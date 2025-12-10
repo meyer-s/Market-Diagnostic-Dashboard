@@ -76,6 +76,30 @@ indicators = [
         "threshold_yellow_max": 60,
         "weight": 1.3,
     },
+    {
+        "code": "PCE",
+        "name": "Personal Consumption Expenditures",
+        "source": "FRED",
+        "source_symbol": "PCE",
+        "category": "consumer",
+        "direction": -1,  # high = strong consumer spending = stability, low = weak spending = stress
+        "lookback_days_for_z": 252,
+        "threshold_green_max": 30,
+        "threshold_yellow_max": 60,
+        "weight": 1.0,
+    },
+    {
+        "code": "PI",
+        "name": "Personal Income",
+        "source": "FRED",
+        "source_symbol": "PI",
+        "category": "consumer",
+        "direction": -1,  # high = strong income growth = stability, low = weak income = stress
+        "lookback_days_for_z": 252,
+        "threshold_green_max": 30,
+        "threshold_yellow_max": 60,
+        "weight": 1.0,
+    },
 ]
 
 for ind_data in indicators:

@@ -9,7 +9,7 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - "8000:8000"
+      - "0.0.0.0:8000:8000"  # Bind to all interfaces for external access
     depends_on:
       - db
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -30,7 +30,7 @@ services:
       - ./frontend/tailwind.config.js:/app/tailwind.config.js
       - ./frontend/postcss.config.js:/app/postcss.config.js
     ports:
-      - "5173:5173"
+      - "0.0.0.0:5173:5173"  # Bind to all interfaces for external access
     command: ["pnpm", "dev", "--host"]
 
   db:

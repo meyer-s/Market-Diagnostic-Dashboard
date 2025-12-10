@@ -100,6 +100,25 @@ class ETLRunner:
                 direction=ind.direction,
                 lookback=ind.lookback_days_for_z,
             )
+        elif code in ("PCE", "PI"):
+            # For consumer indicators, use month-over-month percentage change
+            # This captures growth/contraction better than absolute levels
+            mom_pct = [0.0]  # First point has no prior reference
+            for i in range(1, len(raw_series)):
+                if raw_series[i-1] != 0:
+                    pct_change = ((raw_series[i] - raw_series[i-1]) / raw_series[i-1]) * 100
+                    mom_pct.append(pct_change)
+                else:
+                    mom_pct.append(0.0)
+            
+            # Normalize MoM% changes
+            # Positive growth = healthy consumer = stability (direction -1)
+            # Negative growth = contracting consumer = stress
+            normalized_series = normalize_series(
+                mom_pct,
+                direction=ind.direction,
+                lookback=ind.lookback_days_for_z,
+            )
         elif code == "SPY":
             # For SPY, use distance from 50-day EMA as the indicator
             # This captures trend strength and mean reversion better than raw price

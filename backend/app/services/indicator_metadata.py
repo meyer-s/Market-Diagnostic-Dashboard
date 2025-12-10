@@ -132,6 +132,38 @@ INDICATOR_METADATA = {
         },
         "typical_range": "Normal: 300-500 bps. Elevated: 500-800 bps. Crisis: 800+ bps",
         "impact": "High impact on corporate financing and market sentiment. Widening spreads (RED) can trigger credit crunches and constrain business investment."
+    },
+    
+    "PCE": {
+        "name": "Personal Consumption Expenditures",
+        "description": "PCE measures total consumer spending on goods and services in the U.S. economy. It's the Federal Reserve's preferred inflation gauge and a key indicator of consumer demand and economic health.",
+        "relevance": "Rising PCE indicates strong consumer spending and economic activity. Declining PCE signals weakening demand, reduced consumer confidence, and potential recession.",
+        "scoring": "Direction: -1 (low = stress). Strong consumer spending = economic health. Declining spending = weakness. Z-score normalized with 252-day lookback.",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "Rising PCE = Strong Consumer Demand (GOOD). Falling PCE = Weak Economy/Recession Risk (BAD).",
+        "thresholds": {
+            "green_below": 30,
+            "yellow_below": 60
+        },
+        "typical_range": "Healthy growth: 2-4% YoY. Moderate: 0-2%. Contraction: Negative growth signals recession.",
+        "impact": "Very high impact. Consumer spending accounts for ~70% of U.S. GDP. Declining PCE (RED state) is a strong recession indicator and directly impacts corporate earnings expectations."
+    },
+    
+    "PI": {
+        "name": "Personal Income",
+        "description": "Personal Income measures the total income received by individuals from all sources including wages, salaries, investment income, and government benefits. A key indicator of consumer purchasing power.",
+        "relevance": "Rising personal income supports consumer spending and economic growth. Stagnant or declining income constrains spending and signals economic stress.",
+        "scoring": "Direction: -1 (low = stress). Strong income growth = consumer health and spending capacity. Declining income = economic weakness and reduced demand.",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "Rising Income = Strong Consumer Health (GOOD). Falling Income = Economic Weakness (BAD).",
+        "thresholds": {
+            "green_below": 30,
+            "yellow_below": 60
+        },
+        "typical_range": "Healthy: 3-5% YoY growth. Moderate: 1-3%. Warning: 0-1%. Recessionary: Negative growth.",
+        "impact": "High impact on consumer spending capacity and confidence. Declining personal income (RED state) precedes reduced consumer spending and economic contraction, affecting market sentiment and corporate revenue expectations."
     }
 }
 

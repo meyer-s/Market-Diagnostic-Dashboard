@@ -1,6 +1,17 @@
 import { useState, useEffect } from "react";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Use the same host as the frontend, but port 8000 for API
+// This allows external users to access the API on your public IP
+const getApiUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  return `${protocol}//${hostname}:8000`;
+};
+
+const API_URL = getApiUrl();
 
 export function useApi<T>(endpoint: string) {
   const [data, setData] = useState<T | null>(null);
