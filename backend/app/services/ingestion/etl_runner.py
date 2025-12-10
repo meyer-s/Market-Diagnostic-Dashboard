@@ -171,8 +171,9 @@ class ETLRunner:
             
             # C. Rates Momentum - already have DGS2 and DGS10
             
-            # D. Treasury Volatility (MOVE Index)
-            move_series = self.yahoo.fetch_series("^MOVE", start_date=start_date)
+            # D. Treasury Volatility - Calculate from 10Y yield changes (better data availability than MOVE)
+            # Instead of MOVE Index, we'll calculate realized volatility from DGS10
+            # This will be computed later from dgs10 data
             
             # E. Term Premium (optional - may not be available)
             term_premium_series = []
@@ -192,12 +193,12 @@ class ETLRunner:
             dgs3mo = series_to_dict(dgs3mo_series)
             dgs30 = series_to_dict(dgs30_series)
             dgs5 = series_to_dict(dgs5_series)
-            move = series_to_dict(move_series)
             term_premium = series_to_dict(term_premium_series) if term_premium_series else {}
             
-            # Find common dates (intersection of required data, term premium optional)
+            # Find common dates (intersection of required data - no MOVE needed, we'll calculate volatility)
+            # Term premium is optional
             required_dates = set(hy_oas.keys()) & set(ig_oas.keys()) & set(dgs10.keys()) & set(dgs2.keys()) & \
-                           set(dgs3mo.keys()) & set(move.keys())
+                           set(dgs3mo.keys())
             common_dates = sorted(required_dates)
             
             if len(common_dates) < 30:
@@ -216,7 +217,6 @@ class ETLRunner:
             # Only extract dgs30/dgs5 if they have data for all required dates
             dgs30_vals = np.array([dgs30[d] for d in common_dates]) if (dgs30 and all(d in dgs30 for d in common_dates)) else None
             dgs5_vals = np.array([dgs5[d] for d in common_dates]) if (dgs5 and all(d in dgs5 for d in common_dates)) else None
-            move_vals = np.array([move[d] for d in common_dates])
             
             # Helper function to compute z-score and map to 0-100
             def z_score_to_100(vals, invert=False):
@@ -275,8 +275,23 @@ class ETLRunner:
             avg_roc = (roc_2y + roc_10y) / 2
             rates_momentum_stress = z_score_to_100(avg_roc, invert=False)  # Large increases = stress
             
-            # D. Treasury Volatility (MOVE Index) (15%) - rising MOVE = stress
-            move_stress = z_score_to_100(move_vals, invert=False)
+            # D. Treasury Volatility (15%) - Calculate realized volatility from 10Y yield changes
+            # Use 20-day rolling standard deviation of daily yield changes as volatility proxy
+            dgs10_changes = np.zeros_like(dgs10_vals)
+            for i in range(1, len(dgs10_vals)):
+                dgs10_changes[i] = abs(dgs10_vals[i] - dgs10_vals[i-1])
+            
+            # Calculate rolling volatility (20-period window)
+            rolling_vol = np.zeros_like(dgs10_changes)
+            window = min(20, len(dgs10_changes) // 4)  # Adaptive window, min 20 or 1/4 of data
+            for i in range(window, len(dgs10_changes)):
+                rolling_vol[i] = np.std(dgs10_changes[i-window:i])
+            
+            # For initial values, use expanding window
+            for i in range(1, window):
+                rolling_vol[i] = np.std(dgs10_changes[:i+1]) if i > 0 else 0
+            
+            treasury_volatility_stress = z_score_to_100(rolling_vol, invert=False)  # Higher volatility = stress
             
             # E. Term Premium (10%) - high term premium = stress (optional)
             has_term_premium = len(term_premium) > 0 and all(d in term_premium for d in common_dates)
@@ -290,14 +305,14 @@ class ETLRunner:
                     'credit': 0.40,
                     'curve': 0.20,
                     'momentum': 0.15,
-                    'move': 0.15,
+                    'volatility': 0.15,
                     'premium': 0.10
                 }
                 composite_stress = (
                     credit_stress * weights['credit'] +
                     curve_health * weights['curve'] +
                     rates_momentum_stress * weights['momentum'] +
-                    move_stress * weights['move'] +
+                    treasury_volatility_stress * weights['volatility'] +
                     term_premium_stress * weights['premium']
                 )
             else:
@@ -306,19 +321,22 @@ class ETLRunner:
                     'credit': 0.44,  # 40% + 4%
                     'curve': 0.23,   # 20% + 3%
                     'momentum': 0.17,  # 15% + 2%
-                    'move': 0.16     # 15% + 1%
+                    'volatility': 0.16     # 15% + 1%
                 }
                 composite_stress = (
                     credit_stress * weights['credit'] +
                     curve_health * weights['curve'] +
                     rates_momentum_stress * weights['momentum'] +
-                    move_stress * weights['move']
+                    treasury_volatility_stress * weights['volatility']
                 )
             
             # Invert: we want HIGH score = STABLE, LOW score = STRESS
             # So: stability = 100 - stress
             composite_stability = 100 - composite_stress
             
+            # Update series with actual dates and values
+            series = [{"date": common_dates[i], "value": composite_stability[i]} for i in range(len(common_dates))]
+            clean_values = series  # All values are valid
             raw_series = composite_stability.tolist()
             
             # Since we've already computed 0-100 scores, use them directly
@@ -427,6 +445,9 @@ class ETLRunner:
             liquidity_stress = 50 - (liquidity_proxy * 15)  # Scale z-scores to reasonable range
             liquidity_stress = np.clip(liquidity_stress, 0, 100)
             
+            # Update series with actual dates and values
+            series = [{"date": common_dates[i], "value": liquidity_stress[i]} for i in range(len(common_dates))]
+            clean_values = series  # All values are valid
             raw_series = liquidity_stress.tolist()
             
             # Normalize for consistency
