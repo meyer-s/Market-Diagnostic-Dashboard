@@ -4,12 +4,13 @@ A real-time market stability monitoring system that tracks key financial indicat
 
 ## Features
 
-- **Real-time Indicator Monitoring**: Tracks VIX, SPY, Federal Funds Rate (DFF), Treasury Yield Curve (T10Y2Y), and Unemployment Rate (UNRATE)
+- **Real-time Indicator Monitoring**: Tracks VIX, SPY (via 50-day EMA gap), Federal Funds Rate (DFF via rate-of-change), Treasury Yield Curve (T10Y2Y), and Unemployment Rate (UNRATE)
 - **Dow Theory Market Strain Analysis**: Advanced market direction and strain calculations based on Dow Theory principles
-- **System Overview Dashboard**: Composite scoring system with historical trends and alert notifications
+- **System Overview Dashboard**: Composite scoring system with historical trends, alert notifications, and purpose description
 - **Automated Data Ingestion**: Scheduled ETL pipeline pulling data from FRED API and Yahoo Finance
 - **Alert System**: Configurable threshold-based alerting for market condition changes
 - **Docker Support**: Full containerized deployment for both Mac (ARM64) and Windows (x86_64)
+- **Advanced Technical Analysis**: SPY uses distance from 50-day EMA to capture trend strength and mean reversion dynamics
 
 ## Tech Stack
 
@@ -127,6 +128,9 @@ VITE_API_URL=http://localhost:8000
 - **Directional Logic**: Configurable interpretation (high=stress vs high=stability)
 - **0-100 Scoring**: Normalized scores mapped to intuitive scale
 - **State Classification**: RED/YELLOW/GREEN based on configurable thresholds
+- **Enhanced Metrics**: 
+  - SPY: Uses (Price - 50 EMA) / EMA percentage gap to capture trend strength
+  - DFF: Uses rate-of-change instead of absolute level to measure policy velocity
 
 ### Data Pipeline
 1. **Ingestion**: Automated fetching from FRED and Yahoo Finance
