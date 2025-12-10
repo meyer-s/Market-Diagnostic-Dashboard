@@ -97,6 +97,8 @@ export default function SystemBreakdown() {
       T10Y2Y: 1.5,
       UNRATE: 1.3,
       CONSUMER_HEALTH: 1.5,
+      BOND_MARKET_STABILITY: 1.8,
+      LIQUIDITY_PROXY: 1.6,
     };
     return weights[code] || 1.0;
   };
@@ -562,35 +564,34 @@ export default function SystemBreakdown() {
         <h4 className="text-lg font-semibold mb-3 text-stealth-100">Bond Market Stability Composite</h4>
         <div className="space-y-3 text-sm">
           <p className="text-stealth-300">
-            <strong className="text-stealth-200">Weight: 1.8</strong> · Aggregates five bond market signals into a comprehensive stability score.
+            <strong className="text-stealth-200">Weight: 1.8</strong> · Aggregates four bond market signals into a comprehensive stress score.
           </p>
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 space-y-2">
             <div className="font-mono text-xs text-stealth-300">
               <div className="mb-2"><strong className="text-stealth-200">Components:</strong></div>
               <div className="ml-3 space-y-1">
-                <div>• <span className="text-blue-400">Credit Spread Stress (40%)</span>: HY OAS + IG OAS z-scores</div>
-                <div>• <span className="text-blue-400">Yield Curve Health (20%)</span>: 10Y-2Y, 10Y-3M spreads (inverted)</div>
-                <div>• <span className="text-blue-400">Rates Momentum (15%)</span>: 3-month ROC of 2Y and 10Y yields</div>
-                <div>• <span className="text-blue-400">Treasury Volatility (15%)</span>: MOVE Index z-score</div>
-                <div>• <span className="text-blue-400">Term Premium (10%)</span>: ACMTP10 z-score</div>
+                <div>• <span className="text-blue-400">Credit Spread Stress (44%)</span>: HY OAS + IG OAS z-scores</div>
+                <div>• <span className="text-blue-400">Yield Curve Stress (23%)</span>: 10Y-2Y, 10Y-3M, 30Y-5Y spreads</div>
+                <div>• <span className="text-blue-400">Rates Momentum Stress (17%)</span>: 3-month ROC of 2Y and 10Y yields</div>
+                <div>• <span className="text-blue-400">Treasury Volatility Stress (16%)</span>: 20-day rolling std dev of DGS10</div>
               </div>
             </div>
             <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
-              composite_stress = (0.40 × credit) + (0.20 × curve) + (0.15 × rates) + (0.15 × move) + (0.10 × term)
+              composite_stress = (0.44 × credit) + (0.23 × curve) + (0.17 × momentum) + (0.16 × volatility)
               <br />
-              composite_stability = 100 - composite_stress
+              <span className="text-stealth-500">// Stored as stress score (0-100, higher = worse), direction=-1 inverts during normalization</span>
             </div>
           </div>
           <div className="text-stealth-400">
             <strong className="text-stealth-300">Rationale:</strong> Bond markets are leading indicators of systemic stress. 
-            Credit spreads widen before equity crashes, yield curves invert before recessions, and the MOVE index spikes during 
+            Credit spreads widen before equity crashes, yield curves invert before recessions, and Treasury volatility spikes during 
             liquidity crises. This composite captures bond market dislocations that precede broader market turmoil.
           </div>
           <div className="text-stealth-400">
-            <strong className="text-stealth-300">Typical Ranges:</strong> 
-            <span className="ml-2 text-emerald-400">GREEN: 0-35</span> (stable credit, normal curves, low vol) · 
-            <span className="ml-2 text-yellow-400">YELLOW: 35-65</span> (widening spreads, curve flattening) · 
-            <span className="ml-2 text-red-400">RED: 65-100</span> (credit stress, inversions, MOVE spikes)
+            <strong className="text-stealth-300">Typical Ranges (Stress Score):</strong> 
+            <span className="ml-2 text-emerald-400">LOW: 0-35</span> (stable credit, normal curves, low vol) · 
+            <span className="ml-2 text-yellow-400">MODERATE: 35-65</span> (widening spreads, curve flattening) · 
+            <span className="ml-2 text-red-400">HIGH: 65-100</span> (credit stress, inversions, volatility spikes)
           </div>
         </div>
       </div>
@@ -615,7 +616,9 @@ export default function SystemBreakdown() {
             <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
               liquidity_proxy = z_score(M2_YoY) + z_score(Δ_FedBS) - z_score(RRP_level)
               <br />
-              liquidity_stress = 50 - (liquidity_proxy × 15) → clipped to [0, 100]
+              stress_score = 50 - (liquidity_proxy × 15) → clipped to [0, 100]
+              <br />
+              <span className="text-stealth-500">// Stored as stress score (0-100, higher = worse liquidity), direction=-1 inverts</span>
             </div>
           </div>
           <div className="text-stealth-400">
@@ -625,16 +628,16 @@ export default function SystemBreakdown() {
             liquidity regime driving all asset classes.
           </div>
           <div className="text-stealth-400">
-            <strong className="text-stealth-300">Typical Ranges:</strong> 
-            <span className="ml-2 text-emerald-400">GREEN: 0-30</span> (M2 growth, QE, low RRP) · 
-            <span className="ml-2 text-yellow-400">YELLOW: 30-60</span> (slowing M2, neutral Fed, rising RRP) · 
-            <span className="ml-2 text-red-400">RED: 60-100</span> (M2 decline, aggressive QT, RRP peak)
+            <strong className="text-stealth-300">Typical Ranges (Stress Score):</strong> 
+            <span className="ml-2 text-emerald-400">LOW: 0-30</span> (M2 growth, QE, low RRP = abundant liquidity) · 
+            <span className="ml-2 text-yellow-400">MODERATE: 30-60</span> (slowing M2, neutral Fed, rising RRP) · 
+            <span className="ml-2 text-red-400">HIGH: 60-100</span> (M2 decline, aggressive QT, RRP peak = liquidity drought)
           </div>
           <div className="text-stealth-400">
             <strong className="text-stealth-300">Historical Context:</strong> 
-            2020-2021 QE era: <span className="text-emerald-400">GREEN</span> (M2 +25%, Fed +$4T, RRP near zero) · 
-            2022 aggressive tightening: <span className="text-red-400">RED</span> (M2 declining, QT -$95B/month, RRP $2.5T) · 
-            2023-2024 recovery: <span className="text-yellow-400">YELLOW</span> (stabilizing M2, slowing QT, RRP declining)
+            2020-2021 QE era: <span className="text-emerald-400">LOW STRESS</span> (M2 +25%, Fed +$4T, RRP near zero) · 
+            2022 aggressive tightening: <span className="text-red-400">HIGH STRESS</span> (M2 declining, QT -$95B/month, RRP $2.5T) · 
+            2023-2024 recovery: <span className="text-yellow-400">MODERATE</span> (stabilizing M2, slowing QT, RRP declining)
           </div>
         </div>
       </div>

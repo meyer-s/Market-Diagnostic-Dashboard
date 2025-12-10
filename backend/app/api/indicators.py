@@ -136,6 +136,296 @@ def get_indicator_history(code: str, days: int = 365):
     ]
 
 
+# Note: Specific routes must be defined BEFORE generic routes
+# so FastAPI matches them correctly
+
+@router.get("/indicators/BOND_MARKET_STABILITY/components")
+async def get_bond_composite_components(days: int = 365):
+    """
+    Return component breakdown for Bond Market Stability Composite.
+    Shows the 4 sub-indicators and their weighted contributions.
+    """
+    from datetime import datetime, timedelta
+    from app.services.ingestion.fred_client import FredClient
+    import numpy as np
+    
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    start_date = cutoff.strftime("%Y-%m-%d")
+    
+    # Fetch all sub-indicators
+    async def fetch_all_components():
+        fred = FredClient()
+        
+        # Fetch in parallel
+        hy_oas_data = await fred.fetch_series("BAMLH0A0HYM2", start_date=start_date)
+        ig_oas_data = await fred.fetch_series("BAMLC0A0CM", start_date=start_date)
+        dgs10_data = await fred.fetch_series("DGS10", start_date=start_date)
+        dgs2_data = await fred.fetch_series("DGS2", start_date=start_date)
+        dgs3mo_data = await fred.fetch_series("DGS3MO", start_date=start_date)
+        dgs30_data = await fred.fetch_series("DGS30", start_date=start_date)
+        dgs5_data = await fred.fetch_series("DGS5", start_date=start_date)
+        
+        return {
+            'hy_oas': hy_oas_data,
+            'ig_oas': ig_oas_data,
+            'dgs10': dgs10_data,
+            'dgs2': dgs2_data,
+            'dgs3mo': dgs3mo_data,
+            'dgs30': dgs30_data,
+            'dgs5': dgs5_data,
+        }
+    
+    components = await fetch_all_components()
+    
+    # Convert to dicts for alignment
+    def series_to_dict(s):
+        return {x["date"]: x["value"] for x in s if x["value"] is not None}
+    
+    hy_oas = series_to_dict(components['hy_oas'])
+    ig_oas = series_to_dict(components['ig_oas'])
+    dgs10 = series_to_dict(components['dgs10'])
+    dgs2 = series_to_dict(components['dgs2'])
+    dgs3mo = series_to_dict(components['dgs3mo'])
+    dgs30 = series_to_dict(components['dgs30'])
+    dgs5 = series_to_dict(components['dgs5'])
+    
+    # Find common dates (only FRED sources)
+    all_dates = set(hy_oas.keys()) & set(ig_oas.keys()) & set(dgs10.keys()) & \
+                set(dgs2.keys()) & set(dgs3mo.keys()) & set(dgs30.keys()) & set(dgs5.keys())
+    common_dates = sorted(all_dates)
+    
+    # Helper: z-score to 0-100
+    def calc_scores(vals, invert=False):
+        vals_arr = np.array(vals)
+        mean = np.mean(vals_arr)
+        std = np.std(vals_arr)
+        if std == 0:
+            return [50.0] * len(vals)
+        z_scores = (vals_arr - mean) / std
+        if invert:
+            z_scores = -z_scores
+        scores = 50 + (z_scores * 25)
+        return np.clip(scores, 0, 100).tolist()
+    
+    # Extract values for each date
+    hy_vals = [hy_oas[d] for d in common_dates]
+    ig_vals = [ig_oas[d] for d in common_dates]
+    dgs10_vals = np.array([dgs10[d] for d in common_dates])
+    dgs2_vals = [dgs2[d] for d in common_dates]
+    dgs3mo_vals = [dgs3mo[d] for d in common_dates]
+    dgs30_vals = [dgs30[d] for d in common_dates]
+    dgs5_vals = [dgs5[d] for d in common_dates]
+    
+    # Calculate scores for each component
+    hy_scores = calc_scores(hy_vals, invert=False)
+    ig_scores = calc_scores(ig_vals, invert=False)
+    credit_scores = [(h + i) / 2 for h, i in zip(hy_scores, ig_scores)]
+    
+    # Yield curves (using 3 curves for better coverage)
+    curve_10y2y = [d10 - d2 for d10, d2 in zip(dgs10_vals, dgs2_vals)]
+    curve_10y3m = [d10 - d3m for d10, d3m in zip(dgs10_vals, dgs3mo_vals)]
+    curve_30y5y = [d30 - d5 for d30, d5 in zip(dgs30_vals, dgs5_vals)]
+    avg_curves = [(c1 + c2 + c3) / 3 for c1, c2, c3 in zip(curve_10y2y, curve_10y3m, curve_30y5y)]
+    curve_scores = calc_scores(avg_curves, invert=True)
+    
+    # Rates momentum (3-month ROC)
+    def calc_roc(vals, periods=63):
+        roc = [0.0] * periods
+        for i in range(periods, len(vals)):
+            roc.append(vals[i] - vals[i - periods])
+        return roc
+    
+    roc_2y = calc_roc(dgs2_vals)
+    roc_10y = calc_roc(dgs10_vals.tolist())
+    avg_roc = [(r2 + r10) / 2 for r2, r10 in zip(roc_2y, roc_10y)]
+    momentum_scores = calc_scores(avg_roc, invert=False)
+    
+    # Calculate Treasury volatility (20-day rolling std dev of absolute daily changes)
+    treasury_vol = []
+    window = 20
+    for i in range(len(dgs10_vals)):
+        if i < window:
+            # Use expanding window for first 20 periods
+            start_idx = 0
+            window_data = dgs10_vals[start_idx:i+1]
+        else:
+            # Use 20-day rolling window
+            window_data = dgs10_vals[i-window:i]
+        
+        if len(window_data) > 1:
+            # Calculate absolute daily changes
+            changes = np.abs(np.diff(window_data))
+            vol = np.std(changes)
+        else:
+            vol = 0.0
+        treasury_vol.append(vol)
+    
+    vol_scores = calc_scores(treasury_vol, invert=False)
+    
+    # Updated weights (no term premium)
+    weights = {'credit': 0.44, 'curve': 0.23, 'momentum': 0.17, 'volatility': 0.16}
+    
+    # Build result
+    result = []
+    for i, date in enumerate(common_dates):
+        composite_stress = (
+            credit_scores[i] * weights['credit'] +
+            curve_scores[i] * weights['curve'] +
+            momentum_scores[i] * weights['momentum'] +
+            vol_scores[i] * weights['volatility']
+        )
+        
+        result.append({
+            "date": date,
+            "credit_spread_stress": {
+                "hy_oas": hy_vals[i],
+                "ig_oas": ig_vals[i],
+                "stress_score": credit_scores[i],
+                "weight": weights['credit'],
+                "contribution": credit_scores[i] * weights['credit'],
+            },
+            "yield_curve_stress": {
+                "spread_10y2y": curve_10y2y[i],
+                "spread_10y3m": curve_10y3m[i],
+                "spread_30y5y": curve_30y5y[i],
+                "stress_score": curve_scores[i],
+                "weight": weights['curve'],
+                "contribution": curve_scores[i] * weights['curve'],
+            },
+            "rates_momentum_stress": {
+                "roc_2y": roc_2y[i],
+                "roc_10y": roc_10y[i],
+                "stress_score": momentum_scores[i],
+                "weight": weights['momentum'],
+                "contribution": momentum_scores[i] * weights['momentum'],
+            },
+            "treasury_volatility_stress": {
+                "calculated_volatility": treasury_vol[i],
+                "stress_score": vol_scores[i],
+                "weight": weights['volatility'],
+                "contribution": vol_scores[i] * weights['volatility'],
+            },
+            "composite": {
+                "stress_score": composite_stress,
+            }
+        })
+    
+    return result
+
+
+@router.get("/indicators/LIQUIDITY_PROXY/components")
+async def get_liquidity_proxy_components(days: int = 365):
+    """
+    Return component breakdown for Liquidity Proxy Indicator.
+    Shows M2 YoY%, Fed balance sheet delta, and RRP usage.
+    """
+    from datetime import datetime, timedelta
+    from app.services.ingestion.fred_client import FredClient
+    import numpy as np
+    
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    start_date = cutoff.strftime("%Y-%m-%d")
+    
+    # Fetch all components
+    async def fetch_all_components():
+        fred = FredClient()
+        
+        m2_data = await fred.fetch_series("M2SL", start_date=start_date)
+        fed_bs_data = await fred.fetch_series("WALCL", start_date=start_date)
+        rrp_data = await fred.fetch_series("RRPONTSYD", start_date=start_date)
+        
+        return {
+            'm2': m2_data,
+            'fed_bs': fed_bs_data,
+            'rrp': rrp_data,
+        }
+    
+    components = await fetch_all_components()
+    
+    # Convert to dicts
+    def series_to_dict(s):
+        return {x["date"]: x["value"] for x in s if x["value"] is not None}
+    
+    m2_dict = series_to_dict(components['m2'])
+    fed_bs_dict = series_to_dict(components['fed_bs'])
+    rrp_dict = series_to_dict(components['rrp'])
+    
+    # Find common dates
+    all_dates = set(m2_dict.keys()) & set(fed_bs_dict.keys()) & set(rrp_dict.keys())
+    common_dates = sorted(all_dates)
+    
+    # Extract values
+    m2_vals = np.array([m2_dict[d] for d in common_dates])
+    fed_bs_vals = np.array([fed_bs_dict[d] for d in common_dates])
+    rrp_vals = np.array([rrp_dict[d] for d in common_dates])
+    
+    # Calculate M2 YoY% (252 trading days ≈ 1 year)
+    m2_yoy = []
+    lookback = 252
+    for i in range(len(m2_vals)):
+        if i < lookback:
+            m2_yoy.append(0.0)
+        else:
+            yoy_pct = ((m2_vals[i] - m2_vals[i - lookback]) / m2_vals[i - lookback]) * 100
+            m2_yoy.append(yoy_pct)
+    
+    # Calculate Fed balance sheet delta (month-over-month ≈ 21 trading days)
+    fed_bs_delta = []
+    mom_window = 21
+    for i in range(len(fed_bs_vals)):
+        if i < mom_window:
+            fed_bs_delta.append(0.0)
+        else:
+            delta = fed_bs_vals[i] - fed_bs_vals[i - mom_window]
+            fed_bs_delta.append(delta)
+    
+    # Helper: compute z-score
+    def compute_z_score(vals):
+        mean = np.mean(vals)
+        std = np.std(vals)
+        if std == 0:
+            return np.zeros_like(vals)
+        return (vals - mean) / std
+    
+    # Compute z-scores
+    z_m2_yoy = compute_z_score(np.array(m2_yoy))
+    z_fed_delta = compute_z_score(np.array(fed_bs_delta))
+    z_rrp = compute_z_score(rrp_vals)
+    
+    # Formula: Liquidity = z(M2_YoY) + z(ΔFedBS) - z(RRP_level)
+    liquidity_proxy = z_m2_yoy + z_fed_delta - z_rrp
+    
+    # Map to stress score: 50 - (liquidity_proxy * 15), clipped to [0, 100]
+    liquidity_stress = np.clip(50 - (liquidity_proxy * 15), 0, 100)
+    
+    # Build result
+    result = []
+    for i, date in enumerate(common_dates):
+        result.append({
+            "date": date,
+            "m2_money_supply": {
+                "value": m2_vals[i],
+                "yoy_pct": m2_yoy[i],
+                "z_score": float(z_m2_yoy[i]),
+            },
+            "fed_balance_sheet": {
+                "value": fed_bs_vals[i],
+                "delta": fed_bs_delta[i],
+                "z_score": float(z_fed_delta[i]),
+            },
+            "reverse_repo": {
+                "value": rrp_vals[i],
+                "z_score": float(z_rrp[i]),
+            },
+            "composite": {
+                "liquidity_proxy": float(liquidity_proxy[i]),
+                "stress_score": float(liquidity_stress[i]),
+            }
+        })
+    
+    return result
+
+
 @router.get("/indicators/{code}/components")
 def get_indicator_components(code: str, days: int = 365):
     """
@@ -218,168 +508,6 @@ def get_indicator_components(code: str, days: int = 365):
                 "pce_vs_cpi": pce_vs_cpi,
                 "pi_vs_cpi": pi_vs_cpi,
                 "consumer_health": consumer_health,
-            }
-        })
-    
-    return result
-
-
-@router.get("/indicators/BOND_MARKET_STABILITY/components")
-async def get_bond_composite_components(days: int = 365):
-    """
-    Return component breakdown for Bond Market Stability Composite.
-    Shows the 5 sub-indicators and their weighted contributions.
-    """
-    from datetime import datetime, timedelta
-    from app.services.ingestion.fred_client import FredClient
-    from app.services.ingestion.yahoo_client import YahooClient
-    import asyncio
-    import numpy as np
-    
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    start_date = cutoff.strftime("%Y-%m-%d")
-    
-    # Fetch all sub-indicators
-    async def fetch_all_components():
-        fred = FredClient()
-        yahoo = YahooClient()
-        
-        # Fetch in parallel
-        hy_oas_data = await fred.fetch_series("BAMLH0A0HYM2", start_date=start_date)
-        ig_oas_data = await fred.fetch_series("BAMLC0A0CM", start_date=start_date)
-        dgs10_data = await fred.fetch_series("DGS10", start_date=start_date)
-        dgs2_data = await fred.fetch_series("DGS2", start_date=start_date)
-        dgs3mo_data = await fred.fetch_series("DGS3MO", start_date=start_date)
-        move_data = yahoo.fetch_series("^MOVE", start_date=start_date)
-        term_premium_data = await fred.fetch_series("ACMTP10", start_date=start_date)
-        
-        return {
-            'hy_oas': hy_oas_data,
-            'ig_oas': ig_oas_data,
-            'dgs10': dgs10_data,
-            'dgs2': dgs2_data,
-            'dgs3mo': dgs3mo_data,
-            'move': move_data,
-            'term_premium': term_premium_data,
-        }
-    
-    components = await fetch_all_components()
-    
-    # Convert to dicts for alignment
-    def series_to_dict(s):
-        return {x["date"]: x["value"] for x in s if x["value"] is not None}
-    
-    hy_oas = series_to_dict(components['hy_oas'])
-    ig_oas = series_to_dict(components['ig_oas'])
-    dgs10 = series_to_dict(components['dgs10'])
-    dgs2 = series_to_dict(components['dgs2'])
-    dgs3mo = series_to_dict(components['dgs3mo'])
-    move = series_to_dict(components['move'])
-    term_premium = series_to_dict(components['term_premium'])
-    
-    # Find common dates
-    all_dates = set(hy_oas.keys()) & set(ig_oas.keys()) & set(dgs10.keys()) & \
-                set(dgs2.keys()) & set(dgs3mo.keys()) & set(move.keys()) & \
-                set(term_premium.keys())
-    common_dates = sorted(all_dates)
-    
-    # Helper: z-score to 0-100
-    def calc_scores(vals, invert=False):
-        vals_arr = np.array(vals)
-        mean = np.mean(vals_arr)
-        std = np.std(vals_arr)
-        if std == 0:
-            return [50.0] * len(vals)
-        z_scores = (vals_arr - mean) / std
-        if invert:
-            z_scores = -z_scores
-        scores = 50 + (z_scores * 25)
-        return np.clip(scores, 0, 100).tolist()
-    
-    # Extract values for each date
-    hy_vals = [hy_oas[d] for d in common_dates]
-    ig_vals = [ig_oas[d] for d in common_dates]
-    dgs10_vals = [dgs10[d] for d in common_dates]
-    dgs2_vals = [dgs2[d] for d in common_dates]
-    dgs3mo_vals = [dgs3mo[d] for d in common_dates]
-    move_vals = [move[d] for d in common_dates]
-    tp_vals = [term_premium[d] for d in common_dates]
-    
-    # Calculate scores for each component
-    hy_scores = calc_scores(hy_vals, invert=False)
-    ig_scores = calc_scores(ig_vals, invert=False)
-    credit_scores = [(h + i) / 2 for h, i in zip(hy_scores, ig_scores)]
-    
-    # Yield curves
-    curve_10y2y = [d10 - d2 for d10, d2 in zip(dgs10_vals, dgs2_vals)]
-    curve_10y3m = [d10 - d3m for d10, d3m in zip(dgs10_vals, dgs3mo_vals)]
-    avg_curves = [(c1 + c2) / 2 for c1, c2 in zip(curve_10y2y, curve_10y3m)]
-    curve_scores = calc_scores(avg_curves, invert=True)
-    
-    # Rates momentum (3-month ROC)
-    def calc_roc(vals, periods=63):
-        roc = [0.0] * periods
-        for i in range(periods, len(vals)):
-            roc.append(vals[i] - vals[i - periods])
-        return roc
-    
-    roc_2y = calc_roc(dgs2_vals)
-    roc_10y = calc_roc(dgs10_vals)
-    avg_roc = [(r2 + r10) / 2 for r2, r10 in zip(roc_2y, roc_10y)]
-    momentum_scores = calc_scores(avg_roc, invert=False)
-    
-    # MOVE and term premium
-    move_scores = calc_scores(move_vals, invert=False)
-    tp_scores = calc_scores(tp_vals, invert=False)
-    
-    # Weights
-    weights = {'credit': 0.40, 'curve': 0.20, 'momentum': 0.15, 'move': 0.15, 'premium': 0.10}
-    
-    # Build result
-    result = []
-    for i, date in enumerate(common_dates):
-        composite_stress = (
-            credit_scores[i] * weights['credit'] +
-            curve_scores[i] * weights['curve'] +
-            momentum_scores[i] * weights['momentum'] +
-            move_scores[i] * weights['move'] +
-            tp_scores[i] * weights['premium']
-        )
-        composite_stability = 100 - composite_stress
-        
-        result.append({
-            "date": date,
-            "credit_spread": {
-                "hy_oas": hy_vals[i],
-                "ig_oas": ig_vals[i],
-                "score": credit_scores[i],
-                "weight": weights['credit'],
-            },
-            "yield_curve": {
-                "spread_10y2y": curve_10y2y[i],
-                "spread_10y3m": curve_10y3m[i],
-                "score": curve_scores[i],
-                "weight": weights['curve'],
-            },
-            "rates_momentum": {
-                "roc_2y": roc_2y[i],
-                "roc_10y": roc_10y[i],
-                "score": momentum_scores[i],
-                "weight": weights['momentum'],
-            },
-            "treasury_volatility": {
-                "move_index": move_vals[i],
-                "score": move_scores[i],
-                "weight": weights['move'],
-            },
-            "term_premium": {
-                "value": tp_vals[i],
-                "score": tp_scores[i],
-                "weight": weights['premium'],
-            },
-            "composite": {
-                "stress_score": composite_stress,
-                "stability_score": composite_stability,
             }
         })
     
