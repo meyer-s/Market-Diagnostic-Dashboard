@@ -330,14 +330,14 @@ class ETLRunner:
                     treasury_volatility_stress * weights['volatility']
                 )
             
-            # Invert: we want HIGH score = STABLE, LOW score = STRESS
-            # So: stability = 100 - stress
-            composite_stability = 100 - composite_stress
+            # Store composite stress score (0-100, where higher = more stress)
+            # direction=-1 in the indicator config will invert this during normalization
+            # so that high stress → low final score (RED) and low stress → high final score (GREEN)
             
             # Update series with actual dates and values
-            series = [{"date": common_dates[i], "value": composite_stability[i]} for i in range(len(common_dates))]
+            series = [{"date": common_dates[i], "value": composite_stress[i]} for i in range(len(common_dates))]
             clean_values = series  # All values are valid
-            raw_series = composite_stability.tolist()
+            raw_series = composite_stress.tolist()
             
             # Since we've already computed 0-100 scores, use them directly
             # but still normalize for consistency with system
@@ -435,13 +435,11 @@ class ETLRunner:
             # Higher M2 growth and Fed balance sheet = higher liquidity
             liquidity_proxy = z_m2_yoy + z_fed_delta - z_rrp
             
-            # Map to 0-100 scale: z-score of ~-2 to +2 maps to 0-100
-            # We want high liquidity = low stress score for consistency
-            # So we'll map: high liquidity (positive) = low score (GREEN)
-            #                low liquidity (negative) = high score (RED)
-            
-            # Invert and scale: liquidity to stress score
-            # High liquidity z-score should give low stress score
+            # Store as stress score (0-100, where higher = worse liquidity conditions)
+            # High liquidity z-score (good) should map to low stress score
+            # Low liquidity z-score (bad) should map to high stress score
+            # direction=-1 in indicator config will invert this during normalization
+            # so that high stress → low final score (RED) and low stress → high final score (GREEN)
             liquidity_stress = 50 - (liquidity_proxy * 15)  # Scale z-scores to reasonable range
             liquidity_stress = np.clip(liquidity_stress, 0, 100)
             

@@ -4,13 +4,18 @@ A real-time market stability monitoring system that tracks key financial indicat
 
 ## Features
 
-- **Real-time Indicator Monitoring**: Tracks VIX, SPY (via 50-day EMA gap), Federal Funds Rate (DFF via rate-of-change), Treasury Yield Curve (T10Y2Y), and Unemployment Rate (UNRATE)
+- **8-Indicator Monitoring System**: 
+  - **Core Indicators**: VIX, SPY (50-day EMA gap), Federal Funds Rate (rate-of-change), Treasury Yield Curve (10Y-2Y), Unemployment Rate
+  - **Composite Indicators**: Consumer Health, Bond Market Stability (4-component weighted), Liquidity Proxy (3-component)
 - **Dow Theory Market Strain Analysis**: Advanced market direction and strain calculations based on Dow Theory principles
 - **System Overview Dashboard**: Composite scoring system with historical trends, alert notifications, and purpose description
-- **Automated Data Ingestion**: Scheduled ETL pipeline pulling data from FRED API and Yahoo Finance
+- **Automated Data Ingestion**: Scheduled ETL pipeline (4-hour intervals) pulling from FRED API and Yahoo Finance, with 365-day backfill capability
 - **Alert System**: Configurable threshold-based alerting for market condition changes
 - **Docker Support**: Full containerized deployment for both Mac (ARM64) and Windows (x86_64)
-- **Advanced Technical Analysis**: SPY uses distance from 50-day EMA to capture trend strength and mean reversion dynamics
+- **Advanced Technical Analysis**: 
+  - SPY uses distance from 50-day EMA to capture trend strength
+  - Bond Market Stability: Weighted composite (44% credit, 23% curve, 17% momentum, 16% Treasury volatility)
+  - Liquidity Proxy: Z-score combination of M2 growth, Fed balance sheet delta, and RRP usage
 
 ## Tech Stack
 

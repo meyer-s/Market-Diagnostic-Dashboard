@@ -98,12 +98,22 @@
 - Federal Funds Rate (DFF)
 - Yield Curve 10Y-2Y (T10Y2Y)
 - Unemployment Rate (UNRATE)
-- Ready for: HY OAS, IG Spreads, PMIs, Financial Conditions Indexes
+- **Bond Market Components:**
+  - High Yield OAS (BAMLH0A0HYM2)
+  - Investment Grade OAS (BAMLC0A0CM)
+  - Treasury Yields: 10Y, 2Y, 3M, 30Y, 5Y (DGS10, DGS2, DGS3MO, DGS30, DGS5)
+- **Liquidity Components:**
+  - M2 Money Supply (M2SL)
+  - Fed Balance Sheet (WALCL)
+  - Overnight Reverse Repo (RRPONTSYD)
+- **Consumer Health Components:**
+  - Personal Consumption Expenditures (PCE)
+  - Personal Income (PI)
+  - Consumer Price Index (CPIAUCSL)
 
 ✅ **Yahoo Finance**
 - VIX (Volatility Index)
 - S&P 500 ETF (SPY)
-- Ready for: Bank CDS proxies, equity indexes
 
 ### Database Schema
 - **Indicator:** Metadata (code, name, thresholds, weights)
@@ -119,19 +129,35 @@
 
 ---
 
-## 🚀 Next Steps to Match Your Vision
+## 🚀 Current 8-Indicator System
 
-### Missing High-Priority Indicators
-To fully match your initial request, add these indicators:
+### Core Indicators
+1. **VIX (Volatility Index)** - Market fear gauge from options pricing
+2. **SPY (S&P 500 ETF)** - Equity market momentum and trend
+3. **Federal Funds Rate (DFF)** - Current monetary policy stance
+4. **10Y-2Y Yield Curve (T10Y2Y)** - Recession warning indicator
+5. **Unemployment Rate (UNRATE)** - Labor market health
 
-1. **High Yield OAS (HY Spread)** - FRED: `BAMLH0A0HYM2`
-2. **Investment Grade Spreads (IG)** - FRED: `BAMLC0A0CM`
-3. **ISM Manufacturing PMI** - FRED: `MANEMP`
-4. **Chicago Fed Financial Conditions Index** - FRED: `NFCI`
-5. **Bank CDS Proxy** - Could use bank ETF spreads or sector volatility
+### Advanced Composite Indicators
+6. **Consumer Health Composite** - Real purchasing power analysis
+   - Components: PCE, PI, CPI (spending/income vs inflation)
+   - Captures whether consumers face expansion or squeeze
 
-Would you like me to:
-1. Add these specific indicators to the database?
-2. Set up a cron job for automated daily updates?
-3. Enhance the charting with additional styling options?
-4. Add export functionality (CSV/PDF reports)?
+7. **Bond Market Stability Composite** - Multi-dimensional fixed-income health
+   - Credit Spreads (44%): HY OAS, IG OAS
+   - Yield Curves (23%): 10Y-2Y, 10Y-3M, 30Y-5Y
+   - Rates Momentum (17%): 2Y and 10Y rate of change
+   - Treasury Volatility (16%): Calculated 20-day rolling std dev from DGS10
+   - Note: MOVE Index replaced with calculated volatility for better data availability
+
+8. **Liquidity Proxy Indicator** - Monetary conditions and market liquidity
+   - M2 Year-over-Year Growth
+   - Fed Balance Sheet Delta
+   - Reverse Repo Facility Usage (inverse relationship)
+
+### Technical Implementation Notes
+- **Direction Logic:** Indicators store raw stress scores (0-100, higher = worse)
+- **Normalization:** `direction=-1` inverts z-scores during scoring so high stress → RED, low stress → GREEN
+- **Data Frequency:** Daily updates via scheduled ETL (4-hour intervals during market hours)
+- **Historical Depth:** 365 days of backfilled data for all composite indicators
+- **Automated Scheduler:** Runs on application startup and every 4 hours

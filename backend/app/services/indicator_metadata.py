@@ -156,15 +156,15 @@ INDICATOR_METADATA = {
         "name": "Bond Market Stability Composite",
         "description": "Comprehensive bond market health index aggregating five critical fixed-income signals: credit spreads, yield curve shape, rate momentum, Treasury volatility, and term premium. Provides a holistic 0-100 stability score for bond market conditions.",
         "relevance": "The bond market often signals economic stress before equities. This composite captures multiple dimensions of fixed-income market health, from credit risk to rate volatility, offering early warnings of systemic instability. Bond markets are larger and more sensitive to macroeconomic shifts than equities.",
-        "scoring": "Direction: -1 (high score = stable, low score = stress). Computes weighted composite from 5 sub-indicators, each z-score normalized and mapped to 0-100. Final score inverted so higher values indicate better stability. Thresholds: 65-100 = GREEN (stable), 35-65 = YELLOW (caution), 0-35 = RED (stress).",
+        "scoring": "Direction: -1 (indicates high raw value should map to low final score). Computes weighted composite stress score from 5 sub-indicators, each z-score normalized and mapped to 0-100 where higher = more stress. The direction=-1 setting inverts this during normalization so that high stress maps to low final scores (RED) and low stress maps to high final scores (GREEN). Thresholds: 65-100 = GREEN (stable), 35-65 = YELLOW (caution), 0-35 = RED (stress).",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "High score (65+) = Healthy bond markets, normal credit conditions, manageable volatility (GOOD). Mid score (35-65) = Elevated concerns, some stress signals (CAUTION). Low score (0-35) = Severe bond market stress, credit crunch, high volatility (BAD).",
-        "derived_from": ["BAMLH0A0HYM2", "BAMLC0A0CM", "DGS10", "DGS2", "DGS3MO", "DGS30", "DGS5", "^MOVE", "ACMTP10"],
+        "derived_from": ["BAMLH0A0HYM2", "BAMLC0A0CM", "DGS10", "DGS2", "DGS3MO", "DGS30", "DGS5"],
         "components": {
             "credit_spread_stress": {
-                "weight": 0.40,
-                "description": "Credit Spread Stress (40%)",
+                "weight": 0.44,
+                "description": "Credit Spread Stress (44%)",
                 "sources": ["High Yield OAS (BAMLH0A0HYM2)", "Investment Grade OAS (BAMLC0A0CM)"],
                 "formula": "Average z-scores of HY and IG option-adjusted spreads. Higher spreads = more stress.",
                 "interpretation": "Widening credit spreads indicate investors demanding higher risk premiums, signaling deteriorating credit conditions and potential default risk.",
@@ -174,8 +174,8 @@ INDICATOR_METADATA = {
                 }
             },
             "yield_curve_health": {
-                "weight": 0.20,
-                "description": "Yield Curve Health (20%)",
+                "weight": 0.23,
+                "description": "Yield Curve Health (23%)",
                 "sources": ["10Y-2Y Spread (DGS10-DGS2)", "10Y-3M Spread (DGS10-DGS3MO)", "Optional: 30Y-5Y (DGS30-DGS5)"],
                 "formula": "Average z-scores of yield curve slopes, inverted. Steeper curve = healthier = lower stress score.",
                 "interpretation": "Inverted curves (negative spreads) have preceded every U.S. recession since 1955. Flat/inverted = recession warning. Steep = growth expectations.",
@@ -185,37 +185,29 @@ INDICATOR_METADATA = {
                 }
             },
             "rates_momentum": {
-                "weight": 0.15,
-                "description": "Rates Momentum (15%)",
+                "weight": 0.17,
+                "description": "Rates Momentum (17%)",
                 "sources": ["2Y Yield ROC (DGS2)", "10Y Yield ROC (DGS10)"],
                 "formula": "3-month rate of change for 2Y and 10Y yields. Large upward spikes indicate aggressive Fed tightening = stress.",
                 "interpretation": "Rapid rate increases signal restrictive monetary policy and increased recession risk. Historical Fed hiking cycles correlate with market corrections.",
                 "typical_ranges": "Gradual: ±25 bps/quarter, Aggressive: ±50-100 bps/quarter, Crisis tightening: 100+ bps/quarter"
             },
             "treasury_volatility": {
-                "weight": 0.15,
-                "description": "Treasury Volatility (MOVE Index) (15%)",
-                "sources": ["MOVE Index (^MOVE from Yahoo Finance)"],
-                "formula": "Z-score of MOVE Index. Rising MOVE = increased Treasury market volatility = stress.",
-                "interpretation": "MOVE is the bond market equivalent of VIX. Elevated MOVE signals uncertainty, forced deleveraging, or liquidity concerns in Treasury markets.",
-                "typical_ranges": "Normal: 60-90, Elevated: 90-130, Crisis: 130+ (2020 peak: 264)"
-            },
-            "term_premium": {
-                "weight": 0.10,
-                "description": "Term Premium (10%)",
-                "sources": ["ACM Term Premium (ACMTP10)"],
-                "formula": "Z-score of 10-year term premium. High term premium = investors demanding more compensation for duration risk = stress.",
-                "interpretation": "Term premium reflects compensation for holding long-duration bonds. Rising premium indicates increased inflation uncertainty or policy risk.",
-                "typical_ranges": "Normal: -0.5% to +0.5%, Elevated: +0.5% to +1.5%, Crisis: +1.5%+"
+                "weight": 0.16,
+                "description": "Treasury Volatility (16%)",
+                "sources": ["Calculated from 10-Year Treasury Yield (DGS10)"],
+                "formula": "20-day rolling standard deviation of absolute daily yield changes. Higher volatility = increased stress.",
+                "interpretation": "Realized Treasury volatility measures actual rate instability. Elevated volatility signals uncertainty, forced deleveraging, or liquidity concerns in Treasury markets. Similar to MOVE Index but calculated from daily yield changes for better data availability.",
+                "typical_ranges": "Low volatility: <0.03% daily std dev, Moderate: 0.03-0.06%, High: 0.06-0.10%, Crisis: >0.10%"
             }
         },
-        "calculation": "Composite Stress = (Credit * 0.40) + (Curve * 0.20) + (Momentum * 0.15) + (MOVE * 0.15) + (Premium * 0.10). Final Stability Score = 100 - Stress Score.",
+        "calculation": "Composite Stress Score = (Credit Spread Stress * 0.44) + (Yield Curve Stress * 0.23) + (Rates Momentum Stress * 0.17) + (Treasury Volatility Stress * 0.16). Stored as raw stress score (0-100, higher = more stress). The direction=-1 indicator setting inverts this during normalization for final scoring.",
         "thresholds": {
             "green_below": 35,
             "yellow_below": 65
         },
         "typical_range": "GREEN (65-100): Normal bond market conditions with healthy credit, normal curve, low volatility. YELLOW (35-65): Some stress signals emerging, elevated caution. RED (0-35): Severe bond market dysfunction, credit crunch, high volatility.",
-        "impact": "Very high impact. Bond markets are leading indicators of economic conditions. This composite captures systemic stress before it manifests in equities. RED states (score <35) historically coincide with recessions, credit crises, or major policy shifts. The weighted approach prioritizes credit conditions (40%) as the most sensitive early warning system.",
+        "impact": "Very high impact. Bond markets are leading indicators of economic conditions. This composite captures systemic stress before it manifests in equities. RED states (score <35) historically coincide with recessions, credit crises, or major policy shifts. The weighted approach prioritizes credit conditions (44%) as the most sensitive early warning system.",
         "historical_context": "Major crises (2008, 2020) showed severe bond market stress months before equity peaks. Credit spreads widened dramatically, curves inverted, and MOVE spiked. This composite would have provided early RED warnings during: 2008 Financial Crisis, 2011 European Debt Crisis, 2018 Q4 selloff, 2020 COVID shock.",
         "use_cases": [
             "Early warning system for systemic financial stress",
@@ -230,7 +222,7 @@ INDICATOR_METADATA = {
         "name": "Liquidity Proxy Indicator",
         "description": "Composite measure of systemic liquidity conditions combining M2 money supply growth, Federal Reserve balance sheet changes, and overnight reverse repo facility usage. Captures the availability of money and credit in the financial system.",
         "relevance": "Liquidity is the lifeblood of financial markets. When liquidity is abundant, asset prices rise and volatility falls. When liquidity drains, markets become vulnerable to shocks and corrections. This indicator provides early warning of liquidity regime shifts.",
-        "scoring": "Direction: -1 (high liquidity = low stress score = GREEN, low liquidity = high stress score = RED). Formula: z(M2 YoY%) + z(ΔFed Balance Sheet) - z(RRP Usage). Components are z-score normalized and combined. Result mapped to 0-100 stress scale where lower = better liquidity conditions.",
+        "scoring": "Direction: -1 (indicates high raw value should map to low final score). Formula: z(M2 YoY%) + z(ΔFed Balance Sheet) - z(RRP Usage). Components are z-score normalized and combined into liquidity proxy, then inverted and scaled to create a stress score (0-100, where higher = worse liquidity). The direction=-1 setting inverts this during normalization so high stress maps to low final scores (RED) and low stress maps to high final scores (GREEN).",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "GREEN (0-30): Abundant liquidity, supportive tailwinds for risk assets. YELLOW (30-60): Neutral/mixed liquidity, market vulnerable to shocks. RED (60-100): Liquidity drought, high fragility, increased crash risk.",
