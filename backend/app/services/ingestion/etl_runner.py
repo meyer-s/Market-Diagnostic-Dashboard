@@ -87,6 +87,14 @@ class ETLRunner:
                 pce_raw = [pce_dict[date] for date in common_dates]
                 cpi_raw = [cpi_dict[date] for date in common_dates]
                 pi_raw = [pi_dict[date] for date in common_dates]
+            elif code == "BOND_MARKET_STABILITY":
+                # This indicator fetches its data in the processing section below
+                # Just create placeholder series for now
+                series = [{"date": start_date, "value": 0.0}]
+            elif code == "LIQUIDITY_PROXY":
+                # This indicator fetches its data in the processing section below
+                # Just create placeholder series for now
+                series = [{"date": start_date, "value": 0.0}]
             else:
                 db.close()
                 raise ValueError(f"Unknown derived indicator: {code}")
@@ -143,6 +151,287 @@ class ETLRunner:
             # Negative values = consumer stress (inflation > spending/income)
             normalized_series = normalize_series(
                 consumer_health,
+                direction=ind.direction,
+                lookback=ind.lookback_days_for_z,
+            )
+        elif code == "BOND_MARKET_STABILITY":
+            import numpy as np
+            
+            # Fetch all sub-indicators
+            # A. Credit Spread Stress (40%)
+            hy_oas_series = await self.fred.fetch_series("BAMLH0A0HYM2", start_date=start_date)  # HY OAS
+            ig_oas_series = await self.fred.fetch_series("BAMLC0A0CM", start_date=start_date)    # IG OAS
+            
+            # B. Yield Curve Health (20%)
+            dgs10_series = await self.fred.fetch_series("DGS10", start_date=start_date)
+            dgs2_series = await self.fred.fetch_series("DGS2", start_date=start_date)
+            dgs3mo_series = await self.fred.fetch_series("DGS3MO", start_date=start_date)
+            dgs30_series = await self.fred.fetch_series("DGS30", start_date=start_date)
+            dgs5_series = await self.fred.fetch_series("DGS5", start_date=start_date)
+            
+            # C. Rates Momentum - already have DGS2 and DGS10
+            
+            # D. Treasury Volatility (MOVE Index)
+            move_series = self.yahoo.fetch_series("^MOVE", start_date=start_date)
+            
+            # E. Term Premium (optional - may not be available)
+            term_premium_series = []
+            try:
+                term_premium_series = await self.fred.fetch_series("ACMTP10", start_date=start_date)
+            except:
+                print("Warning: Term Premium (ACMTP10) not available, using 4-component model")
+            
+            # Align all series by date
+            def series_to_dict(s):
+                return {x["date"]: x["value"] for x in s if x["value"] is not None}
+            
+            hy_oas = series_to_dict(hy_oas_series)
+            ig_oas = series_to_dict(ig_oas_series)
+            dgs10 = series_to_dict(dgs10_series)
+            dgs2 = series_to_dict(dgs2_series)
+            dgs3mo = series_to_dict(dgs3mo_series)
+            dgs30 = series_to_dict(dgs30_series)
+            dgs5 = series_to_dict(dgs5_series)
+            move = series_to_dict(move_series)
+            term_premium = series_to_dict(term_premium_series) if term_premium_series else {}
+            
+            # Find common dates (intersection of required data, term premium optional)
+            required_dates = set(hy_oas.keys()) & set(ig_oas.keys()) & set(dgs10.keys()) & set(dgs2.keys()) & \
+                           set(dgs3mo.keys()) & set(move.keys())
+            common_dates = sorted(required_dates)
+            
+            if len(common_dates) < 30:
+                db.close()
+                raise ValueError(f"Insufficient overlapping data for {code}: only {len(common_dates)} common dates")
+            
+            # Build series for each component
+            series = [{"date": date, "value": 0.0} for date in common_dates]
+            
+            # Extract aligned raw values
+            hy_oas_vals = np.array([hy_oas[d] for d in common_dates])
+            ig_oas_vals = np.array([ig_oas[d] for d in common_dates])
+            dgs10_vals = np.array([dgs10[d] for d in common_dates])
+            dgs2_vals = np.array([dgs2[d] for d in common_dates])
+            dgs3mo_vals = np.array([dgs3mo[d] for d in common_dates])
+            # Only extract dgs30/dgs5 if they have data for all required dates
+            dgs30_vals = np.array([dgs30[d] for d in common_dates]) if (dgs30 and all(d in dgs30 for d in common_dates)) else None
+            dgs5_vals = np.array([dgs5[d] for d in common_dates]) if (dgs5 and all(d in dgs5 for d in common_dates)) else None
+            move_vals = np.array([move[d] for d in common_dates])
+            
+            # Helper function to compute z-score and map to 0-100
+            def z_score_to_100(vals, invert=False):
+                """Convert to z-scores, then map to 0-100 scale. Higher = more stress."""
+                mean = np.mean(vals)
+                std = np.std(vals)
+                if std == 0:
+                    return np.full_like(vals, 50.0)
+                z_scores = (vals - mean) / std
+                if invert:
+                    z_scores = -z_scores
+                # Map z-score to 0-100: z=-2 → 0, z=0 → 50, z=2 → 100
+                scores = 50 + (z_scores * 25)
+                return np.clip(scores, 0, 100)
+            
+            # A. Credit Spread Stress (40%) - higher spreads = more stress
+            hy_stress = z_score_to_100(hy_oas_vals, invert=False)
+            ig_stress = z_score_to_100(ig_oas_vals, invert=False)
+            credit_stress = (hy_stress + ig_stress) / 2
+            
+            # B. Yield Curve Health (20%) - higher slope = healthier, invert for stress
+            curve_10y2y = dgs10_vals - dgs2_vals
+            curve_10y3m = dgs10_vals - dgs3mo_vals
+            
+            # Check if 30Y and 5Y data is available for all common dates
+            has_30y_5y = (len(dgs30) > 0 and len(dgs5) > 0 and 
+                         all(d in dgs30 for d in common_dates) and 
+                         all(d in dgs5 for d in common_dates))
+            
+            curve_scores = []
+            if has_30y_5y:
+                dgs30_vals = np.array([dgs30[d] for d in common_dates])
+                dgs5_vals = np.array([dgs5[d] for d in common_dates])
+                curve_30y5y = dgs30_vals - dgs5_vals
+                # Average all three curves
+                for i in range(len(common_dates)):
+                    curves = [curve_10y2y[i], curve_10y3m[i], curve_30y5y[i]]
+                    curve_scores.append(np.mean(curves))
+            else:
+                # Average just 10Y-2Y and 10Y-3M (most reliable)
+                for i in range(len(common_dates)):
+                    curves = [curve_10y2y[i], curve_10y3m[i]]
+                    curve_scores.append(np.mean(curves))
+            
+            curve_health = z_score_to_100(np.array(curve_scores), invert=True)  # Invert: steep curve = low stress
+            
+            # C. Rates Momentum (15%) - 3-month ROC, large upward spikes = stress
+            def compute_roc(vals, periods=63):  # ~3 months of trading days
+                roc = np.zeros_like(vals)
+                for i in range(periods, len(vals)):
+                    roc[i] = vals[i] - vals[i - periods]
+                return roc
+            
+            roc_2y = compute_roc(dgs2_vals)
+            roc_10y = compute_roc(dgs10_vals)
+            avg_roc = (roc_2y + roc_10y) / 2
+            rates_momentum_stress = z_score_to_100(avg_roc, invert=False)  # Large increases = stress
+            
+            # D. Treasury Volatility (MOVE Index) (15%) - rising MOVE = stress
+            move_stress = z_score_to_100(move_vals, invert=False)
+            
+            # E. Term Premium (10%) - high term premium = stress (optional)
+            has_term_premium = len(term_premium) > 0 and all(d in term_premium for d in common_dates)
+            
+            # Compute weighted composite: lower = better (stable), higher = stress
+            # If term premium unavailable, redistribute weight proportionally
+            if has_term_premium:
+                term_premium_vals = np.array([term_premium[d] for d in common_dates])
+                term_premium_stress = z_score_to_100(term_premium_vals, invert=False)
+                weights = {
+                    'credit': 0.40,
+                    'curve': 0.20,
+                    'momentum': 0.15,
+                    'move': 0.15,
+                    'premium': 0.10
+                }
+                composite_stress = (
+                    credit_stress * weights['credit'] +
+                    curve_health * weights['curve'] +
+                    rates_momentum_stress * weights['momentum'] +
+                    move_stress * weights['move'] +
+                    term_premium_stress * weights['premium']
+                )
+            else:
+                # Without term premium: redistribute 10% across other components
+                weights = {
+                    'credit': 0.44,  # 40% + 4%
+                    'curve': 0.23,   # 20% + 3%
+                    'momentum': 0.17,  # 15% + 2%
+                    'move': 0.16     # 15% + 1%
+                }
+                composite_stress = (
+                    credit_stress * weights['credit'] +
+                    curve_health * weights['curve'] +
+                    rates_momentum_stress * weights['momentum'] +
+                    move_stress * weights['move']
+                )
+            
+            # Invert: we want HIGH score = STABLE, LOW score = STRESS
+            # So: stability = 100 - stress
+            composite_stability = 100 - composite_stress
+            
+            raw_series = composite_stability.tolist()
+            
+            # Since we've already computed 0-100 scores, use them directly
+            # but still normalize for consistency with system
+            normalized_series = normalize_series(
+                raw_series,
+                direction=ind.direction,
+                lookback=ind.lookback_days_for_z,
+            )
+        elif code == "LIQUIDITY_PROXY":
+            import numpy as np
+            
+            # Fetch liquidity components
+            # 1. M2 Money Supply (M2SL)
+            m2_series = await self.fred.fetch_series("M2SL", start_date=start_date)
+            
+            # 2. Fed Balance Sheet Total Assets (WALCL)
+            fed_bs_series = await self.fred.fetch_series("WALCL", start_date=start_date)
+            
+            # 3. Overnight Reverse Repo (RRPONTSYD)
+            rrp_series = await self.fred.fetch_series("RRPONTSYD", start_date=start_date)
+            
+            # Convert to dicts
+            def series_to_dict(s):
+                return {x["date"]: x["value"] for x in s if x["value"] is not None}
+            
+            m2_dict = series_to_dict(m2_series)
+            fed_bs_dict = series_to_dict(fed_bs_series)
+            rrp_dict = series_to_dict(rrp_series)
+            
+            # These series have different update frequencies (M2 is monthly, RRP is daily, etc.)
+            # Use union of dates and forward-fill missing values
+            all_dates = sorted(set(m2_dict.keys()) | set(fed_bs_dict.keys()) | set(rrp_dict.keys()))
+            
+            if len(all_dates) < 30:
+                db.close()
+                raise ValueError(f"Insufficient data for {code}: only {len(all_dates)} total dates")
+            
+            # Forward fill: use last known value for each series
+            def forward_fill(data_dict, all_dates):
+                result = {}
+                last_value = None
+                for date in all_dates:
+                    if date in data_dict:
+                        last_value = data_dict[date]
+                    if last_value is not None:
+                        result[date] = last_value
+                return result
+            
+            m2_filled = forward_fill(m2_dict, all_dates)
+            fed_bs_filled = forward_fill(fed_bs_dict, all_dates)
+            rrp_filled = forward_fill(rrp_dict, all_dates)
+            
+            # Only use dates where all three have values
+            common_dates = [d for d in all_dates if d in m2_filled and d in fed_bs_filled and d in rrp_filled]
+            
+            if len(common_dates) < 30:
+                db.close()
+                raise ValueError(f"Insufficient overlapping data for {code}: only {len(common_dates)} common dates after forward fill")
+            
+            series = [{"date": date, "value": 0.0} for date in common_dates]
+            
+            # Extract aligned values (using forward-filled data)
+            m2_vals = np.array([m2_filled[d] for d in common_dates])
+            fed_bs_vals = np.array([fed_bs_filled[d] for d in common_dates])
+            rrp_vals = np.array([rrp_filled[d] for d in common_dates])
+            
+            # Calculate M2 YoY% change
+            m2_yoy = np.zeros_like(m2_vals)
+            # Need at least 252 data points (roughly 1 year of daily data, but these are often weekly/monthly)
+            # For monthly data, use 12 months back
+            periods_per_year = 12  # Assume monthly data
+            for i in range(periods_per_year, len(m2_vals)):
+                m2_yoy[i] = ((m2_vals[i] - m2_vals[i - periods_per_year]) / m2_vals[i - periods_per_year]) * 100
+            
+            # Calculate Fed Balance Sheet change (delta)
+            fed_bs_delta = np.zeros_like(fed_bs_vals)
+            for i in range(1, len(fed_bs_vals)):
+                fed_bs_delta[i] = fed_bs_vals[i] - fed_bs_vals[i-1]
+            
+            # Helper: compute z-score
+            def compute_z_score(vals):
+                mean = np.mean(vals)
+                std = np.std(vals)
+                if std == 0:
+                    return np.zeros_like(vals)
+                return (vals - mean) / std
+            
+            # Compute z-scores for each component
+            z_m2_yoy = compute_z_score(m2_yoy)
+            z_fed_delta = compute_z_score(fed_bs_delta)
+            z_rrp = compute_z_score(rrp_vals)
+            
+            # Formula: Liquidity = z(M2_YoY) + z(Delta_FedBS) - z(RRP_level)
+            # Higher RRP = lower liquidity (subtract it)
+            # Higher M2 growth and Fed balance sheet = higher liquidity
+            liquidity_proxy = z_m2_yoy + z_fed_delta - z_rrp
+            
+            # Map to 0-100 scale: z-score of ~-2 to +2 maps to 0-100
+            # We want high liquidity = low stress score for consistency
+            # So we'll map: high liquidity (positive) = low score (GREEN)
+            #                low liquidity (negative) = high score (RED)
+            
+            # Invert and scale: liquidity to stress score
+            # High liquidity z-score should give low stress score
+            liquidity_stress = 50 - (liquidity_proxy * 15)  # Scale z-scores to reasonable range
+            liquidity_stress = np.clip(liquidity_stress, 0, 100)
+            
+            raw_series = liquidity_stress.tolist()
+            
+            # Normalize for consistency
+            normalized_series = normalize_series(
+                raw_series,
                 direction=ind.direction,
                 lookback=ind.lookback_days_for_z,
             )

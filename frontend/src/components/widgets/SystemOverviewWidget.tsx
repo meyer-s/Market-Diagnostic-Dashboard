@@ -148,7 +148,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
     <Link to="/system-breakdown" className="block">
       <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 space-y-4 hover:bg-stealth-750 hover:border-stealth-600 transition cursor-pointer">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold text-stealth-100">
               System Overview
@@ -159,6 +159,12 @@ const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
             {data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : 'N/A'}
           </span>
         </div>
+
+        {/* Description */}
+        <p className="text-xs text-stealth-400 leading-relaxed">
+          Composite score aggregating 8 indicators: VIX, SPY, DFF, T10Y2Y, UNRATE, Consumer Health, 
+          Bond Market Stability, and Liquidity Proxy. Weighted by historical predictive power.
+        </p>
 
       {/* Main Metrics Grid */}
       <div className="grid grid-cols-2 gap-4">

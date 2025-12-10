@@ -150,6 +150,128 @@ INDICATOR_METADATA = {
         },
         "typical_range": "Healthy: +1% to +3% spread. Neutral: -0.5% to +1%. Warning: -1% to -3%. Crisis: -3%+ (severe squeeze).",
         "impact": "Very high impact. This composite metric reveals whether consumer fundamentals align with market indicators. Negative spreads (RED state) signal consumers losing purchasing power despite nominal growth, indicating recession risk and reduced corporate revenue expectations. Captures the real-world impact of inflation on consumer capacity."
+    },
+    
+    "BOND_MARKET_STABILITY": {
+        "name": "Bond Market Stability Composite",
+        "description": "Comprehensive bond market health index aggregating five critical fixed-income signals: credit spreads, yield curve shape, rate momentum, Treasury volatility, and term premium. Provides a holistic 0-100 stability score for bond market conditions.",
+        "relevance": "The bond market often signals economic stress before equities. This composite captures multiple dimensions of fixed-income market health, from credit risk to rate volatility, offering early warnings of systemic instability. Bond markets are larger and more sensitive to macroeconomic shifts than equities.",
+        "scoring": "Direction: -1 (high score = stable, low score = stress). Computes weighted composite from 5 sub-indicators, each z-score normalized and mapped to 0-100. Final score inverted so higher values indicate better stability. Thresholds: 65-100 = GREEN (stable), 35-65 = YELLOW (caution), 0-35 = RED (stress).",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "High score (65+) = Healthy bond markets, normal credit conditions, manageable volatility (GOOD). Mid score (35-65) = Elevated concerns, some stress signals (CAUTION). Low score (0-35) = Severe bond market stress, credit crunch, high volatility (BAD).",
+        "derived_from": ["BAMLH0A0HYM2", "BAMLC0A0CM", "DGS10", "DGS2", "DGS3MO", "DGS30", "DGS5", "^MOVE", "ACMTP10"],
+        "components": {
+            "credit_spread_stress": {
+                "weight": 0.40,
+                "description": "Credit Spread Stress (40%)",
+                "sources": ["High Yield OAS (BAMLH0A0HYM2)", "Investment Grade OAS (BAMLC0A0CM)"],
+                "formula": "Average z-scores of HY and IG option-adjusted spreads. Higher spreads = more stress.",
+                "interpretation": "Widening credit spreads indicate investors demanding higher risk premiums, signaling deteriorating credit conditions and potential default risk.",
+                "typical_ranges": {
+                    "hy_oas": "Normal: 300-500 bps, Elevated: 500-800 bps, Crisis: 800+ bps",
+                    "ig_oas": "Normal: 100-200 bps, Elevated: 200-350 bps, Crisis: 350+ bps"
+                }
+            },
+            "yield_curve_health": {
+                "weight": 0.20,
+                "description": "Yield Curve Health (20%)",
+                "sources": ["10Y-2Y Spread (DGS10-DGS2)", "10Y-3M Spread (DGS10-DGS3MO)", "Optional: 30Y-5Y (DGS30-DGS5)"],
+                "formula": "Average z-scores of yield curve slopes, inverted. Steeper curve = healthier = lower stress score.",
+                "interpretation": "Inverted curves (negative spreads) have preceded every U.S. recession since 1955. Flat/inverted = recession warning. Steep = growth expectations.",
+                "typical_ranges": {
+                    "10y2y": "Healthy: +0.5% to +2%, Warning: 0% to -0.5%, Crisis: -0.5% or lower",
+                    "10y3m": "Healthy: +1% to +2.5%, Warning: 0% to +0.5%, Crisis: negative"
+                }
+            },
+            "rates_momentum": {
+                "weight": 0.15,
+                "description": "Rates Momentum (15%)",
+                "sources": ["2Y Yield ROC (DGS2)", "10Y Yield ROC (DGS10)"],
+                "formula": "3-month rate of change for 2Y and 10Y yields. Large upward spikes indicate aggressive Fed tightening = stress.",
+                "interpretation": "Rapid rate increases signal restrictive monetary policy and increased recession risk. Historical Fed hiking cycles correlate with market corrections.",
+                "typical_ranges": "Gradual: ±25 bps/quarter, Aggressive: ±50-100 bps/quarter, Crisis tightening: 100+ bps/quarter"
+            },
+            "treasury_volatility": {
+                "weight": 0.15,
+                "description": "Treasury Volatility (MOVE Index) (15%)",
+                "sources": ["MOVE Index (^MOVE from Yahoo Finance)"],
+                "formula": "Z-score of MOVE Index. Rising MOVE = increased Treasury market volatility = stress.",
+                "interpretation": "MOVE is the bond market equivalent of VIX. Elevated MOVE signals uncertainty, forced deleveraging, or liquidity concerns in Treasury markets.",
+                "typical_ranges": "Normal: 60-90, Elevated: 90-130, Crisis: 130+ (2020 peak: 264)"
+            },
+            "term_premium": {
+                "weight": 0.10,
+                "description": "Term Premium (10%)",
+                "sources": ["ACM Term Premium (ACMTP10)"],
+                "formula": "Z-score of 10-year term premium. High term premium = investors demanding more compensation for duration risk = stress.",
+                "interpretation": "Term premium reflects compensation for holding long-duration bonds. Rising premium indicates increased inflation uncertainty or policy risk.",
+                "typical_ranges": "Normal: -0.5% to +0.5%, Elevated: +0.5% to +1.5%, Crisis: +1.5%+"
+            }
+        },
+        "calculation": "Composite Stress = (Credit * 0.40) + (Curve * 0.20) + (Momentum * 0.15) + (MOVE * 0.15) + (Premium * 0.10). Final Stability Score = 100 - Stress Score.",
+        "thresholds": {
+            "green_below": 35,
+            "yellow_below": 65
+        },
+        "typical_range": "GREEN (65-100): Normal bond market conditions with healthy credit, normal curve, low volatility. YELLOW (35-65): Some stress signals emerging, elevated caution. RED (0-35): Severe bond market dysfunction, credit crunch, high volatility.",
+        "impact": "Very high impact. Bond markets are leading indicators of economic conditions. This composite captures systemic stress before it manifests in equities. RED states (score <35) historically coincide with recessions, credit crises, or major policy shifts. The weighted approach prioritizes credit conditions (40%) as the most sensitive early warning system.",
+        "historical_context": "Major crises (2008, 2020) showed severe bond market stress months before equity peaks. Credit spreads widened dramatically, curves inverted, and MOVE spiked. This composite would have provided early RED warnings during: 2008 Financial Crisis, 2011 European Debt Crisis, 2018 Q4 selloff, 2020 COVID shock.",
+        "use_cases": [
+            "Early warning system for systemic financial stress",
+            "Credit cycle assessment and recession forecasting",
+            "Portfolio risk management and defensive positioning",
+            "Central bank policy impact monitoring",
+            "Fixed-income market health diagnostic"
+        ]
+    },
+    
+    "LIQUIDITY_PROXY": {
+        "name": "Liquidity Proxy Indicator",
+        "description": "Composite measure of systemic liquidity conditions combining M2 money supply growth, Federal Reserve balance sheet changes, and overnight reverse repo facility usage. Captures the availability of money and credit in the financial system.",
+        "relevance": "Liquidity is the lifeblood of financial markets. When liquidity is abundant, asset prices rise and volatility falls. When liquidity drains, markets become vulnerable to shocks and corrections. This indicator provides early warning of liquidity regime shifts.",
+        "scoring": "Direction: -1 (high liquidity = low stress score = GREEN, low liquidity = high stress score = RED). Formula: z(M2 YoY%) + z(ΔFed Balance Sheet) - z(RRP Usage). Components are z-score normalized and combined. Result mapped to 0-100 stress scale where lower = better liquidity conditions.",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "GREEN (0-30): Abundant liquidity, supportive tailwinds for risk assets. YELLOW (30-60): Neutral/mixed liquidity, market vulnerable to shocks. RED (60-100): Liquidity drought, high fragility, increased crash risk.",
+        "derived_from": ["M2SL", "WALCL", "RRPONTSYD"],
+        "components": {
+            "m2_money_supply": {
+                "symbol": "M2SL",
+                "description": "M2 Money Supply Year-over-Year Growth",
+                "interpretation": "Rapid M2 growth = increasing money supply = higher liquidity. Declining M2 growth = monetary tightening. M2 includes cash, checking deposits, savings accounts, money market funds - broad measure of money availability.",
+                "typical_ranges": "Healthy: 5-8% YoY growth. Tight: 0-3% growth. Extreme ease: 10%+ growth (2020-2021). Contraction: negative growth (rare, indicates severe tightening)."
+            },
+            "fed_balance_sheet": {
+                "symbol": "WALCL",
+                "description": "Federal Reserve Total Assets (Balance Sheet Changes)",
+                "interpretation": "Increasing balance sheet = Fed buying assets (QE) = injecting liquidity. Decreasing balance sheet = Fed selling assets (QT) = draining liquidity. Delta (change) matters more than absolute level.",
+                "typical_ranges": "QE: +$50-100B/month. QT: -$50-95B/month. Neutral: flat to small changes. Crisis response: massive expansion (2008, 2020)."
+            },
+            "reverse_repo": {
+                "symbol": "RRPONTSYD",
+                "description": "Overnight Reverse Repo Facility Usage",
+                "interpretation": "HIGH RRP usage = excess reserves parked at Fed = LOW effective market liquidity (money sitting idle). LOW RRP = reserves deployed in markets = HIGH liquidity. Inverse relationship with market liquidity.",
+                "typical_ranges": "Low liquidity stress: $2T+ parked. Moderate: $500B-$2T. High liquidity: <$500B. Zero usage = maximum liquidity deployment."
+            }
+        },
+        "calculation": "1) Calculate M2 YoY% change (12-month lookback). 2) Calculate Fed balance sheet delta (month-over-month change). 3) Get RRP usage level. 4) Compute z-scores for each. 5) Combine: Liquidity = z(M2_YoY) + z(ΔFedBS) - z(RRP). 6) Map to 0-100 stress score (inverted: high liquidity = low score).",
+        "thresholds": {
+            "green_below": 30,
+            "yellow_below": 60
+        },
+        "typical_range": "GREEN (0-30): 2020-2021 QE era, abundant liquidity supporting asset prices. YELLOW (30-60): 2019 normal conditions, 2023-2024 partial recovery. RED (60-100): 2022 aggressive QT and M2 contraction.",
+        "impact": "Very high impact. Liquidity drives ALL asset classes. The saying 'don't fight the Fed' refers primarily to liquidity conditions. Major market regimes correlate with liquidity: 2008-2014 QE = bull market, 2018 QT = correction, 2020-2021 massive QE = bubble, 2022 aggressive QT = bear market. This indicator provides systematic edge for timing risk-on/risk-off positioning.",
+        "historical_context": "Liquidity explains much of market behavior that fundamentals cannot. 2020-2021: GREEN (M2 growth 25%+, Fed balance sheet +$4T, RRP near zero) = everything rallied. 2022: RED (M2 declining, QT -$95B/month, RRP peaked $2.5T) = worst year since 2008. 2023-2024: YELLOW (M2 stabilizing, QT slowing, RRP declining) = choppy recovery.",
+        "use_cases": [
+            "Market regime identification (risk-on vs risk-off)",
+            "Asset allocation decisions and beta management",
+            "Timing entry/exit for risk assets",
+            "Fed policy impact assessment (QE/QT effects)",
+            "Crash risk monitoring (liquidity droughts precede crashes)",
+            "Cryptocurrency and speculative asset timing (most liquidity-sensitive)"
+        ],
+        "correlation_note": "Strong inverse correlation with VIX. When liquidity is abundant (GREEN), volatility tends to be low. When liquidity drains (RED), volatility spikes. Also correlates with credit spreads and risk appetite metrics."
     }
 }
 

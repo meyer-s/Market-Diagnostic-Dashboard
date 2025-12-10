@@ -31,9 +31,10 @@ export default function Dashboard() {
   return (
     <div className="p-6 text-gray-200">
       {/* Header with Alert Badge */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h2 className="text-2xl font-bold">Dashboard</h2>
+      <div className="flex flex-col mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-4">
+            <h2 className="text-2xl font-bold">Dashboard</h2>
           {activeAlertCount > 0 && (
             <div className="flex items-center gap-2 bg-red-500/20 border border-red-500/50 rounded-full px-3 py-1">
               <span className="relative flex h-2 w-2">
@@ -45,10 +46,10 @@ export default function Dashboard() {
               </span>
             </div>
           )}
-        </div>
+          </div>
 
-        {/* Trend Period Toggle */}
-        <div className="flex items-center gap-2 bg-stealth-800 border border-stealth-700 rounded-lg p-1">
+          {/* Trend Period Toggle */}
+          <div className="flex items-center gap-2 bg-stealth-800 border border-stealth-700 rounded-lg p-1">
           <button
             onClick={() => setTrendPeriod(90)}
             className={`px-3 py-1 rounded text-sm font-medium transition ${
@@ -79,6 +80,23 @@ export default function Dashboard() {
           >
             1 Year
           </button>
+          </div>
+        </div>
+
+        {/* System Description */}
+        <div className="bg-stealth-850/50 border border-stealth-700/50 rounded-lg p-4">
+          <p className="text-sm text-stealth-300 leading-relaxed">
+            Comprehensive market diagnostic system monitoring <strong className="text-stealth-100">8 critical indicators</strong> across 
+            <strong className="text-stealth-100"> volatility</strong> (VIX), 
+            <strong className="text-stealth-100"> equities</strong> (SPY), 
+            <strong className="text-stealth-100"> interest rates</strong> (DFF, T10Y2Y), 
+            <strong className="text-stealth-100"> employment</strong> (UNRATE), 
+            <strong className="text-stealth-100"> bond markets</strong> (Bond Stability Composite), 
+            <strong className="text-stealth-100"> liquidity</strong> (Liquidity Proxy), and 
+            <strong className="text-stealth-100"> consumer health</strong> (PCE, PI, CPI). 
+            Each indicator is statistically normalized and weighted to detect early signs of market stress, regime shifts, 
+            and systemic risks before they cascade into broader crises.
+          </p>
         </div>
       </div>
 

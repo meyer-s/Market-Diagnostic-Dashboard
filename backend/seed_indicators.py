@@ -11,93 +11,55 @@ Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()
 
-# Clear existing indicators
-db.query(Indicator).delete()
-db.commit()
+# Check if indicators already exist
+existing_bond = db.query(Indicator).filter(Indicator.code == "BOND_MARKET_STABILITY").first()
+existing_liquidity = db.query(Indicator).filter(Indicator.code == "LIQUIDITY_PROXY").first()
 
-indicators = [
-    {
-        "code": "VIX",
-        "name": "Volatility Index (VIX)",
-        "source": "YAHOO",
-        "source_symbol": "^VIX",
-        "category": "volatility",
-        "direction": 1,  # high = stress
-        "lookback_days_for_z": 252,
-        "threshold_green_max": 30,
-        "threshold_yellow_max": 60,
-        "weight": 1.5,
-    },
-    {
-        "code": "DFF",
-        "name": "Federal Funds Rate",
-        "source": "FRED",
-        "source_symbol": "DFF",
-        "category": "rates",
-        "direction": 1,  # high = stress
-        "lookback_days_for_z": 252,
-        "threshold_green_max": 30,
-        "threshold_yellow_max": 60,
-        "weight": 1.2,
-    },
-    {
-        "code": "T10Y2Y",
-        "name": "Yield Curve (10Y-2Y)",
-        "source": "FRED",
-        "source_symbol": "T10Y2Y",
-        "category": "rates",
-        "direction": 1,  # high = positive curve = stability, low/negative = inverted = stress
-        "lookback_days_for_z": 252,
-        "threshold_green_max": 30,
-        "threshold_yellow_max": 60,
-        "weight": 1.8,
-    },
-    {
-        "code": "UNRATE",
-        "name": "Unemployment Rate",
-        "source": "FRED",
-        "source_symbol": "UNRATE",
-        "category": "employment",
-        "direction": 1,  # high = stress
-        "lookback_days_for_z": 252,
-        "threshold_green_max": 30,
-        "threshold_yellow_max": 60,
-        "weight": 1.0,
-    },
-    {
-        "code": "SPY",
-        "name": "S&P 500 ETF",
-        "source": "YAHOO",
-        "source_symbol": "SPY",
-        "category": "equity",
-        "direction": 1,  # high = bull market = stability, low = bear market = stress
-        "lookback_days_for_z": 252,
-        "threshold_green_max": 30,
-        "threshold_yellow_max": 60,
-        "weight": 1.3,
-    },
-    {
-        "code": "CONSUMER_HEALTH",
-        "name": "Consumer Health Index",
+# Add new indicators that don't exist
+new_indicators = []
+
+if not existing_bond:
+    new_indicators.append({
+        "code": "BOND_MARKET_STABILITY",
+        "name": "Bond Market Stability Composite",
         "source": "DERIVED",
-        "source_symbol": "PCE-CPI-PI",  # Derived from PCE, CPI, and PI
-        "category": "consumer",
-        "direction": -1,  # positive spread = healthy, negative = stress
+        "source_symbol": "BOND_COMPOSITE",  # Aggregates 5 bond market signals
+        "category": "bonds",
+        "direction": -1,  # high score = healthy bond market, low = stress
         "lookback_days_for_z": 252,
-        "threshold_green_max": 30,
-        "threshold_yellow_max": 60,
-        "weight": 1.5,
-    },
-]
+        "threshold_green_max": 35,  # 0-35 = GREEN (stable)
+        "threshold_yellow_max": 65,  # 35-65 = YELLOW (caution)
+        "weight": 1.8,  # High weight due to bond market's predictive power
+    })
 
-for ind_data in indicators:
+if not existing_liquidity:
+    new_indicators.append({
+        "code": "LIQUIDITY_PROXY",
+        "name": "Liquidity Proxy Indicator",
+        "source": "DERIVED",
+        "source_symbol": "LIQUIDITY_COMPOSITE",  # M2 + Fed Balance + Reverse Repo
+        "category": "liquidity",
+        "direction": -1,  # high liquidity = stability, low liquidity = stress
+        "lookback_days_for_z": 252,
+        "threshold_green_max": 30,  # 0-30 = GREEN (abundant liquidity)
+        "threshold_yellow_max": 60,  # 30-60 = YELLOW (neutral)
+        "weight": 1.6,  # High weight - liquidity drives markets
+    })
+
+if not new_indicators:
+    print("✅ All composite indicators already exist")
+    db.close()
+    exit(0)
+
+for ind_data in new_indicators:
     indicator = Indicator(**ind_data)
     db.add(indicator)
+    print(f"✅ Adding {ind_data['name']}")
 
 db.commit()
 db.close()
 
-print(f"✅ Created {len(indicators)} indicators (metadata only)")
+print(f"\n✅ Created {len(new_indicators)} new indicator(s)")
 print("\n📊 To backfill 365 days of historical data, run:")
 print("   curl -X POST http://localhost:8000/admin/backfill")
 print("\nOr the ETL scheduler will fetch latest data automatically.")
