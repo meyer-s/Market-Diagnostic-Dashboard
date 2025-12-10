@@ -100,8 +100,8 @@ class ETLRunner:
                 direction=ind.direction,
                 lookback=ind.lookback_days_for_z,
             )
-        elif code in ("PCE", "PI"):
-            # For consumer indicators, use month-over-month percentage change
+        elif code in ("PCE", "PI", "CPI"):
+            # For consumer/inflation indicators, use month-over-month percentage change
             # This captures growth/contraction better than absolute levels
             mom_pct = [0.0]  # First point has no prior reference
             for i in range(1, len(raw_series)):
@@ -112,8 +112,8 @@ class ETLRunner:
                     mom_pct.append(0.0)
             
             # Normalize MoM% changes
-            # Positive growth = healthy consumer = stability (direction -1)
-            # Negative growth = contracting consumer = stress
+            # For PCE/PI: Positive growth = healthy consumer = stability (direction -1)
+            # For CPI: Positive growth = inflation = stress (direction +1)
             normalized_series = normalize_series(
                 mom_pct,
                 direction=ind.direction,

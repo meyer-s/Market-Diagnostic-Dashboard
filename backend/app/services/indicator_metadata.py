@@ -164,6 +164,23 @@ INDICATOR_METADATA = {
         },
         "typical_range": "Healthy: 3-5% YoY growth. Moderate: 1-3%. Warning: 0-1%. Recessionary: Negative growth.",
         "impact": "High impact on consumer spending capacity and confidence. Declining personal income (RED state) precedes reduced consumer spending and economic contraction, affecting market sentiment and corporate revenue expectations."
+    },
+    
+    "CPI": {
+        "name": "Consumer Price Index (CPI)",
+        "description": "The Consumer Price Index measures changes in the price level of a basket of consumer goods and services. CPI is the most widely watched inflation indicator, tracking price changes faced by urban consumers.",
+        "relevance": "Rising CPI indicates inflation eroding purchasing power. Rapid CPI increases trigger Fed rate hikes, tighten financial conditions, and reduce real consumer income. High inflation destabilizes markets and economies.",
+        "scoring": "Direction: +1 (high = stress). Uses month-over-month percentage change. Accelerating inflation = stress/Fed tightening. Decelerating inflation = stability. Deflation also signals economic weakness.",
+        "direction": 1,
+        "positive_is_good": False,
+        "interpretation": "Rising CPI = Inflation Pressure/Fed Tightening (BAD). Stable/Declining CPI = Price Stability (GOOD).",
+        "use_rate_of_change": True,
+        "thresholds": {
+            "green_below": 30,
+            "yellow_below": 60
+        },
+        "typical_range": "Healthy: 1.5-2.5% YoY. Elevated: 3-5%. Crisis: 5%+. Fed target: 2% YoY. MoM changes: 0.1-0.3% normal, 0.4%+ concerning.",
+        "impact": "Very high impact. Accelerating CPI (RED state) forces Fed rate hikes, pressures profit margins, reduces consumer purchasing power, and increases recession risk. CPI directly influences Fed policy decisions and market expectations."
     }
 }
 

@@ -100,6 +100,18 @@ indicators = [
         "threshold_yellow_max": 60,
         "weight": 1.0,
     },
+    {
+        "code": "CPI",
+        "name": "Consumer Price Index",
+        "source": "FRED",
+        "source_symbol": "CPIAUCSL",
+        "category": "inflation",
+        "direction": 1,  # high inflation = stress, low/moderate = stability
+        "lookback_days_for_z": 252,
+        "threshold_green_max": 30,
+        "threshold_yellow_max": 60,
+        "weight": 1.2,
+    },
 ]
 
 for ind_data in indicators:
