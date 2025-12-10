@@ -49,15 +49,41 @@ interface ComponentData {
 
 export default function IndicatorDetail() {
   const { code } = useParams();
+  
+  // Determine appropriate lookback period based on data freshness
+  const getHistoryDays = () => {
+    // For now, always request 730 days (2 years) to have more data available
+    // The component will intelligently display the appropriate range
+    return 730;
+  };
+  
   const { data: meta } = useApi<IndicatorDetailResponse>(`/indicators/${code}`);
   const { data: history } = useApi<IndicatorHistoryPoint[]>(
-    `/indicators/${code}/history?days=365`
+    `/indicators/${code}/history?days=${getHistoryDays()}`
   );
   const { data: components } = useApi<ComponentData[]>(
-    code === "CONSUMER_HEALTH" ? `/indicators/${code}/components?days=365` : ""
+    code === "CONSUMER_HEALTH" ? `/indicators/${code}/components?days=${getHistoryDays()}` : ""
   );
 
   if (!code) return <div className="p-6 text-gray-200">No code provided.</div>;
+  
+  // Check if data is stale and needs extended view
+  const getChartRange = () => {
+    if (!history || history.length === 0) return { days: 365, label: "365 days" };
+    
+    const latestDataDate = new Date(history[history.length - 1].timestamp);
+    const today = new Date();
+    const daysStale = Math.floor((today.getTime() - latestDataDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    // If data is stale for more than 30 days, show longer timeframe for context
+    if (daysStale > 30) {
+      return { days: 730, label: "2 years (extended due to data delay)" };
+    }
+    
+    return { days: 365, label: "365 days" };
+  };
+  
+  const chartRange = getChartRange();
 
   const stateColor = {
     GREEN: "text-green-400 bg-green-500/10 border-green-500/30",
@@ -151,7 +177,18 @@ export default function IndicatorDetail() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                 <XAxis
                   dataKey="date"
-                  tickFormatter={(v: string) =>
+                  type="number"
+                  domain={[
+                    () => {
+                      const today = new Date();
+                      const daysBack = new Date(today);
+                      daysBack.setDate(today.getDate() - chartRange.days);
+                      return daysBack.getTime();
+                    },
+                    () => new Date().getTime()
+                  ]}
+                  scale="time"
+                  tickFormatter={(v: number) =>
                     new Date(v).toLocaleDateString(undefined, {
                       month: "short",
                       year: "2-digit",
@@ -214,7 +251,18 @@ export default function IndicatorDetail() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                 <XAxis
                   dataKey="date"
-                  tickFormatter={(v: string) =>
+                  type="number"
+                  domain={[
+                    () => {
+                      const today = new Date();
+                      const daysBack = new Date(today);
+                      daysBack.setDate(today.getDate() - chartRange.days);
+                      return daysBack.getTime();
+                    },
+                    () => new Date().getTime()
+                  ]}
+                  scale="time"
+                  tickFormatter={(v: number) =>
                     new Date(v).toLocaleDateString(undefined, {
                       month: "short",
                       year: "2-digit",
@@ -271,6 +319,30 @@ export default function IndicatorDetail() {
         </div>
       )}
 
+      {/* Stale Data Warning */}
+      {meta?.latest && (() => {
+        const latestDate = new Date(meta.latest.timestamp);
+        const now = new Date();
+        const daysOld = Math.floor((now.getTime() - latestDate.getTime()) / (1000 * 60 * 60 * 24));
+        const isStale = daysOld > 45;
+        
+        return isStale ? (
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6">
+            <div className="flex items-start gap-3">
+              <div className="text-yellow-400 text-xl">⚠️</div>
+              <div>
+                <div className="text-yellow-400 font-semibold mb-1">Data May Be Delayed</div>
+                <div className="text-sm text-stealth-300">
+                  Latest data is from {latestDate.toLocaleDateString()} ({daysOld} days ago). 
+                  This indicator may be affected by the government shutdown or delayed reporting.
+                  Data will update automatically when new releases become available.
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null;
+      })()}
+
       {/* Current Status */}
       {meta?.latest && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -306,7 +378,9 @@ export default function IndicatorDetail() {
       {/* Historical Charts */}
       <div className="space-y-6">
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
-          <h3 className="text-xl font-semibold mb-4 text-stealth-100">Raw Value History (365 days)</h3>
+          <h3 className="text-xl font-semibold mb-4 text-stealth-100">
+            Raw Value History ({chartRange.label})
+          </h3>
           <div className="h-80">
             {history && history.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -314,7 +388,18 @@ export default function IndicatorDetail() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                   <XAxis
                     dataKey="timestamp"
-                    tickFormatter={(v: string | number) =>
+                    type="number"
+                    domain={[
+                      () => {
+                        const today = new Date();
+                        const daysBack = new Date(today);
+                        daysBack.setDate(today.getDate() - chartRange.days);
+                        return daysBack.getTime();
+                      },
+                      () => new Date().getTime()
+                    ]}
+                    scale="time"
+                    tickFormatter={(v: number) =>
                       new Date(v).toLocaleDateString(undefined, {
                         month: "short",
                         day: "numeric",
@@ -363,7 +448,9 @@ export default function IndicatorDetail() {
         </div>
 
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
-          <h3 className="text-xl font-semibold mb-4 text-stealth-100">Stability Score History (365 days)</h3>
+          <h3 className="text-xl font-semibold mb-4 text-stealth-100">
+            Stability Score History ({chartRange.label})
+          </h3>
           <div className="h-80">
             {history && history.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -371,7 +458,18 @@ export default function IndicatorDetail() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                   <XAxis
                     dataKey="timestamp"
-                    tickFormatter={(v: string | number) =>
+                    type="number"
+                    domain={[
+                      () => {
+                        const today = new Date();
+                        const daysBack = new Date(today);
+                        daysBack.setDate(today.getDate() - chartRange.days);
+                        return daysBack.getTime();
+                      },
+                      () => new Date().getTime()
+                    ]}
+                    scale="time"
+                    tickFormatter={(v: number) =>
                       new Date(v).toLocaleDateString(undefined, {
                         month: "short",
                         day: "numeric",
@@ -429,7 +527,9 @@ export default function IndicatorDetail() {
 
         {/* State Trend Sparkline */}
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
-          <h3 className="text-xl font-semibold mb-4 text-stealth-100">State Trend (365 days)</h3>
+          <h3 className="text-xl font-semibold mb-4 text-stealth-100">
+            State Trend ({chartRange.label})
+          </h3>
           <div className="flex items-center justify-center py-8">
             <StateSparkline history={history || []} width={800} height={40} />
           </div>
