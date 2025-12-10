@@ -268,7 +268,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
       {history.length > 0 && (
         <div className="pt-4 border-t border-stealth-700">
           <h4 className="text-sm font-semibold text-stealth-200 mb-3">
-            Composite Score Trend ({periodLabel})
+            Composite Score Trend
           </h4>
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">

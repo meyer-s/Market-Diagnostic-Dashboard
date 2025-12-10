@@ -17,7 +17,7 @@ export default function Indicators() {
             <th className="px-4 py-3">Name</th>
             <th className="px-4 py-3">Score</th>
             <th className="px-4 py-3">State</th>
-            <th className="px-4 py-3">Trend (60 days)</th>
+            <th className="px-4 py-3">Trend</th>
           </tr>
         </thead>
         <tbody className="text-gray-300">

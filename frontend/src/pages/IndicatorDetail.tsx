@@ -1019,7 +1019,7 @@ export default function IndicatorDetail() {
         {/* State Trend Sparkline */}
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
           <h3 className="text-xl font-semibold mb-4 text-stealth-100">
-            State Trend ({chartRange.label})
+            State Trend
           </h3>
           <div className="flex items-center justify-center py-8">
             <StateSparkline history={history || []} width={800} height={40} />
