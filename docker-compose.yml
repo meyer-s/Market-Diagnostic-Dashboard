@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: market_backend
+    env_file:
+      - ./devops/env/backend.env
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build: 
+      context: ./frontend
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    container_name: market_frontend
+    env_file:
+      - ./devops/env/frontend.env
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./frontend/postcss.config.js:/app/postcss.config.js
+    ports:
+      - "5173:5173"
+    command: ["pnpm", "dev", "--host"]
+
+  db:
+    image: postgres:16
+    container_name: market_postgres
+    env_file:
+      - ./devops/env/db.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - market_db:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer
+    container_name: market_adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+volumes:
+  market_db:
