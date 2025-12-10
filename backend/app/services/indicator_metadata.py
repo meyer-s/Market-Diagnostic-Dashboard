@@ -23,7 +23,7 @@ INDICATOR_METADATA = {
         "name": "Federal Funds Effective Rate",
         "description": "The Federal Funds Rate is the interest rate at which depository institutions lend reserve balances to other institutions overnight. It's the primary tool the Federal Reserve uses to implement monetary policy.",
         "relevance": "The Fed Funds Rate directly influences all other interest rates in the economy, affecting borrowing costs for consumers and businesses. Rapid rate increases can stress financial markets and slow economic growth.",
-        "scoring": "Direction: +1 (high = stress). Scored on RATE OF CHANGE: rising rates = tightening = stress, falling rates = easing = stability. The velocity of change matters more than absolute level.",
+        "scoring": "Direction: +1 (high = stress). Scored on RATE OF CHANGE: rising rates = tightening = stress, falling rates = easing = stability. The velocity of change matters more than absolute level. First data point is skipped to avoid zero-padding bias.",
         "direction": 1,
         "positive_is_good": False,
         "interpretation": "Rising rates = Tightening Policy/Stress (BAD). Falling rates = Easing Policy (GOOD).",
@@ -40,7 +40,7 @@ INDICATOR_METADATA = {
         "name": "S&P 500 ETF (SPY)",
         "description": "SPY tracks the S&P 500 index, representing the 500 largest U.S. companies. Scored based on distance from 50-day EMA to capture trend strength and mean reversion dynamics.",
         "relevance": "The gap between price and its 50-day EMA reveals trend strength and exhaustion. Large deviations signal overextended conditions or breakdowns in trend structure.",
-        "scoring": "Direction: -1 (low = stress). Uses (Price - 50 EMA) / 50 EMA as percentage gap. Positive gap (price above EMA) = bullish = GREEN. Negative gap (below EMA) = bearish = RED. Z-score normalized on gap percentages.",
+        "scoring": "Direction: -1 (negative gap = stress). Uses (Price - 50 EMA) / 50 EMA as percentage gap. Positive gap (price above EMA) = bullish = HIGH score = GREEN. Negative gap (below EMA) = bearish = LOW score = RED. Z-score normalized on gap percentages.",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "Price above 50 EMA = Bullish Trend (GOOD). Price below 50 EMA = Bearish Trend/Weakness (BAD). Large deviations indicate overextension or breakdown.",
@@ -90,7 +90,7 @@ INDICATOR_METADATA = {
         "name": "10-Year minus 2-Year Treasury Spread",
         "description": "The yield curve spread between 10-year and 2-year U.S. Treasury notes. A key predictor of economic conditions and recessions.",
         "relevance": "An inverted yield curve (negative spread) has preceded every U.S. recession since 1950. It signals expectations of economic slowdown and Fed rate cuts.",
-        "scoring": "Direction: -1 (low/negative = stress). Inversion indicates stress. Lower scores reflect greater inversion and higher recession risk.",
+        "scoring": "Direction: -1 (negative/inverted spread = stress). Normal positive spread = HIGH score = GREEN. Inverted negative spread = LOW score = RED. Z-score normalization with direction inversion.",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "Positive spread = Normal Curve/Growth (GOOD). Negative spread = Inverted/Recession Signal (BAD).",
@@ -138,12 +138,12 @@ INDICATOR_METADATA = {
         "name": "Consumer Health Index",
         "description": "Derived indicator measuring consumer financial health by comparing spending and income growth against inflation. Combines PCE (Personal Consumption Expenditures), PI (Personal Income), and CPI (Consumer Price Index) to assess real consumer capacity.",
         "relevance": "When spending and income growth outpace inflation, consumers have expanding real purchasing power and economic health is strong. When inflation outpaces spending/income growth, consumers face a squeeze with declining real purchasing power, signaling economic stress.",
-        "scoring": "Direction: -1 (negative = stress). Calculates: (PCE MoM% - CPI MoM%) + (PI MoM% - CPI MoM%). Positive spread = spending and income outpacing inflation (healthy). Negative spread = inflation eroding real consumer capacity (stress).",
+        "scoring": "Direction: -1 (negative = stress). Calculates average of two spreads: [(PCE MoM% - CPI MoM%) + (PI MoM% - CPI MoM%)] / 2. Positive spread = spending and income outpacing inflation (healthy). Negative spread = inflation eroding real consumer capacity (stress).",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "Positive spread = Real consumer purchasing power expanding (GOOD). Negative spread = Inflation squeeze on consumers (BAD). Shows whether consumer fundamentals support economic growth or signal contraction.",
         "derived_from": ["PCE", "PI", "CPI"],
-        "calculation": "Consumer Health = (PCE Growth - CPI Growth) + (PI Growth - CPI Growth)",
+        "calculation": "Consumer Health = Average[(PCE Growth - CPI Growth), (PI Growth - CPI Growth)] - Avoids double-weighting inflation",
         "thresholds": {
             "green_below": 30,
             "yellow_below": 60
@@ -196,17 +196,17 @@ INDICATOR_METADATA = {
                 "weight": 0.16,
                 "description": "Treasury Volatility (16%)",
                 "sources": ["Calculated from 10-Year Treasury Yield (DGS10)"],
-                "formula": "20-day rolling standard deviation of absolute daily yield changes. Higher volatility = increased stress.",
+                "formula": "Fixed 20-day rolling standard deviation of absolute daily yield changes. Higher volatility = increased stress. Initial values use expanding window.",
                 "interpretation": "Realized Treasury volatility measures actual rate instability. Elevated volatility signals uncertainty, forced deleveraging, or liquidity concerns in Treasury markets. Similar to MOVE Index but calculated from daily yield changes for better data availability.",
                 "typical_ranges": "Low volatility: <0.03% daily std dev, Moderate: 0.03-0.06%, High: 0.06-0.10%, Crisis: >0.10%"
             }
         },
         "calculation": "Composite Stress Score = (Credit Spread Stress * 0.44) + (Yield Curve Stress * 0.23) + (Rates Momentum Stress * 0.17) + (Treasury Volatility Stress * 0.16). Stored as raw stress score (0-100, higher = more stress). The direction=-1 indicator setting inverts this during normalization for final scoring.",
         "thresholds": {
-            "green_below": 35,
-            "yellow_below": 65
+            "green_below": 65,
+            "yellow_below": 35
         },
-        "typical_range": "GREEN (65-100): Normal bond market conditions with healthy credit, normal curve, low volatility. YELLOW (35-65): Some stress signals emerging, elevated caution. RED (0-35): Severe bond market dysfunction, credit crunch, high volatility.",
+        "typical_range": "GREEN (Score 65-100): Normal bond market conditions with healthy credit, normal curve, low volatility. YELLOW (Score 35-65): Some stress signals emerging, elevated caution. RED (Score 0-35): Severe bond market dysfunction, credit crunch, high volatility.",
         "impact": "Very high impact. Bond markets are leading indicators of economic conditions. This composite captures systemic stress before it manifests in equities. RED states (score <35) historically coincide with recessions, credit crises, or major policy shifts. The weighted approach prioritizes credit conditions (44%) as the most sensitive early warning system.",
         "historical_context": "Major crises (2008, 2020) showed severe bond market stress months before equity peaks. Credit spreads widened dramatically, curves inverted, and MOVE spiked. This composite would have provided early RED warnings during: 2008 Financial Crisis, 2011 European Debt Crisis, 2018 Q4 selloff, 2020 COVID shock.",
         "use_cases": [
@@ -225,7 +225,7 @@ INDICATOR_METADATA = {
         "scoring": "Direction: -1 (indicates high raw value should map to low final score). Formula: z(M2 YoY%) + z(ΔFed Balance Sheet) - z(RRP Usage). Components are z-score normalized and combined into liquidity proxy, then inverted and scaled to create a stress score (0-100, where higher = worse liquidity). The direction=-1 setting inverts this during normalization so high stress maps to low final scores (RED) and low stress maps to high final scores (GREEN).",
         "direction": -1,
         "positive_is_good": True,
-        "interpretation": "GREEN (0-30): Abundant liquidity, supportive tailwinds for risk assets. YELLOW (30-60): Neutral/mixed liquidity, market vulnerable to shocks. RED (60-100): Liquidity drought, high fragility, increased crash risk.",
+        "interpretation": "GREEN (Score 60-100): Abundant liquidity, supportive tailwinds for risk assets. YELLOW (Score 30-60): Neutral/mixed liquidity, market vulnerable to shocks. RED (Score 0-30): Liquidity drought, high fragility, increased crash risk.",
         "derived_from": ["M2SL", "WALCL", "RRPONTSYD"],
         "components": {
             "m2_money_supply": {
@@ -247,12 +247,12 @@ INDICATOR_METADATA = {
                 "typical_ranges": "Low liquidity stress: $2T+ parked. Moderate: $500B-$2T. High liquidity: <$500B. Zero usage = maximum liquidity deployment."
             }
         },
-        "calculation": "1) Calculate M2 YoY% change (12-month lookback). 2) Calculate Fed balance sheet delta (month-over-month change). 3) Get RRP usage level. 4) Compute z-scores for each. 5) Combine: Liquidity = z(M2_YoY) + z(ΔFedBS) - z(RRP). 6) Map to 0-100 stress score (inverted: high liquidity = low score).",
+        "calculation": "1) Calculate M2 YoY% change (12-month lookback). 2) Calculate Fed balance sheet delta (month-over-month change). 3) Get RRP usage level. 4) Compute z-scores for each. 5) Combine: Liquidity = z(M2_YoY) + z(ΔFedBS) - z(RRP). 6) Map to 0-100 stress score (inverted: high liquidity = high score).",
         "thresholds": {
-            "green_below": 30,
-            "yellow_below": 60
+            "green_below": 60,
+            "yellow_below": 30
         },
-        "typical_range": "GREEN (0-30): 2020-2021 QE era, abundant liquidity supporting asset prices. YELLOW (30-60): 2019 normal conditions, 2023-2024 partial recovery. RED (60-100): 2022 aggressive QT and M2 contraction.",
+        "typical_range": "GREEN (Score 60-100): 2020-2021 QE era, abundant liquidity supporting asset prices. YELLOW (Score 30-60): 2019 normal conditions, 2023-2024 partial recovery. RED (Score 0-30): 2022 aggressive QT and M2 contraction.",
         "impact": "Very high impact. Liquidity drives ALL asset classes. The saying 'don't fight the Fed' refers primarily to liquidity conditions. Major market regimes correlate with liquidity: 2008-2014 QE = bull market, 2018 QT = correction, 2020-2021 massive QE = bubble, 2022 aggressive QT = bear market. This indicator provides systematic edge for timing risk-on/risk-off positioning.",
         "historical_context": "Liquidity explains much of market behavior that fundamentals cannot. 2020-2021: GREEN (M2 growth 25%+, Fed balance sheet +$4T, RRP near zero) = everything rallied. 2022: RED (M2 declining, QT -$95B/month, RRP peaked $2.5T) = worst year since 2008. 2023-2024: YELLOW (M2 stabilizing, QT slowing, RRP declining) = choppy recovery.",
         "use_cases": [

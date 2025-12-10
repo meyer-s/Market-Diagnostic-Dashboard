@@ -34,6 +34,8 @@ def list_indicators():
             "category": ind.category,
             "direction": ind.direction,
             "lookback_days_for_z": ind.lookback_days_for_z,
+            "threshold_green_max": ind.threshold_green_max,
+            "threshold_yellow_max": ind.threshold_yellow_max,
             "weight": ind.weight,
         }
         for ind in indicators
@@ -82,6 +84,8 @@ def get_indicator_detail(code: str):
         "category": ind.category,
         "direction": ind.direction,
         "lookback_days_for_z": ind.lookback_days_for_z,
+        "threshold_green_max": ind.threshold_green_max,
+        "threshold_yellow_max": ind.threshold_yellow_max,
         "weight": ind.weight,
         "latest": {
             "timestamp": latest.timestamp.isoformat(),
@@ -323,7 +327,9 @@ async def get_liquidity_proxy_components(days: int = 365):
     from app.services.ingestion.fred_client import FredClient
     import numpy as np
     
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    # Fetch extra historical data for lookback calculations (252 days for YoY)
+    fetch_days = days + 252 + 30  # Extra buffer for weekends/holidays
+    cutoff = datetime.utcnow() - timedelta(days=fetch_days)
     start_date = cutoff.strftime("%Y-%m-%d")
     
     # Fetch all components
@@ -350,14 +356,26 @@ async def get_liquidity_proxy_components(days: int = 365):
     fed_bs_dict = series_to_dict(components['fed_bs'])
     rrp_dict = series_to_dict(components['rrp'])
     
-    # Find common dates
-    all_dates = set(m2_dict.keys()) & set(fed_bs_dict.keys()) & set(rrp_dict.keys())
-    common_dates = sorted(all_dates)
+    # Use RRP dates as base (most frequent updates) and forward-fill M2 and Fed BS
+    all_dates = sorted(set(rrp_dict.keys()))
     
-    # Extract values
-    m2_vals = np.array([m2_dict[d] for d in common_dates])
-    fed_bs_vals = np.array([fed_bs_dict[d] for d in common_dates])
-    rrp_vals = np.array([rrp_dict[d] for d in common_dates])
+    # Forward-fill M2 and Fed BS values
+    def forward_fill(source_dict, all_dates):
+        result = []
+        last_value = None
+        for date in all_dates:
+            if date in source_dict:
+                last_value = source_dict[date]
+            if last_value is not None:
+                result.append(last_value)
+            else:
+                result.append(0.0)  # Default if no data yet
+        return result
+    
+    m2_vals = np.array(forward_fill(m2_dict, all_dates))
+    fed_bs_vals = np.array(forward_fill(fed_bs_dict, all_dates))
+    rrp_vals = np.array([rrp_dict.get(d, 0.0) for d in all_dates])
+    common_dates = all_dates
     
     # Calculate M2 YoY% (252 trading days ≈ 1 year)
     m2_yoy = []
@@ -422,6 +440,11 @@ async def get_liquidity_proxy_components(days: int = 365):
                 "stress_score": float(liquidity_stress[i]),
             }
         })
+    
+    # Filter to only return the requested days (after using full history for calculations)
+    from datetime import datetime, timedelta
+    cutoff_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    result = [r for r in result if r["date"] >= cutoff_date]
     
     return result
 

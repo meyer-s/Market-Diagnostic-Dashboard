@@ -27,8 +27,8 @@ if not existing_bond:
         "category": "bonds",
         "direction": -1,  # high score = healthy bond market, low = stress
         "lookback_days_for_z": 252,
-        "threshold_green_max": 35,  # 0-35 = GREEN (stable)
-        "threshold_yellow_max": 65,  # 35-65 = YELLOW (caution)
+        "threshold_green_max": 65,  # Score 65-100 = GREEN (stable)
+        "threshold_yellow_max": 35,  # Score 35-65 = YELLOW, 0-35 = RED (stress)
         "weight": 1.8,  # High weight due to bond market's predictive power
     })
 
@@ -41,8 +41,8 @@ if not existing_liquidity:
         "category": "liquidity",
         "direction": -1,  # high liquidity = stability, low liquidity = stress
         "lookback_days_for_z": 252,
-        "threshold_green_max": 30,  # 0-30 = GREEN (abundant liquidity)
-        "threshold_yellow_max": 60,  # 30-60 = YELLOW (neutral)
+        "threshold_green_max": 60,  # Score 60-100 = GREEN (abundant liquidity)
+        "threshold_yellow_max": 30,  # Score 30-60 = YELLOW, 0-30 = RED (drought)
         "weight": 1.6,  # High weight - liquidity drives markets
     })
 

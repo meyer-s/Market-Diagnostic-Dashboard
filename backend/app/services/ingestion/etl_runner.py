@@ -135,12 +135,15 @@ class ETLRunner:
                 cpi_mom.append(cpi_pct)
                 pi_mom.append(pi_pct)
             
-            # Consumer Health = (PCE growth - CPI growth) + (PI growth - CPI growth)
+            # Consumer Health = Average of (PCE growth - CPI growth) and (PI growth - CPI growth)
+            # This avoids double-weighting CPI
             # Positive = spending and income outpacing inflation (healthy)
             # Negative = inflation outpacing spending/income (consumer squeeze)
             consumer_health = []
             for i in range(len(pce_mom)):
-                health = (pce_mom[i] - cpi_mom[i]) + (pi_mom[i] - cpi_mom[i])
+                pce_spread = pce_mom[i] - cpi_mom[i]
+                pi_spread = pi_mom[i] - cpi_mom[i]
+                health = (pce_spread + pi_spread) / 2
                 consumer_health.append(health)
             
             # Update raw_series with the derived consumer health values
@@ -283,12 +286,12 @@ class ETLRunner:
             
             # Calculate rolling volatility (20-period window)
             rolling_vol = np.zeros_like(dgs10_changes)
-            window = min(20, len(dgs10_changes) // 4)  # Adaptive window, min 20 or 1/4 of data
+            window = 20
             for i in range(window, len(dgs10_changes)):
                 rolling_vol[i] = np.std(dgs10_changes[i-window:i])
             
-            # For initial values, use expanding window
-            for i in range(1, window):
+            # For initial values (before full window), use expanding window
+            for i in range(1, min(window, len(dgs10_changes))):
                 rolling_vol[i] = np.std(dgs10_changes[:i+1]) if i > 0 else 0
             
             treasury_volatility_stress = z_score_to_100(rolling_vol, invert=False)  # Higher volatility = stress
@@ -456,10 +459,14 @@ class ETLRunner:
             )
         elif code == "DFF":
             # Calculate rate of change (difference between consecutive points)
-            roc_series = [0.0]  # First point has no prior reference
+            # Skip first point since it has no prior reference
+            roc_series = []
             for i in range(1, len(raw_series)):
                 change = raw_series[i] - raw_series[i-1]
                 roc_series.append(change)
+            
+            # Update clean_values to match roc_series length
+            clean_values = clean_values[1:]
             
             # Normalize the rate of change (positive change = rising = stress)
             normalized_series = normalize_series(
