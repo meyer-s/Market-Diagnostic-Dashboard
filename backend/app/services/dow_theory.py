@@ -357,7 +357,7 @@ class DowTheoryCalculator:
                 modern_signal_strength = "WEAK"
 
             modern_divergence = abs(dia_etf_roc - iyt_etf_roc)
-            modern_defensive_outperformance = max(0, xlu_roc - dia_etf_roc)
+            modern_defensive_outperformance = xlu_roc - dia_etf_roc
             modern_components = {
                 "dia_roc": round(dia_etf_roc, 2),
                 "iyt_roc": round(iyt_etf_roc, 2),
