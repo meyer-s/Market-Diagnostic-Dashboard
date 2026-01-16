@@ -11,6 +11,8 @@ interface PriceAnalysisChartProps {
   stopLoss: number;
   projectedReturn: number;
   horizon: string;
+  analystTarget?: number | null;
+  analystCount?: number | null;
 }
 
 export function PriceAnalysisChart({
@@ -19,6 +21,8 @@ export function PriceAnalysisChart({
   stopLoss,
   projectedReturn,
   horizon,
+  analystTarget,
+  analystCount,
 }: PriceAnalysisChartProps) {
   // Calculate percentages for visualization
   const tpUpside = ((takeProfit - currentPrice) / currentPrice) * 100;
@@ -38,6 +42,27 @@ export function PriceAnalysisChart({
   const projHeight = Math.abs(projectedPercent > 0 
     ? (projectedPercent / maxRange) * 100 
     : 0);
+
+  const modelTarget = currentPrice * (1 + projectedPercent / 100);
+  const hasAnalystTarget =
+    analystTarget !== null && analystTarget !== undefined && analystTarget > 0;
+  const analystDiffPct = hasAnalystTarget
+    ? ((modelTarget - analystTarget) / analystTarget) * 100
+    : null;
+  let analystAlignment = "n/a";
+  let analystColor = "text-gray-400";
+  if (analystDiffPct !== null) {
+    if (Math.abs(analystDiffPct) <= 5) {
+      analystAlignment = "Aligned";
+      analystColor = "text-green-400";
+    } else if (analystDiffPct > 5) {
+      analystAlignment = "Above analysts";
+      analystColor = "text-orange-300";
+    } else {
+      analystAlignment = "Below analysts";
+      analystColor = "text-blue-300";
+    }
+  }
   
   return (
     <div className="bg-gray-900 rounded-lg p-3 sm:p-4 border border-gray-700">
@@ -56,6 +81,17 @@ export function PriceAnalysisChart({
             </p>
           </div>
         </div>
+        {hasAnalystTarget && (
+          <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
+            <span>
+              Analyst target: ${analystTarget!.toFixed(2)}
+              {analystCount ? ` (${analystCount})` : ""}
+            </span>
+            <span className={`font-semibold ${analystColor}`}>
+              Analyst Alignment: {analystAlignment}
+            </span>
+          </div>
+        )}
       </div>
       
       {/* Chart */}

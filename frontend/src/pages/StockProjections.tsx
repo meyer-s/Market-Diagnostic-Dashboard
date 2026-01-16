@@ -1,12 +1,12 @@
 /**
- * Stock Projections Page
+ * Stock Analysis Page
  * 
- * Single stock lookup and analysis with multi-horizon projections.
+ * Single stock lookup and analysis with multi-horizon outlook.
  * Allows users to search for any stock and view transparent scoring across time horizons.
  * 
  * Features:
  * - Stock ticker search and lookup
- * - Multi-horizon analysis: 3-month, 6-month, and 12-month projections
+ * - Multi-horizon analysis: 3-month, 6-month, and 12-month outlooks
  * - Interactive chart with uncertainty cones
  * - Detailed scoring breakdown with conviction metrics
  * - Price analysis with take profit and stop loss targets
@@ -17,6 +17,7 @@ import { useState } from "react";
 import { PriceAnalysisChart } from "../components/widgets/PriceAnalysisChart";
 import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
 import { TechnicalIndicators } from "../components/widgets/TechnicalIndicators.tsx";
+import { OptionalityMispricingWidget } from "../components/widgets/OptionalityMispricingWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 
@@ -71,12 +72,22 @@ interface OptionsFlowData {
   put_call_oi_ratio: number | null;
 }
 
+interface OptionalityMetrics {
+  iv30: number | null;
+  hv30: number | null;
+  iv_percentile: number | null;
+  avg_edr: number | null;
+}
+
 export default function StockProjections() {
   const [ticker, setTicker] = useState("");
   const [searchTicker, setSearchTicker] = useState("");
   const [projections, setProjections] = useState<Record<string, StockProjection>>({});
   const [technicalData, setTechnicalData] = useState<any>(null);
   const [optionsFlow, setOptionsFlow] = useState<OptionsFlowData | null>(null);
+  const [optionalityMetrics, setOptionalityMetrics] = useState<OptionalityMetrics | null>(null);
+  const [analystTarget, setAnalystTarget] = useState<number | null>(null);
+  const [analystCount, setAnalystCount] = useState<number | null>(null);
   const [historicalScore, setHistoricalScore] = useState<number | null>(null);
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [dataWarnings, setDataWarnings] = useState<DataWarning[]>([]);
@@ -110,6 +121,9 @@ export default function StockProjections() {
       setHistoricalScore(projData.historical?.score_3m_ago || null);
       setTechnicalData(projData.technical || null);
       setOptionsFlow(projData.options_flow || null);
+      setOptionalityMetrics(projData.optionality || null);
+      setAnalystTarget(projData.analyst_target ?? null);
+      setAnalystCount(projData.analyst_count ?? null);
       setDataWarnings(projData.data_warnings || []);
       setLastUpdated(new Date().toISOString());
       setDataAsOf(projData.as_of_date || projData.created_at || null);
@@ -126,6 +140,9 @@ export default function StockProjections() {
       setHistoricalScore(null);
       setTechnicalData(null);
       setOptionsFlow(null);
+      setOptionalityMetrics(null);
+      setAnalystTarget(null);
+      setAnalystCount(null);
       setNews([]);
       setDataWarnings([]);
       setLastUpdated(null);
@@ -174,7 +191,7 @@ export default function StockProjections() {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto text-gray-100">
-      <h1 className="text-2xl font-bold mb-2">Stock Projections</h1>
+      <h1 className="text-2xl font-bold mb-2">Stock Analysis</h1>
       <p className="mb-4 text-gray-400">Analyze individual stocks across multiple time horizons with quantified confidence levels</p>
       
       {/* Stock Search */}
@@ -280,7 +297,7 @@ export default function StockProjections() {
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
                   <p className="text-gray-400 mb-1">Risk</p>
                   <p className="font-semibold text-gray-200">
-                    Vol {projections["T"].volatility.toFixed(1)}% · DD {projections["T"].max_drawdown.toFixed(1)}%
+                    Vol {projections["T"].volatility.toFixed(1)}% / DD {projections["T"].max_drawdown.toFixed(1)}%
                   </p>
                 </div>
               </div>
@@ -296,6 +313,8 @@ export default function StockProjections() {
                 stopLoss={projections[selectedHorizon].stop_loss}
                 projectedReturn={projections[selectedHorizon].return_pct}
                 horizon={selectedHorizon.toUpperCase()}
+                analystTarget={analystTarget}
+                analystCount={analystCount}
               />
               <ConvictionSnapshot
                 conviction={projections[selectedHorizon].conviction}
@@ -303,6 +322,12 @@ export default function StockProjections() {
                 volatility={projections[selectedHorizon].volatility}
                 horizon={selectedHorizon.toUpperCase()}
               />
+            </div>
+          )}
+
+          {optionalityMetrics && (
+            <div className="mb-6">
+              <OptionalityMispricingWidget metrics={optionalityMetrics} />
             </div>
           )}
 
@@ -553,7 +578,7 @@ export default function StockProjections() {
                   </div>
                 </div>
                 <div className="text-gray-400 text-xs sm:text-sm">
-                  Current score reflects real-time positioning. Select a future horizon to view projections.
+                  Current score reflects real-time positioning. Select a future horizon to view the outlook.
                 </div>
               </div>
             )}
@@ -724,14 +749,14 @@ export default function StockProjections() {
             </div>
           )}
 
-          {/* Understanding the Projections */}
+          {/* Understanding the Analysis */}
           <div className="mt-6 bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 sm:p-4">
-            <h3 className="text-xs sm:text-sm font-semibold text-blue-200 mb-2">Understanding the Projections</h3>
+            <h3 className="text-xs sm:text-sm font-semibold text-blue-200 mb-2">Understanding the Analysis</h3>
             <div className="text-xs text-blue-200/80 space-y-1 sm:space-y-2 leading-relaxed">
               <p><strong>Score (0-100):</strong> Higher scores indicate stronger technical outlook.</p>
-              <p><strong>Score Change:</strong> Shows whether the outlook is improving (+) or deteriorating (−) over time.</p>
+              <p><strong>Score Change:</strong> Shows whether the outlook is improving (+) or deteriorating (-) over time.</p>
               <p><strong>Uncertainty Cone:</strong> Tighter cones = higher confidence. Wider cones = greater uncertainty.</p>
-              <p><strong>Conviction:</strong> Confidence level in the projection (0-100). Based on signal alignment, volatility, and score strength.</p>
+              <p><strong>Conviction:</strong> Confidence level in the analysis (0-100). Based on signal alignment, volatility, and score strength.</p>
               <p><strong>Price Targets:</strong> Take Profit and Stop Loss levels calculated from volatility-adjusted returns and risk metrics.</p>
             </div>
           </div>
@@ -739,7 +764,7 @@ export default function StockProjections() {
         {dataWarnings.length > 0 && (
           <div className="mt-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3 sm:p-4">
             <p className="text-xs sm:text-sm text-yellow-200/90 leading-relaxed">
-              <strong>Data Warning:</strong> Recent projections contain data quality flags that may reduce accuracy.
+              <strong>Data Warning:</strong> Recent analysis snapshots contain data quality flags that may reduce accuracy.
             </p>
             {dataWarnings.length > 0 && (
               <p className="mt-1 text-xs text-yellow-200/80">
@@ -763,7 +788,7 @@ export default function StockProjections() {
             {methodologyOpen && (
               <div className="px-6 pb-6 text-sm text-gray-300 space-y-4">
                 <p>
-                  Stock projections use the same transparent scoring methodology as sector analysis, 
+                  Stock analysis uses the same transparent scoring methodology as sector analysis, 
                   evaluating performance across 3-month, 6-month, and 12-month lookback periods.
                 </p>
                 <div className="bg-gray-900 rounded p-4">
@@ -778,12 +803,12 @@ export default function StockProjections() {
                 <div className="bg-gray-900 rounded p-4">
                   <h4 className="font-semibold mb-2">Conviction Metric</h4>
                   <p className="text-xs mb-2">
-                    Measures confidence in the projection (0-100) based on three factors:
+                    Measures confidence in the analysis (0-100) based on three factors:
                   </p>
                   <ul className="space-y-1 text-xs">
-                    <li>• <strong>Component Alignment (40%):</strong> How well the scoring components agree with each other</li>
-                    <li>• <strong>Volatility Factor (35%):</strong> Lower volatility = higher conviction in predictions</li>
-                    <li>• <strong>Signal Strength (25%):</strong> How far the score deviates from neutral (50 = stronger signal)</li>
+                    <li>- <strong>Component Alignment (40%):</strong> How well the scoring components agree with each other</li>
+                    <li>- <strong>Volatility Factor (35%):</strong> Lower volatility = higher conviction in the analysis</li>
+                    <li>- <strong>Signal Strength (25%):</strong> How far the score deviates from neutral (50 = stronger signal)</li>
                   </ul>
                 </div>
                 <div className="bg-gray-900 rounded p-4">
@@ -797,7 +822,7 @@ export default function StockProjections() {
                 <div className="bg-gray-900 rounded p-4">
                   <h4 className="font-semibold mb-2">Uncertainty Cones</h4>
                   <p className="text-xs">
-                    The expanding cone represents projection confidence intervals. Width increases with forecast horizon, 
+                    The expanding cone represents confidence intervals. Width increases with forecast horizon, 
                     reflecting growing uncertainty. Narrower cones indicate more predictable price behavior.
                   </p>
                 </div>
@@ -808,7 +833,7 @@ export default function StockProjections() {
           {/* Disclaimer */}
           <div className="mt-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4">
             <p className="text-xs text-yellow-200/90 leading-relaxed">
-              <strong>Disclaimer:</strong> These projections are theoretical models for educational and informational purposes only. 
+              <strong>Disclaimer:</strong> These analysis signals are theoretical models for educational and informational purposes only. 
               They are not financial advice, investment recommendations, or guarantees of future performance. 
               Past performance does not indicate future results. Always conduct your own research and consult with a qualified 
               financial advisor before making investment decisions.
@@ -819,7 +844,7 @@ export default function StockProjections() {
 
       {loading && (
         <div className="bg-gray-800 rounded-lg p-12 flex justify-center">
-          <MarketLoading size={110} variant="scan" label="Analyzing projections..." />
+          <MarketLoading size={110} variant="scan" label="Analyzing stock..." />
         </div>
       )}
 
@@ -831,7 +856,7 @@ export default function StockProjections() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <p className="text-lg font-semibold mb-2">Search for a stock to get started</p>
-            <p className="text-sm">Enter any stock ticker to analyze its multi-horizon projections</p>
+            <p className="text-sm">Enter any stock ticker to analyze its multi-horizon outlook</p>
           </div>
         </div>
       )}

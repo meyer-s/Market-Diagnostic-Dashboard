@@ -27,7 +27,7 @@ function AppWithAnalytics() {
                      location.pathname.includes('/system-breakdown') ? 'System Breakdown' :
                      location.pathname.includes('/market-map') ? 'Market Map' :
                      location.pathname.includes('/sector-projections') ? 'Sector Projections' :
-                     location.pathname.includes('/stock-projections') ? 'Stock Projections' :
+                     location.pathname.includes('/stock-projections') ? 'Stock Analysis' :
                      location.pathname.includes('/precious-metals') ? 'Precious Metals' :
                      location.pathname.includes('/alternative-assets') ? 'Alternative Assets' :
                      location.pathname.includes('/aap-breakdown') ? 'AAS Breakdown' :

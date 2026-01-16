@@ -14,6 +14,7 @@ All projections include:
 
 from fastapi import APIRouter, HTTPException, Path
 from datetime import datetime, timedelta
+from typing import Optional
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -101,6 +102,189 @@ def compute_conviction(trend_score: float, rel_strength_score: float, risk_score
     )
     
     return np.clip(conviction, 0, 100)
+
+
+def compute_historical_volatility(df: pd.DataFrame, window: int = 30) -> Optional[float]:
+    """Calculate historical volatility over a rolling window (annualized)."""
+    returns = df['Close'].pct_change().dropna()
+    if len(returns) < window:
+        return None
+    hv = returns.tail(window).std() * np.sqrt(252) * 100
+    return round(float(hv), 2)
+
+
+def _parse_expiry(expiry: str) -> Optional[datetime]:
+    try:
+        return datetime.strptime(expiry, "%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def _near_atm(options_df: pd.DataFrame, current_price: float, threshold: float = 0.05) -> pd.DataFrame:
+    if options_df is None or options_df.empty or current_price <= 0:
+        return pd.DataFrame()
+    return options_df[(options_df["strike"] - current_price).abs() / current_price <= threshold]
+
+
+def _option_mid_price(row: pd.Series) -> Optional[float]:
+    bid = row.get("bid")
+    ask = row.get("ask")
+    last = row.get("lastPrice")
+    if bid is not None and ask is not None and bid > 0 and ask > 0:
+        return float((bid + ask) / 2)
+    if last is not None and last > 0:
+        return float(last)
+    return None
+
+
+def compute_options_flow(stock: yf.Ticker) -> Optional[dict]:
+    """Build a lightweight options flow snapshot from the nearest expiry."""
+    try:
+        expiries = stock.options or []
+        if not expiries:
+            return None
+
+        expiry = expiries[0]
+        chain = stock.option_chain(expiry)
+        calls = chain.calls if chain and hasattr(chain, "calls") else pd.DataFrame()
+        puts = chain.puts if chain and hasattr(chain, "puts") else pd.DataFrame()
+
+        if calls.empty and puts.empty:
+            return None
+
+        def top_walls(df: pd.DataFrame) -> list:
+            if df is None or df.empty:
+                return []
+            cols = df[["strike", "openInterest", "volume"]].fillna(0)
+            cols = cols.sort_values("openInterest", ascending=False).head(3)
+            return [
+                {
+                    "strike": float(row.strike),
+                    "open_interest": int(row.openInterest),
+                    "volume": int(row.volume),
+                }
+                for _, row in cols.iterrows()
+            ]
+
+        call_walls = top_walls(calls)
+        put_walls = top_walls(puts)
+        call_oi_total = int(calls["openInterest"].fillna(0).sum()) if not calls.empty else 0
+        put_oi_total = int(puts["openInterest"].fillna(0).sum()) if not puts.empty else 0
+        call_vol_total = int(calls["volume"].fillna(0).sum()) if not calls.empty else 0
+        put_vol_total = int(puts["volume"].fillna(0).sum()) if not puts.empty else 0
+        put_call_oi_ratio = round(put_oi_total / call_oi_total, 2) if call_oi_total > 0 else None
+
+        return {
+            "expiry": expiry,
+            "as_of": datetime.utcnow().isoformat(),
+            "call_walls": call_walls,
+            "put_walls": put_walls,
+            "call_open_interest_total": call_oi_total,
+            "put_open_interest_total": put_oi_total,
+            "call_volume_total": call_vol_total,
+            "put_volume_total": put_vol_total,
+            "put_call_oi_ratio": put_call_oi_ratio,
+        }
+    except Exception:
+        return None
+
+
+def compute_optionality_metrics(
+    stock: yf.Ticker,
+    current_price: float,
+    hv30: Optional[float],
+) -> dict:
+    """Compute IV/HV spread, IV percentile, and extrinsic density ratio."""
+    expiries = stock.options or []
+    if not expiries:
+        return {
+            "iv30": None,
+            "hv30": hv30,
+            "iv_percentile": None,
+            "avg_edr": None,
+        }
+
+    today = datetime.utcnow().date()
+    expiry_candidates = []
+    for exp in expiries:
+        exp_date = _parse_expiry(exp)
+        if not exp_date:
+            continue
+        dte = (exp_date.date() - today).days
+        if dte <= 0:
+            continue
+        expiry_candidates.append((exp, dte))
+
+    if not expiry_candidates:
+        return {
+            "iv30": None,
+            "hv30": hv30,
+            "iv_percentile": None,
+            "avg_edr": None,
+        }
+
+    expiry_candidates.sort(key=lambda x: x[1])
+    front_expiries = expiry_candidates[:6]
+    target_expiry = min(front_expiries, key=lambda x: abs(x[1] - 30))[0]
+
+    iv_values = []
+    edr_values = []
+    iv30 = None
+
+    for expiry, _ in front_expiries:
+        try:
+            chain = stock.option_chain(expiry)
+        except Exception:
+            continue
+
+        calls = chain.calls if chain and hasattr(chain, "calls") else pd.DataFrame()
+        puts = chain.puts if chain and hasattr(chain, "puts") else pd.DataFrame()
+
+        near_calls = _near_atm(calls, current_price)
+        near_puts = _near_atm(puts, current_price)
+        near_chain = pd.concat([near_calls, near_puts], ignore_index=True)
+        if near_chain.empty:
+            continue
+
+        iv_series = near_chain.get("impliedVolatility")
+        if iv_series is not None:
+            iv_values.extend([float(v) * 100 for v in iv_series.dropna().tolist() if v > 0])
+
+        for _, row in near_calls.iterrows():
+            price = _option_mid_price(row)
+            if not price:
+                continue
+            intrinsic = max(current_price - row.strike, 0)
+            extrinsic = max(price - intrinsic, 0)
+            edr_values.append(extrinsic / price if price > 0 else 0)
+
+        for _, row in near_puts.iterrows():
+            price = _option_mid_price(row)
+            if not price:
+                continue
+            intrinsic = max(row.strike - current_price, 0)
+            extrinsic = max(price - intrinsic, 0)
+            edr_values.append(extrinsic / price if price > 0 else 0)
+
+        if expiry == target_expiry and iv_series is not None and not iv_series.dropna().empty:
+            iv30 = round(float(iv_series.dropna().median() * 100), 2)
+
+    iv_percentile = None
+    if iv30 is not None and iv_values:
+        sorted_vals = sorted(iv_values)
+        count = sum(1 for v in sorted_vals if v <= iv30)
+        iv_percentile = round((count / len(sorted_vals)) * 100, 1)
+
+    avg_edr = None
+    if edr_values:
+        avg_edr = round(float(np.mean(edr_values) * 100), 2)
+
+    return {
+        "iv30": iv30,
+        "hv30": hv30,
+        "iv_percentile": iv_percentile,
+        "avg_edr": avg_edr,
+    }
 
 
 def calculate_take_profit(current_price: float, return_pct: float, volatility: float, horizon_days: int) -> float:
@@ -353,11 +537,14 @@ def get_stock_projections(
     """
     
     ticker = ticker.upper()
+    stock = yf.Ticker(ticker)
     
     data_warnings = []
 
     # Fetch stock data
     df = fetch_stock_data(ticker)
+    current_price = float(df['Close'].iloc[-1])
+    hv30 = compute_historical_volatility(df, window=30)
     
     # Fetch SPY for relative strength comparison
     spy_df = fetch_stock_data("SPY")
@@ -386,11 +573,26 @@ def get_stock_projections(
         system_state = status.state if status else "YELLOW"
     
     # Get stock name
+    stock_info = {}
     try:
-        stock_info = yf.Ticker(ticker).info
-        stock_name = stock_info.get('longName') or stock_info.get('shortName') or ticker
-    except:
-        stock_name = ticker
+        stock_info = stock.info
+    except Exception:
+        stock_info = {}
+
+    stock_name = stock_info.get('longName') or stock_info.get('shortName') or ticker
+    analyst_target = stock_info.get("targetMeanPrice") or stock_info.get("targetMedianPrice")
+    analyst_count = stock_info.get("numberOfAnalystOpinions")
+    try:
+        analyst_target = round(float(analyst_target), 2) if analyst_target is not None else None
+    except Exception:
+        analyst_target = None
+    try:
+        analyst_count = int(analyst_count) if analyst_count is not None else None
+    except Exception:
+        analyst_count = None
+
+    options_flow = compute_options_flow(stock)
+    optionality = compute_optionality_metrics(stock, current_price, hv30)
     
     # Compute projections for each horizon
     projections = {}
@@ -435,6 +637,10 @@ def get_stock_projections(
         "as_of_date": datetime.now().isoformat(),
         "created_at": datetime.utcnow().isoformat(),
         "data_warnings": data_warnings,
+        "analyst_target": analyst_target,
+        "analyst_count": analyst_count,
+        "options_flow": options_flow,
+        "optionality": optionality,
         "projections": projections,
         "historical": {
             "score_3m_ago": historical_score  # What the score was 90 days ago

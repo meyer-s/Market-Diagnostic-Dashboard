@@ -324,6 +324,160 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
           </span>
         </div>
       </div>
+      {chartHistory.length > 0 && (
+        <div className="pt-2 border-t border-stealth-700">
+          <h4 className="text-sm font-semibold text-stealth-200 mb-3">
+            Market Direction Trends
+          </h4>
+          <div className="h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartHistory} margin={CHART_MARGIN}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                <XAxis
+                  dataKey="timestamp"
+                  tickFormatter={(v: string) =>
+                    new Date(v).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })
+                  }
+                  tick={{ fill: "#6b7280", fontSize: 10 }}
+                  stroke="#555560"
+                />
+                <YAxis
+                  yAxisId="primary"
+                  tick={{ fill: "#6b7280", fontSize: 10 }}
+                  stroke="#555560"
+                  domain={["auto", "auto"]}
+                />
+                <YAxis
+                  yAxisId="spread"
+                  orientation="right"
+                  tick={{ fill: "#f97316", fontSize: 10 }}
+                  stroke="#f97316"
+                  domain={spreadDomain}
+                  tickFormatter={(value: number) => `${value.toFixed(1)}%`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#161619",
+                    borderColor: "#555560",
+                    borderRadius: "6px",
+                    padding: "8px",
+                  }}
+                  labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
+                  itemStyle={{ color: "#ffffff", fontSize: 11 }}
+                  formatter={(value: number | null, name: string) => {
+                    if (
+                      name === "Range Base" ||
+                      name === "Modern Above" ||
+                      name === "Classic Above"
+                    ) {
+                      return null;
+                    }
+                    if (typeof value === "number") {
+                      return [`${value.toFixed(2)}%`, name];
+                    }
+                    return [value ?? "N/A", name];
+                  }}
+                  labelFormatter={(label: string) =>
+                    new Date(label).toLocaleDateString()
+                  }
+                />
+                <ReferenceLine yAxisId="primary" y={7.5} stroke="#22c55e" strokeDasharray="4 4" />
+                <ReferenceLine yAxisId="primary" y={-7.5} stroke="#f87171" strokeDasharray="4 4" />
+                <ReferenceLine yAxisId="primary" y={0} stroke="#6b7280" strokeDasharray="3 3" />
+                <Area
+                  type="monotone"
+                  dataKey="rangeBase"
+                  name="Range Base"
+                  stackId="range"
+                  yAxisId="primary"
+                  stroke="none"
+                  fill="transparent"
+                  isAnimationActive={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="rangeDiffModern"
+                  name="Modern Above"
+                  stackId="range"
+                  yAxisId="primary"
+                  stroke="none"
+                  fill="#fbbf24"
+                  fillOpacity={0.4}
+                  connectNulls={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="rangeDiffClassic"
+                  name="Classic Above"
+                  stackId="range"
+                  yAxisId="primary"
+                  stroke="none"
+                  fill="#60a5fa"
+                  fillOpacity={0.4}
+                  connectNulls={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="market_direction"
+                  name="Classic"
+                  yAxisId="primary"
+                  stroke="#60a5fa"
+                  strokeWidth={2}
+                  dot={false}
+                  animationDuration={300}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="modern_direction"
+                  name="Modern"
+                  yAxisId="primary"
+                  stroke="#fbbf24"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls={false}
+                  animationDuration={300}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="direction_spread"
+                  name="Spread"
+                  yAxisId="spread"
+                  stroke="#f97316"
+                  strokeWidth={4}
+                  dot={false}
+                  connectNulls={false}
+                  animationDuration={300}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-stealth-300">
+            <div className="flex items-center gap-2">
+              <span className="block h-0.5 w-6 bg-blue-400"></span>
+              <span>Classic</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="block h-0.5 w-6 bg-amber-400"></span>
+              <span>Modern</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="block h-0.5 w-6 bg-orange-400"></span>
+              <span>Spread</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="block h-3 w-6 rounded-sm bg-yellow-400/20 border border-yellow-300/40"></span>
+              <span>Modern Above</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="block h-3 w-6 rounded-sm bg-blue-500/20 border border-blue-400/40"></span>
+              <span>Classic Above</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="pt-2 border-t border-stealth-700 space-y-4">
         <div className="flex items-center gap-2">
@@ -489,160 +643,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
 
       {showInfo && (
         <div className="space-y-5">
-          {chartHistory.length > 0 && (
-            <div className="pt-2 border-t border-stealth-700">
-              <h4 className="text-sm font-semibold text-stealth-200 mb-3">
-                Market Direction Trends
-              </h4>
-              <div className="h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartHistory} margin={CHART_MARGIN}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
-                    <XAxis
-                      dataKey="timestamp"
-                      tickFormatter={(v: string) =>
-                        new Date(v).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      }
-                      tick={{ fill: "#6b7280", fontSize: 10 }}
-                      stroke="#555560"
-                    />
-                    <YAxis
-                      yAxisId="primary"
-                      tick={{ fill: "#6b7280", fontSize: 10 }}
-                      stroke="#555560"
-                      domain={["auto", "auto"]}
-                    />
-                    <YAxis
-                      yAxisId="spread"
-                      orientation="right"
-                      tick={{ fill: "#f97316", fontSize: 10 }}
-                      stroke="#f97316"
-                      domain={spreadDomain}
-                      tickFormatter={(value: number) => `${value.toFixed(1)}%`}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#161619",
-                        borderColor: "#555560",
-                        borderRadius: "6px",
-                        padding: "8px",
-                      }}
-                      labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
-                      itemStyle={{ color: "#ffffff", fontSize: 11 }}
-                      formatter={(value: number | null, name: string) => {
-                        if (
-                          name === "Range Base" ||
-                          name === "Modern Above" ||
-                          name === "Classic Above"
-                        ) {
-                          return null;
-                        }
-                        if (typeof value === "number") {
-                          return [`${value.toFixed(2)}%`, name];
-                        }
-                        return [value ?? "N/A", name];
-                      }}
-                      labelFormatter={(label: string) =>
-                        new Date(label).toLocaleDateString()
-                      }
-                    />
-                    <ReferenceLine yAxisId="primary" y={7.5} stroke="#22c55e" strokeDasharray="4 4" />
-                    <ReferenceLine yAxisId="primary" y={-7.5} stroke="#f87171" strokeDasharray="4 4" />
-                    <ReferenceLine yAxisId="primary" y={0} stroke="#6b7280" strokeDasharray="3 3" />
-                    <Area
-                      type="monotone"
-                      dataKey="rangeBase"
-                      name="Range Base"
-                      stackId="range"
-                      yAxisId="primary"
-                      stroke="none"
-                      fill="transparent"
-                      isAnimationActive={false}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="rangeDiffModern"
-                      name="Modern Above"
-                      stackId="range"
-                      yAxisId="primary"
-                      stroke="none"
-                      fill="#fbbf24"
-                      fillOpacity={0.4}
-                      connectNulls={false}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="rangeDiffClassic"
-                      name="Classic Above"
-                      stackId="range"
-                      yAxisId="primary"
-                      stroke="none"
-                      fill="#60a5fa"
-                      fillOpacity={0.4}
-                      connectNulls={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="market_direction"
-                      name="Classic"
-                      yAxisId="primary"
-                      stroke="#60a5fa"
-                      strokeWidth={2}
-                      dot={false}
-                      animationDuration={300}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="modern_direction"
-                      name="Modern"
-                      yAxisId="primary"
-                      stroke="#fbbf24"
-                      strokeWidth={2}
-                      dot={false}
-                      connectNulls={false}
-                      animationDuration={300}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="direction_spread"
-                      name="Spread"
-                      yAxisId="spread"
-                      stroke="#f97316"
-                      strokeWidth={4}
-                      dot={false}
-                      connectNulls={false}
-                      animationDuration={300}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-stealth-300">
-                <div className="flex items-center gap-2">
-                  <span className="block h-0.5 w-6 bg-blue-400"></span>
-                  <span>Classic</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="block h-0.5 w-6 bg-amber-400"></span>
-                  <span>Modern</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="block h-0.5 w-6 bg-orange-400"></span>
-                  <span>Spread</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="block h-3 w-6 rounded-sm bg-yellow-400/20 border border-yellow-300/40"></span>
-                  <span>Modern Above</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="block h-3 w-6 rounded-sm bg-blue-500/20 border border-blue-400/40"></span>
-                  <span>Classic Above</span>
-                </div>
-              </div>
-            </div>
-          )}
+
 
           {activeTab === "classic" ? (
             <div className="pt-2 border-t border-stealth-700 space-y-4">
