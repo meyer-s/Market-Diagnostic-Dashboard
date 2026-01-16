@@ -386,10 +386,19 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                       }}
                       labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
                       itemStyle={{ color: "#ffffff", fontSize: 11 }}
-                      formatter={(value: number, name: string) => [
-                        `${value.toFixed(2)}%`,
-                        name,
-                      ]}
+                      formatter={(value: number | number[] | null, name: string) => {
+                        if (Array.isArray(value)) {
+                          const [minVal, maxVal] = value;
+                          if (typeof minVal === "number" && typeof maxVal === "number") {
+                            return [`${minVal.toFixed(2)}% - ${maxVal.toFixed(2)}%`, name];
+                          }
+                          return [String(value), name];
+                        }
+                        if (typeof value === "number") {
+                          return [`${value.toFixed(2)}%`, name];
+                        }
+                        return [value ?? "N/A", name];
+                      }}
                       labelFormatter={(label: string) =>
                         new Date(label).toLocaleDateString()
                       }
