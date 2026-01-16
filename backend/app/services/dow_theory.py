@@ -256,8 +256,8 @@ class DowTheoryCalculator:
             dir_state = "NEUTRAL"
         
         # Confirmation state
-        bull_confirm = dia_up and djt_up
-        bear_confirm = dia_down and djt_down
+        bull_confirm = dji_up and djt_up
+        bear_confirm = dji_down and djt_down
         
         if bull_confirm:
             confirm_state = "BULL"
