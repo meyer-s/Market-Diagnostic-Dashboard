@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   ReferenceLine,
+  type TooltipProps,
 } from "recharts";
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
@@ -146,7 +147,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
     return (
       <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-red-400 mb-2">
-          Dow Theory Trends Stability
+          Dow Theory Trends
         </h3>
         <p className="text-stealth-400 text-sm">
           {error || "No data available"}
@@ -262,28 +263,78 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
     }
 
     const classic = point.market_direction;
+    const spreadValue =
+      typeof point.direction_spread === "number"
+        ? point.direction_spread
+        : modern - classic;
     const minValue = Math.min(classic, modern);
-    const diff = Math.abs(modern - classic);
+    const diff = Math.abs(spreadValue);
 
     return {
       ...point,
       rangeBase: minValue,
-      rangeDiffModern: modern > classic ? diff : 0,
-      rangeDiffClassic: classic > modern ? diff : 0,
+      rangeDiffModern: spreadValue > 0 ? diff : 0,
+      rangeDiffClassic: spreadValue < 0 ? diff : 0,
     };
   });
-  const spreadExtent = chartHistory.reduce((max, point) => {
-    const value = point.direction_spread ?? 0;
-    return Math.max(max, Math.abs(value));
-  }, 0);
-  const spreadBuffer = Math.max(spreadExtent, 5);
-  const spreadDomain: [number, number] = [-spreadBuffer, spreadBuffer];
+
+  const renderTrendTooltip = ({
+    active,
+    label,
+    payload,
+  }: TooltipProps<number, string>) => {
+    if (!active || !payload?.length) return null;
+    const point = payload[0].payload as HistoryPoint;
+    const modernValue = point.modern_direction;
+    const spreadValue =
+      typeof point.direction_spread === "number"
+        ? point.direction_spread
+        : typeof modernValue === "number"
+        ? modernValue - point.market_direction
+        : null;
+    const spreadClass =
+      spreadValue === null
+        ? "text-stealth-400"
+        : spreadValue > 0
+        ? "text-green-400"
+        : spreadValue < 0
+        ? "text-red-400"
+        : "text-stealth-100";
+
+    return (
+      <div className="bg-stealth-900 border border-stealth-700 rounded-md px-2 py-2 text-xs text-stealth-100 shadow-lg">
+        <div className="text-[11px] text-stealth-400 mb-1">
+          {label ? new Date(label).toLocaleDateString() : ""}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-blue-300">Classic</span>
+          <span>{point.market_direction.toFixed(2)}%</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-amber-300">Modern</span>
+          <span>
+            {typeof modernValue === "number"
+              ? `${modernValue.toFixed(2)}%`
+              : "N/A"}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-orange-300">Spread</span>
+          <span className={spreadClass}>
+            {spreadValue === null
+              ? "N/A"
+              : `${spreadValue > 0 ? "+" : ""}${spreadValue.toFixed(2)}%`}
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 space-y-5">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-stealth-100">
-          Dow Theory Trends Stability
+          Dow Theory Trends
         </h3>
         <span className="text-xs text-stealth-400">
           {formatTime(data.timestamp)}
@@ -350,40 +401,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                   stroke="#555560"
                   domain={["auto", "auto"]}
                 />
-                <YAxis
-                  yAxisId="spread"
-                  orientation="right"
-                  tick={{ fill: "#f97316", fontSize: 10 }}
-                  stroke="#f97316"
-                  domain={spreadDomain}
-                  tickFormatter={(value: number) => `${value.toFixed(1)}%`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#161619",
-                    borderColor: "#555560",
-                    borderRadius: "6px",
-                    padding: "8px",
-                  }}
-                  labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
-                  itemStyle={{ color: "#ffffff", fontSize: 11 }}
-                  formatter={(value: number | null, name: string) => {
-                    if (
-                      name === "Range Base" ||
-                      name === "Modern Above" ||
-                      name === "Classic Above"
-                    ) {
-                      return null;
-                    }
-                    if (typeof value === "number") {
-                      return [`${value.toFixed(2)}%`, name];
-                    }
-                    return [value ?? "N/A", name];
-                  }}
-                  labelFormatter={(label: string) =>
-                    new Date(label).toLocaleDateString()
-                  }
-                />
+                <Tooltip content={renderTrendTooltip} />
                 <ReferenceLine yAxisId="primary" y={7.5} stroke="#22c55e" strokeDasharray="4 4" />
                 <ReferenceLine yAxisId="primary" y={-7.5} stroke="#f87171" strokeDasharray="4 4" />
                 <ReferenceLine yAxisId="primary" y={0} stroke="#6b7280" strokeDasharray="3 3" />
@@ -440,41 +458,8 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                   connectNulls={false}
                   animationDuration={300}
                 />
-                <Line
-                  type="monotone"
-                  dataKey="direction_spread"
-                  name="Spread"
-                  yAxisId="spread"
-                  stroke="#f97316"
-                  strokeWidth={4}
-                  dot={false}
-                  connectNulls={false}
-                  animationDuration={300}
-                />
               </LineChart>
             </ResponsiveContainer>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-stealth-300">
-            <div className="flex items-center gap-2">
-              <span className="block h-0.5 w-6 bg-blue-400"></span>
-              <span>Classic</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="block h-0.5 w-6 bg-amber-400"></span>
-              <span>Modern</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="block h-0.5 w-6 bg-orange-400"></span>
-              <span>Spread</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="block h-3 w-6 rounded-sm bg-yellow-400/20 border border-yellow-300/40"></span>
-              <span>Modern Above</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="block h-3 w-6 rounded-sm bg-blue-500/20 border border-blue-400/40"></span>
-              <span>Classic Above</span>
-            </div>
           </div>
         </div>
       )}
@@ -485,7 +470,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
             onClick={() => setActiveTab("classic")}
             className={`px-3 py-1 text-xs font-semibold rounded-full border transition-colors ${
               activeTab === "classic"
-                ? "bg-stealth-700 text-stealth-100 border-stealth-500"
+                ? "bg-blue-500/20 text-blue-200 border-blue-400"
                 : "bg-stealth-900 text-stealth-400 border-stealth-700 hover:text-stealth-200"
             }`}
           >
@@ -495,7 +480,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
             onClick={() => setActiveTab("modern")}
             className={`px-3 py-1 text-xs font-semibold rounded-full border transition-colors ${
               activeTab === "modern"
-                ? "bg-stealth-700 text-stealth-100 border-stealth-500"
+                ? "bg-amber-500/20 text-amber-200 border-amber-400"
                 : "bg-stealth-900 text-stealth-400 border-stealth-700 hover:text-stealth-200"
             }`}
           >
