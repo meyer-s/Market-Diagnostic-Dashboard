@@ -516,7 +516,7 @@ def compute_stock_projection(ticker: str, df: pd.DataFrame, spy_df: pd.DataFrame
         "score_relative_strength": round(rel_strength_score, 2),
         "score_risk": round(risk_score, 2),
         "score_regime": round(regime_score, 2),
-        "return_pct": round(total_return * 100, 2),
+        "trailing_return_pct": round(total_return * 100, 2),
         "volatility": round(volatility, 2),
         "max_drawdown": round(max_drawdown, 2),
         "conviction": round(conviction, 2),

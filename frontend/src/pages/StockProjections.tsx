@@ -30,7 +30,7 @@ interface StockProjection {
   score_relative_strength: number;
   score_risk: number;
   score_regime: number;
-  return_pct: number;
+  trailing_return_pct: number;
   volatility: number;
   max_drawdown: number;
   conviction: number;
@@ -311,7 +311,7 @@ export default function StockProjections() {
                 currentPrice={projections[selectedHorizon].current_price}
                 takeProfit={projections[selectedHorizon].take_profit}
                 stopLoss={projections[selectedHorizon].stop_loss}
-                projectedReturn={projections[selectedHorizon].return_pct}
+                trailingReturn={projections[selectedHorizon].trailing_return_pct}
                 horizon={selectedHorizon.toUpperCase()}
                 analystTarget={analystTarget}
                 analystCount={analystCount}
