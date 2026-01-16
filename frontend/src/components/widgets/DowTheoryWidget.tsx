@@ -31,6 +31,8 @@ interface DowTheoryData {
   modern_signal_strength: "WEAK" | "MODERATE" | "STRONG";
   modern_divergence: number;
   modern_defensive_outperformance: number;
+  modern_etf_direction: number | null;
+  modern_futures_direction: number | null;
   direction_spread: number;
   theory_alignment_score: number;
   theory_alignment_state: "ALIGNED" | "MIXED" | "DIVERGENT" | "UNKNOWN";
@@ -93,9 +95,6 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
   const [error, setError] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [activeTab, setActiveTab] = useState<"classic" | "modern">("classic");
-  const [isTouch, setIsTouch] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -131,11 +130,6 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
     return () => clearInterval(interval);
   }, [trendPeriod]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const coarsePointer = window.matchMedia("(hover: none)").matches;
-    setIsTouch(coarsePointer || navigator.maxTouchPoints > 0);
-  }, []);
 
   if (loading) {
     return (
@@ -251,7 +245,6 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
   );
   const modernStabilityPercentage = Math.max(0, Math.min(100, modernStabilityScore));
   const alignmentPercentage = Math.max(0, Math.min(100, data.theory_alignment_score));
-  const showDetails = isTouch ? isExpanded : isHovered;
 
   const chartHistory = history.map((point) => {
     const modern = point.modern_direction ?? null;
@@ -286,17 +279,15 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
       rangeClassicOnTop: null,
     };
   });
+  const spreadExtent = chartHistory.reduce((max, point) => {
+    const value = point.direction_spread ?? 0;
+    return Math.max(max, Math.abs(value));
+  }, 0);
+  const spreadBuffer = Math.max(spreadExtent, 5);
+  const spreadDomain: [number, number] = [-spreadBuffer, spreadBuffer];
 
   return (
-    <div
-      className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 space-y-5"
-      onMouseEnter={() => {
-        if (!isTouch) setIsHovered(true);
-      }}
-      onMouseLeave={() => {
-        if (!isTouch) setIsHovered(false);
-      }}
-    >
+    <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 space-y-5">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-stealth-100">
           Dow Theory Trends Stability
@@ -306,16 +297,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
         </span>
       </div>
 
-      <div
-        className={`bg-stealth-900 border border-stealth-700 rounded-lg p-4 space-y-3 ${
-          isTouch ? "cursor-pointer" : ""
-        }`}
-        onClick={() => {
-          if (isTouch) {
-            setIsExpanded((prev) => !prev);
-          }
-        }}
-      >
+      <div className="bg-stealth-900 border border-stealth-700 rounded-lg p-4 space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-sm font-semibold text-stealth-200">
@@ -350,8 +332,17 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
         </div>
       </div>
 
-      {showDetails && (
-        <>
+      <div className="pt-3 border-t border-stealth-700">
+        <button
+          onClick={() => setShowInfo(!showInfo)}
+          className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-2"
+        >
+          {showInfo ? "Theory Details -" : "Theory Details +"}
+        </button>
+      </div>
+
+      {showInfo && (
+        <div className="space-y-5">
           {chartHistory.length > 0 && (
             <div className="pt-2 border-t border-stealth-700">
               <h4 className="text-sm font-semibold text-stealth-200 mb-3">
@@ -373,9 +364,18 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                       stroke="#555560"
                     />
                     <YAxis
+                      yAxisId="primary"
                       tick={{ fill: "#6b7280", fontSize: 10 }}
                       stroke="#555560"
                       domain={["auto", "auto"]}
+                    />
+                    <YAxis
+                      yAxisId="spread"
+                      orientation="right"
+                      tick={{ fill: "#f97316", fontSize: 10 }}
+                      stroke="#f97316"
+                      domain={spreadDomain}
+                      tickFormatter={(value: number) => `${value.toFixed(1)}%`}
                     />
                     <Tooltip
                       contentStyle={{
@@ -403,17 +403,18 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                         new Date(label).toLocaleDateString()
                       }
                     />
-                    <ReferenceLine y={2} stroke="#22c55e" strokeDasharray="4 4" />
-                    <ReferenceLine y={-2} stroke="#f87171" strokeDasharray="4 4" />
-                    <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" />
+                    <ReferenceLine yAxisId="primary" y={7.5} stroke="#22c55e" strokeDasharray="4 4" />
+                    <ReferenceLine yAxisId="primary" y={-7.5} stroke="#f87171" strokeDasharray="4 4" />
+                    <ReferenceLine yAxisId="primary" y={0} stroke="#6b7280" strokeDasharray="3 3" />
                     <Area
                       type="monotone"
                       dataKey="rangeModernOnTop"
                       name="Modern above"
                       isRange
+                      yAxisId="primary"
                       stroke="none"
                       fill="#fbbf24"
-                      fillOpacity={0.18}
+                      fillOpacity={0.4}
                       connectNulls={false}
                     />
                     <Area
@@ -421,15 +422,17 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                       dataKey="rangeClassicOnTop"
                       name="Classic above"
                       isRange
+                      yAxisId="primary"
                       stroke="none"
                       fill="#60a5fa"
-                      fillOpacity={0.18}
+                      fillOpacity={0.4}
                       connectNulls={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="market_direction"
                       name="Classic"
+                      yAxisId="primary"
                       stroke="#60a5fa"
                       strokeWidth={2}
                       dot={false}
@@ -439,6 +442,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                       type="monotone"
                       dataKey="modern_direction"
                       name="Modern"
+                      yAxisId="primary"
                       stroke="#fbbf24"
                       strokeWidth={2}
                       dot={false}
@@ -449,9 +453,9 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                       type="monotone"
                       dataKey="direction_spread"
                       name="Spread"
+                      yAxisId="spread"
                       stroke="#f97316"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      strokeWidth={4}
                       dot={false}
                       connectNulls={false}
                       animationDuration={300}
@@ -469,7 +473,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
                   <span>Modern</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="block h-0.5 w-6 border-t border-dashed border-orange-400"></span>
+                  <span className="block h-0.5 w-6 bg-orange-400"></span>
                   <span>Spread</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -508,325 +512,352 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
               </button>
             </div>
 
-        {activeTab === "classic" ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-stealth-400">Market Direction</span>
-                  <span className={`text-xl font-bold ${directionColor}`}>
-                    {data.direction_state}
-                  </span>
-                </div>
-                <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
-                  <div
-                    className={`absolute left-0 top-0 h-full transition-all duration-500 ${
-                      data.market_direction > 0.25
-                        ? "bg-green-500"
-                        : data.market_direction < -0.25
-                        ? "bg-red-500"
-                        : "bg-gray-500"
-                    }`}
-                    style={{ width: `${directionPercentage}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-stealth-400">Value:</span>
-                  <span className="text-stealth-200">{data.market_direction}%</span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-stealth-400">Stability Level</span>
-                  <span className={`text-xl font-bold ${stabilityColor}`}>
-                    {stabilityLevel}
-                  </span>
-                </div>
-                <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
-                  <div
-                    className={`absolute left-0 top-0 h-full transition-all duration-500 ${stabilityBarColor}`}
-                    style={{ width: `${stabilityPercentage}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-stealth-400">Score:</span>
-                  <span className="text-stealth-200">{stabilityScore.toFixed(1)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700">
-                <span className="text-xs text-stealth-400">Confirmation:</span>
-                <span className={`text-xs font-semibold ${confirmColor}`}>
-                  {data.confirmation_state}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700">
-                <span className="text-xs text-stealth-400">Signal:</span>
-                <span className={`text-xs font-semibold ${signalColor}`}>
-                  {data.signal_strength}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 pt-3 border-t border-stealth-700">
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">DJI ROC</div>
-                <div
-                  className={`text-sm font-semibold ${
-                    data.components.dji_roc > 0 ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  {data.components.dji_roc}%
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">DJT ROC</div>
-                <div
-                  className={`text-sm font-semibold ${
-                    data.components.djt_roc > 0 ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  {data.components.djt_roc}%
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">DJU ROC</div>
-                <div
-                  className={`text-sm font-semibold ${
-                    data.components.dju_roc > 0 ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  {data.components.dju_roc}%
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stealth-700">
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">
-                  DJI/DJT Divergence
-                </div>
-                <div className="text-sm font-semibold text-stealth-200">
-                  {data.divergence}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">
-                  Utility Spread (DJU - DJI)
-                </div>
-                <div className={`text-sm font-semibold ${utilitySpreadClass}`}>
-                  {utilitySpread > 0 ? "+" : ""}
-                  {utilitySpread.toFixed(2)}%
-                </div>
-              </div>
-            </div>
-
-            {(data.etf_direction !== null || data.futures_direction !== null) && (
-              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stealth-700">
-                {data.etf_direction !== null && (
-                  <div>
-                    <div className="text-xs text-stealth-400 mb-1">
-                      ETF Direction
+            {activeTab === "classic" ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-stealth-400">Market Direction</span>
+                      <span className={`text-xl font-bold ${directionColor}`}>
+                        {data.direction_state}
+                      </span>
                     </div>
-                    <div
-                      className={`text-sm font-semibold ${
-                        data.etf_direction > 0 ? "text-green-400" : "text-red-400"
-                      }`}
-                    >
-                      {data.etf_direction}%
+                    <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
+                      <div
+                        className={`absolute left-0 top-0 h-full transition-all duration-500 ${
+                          data.market_direction > 0.25
+                            ? "bg-green-500"
+                            : data.market_direction < -0.25
+                            ? "bg-red-500"
+                            : "bg-gray-500"
+                        }`}
+                        style={{ width: `${directionPercentage}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-stealth-400">Value:</span>
+                      <span className="text-stealth-200">{data.market_direction}%</span>
                     </div>
                   </div>
-                )}
-                {data.futures_direction !== null && (
-                  <div>
-                    <div className="text-xs text-stealth-400 mb-1">
-                      Futures Direction
+
+                  <div className="space-y-2">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-stealth-400">Stability Level</span>
+                      <span className={`text-xl font-bold ${stabilityColor}`}>
+                        {stabilityLevel}
+                      </span>
                     </div>
+                    <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
+                      <div
+                        className={`absolute left-0 top-0 h-full transition-all duration-500 ${stabilityBarColor}`}
+                        style={{ width: `${stabilityPercentage}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-stealth-400">Score:</span>
+                      <span className="text-stealth-200">{stabilityScore.toFixed(1)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700">
+                    <span className="text-xs text-stealth-400">Confirmation:</span>
+                    <span className={`text-xs font-semibold ${confirmColor}`}>
+                      {data.confirmation_state}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700">
+                    <span className="text-xs text-stealth-400">Signal:</span>
+                    <span className={`text-xs font-semibold ${signalColor}`}>
+                      {data.signal_strength}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 pt-3 border-t border-stealth-700">
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">DJI ROC</div>
                     <div
                       className={`text-sm font-semibold ${
-                        data.futures_direction > 0
-                          ? "text-green-400"
-                          : "text-red-400"
+                        data.components.dji_roc > 0 ? "text-green-400" : "text-red-400"
                       }`}
                     >
-                      {data.futures_direction}%
+                      {data.components.dji_roc}%
                     </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">DJT ROC</div>
+                    <div
+                      className={`text-sm font-semibold ${
+                        data.components.djt_roc > 0 ? "text-green-400" : "text-red-400"
+                      }`}
+                    >
+                      {data.components.djt_roc}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">DJU ROC</div>
+                    <div
+                      className={`text-sm font-semibold ${
+                        data.components.dju_roc > 0 ? "text-green-400" : "text-red-400"
+                      }`}
+                    >
+                      {data.components.dju_roc}%
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stealth-700">
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">
+                      DJI/DJT Divergence
+                    </div>
+                    <div className="text-sm font-semibold text-stealth-200">
+                      {data.divergence}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">
+                      Utility Spread (DJU - DJI)
+                    </div>
+                    <div className={`text-sm font-semibold ${utilitySpreadClass}`}>
+                      {utilitySpread > 0 ? "+" : ""}
+                      {utilitySpread.toFixed(2)}%
+                    </div>
+                  </div>
+                </div>
+
+                {(data.etf_direction !== null || data.futures_direction !== null) && (
+                  <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stealth-700">
+                    {data.etf_direction !== null && (
+                      <div>
+                        <div className="text-xs text-stealth-400 mb-1">
+                          ETF Direction
+                        </div>
+                        <div
+                          className={`text-sm font-semibold ${
+                            data.etf_direction > 0 ? "text-green-400" : "text-red-400"
+                          }`}
+                        >
+                          {data.etf_direction}%
+                        </div>
+                      </div>
+                    )}
+                    {data.futures_direction !== null && (
+                      <div>
+                        <div className="text-xs text-stealth-400 mb-1">
+                          Futures Direction
+                        </div>
+                        <div
+                          className={`text-sm font-semibold ${
+                            data.futures_direction > 0
+                              ? "text-green-400"
+                              : "text-red-400"
+                          }`}
+                        >
+                          {data.futures_direction}%
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-stealth-400">Market Direction</span>
+                      <span className={`text-xl font-bold ${modernDirectionColor}`}>
+                        {data.modern_direction_state}
+                      </span>
+                    </div>
+                    <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
+                      <div
+                        className={`absolute left-0 top-0 h-full transition-all duration-500 ${
+                          data.modern_direction > 0.25
+                            ? "bg-green-500"
+                            : data.modern_direction < -0.25
+                            ? "bg-red-500"
+                            : "bg-gray-500"
+                        }`}
+                        style={{ width: `${modernDirectionPercentage}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-stealth-400">Value:</span>
+                      <span className="text-stealth-200">{data.modern_direction}%</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-stealth-400">Stability Level</span>
+                      <span className={`text-xl font-bold ${modernStabilityColor}`}>
+                        {modernStabilityLevel}
+                      </span>
+                    </div>
+                    <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
+                      <div
+                        className={`absolute left-0 top-0 h-full transition-all duration-500 ${modernStabilityBarColor}`}
+                        style={{ width: `${modernStabilityPercentage}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-stealth-400">Score:</span>
+                      <span className="text-stealth-200">{modernStabilityScore.toFixed(1)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700">
+                    <span className="text-xs text-stealth-400">Confirmation:</span>
+                    <span className={`text-xs font-semibold ${confirmColor}`}>
+                      {data.confirmation_state}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700">
+                    <span className="text-xs text-stealth-400">Signal:</span>
+                    <span className={`text-xs font-semibold ${modernSignalColor}`}>
+                      {data.modern_signal_strength}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 pt-3 border-t border-stealth-700">
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">DIA ROC</div>
+                    <div
+                      className={`text-sm font-semibold ${
+                        data.modern_components.dia_roc > 0 ? "text-green-400" : "text-red-400"
+                      }`}
+                    >
+                      {data.modern_components.dia_roc}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">IYT ROC</div>
+                    <div
+                      className={`text-sm font-semibold ${
+                        data.modern_components.iyt_roc > 0 ? "text-green-400" : "text-red-400"
+                      }`}
+                    >
+                      {data.modern_components.iyt_roc}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">XLU ROC</div>
+                    <div
+                      className={`text-sm font-semibold ${
+                        data.modern_components.xlu_roc > 0 ? "text-green-400" : "text-red-400"
+                      }`}
+                    >
+                      {data.modern_components.xlu_roc}%
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stealth-700">
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">
+                      DIA/IYT Divergence
+                    </div>
+                    <div className="text-sm font-semibold text-stealth-200">
+                      {data.modern_divergence}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-stealth-400 mb-1">
+                      Defensive Tilt (XLU - DIA)
+                    </div>
+                    <div className={`text-sm font-semibold ${defensiveTiltClass}`}>
+                      {defensiveTilt > 0 ? "+" : ""}
+                      {defensiveTilt.toFixed(2)}%
+                    </div>
+                  </div>
+                </div>
+
+                {(data.modern_etf_direction !== null || data.modern_futures_direction !== null) && (
+                  <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stealth-700">
+                    {data.modern_etf_direction !== null && (
+                      <div>
+                        <div className="text-xs text-stealth-400 mb-1">
+                          ETF Direction
+                        </div>
+                        <div
+                          className={`text-sm font-semibold ${
+                            data.modern_etf_direction > 0
+                              ? "text-green-400"
+                              : "text-red-400"
+                          }`}
+                        >
+                          {data.modern_etf_direction}%
+                        </div>
+                      </div>
+                    )}
+                    {data.modern_futures_direction !== null && (
+                      <div>
+                        <div className="text-xs text-stealth-400 mb-1">
+                          Futures Direction
+                        </div>
+                        <div
+                          className={`text-sm font-semibold ${
+                            data.modern_futures_direction > 0
+                              ? "text-green-400"
+                              : "text-red-400"
+                          }`}
+                        >
+                          {data.modern_futures_direction}%
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
           </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-stealth-400">Market Direction</span>
-                  <span className={`text-xl font-bold ${modernDirectionColor}`}>
-                    {data.modern_direction_state}
-                  </span>
-                </div>
-                <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
-                  <div
-                    className={`absolute left-0 top-0 h-full transition-all duration-500 ${
-                      data.modern_direction > 0.25
-                        ? "bg-green-500"
-                        : data.modern_direction < -0.25
-                        ? "bg-red-500"
-                        : "bg-gray-500"
-                    }`}
-                    style={{ width: `${modernDirectionPercentage}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-stealth-400">Value:</span>
-                  <span className="text-stealth-200">{data.modern_direction}%</span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-stealth-400">Stability Level</span>
-                  <span className={`text-xl font-bold ${modernStabilityColor}`}>
-                    {modernStabilityLevel}
-                  </span>
-                </div>
-                <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
-                  <div
-                    className={`absolute left-0 top-0 h-full transition-all duration-500 ${modernStabilityBarColor}`}
-                    style={{ width: `${modernStabilityPercentage}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-stealth-400">Score:</span>
-                  <span className="text-stealth-200">{modernStabilityScore.toFixed(1)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700">
-                <span className="text-xs text-stealth-400">Confirmation:</span>
-                <span className={`text-xs font-semibold ${confirmColor}`}>
-                  {data.confirmation_state}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700">
-                <span className="text-xs text-stealth-400">Signal:</span>
-                <span className={`text-xs font-semibold ${modernSignalColor}`}>
-                  {data.modern_signal_strength}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 pt-3 border-t border-stealth-700">
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">DIA ROC</div>
-                <div
-                  className={`text-sm font-semibold ${
-                    data.modern_components.dia_roc > 0 ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  {data.modern_components.dia_roc}%
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">IYT ROC</div>
-                <div
-                  className={`text-sm font-semibold ${
-                    data.modern_components.iyt_roc > 0 ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  {data.modern_components.iyt_roc}%
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">XLU ROC</div>
-                <div
-                  className={`text-sm font-semibold ${
-                    data.modern_components.xlu_roc > 0 ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  {data.modern_components.xlu_roc}%
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stealth-700">
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">
-                  DIA/IYT Divergence
-                </div>
-                <div className="text-sm font-semibold text-stealth-200">
-                  {data.modern_divergence}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-stealth-400 mb-1">
-                  Defensive Tilt (XLU - DIA)
-                </div>
-                <div className={`text-sm font-semibold ${defensiveTiltClass}`}>
-                  {defensiveTilt > 0 ? "+" : ""}
-                  {defensiveTilt.toFixed(2)}%
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
 
           <div className="pt-4 border-t border-stealth-700">
-            <button
-              onClick={() => setShowInfo(!showInfo)}
-              className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1"
-            >
-              {showInfo ? "Hide" : "Show"} Theory Details
-              <span className="text-xs">{showInfo ? "^" : "v"}</span>
-            </button>
-
-            {showInfo && (
-              <div className="mt-3 space-y-3 text-sm text-stealth-300">
-                <div>
-                  <p className="font-semibold text-stealth-200 mb-1">
-                    Classic Dow Theory
-                  </p>
-                  <p className="text-xs leading-relaxed">
-                    Uses Dow Jones Industrials (DJI) and Transports (DJT) to confirm
-                    trend strength. Utilities (DJU) act as a risk-off check; rising
-                    utilities while industrials/transports weaken flags instability.
-                  </p>
-                </div>
-
-                <div>
-                  <p className="font-semibold text-stealth-200 mb-1">
-                    Modern Dow Theory
-                  </p>
-                  <p className="text-xs leading-relaxed">
-                    Uses ETF proxies (DIA, IYT, XLU) to capture current sector mix
-                    and liquidity conditions. Strong agreement between DIA and IYT
-                    signals broad participation, while defensive tilts in XLU signal
-                    caution.
-                  </p>
-                </div>
-
-                <div>
-                  <p className="font-semibold text-stealth-200 mb-1">
-                    Derived Conclusion
-                  </p>
-                  <p className="text-xs leading-relaxed">
-                    The alignment score rewards tight spread between classic and
-                    modern direction lines. High alignment implies stable economic
-                    confirmation; low alignment suggests regime uncertainty and
-                    higher risk of volatility.
-                  </p>
-                </div>
+            <div className="mt-3 space-y-3 text-sm text-stealth-300">
+              <div>
+                <p className="font-semibold text-stealth-200 mb-1">
+                  Classic Dow Theory
+                </p>
+                <p className="text-xs leading-relaxed">
+                  Uses Dow Jones Industrials (DJI) and Transports (DJT) to confirm
+                  trend strength. Utilities (DJU) act as a risk-off check; rising
+                  utilities while industrials/transports weaken flags instability.
+                </p>
               </div>
-            )}
+
+              <div>
+                <p className="font-semibold text-stealth-200 mb-1">
+                  Modern Dow Theory
+                </p>
+                <p className="text-xs leading-relaxed">
+                  Uses ETF proxies (DIA, IYT, XLU) to capture current sector mix
+                  and liquidity conditions. Strong agreement between DIA and IYT
+                  signals broad participation, while defensive tilts in XLU signal
+                  caution.
+                </p>
+              </div>
+
+              <div>
+                <p className="font-semibold text-stealth-200 mb-1">
+                  Derived Conclusion
+                </p>
+                <p className="text-xs leading-relaxed">
+                  The alignment score rewards tight spread between classic and
+                  modern direction lines. High alignment implies stable economic
+                  confirmation; low alignment suggests regime uncertainty and
+                  higher risk of volatility.
+                </p>
+              </div>
+            </div>
           </div>
-      </>
+        </div>
       )}
     </div>
   );

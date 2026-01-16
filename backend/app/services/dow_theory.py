@@ -291,6 +291,8 @@ class DowTheoryCalculator:
         modern_divergence = 0.0
         modern_defensive_outperformance = 0.0
         modern_align_score = 0
+        modern_etf_direction = None
+        modern_futures_direction = None
         modern_components = {
             "dia_roc": 0.0,
             "iyt_roc": 0.0,
@@ -304,6 +306,7 @@ class DowTheoryCalculator:
             iyt_etf_roc = self.compute_roc(iyt_data)
             xlu_roc = self.compute_roc(xlu_data)
             modern_base = (dia_etf_roc + iyt_etf_roc + xlu_roc) / 3
+            modern_etf_direction = modern_base
 
             dia_etf_slope = self.compute_slope(dia_data)
             iyt_etf_slope = self.compute_slope(iyt_data)
@@ -362,6 +365,9 @@ class DowTheoryCalculator:
                 "alignment_score": modern_align_score,
             }
 
+        if fut_dir is not None:
+            modern_futures_direction = fut_dir
+
         if has_modern_data:
             direction_spread = modern_direction - market_dir
             theory_alignment_score = max(0.0, min(100.0, 100.0 - abs(direction_spread) * 10.0))
@@ -393,6 +399,8 @@ class DowTheoryCalculator:
             "modern_signal_strength": modern_signal_strength,
             "modern_divergence": round(modern_divergence, 2),
             "modern_defensive_outperformance": round(modern_defensive_outperformance, 2),
+            "modern_etf_direction": round(modern_etf_direction, 2) if modern_etf_direction is not None else None,
+            "modern_futures_direction": round(modern_futures_direction, 2) if modern_futures_direction is not None else None,
             "direction_spread": round(direction_spread, 2),
             "theory_alignment_score": round(theory_alignment_score, 1),
             "theory_alignment_state": theory_alignment_state,
@@ -424,6 +432,8 @@ class DowTheoryCalculator:
             "modern_signal_strength": "WEAK",
             "modern_divergence": 0.0,
             "modern_defensive_outperformance": 0.0,
+            "modern_etf_direction": None,
+            "modern_futures_direction": None,
             "direction_spread": 0.0,
             "theory_alignment_score": 0.0,
             "theory_alignment_state": "UNKNOWN",
