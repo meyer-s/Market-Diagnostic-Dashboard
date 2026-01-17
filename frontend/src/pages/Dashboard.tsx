@@ -18,6 +18,57 @@ interface NewsArticle {
   published_at: string;
 }
 
+type OverallSummary = {
+  label: string;
+  color: string;
+  text: string;
+  counts: { green: number; yellow: number; red: number };
+  total: number;
+};
+
+const buildOverallSummary = (items: IndicatorStatus[]): OverallSummary | null => {
+  if (!items.length) return null;
+
+  const counts = items.reduce(
+    (acc, item) => {
+      if (item.state === "GREEN") acc.green += 1;
+      if (item.state === "YELLOW") acc.yellow += 1;
+      if (item.state === "RED") acc.red += 1;
+      return acc;
+    },
+    { green: 0, yellow: 0, red: 0 }
+  );
+
+  const total = items.length;
+  const avgScore =
+    items.reduce((sum, item) => sum + (Number.isFinite(item.score) ? item.score : 0), 0) / total;
+  const redShare = counts.red / total;
+  const yellowShare = counts.yellow / total;
+
+  let label: "Stable" | "Cautious" | "Stressed";
+  let color: string;
+  let text: string;
+
+  if (redShare >= 0.3 || avgScore < 40) {
+    label = "Stressed";
+    color = "text-red-400";
+    text =
+      "Many signals point to strain, so the economy looks more fragile right now. For most people, that can mean tighter credit and slower growth; for investors, it suggests higher volatility and a focus on risk control.";
+  } else if (redShare >= 0.15 || yellowShare >= 0.4 || avgScore < 55) {
+    label = "Cautious";
+    color = "text-yellow-400";
+    text =
+      "Signals are mixed, so stability is present but uneven. For most people, this can feel like higher costs or softer job momentum; for investors, it implies choppier markets and the need to stay selective.";
+  } else {
+    label = "Stable";
+    color = "text-green-400";
+    text =
+      "Most signals agree on steady conditions. For most people, that usually means fewer surprise shocks and steadier job trends; for investors, it points to a more forgiving environment for long term plans.";
+  }
+
+  return { label, color, text, counts, total };
+};
+
 export default function Dashboard() {
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [indicators, setIndicators] = useState<IndicatorStatus[] | null>(null);
@@ -44,6 +95,8 @@ export default function Dashboard() {
   }, [refreshKey]);
 
   const newsCount = news.length;
+  const visibleIndicators = indicators?.filter((i) => i.code !== "AAP") ?? [];
+  const overallSummary = buildOverallSummary(visibleIndicators);
 
   // Manual refresh function - triggers ETL ingestion for all indicators
   const handleRefresh = async () => {
@@ -157,6 +210,35 @@ export default function Dashboard() {
           </div>
         </div>
 
+      <div className="mb-3 md:mb-6">
+        {indicatorsLoading && (
+          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
+            <p className="text-xs text-stealth-400">Overall conclusion loading...</p>
+          </div>
+        )}
+        {!indicatorsLoading && overallSummary && (
+          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Conclusion</div>
+                <div className={`text-lg font-semibold ${overallSummary.color}`}>{overallSummary.label}</div>
+              </div>
+              <div className="text-xs text-stealth-400 text-right">
+                {overallSummary.counts.green} green • {overallSummary.counts.yellow} yellow • {overallSummary.counts.red} red
+              </div>
+            </div>
+            <p className="text-sm text-stealth-300 mt-2 leading-relaxed">
+              {overallSummary.text}
+            </p>
+          </div>
+        )}
+        {!indicatorsLoading && !overallSummary && (
+          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
+            <p className="text-xs text-stealth-400">Overall conclusion unavailable.</p>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-6 mb-3 md:mb-6">
         <SystemOverviewWidget trendPeriod={trendPeriod} />
         <DowTheoryWidget trendPeriod={trendPeriod} />
@@ -171,11 +253,9 @@ export default function Dashboard() {
         </div>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
-        {indicators
-          ?.filter((i) => i.code !== 'AAP')
-          .map((i) => (
-            <IndicatorCard key={i.code} indicator={i} />
-          ))}
+        {visibleIndicators.map((i) => (
+          <IndicatorCard key={i.code} indicator={i} />
+        ))}
       </div>
     </div>
   );

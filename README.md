@@ -168,7 +168,7 @@ docker exec market_backend python backfill_aap.py
 
 ### Sector Analysis
 - `GET /sector-projections` - Forward sector analysis
-- `GET /stock-projections` - Individual stock signals
+- `GET /stocks/{ticker}/projections` - Individual stock signals
 - `GET /sector-alerts` - Active sector alerts
 
 ---
@@ -185,7 +185,7 @@ docker exec market_backend python backfill_aap.py
 ### Specialized Pages
 - `/precious-metals` - Comprehensive metals diagnostic
 - `/sector-projections` - Sector forward analysis
-- `/stock-projections` - Individual stock projections
+- `/stock-analysis` - Individual stock projections
 
 ---
 

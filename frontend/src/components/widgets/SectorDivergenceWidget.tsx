@@ -403,6 +403,12 @@ export default function SectorDivergenceWidget({ trendPeriod = 90 }: Props) {
           </div>
         </div>
       )}
+
+      <div className="mt-6 bg-stealth-900 border border-stealth-700 rounded p-3">
+        <p className="text-xs text-stealth-300 leading-relaxed">
+          <span className="font-semibold text-stealth-200">Conclusion:</span> Shows whether investors are leaning toward safety or growth, which gives an early read on confidence. It helps confirm the current regime and can flag when stability is starting to slip.
+        </p>
+      </div>
     </div>
   );
 }

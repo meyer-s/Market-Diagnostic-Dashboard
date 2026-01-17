@@ -237,11 +237,10 @@ export default function AASWidget({ timeframe = '90d' }: AASWidgetProps) {
           )}
         </div>
 
-        {/* Quick Info */}
+        {/* Conclusion */}
         <div className="text-xs text-stealth-400 border-t border-stealth-700 pt-3">
           <p className="leading-relaxed">
-            Measures systemic stability through precious metals and crypto signals. 
-            Click to view full analysis.
+            <span className="font-semibold text-stealth-200">Conclusion:</span> Uses metals and crypto to capture stress or confidence outside stocks. It adds a second opinion on stability, so sharp moves here can warn of pressure building elsewhere.
           </p>
         </div>
       </div>

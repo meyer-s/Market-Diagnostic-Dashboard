@@ -13,7 +13,7 @@
 
 ## Pages to Test
 
-### 1. Stock Projections Page (`/stock-projections`)
+### 1. Stock Analysis Page (`/stock-analysis`)
 
 #### Chart Area (-3M to 12M)
 - [ ] **Mobile (320-480px)**

@@ -378,10 +378,10 @@ const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
         </div>
       </div>
 
-      {/* System Description */}
+      {/* Conclusion */}
       <div className="bg-stealth-900 border border-stealth-700 rounded p-3 mt-4">
         <p className="text-xs text-stealth-300 leading-relaxed">
-          <span className="font-semibold text-stealth-200">Purpose:</span> This dashboard monitors real-time market stability by tracking key economic indicators including volatility (VIX), equity performance (SPY), interest rates (DFF), yield curve (T10Y2Y), and unemployment (UNRATE). Each indicator is scored 0-100 using statistical normalization, then classified as RED (stress), YELLOW (caution), or GREEN (stable). The composite score aggregates all indicators to provide an at-a-glance assessment of overall market health and emerging risks.
+          <span className="font-semibold text-stealth-200">Conclusion:</span> Combines many signals into one health check so you can tell at a glance if the economy is steady, wobbling, or under stress, and whether that stability is improving or fading.
         </p>
       </div>
       </div>

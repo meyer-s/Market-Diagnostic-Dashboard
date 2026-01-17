@@ -4,6 +4,8 @@
  * Displays price history (252 days), RSI, and MACD charts with real data
  */
 
+import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
+
 interface Candle {
   date: string;
   open: number;
@@ -56,14 +58,23 @@ interface OptionsFlowData {
   put_call_oi_ratio: number | null;
 }
 
+interface OptionalityMetrics {
+  iv30: number | null;
+  hv30: number | null;
+  iv_percentile: number | null;
+  avg_edr: number | null;
+}
+
 interface TechnicalIndicatorsProps {
   technicalData?: TechnicalData;
   optionsFlow?: OptionsFlowData | null;
+  optionalityMetrics?: OptionalityMetrics | null;
 }
 
 export function TechnicalIndicators({
   technicalData,
   optionsFlow,
+  optionalityMetrics,
 }: TechnicalIndicatorsProps) {
   if (!technicalData && !optionsFlow) {
     return (
@@ -198,6 +209,9 @@ export function TechnicalIndicators({
         <div className="bg-gray-800 rounded-lg p-4 sm:p-6">
           <p className="text-gray-400">Technical analysis unavailable for this ticker.</p>
         </div>
+        {optionalityMetrics && (
+          <OptionalityMispricingWidget metrics={optionalityMetrics} />
+        )}
         {optionsFlowCard}
       </div>
     );
@@ -800,6 +814,9 @@ export function TechnicalIndicators({
         </div>
       </div>
 
+      {optionalityMetrics && (
+        <OptionalityMispricingWidget metrics={optionalityMetrics} />
+      )}
       {optionsFlowCard}
     </div>
   );

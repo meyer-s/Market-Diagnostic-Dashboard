@@ -617,6 +617,14 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
         )}
       </div>
 
+      <div className="pt-3">
+        <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
+          <p className="text-xs text-stealth-300 leading-relaxed">
+            <span className="font-semibold text-stealth-200">Conclusion:</span> Checks whether different parts of the market move together. When they agree, it supports a stable economy; when they split, it warns that stability is fragile and shocks are more likely.
+          </p>
+        </div>
+      </div>
+
       <div className="pt-3 border-t border-stealth-700">
         <button
           onClick={() => setShowInfo(!showInfo)}

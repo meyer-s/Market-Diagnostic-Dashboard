@@ -17,7 +17,6 @@ import { useState } from "react";
 import { PriceAnalysisChart } from "../components/widgets/PriceAnalysisChart";
 import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
 import { TechnicalIndicators } from "../components/widgets/TechnicalIndicators.tsx";
-import { OptionalityMispricingWidget } from "../components/widgets/OptionalityMispricingWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 
@@ -79,7 +78,7 @@ interface OptionalityMetrics {
   avg_edr: number | null;
 }
 
-export default function StockProjections() {
+export default function StockAnalysis() {
   const [ticker, setTicker] = useState("");
   const [searchTicker, setSearchTicker] = useState("");
   const [projections, setProjections] = useState<Record<string, StockProjection>>({});
@@ -325,17 +324,12 @@ export default function StockProjections() {
             </div>
           )}
 
-          {optionalityMetrics && (
-            <div className="mb-6">
-              <OptionalityMispricingWidget metrics={optionalityMetrics} />
-            </div>
-          )}
-
           {/* Technical Indicators */}
           {projections["T"] && (
             <TechnicalIndicators
               technicalData={technicalData}
               optionsFlow={optionsFlow}
+              optionalityMetrics={optionalityMetrics}
             />
           )}
 
