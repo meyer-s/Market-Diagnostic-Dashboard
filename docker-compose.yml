@@ -30,7 +30,7 @@ services:
       - ./frontend/postcss.config.js:/app/postcss.config.js
     ports:
       - "0.0.0.0:5173:5173"  # Bind to all interfaces for external access
-    command: ["pnpm", "dev", "--host"]
+    command: ["pnpm", "preview", "--host", "0.0.0.0", "--port", "5173"]
 
   db:
     image: postgres:16

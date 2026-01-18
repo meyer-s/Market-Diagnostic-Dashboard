@@ -42,28 +42,30 @@ const buildOverallSummary = (items: IndicatorStatus[]): OverallSummary | null =>
   const total = items.length;
   const avgScore =
     items.reduce((sum, item) => sum + (Number.isFinite(item.score) ? item.score : 0), 0) / total;
+  const avgScoreDisplay = Number.isFinite(avgScore) ? avgScore.toFixed(1) : "n/a";
   const redShare = counts.red / total;
   const yellowShare = counts.yellow / total;
 
   let label: "Stable" | "Cautious" | "Stressed";
   let color: string;
   let text: string;
+  const summaryMetrics = `This measures how many indicators are in good, warning, or stress states (${counts.green} green, ${counts.yellow} yellow, ${counts.red} red out of ${total}, avg score ${avgScoreDisplay}).`;
 
   if (redShare >= 0.3 || avgScore < 40) {
     label = "Stressed";
     color = "text-red-400";
     text =
-      "Many signals point to strain, so the economy looks more fragile right now. For most people, that can mean tighter credit and slower growth; for investors, it suggests higher volatility and a focus on risk control.";
+      `${summaryMetrics} It matters because broad weakness often shows up next in borrowing costs, hiring, and spending. It affects households and businesses first, and investors feel it as bigger price swings. To take advantage, keep positions smaller, protect cash needs, and add risk only when the red count starts to fall.`;
   } else if (redShare >= 0.15 || yellowShare >= 0.4 || avgScore < 55) {
     label = "Cautious";
     color = "text-yellow-400";
     text =
-      "Signals are mixed, so stability is present but uneven. For most people, this can feel like higher costs or softer job momentum; for investors, it implies choppier markets and the need to stay selective.";
+      `${summaryMetrics} It matters because mixed signals usually mean uneven conditions and more false starts. It affects borrowers, employers, and investors who need timing to be right. To take advantage, stay diversified, avoid big bets, and wait for more indicators to turn green before adding exposure.`;
   } else {
     label = "Stable";
     color = "text-green-400";
     text =
-      "Most signals agree on steady conditions. For most people, that usually means fewer surprise shocks and steadier job trends; for investors, it points to a more forgiving environment for long term plans.";
+      `${summaryMetrics} It matters because broad agreement usually supports steady jobs, spending, and planning. It affects households through income stability, businesses through clearer demand, and investors through smoother trends. To take advantage, extend time horizons, lock in funding needs, or add exposure while the dashboard stays green.`;
   }
 
   return { label, color, text, counts, total };
