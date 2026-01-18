@@ -16,7 +16,7 @@ COPY public ./public
 COPY index.html tsconfig.json tsconfig.node.json vite.config.ts ./
 COPY tailwind.config.js postcss.config.js ./
 
-RUN pnpm build
+RUN pnpm vite build
 
 EXPOSE 5173
 
