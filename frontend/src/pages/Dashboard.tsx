@@ -7,7 +7,7 @@ import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget
 import AASWidget from "../components/widgets/AASWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import { getLegacyApiUrl } from "../utils/apiUtils";
-import type { InsightSignal } from "../utils/insightUtils";
+import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
 
 interface NewsArticle {
   id: number;
@@ -24,11 +24,15 @@ type OverallInsight = {
   color: string;
   summary: string;
   posture: InsightSignal["stance"];
-  direction: InsightSignal["direction"];
+  primaryDirection: InsightSignal["primaryDirection"];
+  secondaryDirection: InsightSignal["secondaryDirection"];
   confidence: InsightSignal["confidence"];
 };
 
-const buildOverallInsight = (signals: InsightSignal[]): OverallInsight | null => {
+const buildOverallInsight = (
+  signals: InsightSignal[],
+  trendLabel: string
+): OverallInsight | null => {
   if (signals.length < 4) return null;
 
   const stanceScore = signals.reduce((sum, item) => {
@@ -36,9 +40,14 @@ const buildOverallInsight = (signals: InsightSignal[]): OverallInsight | null =>
     if (item.stance === "risk-off") return sum - 1;
     return sum;
   }, 0);
-  const directionScore = signals.reduce((sum, item) => {
-    if (item.direction === "up") return sum + 1;
-    if (item.direction === "down") return sum - 1;
+  const primaryDirectionScore = signals.reduce((sum, item) => {
+    if (item.primaryDirection === "up") return sum + 1;
+    if (item.primaryDirection === "down") return sum - 1;
+    return sum;
+  }, 0);
+  const secondaryDirectionScore = signals.reduce((sum, item) => {
+    if (item.secondaryDirection === "up") return sum + 1;
+    if (item.secondaryDirection === "down") return sum - 1;
     return sum;
   }, 0);
   const confidenceScore = signals.reduce((sum, item) => {
@@ -49,10 +58,19 @@ const buildOverallInsight = (signals: InsightSignal[]): OverallInsight | null =>
 
   const posture: InsightSignal["stance"] =
     stanceScore >= 2 ? "risk-on" : stanceScore <= -2 ? "risk-off" : "mixed";
-  const direction: InsightSignal["direction"] =
-    directionScore >= 2 ? "up" : directionScore <= -2 ? "down" : "flat";
-  const confidence: InsightSignal["confidence"] =
+  const primaryDirection: InsightSignal["primaryDirection"] =
+    primaryDirectionScore >= 2 ? "up" : primaryDirectionScore <= -2 ? "down" : "flat";
+  const secondaryDirection: InsightSignal["secondaryDirection"] =
+    secondaryDirectionScore >= 2 ? "up" : secondaryDirectionScore <= -2 ? "down" : "flat";
+  let confidence: InsightSignal["confidence"] =
     confidenceScore >= 2 ? "high" : confidenceScore <= -2 ? "low" : "medium";
+  if (
+    primaryDirection !== "flat" &&
+    secondaryDirection !== "flat" &&
+    primaryDirection !== secondaryDirection
+  ) {
+    confidence = "low";
+  }
 
   const label =
     posture === "risk-on" ? "Positive" : posture === "risk-off" ? "Cautious" : "Mixed";
@@ -64,30 +82,28 @@ const buildOverallInsight = (signals: InsightSignal[]): OverallInsight | null =>
       : "text-yellow-400";
   let summary = "";
   if (posture === "risk-on") {
-    summary =
-      direction === "up"
-        ? "Tailwinds lead and momentum is building."
-        : direction === "down"
-        ? "Tailwinds still lead, but momentum is fading."
-        : "Tailwinds lead, but momentum is flat.";
+    summary = `Tailwinds lead. ${trendLabel} ${primaryDirection}, recent ${secondaryDirection}.`;
   } else if (posture === "risk-off") {
-    summary =
-      direction === "down"
-        ? "Caution leads and momentum is fading."
-        : direction === "up"
-        ? "Caution still leads, but pressure is easing."
-        : "Caution leads, but momentum is flat.";
+    summary = `Caution leads. ${trendLabel} ${primaryDirection}, recent ${secondaryDirection}.`;
   } else {
-    summary = "Signals are split; stay balanced until one side wins.";
+    summary = `Signals split. ${trendLabel} ${primaryDirection}, recent ${secondaryDirection}.`;
   }
 
   if (confidence === "low") {
-    summary += " The read feels noisy.";
+    summary += " Noisy read.";
   } else if (confidence === "high") {
-    summary += " The read feels clear.";
+    summary += " Clear read.";
   }
 
-  return { label, color, summary, posture, direction, confidence };
+  return {
+    label,
+    color,
+    summary,
+    posture,
+    primaryDirection,
+    secondaryDirection,
+    confidence,
+  };
 };
 
 export default function Dashboard() {
@@ -123,9 +139,13 @@ export default function Dashboard() {
     () => insightOrder.map((id) => insights[id]).filter(Boolean) as InsightSignal[],
     [insights]
   );
+  const overallTrendLabel = useMemo(
+    () => getTrendWindows(trendPeriod).label.toLowerCase(),
+    [trendPeriod]
+  );
   const overallInsight = useMemo(
-    () => buildOverallInsight(insightList),
-    [insightList]
+    () => buildOverallInsight(insightList, overallTrendLabel),
+    [insightList, overallTrendLabel]
   );
 
   const handleInsight = useCallback((insight: InsightSignal) => {
@@ -134,7 +154,8 @@ export default function Dashboard() {
       if (
         existing &&
         existing.summary === insight.summary &&
-        existing.direction === insight.direction &&
+        existing.primaryDirection === insight.primaryDirection &&
+        existing.secondaryDirection === insight.secondaryDirection &&
         existing.stance === insight.stance &&
         existing.confidence === insight.confidence
       ) {
@@ -303,8 +324,8 @@ export default function Dashboard() {
                     <span className="text-xs font-semibold text-stealth-100">
                       {insight.label}
                     </span>
-                    <span className={`text-[10px] uppercase ${directionStyles[insight.direction]}`}>
-                      {directionLabel[insight.direction]}
+                    <span className={`text-[10px] uppercase ${directionStyles[insight.primaryDirection]}`}>
+                      {directionLabel[insight.primaryDirection]}
                     </span>
                   </div>
                   <div className="text-[10px] text-stealth-200 mt-1 truncate">

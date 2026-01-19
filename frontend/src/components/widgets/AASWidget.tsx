@@ -2,7 +2,13 @@ import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
 import { Link } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { analyzeSeries, getTrendTone, getConfidenceFromSignal, type InsightSignal } from "../../utils/insightUtils";
+import {
+  analyzeSeries,
+  getTrendTone,
+  getConfidenceFromSignal,
+  getTrendWindows,
+  type InsightSignal,
+} from "../../utils/insightUtils";
 
 interface AASData {
   stability_score: number;
@@ -92,6 +98,116 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
     return labels[regime] || regime.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
+  const days = parseInt(timeframe);
+  const trendWindows = getTrendWindows(days);
+  const stabilitySeries = chartData.map((point) => point.stability_score);
+  const primarySignal = analyzeSeries(stabilitySeries, trendWindows.primary);
+  const secondarySignal = analyzeSeries(stabilitySeries, trendWindows.secondary);
+  const averageValue = (points: HistoricalData[], key: keyof HistoricalData) => {
+    if (!points.length) return 0;
+    const sum = points.reduce((total, point) => total + (Number(point[key]) || 0), 0);
+    return sum / points.length;
+  };
+  const fallbackMetals = aasData?.metals_contribution ?? 0;
+  const fallbackCrypto = aasData?.crypto_contribution ?? 0;
+  const lastWindow = chartData.slice(-trendWindows.secondary.recent);
+  const prevWindow = chartData.slice(
+    -(trendWindows.secondary.recent + trendWindows.secondary.prior),
+    -trendWindows.secondary.recent
+  );
+  const recentMetals = lastWindow.length
+    ? averageValue(lastWindow, "metals_contribution")
+    : fallbackMetals;
+  const recentCrypto = lastWindow.length
+    ? averageValue(lastWindow, "crypto_contribution")
+    : fallbackCrypto;
+  const priorMetals = prevWindow.length
+    ? averageValue(prevWindow, "metals_contribution")
+    : recentMetals;
+  const priorCrypto = prevWindow.length
+    ? averageValue(prevWindow, "crypto_contribution")
+    : recentCrypto;
+  const recentLeader = recentMetals >= recentCrypto ? "metals" : "crypto";
+  const priorLeader = prevWindow.length ? (priorMetals >= priorCrypto ? "metals" : "crypto") : recentLeader;
+  const leaderShifted = recentLeader !== priorLeader;
+  const leaderPhrase =
+    recentLeader === "metals"
+      ? leaderShifted
+        ? "Metals just took the lead"
+        : "Metals are doing more of the lifting"
+      : leaderShifted
+      ? "Crypto just took the lead"
+      : "Crypto is doing more of the lifting";
+  const leaderImpact =
+    recentLeader === "metals"
+      ? "that usually shows up first in inflation-sensitive budgets"
+      : "that usually shows up first in risk-taking and fast money moves";
+  const trendTone = getTrendTone(primarySignal);
+  const primaryWord =
+    primarySignal.direction === "up"
+      ? "improving"
+      : primarySignal.direction === "down"
+      ? "slipping"
+      : "holding";
+  const secondaryWord =
+    secondarySignal.direction === "up"
+      ? "improving"
+      : secondarySignal.direction === "down"
+      ? "slipping"
+      : "flat";
+  const trendClause =
+    secondarySignal.direction === primarySignal.direction
+      ? `${trendWindows.label} is ${primaryWord}.`
+      : `${trendWindows.label} is ${primaryWord}, but the recent move is ${secondaryWord}.`;
+  const toneClause = trendTone === "mixed" ? "" : ` It feels ${trendTone}.`;
+  let actionSentence = "Stay balanced while the signal firms up.";
+  if (primarySignal.direction === "up" && trendTone !== "noisy") {
+    actionSentence = "Measured exposure can make sense while this holds.";
+  } else if (primarySignal.direction === "down") {
+    actionSentence = "Keep size light and lean on hedges until it steadies.";
+  }
+  const aasSummary = `Alternative assets often move early when stress builds. ${trendClause}${toneClause} ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
+  const summaryShort = `${trendWindows.shortLabel} ${primarySignal.direction}${
+    secondarySignal.direction === primarySignal.direction
+      ? ""
+      : ` / recent ${secondarySignal.direction}`
+  }, ${recentLeader}`;
+  const stabilityScore = aasData?.stability_score ?? 0;
+  const regimeLower = (aasData?.regime || "").toLowerCase();
+  const stressRegime =
+    regimeLower.includes("stress") ||
+    regimeLower.includes("crisis") ||
+    regimeLower.includes("breakdown");
+  const stance: InsightSignal["stance"] =
+    stabilityScore >= 67 && primarySignal.direction !== "down"
+      ? "risk-on"
+      : stabilityScore <= 34 || stressRegime || primarySignal.direction === "down"
+      ? "risk-off"
+      : "mixed";
+  const aasInsight: InsightSignal | null = aasData
+    ? {
+        id: "aas",
+        label: "Alts",
+        primaryDirection: primarySignal.direction,
+        secondaryDirection: secondarySignal.direction,
+        stance,
+        confidence: getConfidenceFromSignal(primarySignal),
+        summary: summaryShort,
+      }
+    : null;
+
+  useEffect(() => {
+    if (!onInsight || !aasInsight) return;
+    onInsight(aasInsight);
+  }, [
+    onInsight,
+    aasInsight?.primaryDirection,
+    aasInsight?.secondaryDirection,
+    aasInsight?.stance,
+    aasInsight?.confidence,
+    aasInsight?.summary,
+  ]);
+
   if (loading) {
     return (
       <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
@@ -110,82 +226,6 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
       </div>
     );
   }
-
-  const averageValue = (points: HistoricalData[], key: keyof HistoricalData) => {
-    if (!points.length) return 0;
-    const sum = points.reduce((total, point) => total + (Number(point[key]) || 0), 0);
-    return sum / points.length;
-  };
-  const stabilitySeries = chartData.map((point) => point.stability_score);
-  const trendSignal = analyzeSeries(stabilitySeries, { recent: 7, prior: 7 });
-  const trendTone = getTrendTone(trendSignal);
-  const trendWord =
-    trendSignal.direction === "up"
-      ? "improving"
-      : trendSignal.direction === "down"
-      ? "slipping"
-      : "holding";
-  const momentumClause =
-    trendSignal.momentum === "steady"
-      ? ""
-      : `, momentum is ${trendSignal.momentum === "accelerating" ? "building" : "fading"}`;
-  const toneClause = trendTone === "mixed" ? "" : `, the signal feels ${trendTone}`;
-  const last7 = chartData.slice(-7);
-  const prev7 = chartData.slice(-14, -7);
-  const fallbackMetals = aasData.metals_contribution ?? 0;
-  const fallbackCrypto = aasData.crypto_contribution ?? 0;
-  const recentMetals = last7.length ? averageValue(last7, "metals_contribution") : fallbackMetals;
-  const recentCrypto = last7.length ? averageValue(last7, "crypto_contribution") : fallbackCrypto;
-  const priorMetals = prev7.length ? averageValue(prev7, "metals_contribution") : recentMetals;
-  const priorCrypto = prev7.length ? averageValue(prev7, "crypto_contribution") : recentCrypto;
-  const recentLeader = recentMetals >= recentCrypto ? "metals" : "crypto";
-  const priorLeader = prev7.length ? (priorMetals >= priorCrypto ? "metals" : "crypto") : recentLeader;
-  const leaderShifted = recentLeader !== priorLeader;
-  const leaderPhrase =
-    recentLeader === "metals"
-      ? leaderShifted
-        ? "Metals just took the lead"
-        : "Metals are doing more of the lifting"
-      : leaderShifted
-      ? "Crypto just took the lead"
-      : "Crypto is doing more of the lifting";
-  const leaderImpact =
-    recentLeader === "metals"
-      ? "that usually shows up first in inflation-sensitive budgets"
-      : "that usually shows up first in risk-taking and fast money moves";
-  let actionSentence = "Stay balanced while the signal firms up.";
-  if (trendSignal.direction === "up" && trendTone !== "noisy") {
-    actionSentence = "Measured exposure can make sense while this holds.";
-  } else if (trendSignal.direction === "down") {
-    actionSentence = "Keep size light and lean on hedges until it steadies.";
-  }
-  const aasSummary = `Alternative assets often move early when stress builds. It is ${trendWord}${momentumClause}${toneClause}. ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
-  const leaderShort = recentLeader === "metals" ? "metals lead" : "crypto lead";
-  const summaryShort = `${trendWord}, ${leaderShort}`;
-  const regimeLower = (aasData.regime || "").toLowerCase();
-  const stressRegime =
-    regimeLower.includes("stress") ||
-    regimeLower.includes("crisis") ||
-    regimeLower.includes("breakdown");
-  const stance =
-    aasData.stability_score >= 67 && trendSignal.direction !== "down"
-      ? "risk-on"
-      : aasData.stability_score <= 34 || stressRegime || trendSignal.direction === "down"
-      ? "risk-off"
-      : "mixed";
-  const aasInsight: InsightSignal = {
-    id: "aas",
-    label: "Alts",
-    direction: trendSignal.direction,
-    stance,
-    confidence: getConfidenceFromSignal(trendSignal),
-    summary: summaryShort,
-  };
-
-  useEffect(() => {
-    if (!onInsight) return;
-    onInsight(aasInsight);
-  }, [onInsight, aasInsight.direction, aasInsight.stance, aasInsight.confidence, aasInsight.summary]);
 
   return (
     <Link to="/alternative-assets">

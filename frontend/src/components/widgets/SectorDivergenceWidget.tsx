@@ -32,7 +32,13 @@ import {
 } from "recharts";
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
-import { analyzeSeries, getTrendTone, getConfidenceFromSignal, type InsightSignal } from "../../utils/insightUtils";
+import {
+  analyzeSeries,
+  getTrendTone,
+  getConfidenceFromSignal,
+  getTrendWindows,
+  type InsightSignal,
+} from "../../utils/insightUtils";
 
 interface SectorSummary {
   as_of_date: string;
@@ -161,6 +167,81 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
     fetchData();
   }, [trendPeriod]);
 
+  const chartData = history;
+  const trendWindows = getTrendWindows(trendPeriod);
+  const spreadSeries = chartData.map((point) => point.spread).filter((value) => Number.isFinite(value));
+  const gapSeries = spreadSeries.map((value) => Math.abs(value));
+  const primaryGapSignal = analyzeSeries(gapSeries, trendWindows.primary);
+  const secondaryGapSignal = analyzeSeries(gapSeries, trendWindows.secondary);
+  const spreadTrendPhrase =
+    primaryGapSignal.direction === "up"
+      ? "widening"
+      : primaryGapSignal.direction === "down"
+      ? "narrowing"
+      : "steady";
+  const secondarySpreadPhrase =
+    secondaryGapSignal.direction === "up"
+      ? "widening"
+      : secondaryGapSignal.direction === "down"
+      ? "narrowing"
+      : "steady";
+  const spreadTone = getTrendTone(primaryGapSignal);
+  const leadValue = data?.defensive_vs_cyclical ?? 0;
+  const leadSide =
+    Math.abs(leadValue) < 2 ? "balanced" : leadValue > 0 ? "defense" : "growth";
+  const breadthBalance = (data?.sector_breadth.improving ?? 0) - (data?.sector_breadth.deteriorating ?? 0);
+  const breadthPhrase =
+    breadthBalance > 2
+      ? "breadth is improving"
+      : breadthBalance < -2
+      ? "breadth is thinning"
+      : "breadth is mixed";
+  const toneClause = spreadTone === "mixed" ? "" : `, and the move feels ${spreadTone}`;
+  const secondaryBiasSignal = analyzeSeries(spreadSeries, trendWindows.secondary);
+  const primaryDirection =
+    leadSide === "growth" ? "up" : leadSide === "defense" ? "down" : "flat";
+  const secondaryDirection =
+    secondaryBiasSignal.direction === "up"
+      ? "down"
+      : secondaryBiasSignal.direction === "down"
+      ? "up"
+      : "flat";
+  const summaryShort =
+    leadSide === "balanced"
+      ? `balanced, gap ${spreadTrendPhrase}${
+          secondaryGapSignal.direction === primaryGapSignal.direction
+            ? ""
+            : ` / recent ${secondarySpreadPhrase}`
+        }`
+      : `${leadSide} lead, gap ${spreadTrendPhrase}${
+          secondaryGapSignal.direction === primaryGapSignal.direction
+            ? ""
+            : ` / recent ${secondarySpreadPhrase}`
+        }`;
+  const sectorInsight: InsightSignal | null = data
+    ? {
+        id: "sector",
+        label: "Sectors",
+        primaryDirection,
+        secondaryDirection,
+        stance: leadSide === "growth" ? "risk-on" : leadSide === "defense" ? "risk-off" : "mixed",
+        confidence: getConfidenceFromSignal(primaryGapSignal),
+        summary: summaryShort,
+      }
+    : null;
+
+  useEffect(() => {
+    if (!onInsight || !sectorInsight) return;
+    onInsight(sectorInsight);
+  }, [
+    onInsight,
+    sectorInsight?.primaryDirection,
+    sectorInsight?.secondaryDirection,
+    sectorInsight?.stance,
+    sectorInsight?.confidence,
+    sectorInsight?.summary,
+  ]);
+
   if (loading) {
     return (
       <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">
@@ -201,68 +282,22 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
 
   const interpretation = getMarketInterpretation();
   const periodLabel = trendPeriod === 365 ? "1yr" : trendPeriod === 180 ? "6mo" : "90d";
-  const chartData = history;
   const timestamps = chartData.map((point) => point.timestampNum);
   const minTime = timestamps.length ? Math.min(...timestamps) : 0;
   const maxTime = timestamps.length ? Math.max(...timestamps) : 0;
   const tickPositions = timestamps.length > 1
     ? Array.from({ length: 5 }, (_, i) => minTime + ((maxTime - minTime) * (i / 4)))
     : timestamps;
-  const spreadSeries = chartData.map((point) => point.spread).filter((value) => Number.isFinite(value));
-  const gapSeries = spreadSeries.map((value) => Math.abs(value));
-  const gapSignal = analyzeSeries(gapSeries, { recent: 5, prior: 5, flatThreshold: 0.1 });
-  const spreadTrendPhrase =
-    gapSignal.direction === "up"
-      ? "widening"
-      : gapSignal.direction === "down"
-      ? "narrowing"
-      : "steady";
-  const spreadTone = getTrendTone(gapSignal);
-  const leadSide =
-    Math.abs(data.defensive_vs_cyclical) < 2
-      ? "balanced"
-      : data.defensive_vs_cyclical > 0
-      ? "defense"
-      : "growth";
-  const breadthBalance = data.sector_breadth.improving - data.sector_breadth.deteriorating;
-  const breadthPhrase =
-    breadthBalance > 2
-      ? "breadth is improving"
-      : breadthBalance < -2
-      ? "breadth is thinning"
-      : "breadth is mixed";
-  const toneClause = spreadTone === "mixed" ? "" : `, and the move feels ${spreadTone}`;
+  const secondaryClause =
+    secondaryGapSignal.direction === primaryGapSignal.direction
+      ? "Recent move agrees."
+      : `Recent move is ${secondarySpreadPhrase}.`;
   const sectorSummary =
     leadSide === "balanced"
-      ? `Compares defensive vs growth sectors. The gap is small and ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}; growth-linked jobs and portfolios feel it first, so stay balanced.`
+      ? `Compares defensive vs growth sectors. ${trendWindows.label} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios feel it first, so stay balanced.`
       : leadSide === "defense"
-      ? `Compares defensive vs growth sectors. Defense is ahead and the gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}; growth-linked jobs and portfolios feel it first, so keep a defensive tilt.`
-      : `Compares defensive vs growth sectors. Growth is ahead and the gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}; growth-linked jobs and portfolios benefit first, so lean into growth.`;
-  const summaryShort =
-    leadSide === "balanced"
-      ? `balanced, gap ${spreadTrendPhrase}`
-      : leadSide === "defense"
-      ? `defense lead, gap ${spreadTrendPhrase}`
-      : `growth lead, gap ${spreadTrendPhrase}`;
-  const sectorInsight: InsightSignal = {
-    id: "sector",
-    label: "Sectors",
-    direction: leadSide === "growth" ? "up" : leadSide === "defense" ? "down" : "flat",
-    stance: leadSide === "growth" ? "risk-on" : leadSide === "defense" ? "risk-off" : "mixed",
-    confidence: getConfidenceFromSignal(gapSignal),
-    summary: summaryShort,
-  };
-
-  useEffect(() => {
-    if (!onInsight) return;
-    onInsight(sectorInsight);
-  }, [
-    onInsight,
-    sectorInsight.direction,
-    sectorInsight.stance,
-    sectorInsight.confidence,
-    sectorInsight.summary,
-  ]);
+      ? `Compares defensive vs growth sectors. Defense is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios feel it first, so keep a defensive tilt.`
+      : `Compares defensive vs growth sectors. Growth is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios benefit first, so lean into growth.`;
 
   return (
     <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">

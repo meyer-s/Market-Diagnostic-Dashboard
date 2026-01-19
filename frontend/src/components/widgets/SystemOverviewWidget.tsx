@@ -15,7 +15,13 @@ import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatDateTime, formatTime } from "../../utils/styleUtils";
 import { CHART_MARGIN, commonXAxisProps, commonYAxisProps, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
 import { getStateFromScore, STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
-import { analyzeSeries, getTrendTone, getConfidenceFromSignal, type InsightSignal } from "../../utils/insightUtils";
+import {
+  analyzeSeries,
+  getTrendTone,
+  getConfidenceFromSignal,
+  getTrendWindows,
+  type InsightSignal,
+} from "../../utils/insightUtils";
 
 interface SystemStatus {
   state: string;
@@ -105,6 +111,40 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     return () => clearInterval(interval);
   }, [trendPeriod]);
 
+  const scoreSeries = history.map((point) => point.composite_score);
+  const trendWindows = getTrendWindows(trendPeriod);
+  const primarySignal = analyzeSeries(scoreSeries, trendWindows.primary);
+  const secondarySignal = analyzeSeries(scoreSeries, trendWindows.secondary);
+  const systemInsight = (() => {
+    if (!data) return null;
+    const insightSummary = `${trendWindows.shortLabel} ${primarySignal.direction}${
+      secondarySignal.direction === primarySignal.direction
+        ? ""
+        : ` / recent ${secondarySignal.direction}`
+    }`;
+    return {
+      id: "system",
+      label: "System",
+      primaryDirection: primarySignal.direction,
+      secondaryDirection: secondarySignal.direction,
+      stance: data.state === "GREEN" ? "risk-on" : data.state === "RED" ? "risk-off" : "mixed",
+      confidence: getConfidenceFromSignal(primarySignal),
+      summary: insightSummary,
+    } satisfies InsightSignal;
+  })();
+
+  useEffect(() => {
+    if (!onInsight || !systemInsight) return;
+    onInsight(systemInsight);
+  }, [
+    onInsight,
+    systemInsight?.primaryDirection,
+    systemInsight?.secondaryDirection,
+    systemInsight?.stance,
+    systemInsight?.confidence,
+    systemInsight?.summary,
+  ]);
+
   if (loading) {
     return (
       <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
@@ -162,78 +202,46 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   }[trendDirection];
 
   const periodLabel = trendPeriod === 365 ? "1 year" : trendPeriod === 180 ? "6 months" : "90 days";
-  const scoreSeries = history.map((point) => point.composite_score);
-  const trendSignal = analyzeSeries(scoreSeries);
-  const trendTone = getTrendTone(trendSignal);
+  const trendTone = getTrendTone(primarySignal);
   const condition =
     data.state === "GREEN" ? "steady" : data.state === "YELLOW" ? "mixed" : "stressed";
-  const trendWord =
-    trendSignal.direction === "up"
-      ? "improving"
-      : trendSignal.direction === "down"
+  const primaryWord =
+    primarySignal.direction === "up"
+      ? "rising"
+      : primarySignal.direction === "down"
       ? "softening"
-      : "holding";
-  const momentumClause =
-    trendSignal.momentum === "steady"
-      ? ""
-      : `, momentum is ${trendSignal.momentum === "accelerating" ? "building" : "fading"}`;
-  const toneClause = trendTone === "mixed" ? "" : `, the signal feels ${trendTone}`;
-  const nuanceSentence = `It looks ${condition} and ${trendWord}${momentumClause}${toneClause}.`;
+      : "flat";
+  const secondaryWord =
+    secondarySignal.direction === "up"
+      ? "rising"
+      : secondarySignal.direction === "down"
+      ? "softening"
+      : "flat";
+  const primaryClause = `${trendWindows.label} is ${primaryWord}`;
+  const secondaryClause =
+    secondarySignal.direction === primarySignal.direction
+      ? "and the recent move agrees."
+      : `but the recent move is ${secondaryWord}.`;
+  const toneClause = trendTone === "mixed" ? "" : ` It feels ${trendTone}.`;
+  const nuanceSentence = `It looks ${condition}. ${primaryClause} ${secondaryClause}${toneClause}`;
   let actionSentence = "";
   if (data.state === "GREEN") {
     actionSentence =
-      trendSignal.direction === "down"
+      primarySignal.direction === "down"
         ? "Households and businesses should still see stability, but keep risk measured until the slide stops."
         : "Households and businesses usually feel stability first, so longer-term plans can make sense while this holds.";
   } else if (data.state === "YELLOW") {
     actionSentence =
-      trendSignal.direction === "up"
+      primarySignal.direction === "up"
         ? "Unevenness may ease, but stay diversified until the signal firms up."
         : "Uneven costs or demand can show up for households and employers, so keep exposure balanced.";
   } else {
     actionSentence =
-      trendSignal.direction === "up"
+      primarySignal.direction === "up"
         ? "Stress may be easing, but borrowers and employers feel it first; protect cash needs until it stabilizes."
         : "Borrowers and employers feel this first; protect cash needs and keep risk small.";
   }
-  const systemSummary = `This blends many signals into one health score. ${nuanceSentence} ${actionSentence}`;
-  const insightSummary =
-    data.state === "GREEN"
-      ? trendSignal.direction === "down"
-        ? "steady, cooling"
-        : trendSignal.direction === "up"
-        ? "steady, firming"
-        : "steady"
-      : data.state === "YELLOW"
-      ? trendSignal.direction === "up"
-        ? "mixed, firming"
-        : trendSignal.direction === "down"
-        ? "mixed, slipping"
-        : "mixed"
-      : trendSignal.direction === "up"
-      ? "stressed, easing"
-      : trendSignal.direction === "down"
-      ? "stressed, falling"
-      : "stressed";
-  const systemInsight: InsightSignal = {
-    id: "system",
-    label: "System",
-    direction: trendSignal.direction,
-    stance: data.state === "GREEN" ? "risk-on" : data.state === "RED" ? "risk-off" : "mixed",
-    confidence: getConfidenceFromSignal(trendSignal),
-    summary: insightSummary,
-  };
-
-  useEffect(() => {
-    if (!onInsight) return;
-    onInsight(systemInsight);
-  }, [
-    onInsight,
-    systemInsight.direction,
-    systemInsight.stance,
-    systemInsight.confidence,
-    systemInsight.summary,
-  ]);
+  const systemSummary = `System health blends many signals. ${nuanceSentence} ${actionSentence}`;
 
   return (
     <Link to="/system-breakdown" className="block">

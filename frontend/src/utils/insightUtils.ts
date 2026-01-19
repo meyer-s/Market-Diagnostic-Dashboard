@@ -8,7 +8,8 @@ export type TrendSignal = {
 export type InsightSignal = {
   id: "system" | "dow" | "sector" | "aas";
   label: string;
-  direction: "up" | "down" | "flat";
+  primaryDirection: "up" | "down" | "flat";
+  secondaryDirection: "up" | "down" | "flat";
   stance: "risk-on" | "risk-off" | "mixed";
   confidence: "high" | "medium" | "low";
   summary: string;
@@ -89,4 +90,29 @@ export const getConfidenceFromSignal = (
   if (signal.volatility === "choppy" && signal.strength !== "strong") return "low";
   if (signal.strength === "strong" && signal.volatility === "calm") return "high";
   return "medium";
+};
+
+export const getTrendWindows = (days: number) => {
+  if (days >= 300) {
+    return {
+      primary: { recent: 90, prior: 90 },
+      secondary: { recent: 30, prior: 30 },
+      label: "Long view",
+      shortLabel: "long",
+    };
+  }
+  if (days >= 180) {
+    return {
+      primary: { recent: 60, prior: 60 },
+      secondary: { recent: 20, prior: 20 },
+      label: "Broader view",
+      shortLabel: "broad",
+    };
+  }
+  return {
+    primary: { recent: 30, prior: 30 },
+    secondary: { recent: 10, prior: 10 },
+    label: "Trend view",
+    shortLabel: "trend",
+  };
 };

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   LineChart,
   Line,
-  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -14,7 +13,13 @@ import {
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
 import { formatTime } from "../../utils/styleUtils";
-import { analyzeSeries, getTrendTone, getConfidenceFromSignal, type InsightSignal } from "../../utils/insightUtils";
+import {
+  analyzeSeries,
+  getTrendTone,
+  getConfidenceFromSignal,
+  getTrendWindows,
+  type InsightSignal,
+} from "../../utils/insightUtils";
 
 interface DowTheoryData {
   timestamp: string;
@@ -132,6 +137,92 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
     return () => clearInterval(interval);
   }, [trendPeriod]);
+
+  const chartHistory = history;
+  const trendWindows = getTrendWindows(trendPeriod);
+  const spreadSeries = chartHistory
+    .map((point) =>
+      typeof point.direction_spread === "number"
+        ? point.direction_spread
+        : point.modern_direction !== null && point.modern_direction !== undefined
+        ? point.modern_direction - point.market_direction
+        : null
+    )
+    .filter((value): value is number => typeof value === "number");
+  const spreadAbsSeries = spreadSeries.map((value) => Math.abs(value));
+  const primaryGapSignal = analyzeSeries(spreadAbsSeries, {
+    ...trendWindows.primary,
+    flatThreshold: 0.08,
+  });
+  const secondaryGapSignal = analyzeSeries(spreadAbsSeries, {
+    ...trendWindows.secondary,
+    flatThreshold: 0.08,
+  });
+  const spreadTrendPhrase =
+    primaryGapSignal.direction === "up"
+      ? "widening"
+      : primaryGapSignal.direction === "down"
+      ? "tightening"
+      : "steady";
+  const recentSpreadPhrase =
+    secondaryGapSignal.direction === "up"
+      ? "widening"
+      : secondaryGapSignal.direction === "down"
+      ? "tightening"
+      : "steady";
+  const gapTone = getTrendTone(primaryGapSignal);
+  const toneClause = gapTone === "mixed" ? "" : ` It feels ${gapTone}.`;
+  const classicSeries = chartHistory.map((point) => point.market_direction);
+  const modernSeries = chartHistory
+    .map((point) => point.modern_direction)
+    .filter((value): value is number => typeof value === "number");
+  const primaryClassic = analyzeSeries(classicSeries, trendWindows.primary);
+  const primaryModern = analyzeSeries(modernSeries, trendWindows.primary);
+  const secondaryClassic = analyzeSeries(classicSeries, trendWindows.secondary);
+  const secondaryModern = analyzeSeries(modernSeries, trendWindows.secondary);
+  const primaryDirection =
+    primaryClassic.direction === primaryModern.direction ? primaryClassic.direction : "flat";
+  const secondaryDirection =
+    secondaryClassic.direction === secondaryModern.direction ? secondaryClassic.direction : "flat";
+  const alignmentState = data?.theory_alignment_state ?? "UNKNOWN";
+  let stance: InsightSignal["stance"] = "mixed";
+  if (alignmentState === "ALIGNED") {
+    stance =
+      primaryDirection === "up" ? "risk-on" : primaryDirection === "down" ? "risk-off" : "mixed";
+  } else if (alignmentState === "DIVERGENT") {
+    stance = "risk-off";
+  }
+  const summaryShort =
+    alignmentState === "ALIGNED"
+      ? `aligned, ${trendWindows.shortLabel} ${primaryDirection}`
+      : alignmentState === "MIXED"
+      ? `mixed, ${trendWindows.shortLabel} ${primaryDirection}`
+      : alignmentState === "DIVERGENT"
+      ? `split, ${trendWindows.shortLabel} ${primaryDirection}`
+      : "unclear";
+  const dowInsight: InsightSignal | null = data
+    ? {
+        id: "dow",
+        label: "Dow",
+        primaryDirection,
+        secondaryDirection,
+        stance,
+        confidence: getConfidenceFromSignal(primaryGapSignal),
+        summary: summaryShort,
+      }
+    : null;
+
+  useEffect(() => {
+    if (!onInsight || !dowInsight) return;
+    onInsight(dowInsight);
+  }, [
+    onInsight,
+    dowInsight?.primaryDirection,
+    dowInsight?.secondaryDirection,
+    dowInsight?.stance,
+    dowInsight?.confidence,
+    dowInsight?.summary,
+  ]);
 
 
   if (loading) {
@@ -253,112 +344,28 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   const modernStabilityPercentage = Math.max(0, Math.min(100, modernStabilityScore));
   const alignmentPercentage = Math.max(0, Math.min(100, data.theory_alignment_score));
 
-  const chartHistory = history.map((point) => {
-    const modern = point.modern_direction ?? null;
-    if (modern === null) {
-      return {
-        ...point,
-        rangeBase: null,
-        rangeDiffModern: null,
-        rangeDiffClassic: null,
-      };
-    }
-
-    const classic = point.market_direction;
-    const spreadValue =
-      typeof point.direction_spread === "number"
-        ? point.direction_spread
-        : modern - classic;
-    const minValue = Math.min(classic, modern);
-    const diff = Math.abs(spreadValue);
-
-    return {
-      ...point,
-      rangeBase: minValue,
-      rangeDiffModern: spreadValue > 0 ? diff : 0,
-      rangeDiffClassic: spreadValue < 0 ? diff : 0,
-    };
-  });
-  const spreadSeries = chartHistory
-    .map((point) =>
-      typeof point.direction_spread === "number"
-        ? point.direction_spread
-        : point.modern_direction !== null && point.modern_direction !== undefined
-        ? point.modern_direction - point.market_direction
-        : null
-    )
-    .filter((value): value is number => typeof value === "number");
-  const spreadAbsSeries = spreadSeries.map((value) => Math.abs(value));
-  const gapSignal = analyzeSeries(spreadAbsSeries, { recent: 7, prior: 7, flatThreshold: 0.08 });
-  const spreadTrendPhrase =
-    gapSignal.direction === "up"
-      ? "widening"
-      : gapSignal.direction === "down"
-      ? "tightening"
-      : "steady";
-  const gapTone = getTrendTone(gapSignal);
-  const toneClause = gapTone === "mixed" ? "" : `, and the signal feels ${gapTone}`;
-  const classicDir =
-    data.market_direction > 0.25
-      ? "up"
-      : data.market_direction < -0.25
-      ? "down"
-      : "flat";
-  const modernDir =
-    data.modern_direction > 0.25
-      ? "up"
-      : data.modern_direction < -0.25
-      ? "down"
-      : "flat";
-  const directionAgreement =
-    classicDir === modernDir
-      ? classicDir === "flat"
-        ? "both muted"
-        : `both pointing ${classicDir}`
-      : classicDir === "flat" || modernDir === "flat"
-      ? "one clear, one muted"
-      : "pointing different ways";
+  const primaryClause =
+    primaryDirection === "flat"
+      ? `${trendWindows.label} is mixed.`
+      : `${trendWindows.label} points ${primaryDirection}.`;
+  const secondaryClause =
+    secondaryDirection === primaryDirection
+      ? "Recent move agrees."
+      : secondaryDirection === "flat"
+      ? "Recent move is mixed."
+      : `Recent move points ${secondaryDirection}.`;
+  const gapClause =
+    secondaryGapSignal.direction === primaryGapSignal.direction
+      ? `Gap is ${spreadTrendPhrase}.`
+      : `Gap is ${spreadTrendPhrase}, but the recent move is ${recentSpreadPhrase}.`;
   const dowSummary =
     data.theory_alignment_state === "ALIGNED"
-      ? `Checks whether classic and modern signals agree. They line up, are ${directionAgreement}, and the gap is ${spreadTrendPhrase}${toneClause}, so the trend is easier to trust and borrowers, businesses, and investors can add risk with more confidence.`
+      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} The trend is easier to trust, so borrowers, businesses, and investors can add risk with more confidence.`
       : data.theory_alignment_state === "MIXED"
-      ? `Checks whether classic and modern signals agree. They are mixed, are ${directionAgreement}, and the gap is ${spreadTrendPhrase}${toneClause}, so the trend is less reliable and borrowers, businesses, and investors should keep risk smaller.`
+      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} The trend is less reliable, so borrowers, businesses, and investors should keep risk smaller.`
       : data.theory_alignment_state === "DIVERGENT"
-      ? `Checks whether classic and modern signals agree. They are split, are ${directionAgreement}, and the gap is ${spreadTrendPhrase}${toneClause}, so choppy moves are more likely and borrowers, businesses, and investors should protect downside.`
+      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} Choppy moves are more likely, so borrowers, businesses, and investors should protect downside.`
       : `Checks whether classic and modern signals agree. Alignment is unclear, so keep positions balanced until the signals settle.`;
-  const summaryShort =
-    data.theory_alignment_state === "ALIGNED"
-      ? `aligned, gap ${spreadTrendPhrase}`
-      : data.theory_alignment_state === "MIXED"
-      ? `mixed, gap ${spreadTrendPhrase}`
-      : data.theory_alignment_state === "DIVERGENT"
-      ? `split, gap ${spreadTrendPhrase}`
-      : "unclear";
-  const trendDirection =
-    classicDir === "up" && modernDir === "up"
-      ? "up"
-      : classicDir === "down" && modernDir === "down"
-      ? "down"
-      : "flat";
-  let stance: InsightSignal["stance"] = "mixed";
-  if (data.theory_alignment_state === "ALIGNED") {
-    stance = trendDirection === "up" ? "risk-on" : trendDirection === "down" ? "risk-off" : "mixed";
-  } else if (data.theory_alignment_state === "DIVERGENT") {
-    stance = "risk-off";
-  }
-  const dowInsight: InsightSignal = {
-    id: "dow",
-    label: "Dow",
-    direction: trendDirection,
-    stance,
-    confidence: getConfidenceFromSignal(gapSignal),
-    summary: summaryShort,
-  };
-
-  useEffect(() => {
-    if (!onInsight) return;
-    onInsight(dowInsight);
-  }, [onInsight, dowInsight.direction, dowInsight.stance, dowInsight.confidence, dowInsight.summary]);
 
   const renderTrendTooltip = ({
     active,
@@ -487,38 +494,6 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
                 <ReferenceLine yAxisId="primary" y={7.5} stroke="#22c55e" strokeDasharray="4 4" />
                 <ReferenceLine yAxisId="primary" y={-7.5} stroke="#f87171" strokeDasharray="4 4" />
                 <ReferenceLine yAxisId="primary" y={0} stroke="#6b7280" strokeDasharray="3 3" />
-                <Area
-                  type="monotone"
-                  dataKey="rangeBase"
-                  name="Range Base"
-                  stackId="range"
-                  yAxisId="primary"
-                  stroke="none"
-                  fill="transparent"
-                  isAnimationActive={false}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="rangeDiffModern"
-                  name="Modern Above"
-                  stackId="range"
-                  yAxisId="primary"
-                  stroke="none"
-                  fill="#fbbf24"
-                  fillOpacity={0.4}
-                  connectNulls={false}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="rangeDiffClassic"
-                  name="Classic Above"
-                  stackId="range"
-                  yAxisId="primary"
-                  stroke="none"
-                  fill="#60a5fa"
-                  fillOpacity={0.4}
-                  connectNulls={false}
-                />
                 <Line
                   type="monotone"
                   dataKey="market_direction"
@@ -600,7 +575,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
               <div className="space-y-2">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-stealth-400">Stability Level</span>
+                  <span className="text-sm text-stealth-400">Condition Level</span>
                   <span className={`text-xl font-bold ${stabilityColor}`}>
                     {stabilityLevel}
                   </span>
@@ -663,7 +638,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
               <div className="space-y-2">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-stealth-400">Stability Level</span>
+                  <span className="text-sm text-stealth-400">Condition Level</span>
                   <span className={`text-xl font-bold ${modernStabilityColor}`}>
                     {modernStabilityLevel}
                   </span>
@@ -910,9 +885,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
               </div>
 
               <div>
-                <p className="font-semibold text-stealth-200 mb-1">
-                  Derived Conclusion
-                </p>
+                <p className="font-semibold text-stealth-200 mb-1">Takeaway</p>
                 <p className="text-xs leading-relaxed">
                   The alignment score rewards tight spread between classic and
                   modern direction lines. High alignment implies stable economic
