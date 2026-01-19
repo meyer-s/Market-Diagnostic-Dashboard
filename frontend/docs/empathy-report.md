@@ -1,136 +1,260 @@
-# Empathy Report Audit - Market Stability Diagnostic
+# Empathy Report — Market Stability Diagnostic
 Date: 2026-01-19
-Scope: Dashboard UX (Progressive Commitment)
 
-Legend
-- Questions: 1) Changed? 2) Certain? 3) Look closer? 4) Where in system?
-- Action: KEEP / REMOVE / DEMOTE (hover/click) / MERGE
-- Load: Low / Med / High
+This document defines the interpretive philosophy, interaction model, and reduction rationale
+behind the Market Stability Diagnostic dashboard.
 
-Global rule:
-REST must remain interpretable in under 3 seconds per section.
-If a user cannot understand the signal without hovering or clicking, the REST layer has failed.
+It exists to preserve intent, protect coherence, and prevent drift.
+It is not an implementation spec — it is a system self-explanation.
 
-## Global Header
-Block: Dashboard title + subtitle
-- Questions: 4
-- Action: KEEP, REDUCE copy
-- REST copy proposal:
-  - Signal: Market diagnostic overview
-  - Context: Volatility, rates, liquidity, sentiment
-- Hover: none
-- Click: none
-- Load: Low
+────────────────────────────────────────────────────────────
+CORE PHILOSOPHY
+────────────────────────────────────────────────────────────
 
-Block: News badge
-- Questions: 1, 3
-- Action: KEEP
-- REST copy proposal: keep count only (no extra sentence)
-- Hover: "Recent headlines available"
-- Click: nav to news page (optional)
-- Load: Low
+The dashboard is a diagnostic lens, not an advisory tool.
 
-Block: Refresh + time range
-- Questions: 1
-- Action: KEEP
-- REST copy proposal: keep
-- Focus: "Fetch latest indicator data"
-- Click: refresh / range change
-- Load: Low
+Every UI element must answer at least ONE of the following questions
+at its current interaction level:
 
-## Overall Summary Strip
-Block: Overall summary card
-- Questions: 1, 4
-- Action: KEEP, REDUCE to Signal Sentence
-- REST copy proposal:
-  - Signal: Tailwinds lead / Caution leads / Signals split
-  - Context: 4-signal composite, trend vs recent
-- Focus: "Confidence: {High|Medium|Low} - (trend clarity)"
-- Click: inline expansion with "Why it matters" + "Related Signals"
-- Load: Med (currently High)
+1) Has something changed?
+2) Is this certain or uncertain?
+3) Should I look closer?
+4) Where am I in the system?
 
-Sub-block: Mini signal chips
-- Questions: 4
-- Action: MERGE into compact chips
-- REST copy proposal: label + direction only (no sentences)
-- Focus: one-line clarification per chip
-- Click: scroll to card or expand related detail
-- Load: Med
+If an element does not answer one of these, it does not belong at that level.
 
-## System Overview Card
-- Questions: 1, 4
-- Action: KEEP, DEMOTE paragraph to click
-- REST Signal Sentence:
-  - Signal: System health {improving|softening|steady}
-  - Context: Composite of volatility, rates, liquidity, sentiment
-- Focus: "Confidence: {High|Medium|Low} - (trend {clear|mixed|noisy})"
-- Click: navigate to /system-breakdown
-- Load: Med (currently High)
+Empathy is expressed structurally:
+- by respecting attention
+- by avoiding over-explanation
+- by rewarding curiosity only after intent is shown
 
-## Dow Theory Trends Card
-- Questions: 1, 4
-- Action: KEEP, DEMOTE explanation to click
-- REST Signal Sentence:
-  - Signal: Alignment {aligned|mixed|split}
-  - Context: Classic vs modern trend signals
-- Hover: "Confidence: {High|Medium|Low} - (spread {tightening|steady|widening})"
-- Click: inline expansion (Theory Details)
-- Load: Med
+────────────────────────────────────────────────────────────
+PROGRESSIVE COMMITMENT MODEL
+────────────────────────────────────────────────────────────
 
-## Sector Divergence Card
-- Questions: 1, 4
-- Action: KEEP, DEMOTE market interpretation to click
-- REST Signal Sentence:
-  - Signal: {Growth lead|Defense lead|Balanced rotation}
-  - Context: Defensive vs cyclical leadership
-- Hover: "Confidence: {High|Medium|Low} - (gap {widening|steady|narrowing})"
-- Click: inline expansion or nav to /sector-projections
-- Load: Med
+The system uses Progressive Commitment rather than modes or overlays.
 
-## Alternative Asset Stability Card
-- Questions: 1, 4
-- Action: KEEP, DEMOTE long conclusion to click
-- REST Signal Sentence:
-  - Signal: Alt stability {improving|slipping|steady}
-  - Context: Metals vs crypto pressure balance
-- Hover: "Confidence: {High|Medium|Low} - (leader {metals|crypto})"
-- Click: navigate to /alternative-assets
-- Load: Med
+REST → FOCUS → CLICK
 
-## Indicator Cards Grid
-- Questions: 1, 4
-- Action: KEEP, REDUCE per-card text
-- REST Signal Sentence:
-  - Signal: {indicator state + trend}
-  - Context: {indicator family / system bucket}
-- Hover: "Confidence: {expected lag|stale|current}"
-- Click: navigate to indicator detail page
-- Load: Med (currently High)
+There is no Inspect Mode and no special lens.
+The interface explains itself by how it behaves.
 
-## Indicators Section Header
-- Questions: 4
-- Action: KEEP, shorten
-- REST copy proposal: "Indicators"
-- Hover: none
-- Click: none
-- Load: Low
+--------------------------------
+REST
+--------------------------------
+REST is the default, always-visible state.
 
-Notes
-- Any paragraph-length explanation moves to click (inline expansion or detail page).
-- Hover clarification must be single-line, neutral gray, and keyboard-focusable.
-- Uncertainty cues: dotted underline on low confidence + optional "±" when near thresholds.
-- Related Signals appear only on click, never on hover, and never exceed one level of depth (no chains-of-chains).
+Purpose:
+- Orientation
+- Fast scanning
+- System awareness
 
-FOCUS state definition:
-FOCUS is a temporary clarification state triggered by hover (desktop), focus (keyboard), or first tap (touch).
-FOCUS must never navigate, expand, or permanently alter layout.
+REST must be intelligible without interaction.
 
-Mobile rule:
-No information may exist exclusively in hover without an equivalent focus or first-tap behavior on touch devices.
+At REST, a user should understand:
+- where they are in the system
+- whether something has changed
 
-Success criteria:
-	•	Dashboard can be skimmed without hovering and still be intelligible
-	•	Hover adds clarity, not new concepts
-	•	Click reveals explanation, not surprise
-	•	No section requires reading more than 2 lines at rest
-  - EVERYTHING IS MODULAR AND REUSABLE!!! This app will be built on and built on, it needs to be consistent. 
+REST rules:
+- Maximum 2 lines of text
+- No paragraphs
+- No methodology
+- No explicit relationships
+- No caveats longer than a clause
+
+REST uses the Signal Sentence pattern:
+
+Signal: <short factual statement>
+Context: <where this sits in the system>
+
+--------------------------------
+FOCUS
+--------------------------------
+FOCUS is a temporary clarification state.
+
+FOCUS answers ambiguity, not curiosity.
+
+FOCUS is triggered by:
+- hover (desktop)
+- keyboard focus
+- first tap (mobile)
+
+FOCUS rules:
+- One short line only
+- Inline (no modal, no drawer)
+- Never navigates
+- Never expands layout
+- Disappears immediately when attention moves away
+
+FOCUS answers exactly ONE question:
+- Is this certain or uncertain?
+OR
+- Should I look closer?
+
+Examples:
+- Confidence: Medium — signals diverging
+- Near regime boundary (±)
+- Data freshness: lagging
+
+FOCUS is a semantic state, not a visual flourish.
+
+--------------------------------
+CLICK
+--------------------------------
+CLICK represents explicit curiosity.
+
+CLICK answers:
+- Why this matters
+- What it connects to
+- How it is constructed
+
+CLICK behavior:
+- Inline expansion OR
+- Navigation to a detail page
+
+CLICK is the only place where:
+- methodology
+- relationships
+- deeper explanation
+appear.
+
+────────────────────────────────────────────────────────────
+MOBILE PARITY
+────────────────────────────────────────────────────────────
+
+Hover is not a requirement.
+
+FOCUS is shared across devices:
+- Desktop: hover OR keyboard focus
+- Mobile: first tap
+- Keyboard: Tab focus
+
+No information may exist exclusively on hover.
+Mobile users must receive the same meaning, not a reduced experience.
+
+────────────────────────────────────────────────────────────
+COLOR AS SEMANTIC LANGUAGE
+────────────────────────────────────────────────────────────
+
+Color communicates identity and condition, not decoration.
+
+Two color layers exist:
+
+1) Metric family color (identity)
+2) State color (condition)
+
+These must never be mixed.
+
+--------------------------------
+Metric Families
+--------------------------------
+Every metric belongs to exactly one family
+(e.g. rates, liquidity, volatility, metals, credit, crypto).
+
+A family has one consistent base color across the entire site.
+
+Example:
+- Metals = muted gold (identity, always)
+- Volatility = muted indigo
+- Liquidity = muted teal
+
+Charts do not choose colors.
+They request them from a central registry.
+
+--------------------------------
+State Colors
+--------------------------------
+Green / Yellow / Red indicate condition only.
+
+They may appear as:
+- state pills
+- small badges
+- thin borders or background tints
+
+They must NEVER be used as chart series colors
+and must never replace a metric’s identity color.
+
+────────────────────────────────────────────────────────────
+RELATIONSHIPS
+────────────────────────────────────────────────────────────
+
+Relationships are powerful and therefore constrained.
+
+Rules:
+- Never shown at REST or FOCUS
+- Revealed only on CLICK
+- One level deep (no chains of chains)
+- Maximum 4 initially
+
+A relationship must meet at least one criterion:
+- Direct contributor
+- Documented lead/lag
+- Shared macro driver
+- Confirming or conflicting signal
+
+Relationships are explanatory, not exploratory.
+
+────────────────────────────────────────────────────────────
+SECTION-BY-SECTION REDUCTION RATIONALE
+────────────────────────────────────────────────────────────
+
+Global Header:
+- Reduced to orientation only
+- No explanatory prose
+
+Overall Summary:
+- Reduced to Signal Sentence
+- Confidence moved to FOCUS
+- Interpretation moved to CLICK
+
+System Overview / Theory / Sector / Alternatives:
+- Paragraphs removed from REST
+- Explanation demoted to CLICK
+- Confidence clarified in FOCUS
+
+Indicator Grid:
+- Each card reduced to state + context
+- Freshness clarified in FOCUS
+- Full detail deferred to indicator pages
+
+Across the system:
+- Any paragraph-length explanation was moved deeper
+- Any duplicate interpretation was merged or removed
+- Load was reduced from “dense” to “inspectable”
+
+────────────────────────────────────────────────────────────
+MODULARITY & FUTURE EXPANSION
+────────────────────────────────────────────────────────────
+
+This system is designed to grow without redesign.
+
+Rules:
+- New features must conform to REST / FOCUS / CLICK
+- New metrics must join an existing family or define one
+- New explanation must move deeper, not widen the UI
+- Special cases are avoided in favor of generalization
+
+If a feature cannot fit cleanly into this model,
+it should not be added.
+
+────────────────────────────────────────────────────────────
+WHEN IN DOUBT
+────────────────────────────────────────────────────────────
+
+When decisions are ambiguous:
+- Remove content rather than add UI
+- Move information deeper rather than showing it early
+- Prefer neutral language over interpretation
+- Prefer consistency over novelty
+
+The system should err toward restraint.
+
+────────────────────────────────────────────────────────────
+SUCCESS CRITERIA
+────────────────────────────────────────────────────────────
+
+- The dashboard is understandable without interaction
+- FOCUS clarifies rather than overwhelms
+- CLICK rewards curiosity without surprise
+- Mobile and desktop experiences are equivalent
+- The system feels calm, not busy
