@@ -470,7 +470,9 @@ export default function SystemBreakdown() {
             <div className="flex items-center gap-4 mt-4 justify-center text-xs">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('GREEN') }}></div>
-                <span className="text-stealth-300">Green (>={STABILITY_THRESHOLDS.YELLOW_MAX})</span>
+                <span className="text-stealth-300">
+                  Green ({">="}{STABILITY_THRESHOLDS.YELLOW_MAX})
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('YELLOW') }}></div>
@@ -515,7 +517,7 @@ export default function SystemBreakdown() {
                   <p><strong>Step 1:</strong> Each indicator is normalized to a 0-100 stability score where higher scores indicate better market stability.</p>
                   <p><strong>Step 2:</strong> Individual scores are multiplied by their assigned weights to reflect importance.</p>
                   <p><strong>Step 3:</strong> Weighted scores are summed and divided by total weight to produce the composite.</p>
-                  <p><strong>Step 4:</strong> The composite score is classified: GREEN (>={STABILITY_THRESHOLDS.YELLOW_MAX}), YELLOW ({STABILITY_THRESHOLDS.RED_MAX}-{STABILITY_THRESHOLDS.YELLOW_MAX - 1}), or RED (&lt;{STABILITY_THRESHOLDS.RED_MAX}).</p>
+                  <p><strong>Step 4:</strong> The composite score is classified: GREEN ({">="}{STABILITY_THRESHOLDS.YELLOW_MAX}), YELLOW ({STABILITY_THRESHOLDS.RED_MAX}-{STABILITY_THRESHOLDS.YELLOW_MAX - 1}), or RED (&lt;{STABILITY_THRESHOLDS.RED_MAX}).</p>
                 </div>
               </div>
               
@@ -533,7 +535,7 @@ export default function SystemBreakdown() {
                   <div>Analyst Confidence Score: 78 x Weight: 1.7 = 132.6</div>
                   <div>SENTIMENT Score: 82 x Weight: 1.6 = 131.2</div>
                   <div className="pt-2 border-t border-stealth-700 mt-2">Total Weighted: 1062.1 / Total Weight: 14.6 = <strong className="text-green-400">72.7 (GREEN)</strong></div>
-                  <div className="text-stealth-400 text-xs mt-2">Note: Score >=70 indicates stable market conditions.</div>
+                  <div className="text-stealth-400 text-xs mt-2">Note: Score {">="}70 indicates stable market conditions.</div>
                 </div>
               </div>
               
@@ -685,7 +687,7 @@ export default function SystemBreakdown() {
                             <br />
                             final_stability_score = normalize(smoothed_liquidity, direction=-1)
                             <br />
-                            <span className="text-stealth-500">// Higher liquidity z-score -> higher stability score (direction=-1 preserves positive values)</span>
+                            <span className="text-stealth-500">// Higher liquidity z-score {"->"} higher stability score (direction=-1 preserves positive values)</span>
                           </div>
                         </div>
                         <div className="text-stealth-400 text-xs">
@@ -784,7 +786,7 @@ export default function SystemBreakdown() {
                             </div>
                           </div>
                           <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
-                            confidence_score(component) = ((z + 3) / 6) x 100 -> [0, 100]
+                            confidence_score(component) = ((z + 3) / 6) x 100 {"->"} [0, 100]
                             <br />
                             composite_confidence = Sum(confidence_score x weight)
                             <br />
