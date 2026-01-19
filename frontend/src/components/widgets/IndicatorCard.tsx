@@ -6,6 +6,7 @@ import { getBusinessDaysAgo, formatRelativeDate } from "../../utils/componentUti
 import { analyzeSeries } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
 import { metricFamilyByKey, metricFamilyLabels } from "../../theme/metricColors";
+import StateSparkline from "./StateSparkline";
 
 interface Props {
   indicator: IndicatorStatus;
@@ -92,6 +93,9 @@ export default function IndicatorCard({ indicator }: Props) {
           Freshness: {freshnessLabel} ({timeDisplay})
         </div>
       )}
+      <div className="mt-3">
+        <StateSparkline history={history} width={200} height={24} />
+      </div>
     </div>
   );
 }

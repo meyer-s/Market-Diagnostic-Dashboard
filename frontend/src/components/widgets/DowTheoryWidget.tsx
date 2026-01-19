@@ -240,6 +240,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   const focusLine = `Confidence: ${dowConfidence} - spread ${spreadTrendPhrase}`;
   const classicLineColor = getFamilyColor("market", "base");
   const modernLineColor = getFamilyColor("market", "muted");
+  const showCompactChart = chartHistory.length > 1;
 
   const stabilityScore = Math.max(0, Math.min(100, 100 - data.strain_score));
   const stabilityLevel: StabilityLevel =
@@ -299,6 +300,33 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
       {commitment.state === "focus" && (
         <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
           {focusLine} (recent {recentSpreadPhrase})
+        </div>
+      )}
+      {showCompactChart && (
+        <div className="h-24">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartHistory}>
+              <XAxis dataKey="timestamp" hide />
+              <YAxis hide domain={["auto", "auto"]} />
+              <Line
+                type="monotone"
+                dataKey="market_direction"
+                stroke={classicLineColor}
+                strokeWidth={2}
+                dot={false}
+                animationDuration={200}
+              />
+              <Line
+                type="monotone"
+                dataKey="modern_direction"
+                stroke={modernLineColor}
+                strokeWidth={2}
+                dot={false}
+                connectNulls={false}
+                animationDuration={200}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
 

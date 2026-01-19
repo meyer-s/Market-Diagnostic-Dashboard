@@ -4,6 +4,7 @@ import { apiFetch } from "../../utils/apiUtils";
 import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatTime } from "../../utils/styleUtils";
 import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
 import {
   analyzeSeries,
   getTrendTone,
@@ -12,6 +13,7 @@ import {
   type InsightSignal,
 } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
+import { getFamilyColor } from "../../theme/metricColors";
 
 interface SystemStatus {
   state: string;
@@ -154,6 +156,10 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     ) <= 3;
   const toneLabel = trendTone === "mixed" ? "mixed trend" : `${trendTone} trend`;
   const focusLine = `Confidence: ${systemConfidence} - ${toneLabel}${nearBoundary ? ", near boundary" : ""}`;
+  const miniSeries = history.map((point) => ({
+    timestamp: point.timestamp,
+    composite_score: point.composite_score,
+  }));
 
   return (
     <div
@@ -176,6 +182,24 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
       {commitment.state === "focus" && (
         <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
           {focusLine}
+        </div>
+      )}
+      {miniSeries.length > 1 && (
+        <div className="h-20">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={miniSeries}>
+              <XAxis dataKey="timestamp" hide />
+              <YAxis domain={[0, 100]} hide />
+              <Line
+                type="monotone"
+                dataKey="composite_score"
+                stroke={getFamilyColor("system")}
+                strokeWidth={2}
+                dot={false}
+                animationDuration={200}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
     </div>

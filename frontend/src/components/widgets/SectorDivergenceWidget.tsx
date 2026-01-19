@@ -253,6 +253,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   const tickPositions = timestamps.length > 1
     ? Array.from({ length: 5 }, (_, i) => minTime + ((maxTime - minTime) * (i / 4)))
     : timestamps;
+  const showCompactChart = chartData.length > 1;
 
   return (
     <div
@@ -273,6 +274,24 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       {commitment.state === "focus" && (
         <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
           {focusLine} (recent {secondarySpreadPhrase})
+        </div>
+      )}
+      {showCompactChart && (
+        <div className="h-24">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <XAxis dataKey="timestampNum" hide />
+              <YAxis hide domain={["dataMin - 5", "dataMax + 5"]} />
+              <Line
+                type="monotone"
+                dataKey="spread"
+                stroke={spreadLineColor}
+                strokeWidth={2}
+                dot={false}
+                animationDuration={200}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
 

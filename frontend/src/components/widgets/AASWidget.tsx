@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
 import { useNavigate } from "react-router-dom";
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
 import {
   analyzeSeries,
   getTrendTone,
@@ -9,6 +10,7 @@ import {
   type InsightSignal,
 } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
+import { getFamilyColor } from "../../theme/metricColors";
 
 interface AASData {
   stability_score: number;
@@ -113,6 +115,11 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
       ? ""
       : ` / recent ${secondarySignal.direction}`
   }`;
+  const miniSeries = chartData.length
+    ? chartData.map((point) => ({ date: point.date, stability_score: point.stability_score }))
+    : aasData
+    ? [{ date: "Now", stability_score: aasData.stability_score }]
+    : [];
   const stabilityScore = aasData?.stability_score ?? 0;
   const regimeLower = (aasData?.regime || "").toLowerCase();
   const stressRegime =
@@ -188,6 +195,24 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
       {commitment.state === "focus" && (
         <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
           Confidence: {aasConfidence} - leader {recentLeader} ({hoverNote})
+        </div>
+      )}
+      {miniSeries.length > 0 && (
+        <div className="h-24">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={miniSeries}>
+              <XAxis dataKey="date" hide />
+              <YAxis domain={[0, 100]} hide />
+              <Line
+                type="monotone"
+                dataKey="stability_score"
+                stroke={getFamilyColor("market")}
+                strokeWidth={2}
+                dot={false}
+                animationDuration={200}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
     </div>
