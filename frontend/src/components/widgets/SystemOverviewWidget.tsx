@@ -203,49 +203,25 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
 
   const periodLabel = trendPeriod === 365 ? "1 year" : trendPeriod === 180 ? "6 months" : "90 days";
   const trendTone = getTrendTone(primarySignal);
-  const condition =
-    data.state === "GREEN" ? "steady" : data.state === "YELLOW" ? "mixed" : "stressed";
+  const systemConfidence = getConfidenceFromSignal(primarySignal);
   const primaryWord =
     primarySignal.direction === "up"
-      ? "rising"
+      ? "improving"
       : primarySignal.direction === "down"
       ? "softening"
-      : "flat";
-  const secondaryWord =
-    secondarySignal.direction === "up"
-      ? "rising"
-      : secondarySignal.direction === "down"
-      ? "softening"
-      : "flat";
-  const primaryClause = `${trendWindows.label} is ${primaryWord}`;
-  const secondaryClause =
-    secondarySignal.direction === primarySignal.direction
-      ? "and the recent move agrees."
-      : `but the recent move is ${secondaryWord}.`;
-  const toneClause = trendTone === "mixed" ? "" : ` It feels ${trendTone}.`;
-  const nuanceSentence = `It looks ${condition}. ${primaryClause} ${secondaryClause}${toneClause}`;
-  let actionSentence = "";
-  if (data.state === "GREEN") {
-    actionSentence =
-      primarySignal.direction === "down"
-        ? "Households and businesses should still see stability, but keep risk measured until the slide stops."
-        : "Households and businesses usually feel stability first, so longer-term plans can make sense while this holds.";
-  } else if (data.state === "YELLOW") {
-    actionSentence =
-      primarySignal.direction === "up"
-        ? "Unevenness may ease, but stay diversified until the signal firms up."
-        : "Uneven costs or demand can show up for households and employers, so keep exposure balanced.";
-  } else {
-    actionSentence =
-      primarySignal.direction === "up"
-        ? "Stress may be easing, but borrowers and employers feel it first; protect cash needs until it stabilizes."
-        : "Borrowers and employers feel this first; protect cash needs and keep risk small.";
-  }
-  const systemSummary = `System health blends many signals. ${nuanceSentence} ${actionSentence}`;
+      : "steady";
+  const signalLine = `System health ${primaryWord}`;
+  const contextLine = "Volatility, rates, liquidity, sentiment";
+  const nearBoundary =
+    Math.min(
+      Math.abs(data.composite_score - STABILITY_THRESHOLDS.RED_MAX),
+      Math.abs(data.composite_score - STABILITY_THRESHOLDS.YELLOW_MAX)
+    ) <= 3;
+  const toneLabel = trendTone === "mixed" ? "mixed trend" : `${trendTone} trend`;
 
   return (
-    <Link to="/system-breakdown" className="block">
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-3 sm:p-6 space-y-4 hover:bg-stealth-750 hover:border-stealth-600 transition cursor-pointer">
+    <Link to="/system-breakdown" className="group block focus-visible:outline-none">
+      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-3 sm:p-6 space-y-4 hover:bg-stealth-750 hover:border-stealth-600 transition cursor-pointer group-focus-within:ring-1 group-focus-within:ring-stealth-500/60">
         {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-start gap-1 sm:gap-2 min-w-0">
@@ -257,6 +233,19 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
           <span className="text-xs text-stealth-400 flex-shrink-0">
             {data.timestamp ? formatTime(data.timestamp) : 'N/A'}
           </span>
+        </div>
+        <div className="text-sm text-stealth-200">
+          <span className="text-stealth-500">Signal:</span> {signalLine}
+        </div>
+        <div className="text-sm text-stealth-400">
+          <span className="text-stealth-500">Context:</span> {contextLine}
+        </div>
+        <div className="text-xs text-stealth-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 motion-reduce:transition-none">
+          <span className="text-stealth-400">Confidence:</span>{" "}
+          <span className={systemConfidence === "low" ? "underline decoration-dotted" : undefined}>
+            {systemConfidence}
+          </span>
+          {systemConfidence === "low" || nearBoundary ? " ±" : ""} ({toneLabel})
         </div>
 
       {/* Main Metrics Grid */}
@@ -464,10 +453,6 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         </div>
       </div>
 
-      {/* Conclusion */}
-      <div className="bg-stealth-900 border border-stealth-700 rounded p-3 mt-4">
-        <p className="text-xs text-stealth-300 leading-relaxed">{systemSummary}</p>
-      </div>
       </div>
     </Link>
   );

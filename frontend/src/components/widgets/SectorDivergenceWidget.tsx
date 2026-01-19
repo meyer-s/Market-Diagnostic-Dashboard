@@ -93,6 +93,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   const [history, setHistory] = useState<SectorHistoryPoint[]>([]);
   const [alerts, setAlerts] = useState<SectorAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showDetails, setShowDetails] = useState(false);
 
   const buildHistorySeries = (historyData: SectorProjectionHistory | null): SectorHistoryPoint[] => {
     if (!historyData) return [];
@@ -281,6 +282,15 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   };
 
   const interpretation = getMarketInterpretation();
+  const sectorConfidence = getConfidenceFromSignal(primaryGapSignal);
+  const signalLine =
+    leadSide === "balanced"
+      ? "Rotation balanced"
+      : leadSide === "defense"
+      ? "Defense leads"
+      : "Growth leads";
+  const contextLine = "Defensive vs cyclical leadership";
+  const hoverNote = `gap ${spreadTrendPhrase}`;
   const periodLabel = trendPeriod === 365 ? "1yr" : trendPeriod === 180 ? "6mo" : "90d";
   const timestamps = chartData.map((point) => point.timestampNum);
   const minTime = timestamps.length ? Math.min(...timestamps) : 0;

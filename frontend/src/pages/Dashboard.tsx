@@ -113,6 +113,7 @@ export default function Dashboard() {
   const [trendPeriod, setTrendPeriod] = useState<90 | 180 | 365>(90);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showOverallDetails, setShowOverallDetails] = useState(false);
   const [insights, setInsights] = useState<Partial<Record<InsightSignal["id"], InsightSignal>>>({});
 
   useEffect(() => {
@@ -147,6 +148,31 @@ export default function Dashboard() {
     () => buildOverallInsight(insightList, overallTrendLabel),
     [insightList, overallTrendLabel]
   );
+  const overallSignalLine = overallInsight
+    ? overallInsight.posture === "risk-on"
+      ? "Tailwinds lead"
+      : overallInsight.posture === "risk-off"
+      ? "Caution leads"
+      : "Signals split"
+    : "";
+  const overallContextLine = overallInsight
+    ? `${overallTrendLabel} ${overallInsight.primaryDirection}, recent ${overallInsight.secondaryDirection}`
+    : "";
+  const overallConfidenceNote =
+    overallInsight?.confidence === "high"
+      ? "clear trend"
+      : overallInsight?.confidence === "low"
+      ? "signals diverge"
+      : "mixed trend";
+  const overallHoverLine = overallInsight
+    ? `Confidence: ${overallInsight.confidence}${overallInsight.confidence === "low" ? " ±" : ""} (${overallConfidenceNote})`
+    : "";
+  const overallRelatedReasons: Record<InsightSignal["id"], string> = {
+    system: "Composite state anchor",
+    dow: "Trend confirmation check",
+    sector: "Leadership check-in",
+    aas: "Risk appetite pulse",
+  };
 
   const handleInsight = useCallback((insight: InsightSignal) => {
     setInsights((prev) => {
@@ -300,43 +326,73 @@ export default function Dashboard() {
           </div>
         )}
         {overallInsight && (
-          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
+          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5 group">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
                 <div className={`text-lg font-semibold ${overallInsight.color}`}>{overallInsight.label}</div>
               </div>
-              <div className="text-xs text-stealth-500 text-right">
-                {overallInsight.confidence === "high"
-                  ? "clear read"
-                  : overallInsight.confidence === "low"
-                  ? "noisy read"
-                  : "mixed read"}
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowOverallDetails((prev) => !prev)}
+                className="text-xs text-stealth-400 hover:text-stealth-200 transition-colors"
+                aria-expanded={showOverallDetails}
+              >
+                {showOverallDetails ? "Hide details" : "Details"}
+              </button>
             </div>
-            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
-              {insightList.map((insight) => (
-                <div
-                  key={insight.id}
-                  className={`rounded-md border px-2 py-2 ${stanceStyles[insight.stance]}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-stealth-100">
-                      {insight.label}
-                    </span>
-                    <span className={`text-[10px] uppercase ${directionStyles[insight.primaryDirection]}`}>
-                      {directionLabel[insight.primaryDirection]}
-                    </span>
+            <div className="mt-2 text-sm text-stealth-200">
+              <span className="text-stealth-500">Signal:</span> {overallSignalLine}
+            </div>
+            <div className="text-sm text-stealth-400">
+              <span className="text-stealth-500">Context:</span> {overallContextLine}
+            </div>
+            <div className="mt-2 text-xs text-stealth-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 motion-reduce:transition-none">
+              <span className="text-stealth-400">Confidence:</span>{" "}
+              <span
+                className={
+                  overallInsight.confidence === "low" ? "underline decoration-dotted" : undefined
+                }
+              >
+                {overallInsight.confidence}
+              </span>
+              {overallInsight.confidence === "low" ? " ±" : ""} ({overallConfidenceNote})
+            </div>
+            {showOverallDetails && (
+              <div className="mt-3 border-t border-stealth-700 pt-3 text-xs text-stealth-300 space-y-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-stealth-500">
+                    Why it matters
                   </div>
-                  <div className="text-[10px] text-stealth-200 mt-1 truncate">
-                    {insight.summary}
+                  <p className="text-stealth-300">{overallInsight.summary}</p>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-stealth-500">
+                    How it is built
+                  </div>
+                  <p className="text-stealth-300">
+                    Built from system, trend alignment, sector leadership, and alternative-asset signals.
+                  </p>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-stealth-500">
+                    Related signals
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {insightList.map((insight) => (
+                      <span
+                        key={insight.id}
+                        className="inline-flex items-center gap-2 rounded-full border border-stealth-600 bg-stealth-900 px-2 py-1 text-[11px] text-stealth-300"
+                      >
+                        {insight.label}
+                        <span className="text-stealth-500">•</span>
+                        {overallRelatedReasons[insight.id] ?? "Composite input"}
+                      </span>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-            <p className="text-sm text-stealth-300 mt-3 leading-relaxed">
-              {overallInsight.summary}
-            </p>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -158,6 +158,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
     ...trendWindows.secondary,
     flatThreshold: 0.08,
   });
+  const dowConfidence = getConfidenceFromSignal(primaryGapSignal);
   const spreadTrendPhrase =
     primaryGapSignal.direction === "up"
       ? "widening"
@@ -185,6 +186,15 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   const secondaryDirection =
     secondaryClassic.direction === secondaryModern.direction ? secondaryClassic.direction : "flat";
   const alignmentState = data?.theory_alignment_state ?? "UNKNOWN";
+  const signalLine =
+    alignmentState === "ALIGNED"
+      ? "Signals aligned"
+      : alignmentState === "MIXED"
+      ? "Signals mixed"
+      : alignmentState === "DIVERGENT"
+      ? "Signals split"
+      : "Signals unclear";
+  const contextLine = "Classic vs modern trend signals";
   let stance: InsightSignal["stance"] = "mixed";
   if (alignmentState === "ALIGNED") {
     stance =
@@ -207,7 +217,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
         primaryDirection,
         secondaryDirection,
         stance,
-        confidence: getConfidenceFromSignal(primaryGapSignal),
+        confidence: dowConfidence,
         summary: summaryShort,
       }
     : null;
@@ -420,7 +430,10 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   };
 
   return (
-    <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 space-y-5">
+    <div
+      className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 space-y-5 group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
+      tabIndex={0}
+    >
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-stealth-100">
           Dow Theory Trends
@@ -429,6 +442,19 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
           {formatTime(data.timestamp)}
         </span>
       </div>
+      <div className="text-sm text-stealth-200">
+        <span className="text-stealth-500">Signal:</span> {signalLine}
+      </div>
+      <div className="text-sm text-stealth-400">
+        <span className="text-stealth-500">Context:</span> {contextLine}
+      </div>
+      <div className="text-xs text-stealth-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 motion-reduce:transition-none">
+        <span className="text-stealth-400">Confidence:</span>{" "}
+        <span className={dowConfidence === "low" ? "underline decoration-dotted" : undefined}>
+          {dowConfidence}
+        </span>
+        {dowConfidence === "low" ? " ±" : ""} (spread {spreadTrendPhrase})
+      </div>
 
       <div className="bg-stealth-900 border border-stealth-700 rounded-lg p-4 space-y-3">
         <div className="flex items-start justify-between gap-4">
@@ -436,10 +462,6 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
             <div className="text-sm font-semibold text-stealth-200">
               Classic vs Modern Alignment
             </div>
-            <p className="text-xs text-stealth-400">
-              Higher score means classic DJI/DJT and modern ETF proxies confirm
-              the same economic trend.
-            </p>
           </div>
           <div className="text-right">
             <div className={`text-2xl font-bold ${alignmentColor}`}>
@@ -674,24 +696,41 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
         )}
       </div>
 
-      <div className="pt-3">
-        <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-          <p className="text-xs text-stealth-300 leading-relaxed">{dowSummary}</p>
-        </div>
-      </div>
-
       <div className="pt-3 border-t border-stealth-700">
         <button
           onClick={() => setShowInfo(!showInfo)}
           className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-2"
         >
-          {showInfo ? "Theory Details -" : "Theory Details +"}
+          {showInfo ? "Details -" : "Details +"}
         </button>
       </div>
 
       {showInfo && (
         <div className="space-y-5">
-
+          <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
+            <p className="text-xs text-stealth-300 leading-relaxed">{dowSummary}</p>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-stealth-500 mb-2">
+              Related Signals
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "System Overview", reason: "Composite confirmation" },
+                { label: "Sector Divergence", reason: "Leadership cross-check" },
+                { label: "Alternative Assets", reason: "Risk appetite read" },
+              ].map((item) => (
+                <span
+                  key={item.label}
+                  className="inline-flex items-center gap-2 rounded-full border border-stealth-600 bg-stealth-900 px-2 py-1 text-[11px] text-stealth-300"
+                >
+                  {item.label}
+                  <span className="text-stealth-500">•</span>
+                  {item.reason}
+                </span>
+              ))}
+            </div>
+          </div>
 
           {activeTab === "classic" ? (
             <div className="pt-2 border-t border-stealth-700 space-y-4">

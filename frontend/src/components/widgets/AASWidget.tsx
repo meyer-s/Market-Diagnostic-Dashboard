@@ -130,43 +130,19 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const recentLeader = recentMetals >= recentCrypto ? "metals" : "crypto";
   const priorLeader = prevWindow.length ? (priorMetals >= priorCrypto ? "metals" : "crypto") : recentLeader;
   const leaderShifted = recentLeader !== priorLeader;
-  const leaderPhrase =
-    recentLeader === "metals"
-      ? leaderShifted
-        ? "Metals just took the lead"
-        : "Metals are doing more of the lifting"
-      : leaderShifted
-      ? "Crypto just took the lead"
-      : "Crypto is doing more of the lifting";
-  const leaderImpact =
-    recentLeader === "metals"
-      ? "that usually shows up first in inflation-sensitive budgets"
-      : "that usually shows up first in risk-taking and fast money moves";
   const trendTone = getTrendTone(primarySignal);
-  const primaryWord =
+  const aasConfidence = getConfidenceFromSignal(primarySignal);
+  const signalLine =
     primarySignal.direction === "up"
-      ? "improving"
+      ? "Alt stability improving"
       : primarySignal.direction === "down"
-      ? "slipping"
-      : "holding";
-  const secondaryWord =
-    secondarySignal.direction === "up"
-      ? "improving"
-      : secondarySignal.direction === "down"
-      ? "slipping"
-      : "flat";
-  const trendClause =
-    secondarySignal.direction === primarySignal.direction
-      ? `${trendWindows.label} is ${primaryWord}.`
-      : `${trendWindows.label} is ${primaryWord}, but the recent move is ${secondaryWord}.`;
-  const toneClause = trendTone === "mixed" ? "" : ` It feels ${trendTone}.`;
-  let actionSentence = "Stay balanced while the signal firms up.";
-  if (primarySignal.direction === "up" && trendTone !== "noisy") {
-    actionSentence = "Measured exposure can make sense while this holds.";
-  } else if (primarySignal.direction === "down") {
-    actionSentence = "Keep size light and lean on hedges until it steadies.";
-  }
-  const aasSummary = `Alternative assets often move early when stress builds. ${trendClause}${toneClause} ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
+      ? "Alt stability slipping"
+      : "Alt stability steady";
+  const contextLine =
+    recentLeader === "metals"
+      ? "Metals leading the pressure mix"
+      : "Crypto leading the pressure mix";
+  const hoverNote = leaderShifted ? "leader shift" : `${trendTone} trend`;
   const summaryShort = `${trendWindows.shortLabel} ${primarySignal.direction}${
     secondarySignal.direction === primarySignal.direction
       ? ""
@@ -191,7 +167,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
         primaryDirection: primarySignal.direction,
         secondaryDirection: secondarySignal.direction,
         stance,
-        confidence: getConfidenceFromSignal(primarySignal),
+        confidence: aasConfidence,
         summary: summaryShort,
       }
     : null;
@@ -228,13 +204,26 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   }
 
   return (
-    <Link to="/alternative-assets">
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6 hover:border-stealth-600 transition cursor-pointer h-full">
+    <Link to="/alternative-assets" className="group block focus-visible:outline-none">
+      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6 hover:border-stealth-600 transition cursor-pointer h-full group-focus-within:ring-1 group-focus-within:ring-stealth-500/60">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-stealth-100">Alternative Asset Stability</h3>
           <svg className="w-5 h-5 text-stealth-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
           </svg>
+        </div>
+        <div className="text-sm text-stealth-200">
+          <span className="text-stealth-500">Signal:</span> {signalLine}
+        </div>
+        <div className="text-sm text-stealth-400">
+          <span className="text-stealth-500">Context:</span> {contextLine}
+        </div>
+        <div className="text-xs text-stealth-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 motion-reduce:transition-none">
+          <span className="text-stealth-400">Confidence:</span>{" "}
+          <span className={aasConfidence === "low" ? "underline decoration-dotted" : undefined}>
+            {aasConfidence}
+          </span>
+          {aasConfidence === "low" ? " ±" : ""} ({hoverNote})
         </div>
 
         {/* Stability Score */}
@@ -355,10 +344,6 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
           )}
         </div>
 
-        {/* Conclusion */}
-        <div className="text-xs text-stealth-400 border-t border-stealth-700 pt-3">
-          <p className="leading-relaxed">{aasSummary}</p>
-        </div>
       </div>
     </Link>
   );

@@ -34,7 +34,7 @@ Block: Refresh + time range
 - Questions: 1
 - Action: KEEP
 - REST copy proposal: keep
-- Hover: "Fetch latest indicator data"
+- Focus: "Fetch latest indicator data"
 - Click: refresh / range change
 - Load: Low
 
@@ -45,7 +45,7 @@ Block: Overall summary card
 - REST copy proposal:
   - Signal: Tailwinds lead / Caution leads / Signals split
   - Context: 4-signal composite, trend vs recent
-- Hover: "Confidence: {High|Medium|Low} - (trend clarity)"
+- Focus: "Confidence: {High|Medium|Low} - (trend clarity)"
 - Click: inline expansion with "Why it matters" + "Related Signals"
 - Load: Med (currently High)
 
@@ -53,7 +53,7 @@ Sub-block: Mini signal chips
 - Questions: 4
 - Action: MERGE into compact chips
 - REST copy proposal: label + direction only (no sentences)
-- Hover: one-line clarification per chip
+- Focus: one-line clarification per chip
 - Click: scroll to card or expand related detail
 - Load: Med
 
@@ -63,7 +63,7 @@ Sub-block: Mini signal chips
 - REST Signal Sentence:
   - Signal: System health {improving|softening|steady}
   - Context: Composite of volatility, rates, liquidity, sentiment
-- Hover: "Confidence: {High|Medium|Low} - (trend {clear|mixed|noisy})"
+- Focus: "Confidence: {High|Medium|Low} - (trend {clear|mixed|noisy})"
 - Click: navigate to /system-breakdown
 - Load: Med (currently High)
 
