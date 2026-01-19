@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -17,7 +17,13 @@ import {
   CartesianGrid,
 } from "recharts";
 import { apiFetch } from "../../utils/apiUtils";
-import { CHART_MARGIN, CHART_NEUTRAL, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
+import {
+  CHART_ANIMATION,
+  CHART_MARGIN,
+  CHART_NEUTRAL,
+  commonGridProps,
+  commonTooltipStyle,
+} from "../../utils/chartUtils";
 import {
   analyzeSeries,
   getConfidenceFromSignal,
@@ -81,7 +87,11 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   const [history, setHistory] = useState<SectorHistoryPoint[]>([]);
   const [alerts, setAlerts] = useState<SectorAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const commitment = useProgressiveCommitment({ mode: "inline" });
+  const navigate = useNavigate();
+  const commitment = useProgressiveCommitment({
+    mode: "navigate",
+    onCommit: () => navigate("/sector-projections"),
+  });
 
   const buildHistorySeries = (historyData: SectorProjectionHistory | null): SectorHistoryPoint[] => {
     if (!historyData) return [];
@@ -254,6 +264,14 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
     ? Array.from({ length: 5 }, (_, i) => minTime + ((maxTime - minTime) * (i / 4)))
     : timestamps;
   const showCompactChart = chartData.length > 1;
+  const showDetails = commitment.state !== "rest";
+  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+    showDetails ? "max-h-[1400px]" : "max-h-0"
+  }`;
+  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
+    showDetails ? "opacity-100 delay-75" : "opacity-0"
+  }`;
+  const accentColor = getFamilyColor("market", "muted");
 
   return (
     <div
@@ -261,6 +279,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       className="bg-stealth-800 rounded-lg p-4 sm:p-6 shadow-lg border border-stealth-700 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
       aria-expanded={commitment.isExpanded}
     >
+      <div className="h-1 rounded-full mb-2" style={{ backgroundColor: accentColor }} />
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-lg font-semibold">Sector Divergence</h3>
         <span className="text-xs text-stealth-500">{periodLabel}</span>
@@ -288,15 +307,16 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
                 stroke={spreadLineColor}
                 strokeWidth={2}
                 dot={false}
-                animationDuration={200}
+                animationDuration={CHART_ANIMATION.duration}
+                animationEasing={CHART_ANIMATION.easing}
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {commitment.isExpanded && (
-        <div className="pt-3 border-t border-stealth-700 space-y-4">
+      <div className={`${detailWrapClass} ${showDetails ? "pt-3 border-t border-stealth-700" : ""}`}>
+        <div className={`${detailContentClass} ${showDetails ? "space-y-4" : ""}`}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-stealth-300">
             <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
               <div className="text-[11px] uppercase tracking-wide text-stealth-500">Alignment score</div>
@@ -412,7 +432,8 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
                       stroke={spreadLineColor}
                       strokeWidth={2}
                       dot={false}
-                      animationDuration={300}
+                      animationDuration={CHART_ANIMATION.duration}
+                      animationEasing={CHART_ANIMATION.easing}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -467,7 +488,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
             </Link>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

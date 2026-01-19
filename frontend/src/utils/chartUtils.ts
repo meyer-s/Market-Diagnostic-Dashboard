@@ -28,6 +28,11 @@ export const CHART_MARGIN = {
   left: 0,
 } as const;
 
+export const CHART_ANIMATION = {
+  duration: 320,
+  easing: "ease-in-out",
+} as const;
+
 /**
  * Get color based on state
  */

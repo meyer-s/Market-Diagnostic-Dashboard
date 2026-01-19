@@ -9,6 +9,7 @@ import MarketLoading from "../components/ui/MarketLoading";
 import { apiFetch } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
 import { useProgressiveCommitment } from "../hooks/useProgressiveCommitment";
+import { getFamilyColor } from "../theme/metricColors";
 
 interface NewsArticle {
   id: number;
@@ -171,6 +172,14 @@ export default function Dashboard() {
     aas: "Alternative assets confirm risk appetite shifts",
   };
   const overallCommitment = useProgressiveCommitment({ mode: "inline" });
+  const overallShowDetails = overallCommitment.state !== "rest";
+  const overallDetailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+    overallShowDetails ? "max-h-80" : "max-h-0"
+  }`;
+  const overallDetailContentClass = `transition-opacity duration-200 ease-in-out ${
+    overallShowDetails ? "opacity-100 delay-75" : "opacity-0"
+  }`;
+  const overallAccentColor = getFamilyColor("system", "muted");
 
   const handleInsight = useCallback((insight: InsightSignal) => {
     setInsights((prev) => {
@@ -307,6 +316,7 @@ export default function Dashboard() {
             className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
             aria-expanded={overallCommitment.isExpanded}
           >
+            <div className="h-1 rounded-full mb-3" style={{ backgroundColor: overallAccentColor }} />
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
@@ -324,8 +334,8 @@ export default function Dashboard() {
                 {overallHoverLine}
               </div>
             )}
-            {overallCommitment.isExpanded && (
-              <div className="mt-3 border-t border-stealth-700 pt-3 text-xs text-stealth-300 space-y-3">
+            <div className={`${overallDetailWrapClass} ${overallShowDetails ? "mt-3 border-t border-stealth-700 pt-3" : ""}`}>
+              <div className={`${overallDetailContentClass} ${overallShowDetails ? "space-y-3 text-xs text-stealth-300" : ""}`}>
                 <div>
                   <div className="text-[11px] uppercase tracking-wide text-stealth-500">
                     Why it matters
@@ -360,7 +370,7 @@ export default function Dashboard() {
                   </p>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>

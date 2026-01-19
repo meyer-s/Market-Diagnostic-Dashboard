@@ -11,7 +11,7 @@ import {
   type TooltipProps,
 } from "recharts";
 import { apiFetch } from "../../utils/apiUtils";
-import { CHART_MARGIN, CHART_NEUTRAL, commonGridProps } from "../../utils/chartUtils";
+import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL, commonGridProps } from "../../utils/chartUtils";
 import { formatTime } from "../../utils/styleUtils";
 import {
   analyzeSeries,
@@ -241,6 +241,14 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   const classicLineColor = getFamilyColor("market", "base");
   const modernLineColor = getFamilyColor("market", "muted");
   const showCompactChart = chartHistory.length > 1;
+  const showDetails = commitment.state !== "rest";
+  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+    showDetails ? "max-h-[1400px]" : "max-h-0"
+  }`;
+  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
+    showDetails ? "opacity-100 delay-75" : "opacity-0"
+  }`;
+  const accentColor = getFamilyColor("market", "muted");
 
   const stabilityScore = Math.max(0, Math.min(100, 100 - data.strain_score));
   const stabilityLevel: StabilityLevel =
@@ -287,6 +295,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
       className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-6 space-y-4 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
       aria-expanded={commitment.isExpanded}
     >
+      <div className="h-1 rounded-full" style={{ backgroundColor: accentColor }} />
       <div className="flex items-center justify-between">
         <h3 className="text-base sm:text-lg font-semibold text-stealth-100">Dow Theory Trends</h3>
         <span className="text-xs text-stealth-400">{formatTime(data.timestamp)}</span>
@@ -314,7 +323,8 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
                 stroke={classicLineColor}
                 strokeWidth={2}
                 dot={false}
-                animationDuration={200}
+                animationDuration={CHART_ANIMATION.duration}
+                animationEasing={CHART_ANIMATION.easing}
               />
               <Line
                 type="monotone"
@@ -323,15 +333,16 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
                 strokeWidth={2}
                 dot={false}
                 connectNulls={false}
-                animationDuration={200}
+                animationDuration={CHART_ANIMATION.duration}
+                animationEasing={CHART_ANIMATION.easing}
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {commitment.isExpanded && (
-        <div className="pt-3 border-t border-stealth-700 space-y-4">
+      <div className={`${detailWrapClass} ${showDetails ? "pt-3 border-t border-stealth-700" : ""}`}>
+        <div className={`${detailContentClass} ${showDetails ? "space-y-4" : ""}`}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-stealth-300">
             <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
               <div className="text-[11px] uppercase tracking-wide text-stealth-500">Alignment</div>
@@ -347,10 +358,10 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
               </div>
             </div>
           </div>
-          <div className="text-xs text-stealth-300 space-y-2">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Why it matters</div>
-            <p>{dashboardCardDetails.dow.why}</p>
-          </div>
+            <div className="text-xs text-stealth-300 space-y-2">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Why it matters</div>
+              <p>{dashboardCardDetails.dow.why}</p>
+            </div>
           <div className="text-xs text-stealth-300 space-y-2">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Related signals</div>
             <div className="flex flex-wrap gap-2">
@@ -422,7 +433,8 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
                       stroke={classicLineColor}
                       strokeWidth={2}
                       dot={false}
-                      animationDuration={300}
+                      animationDuration={CHART_ANIMATION.duration}
+                      animationEasing={CHART_ANIMATION.easing}
                     />
                     <Line
                       type="monotone"
@@ -433,7 +445,8 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
                       strokeWidth={2}
                       dot={false}
                       connectNulls={false}
-                      animationDuration={300}
+                      animationDuration={CHART_ANIMATION.duration}
+                      animationEasing={CHART_ANIMATION.easing}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -460,7 +473,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

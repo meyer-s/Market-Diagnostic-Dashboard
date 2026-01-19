@@ -11,6 +11,7 @@ import {
 } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
 import { getFamilyColor } from "../../theme/metricColors";
+import { CHART_ANIMATION } from "../../utils/chartUtils";
 
 interface AASData {
   stability_score: number;
@@ -143,6 +144,41 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
         summary: summaryShort,
       }
     : null;
+  const showDetails = commitment.state !== "rest";
+  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+    showDetails ? "max-h-80" : "max-h-0"
+  }`;
+  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
+    showDetails ? "opacity-100 delay-75" : "opacity-0"
+  }`;
+  const accentColor = getFamilyColor("market", "muted");
+
+  const getScoreClass = (score: number): string => {
+    if (score >= 67) return "text-green-400";
+    if (score >= 34) return "text-yellow-400";
+    return "text-red-400";
+  };
+
+  const getRegimeClass = (regime: string): string => {
+    if (regime.includes("breakdown") || regime.includes("crisis")) return "text-red-400";
+    if (regime.includes("stress") || regime.includes("caution")) return "text-yellow-400";
+    return "text-green-400";
+  };
+
+  const getRegimeLabel = (regime: string): string => {
+    const labels: Record<string, string> = {
+      normal_confidence: "Normal Confidence",
+      mild_caution: "Mild Caution",
+      monetary_stress: "Monetary Stress",
+      liquidity_crisis: "Liquidity Crisis",
+      systemic_breakdown: "Systemic Breakdown",
+    };
+    return labels[regime] ||
+      regime
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+  };
 
   useEffect(() => {
     if (!onInsight || !aasInsight) return;
@@ -181,6 +217,7 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
       className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
       aria-expanded={commitment.isExpanded}
     >
+      <div className="h-1 rounded-full mb-3" style={{ backgroundColor: accentColor }} />
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-lg font-semibold text-stealth-100">Alternative Asset Stability</h3>
         <span className="text-xs text-stealth-500">{trendWindows.shortLabel}</span>
@@ -209,12 +246,27 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
                 stroke={getFamilyColor("market")}
                 strokeWidth={2}
                 dot={false}
-                animationDuration={200}
+                animationDuration={CHART_ANIMATION.duration}
+                animationEasing={CHART_ANIMATION.easing}
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
+      <div className={`${detailWrapClass} ${showDetails ? "mt-2" : ""}`}>
+        <div className={detailContentClass}>
+          <div className="flex items-end gap-2 mb-2">
+            <div className={`text-3xl font-bold ${getScoreClass(aasData.stability_score)}`}>
+              {aasData.stability_score.toFixed(1)}
+            </div>
+            <div className="text-xs text-stealth-400 mb-1">/ 100</div>
+          </div>
+          <div className="text-xs text-stealth-400 mb-1">Current Regime</div>
+          <div className={`text-sm font-semibold ${getRegimeClass(aasData.regime)}`}>
+            {getRegimeLabel(aasData.regime)}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

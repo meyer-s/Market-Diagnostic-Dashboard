@@ -44,7 +44,13 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { CHART_MARGIN, CHART_NEUTRAL, commonGridProps, commonTooltipStyle } from "../utils/chartUtils";
+import {
+  CHART_ANIMATION,
+  CHART_MARGIN,
+  CHART_NEUTRAL,
+  commonGridProps,
+  commonTooltipStyle,
+} from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import "../index.css";
 
@@ -290,7 +296,8 @@ export default function SectorProjections() {
                       stroke={getFamilyColor("market")}
                       strokeWidth={2}
                       dot={false}
-                      animationDuration={300}
+                      animationDuration={CHART_ANIMATION.duration}
+                      animationEasing={CHART_ANIMATION.easing}
                     />
                   </LineChart>
                 </ResponsiveContainer>

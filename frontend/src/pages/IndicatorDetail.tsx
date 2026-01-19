@@ -8,7 +8,7 @@ import { ComponentCard } from "../components/widgets/ComponentCard";
 import { processComponentData, calculateDateRange, extendStaleData, filterByDateRange } from "../utils/chartDataUtils";
 import { prepareExtendedComponentData } from "../utils/indicatorDetailHelpers";
 import { formatDateTime } from "../utils/styleUtils";
-import { CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
+import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
 import {
@@ -1440,7 +1440,8 @@ export default function IndicatorDetail() {
                       stroke={getFamilyColor("system")}
                       strokeWidth={2}
                       dot={false}
-                      animationDuration={300}
+                      animationDuration={CHART_ANIMATION.duration}
+                      animationEasing={CHART_ANIMATION.easing}
                       connectNulls
                     />
                   </LineChart>
@@ -1558,7 +1559,8 @@ export default function IndicatorDetail() {
                     stroke={getFamilyColor("system")}
                     strokeWidth={2}
                     dot={false}
-                    animationDuration={300}
+                    animationDuration={CHART_ANIMATION.duration}
+                    animationEasing={CHART_ANIMATION.easing}
                     connectNulls
                   />
                 </LineChart>
