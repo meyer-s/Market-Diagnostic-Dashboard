@@ -44,13 +44,18 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { CHART_MARGIN, commonGridProps, commonTooltipStyle } from "../utils/chartUtils";
+import { CHART_MARGIN, CHART_NEUTRAL, commonGridProps, commonTooltipStyle } from "../utils/chartUtils";
+import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import "../index.css";
 
 const HORIZONS = ["3m", "6m", "12m"];
 const CHART_HORIZONS = ["T", "3m", "6m", "12m"];
 const DEFENSIVE_SECTORS = new Set(["XLU", "XLP", "XLV"]);
 const CYCLICAL_SECTORS = new Set(["XLE", "XLF", "XLK", "XLY"]);
+const getSectorColor = (
+  symbol: string,
+  variant: "base" | "muted" | "faint" = "base"
+) => getMetricColor(symbol, variant);
 
 interface SectorHistoryEntry {
   as_of_date: string;
@@ -135,6 +140,13 @@ export default function SectorProjections() {
 
     return points.sort((a, b) => a.timestampNum - b.timestampNum);
   }, [historyData]);
+  const scoreBarColors = {
+    total: getFamilyColor("system"),
+    trend: getFamilyColor("growth"),
+    rel: getFamilyColor("equity"),
+    risk: getFamilyColor("volatility"),
+    regime: getFamilyColor("sentiment"),
+  };
 
   useEffect(() => {
     if (data && data.projections) {
@@ -205,7 +217,7 @@ export default function SectorProjections() {
       <h1 className="text-2xl font-bold mb-2">Sector Projections</h1>
       <p className="mb-4 text-gray-400 text-sm sm:text-base">Identify sector leadership across multiple time horizons with quantified confidence levels</p>
       
-      {data && <p className="mb-6 text-xs text-gray-500">System State: <span className={data.system_state === "RED" ? "text-red-400 font-semibold" : data.system_state === "GREEN" ? "text-green-400 font-semibold" : "text-yellow-400 font-semibold"}>{data.system_state}</span> • As of: {data.as_of_date}</p>}
+      {data && <p className="mb-6 text-xs text-gray-500">System State: <span className={data.system_state === "RED" ? "text-red-400 font-semibold" : data.system_state === "GREEN" ? "text-green-400 font-semibold" : "text-yellow-400 font-semibold"}>{data.system_state}</span> - As of: {data.as_of_date}</p>}
 
       {data?.data_warnings?.length > 0 && (
         <div className="mb-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3 sm:p-4">
@@ -215,7 +227,7 @@ export default function SectorProjections() {
           <ul className="mt-2 text-xs text-yellow-200/80 space-y-0.5">
             {data.data_warnings.map((warning: any, idx: number) => (
               <li key={`${warning.type}-${idx}`}>
-                {warning.type.replace(/_/g, " ")} • {Array.isArray(warning.details) ? warning.details.length : 0} issue(s)
+                {warning.type.replace(/_/g, " ")} - {Array.isArray(warning.details) ? warning.details.length : 0} issue(s)
               </li>
             ))}
           </ul>
@@ -247,8 +259,8 @@ export default function SectorProjections() {
                       type="number"
                       domain={[divergenceMinTime, divergenceMaxTime]}
                       ticks={divergenceTicks}
-                      tick={{ fill: "#9ca3af", fontSize: 10 }}
-                      stroke="#4b5563"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      stroke={CHART_NEUTRAL.axis}
                       tickFormatter={(value: number) =>
                         new Date(value).toLocaleDateString(undefined, {
                           month: "short",
@@ -257,8 +269,8 @@ export default function SectorProjections() {
                       }
                     />
                     <YAxis
-                      tick={{ fill: "#9ca3af", fontSize: 10 }}
-                      stroke="#4b5563"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      stroke={CHART_NEUTRAL.axis}
                       domain={["dataMin - 5", "dataMax + 5"]}
                     />
                     <Tooltip
@@ -275,7 +287,7 @@ export default function SectorProjections() {
                     <Line
                       type="monotone"
                       dataKey="spread"
-                      stroke="#60a5fa"
+                      stroke={getFamilyColor("market")}
                       strokeWidth={2}
                       dot={false}
                       animationDuration={300}
@@ -311,8 +323,7 @@ export default function SectorProjections() {
                 {/* Gradient definitions for uncertainty cones */}
                 <defs>
                   {chartData.map((sector: any, idx: number) => {
-                    const colors = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#6366f1", "#84cc16"];
-                    const color = colors[idx % colors.length];
+                    const color = getSectorColor(sector.symbol, "muted");
                     const gradientId = `grad_${idx}`;
                     return (
                       <linearGradient key={gradientId} id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
@@ -324,8 +335,7 @@ export default function SectorProjections() {
                   })}
                   {/* Radial gradients for fading cone edges */}
                   {chartData.map((sector: any, idx: number) => {
-                    const colors = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#6366f1", "#84cc16"];
-                    const color = colors[idx % colors.length];
+                    const color = getSectorColor(sector.symbol, "muted");
                     const radialId = `radial_${idx}`;
                     return (
                       <radialGradient key={radialId} id={radialId} cx="50%" cy="50%" r="50%">
@@ -339,22 +349,21 @@ export default function SectorProjections() {
                 {/* Grid lines */}
                 {[0, 25, 50, 75, 100].map((y) => (
                   <g key={y}>
-                    <line x1="50" y1={260 - (y * 2.4)} x2="960" y2={260 - (y * 2.4)} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" />
-                    <text x="40" y={264 - (y * 2.4)} fill="#9ca3af" fontSize="10" textAnchor="end">{y}</text>
+                    <line x1="50" y1={260 - (y * 2.4)} x2="960" y2={260 - (y * 2.4)} stroke={CHART_NEUTRAL.grid} strokeWidth="1" strokeDasharray="4 4" />
+                    <text x="40" y={264 - (y * 2.4)} fill={CHART_NEUTRAL.tick} fontSize="10" textAnchor="end">{y}</text>
                   </g>
                 ))}
                 
                 {/* X-axis labels */}
-                <text x="150" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">-3M</text>
-                <text x="350" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">T</text>
-                <text x="550" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">3M</text>
-                <text x="725" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">6M</text>
-                <text x="900" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">12M</text>
+                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">-3M</text>
+                <text x="350" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">T</text>
+                <text x="550" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M</text>
+                <text x="725" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M</text>
+                <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M</text>
                 
                 {/* Uncertainty cones and lines for each sector */}
                 {chartData.map((sector: any, idx: number) => {
-                  const colors = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#6366f1", "#84cc16"];
-                  const color = colors[idx % colors.length];
+                  const color = getSectorColor(sector.symbol);
                   const isSelected = selectedSector === sector.symbol;
                   const opacity = !selectedSector || isSelected ? 0.7 : 0.1;
                   
@@ -495,7 +504,7 @@ export default function SectorProjections() {
                           y1={20} 
                           x2={x0} 
                           y2={280} 
-                          stroke="#fbbf24" 
+                          stroke={getFamilyColor("benchmark")} 
                           strokeWidth="2" 
                           strokeDasharray="5 5"
                           opacity={0.4}
@@ -504,7 +513,7 @@ export default function SectorProjections() {
                       
                       {/* Points - 5 data points */}
                       <circle cx={xHist} cy={yHist} r={isSelected ? "4" : "3"} fill={color} opacity={opacity * 0.9} />
-                      <circle cx={x0} cy={y0} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} stroke={idx === 0 ? "#fbbf24" : "none"} strokeWidth="1" />
+                      <circle cx={x0} cy={y0} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} stroke={idx === 0 ? getFamilyColor("benchmark") : "none"} strokeWidth="1" />
                       <circle cx={x1} cy={y1} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} />
                       <circle cx={x2} cy={y2} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} />
                       <circle cx={x3} cy={y3} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} />
@@ -519,8 +528,7 @@ export default function SectorProjections() {
           <div className="mt-2 mb-4 overflow-x-auto">
             <div className="flex flex-wrap gap-1 sm:gap-2 pb-2 min-w-min">
               {chartData.map((sector: any, idx: number) => {
-                const colors = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#6366f1", "#84cc16"];
-                const color = colors[idx % colors.length];
+                const color = getSectorColor(sector.symbol);
                 const isSelected = selectedSector === sector.symbol;
                 return (
                   <button
@@ -628,7 +636,7 @@ export default function SectorProjections() {
                       <td>{row.rank}</td>
                       <td>{row.sector_name} <span className="text-xs text-gray-500">({row.sector_symbol})</span></td>
                       <td>
-                        <ScoreBar label="" value={row.score_total} color="#38bdf8" />
+                        <ScoreBar label="" value={row.score_total} color={scoreBarColors.total} />
                       </td>
                       <td>
                         <span className={
@@ -641,10 +649,10 @@ export default function SectorProjections() {
                           {row.classification}
                         </span>
                       </td>
-                      <td><ScoreBar label="" value={row.score_trend} color="#facc15" /></td>
-                      <td><ScoreBar label="" value={row.score_rel} color="#a3e635" /></td>
-                      <td><ScoreBar label="" value={row.score_risk} color="#f87171" /></td>
-                      <td><ScoreBar label="" value={row.score_regime} color="#818cf8" /></td>
+                      <td><ScoreBar label="" value={row.score_trend} color={scoreBarColors.trend} /></td>
+                      <td><ScoreBar label="" value={row.score_rel} color={scoreBarColors.rel} /></td>
+                      <td><ScoreBar label="" value={row.score_risk} color={scoreBarColors.risk} /></td>
+                      <td><ScoreBar label="" value={row.score_regime} color={scoreBarColors.regime} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -683,19 +691,19 @@ export default function SectorProjections() {
                         {row.classification}
                       </span>
                       <div className="text-lg font-bold text-gray-500">
-                        {expandedCard === row.sector_symbol ? '−' : '+'}
+                        {expandedCard === row.sector_symbol ? '-' : '+'}
                       </div>
                     </div>
                   </button>
                   <div className="px-3 pt-2 pb-3">
-                    <ScoreBar label="Total" value={row.score_total} color="#38bdf8" />
+                    <ScoreBar label="Total" value={row.score_total} color={scoreBarColors.total} />
                   </div>
                   {expandedCard === row.sector_symbol && (
                     <div className="border-t border-gray-700 bg-black/20 p-3 space-y-2">
-                      <ScoreBar label="Trend" value={row.score_trend} color="#facc15" />
-                      <ScoreBar label="Rel" value={row.score_rel} color="#a3e635" />
-                      <ScoreBar label="Risk" value={row.score_risk} color="#f87171" />
-                      <ScoreBar label="Regime" value={row.score_regime} color="#818cf8" />
+                      <ScoreBar label="Trend" value={row.score_trend} color={scoreBarColors.trend} />
+                      <ScoreBar label="Rel" value={row.score_rel} color={scoreBarColors.rel} />
+                      <ScoreBar label="Risk" value={row.score_risk} color={scoreBarColors.risk} />
+                      <ScoreBar label="Regime" value={row.score_regime} color={scoreBarColors.regime} />
                     </div>
                   )}
                 </div>
@@ -713,12 +721,12 @@ export default function SectorProjections() {
         >
           <div className="flex items-center justify-between">
             <h3 className="text-xs sm:text-sm font-semibold text-blue-200">How to Read This Chart</h3>
-            <span className="text-blue-300 text-lg sm:text-xl">{readingGuideOpen ? '−' : '+'}</span>
+            <span className="text-blue-300 text-lg sm:text-xl">{readingGuideOpen ? '-' : '+'}</span>
           </div>
         </button>
         {readingGuideOpen && (
           <div className="bg-blue-900/20 border border-blue-700/50 border-t-0 rounded-b-lg p-3 sm:p-4 text-xs sm:text-sm text-blue-200/80 space-y-2 leading-relaxed">
-            <p><strong>Score (0-100):</strong> Higher scores indicate stronger technical outlook based on trend, relative strength vs SPY, risk metrics, and market regime alignment. Compare sectors vertically—higher is better.</p>
+            <p><strong>Score (0-100):</strong> Higher scores indicate stronger technical outlook based on trend, relative strength vs SPY, risk metrics, and market regime alignment. Compare sectors vertically-higher is better.</p>
             <p><strong>Score Changes:</strong> Lines moving up show improving outlook; lines moving down show deteriorating conditions. Crossing lines indicate sector rotation.</p>
             <p><strong>Uncertainty Cones (Click a Sector):</strong> The shaded area shows confidence range based on score divergence. Larger gaps create wider cones; smaller gaps keep them tighter.</p>
             <p><strong>Historical (-3M):</strong> Score from 3 months ago, or estimated offset to preserve trend shape.</p>
@@ -734,7 +742,7 @@ export default function SectorProjections() {
         >
           <h2 className="text-base sm:text-lg font-semibold">Methodology & Algorithm Details</h2>
           <div className="text-lg font-bold text-gray-500">
-            {methodologyOpen ? '−' : '+'}
+            {methodologyOpen ? '-' : '+'}
           </div>
         </button>
         {methodologyOpen && (
@@ -761,7 +769,7 @@ export default function SectorProjections() {
                   <div className="text-xs text-gray-400 space-y-1 ml-3">
                     <p><strong>Return:</strong> Total return over the horizon period: (Price_end / Price_start) - 1</p>
                     <p><strong>SMA Distance:</strong> Distance from 200-day simple moving average: (Price_current / SMA_200) - 1</p>
-                    <p><strong>Composite:</strong> Return + (0.5 × SMA Distance), then percentile-ranked across all sectors and scaled to 0-100</p>
+                    <p><strong>Composite:</strong> Return + (0.5 x SMA Distance), then percentile-ranked across all sectors and scaled to 0-100</p>
                   </div>
                 </div>
                 
@@ -783,9 +791,9 @@ export default function SectorProjections() {
                     Evaluates price stability and downside protection. Lower risk = higher score (inverse ranking).
                   </p>
                   <div className="text-xs text-gray-400 space-y-1 ml-3">
-                    <p><strong>Realized Volatility:</strong> 20-day rolling standard deviation of daily returns, annualized (× √252)</p>
+                    <p><strong>Realized Volatility:</strong> 20-day rolling standard deviation of daily returns, annualized (x sqrt252)</p>
                     <p><strong>Max Drawdown:</strong> Largest peak-to-trough decline over the full horizon period</p>
-                    <p><strong>Composite:</strong> Volatility + (0.5 × |Drawdown|), inverted percentile rank scaled to 0-100</p>
+                    <p><strong>Composite:</strong> Volatility + (0.5 x |Drawdown|), inverted percentile rank scaled to 0-100</p>
                     <p>Sectors with lower volatility and smaller drawdowns receive higher risk scores</p>
                   </div>
                 </div>
@@ -812,7 +820,7 @@ export default function SectorProjections() {
               <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Final Score & Ranking</h3>
               <div className="text-xs sm:text-sm text-gray-400 space-y-2">
                 <p className="font-mono bg-gray-950 p-2 rounded text-xs">
-                  Composite Score = (0.45 × Trend) + (0.30 × Rel_Strength) + (0.20 × Risk) + (0.05 × Regime)
+                  Composite Score = (0.45 x Trend) + (0.30 x Rel_Strength) + (0.20 x Risk) + (0.05 x Regime)
                 </p>
                 <p className="text-xs sm:text-sm">
                   Sectors ranked 1-11 by composite score (descending) using minimum rank method for ties.

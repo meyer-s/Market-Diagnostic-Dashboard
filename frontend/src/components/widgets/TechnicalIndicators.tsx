@@ -5,6 +5,8 @@
  */
 
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
+import { CHART_NEUTRAL } from "../../utils/chartUtils";
+import { getFamilyColor, statePalette } from "../../theme/metricColors";
 
 interface Candle {
   date: string;
@@ -231,6 +233,18 @@ export function TechnicalIndicators({
   const padding = { top: 20, right: 50, bottom: 40, left: 50 };
   const plotWidth = chartWidth - padding.left - padding.right;
   const plotHeight = chartHeight - padding.top - padding.bottom;
+  const chartColors = {
+    grid: CHART_NEUTRAL.grid,
+    axis: CHART_NEUTRAL.axis,
+    tick: CHART_NEUTRAL.tick,
+    priceUp: statePalette.green,
+    priceDown: statePalette.red,
+    sma50: getFamilyColor("equity", "muted"),
+    sma200: getFamilyColor("equity", "faint"),
+    rsiLine: getFamilyColor("equity"),
+    macdLine: getFamilyColor("market"),
+    macdSignal: getFamilyColor("benchmark"),
+  };
 
   // Find price range
   const prices = candles.map((c) => [c.high, c.low]).flat();
@@ -288,11 +302,11 @@ export function TechnicalIndicators({
                     y1={y}
                     x2={chartWidth - padding.right}
                     y2={y}
-                    stroke="#374151"
+                    stroke={chartColors.grid}
                     strokeWidth="1"
                     strokeDasharray="4 4"
                   />
-                  <text x={padding.left - 10} y={y + 4} fill="#9ca3af" fontSize="10" textAnchor="end">
+                  <text x={padding.left - 10} y={y + 4} fill={chartColors.tick} fontSize="10" textAnchor="end">
                     ${price.toFixed(0)}
                   </text>
                 </g>
@@ -311,7 +325,7 @@ export function TechnicalIndicators({
               const bodyTop = Math.min(o, c);
               const bodyBottom = Math.max(o, c);
               const bodyHeight = Math.max(bodyBottom - bodyTop, 1);
-              const color = isGreen ? "#22c55e" : "#ef4444";
+              const color = isGreen ? chartColors.priceUp : chartColors.priceDown;
               const wickWidth = plotWidth / candles.length / 3;
 
               return (
@@ -332,12 +346,12 @@ export function TechnicalIndicators({
                   y1={scalePrice(sma_50)}
                   x2={chartWidth - padding.right}
                   y2={scalePrice(sma_50)}
-                  stroke="#f59e0b"
+                  stroke={chartColors.sma50}
                   strokeWidth="2"
                   strokeDasharray="4 2"
                   opacity="0.6"
                 />
-                <text x={chartWidth - padding.right + 5} y={scalePrice(sma_50) + 4} fill="#f59e0b" fontSize="10">
+                <text x={chartWidth - padding.right + 5} y={scalePrice(sma_50) + 4} fill={chartColors.sma50} fontSize="10">
                   SMA50
                 </text>
               </>
@@ -351,20 +365,20 @@ export function TechnicalIndicators({
                   y1={scalePrice(sma_200)}
                   x2={chartWidth - padding.right}
                   y2={scalePrice(sma_200)}
-                  stroke="#8b5cf6"
+                  stroke={chartColors.sma200}
                   strokeWidth="2"
                   strokeDasharray="4 2"
                   opacity="0.6"
                 />
-                <text x={chartWidth - padding.right + 5} y={scalePrice(sma_200) - 4} fill="#8b5cf6" fontSize="10">
+                <text x={chartWidth - padding.right + 5} y={scalePrice(sma_200) - 4} fill={chartColors.sma200} fontSize="10">
                   SMA200
                 </text>
               </>
             )}
 
             {/* Axes */}
-            <line x1={padding.left} y1={padding.top} x2={padding.left} y2={chartHeight - padding.bottom} stroke="#4b5563" strokeWidth="2" />
-            <line x1={padding.left} y1={chartHeight - padding.bottom} x2={chartWidth - padding.right} y2={chartHeight - padding.bottom} stroke="#4b5563" strokeWidth="2" />
+            <line x1={padding.left} y1={padding.top} x2={padding.left} y2={chartHeight - padding.bottom} stroke={chartColors.axis} strokeWidth="2" />
+            <line x1={padding.left} y1={chartHeight - padding.bottom} x2={chartWidth - padding.right} y2={chartHeight - padding.bottom} stroke={chartColors.axis} strokeWidth="2" />
           </svg>
         </div>
 
@@ -467,7 +481,7 @@ export function TechnicalIndicators({
                       y={rsiPadding.top}
                       width={rsiPlotWidth}
                       height={scaleRsiY(70) - rsiPadding.top}
-                      fill="#ef4444"
+                      fill={chartColors.priceDown}
                       opacity="0.1"
                     />
                     <rect
@@ -475,7 +489,7 @@ export function TechnicalIndicators({
                       y={scaleRsiY(30)}
                       width={rsiPlotWidth}
                       height={150 - rsiPadding.bottom - scaleRsiY(30)}
-                      fill="#22c55e"
+                      fill={chartColors.priceUp}
                       opacity="0.1"
                     />
 
@@ -489,14 +503,14 @@ export function TechnicalIndicators({
                             y1={y}
                             x2={chartWidth - rsiPadding.right}
                             y2={y}
-                            stroke={level === 70 || level === 30 ? "#4b5563" : "#374151"}
+                            stroke={level === 70 || level === 30 ? chartColors.axis : chartColors.grid}
                             strokeWidth={level === 70 || level === 30 ? "1.5" : "1"}
                             strokeDasharray="4 4"
                           />
                           <text
                             x={rsiPadding.left - 10}
                             y={y + 4}
-                            fill="#9ca3af"
+                            fill={chartColors.tick}
                             fontSize="10"
                             textAnchor="end"
                           >
@@ -516,7 +530,7 @@ export function TechnicalIndicators({
                         })
                         .join(" ")}
                       fill="none"
-                      stroke="#3b82f6"
+                      stroke={chartColors.rsiLine}
                       strokeWidth="2"
                     />
 
@@ -526,7 +540,7 @@ export function TechnicalIndicators({
                       y1={rsiPadding.top}
                       x2={rsiPadding.left}
                       y2={150 - rsiPadding.bottom}
-                      stroke="#4b5563"
+                      stroke={chartColors.axis}
                       strokeWidth="2"
                     />
                     <line
@@ -534,7 +548,7 @@ export function TechnicalIndicators({
                       y1={150 - rsiPadding.bottom}
                       x2={chartWidth - rsiPadding.right}
                       y2={150 - rsiPadding.bottom}
-                      stroke="#4b5563"
+                      stroke={chartColors.axis}
                       strokeWidth="2"
                     />
                   </>
@@ -550,7 +564,7 @@ export function TechnicalIndicators({
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs text-gray-400 font-semibold">Volume</p>
           <div className="text-[10px] text-gray-500">
-            Latest {volumes.length ? formatCompact(latestVolume) : "n/a"} · Median {volumes.length ? formatCompact(medianVolume) : "n/a"}
+            Latest {volumes.length ? formatCompact(latestVolume) : "n/a"} - Median {volumes.length ? formatCompact(medianVolume) : "n/a"}
           </div>
         </div>
         <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto">
@@ -572,14 +586,14 @@ export function TechnicalIndicators({
                     y1={y}
                     x2={chartWidth - volumePadding.right}
                     y2={y}
-                    stroke="#374151"
+                    stroke={chartColors.grid}
                     strokeWidth="1"
                     strokeDasharray="4 4"
                   />
                   <text
                     x={volumePadding.left - 10}
                     y={y + 4}
-                    fill="#9ca3af"
+                    fill={chartColors.tick}
                     fontSize="10"
                     textAnchor="end"
                   >
@@ -602,7 +616,7 @@ export function TechnicalIndicators({
                   y={y}
                   width={Math.max(barWidth * 0.8, 1)}
                   height={Math.max(height, 0)}
-                  fill={isGreen ? "#22c55e" : "#ef4444"}
+                  fill={isGreen ? chartColors.priceUp : chartColors.priceDown}
                   opacity="0.65"
                 />
               );
@@ -613,7 +627,7 @@ export function TechnicalIndicators({
               y1={volumePadding.top}
               x2={volumePadding.left}
               y2={volumeChartHeight - volumePadding.bottom}
-              stroke="#4b5563"
+              stroke={chartColors.axis}
               strokeWidth="2"
             />
             <line
@@ -621,7 +635,7 @@ export function TechnicalIndicators({
               y1={volumeChartHeight - volumePadding.bottom}
               x2={chartWidth - volumePadding.right}
               y2={volumeChartHeight - volumePadding.bottom}
-              stroke="#4b5563"
+              stroke={chartColors.axis}
               strokeWidth="2"
             />
           </svg>
@@ -675,7 +689,7 @@ export function TechnicalIndicators({
               // If no series data, fall back to just showing current values
               if (macdValues.length === 0 || macdValues.length !== candles.length) {
                 return (
-                  <text x="50%" y="50%" fill="#9ca3af" fontSize="12" textAnchor="middle">
+                  <text x="50%" y="50%" fill={chartColors.tick} fontSize="12" textAnchor="middle">
                     Loading MACD data...
                   </text>
                 );
@@ -701,7 +715,7 @@ export function TechnicalIndicators({
                     y1={centerY}
                     x2={chartWidth - macdPadding.right}
                     y2={centerY}
-                    stroke="#4b5563"
+                    stroke={chartColors.axis}
                     strokeWidth="1.5"
                   />
 
@@ -716,14 +730,14 @@ export function TechnicalIndicators({
                           y1={y}
                           x2={chartWidth - macdPadding.right}
                           y2={y}
-                          stroke="#374151"
+                          stroke={chartColors.grid}
                           strokeWidth="1"
                           strokeDasharray="4 4"
                         />
                         <text
                           x={macdPadding.left - 10}
                           y={y + 4}
-                          fill="#9ca3af"
+                          fill={chartColors.tick}
                           fontSize="10"
                           textAnchor="end"
                         >
@@ -747,7 +761,7 @@ export function TechnicalIndicators({
                         y={y}
                         width={Math.max(barWidth * 0.8, 1)}
                         height={Math.max(barHeight, 0)}
-                        fill={hist >= 0 ? "#22c55e" : "#ef4444"}
+                        fill={hist >= 0 ? chartColors.priceUp : chartColors.priceDown}
                         opacity="0.6"
                       />
                     );
@@ -763,7 +777,7 @@ export function TechnicalIndicators({
                       })
                       .join(" ")}
                     fill="none"
-                    stroke="#3b82f6"
+                    stroke={chartColors.macdLine}
                     strokeWidth="2"
                   />
 
@@ -777,16 +791,16 @@ export function TechnicalIndicators({
                       })
                       .join(" ")}
                     fill="none"
-                    stroke="#f97316"
+                    stroke={chartColors.macdSignal}
                     strokeWidth="2"
                     strokeDasharray="4 2"
                   />
 
                   {/* Legend */}
-                  <text x={chartWidth - macdPadding.right - 120} y={macdPadding.top} fill="#3b82f6" fontSize="11">
+                  <text x={chartWidth - macdPadding.right - 120} y={macdPadding.top} fill={chartColors.macdLine} fontSize="11">
                     MACD
                   </text>
-                  <text x={chartWidth - macdPadding.right - 60} y={macdPadding.top} fill="#f97316" fontSize="11">
+                  <text x={chartWidth - macdPadding.right - 60} y={macdPadding.top} fill={chartColors.macdSignal} fontSize="11">
                     Signal
                   </text>
 
@@ -796,7 +810,7 @@ export function TechnicalIndicators({
                     y1={macdPadding.top}
                     x2={macdPadding.left}
                     y2={200 - macdPadding.bottom}
-                    stroke="#4b5563"
+                    stroke={chartColors.axis}
                     strokeWidth="2"
                   />
                   <line
@@ -804,7 +818,7 @@ export function TechnicalIndicators({
                     y1={200 - macdPadding.bottom}
                     x2={chartWidth - macdPadding.right}
                     y2={200 - macdPadding.bottom}
-                    stroke="#4b5563"
+                    stroke={chartColors.axis}
                     strokeWidth="2"
                   />
                 </>

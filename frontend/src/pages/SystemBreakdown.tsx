@@ -18,6 +18,7 @@ import {
   STABILITY_THRESHOLDS,
   type StabilityState 
 } from "../utils/stabilityConstants";
+import { getFamilyColor } from "../theme/metricColors";
 
 interface SystemHistoryPoint {
   timestamp: string;
@@ -229,9 +230,9 @@ export default function SystemBreakdown() {
     : { GREEN: 0, YELLOW: 0, RED: 0 };
 
   const pieData = [
-    { name: "Green", value: currentDistribution.GREEN, color: "#10b981" },
-    { name: "Yellow", value: currentDistribution.YELLOW, color: "#eab308" },
-    { name: "Red", value: currentDistribution.RED, color: "#ef4444" },
+    { name: "Green", value: currentDistribution.GREEN, color: getStateColor("GREEN") },
+    { name: "Yellow", value: currentDistribution.YELLOW, color: getStateColor("YELLOW") },
+    { name: "Red", value: currentDistribution.RED, color: getStateColor("RED") },
   ].filter(d => d.value > 0);
 
   // Prepare chart data with numeric timestamps
@@ -311,7 +312,7 @@ export default function SystemBreakdown() {
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 md:p-4">
             <div className="flex items-center gap-2 text-xl md:text-2xl mb-1 md:mb-2">
               <svg className="w-5 h-5 md:w-6 md:h-6" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" fill="#10b981" />
+                <circle cx="12" cy="12" r="10" fill={getStateColor("GREEN")} />
               </svg>
               <span className="text-green-400">{STATE_DESCRIPTIONS.GREEN.label}</span>
             </div>
@@ -321,7 +322,7 @@ export default function SystemBreakdown() {
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 md:p-4">
             <div className="flex items-center gap-2 text-xl md:text-2xl mb-1 md:mb-2">
               <svg className="w-5 h-5 md:w-6 md:h-6" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" fill="#eab308" />
+                <circle cx="12" cy="12" r="10" fill={getStateColor("YELLOW")} />
               </svg>
               <span className="text-yellow-400">{STATE_DESCRIPTIONS.YELLOW.label}</span>
             </div>
@@ -331,7 +332,7 @@ export default function SystemBreakdown() {
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 md:p-4">
             <div className="flex items-center gap-2 text-xl md:text-2xl mb-1 md:mb-2">
               <svg className="w-5 h-5 md:w-6 md:h-6" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" fill="#ef4444" />
+                <circle cx="12" cy="12" r="10" fill={getStateColor("RED")} />
               </svg>
               <span className="text-red-400">{STATE_DESCRIPTIONS.RED.label}</span>
             </div>
@@ -355,7 +356,7 @@ export default function SystemBreakdown() {
                   labelLine={false}
                   label={(entry) => `${entry.name}: ${entry.value}`}
                   outerRadius={100}
-                  fill="#8884d8"
+                  fill={getFamilyColor("benchmark")}
                   dataKey="value"
                 >
                   {pieData.map((entry, index) => (
@@ -469,11 +470,11 @@ export default function SystemBreakdown() {
             <div className="flex items-center gap-4 mt-4 justify-center text-xs">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('GREEN') }}></div>
-                <span className="text-stealth-300">Green (≥{STABILITY_THRESHOLDS.YELLOW_MAX})</span>
+                <span className="text-stealth-300">Green (>={STABILITY_THRESHOLDS.YELLOW_MAX})</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('YELLOW') }}></div>
-                <span className="text-stealth-300">Yellow ({STABILITY_THRESHOLDS.RED_MAX}–{STABILITY_THRESHOLDS.YELLOW_MAX - 1})</span>
+                <span className="text-stealth-300">Yellow ({STABILITY_THRESHOLDS.RED_MAX}-{STABILITY_THRESHOLDS.YELLOW_MAX - 1})</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('RED') }}></div>
@@ -493,7 +494,7 @@ export default function SystemBreakdown() {
           <div className="flex items-center gap-2">
             <h3 className="text-lg md:text-xl font-semibold text-stealth-100">Composite Score Calculation</h3>
           </div>
-          <span className="text-stealth-400 text-xl">{expandedSections.has('methodology') ? '−' : '+'}</span>
+          <span className="text-stealth-400 text-xl">{expandedSections.has('methodology') ? '-' : '+'}</span>
         </button>
         {expandedSections.has('methodology') && (
           <div className="collapsible-content">
@@ -508,31 +509,31 @@ export default function SystemBreakdown() {
                   </div>
                 </div>
                 <div className="text-sm font-mono text-cyan-400 mb-3">
-                  Composite Score = Σ (Indicator Score × Weight) / Σ Weights
+                  Composite Score = Sum (Indicator Score x Weight) / Sum Weights
                 </div>
                 <div className="text-xs text-stealth-300 space-y-2">
                   <p><strong>Step 1:</strong> Each indicator is normalized to a 0-100 stability score where higher scores indicate better market stability.</p>
                   <p><strong>Step 2:</strong> Individual scores are multiplied by their assigned weights to reflect importance.</p>
                   <p><strong>Step 3:</strong> Weighted scores are summed and divided by total weight to produce the composite.</p>
-                  <p><strong>Step 4:</strong> The composite score is classified: GREEN (≥{STABILITY_THRESHOLDS.YELLOW_MAX}), YELLOW ({STABILITY_THRESHOLDS.RED_MAX}–{STABILITY_THRESHOLDS.YELLOW_MAX - 1}), or RED (&lt;{STABILITY_THRESHOLDS.RED_MAX}).</p>
+                  <p><strong>Step 4:</strong> The composite score is classified: GREEN (>={STABILITY_THRESHOLDS.YELLOW_MAX}), YELLOW ({STABILITY_THRESHOLDS.RED_MAX}-{STABILITY_THRESHOLDS.YELLOW_MAX - 1}), or RED (&lt;{STABILITY_THRESHOLDS.RED_MAX}).</p>
                 </div>
               </div>
               
               <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
                 <h4 className="text-sm font-semibold text-stealth-200 mb-2">Example Calculation</h4>
                 <div className="text-xs font-mono text-stealth-300 space-y-1">
-                  <div>VIX Score: 70 × Weight: 1.5 = 105.0</div>
-                  <div>SPY Score: 48 × Weight: 1.4 = 67.2</div>
-                  <div>DFF Score: 53 × Weight: 1.3 = 68.9</div>
-                  <div>T10Y2Y Score: 94 × Weight: 1.6 = 150.4</div>
-                  <div>UNRATE Score: 85 × Weight: 1.2 = 102.0</div>
-                  <div>CONSUMER_HEALTH Score: 62 × Weight: 1.4 = 86.8</div>
-                  <div>BOND_MARKET Score: 58 × Weight: 1.8 = 104.4</div>
-                  <div>LIQUIDITY Score: 71 × Weight: 1.6 = 113.6</div>
-                  <div>Analyst Confidence Score: 78 × Weight: 1.7 = 132.6</div>
-                  <div>SENTIMENT Score: 82 × Weight: 1.6 = 131.2</div>
+                  <div>VIX Score: 70 x Weight: 1.5 = 105.0</div>
+                  <div>SPY Score: 48 x Weight: 1.4 = 67.2</div>
+                  <div>DFF Score: 53 x Weight: 1.3 = 68.9</div>
+                  <div>T10Y2Y Score: 94 x Weight: 1.6 = 150.4</div>
+                  <div>UNRATE Score: 85 x Weight: 1.2 = 102.0</div>
+                  <div>CONSUMER_HEALTH Score: 62 x Weight: 1.4 = 86.8</div>
+                  <div>BOND_MARKET Score: 58 x Weight: 1.8 = 104.4</div>
+                  <div>LIQUIDITY Score: 71 x Weight: 1.6 = 113.6</div>
+                  <div>Analyst Confidence Score: 78 x Weight: 1.7 = 132.6</div>
+                  <div>SENTIMENT Score: 82 x Weight: 1.6 = 131.2</div>
                   <div className="pt-2 border-t border-stealth-700 mt-2">Total Weighted: 1062.1 / Total Weight: 14.6 = <strong className="text-green-400">72.7 (GREEN)</strong></div>
-                  <div className="text-stealth-400 text-xs mt-2">Note: Score ≥70 indicates stable market conditions.</div>
+                  <div className="text-stealth-400 text-xs mt-2">Note: Score >=70 indicates stable market conditions.</div>
                 </div>
               </div>
               
@@ -544,15 +545,15 @@ export default function SystemBreakdown() {
                   interpreted as a contemporaneous risk snapshot rather than a hindsight-optimized measure.
                   <div className="mt-2 space-y-1">
                     <div className="flex items-start gap-2">
-                      <span className="text-stealth-500">•</span>
+                      <span className="text-stealth-500">-</span>
                       <span><strong className="text-stealth-400">Monthly indicators</strong> (CPI, PCE, Unemployment): ~2-4 week publication lag</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="text-stealth-500">•</span>
+                      <span className="text-stealth-500">-</span>
                       <span><strong className="text-stealth-400">Sentiment surveys</strong> (Michigan, NFIB, ISM): Released monthly with 1-2 week delay</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="text-stealth-500">•</span>
+                      <span className="text-stealth-500">-</span>
                       <span><strong className="text-stealth-400">Market data</strong> (VIX, SPY, yields): Real-time or 1-day lag</span>
                     </div>
                   </div>
@@ -570,7 +571,7 @@ export default function SystemBreakdown() {
           className="collapsible-header"
         >
           <h3 className="text-lg md:text-xl font-semibold text-stealth-100">Indicator Weights & Configuration</h3>
-          <span className="text-stealth-400 text-xl">{expandedSections.has('weights') ? '−' : '+'}</span>
+          <span className="text-stealth-400 text-xl">{expandedSections.has('weights') ? '-' : '+'}</span>
         </button>
         {expandedSections.has('weights') && (
           <div className="collapsible-content">
@@ -625,7 +626,7 @@ export default function SystemBreakdown() {
                           </div>
                         )}
                         {isComposite && (
-                          <span className="text-stealth-400 text-lg">{isExpanded ? '−' : '+'}</span>
+                          <span className="text-stealth-400 text-lg">{isExpanded ? '-' : '+'}</span>
                         )}
                       </div>
                     </div>
@@ -640,14 +641,14 @@ export default function SystemBreakdown() {
                           <div className="font-mono text-xs text-stealth-300">
                             <div className="mb-2"><strong className="text-stealth-200">Components (Normalized to Stability Scores):</strong></div>
                             <div className="ml-3 space-y-1">
-                              <div>• <span className="text-blue-400">Credit Spread Stability (44%)</span>: HY OAS + IG OAS z-scores, inverted (narrow spreads = high score)</div>
-                              <div>• <span className="text-blue-400">Yield Curve Stability (23%)</span>: 10Y-2Y, 10Y-3M, 30Y-5Y spreads, inverted (normal curve = high score)</div>
-                              <div>• <span className="text-blue-400">Rates Momentum Stability (17%)</span>: 3-month ROC of 2Y and 10Y yields, inverted (stable rates = high score)</div>
-                              <div>• <span className="text-blue-400">Treasury Volatility Stability (16%)</span>: 20-day rolling std dev of DGS10, inverted (low vol = high score)</div>
+                              <div>- <span className="text-blue-400">Credit Spread Stability (44%)</span>: HY OAS + IG OAS z-scores, inverted (narrow spreads = high score)</div>
+                              <div>- <span className="text-blue-400">Yield Curve Stability (23%)</span>: 10Y-2Y, 10Y-3M, 30Y-5Y spreads, inverted (normal curve = high score)</div>
+                              <div>- <span className="text-blue-400">Rates Momentum Stability (17%)</span>: 3-month ROC of 2Y and 10Y yields, inverted (stable rates = high score)</div>
+                              <div>- <span className="text-blue-400">Treasury Volatility Stability (16%)</span>: 20-day rolling std dev of DGS10, inverted (low vol = high score)</div>
                             </div>
                           </div>
                           <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
-                            composite_stability = (0.44 × credit_stability) + (0.23 × curve_stability) + (0.17 × momentum_stability) + (0.16 × volatility_stability)
+                            composite_stability = (0.44 x credit_stability) + (0.23 x curve_stability) + (0.17 x momentum_stability) + (0.16 x volatility_stability)
                             <br />
                             <span className="text-stealth-500">// All components normalized so higher score = more stable bond markets</span>
                           </div>
@@ -659,8 +660,8 @@ export default function SystemBreakdown() {
                         </div>
                         <div className="text-stealth-400 text-xs">
                           <strong className="text-stealth-300">Typical Ranges (Stability Score):</strong> 
-                          <span className="ml-2 text-emerald-400">HIGH: 70-100</span> (stable credit, normal curves, low vol) · 
-                          <span className="ml-2 text-yellow-400">MODERATE: 40-69</span> (widening spreads, curve flattening) · 
+                          <span className="ml-2 text-emerald-400">HIGH: 70-100</span> (stable credit, normal curves, low vol) - 
+                          <span className="ml-2 text-yellow-400">MODERATE: 40-69</span> (widening spreads, curve flattening) - 
                           <span className="ml-2 text-red-400">LOW: 0-39</span> (credit stress, inversions, volatility spikes)
                         </div>
                       </div>
@@ -672,19 +673,19 @@ export default function SystemBreakdown() {
                           <div className="font-mono text-xs text-stealth-300">
                             <div className="mb-2"><strong className="text-stealth-200">Components (Normalized to Stability Scores):</strong></div>
                             <div className="ml-3 space-y-1">
-                              <div>• <span className="text-purple-400">M2 Money Supply</span>: Year-over-year % growth (higher growth = more liquidity)</div>
-                              <div>• <span className="text-purple-400">Fed Balance Sheet</span>: Month-over-month delta (QE expansion = more liquidity)</div>
-                              <div>• <span className="text-purple-400">Reverse Repo (RRP)</span>: Daily usage level (lower usage = more market liquidity)</div>
+                              <div>- <span className="text-purple-400">M2 Money Supply</span>: Year-over-year % growth (higher growth = more liquidity)</div>
+                              <div>- <span className="text-purple-400">Fed Balance Sheet</span>: Month-over-month delta (QE expansion = more liquidity)</div>
+                              <div>- <span className="text-purple-400">Reverse Repo (RRP)</span>: Daily usage level (lower usage = more market liquidity)</div>
                             </div>
                           </div>
                           <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
-                            liquidity_z = z_score(M2_YoY) + z_score(Δ_FedBS) - z_score(RRP_level)
+                            liquidity_z = z_score(M2_YoY) + z_score(Delta_FedBS) - z_score(RRP_level)
                             <br />
                             smoothed_liquidity = moving_average_30day(liquidity_z)
                             <br />
                             final_stability_score = normalize(smoothed_liquidity, direction=-1)
                             <br />
-                            <span className="text-stealth-500">// Higher liquidity z-score → higher stability score (direction=-1 preserves positive values)</span>
+                            <span className="text-stealth-500">// Higher liquidity z-score -> higher stability score (direction=-1 preserves positive values)</span>
                           </div>
                         </div>
                         <div className="text-stealth-400 text-xs">
@@ -694,8 +695,8 @@ export default function SystemBreakdown() {
                         </div>
                         <div className="text-stealth-400 text-xs">
                           <strong className="text-stealth-300">Typical Ranges (Stability Score):</strong> 
-                          <span className="ml-2 text-emerald-400">HIGH: 70-100</span> (M2 growth, QE, low RRP) · 
-                          <span className="ml-2 text-yellow-400">MODERATE: 40-69</span> (slowing M2, neutral Fed) · 
+                          <span className="ml-2 text-emerald-400">HIGH: 70-100</span> (M2 growth, QE, low RRP) - 
+                          <span className="ml-2 text-yellow-400">MODERATE: 40-69</span> (slowing M2, neutral Fed) - 
                           <span className="ml-2 text-red-400">LOW: 0-39</span> (M2 decline, QT, RRP peak)
                         </div>
                       </div>
@@ -707,9 +708,9 @@ export default function SystemBreakdown() {
                           <div className="font-mono text-xs text-stealth-300">
                             <div className="mb-2"><strong className="text-stealth-200">Components:</strong></div>
                             <div className="ml-3 space-y-1">
-                              <div>• <span className="text-green-400">Personal Consumption Expenditures (PCE)</span>: Month-over-month % change</div>
-                              <div>• <span className="text-green-400">Personal Income (PI)</span>: Month-over-month % change</div>
-                              <div>• <span className="text-green-400">Consumer Price Index (CPI)</span>: Month-over-month % change (inflation baseline)</div>
+                              <div>- <span className="text-green-400">Personal Consumption Expenditures (PCE)</span>: Month-over-month % change</div>
+                              <div>- <span className="text-green-400">Personal Income (PI)</span>: Month-over-month % change</div>
+                              <div>- <span className="text-green-400">Consumer Price Index (CPI)</span>: Month-over-month % change (inflation baseline)</div>
                             </div>
                           </div>
                           <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
@@ -729,8 +730,8 @@ export default function SystemBreakdown() {
                         </div>
                         <div className="text-stealth-400 text-xs">
                           <strong className="text-stealth-300">Typical Ranges (Stability Score):</strong> 
-                          <span className="ml-2 text-emerald-400">HEALTHY: 70-100</span> (real growth outpacing inflation) · 
-                          <span className="ml-2 text-yellow-400">NEUTRAL: 40-69</span> (keeping pace with inflation) · 
+                          <span className="ml-2 text-emerald-400">HEALTHY: 70-100</span> (real growth outpacing inflation) - 
+                          <span className="ml-2 text-yellow-400">NEUTRAL: 40-69</span> (keeping pace with inflation) - 
                           <span className="ml-2 text-red-400">STRESS: 0-39</span> (inflation eroding power)
                         </div>
                       </div>
@@ -742,16 +743,16 @@ export default function SystemBreakdown() {
                           <div className="font-mono text-xs text-stealth-300">
                             <div className="mb-2"><strong className="text-stealth-200">Components (Normalized to Stability Scores):</strong></div>
                             <div className="ml-3 space-y-1">
-                              <div>• <span className="text-red-400">VIX (Equity Volatility) - 40%</span>: CBOE Volatility Index (inverted: low VIX = high score)</div>
-                              <div>• <span className="text-red-400">MOVE Index (Rates Volatility) - 25%</span>: Bond market volatility (inverted: low MOVE = high score)</div>
-                              <div>• <span className="text-red-400">HY OAS (Credit Stress) - 25%</span>: High-yield spreads (inverted: narrow spreads = high score)</div>
-                              <div>• <span className="text-red-400">ERP Proxy (Risk Premium) - 10%</span>: BBB yield minus 10Y Treasury (inverted: low premium = high score)</div>
+                              <div>- <span className="text-red-400">VIX (Equity Volatility) - 40%</span>: CBOE Volatility Index (inverted: low VIX = high score)</div>
+                              <div>- <span className="text-red-400">MOVE Index (Rates Volatility) - 25%</span>: Bond market volatility (inverted: low MOVE = high score)</div>
+                              <div>- <span className="text-red-400">HY OAS (Credit Stress) - 25%</span>: High-yield spreads (inverted: narrow spreads = high score)</div>
+                              <div>- <span className="text-red-400">ERP Proxy (Risk Premium) - 10%</span>: BBB yield minus 10Y Treasury (inverted: low premium = high score)</div>
                             </div>
                           </div>
                           <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
-                            component_stability = 100 - (((z_blended + 3) / 6) × 100)
+                            component_stability = 100 - (((z_blended + 3) / 6) x 100)
                             <br />
-                            composite_stability = Σ(component_stability × weight)
+                            composite_stability = Sum(component_stability x weight)
                             <br />
                             <span className="text-stealth-500">// Higher score = calm markets (low anxiety), Lower score = fearful markets (high anxiety)</span>
                           </div>
@@ -763,8 +764,8 @@ export default function SystemBreakdown() {
                         </div>
                         <div className="text-stealth-400 text-xs">
                           <strong className="text-stealth-300">Typical Ranges (Stability Score):</strong> 
-                          <span className="ml-2 text-emerald-400">CALM: 70-100</span> (VIX &lt;20, low spreads, confident) · 
-                          <span className="ml-2 text-yellow-400">ELEVATED: 40-69</span> (VIX 20-30, cautious) · 
+                          <span className="ml-2 text-emerald-400">CALM: 70-100</span> (VIX &lt;20, low spreads, confident) - 
+                          <span className="ml-2 text-yellow-400">ELEVATED: 40-69</span> (VIX 20-30, cautious) - 
                           <span className="ml-2 text-red-400">ANXIOUS: 0-39</span> (VIX &gt;30, panic hedging)
                         </div>
                       </div>
@@ -776,16 +777,16 @@ export default function SystemBreakdown() {
                           <div className="font-mono text-xs text-stealth-300">
                             <div className="mb-2"><strong className="text-stealth-200">Components (Normalized to Stability Scores):</strong></div>
                             <div className="ml-3 space-y-1">
-                              <div>• <span className="text-yellow-400">Michigan Consumer Sentiment - 30%</span>: Consumer confidence (higher = more confident)</div>
-                              <div>• <span className="text-yellow-400">NFIB Small Business Optimism - 30%</span>: Business owner confidence (higher = more optimistic)</div>
-                              <div>• <span className="text-yellow-400">ISM New Orders (Manufacturing) - 25%</span>: Forward demand indicator (higher = more orders)</div>
-                              <div>• <span className="text-yellow-400">CapEx Proxy (Capital Goods Orders) - 15%</span>: Corporate investment (higher = more investment)</div>
+                              <div>- <span className="text-yellow-400">Michigan Consumer Sentiment - 30%</span>: Consumer confidence (higher = more confident)</div>
+                              <div>- <span className="text-yellow-400">NFIB Small Business Optimism - 30%</span>: Business owner confidence (higher = more optimistic)</div>
+                              <div>- <span className="text-yellow-400">ISM New Orders (Manufacturing) - 25%</span>: Forward demand indicator (higher = more orders)</div>
+                              <div>- <span className="text-yellow-400">CapEx Proxy (Capital Goods Orders) - 15%</span>: Corporate investment (higher = more investment)</div>
                             </div>
                           </div>
                           <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
-                            confidence_score(component) = ((z + 3) / 6) × 100 → [0, 100]
+                            confidence_score(component) = ((z + 3) / 6) x 100 -> [0, 100]
                             <br />
-                            composite_confidence = Σ(confidence_score × weight)
+                            composite_confidence = Sum(confidence_score x weight)
                             <br />
                             <span className="text-stealth-500">// Higher confidence = willingness to spend/invest/expand = higher stability</span>
                           </div>
@@ -797,8 +798,8 @@ export default function SystemBreakdown() {
                         </div>
                         <div className="text-stealth-400 text-xs">
                           <strong className="text-stealth-300">Typical Ranges (Stability Score):</strong> 
-                          <span className="ml-2 text-emerald-400">OPTIMISTIC: 70-100</span> (Michigan 90+, NFIB 100+, strong CapEx) · 
-                          <span className="ml-2 text-yellow-400">CAUTIOUS: 40-69</span> (Michigan 70-90, moderate activity) · 
+                          <span className="ml-2 text-emerald-400">OPTIMISTIC: 70-100</span> (Michigan 90+, NFIB 100+, strong CapEx) - 
+                          <span className="ml-2 text-yellow-400">CAUTIOUS: 40-69</span> (Michigan 70-90, moderate activity) - 
                           <span className="ml-2 text-red-400">PESSIMISTIC: 0-39</span> (Michigan &lt;70, contraction signals)
                         </div>
                       </div>

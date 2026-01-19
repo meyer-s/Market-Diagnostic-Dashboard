@@ -3,6 +3,8 @@ import { AreaChart, Area, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cart
 import { MetalsSubsystemPanel } from './MetalsSubsystemPanel';
 import { CryptoSubsystemPanel } from './CryptoSubsystemPanel';
 import { MethodologyPanel } from './MethodologyPanel';
+import { CHART_NEUTRAL } from "../../utils/chartUtils";
+import { getFamilyColor, statePalette } from "../../theme/metricColors";
 
 interface HistoricalData {
   date: string;
@@ -58,16 +60,16 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
 
   const getRegimeColor = (regime: string): string => {
     const colors: Record<string, string> = {
-      'LOW': '#10b981',
-      'MODERATE': '#f59e0b',
-      'HIGH': '#ef4444',
-      'normal_confidence': '#10b981',
-      'mild_caution': '#f59e0b',
-      'monetary_stress': '#f59e0b',
-      'liquidity_crisis': '#ef4444',
-      'systemic_breakdown': '#dc2626'
+      'LOW': statePalette.green,
+      'MODERATE': statePalette.yellow,
+      'HIGH': statePalette.red,
+      'normal_confidence': statePalette.green,
+      'mild_caution': statePalette.yellow,
+      'monetary_stress': statePalette.yellow,
+      'liquidity_crisis': statePalette.red,
+      'systemic_breakdown': statePalette.red
     };
-    return colors[regime] || '#6b7280';
+    return colors[regime] || statePalette.neutral;
   };
 
   const getRegimeLabel = (regime: string): string => {
@@ -115,6 +117,11 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
   const totalContribution = aapData.metals_contribution + aapData.crypto_contribution;
   const metalsPercent = totalContribution > 0 ? (aapData.metals_contribution / totalContribution) * 100 : 50;
   const cryptoPercent = totalContribution > 0 ? (aapData.crypto_contribution / totalContribution) * 100 : 50;
+  const metalsColor = getFamilyColor("metals");
+  const metalsFill = getFamilyColor("metals", "faint");
+  const cryptoColor = getFamilyColor("crypto");
+  const cryptoFill = getFamilyColor("crypto", "faint");
+  const benchmarkColor = getFamilyColor("benchmark");
 
   return (
     <div className="space-y-6">
@@ -133,7 +140,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
           </div>
           <div className="flex items-center gap-2 text-xs md:text-sm text-stealth-500">
             <span>0 = Min Stability</span>
-            <span>•</span>
+            <span>-</span>
             <span>100 = Normal</span>
           </div>
           <div className="mt-3 w-full bg-stealth-700 rounded-full h-2">
@@ -174,8 +181,8 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
           <div className="text-xs md:text-sm text-stealth-500">
             {completenessPercent.toFixed(1)}% operational 
             {completenessPercent >= 70 ? 
-              <span className="text-emerald-400 ml-2">✓ Above threshold</span> : 
-              <span className="text-red-400 ml-2">⚠ Below threshold</span>
+              <span className="text-emerald-400 ml-2">Above threshold</span> : 
+              <span className="text-red-400 ml-2">Below threshold</span>
             }
           </div>
         </div>
@@ -223,31 +230,31 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
         <div className="h-64 md:h-96">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={history}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
               <XAxis 
                 dataKey="date" 
-                stroke="#9ca3af" 
-                tick={{ fill: '#9ca3af', fontSize: 12 }}
+                stroke={CHART_NEUTRAL.axis} 
+                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
               />
               <YAxis 
-                stroke="#9ca3af"
+                stroke={CHART_NEUTRAL.axis}
                 domain={[0, 100]}
-                tick={{ fill: '#9ca3af', fontSize: 12 }}
+                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
               />
               <Tooltip 
                 contentStyle={{ 
-                  backgroundColor: '#1f2937', 
-                  border: '1px solid #374151',
+                  backgroundColor: CHART_NEUTRAL.tooltipBg, 
+                  border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
                   borderRadius: '0.5rem',
-                  color: '#f3f4f6'
+                  color: CHART_NEUTRAL.text
                 }}
               />
               <Area 
                 type="monotone" 
                 dataKey="metals_contribution" 
                 stackId="1" 
-                fill="#f59e0b" 
-                stroke="#f59e0b"
+                fill={metalsFill} 
+                stroke={metalsColor}
                 strokeWidth={2}
                 fillOpacity={0.5}
                 name="Metals"
@@ -256,8 +263,8 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
                 type="monotone" 
                 dataKey="crypto_contribution" 
                 stackId="1" 
-                fill="#3b82f6" 
-                stroke="#3b82f6"
+                fill={cryptoFill} 
+                stroke={cryptoColor}
                 strokeWidth={2}
                 fillOpacity={0.5}
                 name="Crypto"
@@ -265,7 +272,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
               <Line 
                 type="monotone" 
                 dataKey="sma20" 
-                stroke="#f59e0b" 
+                stroke={benchmarkColor} 
                 strokeWidth={3}
                 dot={false}
                 name="20-Day SMA"
@@ -294,19 +301,19 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <svg className="w-6 h-1" viewBox="0 0 24 4" preserveAspectRatio="none">
-                <line x1="0" y1="2" x2="24" y2="2" stroke="#10b981" strokeWidth="2"/>
+                <line x1="0" y1="2" x2="24" y2="2" stroke={statePalette.green} strokeWidth="2"/>
               </svg>
               <span className="text-stealth-300 text-xs">Current Score</span>
             </div>
             <div className="flex items-center gap-2">
               <svg className="w-6 h-1" viewBox="0 0 24 4" preserveAspectRatio="none">
-                <line x1="0" y1="2" x2="24" y2="2" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="2 2"/>
+                <line x1="0" y1="2" x2="24" y2="2" stroke={benchmarkColor} strokeWidth="1.5" strokeDasharray="2 2"/>
               </svg>
               <span className="text-stealth-300 text-xs">20-Day SMA</span>
             </div>
             <div className="flex items-center gap-2">
               <svg className="w-6 h-1" viewBox="0 0 24 4" preserveAspectRatio="none">
-                <line x1="0" y1="2" x2="24" y2="2" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="2 2"/>
+                <line x1="0" y1="2" x2="24" y2="2" stroke={statePalette.red} strokeWidth="1.5" strokeDasharray="2 2"/>
               </svg>
               <span className="text-stealth-300 text-xs">200-Day SMA</span>
             </div>

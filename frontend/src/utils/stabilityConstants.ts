@@ -12,6 +12,8 @@
  * - RED: score < 40 (Market stress)
  */
 
+import { statePalette } from "../theme/metricColors";
+
 export const STABILITY_THRESHOLDS = {
   RED_MAX: 40,
   YELLOW_MAX: 70,
@@ -42,13 +44,13 @@ export function getStateFromScore(score: number): StabilityState {
 export function getStateColor(state: StabilityState): string {
   switch (state) {
     case "GREEN":
-      return "#10b981"; // emerald-500
+      return statePalette.green;
     case "YELLOW":
-      return "#eab308"; // yellow-500
+      return statePalette.yellow;
     case "RED":
-      return "#ef4444"; // red-500
+      return statePalette.red;
     default:
-      return "#6b7280"; // gray-500
+      return statePalette.neutral;
   }
 }
 
@@ -74,13 +76,13 @@ export function getStateBadgeClasses(state: StabilityState): string {
 export const STATE_DESCRIPTIONS = {
   GREEN: {
     label: "GREEN",
-    range: `Stability Score: ≥ ${STABILITY_THRESHOLDS.YELLOW_MAX}`,
+    range: `Stability Score: >= ${STABILITY_THRESHOLDS.YELLOW_MAX}`,
     description:
       "Market conditions are stable. Low volatility, healthy growth, minimal systemic risks.",
   },
   YELLOW: {
     label: "YELLOW",
-    range: `Stability Score: ${STABILITY_THRESHOLDS.RED_MAX}–${STABILITY_THRESHOLDS.YELLOW_MAX - 1}`,
+    range: `Stability Score: ${STABILITY_THRESHOLDS.RED_MAX}-${STABILITY_THRESHOLDS.YELLOW_MAX - 1}`,
     description:
       "Market shows caution signals. Increased volatility, mixed indicators, elevated monitoring required.",
   },

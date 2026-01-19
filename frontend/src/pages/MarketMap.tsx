@@ -39,7 +39,8 @@ import { useEffect, useMemo, useState } from "react";
 import MarketLoading from "../components/ui/MarketLoading";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { formatDateTimeWithWeekday } from "../utils/styleUtils";
-import { CHART_MARGIN } from "../utils/chartUtils";
+import { CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
+import { getFamilyColor, statePalette } from "../theme/metricColors";
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -126,6 +127,17 @@ const NASDAQ_100_TICKERS = [
   'CSGP', 'TTWO', 'ANSS', 'DDOG', 'CDW', 'BIIB', 'ILMN', 'GFS', 'WBD', 'MDB',
   'MRNA', 'WBA', 'SMCI', 'ARM', 'DLTR', 'FANG', 'ALGN', 'ZM', 'SIRI', 'LCID'
 ];
+
+const withAlpha = (hex: string, alpha: number) => {
+  const normalized = hex.replace("#", "");
+  const bigint = parseInt(normalized.length === 3
+    ? normalized.split("").map((ch) => ch + ch).join("")
+    : normalized, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 // =============================================================================
 // MAIN COMPONENT
@@ -375,7 +387,7 @@ const MarketMap = () => {
           {intradaySeriesAligned.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={intradaySeriesAligned} margin={CHART_MARGIN}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                 <XAxis
                   dataKey="timestamp"
                   type="category"
@@ -383,18 +395,18 @@ const MarketMap = () => {
                   hide={true}
                 />
                 <YAxis
-                  tick={{ fill: "#6b7280", fontSize: 12 }}
-                  stroke="#555560"
+                  tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                  stroke={CHART_NEUTRAL.axis}
                   tickFormatter={(value) => `${value.toFixed(1)}%`}
                   domain={['auto', 'auto']}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#161619",
-                    borderColor: "#555560",
+                    backgroundColor: CHART_NEUTRAL.tooltipBg,
+                    borderColor: CHART_NEUTRAL.tooltipBorder,
                     borderRadius: "6px",
                   }}
-                  labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
+                  labelStyle={{ color: CHART_NEUTRAL.label, fontSize: 11 }}
                   itemStyle={{ fontSize: 11 }}
                   labelFormatter={(timestamp: string) => formatDateTimeWithWeekday(timestamp)}
                   formatter={(value: number, name: string) => {
@@ -407,7 +419,7 @@ const MarketMap = () => {
                     return [`${Number(value).toFixed(2)}%`, displayName];
                   }}
                 />
-                <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" strokeWidth={1.5} />
+                <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeDasharray="3 3" strokeWidth={1.5} />
                 
                 {/* Vertical day dividers - Add reference lines at start of each trading day */}
                 {(() => {
@@ -426,7 +438,7 @@ const MarketMap = () => {
                     <ReferenceLine 
                       key={timestamp}
                       x={timestamp} 
-                      stroke="#555560" 
+                      stroke={CHART_NEUTRAL.axis} 
                       strokeDasharray="5 5" 
                       strokeWidth={1}
                     />
@@ -438,7 +450,7 @@ const MarketMap = () => {
                   type="monotone"
                   dataKey="SPY"
                   name="SPY"
-                  stroke="#10B981"
+                  stroke={getFamilyColor("equity")}
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
@@ -449,7 +461,7 @@ const MarketMap = () => {
                   type="monotone"
                   dataKey="DJI"
                   name="DJI"
-                  stroke="#3B82F6"
+                  stroke={getFamilyColor("industrials")}
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
@@ -460,7 +472,7 @@ const MarketMap = () => {
                   type="monotone"
                   dataKey="RTY"
                   name="RTY"
-                  stroke="#F59E0B"
+                  stroke={getFamilyColor("financials")}
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
@@ -481,8 +493,8 @@ const MarketMap = () => {
               key={day.date}
               className="flex-1 text-center p-1.5 sm:p-2 bg-stealth-900 border-t border-b border-stealth-700"
               style={{ 
-                borderLeft: idx === 0 ? '1px solid #333338' : 'none',
-                borderRight: '1px solid #333338'
+                borderLeft: idx === 0 ? `1px solid ${CHART_NEUTRAL.grid}` : 'none',
+                borderRight: `1px solid ${CHART_NEUTRAL.grid}`
               }}
             >
               <div className="text-xs font-semibold text-stealth-300 truncate">{day.day_name.substring(0, 3)}</div>
@@ -569,14 +581,14 @@ const MarketMap = () => {
                             <path
                               d={`M 0,${sparkPoints[0]} Q 8,${(sparkPoints[0] + sparkPoints[1]) / 2} 17,${sparkPoints[1]} Q 25,${(sparkPoints[1] + sparkPoints[2]) / 2} 33,${sparkPoints[2]} Q 42,${(sparkPoints[2] + sparkPoints[3]) / 2} 50,${sparkPoints[3]}`}
                               fill="none"
-                              stroke={trendUp ? '#10b981' : trendDown ? '#ef4444' : '#6b7280'}
+                              stroke={trendUp ? statePalette.green : trendDown ? statePalette.red : statePalette.neutral}
                               strokeWidth="1.5"
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             />
                             
                             {/* Data point circles - only show final point colored */}
-                            <circle cx="50" cy={sparkPoints[3]} r="1.5" fill={trendUp ? '#10b981' : trendDown ? '#ef4444' : '#6b7280'} />
+                            <circle cx="50" cy={sparkPoints[3]} r="1.5" fill={trendUp ? statePalette.green : trendDown ? statePalette.red : statePalette.neutral} />
                           </svg>
                           <div className="text-[9px] text-stealth-500">T + 12M</div>
                         </div>
@@ -621,7 +633,7 @@ const MarketMap = () => {
                           className="absolute w-full"
                           style={{
                             top: `${((maxPct - pct) / range) * 100}%`,
-                            borderTop: `1px ${pct === 0 ? 'solid' : 'dashed'} ${pct === 0 ? '#555560' : '#333338'}`,
+                            borderTop: `1px ${pct === 0 ? 'solid' : 'dashed'} ${pct === 0 ? CHART_NEUTRAL.axis : CHART_NEUTRAL.grid}`,
                           }}
                         />
                       ))}
@@ -670,18 +682,19 @@ const MarketMap = () => {
                         
                         // ============================================================
                         // COLOR CODING: Performance-based gradient
-                        // Bright green (strong gains) → Light green (small gains) →
-                        // Light red (small losses) → Dark red (strong losses)
+                        // Bright green (strong gains) -> Light green (small gains) ->
+                        // Light red (small losses) -> Dark red (strong losses)
                         // ============================================================
                         const getColor = (pct: number): string => {
-                          if (pct >= 10) return '#10b981';   // Emerald 500 - Exceptional gain
-                          if (pct >= 5) return '#22c55e';    // Green 500 - Strong gain
-                          if (pct >= 2) return '#4ade80';    // Green 400 - Moderate gain
-                          if (pct >= 0) return '#86efac';    // Green 300 - Slight gain
-                          if (pct >= -2) return '#fca5a5';   // Red 300 - Slight loss
-                          if (pct >= -5) return '#f87171';   // Red 400 - Moderate loss
-                          if (pct >= -10) return '#ef4444';  // Red 500 - Strong loss
-                          return '#dc2626';                   // Red 600 - Exceptional loss
+                          const magnitude = Math.min(Math.abs(pct), 10);
+                          const alpha = 0.3 + (magnitude / 10) * 0.6;
+                          if (pct > 0) {
+                            return withAlpha(statePalette.green, alpha);
+                          }
+                          if (pct < 0) {
+                            return withAlpha(statePalette.red, alpha);
+                          }
+                          return withAlpha(statePalette.neutral, 0.35);
                         };
 
                         return (

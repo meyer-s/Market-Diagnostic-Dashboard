@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useApi } from "../hooks/useApi";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
+import { CHART_NEUTRAL } from "../utils/chartUtils";
+import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
 
 interface RegimeStatus {
   gold_bias: "MONETARY_HEDGE" | "NEUTRAL" | "FINANCIAL_ASSET";
@@ -119,20 +121,18 @@ interface PriceHistory {
   price: number;
 }
 
-// Metal color scheme for consistent identification throughout the page
-const METAL_COLORS = {
-  AU: { primary: "#FFD700", name: "Gold" },      // Gold
-  AG: { primary: "#C0C0C0", name: "Silver" },    // Silver
-  PT: { primary: "#9D4EDD", name: "Platinum" },  // Platinum (purple)
-  PD: { primary: "#FF6B6B", name: "Palladium" }  // Palladium (red)
+const METAL_LABELS: Record<string, string> = {
+  AU: "Gold",
+  AG: "Silver",
+  PT: "Platinum",
+  PD: "Palladium",
 };
 
-const getMetalColor = (metal: string): string => {
-  return METAL_COLORS[metal as keyof typeof METAL_COLORS]?.primary || "#888888";
-};
+const getMetalColor = (metal: string, variant: "base" | "muted" | "faint" = "base") =>
+  getMetricColor(metal, variant);
 
 const getMetalName = (metal: string): string => {
-  return METAL_COLORS[metal as keyof typeof METAL_COLORS]?.name || metal;
+  return METAL_LABELS[metal] || metal;
 };
 
 const getRegimeBadgeClass = (regime: string): string => {
@@ -262,7 +262,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
         </div>
 
         <div className="text-xs md:text-sm text-stealth-400 mt-4">
-          Last Updated: {new Date().toISOString().split('T')[0]} · Data freshness: Real-time spot | CB data (quarterly lag)
+          Last Updated: {new Date().toISOString().split('T')[0]} - Data freshness: Real-time spot | CB data (quarterly lag)
         </div>
       </div>
 
@@ -373,7 +373,7 @@ function MethodologyPanel() {
           className="w-full flex justify-between items-center py-3 px-4 hover:bg-stealth-700/50 transition-colors text-left"
         >
           <span className="font-semibold text-stealth-200">{title}</span>
-          <span className="text-stealth-400 text-xl">{isExpanded ? '−' : '+'}</span>
+          <span className="text-stealth-400 text-xl">{isExpanded ? '-' : '+'}</span>
         </button>
         {isExpanded && (
           <div className="px-4 pb-4 text-sm text-stealth-300 space-y-3">
@@ -524,7 +524,7 @@ function MethodologyPanel() {
 
               <div>
                 <p className="font-semibold text-blue-300">Supply-Inflation Signal (SIS):</p>
-                <p className="text-xs">SIS = (0.4 × MHS) + (0.3 × PCI) + (0.3 × CB Holdings YoY%)</p>
+                <p className="text-xs">SIS = (0.4 x MHS) + (0.3 x PCI) + (0.3 x CB Holdings YoY%)</p>
                 <p className="text-xs mt-1">Composite of monetary strength, industrial demand, and central bank accumulation. High SIS = broad precious metals bullish structure.</p>
               </div>
             </div>
@@ -693,11 +693,11 @@ function PriceAnchorsPanel({ indicators }: any) {
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm font-semibold text-stealth-300">Au/DXY Ratio (Z-Score)</span>
             <span className={`text-lg font-bold ${Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) > 1.5 ? "text-red-400" : "text-yellow-400"}`}>
-              {indicators.price_anchors.au_dxy_ratio_zscore > 0 ? "+" : ""}{indicators.price_anchors.au_dxy_ratio_zscore.toFixed(2)} σ
+              {indicators.price_anchors.au_dxy_ratio_zscore > 0 ? "+" : ""}{indicators.price_anchors.au_dxy_ratio_zscore.toFixed(2)} sigma
             </span>
           </div>
           <p className="text-xs text-stealth-400">
-            {Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) > 2 && "⚠ Extreme deviation from 2Y norm"}
+            {Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) > 2 && "Warning: Extreme deviation from 2Y norm"}
             {Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) > 1.5 && Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) <= 2 && "High valuation"}
             {Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) <= 1.5 && "Normal range"}
           </p>
@@ -719,19 +719,19 @@ function PriceAnchorsPanel({ indicators }: any) {
           <span className="text-xs font-semibold text-stealth-300 block mb-2">Key Correlations (60-day)</span>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="flex justify-between">
-              <span className="text-stealth-400">Au ↔ SPY:</span>
+              <span className="text-stealth-400">Au <-> SPY:</span>
               <span className="text-stealth-300">-0.15</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-stealth-400">Au ↔ TLT:</span>
+              <span className="text-stealth-400">Au <-> TLT:</span>
               <span className="text-stealth-300">+0.42</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-stealth-400">Au ↔ DXY:</span>
+              <span className="text-stealth-400">Au <-> DXY:</span>
               <span className="text-stealth-300">-0.68</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-stealth-400">Au ↔ VIX:</span>
+              <span className="text-stealth-400">Au <-> VIX:</span>
               <span className="text-stealth-300">+0.55</span>
             </div>
           </div>
@@ -758,7 +758,7 @@ function RelativeValuePanel({ indicators }: any) {
             <span className="text-lg font-bold text-blue-300">{indicators.relative_value.au_ag_ratio.toFixed(1)}</span>
           </div>
           <div className="flex justify-between text-xs text-stealth-400 mb-2">
-            <span>Z-Score: {indicators.relative_value.au_ag_ratio_zscore.toFixed(2)} σ</span>
+            <span>Z-Score: {indicators.relative_value.au_ag_ratio_zscore.toFixed(2)} sigma</span>
             <span className={indicators.relative_value.au_ag_ratio > 70 ? "text-red-400" : indicators.relative_value.au_ag_ratio < 50 ? "text-green-400" : "text-yellow-400"}>
               {indicators.relative_value.au_ag_ratio > 70 ? "Monetary stress bias" : indicators.relative_value.au_ag_ratio < 50 ? "Industrial demand" : "Balanced"}
             </span>
@@ -782,7 +782,7 @@ function RelativeValuePanel({ indicators }: any) {
             <span className="text-lg font-bold text-blue-300">{indicators.relative_value.pt_au_ratio.toFixed(3)}</span>
           </div>
           <div className="flex justify-between text-xs text-stealth-400">
-            <span>Z-Score: {indicators.relative_value.pt_au_ratio_zscore.toFixed(2)} σ</span>
+            <span>Z-Score: {indicators.relative_value.pt_au_ratio_zscore.toFixed(2)} sigma</span>
             <span className={indicators.relative_value.pt_au_ratio_zscore < -1 ? "text-red-400" : "text-green-400"}>
               {indicators.relative_value.pt_au_ratio_zscore < -1 ? "Recession signal" : "Growth neutral"}
             </span>
@@ -799,7 +799,7 @@ function RelativeValuePanel({ indicators }: any) {
             <span className="text-lg font-bold text-blue-300">{indicators.relative_value.pd_au_ratio.toFixed(3)}</span>
           </div>
           <p className="text-xs text-stealth-400">
-            Z-Score: {indicators.relative_value.pd_au_ratio_zscore.toFixed(2)} σ · Indicator of auto cycle demand
+            Z-Score: {indicators.relative_value.pd_au_ratio_zscore.toFixed(2)} sigma - Indicator of auto cycle demand
           </p>
         </div>
       </div>
@@ -853,7 +853,7 @@ function PhysicalPaperPanel({ indicators }: any) {
             <span className="text-sm font-semibold text-stealth-300">Futures OI / Registered Inventory</span>
             <span className="text-lg font-bold text-blue-300">{indicators.physical_paper.oi_registered_ratio.toFixed(2)}x</span>
           </div>
-          <p className="text-xs text-stealth-400">Normal: 0.9–1.0x. {indicators.physical_paper.oi_registered_ratio > 1.3 ? "⚠ Elevated stress" : "✓ Healthy"}</p>
+          <p className="text-xs text-stealth-400">Normal: 0.9-1.0x. {indicators.physical_paper.oi_registered_ratio > 1.3 ? "Warning: Elevated stress" : "Healthy"}</p>
         </div>
 
         {/* Inventory Change */}
@@ -866,7 +866,7 @@ function PhysicalPaperPanel({ indicators }: any) {
           </div>
           <p className="text-xs text-stealth-400">
             {indicators.physical_paper.comex_registered_inventory_change_yoy < -10
-              ? "⚠ Significant decline—monitor tightness"
+              ? "Warning: Significant decline-monitor tightness"
               : "Normal range"}
           </p>
         </div>
@@ -878,7 +878,7 @@ function PhysicalPaperPanel({ indicators }: any) {
             <span className="text-lg font-bold text-blue-300">{indicators.physical_paper.backwardation_severity.toFixed(0)}</span>
           </div>
           <p className="text-xs text-stealth-400">
-            {indicators.physical_paper.backwardation_severity > 500 ? "⚠ Deep backwardation = stress" : "Normal contango structure"}
+            {indicators.physical_paper.backwardation_severity > 500 ? "Warning: Deep backwardation = stress" : "Normal contango structure"}
           </p>
         </div>
       </div>
@@ -934,6 +934,13 @@ function SupplyPanel({ supply_data }: any) {
 }
 
 function DemandPanel({ demand_data }: any) {
+  const categoryColors = {
+    investment: getFamilyColor("market"),
+    industrial: getFamilyColor("industrials"),
+    jewelry: getFamilyColor("consumer"),
+    other: getFamilyColor("benchmark"),
+  };
+
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Who's Buying and Why</h3>
@@ -944,10 +951,10 @@ function DemandPanel({ demand_data }: any) {
           {demand_data.map((metal: any, idx: number) => {
             const total = metal.total_tonnes || 1;
             const categories = [
-              { label: "Investment", value: metal.investment_tonnes, pct: (metal.investment_tonnes / total) * 100, color: "#3B82F6" },
-              { label: "Industrial", value: metal.industrial_tonnes, pct: (metal.industrial_tonnes / total) * 100, color: "#10B981" },
-              { label: "Jewelry", value: metal.jewelry_tonnes, pct: (metal.jewelry_tonnes / total) * 100, color: "#F59E0B" },
-              { label: "Other", value: metal.other_tonnes, pct: (metal.other_tonnes / total) * 100, color: "#6B7280" }
+              { label: "Investment", value: metal.investment_tonnes, pct: (metal.investment_tonnes / total) * 100, color: categoryColors.investment },
+              { label: "Industrial", value: metal.industrial_tonnes, pct: (metal.industrial_tonnes / total) * 100, color: categoryColors.industrial },
+              { label: "Jewelry", value: metal.jewelry_tonnes, pct: (metal.jewelry_tonnes / total) * 100, color: categoryColors.jewelry },
+              { label: "Other", value: metal.other_tonnes, pct: (metal.other_tonnes / total) * 100, color: categoryColors.other }
             ].filter(cat => cat.value > 0);
 
             return (
@@ -1055,7 +1062,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
             <span>Metals / M2:</span>
             <span className="text-lg font-bold text-blue-300">{m2_ratio.toFixed(1)}%</span>
           </div>
-          <div className="text-xs text-stealth-400 mt-1">Historical: Pre-1971 (20%), Post-1980 (2–5%)</div>
+          <div className="text-xs text-stealth-400 mt-1">Historical: Pre-1971 (20%), Post-1980 (2-5%)</div>
         </div>
         
         {/* 100-Year History Chart */}
@@ -1063,33 +1070,33 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
           <div className="text-stealth-400 text-xs mb-3 font-semibold">100-Year History: Metals/M2 Ratio</div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={market_caps_history.history}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
               <XAxis 
                 dataKey="year" 
-                stroke="#666" 
-                tick={{ fill: '#999', fontSize: 10 }}
+                stroke={CHART_NEUTRAL.axis} 
+                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
                 tickFormatter={(year) => year % 10 === 0 ? year : ''}
               />
               <YAxis 
-                stroke="#666" 
-                tick={{ fill: '#999', fontSize: 10 }}
-                label={{ value: 'Metals/M2 %', angle: -90, position: 'insideLeft', style: { fill: '#999', fontSize: 10 } }}
+                stroke={CHART_NEUTRAL.axis} 
+                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                label={{ value: 'Metals/M2 %', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 10 } }}
               />
               <Tooltip 
-                contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '4px' }}
+                contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: '4px' }}
                 formatter={(value: any) => [`${value}%`, 'Metals/M2']}
                 labelFormatter={(year) => `Year: ${year}`}
               />
-              <ReferenceLine y={20} stroke="#fbbf24" strokeDasharray="3 3" label={{ value: 'Gold Standard (~20%)', fill: '#fbbf24', fontSize: 9 }} />
-              <ReferenceLine y={5} stroke="#60a5fa" strokeDasharray="3 3" label={{ value: 'Fiat Era Avg (~5%)', fill: '#60a5fa', fontSize: 9 }} />
-              <ReferenceLine x={1971} stroke="#ef4444" strokeDasharray="3 3" label={{ value: '1971: Nixon Shock', fill: '#ef4444', fontSize: 9, position: 'top' }} />
+              <ReferenceLine y={20} stroke={getFamilyColor("gold")} strokeDasharray="3 3" label={{ value: 'Gold Standard (~20%)', fill: getFamilyColor("gold"), fontSize: 9 }} />
+              <ReferenceLine y={5} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" label={{ value: 'Fiat Era Avg (~5%)', fill: getFamilyColor("benchmark"), fontSize: 9 }} />
+              <ReferenceLine x={1971} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: '1971: Nixon Shock', fill: statePalette.red, fontSize: 9, position: 'top' }} />
               <Line 
                 type="monotone" 
                 dataKey="metals_to_m2_pct" 
-                stroke="#10b981" 
+                stroke={getFamilyColor("metals")} 
                 strokeWidth={2} 
                 dot={false}
-                activeDot={{ r: 4, fill: '#10b981' }}
+                activeDot={{ r: 4, fill: getFamilyColor("metals") }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -1100,8 +1107,8 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
         </div>
         
         <p className="text-xs text-stealth-400 border-t border-stealth-600 pt-3 mt-3">
-          Non-predictive scenarios: If Au → $3,000/oz, metals → {formatMarketCap(scenario_3k_total)}. 
-          If Au → $5,000/oz, → {formatMarketCap(scenario_5k_total)}.
+          Non-predictive scenarios: If Au -> $3,000/oz, metals -> {formatMarketCap(scenario_3k_total)}. 
+          If Au -> $5,000/oz, -> {formatMarketCap(scenario_5k_total)}.
         </p>
       </div>
     </div>
@@ -1135,35 +1142,35 @@ function CorrelationPanel({ correlations }: any) {
           <tbody className="text-xs text-stealth-300">
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> ↔ <span style={{ color: getMetalColor('AG') }}>Ag</span>
+                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> <span style={{ color: getMetalColor('AG') }}>Ag</span>
               </td>
               <td className="text-right font-semibold">{correlations.au_ag.toFixed(2)}</td>
               <td className="text-right">High correlation (both monetary)</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> ↔ SPY
+                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> SPY
               </td>
               <td className="text-right font-semibold">{correlations.au_spy.toFixed(2)}</td>
               <td className="text-right">Diversification benefit</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> ↔ TLT
+                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> TLT
               </td>
               <td className="text-right font-semibold">{correlations.au_tlt.toFixed(2)}</td>
               <td className="text-right">Bond substitute signal</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> ↔ DXY
+                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> DXY
               </td>
               <td className="text-right font-semibold">{correlations.au_dxy.toFixed(2)}</td>
               <td className="text-right">Currency hedge effect</td>
             </tr>
             <tr>
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> ↔ VIX
+                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> VIX
               </td>
               <td className="text-right font-semibold">{correlations.au_vix.toFixed(2)}</td>
               <td className="text-right">Stress indicator</td>
@@ -1173,7 +1180,7 @@ function CorrelationPanel({ correlations }: any) {
       </div>
 
       <div className="mt-4 p-3 bg-stealth-700 rounded text-xs text-stealth-400 border-l-2 border-blue-500">
-        <strong>Note:</strong> Correlations change with market regime. Breakdowns {'>'} ±2σ signal regime shifts. Use as
+        <strong>Note:</strong> Correlations change with market regime. Breakdowns {'>'} +/-2sigma signal regime shifts. Use as
         regime confirmation, not reversion signal.
       </div>
     </div>
@@ -1439,11 +1446,11 @@ function PriceHistoryChart() {
       
       <ResponsiveContainer width="100%" height={350}>
         <LineChart data={historyData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
           <XAxis 
             dataKey="date" 
-            stroke="#9CA3AF"
-            tick={{ fill: '#9CA3AF', fontSize: 12 }}
+            stroke={CHART_NEUTRAL.axis}
+            tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
             tickFormatter={(date) => {
               const d = new Date(date);
               return `${d.getMonth() + 1}/${d.getDate()}`;
@@ -1451,36 +1458,36 @@ function PriceHistoryChart() {
           />
           <YAxis 
             yAxisId="left"
-            stroke="#9CA3AF"
-            tick={{ fill: '#9CA3AF', fontSize: 12 }}
-            label={{ value: 'Gold/Platinum/Palladium ($/oz)', angle: -90, position: 'insideLeft', fill: '#9CA3AF' }}
+            stroke={CHART_NEUTRAL.axis}
+            tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+            label={{ value: 'Gold/Platinum/Palladium ($/oz)', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label }}
           />
           <YAxis 
             yAxisId="right"
             orientation="right"
-            stroke="#9CA3AF"
-            tick={{ fill: '#9CA3AF', fontSize: 12 }}
-            label={{ value: 'Silver ($/oz)', angle: 90, position: 'insideRight', fill: '#9CA3AF' }}
+            stroke={CHART_NEUTRAL.axis}
+            tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+            label={{ value: 'Silver ($/oz)', angle: 90, position: 'insideRight', fill: CHART_NEUTRAL.label }}
           />
           <Tooltip 
             contentStyle={{ 
-              backgroundColor: '#1F2937', 
-              border: '1px solid #374151',
+              backgroundColor: CHART_NEUTRAL.tooltipBg, 
+              border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
               borderRadius: '0.5rem',
-              color: '#E5E7EB'
+              color: CHART_NEUTRAL.text
             }}
             formatter={(value: any) => [`$${value.toFixed(2)}`, '']}
             labelFormatter={(label) => new Date(label).toLocaleDateString()}
           />
           <Legend 
-            wrapperStyle={{ color: '#9CA3AF' }}
+            wrapperStyle={{ color: CHART_NEUTRAL.tick }}
             iconType="line"
           />
           <Line 
             yAxisId="left"
             type="monotone" 
             dataKey="AU" 
-            stroke="#FFD700" 
+            stroke={getMetalColor("AU")} 
             strokeWidth={2}
             dot={false}
             name="Gold"
@@ -1489,7 +1496,7 @@ function PriceHistoryChart() {
             yAxisId="right"
             type="monotone" 
             dataKey="AG" 
-            stroke="#C0C0C0" 
+            stroke={getMetalColor("AG")} 
             strokeWidth={2}
             dot={false}
             name="Silver"
@@ -1498,7 +1505,7 @@ function PriceHistoryChart() {
             yAxisId="left"
             type="monotone" 
             dataKey="PT" 
-            stroke="#9D4EDD" 
+            stroke={getMetalColor("PT")} 
             strokeWidth={2}
             dot={false}
             name="Platinum"
@@ -1507,7 +1514,7 @@ function PriceHistoryChart() {
             yAxisId="left"
             type="monotone" 
             dataKey="PD" 
-            stroke="#FF6B6B" 
+            stroke={getMetalColor("PD")} 
             strokeWidth={2}
             dot={false}
             name="Palladium"

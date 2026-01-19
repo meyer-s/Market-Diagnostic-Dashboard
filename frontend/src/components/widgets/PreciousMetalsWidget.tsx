@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { Link } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
+import { CHART_NEUTRAL } from "../../utils/chartUtils";
+import { getMetricColor } from "../../theme/metricColors";
 
 interface MetalProjection {
   metal: string;
@@ -21,12 +23,7 @@ interface RegimeStatus {
   paper_physical_risk: string;
 }
 
-const METAL_COLORS: Record<string, string> = {
-  AU: "#FFD700",
-  AG: "#C0C0C0",
-  PT: "#9D4EDD",
-  PD: "#FF6B6B"
-};
+const getMetalColor = (metal: string) => getMetricColor(metal);
 
 export default function PreciousMetalsWidget() {
   const [projections, setProjections] = useState<MetalProjection[]>([]);
@@ -78,7 +75,7 @@ export default function PreciousMetalsWidget() {
   const chartData = projections.map(p => ({
     metal: p.metal,
     score: p.score_total,
-    color: METAL_COLORS[p.metal]
+    color: getMetalColor(p.metal)
   }));
 
   if (loading) {
@@ -112,12 +109,12 @@ export default function PreciousMetalsWidget() {
             <BarChart data={chartData}>
               <XAxis 
                 dataKey="metal" 
-                tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 11 }}
                 axisLine={false}
               />
               <YAxis 
                 domain={[0, 100]}
-                tick={{ fill: '#9CA3AF', fontSize: 10 }}
+                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
                 axisLine={false}
                 width={30}
               />
@@ -138,7 +135,7 @@ export default function PreciousMetalsWidget() {
             <div className="flex items-center gap-2 flex-1">
               <span 
                 className="font-semibold"
-                style={{ color: METAL_COLORS[proj.metal] }}
+                style={{ color: getMetalColor(proj.metal) }}
               >
                 {proj.metal}
               </span>

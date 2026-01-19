@@ -1,4 +1,5 @@
 import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
+import { getFamilyColor } from "../../theme/metricColors";
 
 interface AAPComponent {
   name: string;
@@ -110,6 +111,9 @@ export function MetalsSubsystemPanel({
                     smooth: smoothMap.get(entry.date) ?? null,
                   }));
 
+                  const rawColor = getFamilyColor("metals", "muted");
+                  const smoothColor = getFamilyColor("metals");
+
                   return (
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData}>
@@ -117,7 +121,7 @@ export function MetalsSubsystemPanel({
                         <Line
                           type={isStepped ? "stepAfter" : "monotone"}
                           dataKey="raw"
-                          stroke="#94a3b8"
+                          stroke={rawColor}
                           strokeOpacity={0.45}
                           strokeWidth={1}
                           dot={false}
@@ -126,7 +130,7 @@ export function MetalsSubsystemPanel({
                         <Line
                           type={isStepped ? "stepAfter" : "monotone"}
                           dataKey="smooth"
-                          stroke="#f59e0b"
+                          stroke={smoothColor}
                           strokeWidth={2}
                           dot={false}
                           connectNulls

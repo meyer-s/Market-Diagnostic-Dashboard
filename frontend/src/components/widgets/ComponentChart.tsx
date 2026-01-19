@@ -1,5 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { CHART_MARGIN } from "../../utils/chartUtils";
+import { CHART_MARGIN, CHART_NEUTRAL } from "../../utils/chartUtils";
 
 interface ChartLine {
   dataKey: string;
@@ -42,14 +42,14 @@ export function ComponentChart({
     value: yAxisLabel,
     angle: -90,
     position: 'insideLeft',
-    fill: '#a4a4b0',
+    fill: CHART_NEUTRAL.label,
     offset: 12
   } : undefined;
 
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={data} margin={CHART_MARGIN}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+        <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
         <XAxis
           dataKey="dateNum"
           type="number"
@@ -61,25 +61,25 @@ export function ComponentChart({
               year: "2-digit",
             })
           }
-          tick={{ fill: "#a4a4b0", fontSize: 12 }}
-          stroke="#555560"
+          tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+          stroke={CHART_NEUTRAL.axis}
         />
         <YAxis
           domain={yAxisDomain || ['auto', 'auto']}
-          tick={{ fill: "#a4a4b0", fontSize: 12 }}
-          stroke="#555560"
+          tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+          stroke={CHART_NEUTRAL.axis}
           width={yAxisWidth}
           tickMargin={8}
           label={yAxisLabelProps}
         />
         <Tooltip
           contentStyle={{
-            backgroundColor: "#161619",
-            borderColor: "#555560",
+            backgroundColor: CHART_NEUTRAL.tooltipBg,
+            borderColor: CHART_NEUTRAL.tooltipBorder,
             borderRadius: "8px",
             padding: "12px",
           }}
-          labelStyle={{ color: "#a4a4b0", marginBottom: "8px" }}
+          labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
           formatter={(value: number) => value.toFixed(2)}
           labelFormatter={(label: number) => new Date(label).toLocaleDateString()}
         />

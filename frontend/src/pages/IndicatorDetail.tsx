@@ -8,7 +8,8 @@ import { ComponentCard } from "../components/widgets/ComponentCard";
 import { processComponentData, calculateDateRange, extendStaleData, filterByDateRange } from "../utils/chartDataUtils";
 import { prepareExtendedComponentData } from "../utils/indicatorDetailHelpers";
 import { formatDateTime } from "../utils/styleUtils";
-import { CHART_MARGIN } from "../utils/chartUtils";
+import { CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
+import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
 import {
   LineChart,
   Line,
@@ -275,11 +276,11 @@ export default function IndicatorDetail() {
       const backfilledCount = result.result?.backfilled || 0;
       
       if (deletedCount === 0 && backfilledCount === 0) {
-        setRefetchMessage(`✓ Data already up to date`);
+        setRefetchMessage(`OK: Data already up to date`);
       } else if (deletedCount === 0) {
-        setRefetchMessage(`✓ Refetched ${backfilledCount} new data points`);
+        setRefetchMessage(`OK: Refetched ${backfilledCount} new data points`);
       } else {
-        setRefetchMessage(`✓ Cleared ${deletedCount} records and refetched ${backfilledCount} data points`);
+        setRefetchMessage(`OK: Cleared ${deletedCount} records and refetched ${backfilledCount} data points`);
       }
       
       // Refetch all data to update the UI
@@ -292,7 +293,7 @@ export default function IndicatorDetail() {
       // Clear message after 5 seconds
       setTimeout(() => setRefetchMessage(null), 5000);
     } catch (error) {
-      setRefetchMessage(`✗ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setRefetchMessage(`Error: Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsRefetching(false);
     }
@@ -402,7 +403,7 @@ export default function IndicatorDetail() {
             const formatAsOf = (date?: string) =>
               date
                 ? new Date(date).toLocaleDateString("en-US", { month: "short", year: "numeric" })
-                : "—";
+                : "-";
             const isWaiting = (entryDate?: string) =>
               Boolean(latestDate && entryDate && entryDate < latestDate);
 
@@ -482,12 +483,12 @@ export default function IndicatorDetail() {
                 <ComponentChart
                   data={extendedData}
                   lines={[
-                    { dataKey: "pce.mom_pct", name: "PCE Growth", stroke: "#60a5fa" },
-                    { dataKey: "pi.mom_pct", name: "PI Growth", stroke: "#10b981" },
-                    { dataKey: "cpi.mom_pct", name: "CPI (Inflation)", stroke: "#ef4444" }
+                    { dataKey: "pce.mom_pct", name: "PCE Growth", stroke: getMetricColor("PCE") },
+                    { dataKey: "pi.mom_pct", name: "PI Growth", stroke: getMetricColor("PI", "muted") },
+                    { dataKey: "cpi.mom_pct", name: "CPI (Inflation)", stroke: getMetricColor("CPI") }
                   ]}
                   referenceLines={[
-                    { y: 0, stroke: "#666", label: "Neutral", labelFill: "#666" }
+                    { y: 0, stroke: getFamilyColor("benchmark"), label: "Neutral", labelFill: getFamilyColor("benchmark") }
                   ]}
                   yAxisLabel="MoM % Growth"
                   dateRange={dateRange}
@@ -513,14 +514,14 @@ export default function IndicatorDetail() {
                 <ComponentChart
                   data={extendedData}
                   lines={[
-                    { dataKey: "spreads.pce_spread", name: "PCE vs CPI", stroke: "#60a5fa" },
-                    { dataKey: "spreads.pi_spread", name: "PI vs CPI", stroke: "#10b981" },
-                    { dataKey: "spreads.consumer_health", name: "Consumer Health", stroke: "#f59e0b", strokeWidth: 3 }
+                    { dataKey: "spreads.pce_spread", name: "PCE vs CPI", stroke: getMetricColor("PCE", "muted") },
+                    { dataKey: "spreads.pi_spread", name: "PI vs CPI", stroke: getMetricColor("PI", "faint") },
+                    { dataKey: "spreads.consumer_health", name: "Consumer Health", stroke: getMetricColor("CONSUMER_HEALTH"), strokeWidth: 3 }
                   ]}
                   referenceLines={[
-                    { y: 0, stroke: "#666", label: "Neutral", labelFill: "#666" },
-                    { y: 65, stroke: "#10b981", label: "GREEN", labelFill: "#10b981" },
-                    { y: 35, stroke: "#ef4444", label: "RED", labelFill: "#ef4444" }
+                    { y: 0, stroke: getFamilyColor("benchmark"), label: "Neutral", labelFill: getFamilyColor("benchmark") },
+                    { y: 65, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
+                    { y: 35, stroke: statePalette.red, label: "RED", labelFill: statePalette.red }
                   ]}
                   yAxisLabel="Spread vs Inflation (%)"
                   dateRange={dateRange}
@@ -536,7 +537,7 @@ export default function IndicatorDetail() {
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
           <p className="text-xs md:text-sm text-stealth-400 mb-3 md:mb-4 break-all">
-            Composite Stress = (Credit × 44%) + (Curve × 23%) + (Momentum × 17%) + (Volatility × 16%)
+            Composite Stress = (Credit x 44%) + (Curve x 23%) + (Momentum x 17%) + (Volatility x 16%)
           </p>
           
           {/* Latest Component Values */}
@@ -607,14 +608,14 @@ export default function IndicatorDetail() {
                 <ComponentChart
                   data={data}
                   lines={[
-                    { dataKey: "credit_spread_stress.stress_score", name: "Credit Spreads", stroke: "#ef4444" },
-                    { dataKey: "yield_curve_stress.stress_score", name: "Yield Curves", stroke: "#eab308" },
-                    { dataKey: "rates_momentum_stress.stress_score", name: "Rates Momentum", stroke: "#f97316" },
-                    { dataKey: "treasury_volatility_stress.stress_score", name: "Treasury Volatility", stroke: "#a855f7" }
+                    { dataKey: "credit_spread_stress.stress_score", name: "Credit Spreads", stroke: getMetricColor("credit_spread_stress") },
+                    { dataKey: "yield_curve_stress.stress_score", name: "Yield Curves", stroke: getMetricColor("yield_curve_stress") },
+                    { dataKey: "rates_momentum_stress.stress_score", name: "Rates Momentum", stroke: getMetricColor("rates_momentum_stress", "muted") },
+                    { dataKey: "treasury_volatility_stress.stress_score", name: "Treasury Volatility", stroke: getMetricColor("treasury_volatility_stress") }
                   ]}
                   referenceLines={[
-                    { y: 65, stroke: "#ef4444", label: "HIGH", labelFill: "#ef4444" },
-                    { y: 35, stroke: "#10b981", label: "LOW", labelFill: "#10b981" }
+                    { y: 65, stroke: statePalette.red, label: "HIGH", labelFill: statePalette.red },
+                    { y: 35, stroke: statePalette.green, label: "LOW", labelFill: statePalette.green }
                   ]}
                   yAxisLabel="Stress Level (0-100, inverted for final score)"
                   dateRange={dateRange}
@@ -636,11 +637,11 @@ export default function IndicatorDetail() {
                 <ComponentChart
                   data={data}
                   lines={[
-                    { dataKey: "composite.stress_score", name: "Composite Stress", stroke: "#60a5fa", strokeWidth: 3 }
+                    { dataKey: "composite.stress_score", name: "Composite Stress", stroke: getFamilyColor("system"), strokeWidth: 3 }
                   ]}
                   referenceLines={[
-                    { y: 65, stroke: "#ef4444", label: "HIGH STRESS", labelFill: "#ef4444" },
-                    { y: 35, stroke: "#10b981", label: "LOW STRESS", labelFill: "#10b981" }
+                    { y: 65, stroke: statePalette.red, label: "HIGH STRESS", labelFill: statePalette.red },
+                    { y: 35, stroke: statePalette.green, label: "LOW STRESS", labelFill: statePalette.green }
                   ]}
                   yAxisLabel="Composite Stress Score"
                   dateRange={dateRange}
@@ -656,7 +657,7 @@ export default function IndicatorDetail() {
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
           <p className="text-xs md:text-sm text-stealth-400 mb-3 md:mb-4 break-all">
-            Liquidity Proxy = z(M2 YoY%) + z(Fed BS Delta) - z(RRP Usage) → Smoothed → Stability Score
+            Liquidity Proxy = z(M2 YoY%) + z(Fed BS Delta) - z(RRP Usage) -> Smoothed -> Stability Score
           </p>
           
           {/* Latest Component Values */}
@@ -711,12 +712,12 @@ export default function IndicatorDetail() {
                 <ComponentChart
                   data={data}
                   lines={[
-                    { dataKey: "m2_money_supply.z_score", name: "M2 YoY%", stroke: "#60a5fa" },
-                    { dataKey: "fed_balance_sheet.z_score", name: "Fed BS Delta", stroke: "#10b981" },
-                    { dataKey: "reverse_repo.z_score", name: "RRP Usage", stroke: "#a855f7" }
+                    { dataKey: "m2_money_supply.z_score", name: "M2 YoY%", stroke: getFamilyColor("liquidity") },
+                    { dataKey: "fed_balance_sheet.z_score", name: "Fed BS Delta", stroke: getFamilyColor("liquidity", "muted") },
+                    { dataKey: "reverse_repo.z_score", name: "RRP Usage", stroke: getFamilyColor("liquidity", "faint") }
                   ]}
                   referenceLines={[
-                    { y: 0, stroke: "#666", label: "Neutral", labelFill: "#666" }
+                    { y: 0, stroke: getFamilyColor("benchmark"), label: "Neutral", labelFill: getFamilyColor("benchmark") }
                   ]}
                   yAxisLabel="Z-Score"
                   dateRange={dateRange}
@@ -738,11 +739,11 @@ export default function IndicatorDetail() {
                 <ComponentChart
                   data={data}
                   lines={[
-                    { dataKey: "composite.stress_score", name: "Liquidity Stress", stroke: "#f59e0b", strokeWidth: 3 }
+                    { dataKey: "composite.stress_score", name: "Liquidity Stress", stroke: getFamilyColor("liquidity"), strokeWidth: 3 }
                   ]}
                   referenceLines={[
-                    { y: 60, stroke: "#ef4444", label: "HIGH STRESS", labelFill: "#ef4444" },
-                    { y: 30, stroke: "#10b981", label: "LOW STRESS", labelFill: "#10b981" }
+                    { y: 60, stroke: statePalette.red, label: "HIGH STRESS", labelFill: statePalette.red },
+                    { y: 30, stroke: statePalette.green, label: "LOW STRESS", labelFill: statePalette.green }
                   ]}
                   yAxisLabel="Stress Score (0-100)"
                   dateRange={dateRange}
@@ -847,7 +848,7 @@ export default function IndicatorDetail() {
               return (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={deduplicatedData7} margin={CHART_MARGIN}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="dateNum"
                       type="number"
@@ -859,25 +860,25 @@ export default function IndicatorDetail() {
                           year: "2-digit",
                         })
                       }
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                     />
                     <YAxis
                       domain={[0, 100]}
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                       width={72}
                       tickMargin={8}
-                      label={{ value: 'Stability Score (0-100)', angle: -90, position: 'insideLeft', fill: '#a4a4b0', offset: 12 }}
+                      label={{ value: 'Stability Score (0-100)', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: "#161619",
-                        borderColor: "#555560",
+                        backgroundColor: CHART_NEUTRAL.tooltipBg,
+                        borderColor: CHART_NEUTRAL.tooltipBorder,
                         borderRadius: "8px",
                         padding: "12px",
                       }}
-                      labelStyle={{ color: "#a4a4b0", marginBottom: "8px" }}
+                      labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
                       formatter={(value: number) => value.toFixed(2)}
                       labelFormatter={(label: number) =>
                         new Date(label).toLocaleDateString()
@@ -887,7 +888,7 @@ export default function IndicatorDetail() {
                       type="monotone"
                       dataKey="vix.stability_score"
                       name="VIX Stability"
-                      stroke="#60a5fa"
+                      stroke={getMetricColor("VIX")}
                       strokeWidth={2}
                       dot={false}
                     />
@@ -895,7 +896,7 @@ export default function IndicatorDetail() {
                       type="monotone"
                       dataKey="hy_oas.stability_score"
                       name="Credit Stability"
-                      stroke="#ef4444"
+                      stroke={getFamilyColor("credit")}
                       strokeWidth={2}
                       dot={false}
                     />
@@ -904,7 +905,7 @@ export default function IndicatorDetail() {
                         type="monotone"
                         dataKey="move.stability_score"
                         name="MOVE Stability"
-                        stroke="#eab308"
+                        stroke={getFamilyColor("volatility", "muted")}
                         strokeWidth={2}
                         dot={false}
                       />
@@ -914,13 +915,13 @@ export default function IndicatorDetail() {
                         type="monotone"
                         dataKey="erp_proxy.stability_score"
                         name="ERP Stability"
-                        stroke="#a855f7"
+                        stroke={getFamilyColor("sentiment")}
                         strokeWidth={2}
                         dot={false}
                       />
                     )}
-                    <ReferenceLine y={70} stroke="#10b981" strokeDasharray="3 3" label={{ value: 'GREEN', position: 'right', fill: '#10b981' }} />
-                    <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'RED', position: 'right', fill: '#ef4444' }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN', position: 'right', fill: statePalette.green }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED', position: 'right', fill: statePalette.red }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -952,7 +953,7 @@ export default function IndicatorDetail() {
               return (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={deduplicatedData8} margin={CHART_MARGIN}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="dateNum"
                       type="number"
@@ -964,25 +965,25 @@ export default function IndicatorDetail() {
                           year: "2-digit",
                         })
                       }
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                     />
                     <YAxis
                       domain={[0, 100]}
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                       width={72}
                       tickMargin={8}
-                      label={{ value: 'Stability Score', angle: -90, position: 'insideLeft', fill: '#a4a4b0', offset: 12 }}
+                      label={{ value: 'Stability Score', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: "#161619",
-                        borderColor: "#555560",
+                        backgroundColor: CHART_NEUTRAL.tooltipBg,
+                        borderColor: CHART_NEUTRAL.tooltipBorder,
                         borderRadius: "8px",
                         padding: "12px",
                       }}
-                      labelStyle={{ color: "#a4a4b0", marginBottom: "8px" }}
+                      labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
                       formatter={(value: number) => value.toFixed(2)}
                       labelFormatter={(label: number) =>
                         new Date(label).toLocaleDateString()
@@ -992,12 +993,12 @@ export default function IndicatorDetail() {
                       type="monotone"
                       dataKey="composite.stability_score"
                       name="Analyst Confidence Stability"
-                      stroke="#10b981"
+                      stroke={getFamilyColor("sentiment")}
                       strokeWidth={3}
                       dot={false}
                     />
-                    <ReferenceLine y={70} stroke="#10b981" strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: '#10b981', fontSize: 11 }} />
-                    <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: '#ef4444', fontSize: 11 }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: statePalette.green, fontSize: 11 }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: statePalette.red, fontSize: 11 }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -1101,7 +1102,7 @@ export default function IndicatorDetail() {
               return (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={deduplicatedData9} margin={CHART_MARGIN}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="dateNum"
                       type="number"
@@ -1113,25 +1114,25 @@ export default function IndicatorDetail() {
                           year: "2-digit",
                         })
                       }
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                     />
                     <YAxis
                       domain={[0, 100]}
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                       width={72}
                       tickMargin={8}
-                      label={{ value: 'Confidence Score (0-100)', angle: -90, position: 'insideLeft', fill: '#a4a4b0', offset: 12 }}
+                      label={{ value: 'Confidence Score (0-100)', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: "#161619",
-                        borderColor: "#555560",
+                        backgroundColor: CHART_NEUTRAL.tooltipBg,
+                        borderColor: CHART_NEUTRAL.tooltipBorder,
                         borderRadius: "8px",
                         padding: "12px",
                       }}
-                      labelStyle={{ color: "#a4a4b0", marginBottom: "8px" }}
+                      labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
                       formatter={(value: number) => value.toFixed(2)}
                       labelFormatter={(label: number) =>
                         new Date(label).toLocaleDateString()
@@ -1141,7 +1142,7 @@ export default function IndicatorDetail() {
                       type="monotone"
                       dataKey="michigan_sentiment.confidence_score"
                       name="Michigan"
-                      stroke="#60a5fa"
+                      stroke={getFamilyColor("sentiment")}
                       strokeWidth={2}
                       dot={false}
                     />
@@ -1150,7 +1151,7 @@ export default function IndicatorDetail() {
                         type="monotone"
                         dataKey="nfib_optimism.confidence_score"
                         name="NFIB"
-                        stroke="#10b981"
+                        stroke={getFamilyColor("sentiment", "muted")}
                         strokeWidth={2}
                         dot={false}
                       />
@@ -1160,7 +1161,7 @@ export default function IndicatorDetail() {
                         type="monotone"
                         dataKey="ism_new_orders.confidence_score"
                         name="ISM"
-                        stroke="#eab308"
+                        stroke={getFamilyColor("growth")}
                         strokeWidth={2}
                         dot={false}
                       />
@@ -1170,13 +1171,13 @@ export default function IndicatorDetail() {
                         type="monotone"
                         dataKey="capex_proxy.confidence_score"
                         name="CapEx"
-                        stroke="#a855f7"
+                        stroke={getFamilyColor("growth", "muted")}
                         strokeWidth={2}
                         dot={false}
                       />
                     )}
-                    <ReferenceLine y={70} stroke="#10b981" strokeDasharray="3 3" label={{ value: 'GREEN', position: 'right', fill: '#10b981' }} />
-                    <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'RED', position: 'right', fill: '#ef4444' }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN', position: 'right', fill: statePalette.green }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED', position: 'right', fill: statePalette.red }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -1208,7 +1209,7 @@ export default function IndicatorDetail() {
               return (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={deduplicatedData10} margin={CHART_MARGIN}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="dateNum"
                       type="number"
@@ -1220,25 +1221,25 @@ export default function IndicatorDetail() {
                           year: "2-digit",
                         })
                       }
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                     />
                     <YAxis
                       domain={[0, 100]}
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                       width={72}
                       tickMargin={8}
-                      label={{ value: 'Confidence Score', angle: -90, position: 'insideLeft', fill: '#a4a4b0', offset: 12 }}
+                      label={{ value: 'Confidence Score', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: "#161619",
-                        borderColor: "#555560",
+                        backgroundColor: CHART_NEUTRAL.tooltipBg,
+                        borderColor: CHART_NEUTRAL.tooltipBorder,
                         borderRadius: "8px",
                         padding: "12px",
                       }}
-                      labelStyle={{ color: "#a4a4b0", marginBottom: "8px" }}
+                      labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
                       formatter={(value: number) => value.toFixed(2)}
                       labelFormatter={(label: number) =>
                         new Date(label).toLocaleDateString()
@@ -1248,12 +1249,12 @@ export default function IndicatorDetail() {
                       type="monotone"
                       dataKey="composite.confidence_score"
                       name="Sentiment Composite"
-                      stroke="#10b981"
+                      stroke={getFamilyColor("sentiment")}
                       strokeWidth={3}
                       dot={false}
                     />
-                    <ReferenceLine y={70} stroke="#10b981" strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: '#10b981', fontSize: 11 }} />
-                    <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: '#ef4444', fontSize: 11 }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: statePalette.green, fontSize: 11 }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: statePalette.red, fontSize: 11 }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -1272,7 +1273,7 @@ export default function IndicatorDetail() {
         return isStale ? (
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6">
             <div className="flex items-start gap-3">
-              <div className="text-yellow-400 text-xl">⚠️</div>
+              <div className="text-yellow-400 text-xl">Warning</div>
               <div>
                 <div className="text-yellow-400 font-semibold mb-1">Data May Be Delayed</div>
                 <div className="text-sm text-stealth-300">
@@ -1328,7 +1329,7 @@ export default function IndicatorDetail() {
             </h3>
             <div className="flex items-center gap-3">
               {refetchMessage && (
-                <span className={`text-sm ${refetchMessage.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>
+                <span className={`text-sm ${refetchMessage.startsWith('OK:') ? 'text-green-400' : 'text-red-400'}`}>
                   {refetchMessage}
                 </span>
               )}
@@ -1401,7 +1402,7 @@ export default function IndicatorDetail() {
               return (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ ...CHART_MARGIN, right: 30 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="timestampNum"
                       type="number"
@@ -1413,26 +1414,26 @@ export default function IndicatorDetail() {
                           day: "numeric",
                         })
                       }
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                     />
                     <YAxis
                       yAxisId="left"
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                       width={72}
                       tickMargin={8}
-                      label={{ value: 'Raw Value', angle: -90, position: 'insideLeft', fill: '#a4a4b0', offset: 12 }}
+                      label={{ value: 'Raw Value', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: "#161619",
-                        borderColor: "#555560",
+                        backgroundColor: CHART_NEUTRAL.tooltipBg,
+                        borderColor: CHART_NEUTRAL.tooltipBorder,
                         borderRadius: "8px",
                         padding: "12px",
                       }}
-                      labelStyle={{ color: "#a4a4b0", marginBottom: "8px" }}
-                      itemStyle={{ color: "#ffffff" }}
+                      labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
+                      itemStyle={{ color: CHART_NEUTRAL.text }}
                       formatter={(value: number) => [value.toFixed(2), "Value"]}
                       labelFormatter={(label: string | number) =>
                         new Date(label).toLocaleDateString()
@@ -1442,7 +1443,7 @@ export default function IndicatorDetail() {
                       yAxisId="left"
                       type="monotone"
                       dataKey="raw_value"
-                      stroke="#60a5fa"
+                      stroke={getFamilyColor("system")}
                       strokeWidth={2}
                       dot={false}
                       animationDuration={300}
@@ -1511,7 +1512,7 @@ export default function IndicatorDetail() {
               return (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ ...CHART_MARGIN, right: 30 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="timestampNum"
                       type="number"
@@ -1523,26 +1524,26 @@ export default function IndicatorDetail() {
                         day: "numeric",
                       })
                     }
-                    tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                    stroke="#555560"
+                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                    stroke={CHART_NEUTRAL.axis}
                   />
                     <YAxis
                       domain={[0, 100]}
-                      tick={{ fill: "#a4a4b0", fontSize: 12 }}
-                      stroke="#555560"
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                      stroke={CHART_NEUTRAL.axis}
                       width={72}
                       tickMargin={8}
-                      label={{ value: 'Score (0-100)', angle: -90, position: 'insideLeft', fill: '#a4a4b0', offset: 12 }}
+                      label={{ value: 'Score (0-100)', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#161619",
-                      borderColor: "#555560",
+                      backgroundColor: CHART_NEUTRAL.tooltipBg,
+                      borderColor: CHART_NEUTRAL.tooltipBorder,
                       borderRadius: "8px",
                       padding: "12px",
                     }}
-                    labelStyle={{ color: "#a4a4b0", marginBottom: "8px" }}
-                    itemStyle={{ color: "#ffffff" }}
+                    labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
+                    itemStyle={{ color: CHART_NEUTRAL.text }}
                     formatter={(value: number) => {
                       const score = Number(value);
                       const state = score < 30 ? "RED" : score < 60 ? "YELLOW" : "GREEN";
@@ -1560,7 +1561,7 @@ export default function IndicatorDetail() {
                   <Line
                     type="monotone"
                     dataKey="score"
-                    stroke="#10b981"
+                    stroke={getFamilyColor("system")}
                     strokeWidth={2}
                     dot={false}
                     animationDuration={300}

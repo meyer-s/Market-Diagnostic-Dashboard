@@ -19,6 +19,8 @@ import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
 import { TechnicalIndicators } from "../components/widgets/TechnicalIndicators.tsx";
 import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
+import { CHART_NEUTRAL } from "../utils/chartUtils";
+import { getFamilyColor } from "../theme/metricColors";
 
 interface StockProjection {
   ticker: string;
@@ -263,7 +265,7 @@ export default function StockAnalysis() {
                   <p className="text-gray-400 mb-1">52W Range</p>
                   <p className="font-semibold">
                     {technicalData?.low_52w !== undefined && technicalData?.high_52w !== undefined
-                      ? `$${Number(technicalData.low_52w).toFixed(2)} – $${Number(technicalData.high_52w).toFixed(2)}`
+                      ? `$${Number(technicalData.low_52w).toFixed(2)} - $${Number(technicalData.high_52w).toFixed(2)}`
                       : "n/a"}
                   </p>
                 </div>
@@ -342,20 +344,20 @@ export default function StockAnalysis() {
                 {/* Grid lines */}
                 {[0, 25, 50, 75, 100].map((y) => (
                   <g key={y}>
-                    <line x1="50" y1={260 - (y * 2.4)} x2="960" y2={260 - (y * 2.4)} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" />
-                    <text x="40" y={264 - (y * 2.4)} fill="#9ca3af" fontSize="10" textAnchor="end">{y}</text>
+                    <line x1="50" y1={260 - (y * 2.4)} x2="960" y2={260 - (y * 2.4)} stroke={CHART_NEUTRAL.grid} strokeWidth="1" strokeDasharray="4 4" />
+                    <text x="40" y={264 - (y * 2.4)} fill={CHART_NEUTRAL.tick} fontSize="10" textAnchor="end">{y}</text>
                   </g>
                 ))}
                 
                 {/* X-axis labels - simplified */}
-                <text x="150" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">-3M</text>
-                <text x="375" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">T</text>
-                <text x="575" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">3M</text>
-                <text x="750" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">6M</text>
-                <text x="925" y="285" fill="#9ca3af" fontSize="11" textAnchor="middle" fontWeight="500">12M</text>
+                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">-3M</text>
+                <text x="375" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">T</text>
+                <text x="575" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M</text>
+                <text x="750" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M</text>
+                <text x="925" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M</text>
                 
                 {(() => {
-                  const color = "#3b82f6"; // Blue color for stock
+                  const color = getFamilyColor("equity");
                   
                   // Calculate points - 5 data points total: -3M, T(now), 3M, 6M, 12M
                   // Use real historical score from backend, fallback to estimation if unavailable
@@ -500,7 +502,7 @@ export default function StockAnalysis() {
                         y1={20} 
                         x2={x0} 
                         y2={280} 
-                        stroke="#fbbf24" 
+                        stroke={getFamilyColor("benchmark")} 
                         strokeWidth="2" 
                         strokeDasharray="5 5"
                         opacity={0.5}
@@ -508,7 +510,7 @@ export default function StockAnalysis() {
                       
                       {/* Points - 5 data points */}
                       <circle cx={xHist} cy={yHist} r="4" fill={color} opacity={0.7} />
-                      <circle cx={x0} cy={y0} r="6" fill={color} opacity={0.9} stroke="#fbbf24" strokeWidth="2" />
+                      <circle cx={x0} cy={y0} r="6" fill={color} opacity={0.9} stroke={getFamilyColor("benchmark")} strokeWidth="2" />
                       <circle cx={x1} cy={y1} r="5" fill={color} opacity={0.8} />
                       <circle cx={x2} cy={y2} r="5" fill={color} opacity={0.6} />
                       <circle cx={x3} cy={y3} r="5" fill={color} opacity={0.3} />
@@ -776,7 +778,7 @@ export default function StockAnalysis() {
             >
               <h2 className="text-lg font-semibold">Methodology & Scoring Details</h2>
               <div className="text-lg font-bold text-gray-500">
-                {methodologyOpen ? '−' : '+'}
+                {methodologyOpen ? '-' : '+'}
               </div>
             </button>
             {methodologyOpen && (
