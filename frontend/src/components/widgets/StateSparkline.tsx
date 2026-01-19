@@ -1,4 +1,5 @@
 import { IndicatorHistoryPoint } from "../../types";
+import { statePalette } from "../../theme/metricColors";
 
 interface Props {
   history: IndicatorHistoryPoint[];
@@ -41,16 +42,16 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
     );
   }
 
-  /**
-   * Map state strings to color values
-   * GREEN: #10b981 (emerald), YELLOW: #eab308 (amber), RED: #ef4444 (rose)
-   */
   const getColor = (state: string) => {
     switch (state) {
-      case 'GREEN': return '#10b981';
-      case 'YELLOW': return '#eab308';
-      case 'RED': return '#ef4444';
-      default: return '#6b7280';
+      case "GREEN":
+        return statePalette.green;
+      case "YELLOW":
+        return statePalette.yellow;
+      case "RED":
+        return statePalette.red;
+      default:
+        return statePalette.neutral;
     }
   };
 

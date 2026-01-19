@@ -1,4 +1,5 @@
 import { formatDateTime } from "./styleUtils";
+import { getFamilyColor } from "../theme/metricColors";
 
 /**
  * Chart Configuration Utilities
@@ -9,16 +10,15 @@ import { formatDateTime } from "./styleUtils";
 /**
  * Common chart colors
  */
-export const CHART_COLORS = {
-  primary: "#eab308",      // accent-yellow
-  secondary: "#10b981",    // green
-  tertiary: "#3b82f6",     // blue
-  danger: "#ef4444",       // red
-  grid: "#374151",         // stealth-700
-  text: "#9ca3af",         // gray-400
-  green: "#10b981",
-  yellow: "#eab308",
-  red: "#ef4444",
+export const CHART_NEUTRAL = {
+  grid: "#374151",
+  axis: "#555560",
+  tick: "#9ca3af",
+  label: "#a4a4b0",
+  text: "#e5e7eb",
+  tooltipBg: "#161619",
+  tooltipBorder: "#374151",
+  benchmark: getFamilyColor("benchmark"),
 } as const;
 
 export const CHART_MARGIN = {
@@ -31,20 +31,12 @@ export const CHART_MARGIN = {
 /**
  * Get color based on state
  */
-export function getChartColorForState(state: string): string {
-  const stateUpper = state.toUpperCase();
-  if (stateUpper === 'GREEN') return CHART_COLORS.green;
-  if (stateUpper === 'YELLOW') return CHART_COLORS.yellow;
-  if (stateUpper === 'RED') return CHART_COLORS.red;
-  return CHART_COLORS.text;
-}
-
 /**
  * Common X-axis configuration
  */
 export const commonXAxisProps = {
-  stroke: CHART_COLORS.text,
-  tick: { fill: CHART_COLORS.text, fontSize: 12 },
+  stroke: CHART_NEUTRAL.axis,
+  tick: { fill: CHART_NEUTRAL.tick, fontSize: 12 },
   tickFormatter: (value: string) => {
     try {
       const date = new Date(value);
@@ -59,8 +51,8 @@ export const commonXAxisProps = {
  * Common Y-axis configuration
  */
 export const commonYAxisProps = {
-  stroke: CHART_COLORS.text,
-  tick: { fill: CHART_COLORS.text, fontSize: 12 },
+  stroke: CHART_NEUTRAL.axis,
+  tick: { fill: CHART_NEUTRAL.tick, fontSize: 12 },
 };
 
 /**
@@ -68,7 +60,7 @@ export const commonYAxisProps = {
  */
 export const commonGridProps = {
   strokeDasharray: "3 3",
-  stroke: CHART_COLORS.grid,
+  stroke: CHART_NEUTRAL.grid,
   opacity: 0.3,
 };
 
@@ -76,10 +68,10 @@ export const commonGridProps = {
  * Common tooltip style
  */
 export const commonTooltipStyle = {
-  backgroundColor: "#1f2937",
-  border: "1px solid #374151",
+  backgroundColor: CHART_NEUTRAL.tooltipBg,
+  border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
   borderRadius: "0.375rem",
-  color: "#e5e7eb",
+  color: CHART_NEUTRAL.text,
 };
 
 /**
