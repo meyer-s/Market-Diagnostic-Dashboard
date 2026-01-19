@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getLegacyApiUrl } from "../../utils/apiUtils";
+import { apiFetch } from "../../utils/apiUtils";
 import { Link } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
@@ -33,22 +33,13 @@ export default function PreciousMetalsWidget() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const apiUrl = getLegacyApiUrl();
-        
-        const [projectionsRes, regimeRes] = await Promise.all([
-          fetch(`${apiUrl}/precious-metals/projections/latest`),
-          fetch(`${apiUrl}/precious-metals/regime`)
+        const [projectionsData, regimeData] = await Promise.all([
+          apiFetch<{ projections?: MetalProjection[] }>("/precious-metals/projections/latest"),
+          apiFetch<{ regime?: RegimeStatus | null }>("/precious-metals/regime"),
         ]);
 
-        if (projectionsRes.ok) {
-          const data = await projectionsRes.json();
-          setProjections(data.projections || []);
-        }
-
-        if (regimeRes.ok) {
-          const data = await regimeRes.json();
-          setRegime(data.regime || null);
-        }
+        setProjections(projectionsData.projections || []);
+        setRegime(regimeData.regime || null);
       } catch (error) {
         console.error("Error fetching metals data:", error);
       } finally {

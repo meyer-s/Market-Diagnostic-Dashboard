@@ -21,6 +21,7 @@ import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor } from "../theme/metricColors";
+import { apiFetch } from "../utils/apiUtils";
 
 interface StockProjection {
   ticker: string;
@@ -108,16 +109,7 @@ export default function StockAnalysis() {
     setError(null);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-      
-      // Fetch projections
-      const projResponse = await fetch(`${apiUrl}/stocks/${ticker.toUpperCase()}/projections`);
-      
-      if (!projResponse.ok) {
-        throw new Error(`Stock not found or data unavailable`);
-      }
-
-      const projData = await projResponse.json();
+      const projData = await apiFetch<any>(`/stocks/${ticker.toUpperCase()}/projections`);
       setProjections(projData.projections);
       setHistoricalScore(projData.historical?.score_3m_ago || null);
       setTechnicalData(projData.technical || null);
@@ -130,9 +122,8 @@ export default function StockAnalysis() {
       setDataAsOf(projData.as_of_date || projData.created_at || null);
 
       // Fetch news filtered by ticker (server-side to avoid missing relevant articles)
-      const newsResponse = await fetch(`${apiUrl}/news?hours=720&limit=50&symbol=${ticker.toUpperCase()}`); // Last 30 days
-      if (newsResponse.ok) {
-        const tickerNews = await newsResponse.json();
+      const tickerNews = await apiFetch<any[]>(`/news?hours=720&limit=50&symbol=${ticker.toUpperCase()}`).catch(() => null); // Last 30 days
+      if (tickerNews) {
         setNews(tickerNews.slice(0, 10)); // Show top 10 articles
       }
     } catch (err: any) {

@@ -107,6 +107,37 @@ export const metricFamilyByKey: Record<string, MetricFamily> = {
   treasury_volatility_stress: "volatility",
 };
 
+export const metricFamilyLabels: Record<MetricFamily, string> = {
+  system: "System",
+  market: "Market",
+  equity: "Equity",
+  volatility: "Volatility",
+  rates: "Rates",
+  liquidity: "Liquidity",
+  growth: "Growth",
+  sentiment: "Sentiment",
+  credit: "Credit",
+  inflation: "Inflation",
+  energy: "Energy",
+  financials: "Financials",
+  tech: "Technology",
+  consumer: "Consumer",
+  industrials: "Industrials",
+  materials: "Materials",
+  utilities: "Utilities",
+  healthcare: "Healthcare",
+  realestate: "Real Estate",
+  communications: "Communication",
+  crypto: "Crypto",
+  metals: "Metals",
+  gold: "Gold",
+  silver: "Silver",
+  platinum: "Platinum",
+  palladium: "Palladium",
+  benchmark: "Benchmark",
+  neutral: "Neutral",
+};
+
 export const getFamilyColor = (
   family: MetricFamily,
   variant: "base" | "muted" | "faint" = "base"

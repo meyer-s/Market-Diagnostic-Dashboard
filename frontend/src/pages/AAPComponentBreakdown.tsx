@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MarketLoading from '../components/ui/MarketLoading';
+import { apiFetch } from "../utils/apiUtils";
 
 // Simple icon components using SVG
 const ArrowLeft = () => (
@@ -68,9 +69,7 @@ const AAPComponentBreakdown: React.FC = () => {
   const fetchAAPData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/aap/current');
-      if (!response.ok) throw new Error('Failed to fetch AAP data');
-      const result = await response.json();
+      const result = await apiFetch<AAPData>("/aap/current");
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');

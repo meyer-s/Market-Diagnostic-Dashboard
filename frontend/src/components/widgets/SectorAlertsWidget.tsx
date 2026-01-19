@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { getLegacyApiUrl } from "../../utils/apiUtils";
+import { apiFetch } from "../../utils/apiUtils";
 
 interface SectorAlert {
   type: string;
@@ -37,9 +37,7 @@ export default function SectorAlertsWidget() {
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const apiUrl = getLegacyApiUrl();
-        const response = await fetch(`${apiUrl}/sectors/alerts`);
-        const data = await response.json();
+        const data = await apiFetch<{ alerts?: SectorAlert[] }>("/sectors/alerts");
         setAlerts(data.alerts || []);
       } catch (error) {
         console.error("Failed to fetch sector alerts:", error);

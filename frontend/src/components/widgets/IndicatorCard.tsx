@@ -1,12 +1,11 @@
 import { IndicatorStatus, IndicatorHistoryPoint } from "../../types";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { buildApiUrl } from "../../utils/apiUtils";
-import { getBusinessDaysAgo, formatRelativeDate, formatValue } from "../../utils/componentUtils";
+import { apiFetch } from "../../utils/apiUtils";
+import { getBusinessDaysAgo, formatRelativeDate } from "../../utils/componentUtils";
 import { analyzeSeries } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
-import { metricFamilyByKey, type MetricFamily } from "../../theme/metricColors";
-import StateSparkline from "./StateSparkline";
+import { metricFamilyByKey, metricFamilyLabels } from "../../theme/metricColors";
 
 interface Props {
   indicator: IndicatorStatus;
@@ -31,37 +30,6 @@ const colorMap = {
   RED: "text-accent-red",
 };
 
-const familyLabels: Record<MetricFamily, string> = {
-  system: "System",
-  volatility: "Volatility",
-  rates: "Rates",
-  liquidity: "Liquidity",
-  growth: "Growth",
-  sentiment: "Sentiment",
-  credit: "Credit",
-  inflation: "Inflation",
-  equity: "Equity",
-  market: "Market",
-  energy: "Energy",
-  financials: "Financials",
-  tech: "Technology",
-  consumer: "Consumer",
-  industrials: "Industrials",
-  materials: "Materials",
-  utilities: "Utilities",
-  healthcare: "Healthcare",
-  realestate: "Real Estate",
-  communications: "Communication",
-  crypto: "Crypto",
-  metals: "Metals",
-  gold: "Gold",
-  silver: "Silver",
-  platinum: "Platinum",
-  palladium: "Palladium",
-  benchmark: "Benchmark",
-  neutral: "Neutral",
-};
-
 export default function IndicatorCard({ indicator }: Props) {
   const [history, setHistory] = useState<IndicatorHistoryPoint[]>([]);
   const navigate = useNavigate();
@@ -76,9 +44,7 @@ export default function IndicatorCard({ indicator }: Props) {
     const isMonthlyIndicator = metadata?.frequency === "Monthly";
     const days = isMonthlyIndicator ? 365 : 60;
 
-    const url = buildApiUrl(`/indicators/${indicator.code}/history?days=${days}`);
-    fetch(url)
-      .then((res) => res.json())
+    apiFetch<IndicatorHistoryPoint[]>(`/indicators/${indicator.code}/history?days=${days}`)
       .then((data) => setHistory(data))
       .catch(() => setHistory([]));
   }, [indicator.code]);
@@ -101,7 +67,7 @@ export default function IndicatorCard({ indicator }: Props) {
     indicator.state === "GREEN" ? "stable" : indicator.state === "RED" ? "stressed" : "mixed";
   const signalLine = `${stateLabel}, ${trendLabel}`;
   const family = metricFamilyByKey[routeCode] ?? metricFamilyByKey[indicator.code] ?? "system";
-  const contextLine = familyLabels[family] || "System";
+  const contextLine = metricFamilyLabels[family] || "System";
 
   const displayName = indicator.code === "ANALYST_ANXIETY" ? "Analyst Confidence" : indicator.name;
 
@@ -115,9 +81,6 @@ export default function IndicatorCard({ indicator }: Props) {
         <div className="text-gray-300 text-sm">{displayName}</div>
         <span className={`text-xs font-semibold ${colorMap[indicator.state]}`}>{indicator.state}</span>
       </div>
-      <div className="text-2xl font-semibold mt-2">
-        {formatValue(indicator.raw_value, 2)}
-      </div>
       <div className="mt-2 text-sm text-stealth-200">
         <span className="text-stealth-500">Signal:</span> {signalLine}
       </div>
@@ -129,13 +92,6 @@ export default function IndicatorCard({ indicator }: Props) {
           Freshness: {freshnessLabel} ({timeDisplay})
         </div>
       )}
-      <div className="mt-3">
-        <StateSparkline history={history} width={200} height={24} />
-      </div>
-      <div className="flex justify-between items-center mt-2 text-xs text-stealth-400">
-        <span>Score: {indicator.score}</span>
-        <span>{metadata.frequency}</span>
-      </div>
     </div>
   );
 }

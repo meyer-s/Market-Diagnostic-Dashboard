@@ -9,7 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { getLegacyApiUrl } from "../utils/apiUtils";
+import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
 import { 
   getStateFromScore, 
@@ -71,9 +71,7 @@ export default function SystemBreakdown() {
     const fetchData = async () => {
       try {
         // Fetch indicator metadata from backend
-        const apiUrl = getLegacyApiUrl();
-        const metaResponse = await fetch(`${apiUrl}/indicators`);
-        const indicatorData = await metaResponse.json();
+        const indicatorData = await apiFetch<IndicatorStatus[]>("/indicators");
         
         // Use hardcoded weights (TODO: fetch from backend)
         const metaWithWeights: IndicatorMetadata[] = indicatorData.map((ind: IndicatorStatus) => ({
@@ -91,8 +89,7 @@ export default function SystemBreakdown() {
         await Promise.all(
           indicatorCodes.map(async (code: string) => {
             try {
-              const response = await fetch(`${apiUrl}/indicators/${code}/history?days=365`);
-              const data = await response.json();
+              const data = await apiFetch<any[]>(`/indicators/${code}/history?days=365`);
               
               if (Array.isArray(data)) {
                 // Aggregate by date, keeping only the latest timestamp per day

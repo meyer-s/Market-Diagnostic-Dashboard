@@ -25,14 +25,6 @@ export function buildApiUrl(endpoint: string): string {
 }
 
 /**
- * Get the legacy direct API URL (for backward compatibility)
- * Now routes through proxy to avoid CORS issues with HTTPS
- */
-export function getLegacyApiUrl(): string {
-  return '/api';
-}
-
-/**
  * Fetch wrapper with error handling
  */
 export async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {

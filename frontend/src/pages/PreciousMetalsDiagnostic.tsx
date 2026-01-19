@@ -4,6 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import MarketLoading from "../components/ui/MarketLoading";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
+import { apiFetch } from "../utils/apiUtils";
 
 interface RegimeStatus {
   gold_bias: "MONETARY_HEDGE" | "NEUTRAL" | "FINANCIAL_ASSET";
@@ -1370,8 +1371,7 @@ function PriceHistoryChart() {
         const metals = ['AU', 'AG', 'PT', 'PD'];
         const responses = await Promise.all(
           metals.map(metal => 
-            fetch(`/api/precious-metals/history/${metal}?days=365`)
-              .then(res => res.json())
+            apiFetch<PriceHistory[]>(`/precious-metals/history/${metal}?days=365`)
           )
         );
 

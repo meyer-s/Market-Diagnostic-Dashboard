@@ -40,6 +40,7 @@ import MarketLoading from "../components/ui/MarketLoading";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { formatDateTimeWithWeekday } from "../utils/styleUtils";
 import { CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
+import { apiFetch } from "../utils/apiUtils";
 import { getFamilyColor, statePalette } from "../theme/metricColors";
 
 // =============================================================================
@@ -171,20 +172,12 @@ const MarketMap = () => {
    */
   const fetchData = async () => {
     try {
-      const apiUrl = '/api';
-      const [mapResponse, spyResponse, projectionsResponse] = await Promise.all([
-        fetch(`${apiUrl}/market-map/data?days=5`),
-        fetch(`${apiUrl}/market-map/spy-intraday`),
-        fetch(`${apiUrl}/sectors/projections/latest`)
+      const [mapResult, intradayResult] = await Promise.all([
+        apiFetch<any>("/market-map/data?days=5"),
+        apiFetch<any>("/market-map/spy-intraday"),
       ]);
-      
-      if (!mapResponse.ok) throw new Error("Failed to fetch market map data");
-      if (!spyResponse.ok) throw new Error("Failed to fetch intraday data");
-      
-      const mapResult = await mapResponse.json();
-      const intradayResult = await spyResponse.json();
-      const projectionsResult = projectionsResponse.ok ? await projectionsResponse.json() : null;
-      
+      const projectionsResult = await apiFetch<any>("/sectors/projections/latest").catch(() => null);
+
       setData(mapResult);
       setIntradayData(intradayResult.data || []);
       setSectorProjections(projectionsResult?.projections || null);

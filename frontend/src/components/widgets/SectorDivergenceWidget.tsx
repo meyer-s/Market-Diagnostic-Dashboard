@@ -16,7 +16,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { getLegacyApiUrl } from "../../utils/apiUtils";
+import { apiFetch } from "../../utils/apiUtils";
 import { CHART_MARGIN, CHART_NEUTRAL, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
 import {
   analyzeSeries,
@@ -26,6 +26,7 @@ import {
 } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
 import { getFamilyColor } from "../../theme/metricColors";
+import { dashboardCardDetails } from "../../config/dashboardCards";
 
 interface SectorSummary {
   as_of_date: string;
@@ -125,26 +126,26 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const apiUrl = getLegacyApiUrl();
-        const historyUrl = `${apiUrl}/sectors/projections/history?days=${trendPeriod}`;
-        const [summaryRes, historyRes, alertsRes] = await Promise.all([
-          fetch(`${apiUrl}/sectors/summary`),
-          fetch(historyUrl),
-          fetch(`${apiUrl}/sectors/alerts`),
-        ]);
-        if (!summaryRes.ok) throw new Error("Failed to fetch sector summary");
-        const summaryData = await summaryRes.json();
+        const historyUrl = `/sectors/projections/history?days=${trendPeriod}`;
+        const summaryData = await apiFetch<SectorSummary>("/sectors/summary");
         setData(summaryData);
 
-        if (historyRes.ok) {
-          const historyData: SectorProjectionHistory = await historyRes.json();
-          setHistory(buildHistorySeries(historyData));
+        const [historyResult, alertsResult] = await Promise.allSettled([
+          apiFetch<SectorProjectionHistory>(historyUrl),
+          apiFetch<{ alerts?: SectorAlert[] }>("/sectors/alerts"),
+        ]);
+
+        if (historyResult.status === "fulfilled") {
+          setHistory(buildHistorySeries(historyResult.value));
         } else {
           setHistory([]);
         }
 
-        const alertsData = alertsRes.ok ? await alertsRes.json() : { alerts: [] };
-        setAlerts(alertsData.alerts || []);
+        if (alertsResult.status === "fulfilled") {
+          setAlerts(alertsResult.value.alerts || []);
+        } else {
+          setAlerts([]);
+        }
       } catch (error) {
         console.error("Failed to fetch sector data:", error);
         setHistory([]);
@@ -242,7 +243,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
 
   const signalLine =
     leadSide === "growth" ? "Growth lead" : leadSide === "defense" ? "Defense lead" : "Balanced rotation";
-  const contextLine = "Defensive vs cyclical leadership";
+  const contextLine = dashboardCardDetails.sector.context;
   const focusLine = `Confidence: ${sectorConfidence} - gap ${spreadTrendPhrase}`;
   const spreadLineColor = getFamilyColor("market", "base");
   const periodLabel = trendPeriod === 365 ? "1yr" : trendPeriod === 180 ? "6mo" : "90d";
@@ -274,32 +275,29 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
           {focusLine} (recent {secondarySpreadPhrase})
         </div>
       )}
-      <div className="flex items-center justify-between text-xs text-stealth-400">
-        <span>Alignment score</span>
-        <span className="text-stealth-200">{data.regime_alignment_score}</span>
-      </div>
-      <div className="flex items-center justify-between text-xs text-stealth-400">
-        <span>Spread</span>
-        <span className="text-stealth-200">{leadValue > 0 ? "+" : ""}{leadValue}</span>
-      </div>
 
       {commitment.isExpanded && (
         <div className="pt-3 border-t border-stealth-700 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-stealth-300">
+            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Alignment score</div>
+              <div className="mt-1 text-sm text-stealth-200">{data.regime_alignment_score}</div>
+            </div>
+            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Spread</div>
+              <div className="mt-1 text-sm text-stealth-200">
+                {leadValue > 0 ? "+" : ""}{leadValue}
+              </div>
+            </div>
+          </div>
           <div className="text-xs text-stealth-300 space-y-2">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Why it matters</div>
-            <p>
-              Shows whether defensive or cyclical leadership matches the current system state, helping
-              confirm whether risk appetite is consistent with the regime.
-            </p>
+            <p>{dashboardCardDetails.sector.why}</p>
           </div>
           <div className="text-xs text-stealth-300 space-y-2">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Related signals</div>
             <div className="flex flex-wrap gap-2">
-              {[
-                { label: "System Overview", reason: "Baseline for regime confirmation read" },
-                { label: "Dow Theory", reason: "Participation check across transports data" },
-                { label: "Alternative Assets", reason: "Risk appetite cross-check for confirmation" },
-              ].map((item) => (
+              {dashboardCardDetails.sector.related.map((item) => (
                 <span
                   key={item.label}
                   className="inline-flex items-center gap-2 rounded-full border border-stealth-600 bg-stealth-900 px-2 py-1 text-[11px] text-stealth-300"
@@ -313,7 +311,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
           </div>
           <div className="text-xs text-stealth-300 space-y-2">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Methodology note</div>
-            <p>Uses 3-month sector scores for defensive and cyclical baskets.</p>
+            <p>{dashboardCardDetails.sector.methodology}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

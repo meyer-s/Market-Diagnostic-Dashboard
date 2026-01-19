@@ -63,33 +63,6 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
     }
   }, [historyData, timeframe]);
 
-  const getScoreClass = (score: number): string => {
-    if (score >= 67) return "text-green-400";
-    if (score >= 34) return "text-yellow-400";
-    return "text-red-400";
-  };
-
-  const getRegimeClass = (regime: string): string => {
-    if (regime.includes("breakdown") || regime.includes("crisis")) return "text-red-400";
-    if (regime.includes("stress") || regime.includes("caution")) return "text-yellow-400";
-    return "text-green-400";
-  };
-
-  const getRegimeLabel = (regime: string): string => {
-    const labels: Record<string, string> = {
-      normal_confidence: "Normal Confidence",
-      mild_caution: "Mild Caution",
-      monetary_stress: "Monetary Stress",
-      liquidity_crisis: "Liquidity Crisis",
-      systemic_breakdown: "Systemic Breakdown",
-    };
-    return labels[regime] ||
-      regime
-        .split("_")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
-  };
-
   const days = parseInt(timeframe);
   const trendWindows = getTrendWindows(days);
   const stabilitySeries = chartData.map((point) => point.stability_score);
@@ -217,19 +190,6 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
           Confidence: {aasConfidence} - leader {recentLeader} ({hoverNote})
         </div>
       )}
-
-      <div className="pt-3 border-t border-stealth-700">
-        <div className="flex items-end gap-2 mb-2">
-          <div className={`text-3xl font-bold ${getScoreClass(aasData.stability_score)}`}>
-            {aasData.stability_score.toFixed(1)}
-          </div>
-          <div className="text-xs text-stealth-400 mb-1">/ 100</div>
-        </div>
-        <div className="text-xs text-stealth-400 mb-1">Current Regime</div>
-        <div className={`text-sm font-semibold ${getRegimeClass(aasData.regime)}`}>
-          {getRegimeLabel(aasData.regime)}
-        </div>
-      </div>
     </div>
   );
 }

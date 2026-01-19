@@ -10,7 +10,7 @@ import {
   ReferenceLine,
   type TooltipProps,
 } from "recharts";
-import { getLegacyApiUrl } from "../../utils/apiUtils";
+import { apiFetch } from "../../utils/apiUtils";
 import { CHART_MARGIN, CHART_NEUTRAL, commonGridProps } from "../../utils/chartUtils";
 import { formatTime } from "../../utils/styleUtils";
 import {
@@ -21,6 +21,7 @@ import {
 } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
 import { getFamilyColor } from "../../theme/metricColors";
+import { dashboardCardDetails } from "../../config/dashboardCards";
 
 interface DowTheoryData {
   timestamp: string;
@@ -89,20 +90,13 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const apiUrl = getLegacyApiUrl();
         const historyUrl = trendPeriod
-          ? `${apiUrl}/dow-theory/history?days=${trendPeriod}`
-          : `${apiUrl}/dow-theory/history`;
-        const [currentResponse, historyResponse] = await Promise.all([
-          fetch(`${apiUrl}/dow-theory`),
-          fetch(historyUrl),
+          ? `/dow-theory/history?days=${trendPeriod}`
+          : "/dow-theory/history";
+        const [currentData, historyData] = await Promise.all([
+          apiFetch<DowTheoryData>("/dow-theory"),
+          apiFetch<HistoryPoint[]>(historyUrl),
         ]);
-
-        if (!currentResponse.ok) throw new Error("Failed to fetch Dow Theory data");
-        if (!historyResponse.ok) throw new Error("Failed to fetch history");
-
-        const currentData = await currentResponse.json();
-        const historyData = await historyResponse.json();
 
         setData(currentData);
         setHistory(historyData);
@@ -174,7 +168,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
       : alignmentState === "DIVERGENT"
       ? "Signals split"
       : "Signals unclear";
-  const contextLine = "Classic vs modern trend signals";
+  const contextLine = dashboardCardDetails.dow.context;
   let stance: InsightSignal["stance"] = "mixed";
   if (alignmentState === "ALIGNED") {
     stance =
@@ -307,35 +301,32 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
           {focusLine} (recent {recentSpreadPhrase})
         </div>
       )}
-      <div className="flex items-center justify-between text-xs text-stealth-400">
-        <span>Alignment</span>
-        <span className={alignmentColor}>{data.theory_alignment_state}</span>
-        <span className="text-stealth-200">{data.theory_alignment_score}</span>
-      </div>
-      <div className="flex items-center justify-between text-xs text-stealth-400">
-        <span>Spread</span>
-        <span className="text-stealth-200">
-          {directionSpread > 0 ? "+" : ""}{directionSpread.toFixed(2)}% ({spreadLabel})
-        </span>
-      </div>
 
       {commitment.isExpanded && (
         <div className="pt-3 border-t border-stealth-700 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-stealth-300">
+            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Alignment</div>
+              <div className={`mt-1 text-sm font-semibold ${alignmentColor}`}>
+                {data.theory_alignment_state}
+              </div>
+              <div className="text-xs text-stealth-400">Score {data.theory_alignment_score}</div>
+            </div>
+            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Spread</div>
+              <div className="mt-1 text-sm text-stealth-200">
+                {directionSpread > 0 ? "+" : ""}{directionSpread.toFixed(2)}% ({spreadLabel})
+              </div>
+            </div>
+          </div>
           <div className="text-xs text-stealth-300 space-y-2">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Why it matters</div>
-            <p>
-              Agreement between classic and modern signals supports clearer trend confirmation. Divergence
-              signals mixed participation and higher uncertainty.
-            </p>
+            <p>{dashboardCardDetails.dow.why}</p>
           </div>
           <div className="text-xs text-stealth-300 space-y-2">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Related signals</div>
             <div className="flex flex-wrap gap-2">
-              {[
-                { label: "System Overview", reason: "Composite confirmation for trend context" },
-                { label: "Sector Divergence", reason: "Leadership check on sector participation" },
-                { label: "Alternative Assets", reason: "Risk appetite cross-check for confirmation" },
-              ].map((item) => (
+              {dashboardCardDetails.dow.related.map((item) => (
                 <span
                   key={item.label}
                   className="inline-flex items-center gap-2 rounded-full border border-stealth-600 bg-stealth-900 px-2 py-1 text-[11px] text-stealth-300"
@@ -349,7 +340,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
           </div>
           <div className="text-xs text-stealth-300 space-y-2">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Methodology note</div>
-            <p>Compares industrial, transport, and utility momentum with ETF proxies to score alignment.</p>
+            <p>{dashboardCardDetails.dow.methodology}</p>
           </div>
 
           {chartHistory.length > 0 && (

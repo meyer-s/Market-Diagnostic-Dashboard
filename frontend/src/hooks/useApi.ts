@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { buildApiUrl } from "../utils/apiUtils";
+import { apiFetch } from "../utils/apiUtils";
 import { loadingStore } from "../utils/loadingStore";
 
 export function useApi<T>(endpoint: string) {
@@ -12,16 +12,8 @@ export function useApi<T>(endpoint: string) {
     setLoading(true);
     setError(null);
     loadingStore.start();
-    const url = buildApiUrl(endpoint);
-    console.log('Fetching from:', url);
-    fetch(url)
-      .then((res) => {
-        console.log('Response status:', res.status, 'for', endpoint);
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
-      })
+    apiFetch<T>(endpoint)
       .then((result) => {
-        console.log('Data received for', endpoint, ':', Array.isArray(result) ? `${result.length} items` : 'object');
         setData(result);
       })
       .catch((err) => {

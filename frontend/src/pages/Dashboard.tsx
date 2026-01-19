@@ -6,7 +6,7 @@ import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
 import AASWidget from "../components/widgets/AASWidget";
 import MarketLoading from "../components/ui/MarketLoading";
-import { getLegacyApiUrl } from "../utils/apiUtils";
+import { apiFetch } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
 import { useProgressiveCommitment } from "../hooks/useProgressiveCommitment";
 
@@ -117,18 +117,15 @@ export default function Dashboard() {
   const [insights, setInsights] = useState<Partial<Record<InsightSignal["id"], InsightSignal>>>({});
 
   useEffect(() => {
-    const apiUrl = getLegacyApiUrl();
     setIndicatorsLoading(true);
     // Fetch indicators data from backend
-    fetch(`${apiUrl}/indicators`)
-      .then(res => res.json())
+    apiFetch<IndicatorStatus[]>("/indicators")
       .then(data => setIndicators(data))
       .catch(() => setIndicators(null))
       .finally(() => setIndicatorsLoading(false));
 
     // Fetch cached news from last 24 hours
-    fetch(`${apiUrl}/news?hours=24&limit=200`)
-      .then(res => res.json())
+    apiFetch<NewsArticle[]>("/news?hours=24&limit=200")
       .then(data => setNews(data))
       .catch(() => setNews([])  );
   }, [refreshKey]);
@@ -196,18 +193,12 @@ export default function Dashboard() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const apiUrl = getLegacyApiUrl();
       // Trigger backend ETL to fetch latest data from FRED and Yahoo Finance
-      const response = await fetch(`${apiUrl}/admin/ingest/run`, {
-        method: "POST",
-      });
-      
-      if (response.ok) {
-        // Wait for backend to process new data
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        // Force re-fetch of dashboard data by incrementing refresh key
-        setRefreshKey(prev => prev + 1);
-      }
+      await apiFetch("/admin/ingest/run", { method: "POST" });
+      // Wait for backend to process new data
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Force re-fetch of dashboard data by incrementing refresh key
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error("Failed to refresh data:", error);
     } finally {

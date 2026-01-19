@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getLegacyApiUrl } from "../../utils/apiUtils";
+import { apiFetch } from "../../utils/apiUtils";
 import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatTime } from "../../utils/styleUtils";
 import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
@@ -46,18 +46,11 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const apiUrl = getLegacyApiUrl();
-        const historyUrl = `${apiUrl}/system/history?days=${trendPeriod}`;
-        const [statusResponse, historyResponse] = await Promise.all([
-          fetch(`${apiUrl}/system`),
-          fetch(historyUrl),
+        const historyUrl = `/system/history?days=${trendPeriod}`;
+        const [statusData, historyData] = await Promise.all([
+          apiFetch<SystemStatus>("/system"),
+          apiFetch<SystemHistoryPoint[]>(historyUrl),
         ]);
-
-        if (!statusResponse.ok) throw new Error("Failed to fetch system status");
-        if (!historyResponse.ok) throw new Error("Failed to fetch system history");
-
-        const statusData = await statusResponse.json();
-        const historyData = await historyResponse.json();
 
         setData(statusData);
 
@@ -142,34 +135,17 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     );
   }
 
-  const stateColorMap: Record<string, string> = {
-    GREEN: "text-green-400",
-    YELLOW: "text-yellow-400",
-    RED: "text-red-400",
-    UNKNOWN: "text-gray-500",
-  };
-  const stateColor = stateColorMap[data.state] || "text-gray-500";
-
-  const averageScore = (points: SystemHistoryPoint[]) =>
-    points.length
-      ? points.reduce((sum, p) => sum + p.composite_score, 0) / points.length
-      : 0;
-  const last7 = history.slice(-7);
-  const prev7 = history.slice(-14, -7);
-  const last7Avg = averageScore(last7);
-  const prev7Avg = prev7.length ? averageScore(prev7) : last7Avg;
-  const trend = last7Avg - prev7Avg;
-  const trendDirection = trend > 2 ? "IMPROVING" : trend < -2 ? "WORSENING" : "STABLE";
-
   const trendTone = getTrendTone(primarySignal);
   const systemConfidence = getConfidenceFromSignal(primarySignal);
+  const stateWord =
+    data.state === "GREEN" ? "stable" : data.state === "RED" ? "stressed" : "mixed";
   const primaryWord =
     primarySignal.direction === "up"
       ? "improving"
       : primarySignal.direction === "down"
       ? "softening"
       : "steady";
-  const signalLine = `System health ${primaryWord}`;
+  const signalLine = `System ${stateWord}, ${primaryWord}`;
   const contextLine = "Volatility, rates, liquidity, sentiment";
   const nearBoundary =
     Math.min(
@@ -202,20 +178,6 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
           {focusLine}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-stealth-700">
-        <div>
-          <div className="text-xs text-stealth-400">State</div>
-          <div className={`text-lg font-semibold ${stateColor}`}>{data.state}</div>
-        </div>
-        <div>
-          <div className="text-xs text-stealth-400">7-day trend</div>
-          <div className="text-lg text-stealth-200">{trendDirection}</div>
-        </div>
-      </div>
-      <div className="flex items-center justify-between text-xs text-stealth-400">
-        <span>Composite score</span>
-        <span className="text-stealth-200">{data.composite_score.toFixed(1)}</span>
-      </div>
     </div>
   );
 };

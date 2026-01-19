@@ -10,6 +10,7 @@ import { prepareExtendedComponentData } from "../utils/indicatorDetailHelpers";
 import { formatDateTime } from "../utils/styleUtils";
 import { CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
+import { apiFetch } from "../utils/apiUtils";
 import {
   LineChart,
   Line,
@@ -262,16 +263,9 @@ export default function IndicatorDetail() {
     setRefetchMessage(null);
     
     try {
-      const apiUrl = `${window.location.protocol}//${window.location.hostname}:8000`;
-      const response = await fetch(`${apiUrl}/admin/clear-refetch/${apiCode}?days=365`, {
+      const result = await apiFetch<any>(`/admin/clear-refetch/${apiCode}?days=365`, {
         method: 'POST'
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to clear and refetch data');
-      }
-      
-      const result = await response.json();
       const deletedCount = result.deleted_records || 0;
       const backfilledCount = result.result?.backfilled || 0;
       

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useApi } from "../hooks/useApi";
-import { buildApiUrl } from "../utils/apiUtils";
+import { apiFetch } from "../utils/apiUtils";
 import { EmptyState, ErrorState, LoadingState } from "../utils/componentUtils";
 import { BUTTON_STYLES, formatDateTimeWithWeekday } from "../utils/styleUtils";
 
@@ -181,14 +181,10 @@ export default function MarketNews() {
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
     try {
-      const response = await fetch(buildApiUrl("/news/refresh"), {
+      await apiFetch("/news/refresh", {
         method: "POST",
         signal: controller.signal,
       });
-      if (!response.ok) {
-        throw new Error("Failed to refresh news.");
-      }
-      await response.json();
       window.location.reload();
     } catch (refreshError) {
       console.error(refreshError);
@@ -212,17 +208,11 @@ export default function MarketNews() {
 
     try {
       setTickerMessage(null);
-      const response = await fetch(buildApiUrl("/news/tickers"), {
+      const data = await apiFetch<NewsTickerResponse>("/news/tickers", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tickers: parsed }),
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to save tickers.");
-      }
-
-      const data: NewsTickerResponse = await response.json();
       const formatted = formatTickerEditor(data.tickers);
       setTickerDraft(formatted);
       setCustomDraft(formatted);
