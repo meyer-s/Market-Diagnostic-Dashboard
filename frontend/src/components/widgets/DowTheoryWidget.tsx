@@ -14,6 +14,7 @@ import {
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
 import { formatTime } from "../../utils/styleUtils";
+import { analyzeSeries, getTrendTone } from "../../utils/insightUtils";
 
 interface DowTheoryData {
   timestamp: string;
@@ -277,6 +278,53 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
       rangeDiffClassic: spreadValue < 0 ? diff : 0,
     };
   });
+  const spreadSeries = chartHistory
+    .map((point) =>
+      typeof point.direction_spread === "number"
+        ? point.direction_spread
+        : point.modern_direction !== null && point.modern_direction !== undefined
+        ? point.modern_direction - point.market_direction
+        : null
+    )
+    .filter((value): value is number => typeof value === "number");
+  const spreadAbsSeries = spreadSeries.map((value) => Math.abs(value));
+  const gapSignal = analyzeSeries(spreadAbsSeries, { recent: 7, prior: 7, flatThreshold: 0.08 });
+  const spreadTrendPhrase =
+    gapSignal.direction === "up"
+      ? "widening"
+      : gapSignal.direction === "down"
+      ? "tightening"
+      : "steady";
+  const gapTone = getTrendTone(gapSignal);
+  const toneClause = gapTone === "mixed" ? "" : `, and the signal feels ${gapTone}`;
+  const classicDir =
+    data.market_direction > 0.25
+      ? "up"
+      : data.market_direction < -0.25
+      ? "down"
+      : "flat";
+  const modernDir =
+    data.modern_direction > 0.25
+      ? "up"
+      : data.modern_direction < -0.25
+      ? "down"
+      : "flat";
+  const directionAgreement =
+    classicDir === modernDir
+      ? classicDir === "flat"
+        ? "both muted"
+        : `both pointing ${classicDir}`
+      : classicDir === "flat" || modernDir === "flat"
+      ? "one clear, one muted"
+      : "pointing different ways";
+  const dowSummary =
+    data.theory_alignment_state === "ALIGNED"
+      ? `Checks whether classic and modern signals agree. They line up, are ${directionAgreement}, and the gap is ${spreadTrendPhrase}${toneClause}, so the trend is easier to trust and borrowers, businesses, and investors can add risk with more confidence.`
+      : data.theory_alignment_state === "MIXED"
+      ? `Checks whether classic and modern signals agree. They are mixed, are ${directionAgreement}, and the gap is ${spreadTrendPhrase}${toneClause}, so the trend is less reliable and borrowers, businesses, and investors should keep risk smaller.`
+      : data.theory_alignment_state === "DIVERGENT"
+      ? `Checks whether classic and modern signals agree. They are split, are ${directionAgreement}, and the gap is ${spreadTrendPhrase}${toneClause}, so choppy moves are more likely and borrowers, businesses, and investors should protect downside.`
+      : `Checks whether classic and modern signals agree. Alignment is unclear, so keep positions balanced until the signals settle.`;
 
   const renderTrendTooltip = ({
     active,
@@ -619,9 +667,7 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
 
       <div className="pt-3">
         <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-          <p className="text-xs text-stealth-300 leading-relaxed">
-            <span className="font-semibold text-stealth-200">Conclusion:</span> Checks whether different parts of the market move together. When they agree, it supports a stable economy; when they split, it warns that stability is fragile and shocks are more likely.
-          </p>
+          <p className="text-xs text-stealth-300 leading-relaxed">{dowSummary}</p>
         </div>
       </div>
 

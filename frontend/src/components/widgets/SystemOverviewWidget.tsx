@@ -15,6 +15,7 @@ import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatDateTime, formatTime } from "../../utils/styleUtils";
 import { CHART_MARGIN, commonXAxisProps, commonYAxisProps, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
 import { getStateFromScore, STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
+import { analyzeSeries, getTrendTone } from "../../utils/insightUtils";
 
 interface SystemStatus {
   state: string;
@@ -142,10 +143,14 @@ const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
   const recentNews = news.slice(0, 3);
 
   // Calculate trend (last 7 days vs previous 7 days average)
+  const averageScore = (points: SystemHistoryPoint[]) =>
+    points.length
+      ? points.reduce((sum, p) => sum + p.composite_score, 0) / points.length
+      : 0;
   const last7 = history.slice(-7);
   const prev7 = history.slice(-14, -7);
-  const last7Avg = last7.reduce((sum, p) => sum + p.composite_score, 0) / last7.length;
-  const prev7Avg = prev7.reduce((sum, p) => sum + p.composite_score, 0) / prev7.length;
+  const last7Avg = averageScore(last7);
+  const prev7Avg = prev7.length ? averageScore(prev7) : last7Avg;
   const trend = last7Avg - prev7Avg;
   const trendDirection = trend > 2 ? "IMPROVING" : trend < -2 ? "WORSENING" : "STABLE";
 
@@ -156,6 +161,41 @@ const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
   }[trendDirection];
 
   const periodLabel = trendPeriod === 365 ? "1 year" : trendPeriod === 180 ? "6 months" : "90 days";
+  const scoreSeries = history.map((point) => point.composite_score);
+  const trendSignal = analyzeSeries(scoreSeries);
+  const trendTone = getTrendTone(trendSignal);
+  const condition =
+    data.state === "GREEN" ? "steady" : data.state === "YELLOW" ? "mixed" : "stressed";
+  const trendWord =
+    trendSignal.direction === "up"
+      ? "improving"
+      : trendSignal.direction === "down"
+      ? "softening"
+      : "holding";
+  const momentumClause =
+    trendSignal.momentum === "steady"
+      ? ""
+      : `, momentum is ${trendSignal.momentum === "accelerating" ? "building" : "fading"}`;
+  const toneClause = trendTone === "mixed" ? "" : `, the signal feels ${trendTone}`;
+  const nuanceSentence = `It looks ${condition} and ${trendWord}${momentumClause}${toneClause}.`;
+  let actionSentence = "";
+  if (data.state === "GREEN") {
+    actionSentence =
+      trendSignal.direction === "down"
+        ? "Households and businesses should still see stability, but keep risk measured until the slide stops."
+        : "Households and businesses usually feel stability first, so longer-term plans can make sense while this holds.";
+  } else if (data.state === "YELLOW") {
+    actionSentence =
+      trendSignal.direction === "up"
+        ? "Unevenness may ease, but stay diversified until the signal firms up."
+        : "Uneven costs or demand can show up for households and employers, so keep exposure balanced.";
+  } else {
+    actionSentence =
+      trendSignal.direction === "up"
+        ? "Stress may be easing, but borrowers and employers feel it first; protect cash needs until it stabilizes."
+        : "Borrowers and employers feel this first; protect cash needs and keep risk small.";
+  }
+  const systemSummary = `This blends many signals into one health score. ${nuanceSentence} ${actionSentence}`;
 
   return (
     <Link to="/system-breakdown" className="block">
@@ -380,9 +420,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
 
       {/* Conclusion */}
       <div className="bg-stealth-900 border border-stealth-700 rounded p-3 mt-4">
-        <p className="text-xs text-stealth-300 leading-relaxed">
-          <span className="font-semibold text-stealth-200">Conclusion:</span> Combines many signals into one health check so you can tell at a glance if the economy is steady, wobbling, or under stress, and whether that stability is improving or fading.
-        </p>
+        <p className="text-xs text-stealth-300 leading-relaxed">{systemSummary}</p>
       </div>
       </div>
     </Link>

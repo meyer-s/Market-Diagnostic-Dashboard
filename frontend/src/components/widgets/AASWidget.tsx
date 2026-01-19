@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
 import { Link } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { analyzeSeries, getTrendTone } from "../../utils/insightUtils";
 
 interface AASData {
   stability_score: number;
@@ -89,6 +90,56 @@ export default function AASWidget({ timeframe = '90d' }: AASWidgetProps) {
     };
     return labels[regime] || regime.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
+
+  const averageValue = (points: HistoricalData[], key: keyof HistoricalData) => {
+    if (!points.length) return 0;
+    const sum = points.reduce((total, point) => total + (Number(point[key]) || 0), 0);
+    return sum / points.length;
+  };
+  const stabilitySeries = chartData.map((point) => point.stability_score);
+  const trendSignal = analyzeSeries(stabilitySeries, { recent: 7, prior: 7 });
+  const trendTone = getTrendTone(trendSignal);
+  const trendWord =
+    trendSignal.direction === "up"
+      ? "improving"
+      : trendSignal.direction === "down"
+      ? "slipping"
+      : "holding";
+  const momentumClause =
+    trendSignal.momentum === "steady"
+      ? ""
+      : `, momentum is ${trendSignal.momentum === "accelerating" ? "building" : "fading"}`;
+  const toneClause = trendTone === "mixed" ? "" : `, the signal feels ${trendTone}`;
+  const last7 = chartData.slice(-7);
+  const prev7 = chartData.slice(-14, -7);
+  const fallbackMetals = aasData.metals_contribution ?? 0;
+  const fallbackCrypto = aasData.crypto_contribution ?? 0;
+  const recentMetals = last7.length ? averageValue(last7, "metals_contribution") : fallbackMetals;
+  const recentCrypto = last7.length ? averageValue(last7, "crypto_contribution") : fallbackCrypto;
+  const priorMetals = prev7.length ? averageValue(prev7, "metals_contribution") : recentMetals;
+  const priorCrypto = prev7.length ? averageValue(prev7, "crypto_contribution") : recentCrypto;
+  const recentLeader = recentMetals >= recentCrypto ? "metals" : "crypto";
+  const priorLeader = prev7.length ? (priorMetals >= priorCrypto ? "metals" : "crypto") : recentLeader;
+  const leaderShifted = recentLeader !== priorLeader;
+  const leaderPhrase =
+    recentLeader === "metals"
+      ? leaderShifted
+        ? "Metals just took the lead"
+        : "Metals are doing more of the lifting"
+      : leaderShifted
+      ? "Crypto just took the lead"
+      : "Crypto is doing more of the lifting";
+  const leaderImpact =
+    recentLeader === "metals"
+      ? "that usually shows up first in inflation-sensitive budgets"
+      : "that usually shows up first in risk-taking and fast money moves";
+  let actionSentence = "Stay balanced while the signal firms up.";
+  if (trendSignal.direction === "up" && trendTone !== "noisy") {
+    actionSentence = "Measured exposure can make sense while this holds.";
+  } else if (trendSignal.direction === "down") {
+    actionSentence = "Keep size light and lean on hedges until it steadies.";
+  }
+  const aasSummary = `Alternative assets often move early when stress builds. It is ${trendWord}${momentumClause}${toneClause}. ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
 
   if (loading) {
     return (
@@ -239,9 +290,7 @@ export default function AASWidget({ timeframe = '90d' }: AASWidgetProps) {
 
         {/* Conclusion */}
         <div className="text-xs text-stealth-400 border-t border-stealth-700 pt-3">
-          <p className="leading-relaxed">
-            <span className="font-semibold text-stealth-200">Conclusion:</span> Uses metals and crypto to capture stress or confidence outside stocks. It adds a second opinion on stability, so sharp moves here can warn of pressure building elsewhere.
-          </p>
+          <p className="leading-relaxed">{aasSummary}</p>
         </div>
       </div>
     </Link>

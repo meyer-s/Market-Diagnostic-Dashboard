@@ -32,6 +32,7 @@ import {
 } from "recharts";
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
+import { analyzeSeries, getTrendTone } from "../../utils/insightUtils";
 
 interface SectorSummary {
   as_of_date: string;
@@ -206,6 +207,36 @@ export default function SectorDivergenceWidget({ trendPeriod = 90 }: Props) {
   const tickPositions = timestamps.length > 1
     ? Array.from({ length: 5 }, (_, i) => minTime + ((maxTime - minTime) * (i / 4)))
     : timestamps;
+  const spreadSeries = chartData.map((point) => point.spread).filter((value) => Number.isFinite(value));
+  const gapSeries = spreadSeries.map((value) => Math.abs(value));
+  const gapSignal = analyzeSeries(gapSeries, { recent: 5, prior: 5, flatThreshold: 0.1 });
+  const spreadTrendPhrase =
+    gapSignal.direction === "up"
+      ? "widening"
+      : gapSignal.direction === "down"
+      ? "narrowing"
+      : "steady";
+  const spreadTone = getTrendTone(gapSignal);
+  const leadSide =
+    Math.abs(data.defensive_vs_cyclical) < 2
+      ? "balanced"
+      : data.defensive_vs_cyclical > 0
+      ? "defense"
+      : "growth";
+  const breadthBalance = data.sector_breadth.improving - data.sector_breadth.deteriorating;
+  const breadthPhrase =
+    breadthBalance > 2
+      ? "breadth is improving"
+      : breadthBalance < -2
+      ? "breadth is thinning"
+      : "breadth is mixed";
+  const toneClause = spreadTone === "mixed" ? "" : `, and the move feels ${spreadTone}`;
+  const sectorSummary =
+    leadSide === "balanced"
+      ? `Compares defensive vs growth sectors. The gap is small and ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}; growth-linked jobs and portfolios feel it first, so stay balanced.`
+      : leadSide === "defense"
+      ? `Compares defensive vs growth sectors. Defense is ahead and the gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}; growth-linked jobs and portfolios feel it first, so keep a defensive tilt.`
+      : `Compares defensive vs growth sectors. Growth is ahead and the gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}; growth-linked jobs and portfolios benefit first, so lean into growth.`;
 
   return (
     <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">
@@ -405,9 +436,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90 }: Props) {
       )}
 
       <div className="mt-6 bg-stealth-900 border border-stealth-700 rounded p-3">
-        <p className="text-xs text-stealth-300 leading-relaxed">
-          <span className="font-semibold text-stealth-200">Conclusion:</span> Shows whether investors are leaning toward safety or growth, which gives an early read on confidence. It helps confirm the current regime and can flag when stability is starting to slip.
-        </p>
+        <p className="text-xs text-stealth-300 leading-relaxed">{sectorSummary}</p>
       </div>
     </div>
   );

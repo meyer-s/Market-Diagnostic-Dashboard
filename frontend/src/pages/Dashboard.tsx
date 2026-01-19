@@ -42,30 +42,41 @@ const buildOverallSummary = (items: IndicatorStatus[]): OverallSummary | null =>
   const total = items.length;
   const avgScore =
     items.reduce((sum, item) => sum + (Number.isFinite(item.score) ? item.score : 0), 0) / total;
-  const avgScoreDisplay = Number.isFinite(avgScore) ? avgScore.toFixed(1) : "n/a";
   const redShare = counts.red / total;
   const yellowShare = counts.yellow / total;
+  const greenShare = counts.green / total;
+  const scoreSpread = Math.sqrt(
+    items.reduce((sum, item) => sum + Math.pow((item.score ?? 0) - avgScore, 2), 0) / total
+  );
+  const balancePhrase =
+    greenShare - redShare > 0.15
+      ? "greens outweigh reds"
+      : redShare - greenShare > 0.1
+      ? "reds outweigh greens"
+      : "greens and reds are close";
+  const coherencePhrase =
+    scoreSpread < 8 ? "moving together" : scoreSpread > 18 ? "pulling apart" : "uneven";
 
   let label: "Stable" | "Cautious" | "Stressed";
   let color: string;
   let text: string;
-  const summaryMetrics = `This measures how many indicators are in good, warning, or stress states (${counts.green} green, ${counts.yellow} yellow, ${counts.red} red out of ${total}, avg score ${avgScoreDisplay}).`;
+  const summaryMetrics = "This rolls the full indicator set into one snapshot.";
 
   if (redShare >= 0.3 || avgScore < 40) {
     label = "Stressed";
     color = "text-red-400";
     text =
-      `${summaryMetrics} It matters because broad weakness often shows up next in borrowing costs, hiring, and spending. It affects households and businesses first, and investors feel it as bigger price swings. To take advantage, keep positions smaller, protect cash needs, and add risk only when the red count starts to fall.`;
+      `${summaryMetrics} Right now ${balancePhrase} and signals are ${coherencePhrase}, so stress looks broad. Borrowers and employers feel it first; protect cash needs and keep risk small until it eases.`;
   } else if (redShare >= 0.15 || yellowShare >= 0.4 || avgScore < 55) {
     label = "Cautious";
     color = "text-yellow-400";
     text =
-      `${summaryMetrics} It matters because mixed signals usually mean uneven conditions and more false starts. It affects borrowers, employers, and investors who need timing to be right. To take advantage, stay diversified, avoid big bets, and wait for more indicators to turn green before adding exposure.`;
+      `${summaryMetrics} Right now ${balancePhrase} and signals are ${coherencePhrase}, so conditions can feel uneven. Households and employers may feel slower demand; stay diversified and add risk only as more indicators turn green.`;
   } else {
     label = "Stable";
     color = "text-green-400";
     text =
-      `${summaryMetrics} It matters because broad agreement usually supports steady jobs, spending, and planning. It affects households through income stability, businesses through clearer demand, and investors through smoother trends. To take advantage, extend time horizons, lock in funding needs, or add exposure while the dashboard stays green.`;
+      `${summaryMetrics} Right now ${balancePhrase} and signals are ${coherencePhrase}, so conditions look steady. Households and businesses usually see fewer surprises; longer-term plans can make sense while this holds.`;
   }
 
   return { label, color, text, counts, total };
