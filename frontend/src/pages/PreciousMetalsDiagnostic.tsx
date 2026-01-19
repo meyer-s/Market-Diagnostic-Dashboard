@@ -719,19 +719,19 @@ function PriceAnchorsPanel({ indicators }: any) {
           <span className="text-xs font-semibold text-stealth-300 block mb-2">Key Correlations (60-day)</span>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="flex justify-between">
-              <span className="text-stealth-400">Au <-> SPY:</span>
+              <span className="text-stealth-400">Au {"<->"} SPY:</span>
               <span className="text-stealth-300">-0.15</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-stealth-400">Au <-> TLT:</span>
+              <span className="text-stealth-400">Au {"<->"} TLT:</span>
               <span className="text-stealth-300">+0.42</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-stealth-400">Au <-> DXY:</span>
+              <span className="text-stealth-400">Au {"<->"} DXY:</span>
               <span className="text-stealth-300">-0.68</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-stealth-400">Au <-> VIX:</span>
+              <span className="text-stealth-400">Au {"<->"} VIX:</span>
               <span className="text-stealth-300">+0.55</span>
             </div>
           </div>
@@ -1142,35 +1142,35 @@ function CorrelationPanel({ correlations }: any) {
           <tbody className="text-xs text-stealth-300">
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> <span style={{ color: getMetalColor('AG') }}>Ag</span>
+                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} <span style={{ color: getMetalColor('AG') }}>Ag</span>
               </td>
               <td className="text-right font-semibold">{correlations.au_ag.toFixed(2)}</td>
               <td className="text-right">High correlation (both monetary)</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> SPY
+                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} SPY
               </td>
               <td className="text-right font-semibold">{correlations.au_spy.toFixed(2)}</td>
               <td className="text-right">Diversification benefit</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> TLT
+                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} TLT
               </td>
               <td className="text-right font-semibold">{correlations.au_tlt.toFixed(2)}</td>
               <td className="text-right">Bond substitute signal</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> DXY
+                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} DXY
               </td>
               <td className="text-right font-semibold">{correlations.au_dxy.toFixed(2)}</td>
               <td className="text-right">Currency hedge effect</td>
             </tr>
             <tr>
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> <-> VIX
+                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} VIX
               </td>
               <td className="text-right font-semibold">{correlations.au_vix.toFixed(2)}</td>
               <td className="text-right">Stress indicator</td>
