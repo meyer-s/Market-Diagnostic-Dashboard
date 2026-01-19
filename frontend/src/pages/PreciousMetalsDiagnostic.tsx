@@ -1107,8 +1107,8 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
         </div>
         
         <p className="text-xs text-stealth-400 border-t border-stealth-600 pt-3 mt-3">
-          Non-predictive scenarios: If Au -> $3,000/oz, metals -> {formatMarketCap(scenario_3k_total)}. 
-          If Au -> $5,000/oz, -> {formatMarketCap(scenario_5k_total)}.
+          Non-predictive scenarios: If Au {"->"} $3,000/oz, metals {"->"} {formatMarketCap(scenario_3k_total)}. 
+          If Au {"->"} $5,000/oz, {"->"} {formatMarketCap(scenario_5k_total)}.
         </p>
       </div>
     </div>
