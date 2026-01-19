@@ -14,7 +14,7 @@ import {
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
 import { formatTime } from "../../utils/styleUtils";
-import { analyzeSeries, getTrendTone } from "../../utils/insightUtils";
+import { analyzeSeries, getTrendTone, getConfidenceFromSignal, type InsightSignal } from "../../utils/insightUtils";
 
 interface DowTheoryData {
   timestamp: string;
@@ -61,6 +61,7 @@ interface HistoryPoint {
 
 interface DowTheoryWidgetProps {
   trendPeriod?: number;
+  onInsight?: (insight: InsightSignal) => void;
 }
 
 type StabilityLevel = "HIGH" | "MODERATE" | "LOW" | "VERY LOW" | "UNKNOWN";
@@ -90,7 +91,7 @@ const getStabilityBarColor = (level: StabilityLevel) =>
     UNKNOWN: "bg-gray-600",
   }[level]);
 
-const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
+const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) => {
   const [data, setData] = useState<DowTheoryData | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -325,6 +326,39 @@ const DowTheoryWidget = ({ trendPeriod = 90 }: DowTheoryWidgetProps) => {
       : data.theory_alignment_state === "DIVERGENT"
       ? `Checks whether classic and modern signals agree. They are split, are ${directionAgreement}, and the gap is ${spreadTrendPhrase}${toneClause}, so choppy moves are more likely and borrowers, businesses, and investors should protect downside.`
       : `Checks whether classic and modern signals agree. Alignment is unclear, so keep positions balanced until the signals settle.`;
+  const summaryShort =
+    data.theory_alignment_state === "ALIGNED"
+      ? `aligned, gap ${spreadTrendPhrase}`
+      : data.theory_alignment_state === "MIXED"
+      ? `mixed, gap ${spreadTrendPhrase}`
+      : data.theory_alignment_state === "DIVERGENT"
+      ? `split, gap ${spreadTrendPhrase}`
+      : "unclear";
+  const trendDirection =
+    classicDir === "up" && modernDir === "up"
+      ? "up"
+      : classicDir === "down" && modernDir === "down"
+      ? "down"
+      : "flat";
+  let stance: InsightSignal["stance"] = "mixed";
+  if (data.theory_alignment_state === "ALIGNED") {
+    stance = trendDirection === "up" ? "risk-on" : trendDirection === "down" ? "risk-off" : "mixed";
+  } else if (data.theory_alignment_state === "DIVERGENT") {
+    stance = "risk-off";
+  }
+  const dowInsight: InsightSignal = {
+    id: "dow",
+    label: "Dow",
+    direction: trendDirection,
+    stance,
+    confidence: getConfidenceFromSignal(gapSignal),
+    summary: summaryShort,
+  };
+
+  useEffect(() => {
+    if (!onInsight) return;
+    onInsight(dowInsight);
+  }, [onInsight, dowInsight.direction, dowInsight.stance, dowInsight.confidence, dowInsight.summary]);
 
   const renderTrendTooltip = ({
     active,

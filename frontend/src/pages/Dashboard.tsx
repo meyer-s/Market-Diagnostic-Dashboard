@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { IndicatorStatus } from "../types";
 import IndicatorCard from "../components/widgets/IndicatorCard";
 import DowTheoryWidget from "../components/widgets/DowTheoryWidget";
@@ -7,6 +7,7 @@ import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget
 import AASWidget from "../components/widgets/AASWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import { getLegacyApiUrl } from "../utils/apiUtils";
+import type { InsightSignal } from "../utils/insightUtils";
 
 interface NewsArticle {
   id: number;
@@ -18,68 +19,75 @@ interface NewsArticle {
   published_at: string;
 }
 
-type OverallSummary = {
+type OverallInsight = {
   label: string;
   color: string;
-  text: string;
-  counts: { green: number; yellow: number; red: number };
-  total: number;
+  summary: string;
+  posture: InsightSignal["stance"];
+  direction: InsightSignal["direction"];
+  confidence: InsightSignal["confidence"];
 };
 
-const buildOverallSummary = (items: IndicatorStatus[]): OverallSummary | null => {
-  if (!items.length) return null;
+const buildOverallInsight = (signals: InsightSignal[]): OverallInsight | null => {
+  if (signals.length < 4) return null;
 
-  const counts = items.reduce(
-    (acc, item) => {
-      if (item.state === "GREEN") acc.green += 1;
-      if (item.state === "YELLOW") acc.yellow += 1;
-      if (item.state === "RED") acc.red += 1;
-      return acc;
-    },
-    { green: 0, yellow: 0, red: 0 }
-  );
+  const stanceScore = signals.reduce((sum, item) => {
+    if (item.stance === "risk-on") return sum + 1;
+    if (item.stance === "risk-off") return sum - 1;
+    return sum;
+  }, 0);
+  const directionScore = signals.reduce((sum, item) => {
+    if (item.direction === "up") return sum + 1;
+    if (item.direction === "down") return sum - 1;
+    return sum;
+  }, 0);
+  const confidenceScore = signals.reduce((sum, item) => {
+    if (item.confidence === "high") return sum + 1;
+    if (item.confidence === "low") return sum - 1;
+    return sum;
+  }, 0);
 
-  const total = items.length;
-  const avgScore =
-    items.reduce((sum, item) => sum + (Number.isFinite(item.score) ? item.score : 0), 0) / total;
-  const redShare = counts.red / total;
-  const yellowShare = counts.yellow / total;
-  const greenShare = counts.green / total;
-  const scoreSpread = Math.sqrt(
-    items.reduce((sum, item) => sum + Math.pow((item.score ?? 0) - avgScore, 2), 0) / total
-  );
-  const balancePhrase =
-    greenShare - redShare > 0.15
-      ? "greens outweigh reds"
-      : redShare - greenShare > 0.1
-      ? "reds outweigh greens"
-      : "greens and reds are close";
-  const coherencePhrase =
-    scoreSpread < 8 ? "moving together" : scoreSpread > 18 ? "pulling apart" : "uneven";
+  const posture: InsightSignal["stance"] =
+    stanceScore >= 2 ? "risk-on" : stanceScore <= -2 ? "risk-off" : "mixed";
+  const direction: InsightSignal["direction"] =
+    directionScore >= 2 ? "up" : directionScore <= -2 ? "down" : "flat";
+  const confidence: InsightSignal["confidence"] =
+    confidenceScore >= 2 ? "high" : confidenceScore <= -2 ? "low" : "medium";
 
-  let label: "Stable" | "Cautious" | "Stressed";
-  let color: string;
-  let text: string;
-  const summaryMetrics = "This rolls the full indicator set into one snapshot.";
-
-  if (redShare >= 0.3 || avgScore < 40) {
-    label = "Stressed";
-    color = "text-red-400";
-    text =
-      `${summaryMetrics} Right now ${balancePhrase} and signals are ${coherencePhrase}, so stress looks broad. Borrowers and employers feel it first; protect cash needs and keep risk small until it eases.`;
-  } else if (redShare >= 0.15 || yellowShare >= 0.4 || avgScore < 55) {
-    label = "Cautious";
-    color = "text-yellow-400";
-    text =
-      `${summaryMetrics} Right now ${balancePhrase} and signals are ${coherencePhrase}, so conditions can feel uneven. Households and employers may feel slower demand; stay diversified and add risk only as more indicators turn green.`;
+  const label =
+    posture === "risk-on" ? "Positive" : posture === "risk-off" ? "Cautious" : "Mixed";
+  const color =
+    posture === "risk-on"
+      ? "text-green-400"
+      : posture === "risk-off"
+      ? "text-red-400"
+      : "text-yellow-400";
+  let summary = "";
+  if (posture === "risk-on") {
+    summary =
+      direction === "up"
+        ? "Tailwinds lead and momentum is building."
+        : direction === "down"
+        ? "Tailwinds still lead, but momentum is fading."
+        : "Tailwinds lead, but momentum is flat.";
+  } else if (posture === "risk-off") {
+    summary =
+      direction === "down"
+        ? "Caution leads and momentum is fading."
+        : direction === "up"
+        ? "Caution still leads, but pressure is easing."
+        : "Caution leads, but momentum is flat.";
   } else {
-    label = "Stable";
-    color = "text-green-400";
-    text =
-      `${summaryMetrics} Right now ${balancePhrase} and signals are ${coherencePhrase}, so conditions look steady. Households and businesses usually see fewer surprises; longer-term plans can make sense while this holds.`;
+    summary = "Signals are split; stay balanced until one side wins.";
   }
 
-  return { label, color, text, counts, total };
+  if (confidence === "low") {
+    summary += " The read feels noisy.";
+  } else if (confidence === "high") {
+    summary += " The read feels clear.";
+  }
+
+  return { label, color, summary, posture, direction, confidence };
 };
 
 export default function Dashboard() {
@@ -89,6 +97,7 @@ export default function Dashboard() {
   const [trendPeriod, setTrendPeriod] = useState<90 | 180 | 365>(90);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [insights, setInsights] = useState<Partial<Record<InsightSignal["id"], InsightSignal>>>({});
 
   useEffect(() => {
     const apiUrl = getLegacyApiUrl();
@@ -109,7 +118,47 @@ export default function Dashboard() {
 
   const newsCount = news.length;
   const visibleIndicators = indicators?.filter((i) => i.code !== "AAP") ?? [];
-  const overallSummary = buildOverallSummary(visibleIndicators);
+  const insightOrder: InsightSignal["id"][] = ["system", "dow", "sector", "aas"];
+  const insightList = useMemo(
+    () => insightOrder.map((id) => insights[id]).filter(Boolean) as InsightSignal[],
+    [insights]
+  );
+  const overallInsight = useMemo(
+    () => buildOverallInsight(insightList),
+    [insightList]
+  );
+
+  const handleInsight = useCallback((insight: InsightSignal) => {
+    setInsights((prev) => {
+      const existing = prev[insight.id];
+      if (
+        existing &&
+        existing.summary === insight.summary &&
+        existing.direction === insight.direction &&
+        existing.stance === insight.stance &&
+        existing.confidence === insight.confidence
+      ) {
+        return prev;
+      }
+      return { ...prev, [insight.id]: insight };
+    });
+  }, []);
+
+  const stanceStyles = {
+    "risk-on": "bg-green-500/15 text-green-300 border-green-400/40",
+    "risk-off": "bg-red-500/15 text-red-300 border-red-400/40",
+    mixed: "bg-yellow-500/15 text-yellow-300 border-yellow-400/40",
+  } as const;
+  const directionLabel = {
+    up: "up",
+    down: "down",
+    flat: "flat",
+  } as const;
+  const directionStyles = {
+    up: "text-green-300",
+    down: "text-red-300",
+    flat: "text-stealth-300",
+  } as const;
 
   // Manual refresh function - triggers ETL ingestion for all indicators
   const handleRefresh = async () => {
@@ -224,39 +273,61 @@ export default function Dashboard() {
         </div>
 
       <div className="mb-3 md:mb-6">
-        {indicatorsLoading && (
+        {!overallInsight && (
           <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
-            <p className="text-xs text-stealth-400">Overall conclusion loading...</p>
+            <p className="text-xs text-stealth-400">Overall read forming...</p>
           </div>
         )}
-        {!indicatorsLoading && overallSummary && (
+        {overallInsight && (
           <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Conclusion</div>
-                <div className={`text-lg font-semibold ${overallSummary.color}`}>{overallSummary.label}</div>
+                <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
+                <div className={`text-lg font-semibold ${overallInsight.color}`}>{overallInsight.label}</div>
               </div>
-              <div className="text-xs text-stealth-400 text-right">
-                {overallSummary.counts.green} green • {overallSummary.counts.yellow} yellow • {overallSummary.counts.red} red
+              <div className="text-xs text-stealth-500 text-right">
+                {overallInsight.confidence === "high"
+                  ? "clear read"
+                  : overallInsight.confidence === "low"
+                  ? "noisy read"
+                  : "mixed read"}
               </div>
             </div>
-            <p className="text-sm text-stealth-300 mt-2 leading-relaxed">
-              {overallSummary.text}
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+              {insightList.map((insight) => (
+                <div
+                  key={insight.id}
+                  className={`rounded-md border px-2 py-2 ${stanceStyles[insight.stance]}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-stealth-100">
+                      {insight.label}
+                    </span>
+                    <span className={`text-[10px] uppercase ${directionStyles[insight.direction]}`}>
+                      {directionLabel[insight.direction]}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-stealth-200 mt-1 truncate">
+                    {insight.summary}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-sm text-stealth-300 mt-3 leading-relaxed">
+              {overallInsight.summary}
             </p>
-          </div>
-        )}
-        {!indicatorsLoading && !overallSummary && (
-          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
-            <p className="text-xs text-stealth-400">Overall conclusion unavailable.</p>
           </div>
         )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-6 mb-3 md:mb-6">
-        <SystemOverviewWidget trendPeriod={trendPeriod} />
-        <DowTheoryWidget trendPeriod={trendPeriod} />
-        <SectorDivergenceWidget trendPeriod={trendPeriod} />
-        <AASWidget timeframe={trendPeriod === 90 ? '90d' : trendPeriod === 180 ? '180d' : '365d'} />
+        <SystemOverviewWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
+        <DowTheoryWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
+        <SectorDivergenceWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
+        <AASWidget
+          timeframe={trendPeriod === 90 ? '90d' : trendPeriod === 180 ? '180d' : '365d'}
+          onInsight={handleInsight}
+        />
       </div>
 
       <h3 className="text-lg sm:text-xl font-semibold mb-3 md:mb-4">Indicators</h3>

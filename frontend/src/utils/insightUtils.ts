@@ -5,6 +5,15 @@ export type TrendSignal = {
   momentum: "accelerating" | "fading" | "steady";
 };
 
+export type InsightSignal = {
+  id: "system" | "dow" | "sector" | "aas";
+  label: string;
+  direction: "up" | "down" | "flat";
+  stance: "risk-on" | "risk-off" | "mixed";
+  confidence: "high" | "medium" | "low";
+  summary: string;
+};
+
 const mean = (values: number[]) =>
   values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
@@ -72,4 +81,12 @@ export const getTrendTone = (signal: TrendSignal) => {
   if (signal.volatility === "choppy") return "uneven";
   if (signal.strength === "strong") return "clear";
   return "mixed";
+};
+
+export const getConfidenceFromSignal = (
+  signal: TrendSignal
+): InsightSignal["confidence"] => {
+  if (signal.volatility === "choppy" && signal.strength !== "strong") return "low";
+  if (signal.strength === "strong" && signal.volatility === "calm") return "high";
+  return "medium";
 };

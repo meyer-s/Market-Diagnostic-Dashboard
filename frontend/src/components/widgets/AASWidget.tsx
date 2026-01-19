@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
 import { Link } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { analyzeSeries, getTrendTone } from "../../utils/insightUtils";
+import { analyzeSeries, getTrendTone, getConfidenceFromSignal, type InsightSignal } from "../../utils/insightUtils";
 
 interface AASData {
   stability_score: number;
@@ -24,9 +24,10 @@ interface HistoricalData {
 
 interface AASWidgetProps {
   timeframe?: '30d' | '90d' | '180d' | '365d';
+  onInsight?: (insight: InsightSignal) => void;
 }
 
-export default function AASWidget({ timeframe = '90d' }: AASWidgetProps) {
+export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetProps) {
   const { data: aasData, loading } = useApi<AASData>('/aap/current');
   const { data: historyData } = useApi<any>(`/aap/history?days=${parseInt(timeframe)}`);
   const [metalsPercent, setMetalsPercent] = useState(50);
@@ -159,6 +160,32 @@ export default function AASWidget({ timeframe = '90d' }: AASWidgetProps) {
     actionSentence = "Keep size light and lean on hedges until it steadies.";
   }
   const aasSummary = `Alternative assets often move early when stress builds. It is ${trendWord}${momentumClause}${toneClause}. ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
+  const leaderShort = recentLeader === "metals" ? "metals lead" : "crypto lead";
+  const summaryShort = `${trendWord}, ${leaderShort}`;
+  const regimeLower = (aasData.regime || "").toLowerCase();
+  const stressRegime =
+    regimeLower.includes("stress") ||
+    regimeLower.includes("crisis") ||
+    regimeLower.includes("breakdown");
+  const stance =
+    aasData.stability_score >= 67 && trendSignal.direction !== "down"
+      ? "risk-on"
+      : aasData.stability_score <= 34 || stressRegime || trendSignal.direction === "down"
+      ? "risk-off"
+      : "mixed";
+  const aasInsight: InsightSignal = {
+    id: "aas",
+    label: "Alts",
+    direction: trendSignal.direction,
+    stance,
+    confidence: getConfidenceFromSignal(trendSignal),
+    summary: summaryShort,
+  };
+
+  useEffect(() => {
+    if (!onInsight) return;
+    onInsight(aasInsight);
+  }, [onInsight, aasInsight.direction, aasInsight.stance, aasInsight.confidence, aasInsight.summary]);
 
   return (
     <Link to="/alternative-assets">

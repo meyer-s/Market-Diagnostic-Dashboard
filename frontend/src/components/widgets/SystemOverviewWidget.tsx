@@ -15,7 +15,7 @@ import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatDateTime, formatTime } from "../../utils/styleUtils";
 import { CHART_MARGIN, commonXAxisProps, commonYAxisProps, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
 import { getStateFromScore, STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
-import { analyzeSeries, getTrendTone } from "../../utils/insightUtils";
+import { analyzeSeries, getTrendTone, getConfidenceFromSignal, type InsightSignal } from "../../utils/insightUtils";
 
 interface SystemStatus {
   state: string;
@@ -43,9 +43,10 @@ interface NewsArticle {
 
 interface Props {
   trendPeriod?: 90 | 180 | 365;
+  onInsight?: (insight: InsightSignal) => void;
 }
 
-const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
+const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   const [data, setData] = useState<SystemStatus | null>(null);
   const [history, setHistory] = useState<SystemHistoryPoint[]>([]);
   const [news, setNews] = useState<NewsArticle[]>([]);
@@ -196,6 +197,43 @@ const SystemOverviewWidget = ({ trendPeriod = 90 }: Props) => {
         : "Borrowers and employers feel this first; protect cash needs and keep risk small.";
   }
   const systemSummary = `This blends many signals into one health score. ${nuanceSentence} ${actionSentence}`;
+  const insightSummary =
+    data.state === "GREEN"
+      ? trendSignal.direction === "down"
+        ? "steady, cooling"
+        : trendSignal.direction === "up"
+        ? "steady, firming"
+        : "steady"
+      : data.state === "YELLOW"
+      ? trendSignal.direction === "up"
+        ? "mixed, firming"
+        : trendSignal.direction === "down"
+        ? "mixed, slipping"
+        : "mixed"
+      : trendSignal.direction === "up"
+      ? "stressed, easing"
+      : trendSignal.direction === "down"
+      ? "stressed, falling"
+      : "stressed";
+  const systemInsight: InsightSignal = {
+    id: "system",
+    label: "System",
+    direction: trendSignal.direction,
+    stance: data.state === "GREEN" ? "risk-on" : data.state === "RED" ? "risk-off" : "mixed",
+    confidence: getConfidenceFromSignal(trendSignal),
+    summary: insightSummary,
+  };
+
+  useEffect(() => {
+    if (!onInsight) return;
+    onInsight(systemInsight);
+  }, [
+    onInsight,
+    systemInsight.direction,
+    systemInsight.stance,
+    systemInsight.confidence,
+    systemInsight.summary,
+  ]);
 
   return (
     <Link to="/system-breakdown" className="block">

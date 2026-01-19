@@ -32,7 +32,7 @@ import {
 } from "recharts";
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
-import { analyzeSeries, getTrendTone } from "../../utils/insightUtils";
+import { analyzeSeries, getTrendTone, getConfidenceFromSignal, type InsightSignal } from "../../utils/insightUtils";
 
 interface SectorSummary {
   as_of_date: string;
@@ -68,6 +68,7 @@ interface SectorAlert {
 
 interface Props {
   trendPeriod?: 90 | 180 | 365;
+  onInsight?: (insight: InsightSignal) => void;
 }
 
 interface SectorHistoryPoint {
@@ -81,7 +82,7 @@ interface SectorHistoryPoint {
 const DEFENSIVE_SECTORS = new Set(["XLU", "XLP", "XLV"]);
 const CYCLICAL_SECTORS = new Set(["XLE", "XLF", "XLK", "XLY"]);
 
-export default function SectorDivergenceWidget({ trendPeriod = 90 }: Props) {
+export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: Props) {
   const [data, setData] = useState<SectorSummary | null>(null);
   const [history, setHistory] = useState<SectorHistoryPoint[]>([]);
   const [alerts, setAlerts] = useState<SectorAlert[]>([]);
@@ -237,6 +238,31 @@ export default function SectorDivergenceWidget({ trendPeriod = 90 }: Props) {
       : leadSide === "defense"
       ? `Compares defensive vs growth sectors. Defense is ahead and the gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}; growth-linked jobs and portfolios feel it first, so keep a defensive tilt.`
       : `Compares defensive vs growth sectors. Growth is ahead and the gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}; growth-linked jobs and portfolios benefit first, so lean into growth.`;
+  const summaryShort =
+    leadSide === "balanced"
+      ? `balanced, gap ${spreadTrendPhrase}`
+      : leadSide === "defense"
+      ? `defense lead, gap ${spreadTrendPhrase}`
+      : `growth lead, gap ${spreadTrendPhrase}`;
+  const sectorInsight: InsightSignal = {
+    id: "sector",
+    label: "Sectors",
+    direction: leadSide === "growth" ? "up" : leadSide === "defense" ? "down" : "flat",
+    stance: leadSide === "growth" ? "risk-on" : leadSide === "defense" ? "risk-off" : "mixed",
+    confidence: getConfidenceFromSignal(gapSignal),
+    summary: summaryShort,
+  };
+
+  useEffect(() => {
+    if (!onInsight) return;
+    onInsight(sectorInsight);
+  }, [
+    onInsight,
+    sectorInsight.direction,
+    sectorInsight.stance,
+    sectorInsight.confidence,
+    sectorInsight.summary,
+  ]);
 
   return (
     <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">
