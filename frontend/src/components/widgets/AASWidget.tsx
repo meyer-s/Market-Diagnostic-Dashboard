@@ -91,6 +91,25 @@ export default function AASWidget({ timeframe = '90d' }: AASWidgetProps) {
     return labels[regime] || regime.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
+  if (loading) {
+    return (
+      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-stealth-700 rounded mb-3 w-1/3"></div>
+          <div className="h-12 bg-stealth-700 rounded mb-4"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!aasData) {
+    return (
+      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+        <p className="text-stealth-400 text-sm">Unable to load AAS data</p>
+      </div>
+    );
+  }
+
   const averageValue = (points: HistoricalData[], key: keyof HistoricalData) => {
     if (!points.length) return 0;
     const sum = points.reduce((total, point) => total + (Number(point[key]) || 0), 0);
@@ -140,25 +159,6 @@ export default function AASWidget({ timeframe = '90d' }: AASWidgetProps) {
     actionSentence = "Keep size light and lean on hedges until it steadies.";
   }
   const aasSummary = `Alternative assets often move early when stress builds. It is ${trendWord}${momentumClause}${toneClause}. ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
-
-  if (loading) {
-    return (
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-stealth-700 rounded mb-3 w-1/3"></div>
-          <div className="h-12 bg-stealth-700 rounded mb-4"></div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!aasData) {
-    return (
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
-        <p className="text-stealth-400 text-sm">Unable to load AAS data</p>
-      </div>
-    );
-  }
 
   return (
     <Link to="/alternative-assets">
