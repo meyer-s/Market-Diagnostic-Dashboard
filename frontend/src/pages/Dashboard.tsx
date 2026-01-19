@@ -8,6 +8,7 @@ import AASWidget from "../components/widgets/AASWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import { getLegacyApiUrl } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
+import { useProgressiveCommitment } from "../hooks/useProgressiveCommitment";
 
 interface NewsArticle {
   id: number;
@@ -113,7 +114,6 @@ export default function Dashboard() {
   const [trendPeriod, setTrendPeriod] = useState<90 | 180 | 365>(90);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [showOverallDetails, setShowOverallDetails] = useState(false);
   const [insights, setInsights] = useState<Partial<Record<InsightSignal["id"], InsightSignal>>>({});
 
   useEffect(() => {
@@ -165,14 +165,15 @@ export default function Dashboard() {
       ? "signals diverge"
       : "mixed trend";
   const overallHoverLine = overallInsight
-    ? `Confidence: ${overallInsight.confidence}${overallInsight.confidence === "low" ? " ±" : ""} (${overallConfidenceNote})`
+    ? `Confidence: ${overallInsight.confidence} (${overallConfidenceNote})`
     : "";
   const overallRelatedReasons: Record<InsightSignal["id"], string> = {
-    system: "Composite state anchor",
-    dow: "Trend confirmation check",
-    sector: "Leadership check-in",
-    aas: "Risk appetite pulse",
+    system: "Composite anchor for system stability",
+    dow: "Confirms trend agreement across transports",
+    sector: "Shows leadership between defensive and cyclical",
+    aas: "Alternative assets confirm risk appetite shifts",
   };
+  const overallCommitment = useProgressiveCommitment({ mode: "inline" });
 
   const handleInsight = useCallback((insight: InsightSignal) => {
     setInsights((prev) => {
@@ -190,22 +191,6 @@ export default function Dashboard() {
       return { ...prev, [insight.id]: insight };
     });
   }, []);
-
-  const stanceStyles = {
-    "risk-on": "bg-green-500/15 text-green-300 border-green-400/40",
-    "risk-off": "bg-red-500/15 text-red-300 border-red-400/40",
-    mixed: "bg-yellow-500/15 text-yellow-300 border-yellow-400/40",
-  } as const;
-  const directionLabel = {
-    up: "up",
-    down: "down",
-    flat: "flat",
-  } as const;
-  const directionStyles = {
-    up: "text-green-300",
-    down: "text-red-300",
-    flat: "text-stealth-300",
-  } as const;
 
   // Manual refresh function - triggers ETL ingestion for all indicators
   const handleRefresh = async () => {
@@ -326,20 +311,16 @@ export default function Dashboard() {
           </div>
         )}
         {overallInsight && (
-          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5 group">
+          <div
+            {...overallCommitment.getContainerProps<HTMLDivElement>()}
+            className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
+            aria-expanded={overallCommitment.isExpanded}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
                 <div className={`text-lg font-semibold ${overallInsight.color}`}>{overallInsight.label}</div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowOverallDetails((prev) => !prev)}
-                className="text-xs text-stealth-400 hover:text-stealth-200 transition-colors"
-                aria-expanded={showOverallDetails}
-              >
-                {showOverallDetails ? "Hide details" : "Details"}
-              </button>
             </div>
             <div className="mt-2 text-sm text-stealth-200">
               <span className="text-stealth-500">Signal:</span> {overallSignalLine}
@@ -347,31 +328,19 @@ export default function Dashboard() {
             <div className="text-sm text-stealth-400">
               <span className="text-stealth-500">Context:</span> {overallContextLine}
             </div>
-            <div className="mt-2 text-xs text-stealth-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 motion-reduce:transition-none">
-              <span className="text-stealth-400">Confidence:</span>{" "}
-              <span
-                className={
-                  overallInsight.confidence === "low" ? "underline decoration-dotted" : undefined
-                }
-              >
-                {overallInsight.confidence}
-              </span>
-              {overallInsight.confidence === "low" ? " ±" : ""} ({overallConfidenceNote})
-            </div>
-            {showOverallDetails && (
+            {overallCommitment.state === "focus" && (
+              <div className="mt-2 text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+                {overallHoverLine}
+              </div>
+            )}
+            {overallCommitment.isExpanded && (
               <div className="mt-3 border-t border-stealth-700 pt-3 text-xs text-stealth-300 space-y-3">
                 <div>
                   <div className="text-[11px] uppercase tracking-wide text-stealth-500">
                     Why it matters
                   </div>
-                  <p className="text-stealth-300">{overallInsight.summary}</p>
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-wide text-stealth-500">
-                    How it is built
-                  </div>
                   <p className="text-stealth-300">
-                    Built from system, trend alignment, sector leadership, and alternative-asset signals.
+                    {overallInsight.summary} This keeps the dashboard aligned on a single read.
                   </p>
                 </div>
                 <div>
@@ -385,11 +354,19 @@ export default function Dashboard() {
                         className="inline-flex items-center gap-2 rounded-full border border-stealth-600 bg-stealth-900 px-2 py-1 text-[11px] text-stealth-300"
                       >
                         {insight.label}
-                        <span className="text-stealth-500">•</span>
-                        {overallRelatedReasons[insight.id] ?? "Composite input"}
+                        <span className="text-stealth-500">-</span>
+                        {overallRelatedReasons[insight.id] ?? "Composite input for overall balance"}
                       </span>
                     ))}
                   </div>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-stealth-500">
+                    Methodology note
+                  </div>
+                  <p className="text-stealth-300">
+                    Combines system state, trend alignment, sector leadership, and alternative-asset stability.
+                  </p>
                 </div>
               </div>
             )}
