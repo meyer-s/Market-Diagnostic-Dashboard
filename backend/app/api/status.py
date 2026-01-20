@@ -36,6 +36,7 @@ def get_system_history(days: int = 365):
         # Get all indicators with their weights
         indicators = db.query(Indicator).all()
         indicator_map = {ind.id: ind for ind in indicators}
+        indicator_codes = [ind.code for ind in indicators]
         
         # Get historical values for all indicators within date range
         values = (
@@ -68,14 +69,19 @@ def get_system_history(days: int = 365):
             # Calculate weighted composite score
             total_weighted_score = 0
             total_weight = 0
+            weighted_scores_by_code = {code: 0.0 for code in indicator_codes}
             red_count = 0
             yellow_count = 0
             
             for indicator_id, val in latest_per_indicator.items():
                 if indicator_id in indicator_map:
-                    weight = indicator_map[indicator_id].weight
-                    total_weighted_score += val.score * weight
+                    indicator = indicator_map[indicator_id]
+                    weight = indicator.weight or 0
+                    score = val.score if val.score is not None else 0
+                    weighted_score = score * weight
+                    total_weighted_score += weighted_score
                     total_weight += weight
+                    weighted_scores_by_code[indicator.code] = weighted_score
                     
                     if val.state == "RED":
                         red_count += 1
@@ -96,12 +102,18 @@ def get_system_history(days: int = 365):
                 # Use end of day for timestamp
                 timestamp = datetime.combine(date_key, datetime.max.time())
                 
+                contributions = {
+                    code: round(weighted_scores_by_code[code] / total_weight, 2)
+                    for code in indicator_codes
+                }
+
                 history.append({
                     "timestamp": timestamp.isoformat(),
                     "composite_score": round(composite_score, 1),
                     "state": state,
                     "red_count": red_count,
                     "yellow_count": yellow_count,
+                    "contributions": contributions,
                 })
         
         return history

@@ -4,7 +4,17 @@ import { apiFetch } from "../../utils/apiUtils";
 import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatTime } from "../../utils/styleUtils";
 import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
+import {
+  Area,
+  AreaChart,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 import {
   analyzeSeries,
   getTrendTone,
@@ -13,8 +23,8 @@ import {
   type InsightSignal,
 } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
-import { getFamilyColor } from "../../theme/metricColors";
-import { CHART_ANIMATION } from "../../utils/chartUtils";
+import { getFamilyColor, getMetricColor } from "../../theme/metricColors";
+import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL, commonGridProps } from "../../utils/chartUtils";
 
 interface SystemStatus {
   state: string;
@@ -28,6 +38,7 @@ interface SystemHistoryPoint {
   timestamp: string;
   composite_score: number;
   state: string;
+  contributions?: Record<string, number>;
 }
 
 interface Props {
@@ -35,9 +46,16 @@ interface Props {
   onInsight?: (insight: InsightSignal) => void;
 }
 
+interface IndicatorMeta {
+  code: string;
+  name: string;
+}
+
 const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   const [data, setData] = useState<SystemStatus | null>(null);
   const [history, setHistory] = useState<SystemHistoryPoint[]>([]);
+  const [indicatorLabels, setIndicatorLabels] = useState<Record<string, string>>({});
+  const [indicatorOrder, setIndicatorOrder] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -50,12 +68,20 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     const fetchData = async () => {
       try {
         const historyUrl = `/system/history?days=${trendPeriod}`;
-        const [statusData, historyData] = await Promise.all([
+        const [statusData, historyData, indicatorData] = await Promise.all([
           apiFetch<SystemStatus>("/system"),
           apiFetch<SystemHistoryPoint[]>(historyUrl),
+          apiFetch<IndicatorMeta[]>("/indicators"),
         ]);
 
         setData(statusData);
+        setIndicatorOrder(indicatorData.map((indicator) => indicator.code));
+        setIndicatorLabels(
+          indicatorData.reduce<Record<string, string>>((acc, indicator) => {
+            acc[indicator.code] = indicator.name;
+            return acc;
+          }, {})
+        );
 
         if (Array.isArray(historyData) && historyData.length > 0) {
           const smoothedHistory = calculateMovingAverage(historyData, "composite_score", 7);
@@ -186,6 +212,17 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   const trend = last7Avg - prev7Avg;
   const trendDirection = trend > 2 ? "IMPROVING" : trend < -2 ? "WORSENING" : "STABLE";
   const accentColor = getFamilyColor("system", "muted");
+  const contributionSeries = history
+    .filter((point) => point.contributions)
+    .map((point) => ({
+      timestamp: point.timestamp,
+      ...point.contributions,
+    }));
+  const contributionKeys = indicatorOrder.length
+    ? indicatorOrder.filter((code) =>
+        contributionSeries.some((point) => Object.prototype.hasOwnProperty.call(point, code))
+      )
+    : Object.keys(contributionSeries[0] ?? {}).filter((key) => key !== "timestamp");
 
   return (
     <div
@@ -244,6 +281,80 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
               <div className="mt-1 text-sm text-stealth-200">{data.composite_score.toFixed(1)}</div>
             </div>
           </div>
+          {contributionSeries.length > 1 && (
+            <div className="pt-3">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500 mb-2">
+                Indicator Contributions
+              </div>
+              <div className="h-36">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={contributionSeries} margin={CHART_MARGIN}>
+                    <CartesianGrid {...commonGridProps} />
+                    <XAxis
+                      dataKey="timestamp"
+                      tickFormatter={(value: string) =>
+                        new Date(value).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      }
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      stroke={CHART_NEUTRAL.axis}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      stroke={CHART_NEUTRAL.axis}
+                      width={32}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#0f172a",
+                        border: "1px solid rgba(148, 163, 184, 0.2)",
+                        borderRadius: 6,
+                        color: "#e2e8f0",
+                        fontSize: 11,
+                      }}
+                      labelFormatter={(value: string) =>
+                        new Date(value).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })
+                      }
+                    />
+                    {contributionKeys.map((code) => (
+                      <Area
+                        key={code}
+                        type="monotone"
+                        dataKey={code}
+                        name={indicatorLabels[code] ?? code}
+                        stackId="system"
+                        stroke={getMetricColor(code)}
+                        fill={getMetricColor(code, "faint")}
+                        fillOpacity={0.35}
+                        strokeWidth={1.5}
+                        animationDuration={CHART_ANIMATION.duration}
+                        animationEasing={CHART_ANIMATION.easing}
+                        dot={false}
+                      />
+                    ))}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stealth-400">
+                {contributionKeys.map((code) => (
+                  <span key={code} className="inline-flex items-center gap-1">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: getMetricColor(code) }}
+                    />
+                    {indicatorLabels[code] ?? code}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

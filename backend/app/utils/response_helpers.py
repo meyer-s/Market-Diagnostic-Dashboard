@@ -198,6 +198,7 @@ def format_indicator_status(indicator: Indicator, value: Optional[IndicatorValue
         return {
             "code": indicator.code,
             "name": display_name,
+            "weight": indicator.weight,
             "raw_value": None,
             "score": None,
             "state": "UNKNOWN",
@@ -207,6 +208,7 @@ def format_indicator_status(indicator: Indicator, value: Optional[IndicatorValue
     return {
         "code": indicator.code,
         "name": display_name,
+        "weight": indicator.weight,
         "raw_value": value.raw_value,
         "score": value.score,
         "state": value.state,
