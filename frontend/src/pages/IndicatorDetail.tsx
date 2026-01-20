@@ -9,7 +9,7 @@ import { processComponentData, calculateDateRange, extendStaleData, filterByDate
 import { prepareExtendedComponentData } from "../utils/indicatorDetailHelpers";
 import { formatDateTime } from "../utils/styleUtils";
 import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
-import { getFamilyColor, getMetricColor, metricFamilyByKey } from "../theme/metricColors";
+import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
 import {
   LineChart,
@@ -189,7 +189,6 @@ export default function IndicatorDetail() {
   const normalizedCode = routeCode?.toUpperCase();
   const apiCode =
     normalizedCode === "ANALYST_CONFIDENCE" ? "ANALYST_ANXIETY" : normalizedCode;
-  const family = metricFamilyByKey[normalizedCode ?? ""] ?? metricFamilyByKey[apiCode ?? ""] ?? "system";
   const isAnalystConfidence = apiCode === "ANALYST_ANXIETY";
   const [isRefetching, setIsRefetching] = React.useState(false);
   const [refetchMessage, setRefetchMessage] = React.useState<string | null>(null);
@@ -515,8 +514,8 @@ export default function IndicatorDetail() {
                   ]}
                   referenceLines={[
                     { y: 0, stroke: getFamilyColor("benchmark"), label: "Neutral", labelFill: getFamilyColor("benchmark") },
-                    { y: 65, stroke: CHART_NEUTRAL.benchmark, label: "GREEN", labelFill: CHART_NEUTRAL.benchmark },
-                    { y: 35, stroke: CHART_NEUTRAL.benchmark, label: "RED", labelFill: CHART_NEUTRAL.benchmark }
+                    { y: 65, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
+                    { y: 35, stroke: statePalette.red, label: "RED", labelFill: statePalette.red }
                   ]}
                   yAxisLabel="Spread vs Inflation (%)"
                   dateRange={dateRange}
@@ -609,8 +608,8 @@ export default function IndicatorDetail() {
                     { dataKey: "treasury_volatility_stress.stress_score", name: "Treasury Volatility", stroke: getMetricColor("treasury_volatility_stress") }
                   ]}
                   referenceLines={[
-                    { y: 65, stroke: CHART_NEUTRAL.benchmark, label: "HIGH", labelFill: CHART_NEUTRAL.benchmark },
-                    { y: 35, stroke: CHART_NEUTRAL.benchmark, label: "LOW", labelFill: CHART_NEUTRAL.benchmark }
+                    { y: 65, stroke: statePalette.red, label: "HIGH", labelFill: statePalette.red },
+                    { y: 35, stroke: statePalette.green, label: "LOW", labelFill: statePalette.green }
                   ]}
                   yAxisLabel="Stress Level (0-100, inverted for final score)"
                   dateRange={dateRange}
@@ -635,8 +634,8 @@ export default function IndicatorDetail() {
                     { dataKey: "composite.stress_score", name: "Composite Stress", stroke: getFamilyColor("system"), strokeWidth: 3 }
                   ]}
                   referenceLines={[
-                    { y: 65, stroke: CHART_NEUTRAL.benchmark, label: "HIGH STRESS", labelFill: CHART_NEUTRAL.benchmark },
-                    { y: 35, stroke: CHART_NEUTRAL.benchmark, label: "LOW STRESS", labelFill: CHART_NEUTRAL.benchmark }
+                    { y: 65, stroke: statePalette.red, label: "HIGH STRESS", labelFill: statePalette.red },
+                    { y: 35, stroke: statePalette.green, label: "LOW STRESS", labelFill: statePalette.green }
                   ]}
                   yAxisLabel="Composite Stress Score"
                   dateRange={dateRange}
@@ -737,8 +736,8 @@ export default function IndicatorDetail() {
                     { dataKey: "composite.stress_score", name: "Liquidity Stress", stroke: getFamilyColor("liquidity"), strokeWidth: 3 }
                   ]}
                   referenceLines={[
-                    { y: 60, stroke: CHART_NEUTRAL.benchmark, label: "HIGH STRESS", labelFill: CHART_NEUTRAL.benchmark },
-                    { y: 30, stroke: CHART_NEUTRAL.benchmark, label: "LOW STRESS", labelFill: CHART_NEUTRAL.benchmark }
+                    { y: 60, stroke: statePalette.red, label: "HIGH STRESS", labelFill: statePalette.red },
+                    { y: 30, stroke: statePalette.green, label: "LOW STRESS", labelFill: statePalette.green }
                   ]}
                   yAxisLabel="Stress Score (0-100)"
                   dateRange={dateRange}
@@ -915,8 +914,8 @@ export default function IndicatorDetail() {
                         dot={false}
                       />
                     )}
-                    <ReferenceLine y={70} stroke={CHART_NEUTRAL.benchmark} strokeDasharray="3 3" label={{ value: 'GREEN', position: 'right', fill: CHART_NEUTRAL.benchmark }} />
-                    <ReferenceLine y={40} stroke={CHART_NEUTRAL.benchmark} strokeDasharray="3 3" label={{ value: 'RED', position: 'right', fill: CHART_NEUTRAL.benchmark }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN', position: 'right', fill: statePalette.green }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED', position: 'right', fill: statePalette.red }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -992,8 +991,8 @@ export default function IndicatorDetail() {
                       strokeWidth={3}
                       dot={false}
                     />
-                    <ReferenceLine y={70} stroke={CHART_NEUTRAL.benchmark} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: CHART_NEUTRAL.benchmark, fontSize: 11 }} />
-                    <ReferenceLine y={40} stroke={CHART_NEUTRAL.benchmark} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: CHART_NEUTRAL.benchmark, fontSize: 11 }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: statePalette.green, fontSize: 11 }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: statePalette.red, fontSize: 11 }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -1171,8 +1170,8 @@ export default function IndicatorDetail() {
                         dot={false}
                       />
                     )}
-                    <ReferenceLine y={70} stroke={CHART_NEUTRAL.benchmark} strokeDasharray="3 3" label={{ value: 'GREEN', position: 'right', fill: CHART_NEUTRAL.benchmark }} />
-                    <ReferenceLine y={40} stroke={CHART_NEUTRAL.benchmark} strokeDasharray="3 3" label={{ value: 'RED', position: 'right', fill: CHART_NEUTRAL.benchmark }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN', position: 'right', fill: statePalette.green }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED', position: 'right', fill: statePalette.red }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -1248,8 +1247,8 @@ export default function IndicatorDetail() {
                       strokeWidth={3}
                       dot={false}
                     />
-                    <ReferenceLine y={70} stroke={CHART_NEUTRAL.benchmark} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: CHART_NEUTRAL.benchmark, fontSize: 11 }} />
-                    <ReferenceLine y={40} stroke={CHART_NEUTRAL.benchmark} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: CHART_NEUTRAL.benchmark, fontSize: 11 }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: statePalette.green, fontSize: 11 }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: statePalette.red, fontSize: 11 }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -1581,29 +1580,20 @@ export default function IndicatorDetail() {
             State Trend
           </h3>
           <div className="flex items-center justify-center py-8">
-            <StateSparkline history={history || []} family={family} width={800} height={40} />
+            <StateSparkline history={history || []} width={800} height={40} />
           </div>
           <div className="flex justify-center gap-6 mt-4 text-sm text-stealth-400">
             <div className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: getFamilyColor(family, "base"), opacity: 0.9 }}
-              ></div>
-              <span>Higher stability</span>
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+              <span>Green (Stable)</span>
             </div>
             <div className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: getFamilyColor(family, "base"), opacity: 0.7 }}
-              ></div>
-              <span>Mixed signal</span>
+              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+              <span>Yellow (Caution)</span>
             </div>
             <div className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: getFamilyColor(family, "base"), opacity: 0.55 }}
-              ></div>
-              <span>Lower stability</span>
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              <span>Red (Stress)</span>
             </div>
           </div>
         </div>
@@ -1611,4 +1601,3 @@ export default function IndicatorDetail() {
     </div>
   );
 }
-

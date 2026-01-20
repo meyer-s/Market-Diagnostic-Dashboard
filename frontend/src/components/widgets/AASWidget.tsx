@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
 import {
   analyzeSeries,
+  getTrendTone,
   getConfidenceFromSignal,
   getTrendWindows,
   type InsightSignal,
@@ -11,7 +12,6 @@ import {
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
 import { getFamilyColor } from "../../theme/metricColors";
 import { CHART_ANIMATION } from "../../utils/chartUtils";
-import { dashboardCardDetails } from "../../config/dashboardCards";
 
 interface AASData {
   stability_score: number;
@@ -40,7 +40,11 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
   const { data: aasData, loading } = useApi<AASData>("/aap/current");
   const { data: historyData } = useApi<any>(`/aap/history?days=${parseInt(timeframe)}`);
   const [chartData, setChartData] = useState<HistoricalData[]>([]);
-  const commitment = useProgressiveCommitment({ mode: "inline" });
+  const navigate = useNavigate();
+  const commitment = useProgressiveCommitment({
+    mode: "navigate",
+    onCommit: () => navigate("/alternative-assets"),
+  });
 
   useEffect(() => {
     if (historyData && historyData.data && Array.isArray(historyData.data)) {
@@ -92,16 +96,21 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
     ? averageValue(prevWindow, "crypto_contribution")
     : recentCrypto;
   const recentLeader = recentMetals >= recentCrypto ? "metals" : "crypto";
+  const priorLeader = prevWindow.length ? (priorMetals >= priorCrypto ? "metals" : "crypto") : recentLeader;
+  const leaderShifted = recentLeader !== priorLeader;
+  const trendTone = getTrendTone(primarySignal);
   const aasConfidence = getConfidenceFromSignal(primarySignal);
-  const signalWord =
+  const signalLine =
     primarySignal.direction === "up"
-      ? "improving"
+      ? "Alt stability improving"
       : primarySignal.direction === "down"
-      ? "slipping"
-      : "steady";
-  const contextWord = recentLeader === "metals" ? "Metals" : "Crypto";
-  const contextTail = "leading the pressure mix";
-  const focusLine = `Confidence: ${aasConfidence} - leader ${recentLeader}`;
+      ? "Alt stability slipping"
+      : "Alt stability steady";
+  const contextLine =
+    recentLeader === "metals"
+      ? "Metals leading the pressure mix"
+      : "Crypto leading the pressure mix";
+  const hoverNote = leaderShifted ? "leader shift" : `${trendTone} trend`;
   const summaryShort = `${trendWindows.shortLabel} ${primarySignal.direction}${
     secondarySignal.direction === primarySignal.direction
       ? ""
@@ -135,22 +144,14 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
         summary: summaryShort,
       }
     : null;
-  const showDetails = commitment.isExpanded;
-  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none ${
-    showDetails ? "max-h-[900px]" : "max-h-0"
+  const showDetails = commitment.state !== "rest";
+  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+    showDetails ? "max-h-80" : "max-h-0"
   }`;
-  const detailContentClass = `transition-opacity duration-200 ease-in-out motion-reduce:transition-none ${
+  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
     showDetails ? "opacity-100 delay-75" : "opacity-0"
   }`;
   const accentColor = getFamilyColor("market", "muted");
-  const nearBoundary =
-    Math.min(Math.abs(stabilityScore - 67), Math.abs(stabilityScore - 34)) <= 2;
-  const nearBoundaryGlyph = nearBoundary ? (
-    <span className="ml-1 text-[10px] text-stealth-500">+/-</span>
-  ) : null;
-  const touchFocusClass = commitment.isTouchFocus
-    ? "ring-1 ring-stealth-600/60 bg-stealth-750/40"
-    : "";
 
   const getScoreClass = (score: number): string => {
     if (score >= 67) return "text-green-400";
@@ -213,35 +214,26 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
   return (
     <div
       {...commitment.getContainerProps<HTMLDivElement>()}
-      className={`bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60 ${touchFocusClass}`}
+      className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
       aria-expanded={commitment.isExpanded}
     >
-      <div className="h-1 rounded-full mb-3 accent-pulse" style={{ backgroundColor: accentColor }} />
+      <div className="h-1 rounded-full mb-3" style={{ backgroundColor: accentColor }} />
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-lg font-semibold text-stealth-100">Alternative Asset Stability</h3>
         <span className="text-xs text-stealth-500">{trendWindows.shortLabel}</span>
       </div>
 
       <div className="text-sm text-stealth-200">
-        <span className="text-stealth-500">Signal:</span> Alt stability{" "}
-        <span className="signal-underline">{signalWord}</span>
-        {nearBoundaryGlyph}
+        <span className="text-stealth-500">Signal:</span> {signalLine}
       </div>
       <div className="text-sm text-stealth-400">
-        <span className="text-stealth-500">Context:</span>{" "}
-        <span className="signal-underline">{contextWord}</span> {contextTail}
+        <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      <div className="min-h-[14px]">
-        <div
-          className={`text-xs text-stealth-500 focus-clarify ${
-            commitment.state === "focus"
-              ? "opacity-100 translate-y-0"
-              : "opacity-0 translate-y-1"
-          }`}
-        >
-          {focusLine}
+      {commitment.state === "focus" && (
+        <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+          Confidence: {aasConfidence} - leader {recentLeader} ({hoverNote})
         </div>
-      </div>
+      )}
       {miniSeries.length > 0 && (
         <div className="h-24">
           <ResponsiveContainer width="100%" height="100%">
@@ -261,55 +253,17 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
           </ResponsiveContainer>
         </div>
       )}
-      <div className={`${detailWrapClass} ${showDetails ? "mt-2 border-t border-stealth-700 pt-3" : ""}`}>
-        <div className={`${detailContentClass} ${showDetails ? "space-y-3 text-xs text-stealth-300" : ""}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Stability score</div>
-              <div className={`mt-1 text-sm font-semibold ${getScoreClass(aasData.stability_score)}`}>
-                {aasData.stability_score.toFixed(1)}
-              </div>
-              <div className="text-xs text-stealth-400">/ 100</div>
+      <div className={`${detailWrapClass} ${showDetails ? "mt-2" : ""}`}>
+        <div className={detailContentClass}>
+          <div className="flex items-end gap-2 mb-2">
+            <div className={`text-3xl font-bold ${getScoreClass(aasData.stability_score)}`}>
+              {aasData.stability_score.toFixed(1)}
             </div>
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Current regime</div>
-              <div className={`mt-1 text-sm font-semibold ${getRegimeClass(aasData.regime)}`}>
-                {getRegimeLabel(aasData.regime)}
-              </div>
-              <div className="text-xs text-stealth-400">Driver: {aasData.primary_driver}</div>
-            </div>
+            <div className="text-xs text-stealth-400 mb-1">/ 100</div>
           </div>
-          <div className="space-y-2">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Why it matters</div>
-            <p>{dashboardCardDetails.aas.why}</p>
-          </div>
-          <div className="space-y-2">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Related signals</div>
-            <div className="flex flex-wrap gap-2">
-              {dashboardCardDetails.aas.related.map((item) => (
-                <span
-                  key={item.label}
-                  className="inline-flex items-center gap-2 rounded-full border border-stealth-600 bg-stealth-900 px-2 py-1 text-[11px] text-stealth-300"
-                >
-                  {item.label}
-                  <span className="text-stealth-500">-</span>
-                  {item.reason}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Methodology note</div>
-            <p>{dashboardCardDetails.aas.methodology}</p>
-          </div>
-          <div>
-            <Link
-              to="/alternative-assets"
-              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-              onClick={(event) => event.stopPropagation()}
-            >
-              View alternative asset details
-            </Link>
+          <div className="text-xs text-stealth-400 mb-1">Current Regime</div>
+          <div className={`text-sm font-semibold ${getRegimeClass(aasData.regime)}`}>
+            {getRegimeLabel(aasData.regime)}
           </div>
         </div>
       </div>

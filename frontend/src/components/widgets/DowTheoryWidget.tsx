@@ -241,26 +241,14 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   const classicLineColor = getFamilyColor("market", "base");
   const modernLineColor = getFamilyColor("market", "muted");
   const showCompactChart = chartHistory.length > 1;
-  const showDetails = commitment.isExpanded;
-  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none ${
+  const showDetails = commitment.state !== "rest";
+  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
     showDetails ? "max-h-[1400px]" : "max-h-0"
   }`;
-  const detailContentClass = `transition-opacity duration-200 ease-in-out motion-reduce:transition-none ${
+  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
     showDetails ? "opacity-100 delay-75" : "opacity-0"
   }`;
   const accentColor = getFamilyColor("market", "muted");
-  const focusVisible = commitment.state === "focus";
-  const touchFocusClass = commitment.isTouchFocus
-    ? "ring-1 ring-stealth-600/60 bg-stealth-750/40"
-    : "";
-  const signalWord =
-    alignmentState === "ALIGNED"
-      ? "aligned"
-      : alignmentState === "MIXED"
-      ? "mixed"
-      : alignmentState === "DIVERGENT"
-      ? "split"
-      : "unclear";
 
   const stabilityScore = Math.max(0, Math.min(100, 100 - data.strain_score));
   const stabilityLevel: StabilityLevel =
@@ -304,30 +292,25 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   return (
     <div
       {...commitment.getContainerProps<HTMLDivElement>()}
-      className={`bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-6 space-y-4 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60 ${touchFocusClass}`}
+      className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-6 space-y-4 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
       aria-expanded={commitment.isExpanded}
     >
-      <div className="h-1 rounded-full accent-pulse" style={{ backgroundColor: accentColor }} />
+      <div className="h-1 rounded-full" style={{ backgroundColor: accentColor }} />
       <div className="flex items-center justify-between">
         <h3 className="text-base sm:text-lg font-semibold text-stealth-100">Dow Theory Trends</h3>
         <span className="text-xs text-stealth-400">{formatTime(data.timestamp)}</span>
       </div>
       <div className="text-sm text-stealth-200">
-        <span className="text-stealth-500">Signal:</span> Signals{" "}
-        <span className="signal-underline">{signalWord}</span>
+        <span className="text-stealth-500">Signal:</span> {signalLine}
       </div>
       <div className="text-sm text-stealth-400">
         <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      <div className="min-h-[14px]">
-        <div
-          className={`text-xs text-stealth-500 focus-clarify ${
-            focusVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
-          }`}
-        >
-          {focusLine}
+      {commitment.state === "focus" && (
+        <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+          {focusLine} (recent {recentSpreadPhrase})
         </div>
-      </div>
+      )}
       {showCompactChart && (
         <div className="h-24">
           <ResponsiveContainer width="100%" height="100%">

@@ -13,6 +13,7 @@ import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
 import { 
   getStateFromScore, 
+  getStateColor, 
   STATE_DESCRIPTIONS,
   STABILITY_THRESHOLDS,
   type StabilityState 
@@ -225,18 +226,10 @@ export default function SystemBreakdown() {
       )
     : { GREEN: 0, YELLOW: 0, RED: 0 };
 
-  const stateToneColors: Record<StabilityState, string> = {
-    GREEN: getFamilyColor("system", "base"),
-    YELLOW: getFamilyColor("system", "muted"),
-    RED: getFamilyColor("system", "faint"),
-  };
-  const getStateToneColor = (state: StabilityState) =>
-    stateToneColors[state] ?? getFamilyColor("benchmark");
-
   const pieData = [
-    { name: "Green", value: currentDistribution.GREEN, color: getStateToneColor("GREEN") },
-    { name: "Yellow", value: currentDistribution.YELLOW, color: getStateToneColor("YELLOW") },
-    { name: "Red", value: currentDistribution.RED, color: getStateToneColor("RED") },
+    { name: "Green", value: currentDistribution.GREEN, color: getStateColor("GREEN") },
+    { name: "Yellow", value: currentDistribution.YELLOW, color: getStateColor("YELLOW") },
+    { name: "Red", value: currentDistribution.RED, color: getStateColor("RED") },
   ].filter(d => d.value > 0);
 
   // Prepare chart data with numeric timestamps
@@ -316,7 +309,7 @@ export default function SystemBreakdown() {
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 md:p-4">
             <div className="flex items-center gap-2 text-xl md:text-2xl mb-1 md:mb-2">
               <svg className="w-5 h-5 md:w-6 md:h-6" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" fill={getStateToneColor("GREEN")} />
+                <circle cx="12" cy="12" r="10" fill={getStateColor("GREEN")} />
               </svg>
               <span className="text-green-400">{STATE_DESCRIPTIONS.GREEN.label}</span>
             </div>
@@ -326,7 +319,7 @@ export default function SystemBreakdown() {
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 md:p-4">
             <div className="flex items-center gap-2 text-xl md:text-2xl mb-1 md:mb-2">
               <svg className="w-5 h-5 md:w-6 md:h-6" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" fill={getStateToneColor("YELLOW")} />
+                <circle cx="12" cy="12" r="10" fill={getStateColor("YELLOW")} />
               </svg>
               <span className="text-yellow-400">{STATE_DESCRIPTIONS.YELLOW.label}</span>
             </div>
@@ -336,7 +329,7 @@ export default function SystemBreakdown() {
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 md:p-4">
             <div className="flex items-center gap-2 text-xl md:text-2xl mb-1 md:mb-2">
               <svg className="w-5 h-5 md:w-6 md:h-6" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" fill={getStateToneColor("RED")} />
+                <circle cx="12" cy="12" r="10" fill={getStateColor("RED")} />
               </svg>
               <span className="text-red-400">{STATE_DESCRIPTIONS.RED.label}</span>
             </div>
@@ -448,7 +441,7 @@ export default function SystemBreakdown() {
                           key={idx}
                           className="flex-1 h-8 transition-opacity hover:opacity-75 cursor-pointer"
                           style={{ 
-                            backgroundColor: getStateToneColor(point.state as StabilityState),
+                            backgroundColor: getStateColor(point.state),
                             minWidth: '2px',
                           }}
                           title={`${point.date}: ${point.state} (${point.score.toFixed(1)})`}
@@ -473,17 +466,17 @@ export default function SystemBreakdown() {
             {/* Legend */}
             <div className="flex items-center gap-4 mt-4 justify-center text-xs">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateToneColor('GREEN') }}></div>
+                <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('GREEN') }}></div>
                 <span className="text-stealth-300">
                   Green ({">="}{STABILITY_THRESHOLDS.YELLOW_MAX})
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateToneColor('YELLOW') }}></div>
+                <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('YELLOW') }}></div>
                 <span className="text-stealth-300">Yellow ({STABILITY_THRESHOLDS.RED_MAX}-{STABILITY_THRESHOLDS.YELLOW_MAX - 1})</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateToneColor('RED') }}></div>
+                <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('RED') }}></div>
                 <span className="text-stealth-300">Red (&lt;{STABILITY_THRESHOLDS.RED_MAX})</span>
               </div>
             </div>

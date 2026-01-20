@@ -41,7 +41,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { formatDateTimeWithWeekday } from "../utils/styleUtils";
 import { CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
 import { apiFetch } from "../utils/apiUtils";
-import { getFamilyColor, metricFamilyByKey } from "../theme/metricColors";
+import { getFamilyColor, statePalette } from "../theme/metricColors";
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -165,10 +165,6 @@ const MarketMap = () => {
     'Materials': 'XLB',
     'Real Estate': 'XLRE',
     'Communication Services': 'XLC',
-  };
-  const getSectorFamily = (sectorName: string) => {
-    const etfSymbol = sectorToEtf[sectorName];
-    return (etfSymbol && metricFamilyByKey[etfSymbol]) || "market";
   };
 
   /**
@@ -534,10 +530,6 @@ const MarketMap = () => {
               gridLines.push(currentLine);
               currentLine += interval;
             }
-            const sectorFamily = getSectorFamily(sector.name);
-            const sectorBase = getFamilyColor(sectorFamily, "base");
-            const sectorMuted = getFamilyColor(sectorFamily, "muted");
-            const sectorFaint = getFamilyColor(sectorFamily, "faint");
 
             return (
               <div
@@ -582,14 +574,14 @@ const MarketMap = () => {
                             <path
                               d={`M 0,${sparkPoints[0]} Q 8,${(sparkPoints[0] + sparkPoints[1]) / 2} 17,${sparkPoints[1]} Q 25,${(sparkPoints[1] + sparkPoints[2]) / 2} 33,${sparkPoints[2]} Q 42,${(sparkPoints[2] + sparkPoints[3]) / 2} 50,${sparkPoints[3]}`}
                               fill="none"
-                              stroke={trendUp ? sectorBase : trendDown ? sectorMuted : sectorFaint}
+                              stroke={trendUp ? statePalette.green : trendDown ? statePalette.red : statePalette.neutral}
                               strokeWidth="1.5"
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             />
                             
                             {/* Data point circles - only show final point colored */}
-                            <circle cx="50" cy={sparkPoints[3]} r="1.5" fill={trendUp ? sectorBase : trendDown ? sectorMuted : sectorFaint} />
+                            <circle cx="50" cy={sparkPoints[3]} r="1.5" fill={trendUp ? statePalette.green : trendDown ? statePalette.red : statePalette.neutral} />
                           </svg>
                           <div className="text-[9px] text-stealth-500">T + 12M</div>
                         </div>
@@ -690,12 +682,12 @@ const MarketMap = () => {
                           const magnitude = Math.min(Math.abs(pct), 10);
                           const alpha = 0.3 + (magnitude / 10) * 0.6;
                           if (pct > 0) {
-                            return withAlpha(sectorBase, alpha);
+                            return withAlpha(statePalette.green, alpha);
                           }
                           if (pct < 0) {
-                            return withAlpha(sectorMuted, alpha);
+                            return withAlpha(statePalette.red, alpha);
                           }
-                          return withAlpha(sectorFaint, 0.35);
+                          return withAlpha(statePalette.neutral, 0.35);
                         };
 
                         return (

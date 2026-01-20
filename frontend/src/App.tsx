@@ -14,7 +14,6 @@ import StockAnalysis from "./pages/StockAnalysis";
 import AlternativeAssetStability from "./pages/AlternativeAssetStability";
 import AAPComponentBreakdown from "./pages/AAPComponentBreakdown";
 import { trackPageView } from "./utils/analytics";
-import { FocusModeProvider } from "./context/FocusModeContext";
 
 function AppWithAnalytics() {
   const location = useLocation();
@@ -68,9 +67,7 @@ function AppWithAnalytics() {
 export default function App() {
   return (
     <BrowserRouter>
-      <FocusModeProvider>
-        <AppWithAnalytics />
-      </FocusModeProvider>
+      <AppWithAnalytics />
     </BrowserRouter>
   );
 }

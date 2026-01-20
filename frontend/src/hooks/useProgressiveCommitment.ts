@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusMode } from "../context/FocusModeContext";
 
 export type ProgressiveCommitmentState = "rest" | "focus" | "expanded";
 
@@ -14,7 +13,6 @@ export const useProgressiveCommitment = (
   options: ProgressiveCommitmentOptions = {}
 ) => {
   const { mode = "inline", onCommit } = options;
-  const { focusAll } = useFocusMode();
   const [isFocused, setIsFocused] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const containerRef = useRef<HTMLElement | null>(null);
@@ -99,10 +97,9 @@ export const useProgressiveCommitment = (
 
   const state = useMemo<ProgressiveCommitmentState>(() => {
     if (mode === "inline" && isExpanded) return "expanded";
-    if (focusAll || isFocused) return "focus";
+    if (isFocused) return "focus";
     return "rest";
-  }, [focusAll, isExpanded, isFocused, mode]);
-  const isTouchFocus = (focusAll || isFocused) && lastPointerType.current === "touch";
+  }, [isExpanded, isFocused, mode]);
 
   const getContainerProps = useCallback(
     <T extends HTMLElement>() => ({
@@ -133,7 +130,6 @@ export const useProgressiveCommitment = (
     isFocused,
     isExpanded,
     setIsExpanded,
-    isTouchFocus,
     getContainerProps,
   };
 };

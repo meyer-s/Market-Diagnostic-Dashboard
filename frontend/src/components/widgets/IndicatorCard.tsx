@@ -2,11 +2,10 @@ import { IndicatorStatus, IndicatorHistoryPoint } from "../../types";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/apiUtils";
-import { getBusinessDaysAgo, formatRelativeDate } from "../../utils/componentUtils";
+import { getBusinessDaysAgo, formatRelativeDate, formatValue } from "../../utils/componentUtils";
 import { analyzeSeries } from "../../utils/insightUtils";
 import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
 import { getFamilyColor, metricFamilyByKey, metricFamilyLabels } from "../../theme/metricColors";
-import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
 import StateSparkline from "./StateSparkline";
 
 interface Props {
@@ -67,55 +66,55 @@ export default function IndicatorCard({ indicator }: Props) {
     trendSignal.direction === "up" ? "improving" : trendSignal.direction === "down" ? "softening" : "steady";
   const stateLabel =
     indicator.state === "GREEN" ? "stable" : indicator.state === "RED" ? "stressed" : "mixed";
+  const signalLine = `${stateLabel}, ${trendLabel}`;
   const family = metricFamilyByKey[routeCode] ?? metricFamilyByKey[indicator.code] ?? "system";
   const contextLine = metricFamilyLabels[family] || "System";
   const accentColor = getFamilyColor(family, "muted");
-  const nearBoundary =
-    Math.min(
-      Math.abs(indicator.score - STABILITY_THRESHOLDS.RED_MAX),
-      Math.abs(indicator.score - STABILITY_THRESHOLDS.YELLOW_MAX)
-    ) <= 3;
-  const nearBoundaryGlyph = nearBoundary ? (
-    <span className="ml-1 text-[10px] text-stealth-500">+/-</span>
-  ) : null;
-  const touchFocusClass = commitment.isTouchFocus
-    ? "ring-1 ring-stealth-600/60 bg-stealth-750/40"
-    : "";
+  const showDetails = commitment.state !== "rest";
+  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+    showDetails ? "max-h-40" : "max-h-0"
+  }`;
+  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
+    showDetails ? "opacity-100 delay-75" : "opacity-0"
+  }`;
 
   const displayName = indicator.code === "ANALYST_ANXIETY" ? "Analyst Confidence" : indicator.name;
 
   return (
     <div
       {...commitment.getContainerProps<HTMLDivElement>()}
-      className={`bg-stealth-800 rounded p-4 shadow transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60 ${touchFocusClass}`}
+      className="bg-stealth-800 rounded p-4 shadow transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
       aria-expanded={commitment.isExpanded}
     >
-      <div className="h-1 rounded-full mb-3 accent-pulse" style={{ backgroundColor: accentColor }} />
+      <div className="h-1 rounded-full mb-3" style={{ backgroundColor: accentColor }} />
       <div className="flex items-center justify-between">
         <div className="text-gray-300 text-sm">{displayName}</div>
         <span className={`text-xs font-semibold ${colorMap[indicator.state]}`}>{indicator.state}</span>
       </div>
       <div className="mt-2 text-sm text-stealth-200">
-        <span className="text-stealth-500">Signal:</span>{" "}
-        <span className="signal-underline">{stateLabel}</span>
-        {nearBoundaryGlyph}, <span className="signal-underline">{trendLabel}</span>
+        <span className="text-stealth-500">Signal:</span> {signalLine}
       </div>
       <div className="text-sm text-stealth-400">
         <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      <div className="mt-2 min-h-[14px]">
-        <div
-          className={`text-xs text-stealth-500 focus-clarify ${
-            commitment.state === "focus"
-              ? "opacity-100 translate-y-0"
-              : "opacity-0 translate-y-1"
-          }`}
-        >
+      {commitment.state === "focus" && (
+        <div className="mt-2 text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
           Freshness: {freshnessLabel} ({timeDisplay})
         </div>
-      </div>
+      )}
       <div className="mt-3">
-        <StateSparkline history={history} family={family} width={200} height={24} />
+        <StateSparkline history={history} width={200} height={24} />
+      </div>
+      <div className={`${detailWrapClass} ${showDetails ? "mt-2" : ""}`}>
+        <div className={detailContentClass}>
+          <div className="text-lg font-semibold text-stealth-100">
+            {formatValue(indicator.raw_value, 2)}
+          </div>
+          <div className="flex justify-between items-center mt-2 text-xs text-stealth-400">
+            <span>Score: {indicator.score}</span>
+            <span>{metadata.frequency}</span>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -146,6 +146,13 @@ export default function Dashboard() {
     () => buildOverallInsight(insightList, overallTrendLabel),
     [insightList, overallTrendLabel]
   );
+  const overallSignalLine = overallInsight
+    ? overallInsight.posture === "risk-on"
+      ? "Tailwinds lead"
+      : overallInsight.posture === "risk-off"
+      ? "Caution leads"
+      : "Signals split"
+    : "";
   const overallContextLine = overallInsight
     ? `${overallTrendLabel} ${overallInsight.primaryDirection}, recent ${overallInsight.secondaryDirection}`
     : "";
@@ -165,29 +172,14 @@ export default function Dashboard() {
     aas: "Alternative assets confirm risk appetite shifts",
   };
   const overallCommitment = useProgressiveCommitment({ mode: "inline" });
-  const overallShowDetails = overallCommitment.isExpanded;
-  const overallDetailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none ${
+  const overallShowDetails = overallCommitment.state !== "rest";
+  const overallDetailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
     overallShowDetails ? "max-h-80" : "max-h-0"
   }`;
-  const overallDetailContentClass = `transition-opacity duration-200 ease-in-out motion-reduce:transition-none ${
+  const overallDetailContentClass = `transition-opacity duration-200 ease-in-out ${
     overallShowDetails ? "opacity-100 delay-75" : "opacity-0"
   }`;
   const overallAccentColor = getFamilyColor("system", "muted");
-  const overallSignalWord =
-    overallInsight?.posture === "risk-on"
-      ? "Tailwinds"
-      : overallInsight?.posture === "risk-off"
-      ? "Caution"
-      : "Signals";
-  const overallSignalTail =
-    overallInsight?.posture === "risk-on"
-      ? "lead"
-      : overallInsight?.posture === "risk-off"
-      ? "lead"
-      : "split";
-  const overallTouchFocusClass = overallCommitment.isTouchFocus
-    ? "ring-1 ring-stealth-600/60 bg-stealth-750/40"
-    : "";
 
   const handleInsight = useCallback((insight: InsightSignal) => {
     setInsights((prev) => {
@@ -321,10 +313,10 @@ export default function Dashboard() {
         {overallInsight && (
           <div
             {...overallCommitment.getContainerProps<HTMLDivElement>()}
-            className={`bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60 ${overallTouchFocusClass}`}
+            className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
             aria-expanded={overallCommitment.isExpanded}
           >
-            <div className="h-1 rounded-full mb-3 accent-pulse" style={{ backgroundColor: overallAccentColor }} />
+            <div className="h-1 rounded-full mb-3" style={{ backgroundColor: overallAccentColor }} />
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
@@ -332,23 +324,16 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="mt-2 text-sm text-stealth-200">
-              <span className="text-stealth-500">Signal:</span>{" "}
-              <span className="signal-underline">{overallSignalWord}</span> {overallSignalTail}
+              <span className="text-stealth-500">Signal:</span> {overallSignalLine}
             </div>
             <div className="text-sm text-stealth-400">
               <span className="text-stealth-500">Context:</span> {overallContextLine}
             </div>
-            <div className="mt-2 min-h-[14px]">
-              <div
-                className={`text-xs text-stealth-500 focus-clarify ${
-                  overallCommitment.state === "focus"
-                    ? "opacity-100 translate-y-0"
-                    : "opacity-0 translate-y-1"
-                }`}
-              >
+            {overallCommitment.state === "focus" && (
+              <div className="mt-2 text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
                 {overallHoverLine}
               </div>
-            </div>
+            )}
             <div className={`${overallDetailWrapClass} ${overallShowDetails ? "mt-3 border-t border-stealth-700 pt-3" : ""}`}>
               <div className={`${overallDetailContentClass} ${overallShowDetails ? "space-y-3 text-xs text-stealth-300" : ""}`}>
                 <div>
