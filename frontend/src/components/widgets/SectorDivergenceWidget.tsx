@@ -290,11 +290,9 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       <div className="text-sm text-stealth-400">
         <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      {commitment.state === "focus" && (
-        <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-          {focusLine} (recent {secondarySpreadPhrase})
-        </div>
-      )}
+      <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+        {focusLine} (recent {secondarySpreadPhrase})
+      </div>
       {showCompactChart && (
         <div className="h-24">
           <ResponsiveContainer width="100%" height="100%">

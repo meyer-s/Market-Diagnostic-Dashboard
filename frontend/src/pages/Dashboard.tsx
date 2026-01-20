@@ -329,11 +329,9 @@ export default function Dashboard() {
             <div className="text-sm text-stealth-400">
               <span className="text-stealth-500">Context:</span> {overallContextLine}
             </div>
-            {overallCommitment.state === "focus" && (
-              <div className="mt-2 text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-                {overallHoverLine}
-              </div>
-            )}
+            <div className="mt-2 text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+              {overallHoverLine}
+            </div>
             <div className={`${overallDetailWrapClass} ${overallShowDetails ? "mt-3 border-t border-stealth-700 pt-3" : ""}`}>
               <div className={`${overallDetailContentClass} ${overallShowDetails ? "space-y-3 text-xs text-stealth-300" : ""}`}>
                 <div>

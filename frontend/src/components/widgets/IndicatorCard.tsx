@@ -97,11 +97,9 @@ export default function IndicatorCard({ indicator }: Props) {
       <div className="text-sm text-stealth-400">
         <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      {commitment.state === "focus" && (
-        <div className="mt-2 text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-          Freshness: {freshnessLabel} ({timeDisplay})
-        </div>
-      )}
+      <div className="mt-2 text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+        Freshness: {freshnessLabel} ({timeDisplay})
+      </div>
       <div className="mt-3">
         <StateSparkline history={history} width={200} height={24} />
       </div>

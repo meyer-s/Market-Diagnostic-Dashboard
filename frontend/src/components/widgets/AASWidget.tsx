@@ -229,11 +229,9 @@ export default function AASWidget({ timeframe = "90d", onInsight }: AASWidgetPro
       <div className="text-sm text-stealth-400">
         <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      {commitment.state === "focus" && (
-        <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-          Confidence: {aasConfidence} - leader {recentLeader} ({hoverNote})
-        </div>
-      )}
+      <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+        Confidence: {aasConfidence} - leader {recentLeader} ({hoverNote})
+      </div>
       {miniSeries.length > 0 && (
         <div className="h-24">
           <ResponsiveContainer width="100%" height="100%">

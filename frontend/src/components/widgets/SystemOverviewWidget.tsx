@@ -206,11 +206,9 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
       <div className="text-sm text-stealth-400">
         <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      {commitment.state === "focus" && (
-        <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-          {focusLine}
-        </div>
-      )}
+      <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+        {focusLine}
+      </div>
       {miniSeries.length > 1 && (
         <div className="h-20">
           <ResponsiveContainer width="100%" height="100%">
