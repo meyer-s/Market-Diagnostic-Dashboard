@@ -28,6 +28,38 @@ body {
   height: 100vh;
 }
 
+@keyframes accentPulse {
+  0%, 100% {
+    opacity: 0.94;
+  }
+  50% {
+    opacity: 0.96;
+  }
+}
+
+.accent-pulse {
+  animation: accentPulse 7s ease-in-out infinite;
+}
+
+.signal-underline {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(148, 163, 184, 0.6);
+}
+
+.focus-clarify {
+  transition: opacity 160ms ease-in-out, transform 160ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .accent-pulse {
+    animation: none;
+  }
+  .focus-clarify {
+    transition: none;
+  }
+}
+
 /* Collapsible sections styling */
 .collapsible-section {
   @apply bg-stealth-800 border border-stealth-700 rounded-lg mb-4 md:mb-6;

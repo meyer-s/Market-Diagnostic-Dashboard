@@ -6,7 +6,7 @@
 
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
-import { getFamilyColor, statePalette } from "../../theme/metricColors";
+import { getFamilyColor } from "../../theme/metricColors";
 
 interface Candle {
   date: string;
@@ -237,8 +237,8 @@ export function TechnicalIndicators({
     grid: CHART_NEUTRAL.grid,
     axis: CHART_NEUTRAL.axis,
     tick: CHART_NEUTRAL.tick,
-    priceUp: statePalette.green,
-    priceDown: statePalette.red,
+    priceUp: getFamilyColor("equity", "base"),
+    priceDown: getFamilyColor("equity", "muted"),
     sma50: getFamilyColor("equity", "muted"),
     sma200: getFamilyColor("equity", "faint"),
     rsiLine: getFamilyColor("equity"),

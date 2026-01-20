@@ -80,11 +80,10 @@ FOCUS is triggered by:
 - first tap (mobile)
 
 FOCUS rules:
-- One short line only
+- One short line only, unless grammar and understanding will be hindered.
 - Inline (no modal, no drawer)
 - Never navigates
-- Never expands layout
-- Disappears immediately when attention moves away
+- Disappears shortly after when attention moves away
 
 FOCUS answers exactly ONE question:
 - Is this certain or uncertain?

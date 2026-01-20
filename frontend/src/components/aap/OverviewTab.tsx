@@ -301,7 +301,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <svg className="w-6 h-1" viewBox="0 0 24 4" preserveAspectRatio="none">
-                <line x1="0" y1="2" x2="24" y2="2" stroke={statePalette.green} strokeWidth="2"/>
+                <line x1="0" y1="2" x2="24" y2="2" stroke={getFamilyColor("market")} strokeWidth="2"/>
               </svg>
               <span className="text-stealth-300 text-xs">Current Score</span>
             </div>
@@ -313,7 +313,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
             </div>
             <div className="flex items-center gap-2">
               <svg className="w-6 h-1" viewBox="0 0 24 4" preserveAspectRatio="none">
-                <line x1="0" y1="2" x2="24" y2="2" stroke={statePalette.red} strokeWidth="1.5" strokeDasharray="2 2"/>
+                <line x1="0" y1="2" x2="24" y2="2" stroke={getFamilyColor("benchmark", "muted")} strokeWidth="1.5" strokeDasharray="2 2"/>
               </svg>
               <span className="text-stealth-300 text-xs">200-Day SMA</span>
             </div>

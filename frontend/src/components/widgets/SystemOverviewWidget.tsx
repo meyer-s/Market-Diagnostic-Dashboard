@@ -148,7 +148,6 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
       : primarySignal.direction === "down"
       ? "softening"
       : "steady";
-  const signalLine = `System ${stateWord}, ${primaryWord}`;
   const contextLine = "Volatility, rates, liquidity, sentiment";
   const nearBoundary =
     Math.min(
@@ -161,39 +160,21 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     timestamp: point.timestamp,
     composite_score: point.composite_score,
   }));
-  const showDetails = commitment.state !== "rest";
-  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-    showDetails ? "max-h-96" : "max-h-0"
-  }`;
-  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
-    showDetails ? "opacity-100 delay-75" : "opacity-0"
-  }`;
-  const stateColorMap: Record<string, string> = {
-    GREEN: "text-green-400",
-    YELLOW: "text-yellow-400",
-    RED: "text-red-400",
-    UNKNOWN: "text-gray-500",
-  };
-  const stateColor = stateColorMap[data.state] || "text-gray-500";
-  const averageScore = (points: SystemHistoryPoint[]) =>
-    points.length
-      ? points.reduce((sum, p) => sum + p.composite_score, 0) / points.length
-      : 0;
-  const last7 = history.slice(-7);
-  const prev7 = history.slice(-14, -7);
-  const last7Avg = averageScore(last7);
-  const prev7Avg = prev7.length ? averageScore(prev7) : last7Avg;
-  const trend = last7Avg - prev7Avg;
-  const trendDirection = trend > 2 ? "IMPROVING" : trend < -2 ? "WORSENING" : "STABLE";
   const accentColor = getFamilyColor("system", "muted");
+  const touchFocusClass = commitment.isTouchFocus
+    ? "ring-1 ring-stealth-600/60 bg-stealth-750/40"
+    : "";
+  const nearBoundaryGlyph = nearBoundary ? (
+    <span className="ml-1 text-[10px] text-stealth-500">+/-</span>
+  ) : null;
 
   return (
     <div
       {...commitment.getContainerProps<HTMLDivElement>()}
-      className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-6 space-y-4 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
+      className={`bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-6 space-y-4 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60 ${touchFocusClass}`}
       aria-expanded={commitment.isExpanded}
     >
-      <div className="h-1 rounded-full" style={{ backgroundColor: accentColor }} />
+      <div className="h-1 rounded-full accent-pulse" style={{ backgroundColor: accentColor }} />
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-base sm:text-lg font-semibold text-stealth-100">System Overview</h3>
         <span className="text-xs text-stealth-400">
@@ -201,16 +182,24 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         </span>
       </div>
       <div className="text-sm text-stealth-200">
-        <span className="text-stealth-500">Signal:</span> {signalLine}
+        <span className="text-stealth-500">Signal:</span>{" "}
+        <span className="signal-underline">{stateWord}</span>
+        {nearBoundaryGlyph}, <span className="signal-underline">{primaryWord}</span>
       </div>
       <div className="text-sm text-stealth-400">
         <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      {commitment.state === "focus" && (
-        <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
+      <div className="min-h-[14px]">
+        <div
+          className={`text-xs text-stealth-500 focus-clarify ${
+            commitment.state === "focus"
+              ? "opacity-100 translate-y-0"
+              : "opacity-0 translate-y-1"
+          }`}
+        >
           {focusLine}
         </div>
-      )}
+      </div>
       {miniSeries.length > 1 && (
         <div className="h-20">
           <ResponsiveContainer width="100%" height="100%">
@@ -230,26 +219,10 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
           </ResponsiveContainer>
         </div>
       )}
-      <div className={`${detailWrapClass} ${showDetails ? "mt-2" : ""}`}>
-        <div className={detailContentClass}>
-          <div className="grid grid-cols-3 gap-3 text-xs text-stealth-300">
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">State</div>
-              <div className={`mt-1 text-sm font-semibold ${stateColor}`}>{data.state}</div>
-            </div>
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">7-day trend</div>
-              <div className="mt-1 text-sm text-stealth-200">{trendDirection}</div>
-            </div>
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Composite</div>
-              <div className="mt-1 text-sm text-stealth-200">{data.composite_score.toFixed(1)}</div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
 
 export default SystemOverviewWidget;
+
+

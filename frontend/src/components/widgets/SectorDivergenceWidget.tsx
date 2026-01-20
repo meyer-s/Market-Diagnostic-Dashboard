@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -87,11 +87,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   const [history, setHistory] = useState<SectorHistoryPoint[]>([]);
   const [alerts, setAlerts] = useState<SectorAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-  const commitment = useProgressiveCommitment({
-    mode: "navigate",
-    onCommit: () => navigate("/sector-projections"),
-  });
+  const commitment = useProgressiveCommitment({ mode: "inline" });
 
   const buildHistorySeries = (historyData: SectorProjectionHistory | null): SectorHistoryPoint[] => {
     if (!historyData) return [];
@@ -251,8 +247,9 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
     return null;
   }
 
-  const signalLine =
-    leadSide === "growth" ? "Growth lead" : leadSide === "defense" ? "Defense lead" : "Balanced rotation";
+  const signalWord =
+    leadSide === "growth" ? "Growth" : leadSide === "defense" ? "Defense" : "Balanced";
+  const signalTail = leadSide === "balanced" ? "rotation" : "lead";
   const contextLine = dashboardCardDetails.sector.context;
   const focusLine = `Confidence: ${sectorConfidence} - gap ${spreadTrendPhrase}`;
   const spreadLineColor = getFamilyColor("market", "base");
@@ -264,37 +261,52 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
     ? Array.from({ length: 5 }, (_, i) => minTime + ((maxTime - minTime) * (i / 4)))
     : timestamps;
   const showCompactChart = chartData.length > 1;
-  const showDetails = commitment.state !== "rest";
-  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+  const showDetails = commitment.isExpanded;
+  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none ${
     showDetails ? "max-h-[1400px]" : "max-h-0"
   }`;
-  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
+  const detailContentClass = `transition-opacity duration-200 ease-in-out motion-reduce:transition-none ${
     showDetails ? "opacity-100 delay-75" : "opacity-0"
   }`;
   const accentColor = getFamilyColor("market", "muted");
+  const nearBoundary = Math.abs(Math.abs(leadValue) - 2) <= 0.5;
+  const nearBoundaryGlyph = nearBoundary ? (
+    <span className="ml-1 text-[10px] text-stealth-500">+/-</span>
+  ) : null;
+  const touchFocusClass = commitment.isTouchFocus
+    ? "ring-1 ring-stealth-600/60 bg-stealth-750/40"
+    : "";
 
   return (
     <div
       {...commitment.getContainerProps<HTMLDivElement>()}
-      className="bg-stealth-800 rounded-lg p-4 sm:p-6 shadow-lg border border-stealth-700 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
+      className={`bg-stealth-800 rounded-lg p-4 sm:p-6 shadow-lg border border-stealth-700 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60 ${touchFocusClass}`}
       aria-expanded={commitment.isExpanded}
     >
-      <div className="h-1 rounded-full mb-2" style={{ backgroundColor: accentColor }} />
+      <div className="h-1 rounded-full mb-2 accent-pulse" style={{ backgroundColor: accentColor }} />
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-lg font-semibold">Sector Divergence</h3>
         <span className="text-xs text-stealth-500">{periodLabel}</span>
       </div>
       <div className="text-sm text-stealth-200">
-        <span className="text-stealth-500">Signal:</span> {signalLine}
+        <span className="text-stealth-500">Signal:</span>{" "}
+        <span className="signal-underline">{signalWord}</span>
+        {nearBoundaryGlyph} {signalTail}
       </div>
       <div className="text-sm text-stealth-400">
         <span className="text-stealth-500">Context:</span> {contextLine}
       </div>
-      {commitment.state === "focus" && (
-        <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-          {focusLine} (recent {secondarySpreadPhrase})
+      <div className="min-h-[14px]">
+        <div
+          className={`text-xs text-stealth-500 focus-clarify ${
+            commitment.state === "focus"
+              ? "opacity-100 translate-y-0"
+              : "opacity-0 translate-y-1"
+          }`}
+        >
+          {focusLine}
         </div>
-      )}
+      </div>
       {showCompactChart && (
         <div className="h-24">
           <ResponsiveContainer width="100%" height="100%">

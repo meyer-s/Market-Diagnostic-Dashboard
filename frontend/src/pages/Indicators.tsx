@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import StateSparkline from "../components/widgets/StateSparkline";
 import { getStateBadgeClass } from "../utils/styleUtils";
 import MarketLoading from "../components/ui/MarketLoading";
+import { metricFamilyByKey } from "../theme/metricColors";
 
 // Data frequency metadata to determine appropriate history fetch period
 const DATA_FREQUENCY: Record<string, { frequency: string }> = {
@@ -111,6 +112,7 @@ function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
     indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
   const displayCode =
     indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
+  const family = metricFamilyByKey[routeCode] ?? metricFamilyByKey[indicator.code] ?? "system";
 
   return (
     <tr className="border-t border-stealth-700">
@@ -126,7 +128,7 @@ function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
       <td className="px-4 py-3">{indicator.score}</td>
       <td className="px-4 py-3">{indicator.state}</td>
       <td className="px-4 py-3">
-        <StateSparkline history={history || []} width={200} height={24} />
+        <StateSparkline history={history || []} family={family} width={200} height={24} />
       </td>
     </tr>
   );
@@ -143,6 +145,7 @@ function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
     indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
   const displayCode =
     indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
+  const family = metricFamilyByKey[routeCode] ?? metricFamilyByKey[indicator.code] ?? "system";
 
   return (
     <Link to={`/indicators/${routeCode}`}>
@@ -161,7 +164,7 @@ function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
         </div>
         {history && history.length > 0 && (
           <div className="mt-2">
-            <StateSparkline history={history} width={280} height={24} />
+            <StateSparkline history={history} family={family} width={280} height={24} />
           </div>
         )}
       </div>

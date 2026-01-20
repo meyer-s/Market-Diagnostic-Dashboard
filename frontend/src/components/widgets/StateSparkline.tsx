@@ -1,8 +1,9 @@
 import { IndicatorHistoryPoint } from "../../types";
-import { statePalette } from "../../theme/metricColors";
+import { getFamilyColor, type MetricFamily } from "../../theme/metricColors";
 
 interface Props {
   history: IndicatorHistoryPoint[];
+  family?: MetricFamily;
   height?: number;
   width?: number;
 }
@@ -21,7 +22,12 @@ interface Props {
  * @param height - Chart height in pixels (default: 24)
  * @param width - Chart width in pixels (default: 200)
  */
-export default function StateSparkline({ history, height = 24, width = 200 }: Props) {
+export default function StateSparkline({
+  history,
+  family = "system",
+  height = 24,
+  width = 200,
+}: Props) {
   if (!history || history.length === 0) {
     return (
       <div className="flex items-center gap-1" style={{ height, width }}>
@@ -42,18 +48,21 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
     );
   }
 
-  const getColor = (state: string) => {
+  const getOpacity = (state: string) => {
     switch (state) {
       case "GREEN":
-        return statePalette.green;
+        return 0.9;
       case "YELLOW":
-        return statePalette.yellow;
+        return 0.7;
       case "RED":
-        return statePalette.red;
+        return 0.55;
       default:
-        return statePalette.neutral;
+        return 0.6;
     }
   };
+
+  const baseColor = getFamilyColor(family, "base");
+  const pointColor = getFamilyColor(family, "muted");
 
   const clampScore = (score: number): number => {
     if (!Number.isFinite(score)) return 0;
@@ -116,13 +125,13 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
    * Each segment is colored based on the starting point's state
    * This creates a smooth color transition that follows state changes
    */
-  const segments: Array<{ path: string; color: string }> = [];
+  const segments: Array<{ path: string; opacity: number }> = [];
   for (let i = 0; i < points.length - 1; i++) {
     const p1 = points[i];
     const p2 = points[i + 1];
     const segmentPath = `M ${p1.x},${p1.y} L ${p2.x},${p2.y}`;
-    const color = getColor(p1.point.state);
-    segments.push({ path: segmentPath, color });
+    const opacity = getOpacity(p1.point.state);
+    segments.push({ path: segmentPath, opacity });
   }
 
   return (
@@ -133,12 +142,12 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
           <path
             key={index}
             d={segment.path}
-            stroke={segment.color}
+            stroke={baseColor}
             strokeWidth={2}
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"
-            opacity={0.9}
+            opacity={segment.opacity}
           />
         ))}
         
@@ -149,8 +158,8 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
             cx={p.x}
             cy={p.y}
             r={2}
-            fill={getColor(p.point.state)}
-            opacity={0.8}
+            fill={pointColor}
+            opacity={getOpacity(p.point.state)}
           >
             <title>{`${new Date(p.point.timestamp).toLocaleDateString()}: ${p.point.state} (${clampScore(p.point.score).toFixed(1)})`}</title>
           </circle>

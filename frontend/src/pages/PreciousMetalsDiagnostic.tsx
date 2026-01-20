@@ -3,7 +3,7 @@ import { useApi } from "../hooks/useApi";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
-import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
+import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
 
 interface RegimeStatus {
@@ -1090,7 +1090,12 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
               />
               <ReferenceLine y={20} stroke={getFamilyColor("gold")} strokeDasharray="3 3" label={{ value: 'Gold Standard (~20%)', fill: getFamilyColor("gold"), fontSize: 9 }} />
               <ReferenceLine y={5} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" label={{ value: 'Fiat Era Avg (~5%)', fill: getFamilyColor("benchmark"), fontSize: 9 }} />
-              <ReferenceLine x={1971} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: '1971: Nixon Shock', fill: statePalette.red, fontSize: 9, position: 'top' }} />
+              <ReferenceLine
+                x={1971}
+                stroke={CHART_NEUTRAL.benchmark}
+                strokeDasharray="3 3"
+                label={{ value: '1971: Nixon Shock', fill: CHART_NEUTRAL.benchmark, fontSize: 9, position: 'top' }}
+              />
               <Line 
                 type="monotone" 
                 dataKey="metals_to_m2_pct" 
