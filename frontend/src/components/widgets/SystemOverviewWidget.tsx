@@ -5,8 +5,8 @@ import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatTime } from "../../utils/styleUtils";
 import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   LineChart,
   Line,
   XAxis,
@@ -288,7 +288,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
               </div>
               <div className="h-36">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={contributionSeries} margin={CHART_MARGIN}>
+                  <BarChart data={contributionSeries} margin={CHART_MARGIN}>
                     <CartesianGrid {...commonGridProps} />
                     <XAxis
                       dataKey="timestamp"
@@ -324,22 +324,18 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                       }
                     />
                     {contributionKeys.map((code) => (
-                      <Area
+                      <Bar
                         key={code}
-                        type="monotone"
                         dataKey={code}
                         name={indicatorLabels[code] ?? code}
                         stackId="system"
-                        stroke={getMetricColor(code)}
-                        fill={getMetricColor(code, "faint")}
-                        fillOpacity={0.35}
-                        strokeWidth={1.5}
+                        fill={getMetricColor(code)}
+                        fillOpacity={0.7}
                         animationDuration={CHART_ANIMATION.duration}
                         animationEasing={CHART_ANIMATION.easing}
-                        dot={false}
                       />
                     ))}
-                  </AreaChart>
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stealth-400">
