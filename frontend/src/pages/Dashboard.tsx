@@ -189,6 +189,20 @@ export default function Dashboard() {
     flat: "text-stealth-300",
   } as const;
 
+  const formatInsightSummary = (insight: InsightSignal) => {
+    const primary = capitalize(describeDirection(insight.primaryDirection));
+    const secondary = capitalize(describeDirection(insight.secondaryDirection));
+    return `${overallTrendLabel}: ${primary}. Recent: ${secondary}.`;
+  };
+
+  const confidenceLabel = overallInsight
+    ? overallInsight.confidence === "high"
+      ? "Clear read"
+      : overallInsight.confidence === "low"
+      ? "Noisy read"
+      : "Mixed read"
+    : "";
+
   // Manual refresh function - triggers ETL ingestion for all indicators
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -369,16 +383,3 @@ export default function Dashboard() {
     </div>
   );
 }
-  const formatInsightSummary = (insight: InsightSignal) => {
-    const primary = capitalize(describeDirection(insight.primaryDirection));
-    const secondary = capitalize(describeDirection(insight.secondaryDirection));
-    return `${overallTrendLabel}: ${primary}. Recent: ${secondary}.`;
-  };
-
-  const confidenceLabel = overallInsight
-    ? overallInsight.confidence === "high"
-      ? "Clear read"
-      : overallInsight.confidence === "low"
-      ? "Noisy read"
-      : "Mixed read"
-    : "";
