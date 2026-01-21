@@ -315,42 +315,65 @@ class PreciousMetalsIngester:
         count = 0
         with get_db_session() as db:
             today = datetime.utcnow().date()
+            spot_prices = {}
+            for metal in METAL_SYMBOLS:
+                latest_price = db.query(MetalPrice).filter(
+                    MetalPrice.metal == metal
+                ).order_by(MetalPrice.date.desc()).first()
+                if latest_price and latest_price.price_usd_per_oz:
+                    spot_prices[metal] = latest_price.price_usd_per_oz
 
             try:
-                holdings = self._fetch_gld_holdings()
-                if holdings is None:
-                    raise ValueError("GLD holdings not available")
-
                 date_key = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-                existing = db.query(ETFHolding).filter(
-                    ETFHolding.ticker == "GLD",
-                    ETFHolding.date == date_key
-                ).first()
+                for metal, symbols in METAL_SYMBOLS.items():
+                    ticker = symbols.get("etf")
+                    if not ticker:
+                        continue
 
-                if not existing:
-                    previous = db.query(ETFHolding).filter(
-                        ETFHolding.ticker == "GLD",
-                        ETFHolding.date < date_key
-                    ).order_by(ETFHolding.date.desc()).first()
+                    holdings = None
+                    source = None
+                    if ticker == "GLD":
+                        holdings = self._fetch_gld_holdings()
+                        source = "SPDR"
+                    else:
+                        holdings = self._estimate_etf_holdings_from_assets(
+                            ticker,
+                            spot_prices.get(metal)
+                        )
+                        source = "YFINANCE_ASSETS"
 
-                    daily_flow = None
-                    daily_flow_pct = None
-                    if previous and previous.holdings:
-                        daily_flow = holdings - previous.holdings
-                        daily_flow_pct = (daily_flow / previous.holdings) * 100 if previous.holdings else None
+                    if holdings is None:
+                        continue
 
-                    etf_holding = ETFHolding(
-                        date=date_key,
-                        ticker="GLD",
-                        holdings=holdings,
-                        daily_flow=daily_flow,
-                        daily_flow_pct=daily_flow_pct,
-                        source="SPDR"
-                    )
-                    db.add(etf_holding)
-                    count += 1
+                    existing = db.query(ETFHolding).filter(
+                        ETFHolding.ticker == ticker,
+                        ETFHolding.date == date_key
+                    ).first()
+
+                    if not existing:
+                        previous = db.query(ETFHolding).filter(
+                            ETFHolding.ticker == ticker,
+                            ETFHolding.date < date_key
+                        ).order_by(ETFHolding.date.desc()).first()
+
+                        daily_flow = None
+                        daily_flow_pct = None
+                        if previous and previous.holdings:
+                            daily_flow = holdings - previous.holdings
+                            daily_flow_pct = (daily_flow / previous.holdings) * 100 if previous.holdings else None
+
+                        etf_holding = ETFHolding(
+                            date=date_key,
+                            ticker=ticker,
+                            holdings=holdings,
+                            daily_flow=daily_flow,
+                            daily_flow_pct=daily_flow_pct,
+                            source=source
+                        )
+                        db.add(etf_holding)
+                        count += 1
             except Exception as e:
-                logger.error(f"Error ingesting GLD holdings: {str(e)}")
+                logger.error(f"Error ingesting ETF holdings: {str(e)}")
 
             db.commit()
         return count
@@ -475,6 +498,30 @@ class PreciousMetalsIngester:
         except Exception as e:
             logger.warning("GLD holdings fetch failed: %s", e)
             return None
+
+    def _fetch_etf_assets(self, ticker: str) -> Optional[float]:
+        """Fetch ETF total assets in USD via yfinance."""
+        try:
+            info = yf.Ticker(ticker).get_info()
+            assets = info.get("totalAssets")
+            if assets in (None, 0, 0.0):
+                return None
+            return float(assets)
+        except Exception as e:
+            logger.warning("%s assets fetch failed: %s", ticker, e)
+            return None
+
+    def _estimate_etf_holdings_from_assets(self, ticker: str, spot_price: Optional[float]) -> Optional[float]:
+        """
+        Estimate holdings (oz) using ETF total assets divided by spot price.
+        This is derived from ingested ETF AUM + ingested spot pricing.
+        """
+        if not spot_price or spot_price <= 0:
+            return None
+        assets = self._fetch_etf_assets(ticker)
+        if not assets:
+            return None
+        return assets / spot_price
 
     def _compute_correlations(self) -> int:
         """Compute rolling 30/60-day correlations"""

@@ -15,6 +15,8 @@ from app.utils.db_helpers import get_db_session
 
 router = APIRouter(prefix="/precious-metals", tags=["precious-metals"])
 
+TONNES_TO_OZ = 32150.7466
+
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -83,6 +85,41 @@ def _calc_cb_net_purchases_yoy(db) -> Optional[float]:
     if not recent_purchases:
         return None
     return sum(p.tonnes_net_yoy_pct for p in recent_purchases) / len(recent_purchases)
+
+
+def _calc_em_accumulation_momentum(db) -> Optional[float]:
+    em_countries = ["China", "India", "Russia", "Saudi Arabia", "UAE"]
+    em_dates = db.query(CBHolding.date).filter(
+        CBHolding.country.in_(em_countries),
+        CBHolding.gold_tonnes.isnot(None)
+    ).distinct().order_by(desc(CBHolding.date)).limit(2).all()
+    if len(em_dates) < 2:
+        return None
+    latest_date = em_dates[0][0]
+    prior_date = em_dates[1][0]
+    latest_total = _sum_gold_tonnes(db, latest_date, em_countries)
+    prior_total = _sum_gold_tonnes(db, prior_date, em_countries)
+    return _calc_yoy_change(latest_total, prior_total)
+
+
+def _latest_cb_gold_oz(db) -> Optional[float]:
+    latest_date = db.query(func.max(CBHolding.date)).scalar()
+    if not latest_date:
+        return None
+    subq = db.query(
+        CBHolding.country,
+        func.max(CBHolding.id).label("max_id")
+    ).filter(
+        CBHolding.date == latest_date,
+        CBHolding.gold_tonnes.isnot(None)
+    ).group_by(CBHolding.country).subquery()
+    total_tonnes = db.query(func.sum(CBHolding.gold_tonnes)).join(
+        subq,
+        CBHolding.id == subq.c.max_id
+    ).scalar()
+    if total_tonnes is None:
+        return None
+    return total_tonnes * TONNES_TO_OZ
 
 
 def _compute_real_rate_signal(db) -> Optional[float]:
@@ -412,21 +449,7 @@ def get_regime_classification():
                     _sum_gold_tonnes(db, latest_cb_date),
                     _sum_gold_tonnes(db, prior_cb_date)
                 )
-            em_countries = ["China", "India", "Russia", "Saudi Arabia", "UAE"]
-            em_accumulation_momentum = None
-            em_purchases = db.query(CBPurchase).filter(
-                CBPurchase.country.in_(em_countries),
-                CBPurchase.period >= str(datetime.utcnow().year - 1)
-            ).all()
-            if em_purchases:
-                em_accumulation_momentum = (
-                    sum([p.tonnes_net_yoy_pct for p in em_purchases]) / len(em_purchases)
-                )
-            if em_accumulation_momentum is None and latest_cb_date and prior_cb_date:
-                em_accumulation_momentum = _calc_yoy_change(
-                    _sum_gold_tonnes(db, latest_cb_date, em_countries),
-                    _sum_gold_tonnes(db, prior_cb_date, em_countries)
-                )
+            em_accumulation_momentum = _calc_em_accumulation_momentum(db)
 
             return {
                 "regime": {
@@ -480,8 +503,16 @@ def get_cb_holdings():
             if not latest_date:
                 return []
             
-            holdings = db.query(CBHolding).filter(
+            subq = db.query(
+                CBHolding.country,
+                func.max(CBHolding.id).label("max_id")
+            ).filter(
                 CBHolding.date == latest_date
+            ).group_by(CBHolding.country).subquery()
+
+            holdings = db.query(CBHolding).join(
+                subq,
+                CBHolding.id == subq.c.max_id
             ).order_by(desc(CBHolding.gold_tonnes)).limit(20).all()
             
             # Get YoY change
@@ -593,7 +624,7 @@ def get_demand_data():
 @router.get("/market-caps")
 def get_market_caps():
     """
-    Return current spot prices; market caps require ingested above-ground stock data.
+    Return current spot prices with tracked holdings from ETF + CB data.
     """
     with get_db_session() as db:
         try:
@@ -606,20 +637,40 @@ def get_market_caps():
                 if latest:
                     prices[metal] = latest.price_usd_per_oz
             
-            # Calculate market caps
+            etf_by_metal = {
+                "AU": "GLD",
+                "AG": "SLV",
+                "PT": "PPLT",
+                "PD": "PALL",
+            }
+
+            # Calculate market caps from tracked holdings (ETF + CB gold)
             market_caps = {}
-            total_value = 0
+            total_value = 0.0
+            cb_gold_oz = _latest_cb_gold_oz(db)
             for metal in ['AU', 'AG', 'PT', 'PD']:
-                if metal in prices:
-                    value = None
-                    market_caps[metal] = {
-                        "metal": metal,
-                        "price_usd_per_oz": prices[metal],
-                        "stock_oz": None,
-                        "market_cap_usd": value
-                    }
-                    if value is not None:
-                        total_value += value
+                if metal not in prices:
+                    continue
+                stock_oz = None
+                etf_ticker = etf_by_metal.get(metal)
+                if etf_ticker:
+                    latest_etf = db.query(ETFHolding).filter(
+                        ETFHolding.ticker == etf_ticker
+                    ).order_by(desc(ETFHolding.date)).first()
+                    if latest_etf and latest_etf.holdings:
+                        stock_oz = latest_etf.holdings
+                if metal == "AU" and cb_gold_oz:
+                    stock_oz = (stock_oz or 0) + cb_gold_oz
+
+                value = (stock_oz * prices[metal]) if stock_oz is not None else None
+                market_caps[metal] = {
+                    "metal": metal,
+                    "price_usd_per_oz": prices[metal],
+                    "stock_oz": stock_oz,
+                    "market_cap_usd": value
+                }
+                if value is not None:
+                    total_value += value
             
             macro = db.query(MacroLiquidityData).filter(
                 MacroLiquidityData.global_m2.isnot(None)
@@ -636,6 +687,9 @@ def get_market_caps():
                 "total_market_cap_usd": total_value if total_value else None,
                 "global_m2_usd": global_m2_usd,
                 "metals_to_m2_pct": metals_to_m2_ratio,
+                "notes": {
+                    "tracked_stock": "Computed from latest ETF holdings; gold includes latest CB holdings.",
+                },
                 "timestamp": datetime.utcnow().isoformat()
             }
         except Exception as e:
@@ -733,21 +787,37 @@ async def get_market_caps_history():
 
         price_map = {p.date.date(): p.price_usd_per_oz for p in gold_prices}
         m2_map = {m.date.date(): m.global_m2 for m in macro}
+        gld_holdings = db.query(ETFHolding).filter(
+            ETFHolding.ticker == "GLD",
+            ETFHolding.holdings.isnot(None)
+        ).order_by(ETFHolding.date).all()
+        holdings_map = {h.date.date(): h.holdings for h in gld_holdings}
+        cb_gold_oz = _latest_cb_gold_oz(db) or 0.0
         overlap_dates = sorted(set(price_map.keys()) & set(m2_map.keys()))
 
         history = []
+        last_holdings = None
         for date in overlap_dates:
+            if date in holdings_map:
+                last_holdings = holdings_map[date]
+            tracked_gold_oz = (last_holdings or 0.0) + cb_gold_oz if last_holdings is not None else None
+            tracked_value = (tracked_gold_oz * price_map[date]) if tracked_gold_oz is not None else None
+            metals_to_m2 = (
+                (tracked_value / (m2_map[date] * 1e12)) * 100
+                if tracked_value is not None and m2_map[date] is not None
+                else None
+            )
             history.append({
                 'date': date.isoformat(),
                 'gold_price': price_map[date],
                 'global_m2_trillions': m2_map[date],
-                'metals_to_m2_pct': None
+                'metals_to_m2_pct': metals_to_m2
             })
 
         return {
             'history': history,
             'notes': {
-                'metals_to_m2_pct': 'Requires ingested above-ground stock data to compute.'
+                'metals_to_m2_pct': 'Tracked using GLD holdings and latest CB gold holdings.'
             }
         }
 

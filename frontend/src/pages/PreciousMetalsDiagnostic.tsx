@@ -1222,8 +1222,9 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
 
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
-      <h3 className="text-lg font-bold mb-4 text-white">How Big Is This Asset Class?</h3>
-      <p className="text-xs text-stealth-400 mb-4">Tiny markets = easier to move = more volatility = bigger % gains possible</p>
+        <h3 className="text-lg font-bold mb-4 text-white">How Big Is This Asset Class?</h3>
+        <p className="text-xs text-stealth-400 mb-1">Tiny markets = easier to move = more volatility = bigger % gains possible</p>
+        <p className="text-xs text-stealth-500 mb-4">Tracked holdings use ETF assets plus central bank gold.</p>
       <div className="space-y-4 text-sm">
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-stealth-700 rounded p-3">
@@ -1233,7 +1234,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
               <div className="text-lg font-bold text-blue-300">{formatMarketCap(gold_cap)}</div>
               <div className="text-xs text-stealth-500">
                 {isNumber(market_caps.metals?.AU?.stock_oz) && isNumber(gold_price)
-                  ? `${(market_caps.metals.AU.stock_oz / 1e9).toFixed(1)}B oz @ $${gold_price.toFixed(0)}/oz`
+                  ? `${(market_caps.metals.AU.stock_oz / 1e9).toFixed(1)}B oz tracked @ $${gold_price.toFixed(0)}/oz`
                   : "n/a"}
               </div>
             </div>
@@ -1243,23 +1244,23 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
               <div className="text-xs text-stealth-500">Silver, Platinum, Palladium</div>
             </div>
           </div>
-          <div className="bg-stealth-700 rounded p-3">
-            <div className="text-stealth-400 text-xs mb-2">
-              <DerivedLabel label="Current Ratio to Global M2" />
+            <div className="bg-stealth-700 rounded p-3">
+              <div className="text-stealth-400 text-xs mb-2">
+                <DerivedLabel label="Tracked Ratio to Global M2" />
+              </div>
+              <div className="flex justify-between items-center">
+                <span>Tracked Metals / M2:</span>
+                <span className="text-lg font-bold text-blue-300">
+                  {isNumber(m2_ratio) ? `${m2_ratio.toFixed(1)}%` : "n/a"}
+                </span>
+              </div>
             </div>
-            <div className="flex justify-between items-center">
-              <span>Metals / M2:</span>
-              <span className="text-lg font-bold text-blue-300">
-                {isNumber(m2_ratio) ? `${m2_ratio.toFixed(1)}%` : "n/a"}
-              </span>
-            </div>
-          </div>
         
         {/* 100-Year History Chart */}
-          <div className="border-t border-stealth-600 pt-4 mt-4">
-            <div className="text-stealth-400 text-xs mb-3 font-semibold">
-              Metals/M2 Ratio History (Ingested)
-            </div>
+            <div className="border-t border-stealth-600 pt-4 mt-4">
+              <div className="text-stealth-400 text-xs mb-3 font-semibold">
+                Tracked Metals/M2 Ratio History
+              </div>
             {ratioHistory.length > 0 ? (
               <>
                 <ResponsiveContainer width="100%" height={220}>
@@ -1291,15 +1292,15 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
                     />
                   </LineChart>
                 </ResponsiveContainer>
-                <p className="text-xs text-stealth-500 mt-2">
-                  Current: {isNumber(m2_ratio) ? `${m2_ratio.toFixed(1)}%` : "n/a"}.
-                </p>
-              </>
-            ) : (
-              <div className="text-xs text-stealth-500">
-                Metals/M2 ratio requires ingested above-ground stock data. Latest gold price and global M2 shown below.
-                {latestHistory && (
-                  <div className="mt-2 text-stealth-400">
+                  <p className="text-xs text-stealth-500 mt-2">
+                    Current: {isNumber(m2_ratio) ? `${m2_ratio.toFixed(1)}%` : "n/a"}.
+                  </p>
+                </>
+              ) : (
+                <div className="text-xs text-stealth-500">
+                  Tracked metals/M2 ratio uses ETF assets and CB gold holdings. Latest gold price and global M2 shown below.
+                  {latestHistory && (
+                    <div className="mt-2 text-stealth-400">
                     Gold: {isNumber(latestHistory.gold_price) ? `$${latestHistory.gold_price.toFixed(2)}` : "n/a"} ·
                     Global M2: {isNumber(latestHistory.global_m2_trillions) ? `${latestHistory.global_m2_trillions.toFixed(2)}T` : "n/a"}
                   </div>
