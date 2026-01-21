@@ -1,20 +1,20 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { apiFetch } from "../../utils/apiUtils";
-import { calculateMovingAverage } from "../../utils/componentUtils";
-import { formatTime } from "../../utils/styleUtils";
-import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
+import { Link } from "react-router-dom";
 import {
-  Bar,
-  BarChart,
   LineChart,
   Line,
   XAxis,
   YAxis,
-  ResponsiveContainer,
   Tooltip,
+  ResponsiveContainer,
   CartesianGrid,
+  ReferenceLine,
 } from "recharts";
+import { getLegacyApiUrl } from "../../utils/apiUtils";
+import { calculateMovingAverage } from "../../utils/componentUtils";
+import { formatDateTime, formatTime } from "../../utils/styleUtils";
+import { CHART_MARGIN, commonXAxisProps, commonYAxisProps, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
+import { getStateFromScore, STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
 import {
   analyzeSeries,
   getTrendTone,
@@ -22,9 +22,6 @@ import {
   getTrendWindows,
   type InsightSignal,
 } from "../../utils/insightUtils";
-import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
-import { getFamilyColor, getMetricColor } from "../../theme/metricColors";
-import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL, commonGridProps } from "../../utils/chartUtils";
 
 interface SystemStatus {
   state: string;
@@ -38,7 +35,16 @@ interface SystemHistoryPoint {
   timestamp: string;
   composite_score: number;
   state: string;
-  contributions?: Record<string, number>;
+}
+
+interface NewsArticle {
+  id: number;
+  symbol: string;
+  sector?: string | null;
+  title: string;
+  link: string;
+  source: string;
+  published_at: string;
 }
 
 interface Props {
@@ -46,56 +52,51 @@ interface Props {
   onInsight?: (insight: InsightSignal) => void;
 }
 
-interface IndicatorMeta {
-  code: string;
-  name: string;
-}
-
 const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   const [data, setData] = useState<SystemStatus | null>(null);
   const [history, setHistory] = useState<SystemHistoryPoint[]>([]);
-  const [indicatorLabels, setIndicatorLabels] = useState<Record<string, string>>({});
-  const [indicatorOrder, setIndicatorOrder] = useState<string[]>([]);
+  const [news, setNews] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const navigate = useNavigate();
-  const commitment = useProgressiveCommitment({
-    mode: "navigate",
-    onCommit: () => navigate("/system-breakdown"),
-  });
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const historyUrl = `/system/history?days=${trendPeriod}`;
-        const [statusData, historyData, indicatorData] = await Promise.all([
-          apiFetch<SystemStatus>("/system"),
-          apiFetch<SystemHistoryPoint[]>(historyUrl),
-          apiFetch<IndicatorMeta[]>("/indicators"),
+        console.log('SystemOverview fetching data with trendPeriod:', trendPeriod);
+        const apiUrl = getLegacyApiUrl();
+        const historyUrl = `${apiUrl}/system/history?days=${trendPeriod}`;
+        console.log('SystemOverview history URL:', historyUrl);
+        const [statusResponse, historyResponse, newsResponse] = await Promise.all([
+          fetch(`${apiUrl}/system`),
+          fetch(historyUrl),
+          fetch(`${apiUrl}/news?hours=24&limit=50`),
         ]);
-
+        
+        if (!statusResponse.ok) throw new Error("Failed to fetch system status");
+        if (!historyResponse.ok) throw new Error("Failed to fetch system history");
+        if (!newsResponse.ok) throw new Error("Failed to fetch news");
+        
+        const statusData = await statusResponse.json();
+        const historyData = await historyResponse.json();
+        const newsData = await newsResponse.json();
+        
         setData(statusData);
-        setIndicatorOrder(indicatorData.map((indicator) => indicator.code));
-        setIndicatorLabels(
-          indicatorData.reduce<Record<string, string>>((acc, indicator) => {
-            acc[indicator.code] = indicator.name;
-            return acc;
-          }, {})
-        );
-
+        setNews(newsData);
+        
+        // Use real historical data from backend
         if (Array.isArray(historyData) && historyData.length > 0) {
-          const smoothedHistory = calculateMovingAverage(historyData, "composite_score", 7);
+          // Apply 7-day moving average to smooth out daily oscillations
+          const smoothedHistory = calculateMovingAverage(historyData, 'composite_score', 7);
           setHistory(smoothedHistory);
         } else {
-          setHistory([
-            {
-              timestamp: statusData.timestamp || new Date().toISOString(),
-              composite_score: statusData.composite_score,
-              state: statusData.state,
-            },
-          ]);
+          // Fallback: if no history available, use current data point only
+          setHistory([{
+            timestamp: statusData.timestamp || new Date().toISOString(),
+            composite_score: statusData.composite_score,
+            state: statusData.state
+          }]);
         }
-
+        
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
@@ -105,7 +106,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 60000);
+    const interval = setInterval(fetchData, 60000); // Refresh every minute
 
     return () => clearInterval(interval);
   }, [trendPeriod]);
@@ -158,42 +159,17 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   if (error || !data) {
     return (
       <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-red-400 mb-2">System Overview</h3>
-        <p className="text-stealth-400 text-sm">{error || "No data available"}</p>
+        <h3 className="text-lg font-semibold text-red-400 mb-2">
+          System Overview
+        </h3>
+        <p className="text-stealth-400 text-sm">
+          {error || "No data available"}
+        </p>
       </div>
     );
   }
 
-  const trendTone = getTrendTone(primarySignal);
-  const systemConfidence = getConfidenceFromSignal(primarySignal);
-  const stateWord =
-    data.state === "GREEN" ? "stable" : data.state === "RED" ? "stressed" : "mixed";
-  const primaryWord =
-    primarySignal.direction === "up"
-      ? "improving"
-      : primarySignal.direction === "down"
-      ? "softening"
-      : "steady";
-  const signalLine = `System ${stateWord}, ${primaryWord}`;
-  const contextLine = "Volatility, rates, liquidity, sentiment";
-  const nearBoundary =
-    Math.min(
-      Math.abs(data.composite_score - STABILITY_THRESHOLDS.RED_MAX),
-      Math.abs(data.composite_score - STABILITY_THRESHOLDS.YELLOW_MAX)
-    ) <= 3;
-  const toneLabel = trendTone === "mixed" ? "mixed trend" : `${trendTone} trend`;
-  const focusLine = `Confidence: ${systemConfidence} - ${toneLabel}${nearBoundary ? ", near boundary" : ""}`;
-  const miniSeries = history.map((point) => ({
-    timestamp: point.timestamp,
-    composite_score: point.composite_score,
-  }));
-  const showDetails = commitment.state !== "rest";
-  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-    showDetails ? "max-h-96" : "max-h-0"
-  }`;
-  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
-    showDetails ? "opacity-100 delay-75" : "opacity-0"
-  }`;
+  // Color mappings
   const stateColorMap: Record<string, string> = {
     GREEN: "text-green-400",
     YELLOW: "text-yellow-400",
@@ -201,6 +177,13 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     UNKNOWN: "text-gray-500",
   };
   const stateColor = stateColorMap[data.state] || "text-gray-500";
+
+  const compositePercentage = Math.min(100, data.composite_score || 0);
+
+  // Get recent news (last 3)
+  const recentNews = news.slice(0, 3);
+
+  // Calculate trend (last 7 days vs previous 7 days average)
   const averageScore = (points: SystemHistoryPoint[]) =>
     points.length
       ? points.reduce((sum, p) => sum + p.composite_score, 0) / points.length
@@ -211,149 +194,282 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   const prev7Avg = prev7.length ? averageScore(prev7) : last7Avg;
   const trend = last7Avg - prev7Avg;
   const trendDirection = trend > 2 ? "IMPROVING" : trend < -2 ? "WORSENING" : "STABLE";
-  const accentColor = getFamilyColor("system", "muted");
-  const contributionSeries = history
-    .filter((point) => point.contributions)
-    .map((point) => ({
-      timestamp: point.timestamp,
-      ...point.contributions,
-    }));
-  const contributionKeys = indicatorOrder.length
-    ? indicatorOrder.filter((code) =>
-        contributionSeries.some((point) => Object.prototype.hasOwnProperty.call(point, code))
-      )
-    : Object.keys(contributionSeries[0] ?? {}).filter((key) => key !== "timestamp");
+
+  const trendColor = {
+    IMPROVING: "text-green-400",
+    WORSENING: "text-red-400",
+    STABLE: "text-gray-400",
+  }[trendDirection];
+
+  const periodLabel = trendPeriod === 365 ? "1 year" : trendPeriod === 180 ? "6 months" : "90 days";
+  const trendTone = getTrendTone(primarySignal);
+  const condition =
+    data.state === "GREEN" ? "steady" : data.state === "YELLOW" ? "mixed" : "stressed";
+  const primaryWord =
+    primarySignal.direction === "up"
+      ? "rising"
+      : primarySignal.direction === "down"
+      ? "softening"
+      : "flat";
+  const secondaryWord =
+    secondarySignal.direction === "up"
+      ? "rising"
+      : secondarySignal.direction === "down"
+      ? "softening"
+      : "flat";
+  const primaryClause = `${trendWindows.label} is ${primaryWord}`;
+  const secondaryClause =
+    secondarySignal.direction === primarySignal.direction
+      ? "and the recent move agrees."
+      : `but the recent move is ${secondaryWord}.`;
+  const toneClause = trendTone === "mixed" ? "" : ` It feels ${trendTone}.`;
+  const nuanceSentence = `It looks ${condition}. ${primaryClause} ${secondaryClause}${toneClause}`;
+  let actionSentence = "";
+  if (data.state === "GREEN") {
+    actionSentence =
+      primarySignal.direction === "down"
+        ? "Households and businesses should still see stability, but keep risk measured until the slide stops."
+        : "Households and businesses usually feel stability first, so longer-term plans can make sense while this holds.";
+  } else if (data.state === "YELLOW") {
+    actionSentence =
+      primarySignal.direction === "up"
+        ? "Unevenness may ease, but stay diversified until the signal firms up."
+        : "Uneven costs or demand can show up for households and employers, so keep exposure balanced.";
+  } else {
+    actionSentence =
+      primarySignal.direction === "up"
+        ? "Stress may be easing, but borrowers and employers feel it first; protect cash needs until it stabilizes."
+        : "Borrowers and employers feel this first; protect cash needs and keep risk small.";
+  }
+  const systemSummary = `System health blends many signals. ${nuanceSentence} ${actionSentence}`;
 
   return (
-    <div
-      {...commitment.getContainerProps<HTMLDivElement>()}
-      className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-6 space-y-4 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
-      aria-expanded={commitment.isExpanded}
-    >
-      <div className="h-1 rounded-full" style={{ backgroundColor: accentColor }} />
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-base sm:text-lg font-semibold text-stealth-100">System Overview</h3>
-        <span className="text-xs text-stealth-400">
-          {data.timestamp ? formatTime(data.timestamp) : "N/A"}
-        </span>
+    <Link to="/system-breakdown" className="block">
+      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-3 sm:p-6 space-y-4 hover:bg-stealth-750 hover:border-stealth-600 transition cursor-pointer">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex items-start gap-1 sm:gap-2 min-w-0">
+            <h3 className="text-base sm:text-lg font-semibold text-stealth-100 whitespace-nowrap">
+              System Overview
+            </h3>
+            <span className="text-xs text-stealth-500 flex-shrink-0">→ View</span>
+          </div>
+          <span className="text-xs text-stealth-400 flex-shrink-0">
+            {data.timestamp ? formatTime(data.timestamp) : 'N/A'}
+          </span>
+        </div>
+
+      {/* Main Metrics Grid */}
+      <div className="grid grid-cols-2 gap-2 sm:gap-4">
+        {/* System State */}
+        <div className="space-y-2 min-w-0">
+          <div className="flex items-baseline justify-between gap-1">
+            <span className="text-xs sm:text-sm text-stealth-400 truncate">System State</span>
+            <span className={`text-lg sm:text-xl font-bold flex-shrink-0 ${stateColor}`}>
+              {data.state}
+            </span>
+          </div>
+          <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
+            <div
+              className={`absolute left-0 top-0 h-full transition-all duration-500 ${
+                data.composite_score >= STABILITY_THRESHOLDS.YELLOW_MAX
+                  ? "bg-green-500"
+                  : data.composite_score >= STABILITY_THRESHOLDS.RED_MAX
+                  ? "bg-yellow-500"
+                  : "bg-red-500"
+              }`}
+              style={{ width: `${compositePercentage}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs gap-1">
+            <span className="text-stealth-400 truncate">Composite:</span>
+            <span className="text-stealth-200 flex-shrink-0">{data.composite_score.toFixed(1)}</span>
+          </div>
+        </div>
+
+        {/* Weekly Trend */}
+        <div className="space-y-2 min-w-0">
+          <div className="flex items-baseline justify-between gap-1">
+            <span className="text-xs sm:text-sm text-stealth-400 truncate">7-Day Trend</span>
+            <span className={`text-lg sm:text-xl font-bold flex-shrink-0 ${trendColor}`}>
+              {trendDirection}
+            </span>
+          </div>
+          <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
+            <div
+              className={`absolute left-0 top-0 h-full transition-all duration-500 ${trendColor.replace('text-', 'bg-')}`}
+              style={{ width: `${Math.min(100, Math.abs(trend) * 10)}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs gap-1">
+            <span className="text-stealth-400 truncate">Change:</span>
+            <span className="text-stealth-200 flex-shrink-0">{trend > 0 ? '+' : ''}{trend.toFixed(1)}</span>
+          </div>
+        </div>
       </div>
-      <div className="text-sm text-stealth-200">
-        <span className="text-stealth-500">Signal:</span> {signalLine}
+
+      {/* Status Badges */}
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap">
+          <span className="text-stealth-400 flex-shrink-0">Red:</span>
+          <span className="font-semibold text-red-400 flex-shrink-0">
+            {data.red_count}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap">
+          <span className="text-stealth-400 flex-shrink-0">Yellow:</span>
+          <span className="font-semibold text-yellow-400 flex-shrink-0">
+            {data.yellow_count}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap">
+          <span className="text-stealth-400 flex-shrink-0">News:</span>
+          <span className="font-semibold text-cyan-400 flex-shrink-0">
+            {news.length}
+          </span>
+        </div>
       </div>
-      <div className="text-sm text-stealth-400">
-        <span className="text-stealth-500">Context:</span> {contextLine}
-      </div>
-      <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-        {focusLine}
-      </div>
-      {miniSeries.length > 1 && (
-        <div className="h-20">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={miniSeries}>
-              <XAxis dataKey="timestamp" hide />
-              <YAxis domain={[0, 100]} hide />
-              <Line
-                type="monotone"
-                dataKey="composite_score"
-                stroke={getFamilyColor("system")}
-                strokeWidth={2}
-                dot={false}
-                animationDuration={CHART_ANIMATION.duration}
-                animationEasing={CHART_ANIMATION.easing}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+
+      {/* Recent News */}
+      {recentNews.length > 0 && (
+        <div className="pt-3 border-t border-stealth-700">
+          <h4 className="text-sm font-semibold text-stealth-200 mb-2">
+            Recent Market News
+          </h4>
+          <div className="space-y-2">
+            {recentNews.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-start gap-2 p-2 bg-stealth-900 rounded border border-stealth-700"
+              >
+                <span className="text-xs text-sky-400 mt-0.5">{item.symbol}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-stealth-200 truncate">
+                    {item.title}
+                  </p>
+                  <p className="text-xs text-stealth-400 mt-0.5">
+                    {formatDateTime(item.published_at)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
-      <div className={`${detailWrapClass} ${showDetails ? "mt-2" : ""}`}>
-        <div className={detailContentClass}>
-          <div className="grid grid-cols-3 gap-3 text-xs text-stealth-300">
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">State</div>
-              <div className={`mt-1 text-sm font-semibold ${stateColor}`}>{data.state}</div>
-            </div>
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">7-day trend</div>
-              <div className="mt-1 text-sm text-stealth-200">{trendDirection}</div>
-            </div>
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Composite</div>
-              <div className="mt-1 text-sm text-stealth-200">{data.composite_score.toFixed(1)}</div>
+
+      {/* Composite Score Chart */}
+      {history.length > 0 && (() => {
+        // Convert timestamps to numeric values and ensure unique dates
+        const chartData = history.map(item => ({
+          ...item,
+          timestampNum: new Date(item.timestamp).getTime()
+        }));
+        
+        // Calculate domain with today at the end
+        const timestamps = chartData.map(d => d.timestampNum);
+        const minTime = Math.min(...timestamps);
+        const maxTime = Math.max(...timestamps);
+        
+        // Generate evenly spaced tick positions (5 ticks total, including start and end)
+        const tickPositions: number[] = [];
+        for (let i = 0; i < 5; i++) {
+          tickPositions.push(minTime + (maxTime - minTime) * (i / 4));
+        }
+        
+        console.log('SystemOverview chart data sample:', chartData.slice(0, 3), 'total:', chartData.length);
+        
+        return (
+            <div className="pt-6 border-t border-stealth-700">
+            <h4 className="text-sm font-semibold text-stealth-200 mb-4">
+              Composite Score Trend
+            </h4>
+            <div className="w-full h-60 sm:h-72 lg:h-80 -mx-6 sm:mx-0 px-3 sm:px-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={CHART_MARGIN}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                  <XAxis
+                    dataKey="timestampNum"
+                    type="number"
+                    domain={[minTime, maxTime]}
+                    scale="linear"
+                    ticks={tickPositions}
+                    tickFormatter={(v: number) => {
+                      const date = new Date(v);
+                      const today = new Date();
+                      const isToday = date.toDateString() === today.toDateString();
+                      return isToday ? 'Today' : date.toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      });
+                    }}
+                    tick={{ fill: "#6b7280", fontSize: 10 }}
+                    stroke="#555560"
+                  />
+                  <YAxis
+                    tick={{ fill: "#6b7280", fontSize: 10 }}
+                    stroke="#555560"
+                    domain={['dataMin - 5', 'dataMax + 5']}
+                    scale="linear"
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#161619",
+                      borderColor: "#555560",
+                      borderRadius: "6px",
+                      padding: "8px",
+                    }}
+                    labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
+                    itemStyle={{ color: "#ffffff", fontSize: 11 }}
+                    formatter={(value: number) => [`${value.toFixed(1)}`, "Score"]}
+                    labelFormatter={(label: string | number) =>
+                      new Date(label).toLocaleDateString()
+                    }
+                  />
+                  <ReferenceLine y={70} stroke="#10b981" strokeDasharray="3 3" opacity={0.3} />
+                  <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" opacity={0.3} />
+                  <Line
+                    type="monotone"
+                    dataKey="composite_score"
+                    stroke="#60a5fa"
+                    strokeWidth={2}
+                    dot={false}
+                    animationDuration={300}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
-          {contributionSeries.length > 1 && (
-            <div className="pt-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500 mb-2">
-                Indicator Contributions
-              </div>
-              <div className="h-36">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={contributionSeries} margin={CHART_MARGIN}>
-                    <CartesianGrid {...commonGridProps} />
-                    <XAxis
-                      dataKey="timestamp"
-                      tickFormatter={(value: string) =>
-                        new Date(value).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      }
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      stroke={CHART_NEUTRAL.axis}
-                    />
-                    <YAxis
-                      domain={[0, 100]}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      stroke={CHART_NEUTRAL.axis}
-                      width={32}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "#0f172a",
-                        border: "1px solid rgba(148, 163, 184, 0.2)",
-                        borderRadius: 6,
-                        color: "#e2e8f0",
-                        fontSize: 11,
-                      }}
-                      labelFormatter={(value: string) =>
-                        new Date(value).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })
-                      }
-                    />
-                    {contributionKeys.map((code) => (
-                      <Bar
-                        key={code}
-                        dataKey={code}
-                        name={indicatorLabels[code] ?? code}
-                        stackId="system"
-                        fill={getMetricColor(code)}
-                        fillOpacity={0.7}
-                        animationDuration={CHART_ANIMATION.duration}
-                        animationEasing={CHART_ANIMATION.easing}
-                      />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stealth-400">
-                {contributionKeys.map((code) => (
-                  <span key={code} className="inline-flex items-center gap-1">
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: getMetricColor(code) }}
-                    />
-                    {indicatorLabels[code] ?? code}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+        );
+      })()}
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-3 gap-3 pt-3 border-t border-stealth-700">
+        <div>
+          <div className="text-xs text-stealth-400 mb-1">{periodLabel} Avg</div>
+          <div className="text-sm font-semibold text-stealth-200">
+            {(history.reduce((sum, p) => sum + p.composite_score, 0) / history.length).toFixed(1)}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-stealth-400 mb-1">{periodLabel} High</div>
+          <div className="text-sm font-semibold text-stealth-200">
+            {Math.max(...history.map(p => p.composite_score)).toFixed(1)}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-stealth-400 mb-1">{periodLabel} Low</div>
+          <div className="text-sm font-semibold text-stealth-200">
+            {Math.min(...history.map(p => p.composite_score)).toFixed(1)}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Conclusion */}
+      <div className="bg-stealth-900 border border-stealth-700 rounded p-3 mt-4">
+        <p className="text-xs text-stealth-300 leading-relaxed">{systemSummary}</p>
+      </div>
+      </div>
+    </Link>
   );
 };
 

@@ -3,10 +3,24 @@
  * 
  * Dashboard widget displaying sector leadership patterns and regime alignment.
  * Helps identify macro market positioning by comparing defensive vs cyclical sector performance.
+ * 
+ * Key Metrics:
+ * - Defensive Average: XLU (Utilities), XLP (Staples), XLV (Healthcare)
+ * - Cyclical Average: XLE (Energy), XLF (Financials), XLK (Tech), XLY (Discretionary)
+ * - Regime Alignment: How well sector leadership matches expected patterns for current market state
+ * - Sector Breadth: Count of improving vs deteriorating sectors across horizons
+ * 
+ * Interpretations:
+ * - RED market + defensive lead = Flight to safety (expected)
+ * - RED market + cyclical lead = Risk appetite emerging (potential reversal signal)
+ * - GREEN market + cyclical lead = Risk-on mode (healthy)
+ * - GREEN market + defensive lead = Caution creeping in (early warning)
+ * 
+ * @component
  */
 
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -16,23 +30,15 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { apiFetch } from "../../utils/apiUtils";
-import {
-  CHART_ANIMATION,
-  CHART_MARGIN,
-  CHART_NEUTRAL,
-  commonGridProps,
-  commonTooltipStyle,
-} from "../../utils/chartUtils";
+import { getLegacyApiUrl } from "../../utils/apiUtils";
+import { CHART_MARGIN, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
 import {
   analyzeSeries,
+  getTrendTone,
   getConfidenceFromSignal,
   getTrendWindows,
   type InsightSignal,
 } from "../../utils/insightUtils";
-import { useProgressiveCommitment } from "../../hooks/useProgressiveCommitment";
-import { getFamilyColor } from "../../theme/metricColors";
-import { dashboardCardDetails } from "../../config/dashboardCards";
 
 interface SectorSummary {
   as_of_date: string;
@@ -87,11 +93,6 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   const [history, setHistory] = useState<SectorHistoryPoint[]>([]);
   const [alerts, setAlerts] = useState<SectorAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-  const commitment = useProgressiveCommitment({
-    mode: "navigate",
-    onCommit: () => navigate("/sector-projections"),
-  });
 
   const buildHistorySeries = (historyData: SectorProjectionHistory | null): SectorHistoryPoint[] => {
     if (!historyData) return [];
@@ -136,26 +137,26 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const historyUrl = `/sectors/projections/history?days=${trendPeriod}`;
-        const summaryData = await apiFetch<SectorSummary>("/sectors/summary");
+        const apiUrl = getLegacyApiUrl();
+        const historyUrl = `${apiUrl}/sectors/projections/history?days=${trendPeriod}`;
+        const [summaryRes, historyRes, alertsRes] = await Promise.all([
+          fetch(`${apiUrl}/sectors/summary`),
+          fetch(historyUrl),
+          fetch(`${apiUrl}/sectors/alerts`)
+        ]);
+        if (!summaryRes.ok) throw new Error("Failed to fetch sector summary");
+        const summaryData = await summaryRes.json();
         setData(summaryData);
 
-        const [historyResult, alertsResult] = await Promise.allSettled([
-          apiFetch<SectorProjectionHistory>(historyUrl),
-          apiFetch<{ alerts?: SectorAlert[] }>("/sectors/alerts"),
-        ]);
-
-        if (historyResult.status === "fulfilled") {
-          setHistory(buildHistorySeries(historyResult.value));
+        if (historyRes.ok) {
+          const historyData: SectorProjectionHistory = await historyRes.json();
+          setHistory(buildHistorySeries(historyData));
         } else {
           setHistory([]);
         }
 
-        if (alertsResult.status === "fulfilled") {
-          setAlerts(alertsResult.value.alerts || []);
-        } else {
-          setAlerts([]);
-        }
+        const alertsData = alertsRes.ok ? await alertsRes.json() : { alerts: [] };
+        setAlerts(alertsData.alerts || []);
       } catch (error) {
         console.error("Failed to fetch sector data:", error);
         setHistory([]);
@@ -172,7 +173,6 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   const gapSeries = spreadSeries.map((value) => Math.abs(value));
   const primaryGapSignal = analyzeSeries(gapSeries, trendWindows.primary);
   const secondaryGapSignal = analyzeSeries(gapSeries, trendWindows.secondary);
-  const sectorConfidence = getConfidenceFromSignal(primaryGapSignal);
   const spreadTrendPhrase =
     primaryGapSignal.direction === "up"
       ? "widening"
@@ -185,8 +185,10 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       : secondaryGapSignal.direction === "down"
       ? "narrowing"
       : "steady";
+  const spreadTone = getTrendTone(primaryGapSignal);
   const leadValue = data?.defensive_vs_cyclical ?? 0;
-  const leadSide = Math.abs(leadValue) < 2 ? "balanced" : leadValue > 0 ? "defense" : "growth";
+  const leadSide =
+    Math.abs(leadValue) < 2 ? "balanced" : leadValue > 0 ? "defense" : "growth";
   const breadthBalance = (data?.sector_breadth.improving ?? 0) - (data?.sector_breadth.deteriorating ?? 0);
   const breadthPhrase =
     breadthBalance > 2
@@ -194,8 +196,10 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       : breadthBalance < -2
       ? "breadth is thinning"
       : "breadth is mixed";
+  const toneClause = spreadTone === "mixed" ? "" : `, and the move feels ${spreadTone}`;
   const secondaryBiasSignal = analyzeSeries(spreadSeries, trendWindows.secondary);
-  const primaryDirection = leadSide === "growth" ? "up" : leadSide === "defense" ? "down" : "flat";
+  const primaryDirection =
+    leadSide === "growth" ? "up" : leadSide === "defense" ? "down" : "flat";
   const secondaryDirection =
     secondaryBiasSignal.direction === "up"
       ? "down"
@@ -221,7 +225,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
         primaryDirection,
         secondaryDirection,
         stance: leadSide === "growth" ? "risk-on" : leadSide === "defense" ? "risk-off" : "mixed",
-        confidence: sectorConfidence,
+        confidence: getConfidenceFromSignal(primaryGapSignal),
         summary: summaryShort,
       }
     : null;
@@ -251,11 +255,32 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
     return null;
   }
 
-  const signalLine =
-    leadSide === "growth" ? "Growth lead" : leadSide === "defense" ? "Defense lead" : "Balanced rotation";
-  const contextLine = dashboardCardDetails.sector.context;
-  const focusLine = `Confidence: ${sectorConfidence} - gap ${spreadTrendPhrase}`;
-  const spreadLineColor = getFamilyColor("market", "base");
+  const getAlignmentColor = (score: number) => {
+    if (score >= 65) return "text-green-400";
+    if (score >= 45) return "text-yellow-400";
+    return "text-red-400";
+  };
+
+  // Interpret the defensive vs cyclical spread
+  const getMarketInterpretation = () => {
+    const spread = data.defensive_vs_cyclical;
+    const isRed = data.system_state === "RED";
+    const isGreen = data.system_state === "GREEN";
+    
+    if (isRed && spread > 5) {
+      return { text: "Flight to Safety", color: "text-blue-400", desc: "Investors seeking defensive positioning amid stress" };
+    } else if (isRed && spread < -5) {
+      return { text: "Risk Appetite Emerging", color: "text-green-400", desc: "Cyclicals gaining despite red regime - potential reversal signal" };
+    } else if (isGreen && spread < -5) {
+      return { text: "Risk-On Mode", color: "text-orange-400", desc: "Growth sectors leading as expected in healthy market" };
+    } else if (isGreen && spread > 5) {
+      return { text: "Caution Creeping In", color: "text-yellow-400", desc: "Defensives outperforming in green market - early warning sign" };
+    } else {
+      return { text: "Balanced Rotation", color: "text-gray-400", desc: "No clear defensive or cyclical bias" };
+    }
+  };
+
+  const interpretation = getMarketInterpretation();
   const periodLabel = trendPeriod === 365 ? "1yr" : trendPeriod === 180 ? "6mo" : "90d";
   const timestamps = chartData.map((point) => point.timestampNum);
   const minTime = timestamps.length ? Math.min(...timestamps) : 0;
@@ -263,229 +288,216 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   const tickPositions = timestamps.length > 1
     ? Array.from({ length: 5 }, (_, i) => minTime + ((maxTime - minTime) * (i / 4)))
     : timestamps;
-  const showCompactChart = chartData.length > 1;
-  const showDetails = commitment.state !== "rest";
-  const detailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-    showDetails ? "max-h-[1400px]" : "max-h-0"
-  }`;
-  const detailContentClass = `transition-opacity duration-200 ease-in-out ${
-    showDetails ? "opacity-100 delay-75" : "opacity-0"
-  }`;
-  const accentColor = getFamilyColor("market", "muted");
+  const secondaryClause =
+    secondaryGapSignal.direction === primaryGapSignal.direction
+      ? "Recent move agrees."
+      : `Recent move is ${secondarySpreadPhrase}.`;
+  const sectorSummary =
+    leadSide === "balanced"
+      ? `Compares defensive vs growth sectors. ${trendWindows.label} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios feel it first, so stay balanced.`
+      : leadSide === "defense"
+      ? `Compares defensive vs growth sectors. Defense is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios feel it first, so keep a defensive tilt.`
+      : `Compares defensive vs growth sectors. Growth is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios benefit first, so lean into growth.`;
 
   return (
-    <div
-      {...commitment.getContainerProps<HTMLDivElement>()}
-      className="bg-stealth-800 rounded-lg p-4 sm:p-6 shadow-lg border border-stealth-700 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
-      aria-expanded={commitment.isExpanded}
-    >
-      <div className="h-1 rounded-full mb-2" style={{ backgroundColor: accentColor }} />
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-lg font-semibold">Sector Divergence</h3>
-        <span className="text-xs text-stealth-500">{periodLabel}</span>
+    <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-lg font-semibold">Sector Divergence Analysis</h3>
+        <Link 
+          to="/sector-projections" 
+          className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+        >
+          View Details &gt;
+        </Link>
       </div>
-      <div className="text-sm text-stealth-200">
-        <span className="text-stealth-500">Signal:</span> {signalLine}
+
+      {/* Market Interpretation - Prominent Card */}
+      <div className="bg-gradient-to-br from-stealth-900 to-stealth-850 rounded-lg p-4 mb-6 border border-stealth-600">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className={`text-lg font-bold ${interpretation.color} mb-2`}>
+              {interpretation.text}
+            </div>
+            <div className="text-sm text-gray-400">
+              {interpretation.desc}
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className="text-xs text-gray-500 mb-1">Def vs Cyc</div>
+            <div className={`text-2xl font-bold ${data.defensive_vs_cyclical > 0 ? 'text-blue-400' : 'text-orange-400'}`}>
+              {data.defensive_vs_cyclical > 0 ? '+' : ''}{data.defensive_vs_cyclical}
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="text-sm text-stealth-400">
-        <span className="text-stealth-500">Context:</span> {contextLine}
+
+      {/* Key Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
+          <div className="text-xs text-gray-400 mb-2">Regime Alignment</div>
+          <div className="flex items-end justify-between">
+            <div className={`text-3xl font-bold ${getAlignmentColor(data.regime_alignment_score)}`}>
+              {data.regime_alignment_score}
+            </div>
+            <div className="text-xs text-gray-500">/100</div>
+          </div>
+          <div className="text-xs text-gray-500 mt-2 leading-tight">
+            {data.regime_alignment_score >= 65 && "Sectors aligned"}
+            {data.regime_alignment_score >= 45 && data.regime_alignment_score < 65 && "Mixed positioning"}
+            {data.regime_alignment_score < 45 && "Diverged regime"}
+          </div>
+        </div>
+
+        <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
+          <div className="text-xs text-gray-400 mb-2">Sector Breadth</div>
+          <div className="flex justify-between items-end mb-2 gap-2 min-w-0">
+            <div className="flex-1 min-w-0">
+              <div className="text-green-400 font-bold text-2xl truncate">{data.sector_breadth.improving}</div>
+              <div className="text-xs text-gray-500 truncate">Improving</div>
+            </div>
+            <div className="flex-1 min-w-0 text-center">
+              <div className="text-gray-400 font-bold text-lg truncate">{data.sector_breadth.stable}</div>
+              <div className="text-xs text-gray-500 truncate">Stable</div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-red-400 font-bold text-2xl truncate">{data.sector_breadth.deteriorating}</div>
+              <div className="text-xs text-gray-500 truncate">Falling</div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-        {focusLine} (recent {secondarySpreadPhrase})
+
+      {/* Trend Chart */}
+      <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold text-stealth-200">Defensive vs Cyclical Spread</div>
+          <div className="text-xs text-stealth-500">{periodLabel}</div>
+        </div>
+        {chartData.length > 0 ? (
+          <div className="h-40 sm:h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={CHART_MARGIN}>
+                <CartesianGrid {...commonGridProps} />
+                <XAxis
+                  dataKey="timestampNum"
+                  type="number"
+                  domain={[minTime, maxTime]}
+                  ticks={tickPositions}
+                  tick={{ fill: "#6b7280", fontSize: 10 }}
+                  stroke="#555560"
+                  tickFormatter={(value: number) =>
+                    new Date(value).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })
+                  }
+                />
+                <YAxis
+                  tick={{ fill: "#6b7280", fontSize: 10 }}
+                  stroke="#555560"
+                  domain={["dataMin - 5", "dataMax + 5"]}
+                />
+                <Tooltip
+                  contentStyle={commonTooltipStyle}
+                  labelFormatter={(label: number) =>
+                    new Date(label).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })
+                  }
+                  formatter={(value: number) => [`${value.toFixed(2)}`, "Spread"]}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="spread"
+                  stroke="#60a5fa"
+                  strokeWidth={2}
+                  dot={false}
+                  animationDuration={300}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="h-40 sm:h-44 flex items-center justify-center text-xs text-stealth-400">
+            No history available yet.
+          </div>
+        )}
       </div>
-      {showCompactChart && (
-        <div className="h-24">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
-              <XAxis dataKey="timestampNum" hide />
-              <YAxis hide domain={["dataMin - 5", "dataMax + 5"]} />
-              <Line
-                type="monotone"
-                dataKey="spread"
-                stroke={spreadLineColor}
-                strokeWidth={2}
-                dot={false}
-                animationDuration={CHART_ANIMATION.duration}
-                animationEasing={CHART_ANIMATION.easing}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+
+      {/* Sector Divergence Alerts */}
+      {alerts.length > 0 && (
+        <div className="mt-6">
+          <h4 className="text-sm font-semibold text-stealth-200 mb-3">Divergence Alerts</h4>
+          <div className="space-y-3">
+            {alerts.map((alert, idx) => (
+              <div
+                key={idx}
+                className={`bg-stealth-900 rounded p-4 border-l-4 ${
+                  alert.severity === "WARNING" 
+                    ? "border-yellow-400" 
+                    : "border-blue-400"
+                }`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-bold ${
+                      alert.severity === "WARNING" ? "text-yellow-400" : "text-blue-400"
+                    }`}>
+                      {alert.severity === "WARNING" ? "⚠" : "ℹ"}
+                    </span>
+                    <span className="text-sm font-semibold text-stealth-100">
+                      {alert.title}
+                    </span>
+                  </div>
+                </div>
+                
+                <p className="text-xs text-gray-300 mb-3">
+                  {alert.message}
+                </p>
+                
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-stealth-800 rounded p-2">
+                    <div className="text-gray-500">System State</div>
+                    <div className={`font-bold ${
+                      alert.details.system_state === "RED" ? "text-red-400" :
+                      alert.details.system_state === "GREEN" ? "text-green-400" :
+                      "text-yellow-400"
+                    }`}>
+                      {alert.details.system_state}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-stealth-800 rounded p-2">
+                    <div className="text-gray-500">Spread</div>
+                    <div className="font-bold text-stealth-200">
+                      {alert.details.spread > 0 ? "+" : ""}{alert.details.spread} pts
+                    </div>
+                  </div>
+                  
+                  <div className="bg-stealth-800 rounded p-2">
+                    <div className="text-gray-500">Defensive Avg</div>
+                    <div className="font-bold text-blue-400">
+                      {alert.details.defensive_avg}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-stealth-800 rounded p-2">
+                    <div className="text-gray-500">Cyclical Avg</div>
+                    <div className="font-bold text-orange-400">
+                      {alert.details.cyclical_avg}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      <div className={`${detailWrapClass} ${showDetails ? "pt-3 border-t border-stealth-700" : ""}`}>
-        <div className={`${detailContentClass} ${showDetails ? "space-y-4" : ""}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-stealth-300">
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Alignment score</div>
-              <div className="mt-1 text-sm text-stealth-200">{data.regime_alignment_score}</div>
-            </div>
-            <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Spread</div>
-              <div className="mt-1 text-sm text-stealth-200">
-                {leadValue > 0 ? "+" : ""}{leadValue}
-              </div>
-            </div>
-          </div>
-          <div className="text-xs text-stealth-300 space-y-2">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Why it matters</div>
-            <p>{dashboardCardDetails.sector.why}</p>
-          </div>
-          <div className="text-xs text-stealth-300 space-y-2">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Related signals</div>
-            <div className="flex flex-wrap gap-2">
-              {dashboardCardDetails.sector.related.map((item) => (
-                <span
-                  key={item.label}
-                  className="inline-flex items-center gap-2 rounded-full border border-stealth-600 bg-stealth-900 px-2 py-1 text-[11px] text-stealth-300"
-                >
-                  {item.label}
-                  <span className="text-stealth-500">-</span>
-                  {item.reason}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="text-xs text-stealth-300 space-y-2">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Methodology note</div>
-            <p>{dashboardCardDetails.sector.methodology}</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
-              <div className="text-xs text-gray-400 mb-2">Regime Alignment</div>
-              <div className="flex items-end justify-between">
-                <div className="text-3xl font-bold text-stealth-200">{data.regime_alignment_score}</div>
-                <div className="text-xs text-gray-500">/100</div>
-              </div>
-              <div className="text-xs text-gray-500 mt-2 leading-tight">{breadthPhrase}</div>
-            </div>
-
-            <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
-              <div className="text-xs text-gray-400 mb-2">Sector Breadth</div>
-              <div className="flex justify-between items-end mb-2 gap-2 min-w-0">
-                <div className="flex-1 min-w-0">
-                  <div className="text-stealth-200 font-bold text-2xl truncate">
-                    {data.sector_breadth.improving}
-                  </div>
-                  <div className="text-xs text-gray-500 truncate">Improving</div>
-                </div>
-                <div className="flex-1 min-w-0 text-center">
-                  <div className="text-gray-400 font-bold text-lg truncate">{data.sector_breadth.stable}</div>
-                  <div className="text-xs text-gray-500 truncate">Stable</div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-stealth-200 font-bold text-2xl truncate">
-                    {data.sector_breadth.deteriorating}
-                  </div>
-                  <div className="text-xs text-gray-500 truncate">Falling</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm font-semibold text-stealth-200">Defensive vs Cyclical Spread</div>
-              <div className="text-xs text-stealth-500">{periodLabel}</div>
-            </div>
-            {chartData.length > 0 ? (
-              <div className="h-40 sm:h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={CHART_MARGIN}>
-                    <CartesianGrid {...commonGridProps} />
-                    <XAxis
-                      dataKey="timestampNum"
-                      type="number"
-                      domain={[minTime, maxTime]}
-                      ticks={tickPositions}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      stroke={CHART_NEUTRAL.axis}
-                      tickFormatter={(value: number) =>
-                        new Date(value).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      }
-                    />
-                    <YAxis
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      stroke={CHART_NEUTRAL.axis}
-                      domain={["dataMin - 5", "dataMax + 5"]}
-                    />
-                    <Tooltip
-                      contentStyle={commonTooltipStyle}
-                      labelFormatter={(label: number) =>
-                        new Date(label).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })
-                      }
-                      formatter={(value: number) => [`${value.toFixed(2)}`, "Spread"]}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="spread"
-                      stroke={spreadLineColor}
-                      strokeWidth={2}
-                      dot={false}
-                      animationDuration={CHART_ANIMATION.duration}
-                      animationEasing={CHART_ANIMATION.easing}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-40 sm:h-44 flex items-center justify-center text-xs text-stealth-400">
-                No history available yet.
-              </div>
-            )}
-          </div>
-
-          {alerts.length > 0 && (
-            <div>
-              <div className="text-sm font-semibold text-stealth-200 mb-3">Divergence Alerts</div>
-              <div className="space-y-3">
-                {alerts.map((alert, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-stealth-900 rounded p-4 border-l-4 border-stealth-600"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-stealth-100">{alert.title}</span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-300 mb-3">{alert.message}</p>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-stealth-800 rounded p-2">
-                        <div className="text-gray-500">System State</div>
-                        <div className="font-bold text-stealth-200">{alert.details.system_state}</div>
-                      </div>
-                      <div className="bg-stealth-800 rounded p-2">
-                        <div className="text-gray-500">Spread</div>
-                        <div className="font-bold text-stealth-200">
-                          {alert.details.spread > 0 ? "+" : ""}{alert.details.spread} pts
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="pt-2">
-            <Link
-              to="/sector-projections"
-              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-              onClick={(event) => event.stopPropagation()}
-            >
-              View sector details
-            </Link>
-          </div>
-        </div>
+      <div className="mt-6 bg-stealth-900 border border-stealth-700 rounded p-3">
+        <p className="text-xs text-stealth-300 leading-relaxed">{sectorSummary}</p>
       </div>
     </div>
   );

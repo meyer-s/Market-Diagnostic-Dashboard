@@ -6,10 +6,8 @@ import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
 import AASWidget from "../components/widgets/AASWidget";
 import MarketLoading from "../components/ui/MarketLoading";
-import { apiFetch } from "../utils/apiUtils";
+import { getLegacyApiUrl } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
-import { useProgressiveCommitment } from "../hooks/useProgressiveCommitment";
-import { getFamilyColor } from "../theme/metricColors";
 
 interface NewsArticle {
   id: number;
@@ -118,15 +116,18 @@ export default function Dashboard() {
   const [insights, setInsights] = useState<Partial<Record<InsightSignal["id"], InsightSignal>>>({});
 
   useEffect(() => {
+    const apiUrl = getLegacyApiUrl();
     setIndicatorsLoading(true);
     // Fetch indicators data from backend
-    apiFetch<IndicatorStatus[]>("/indicators")
+    fetch(`${apiUrl}/indicators`)
+      .then(res => res.json())
       .then(data => setIndicators(data))
       .catch(() => setIndicators(null))
       .finally(() => setIndicatorsLoading(false));
 
     // Fetch cached news from last 24 hours
-    apiFetch<NewsArticle[]>("/news?hours=24&limit=200")
+    fetch(`${apiUrl}/news?hours=24&limit=200`)
+      .then(res => res.json())
       .then(data => setNews(data))
       .catch(() => setNews([])  );
   }, [refreshKey]);
@@ -146,40 +147,6 @@ export default function Dashboard() {
     () => buildOverallInsight(insightList, overallTrendLabel),
     [insightList, overallTrendLabel]
   );
-  const overallSignalLine = overallInsight
-    ? overallInsight.posture === "risk-on"
-      ? "Tailwinds lead"
-      : overallInsight.posture === "risk-off"
-      ? "Caution leads"
-      : "Signals split"
-    : "";
-  const overallContextLine = overallInsight
-    ? `${overallTrendLabel} ${overallInsight.primaryDirection}, recent ${overallInsight.secondaryDirection}`
-    : "";
-  const overallConfidenceNote =
-    overallInsight?.confidence === "high"
-      ? "clear trend"
-      : overallInsight?.confidence === "low"
-      ? "signals diverge"
-      : "mixed trend";
-  const overallHoverLine = overallInsight
-    ? `Confidence: ${overallInsight.confidence} (${overallConfidenceNote})`
-    : "";
-  const overallRelatedReasons: Record<InsightSignal["id"], string> = {
-    system: "Composite anchor for system stability",
-    dow: "Confirms trend agreement across transports",
-    sector: "Shows leadership between defensive and cyclical",
-    aas: "Alternative assets confirm risk appetite shifts",
-  };
-  const overallCommitment = useProgressiveCommitment({ mode: "inline" });
-  const overallShowDetails = overallCommitment.state !== "rest";
-  const overallDetailWrapClass = `overflow-hidden transition-[max-height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-    overallShowDetails ? "max-h-80" : "max-h-0"
-  }`;
-  const overallDetailContentClass = `transition-opacity duration-200 ease-in-out ${
-    overallShowDetails ? "opacity-100 delay-75" : "opacity-0"
-  }`;
-  const overallAccentColor = getFamilyColor("system", "muted");
 
   const handleInsight = useCallback((insight: InsightSignal) => {
     setInsights((prev) => {
@@ -198,16 +165,38 @@ export default function Dashboard() {
     });
   }, []);
 
+  const stanceStyles = {
+    "risk-on": "bg-green-500/15 text-green-300 border-green-400/40",
+    "risk-off": "bg-red-500/15 text-red-300 border-red-400/40",
+    mixed: "bg-yellow-500/15 text-yellow-300 border-yellow-400/40",
+  } as const;
+  const directionLabel = {
+    up: "up",
+    down: "down",
+    flat: "flat",
+  } as const;
+  const directionStyles = {
+    up: "text-green-300",
+    down: "text-red-300",
+    flat: "text-stealth-300",
+  } as const;
+
   // Manual refresh function - triggers ETL ingestion for all indicators
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
+      const apiUrl = getLegacyApiUrl();
       // Trigger backend ETL to fetch latest data from FRED and Yahoo Finance
-      await apiFetch("/admin/ingest/run", { method: "POST" });
-      // Wait for backend to process new data
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      // Force re-fetch of dashboard data by incrementing refresh key
-      setRefreshKey(prev => prev + 1);
+      const response = await fetch(`${apiUrl}/admin/ingest/run`, {
+        method: "POST",
+      });
+      
+      if (response.ok) {
+        // Wait for backend to process new data
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Force re-fetch of dashboard data by incrementing refresh key
+        setRefreshKey(prev => prev + 1);
+      }
     } catch (error) {
       console.error("Failed to refresh data:", error);
     } finally {
@@ -311,64 +300,43 @@ export default function Dashboard() {
           </div>
         )}
         {overallInsight && (
-          <div
-            {...overallCommitment.getContainerProps<HTMLDivElement>()}
-            className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stealth-500/60"
-            aria-expanded={overallCommitment.isExpanded}
-          >
-            <div className="h-1 rounded-full mb-3" style={{ backgroundColor: overallAccentColor }} />
+          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
                 <div className={`text-lg font-semibold ${overallInsight.color}`}>{overallInsight.label}</div>
               </div>
-            </div>
-            <div className="mt-2 text-sm text-stealth-200">
-              <span className="text-stealth-500">Signal:</span> {overallSignalLine}
-            </div>
-            <div className="text-sm text-stealth-400">
-              <span className="text-stealth-500">Context:</span> {overallContextLine}
-            </div>
-            <div className="mt-2 text-xs text-stealth-500 transition-opacity duration-150 motion-reduce:transition-none">
-              {overallHoverLine}
-            </div>
-            <div className={`${overallDetailWrapClass} ${overallShowDetails ? "mt-3 border-t border-stealth-700 pt-3" : ""}`}>
-              <div className={`${overallDetailContentClass} ${overallShowDetails ? "space-y-3 text-xs text-stealth-300" : ""}`}>
-                <div>
-                  <div className="text-[11px] uppercase tracking-wide text-stealth-500">
-                    Why it matters
-                  </div>
-                  <p className="text-stealth-300">
-                    {overallInsight.summary} This keeps the dashboard aligned on a single read.
-                  </p>
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-wide text-stealth-500">
-                    Related signals
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {insightList.map((insight) => (
-                      <span
-                        key={insight.id}
-                        className="inline-flex items-center gap-2 rounded-full border border-stealth-600 bg-stealth-900 px-2 py-1 text-[11px] text-stealth-300"
-                      >
-                        {insight.label}
-                        <span className="text-stealth-500">-</span>
-                        {overallRelatedReasons[insight.id] ?? "Composite input for overall balance"}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-wide text-stealth-500">
-                    Methodology note
-                  </div>
-                  <p className="text-stealth-300">
-                    Combines system state, trend alignment, sector leadership, and alternative-asset stability.
-                  </p>
-                </div>
+              <div className="text-xs text-stealth-500 text-right">
+                {overallInsight.confidence === "high"
+                  ? "clear read"
+                  : overallInsight.confidence === "low"
+                  ? "noisy read"
+                  : "mixed read"}
               </div>
             </div>
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+              {insightList.map((insight) => (
+                <div
+                  key={insight.id}
+                  className={`rounded-md border px-2 py-2 ${stanceStyles[insight.stance]}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-stealth-100">
+                      {insight.label}
+                    </span>
+                    <span className={`text-[10px] uppercase ${directionStyles[insight.primaryDirection]}`}>
+                      {directionLabel[insight.primaryDirection]}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-stealth-200 mt-1 truncate">
+                    {insight.summary}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-sm text-stealth-300 mt-3 leading-relaxed">
+              {overallInsight.summary}
+            </p>
           </div>
         )}
       </div>
