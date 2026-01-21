@@ -473,51 +473,84 @@ class PreciousMetalsIngester:
         count = 0
         with get_db_session() as db:
             try:
-                # Fetch price history for past 60 days
                 cutoff_60d = datetime.utcnow() - timedelta(days=60)
-                cutoff_30d = datetime.utcnow() - timedelta(days=30)
 
-                au_prices = db.query(MetalPrice).filter(
-                    MetalPrice.metal == "AU",
-                    MetalPrice.date >= cutoff_60d
-                ).order_by(MetalPrice.date).all()
+                def price_series(metal: str) -> dict:
+                    prices = db.query(MetalPrice).filter(
+                        MetalPrice.metal == metal,
+                        MetalPrice.date >= cutoff_60d
+                    ).order_by(MetalPrice.date).all()
+                    return {
+                        price.date.date(): price.price_usd_per_oz
+                        for price in prices
+                        if price.price_usd_per_oz is not None
+                    }
 
-                if len(au_prices) < 30:
+                def aligned_returns(series_a: dict, series_b: dict) -> list:
+                    common_dates = sorted(set(series_a.keys()) & set(series_b.keys()))
+                    if len(common_dates) < 2:
+                        return []
+                    returns = []
+                    for i in range(1, len(common_dates)):
+                        prev_date = common_dates[i - 1]
+                        curr_date = common_dates[i]
+                        prev_a = series_a.get(prev_date)
+                        prev_b = series_b.get(prev_date)
+                        if not prev_a or not prev_b:
+                            continue
+                        curr_a = series_a.get(curr_date, prev_a)
+                        curr_b = series_b.get(curr_date, prev_b)
+                        returns.append((
+                            (curr_a - prev_a) / prev_a,
+                            (curr_b - prev_b) / prev_b,
+                        ))
+                    return returns
+
+                def compute_pair(series_a: dict, series_b: dict):
+                    pairs = aligned_returns(series_a, series_b)
+                    if len(pairs) < 30:
+                        return None, None
+                    series_x = [p[0] for p in pairs]
+                    series_y = [p[1] for p in pairs]
+                    corr_60d = self._pearson_correlation(series_x, series_y)
+                    corr_30d = self._pearson_correlation(series_x[-30:], series_y[-30:])
+                    return corr_30d, corr_60d
+
+                series = {
+                    "AU": price_series("AU"),
+                    "AG": price_series("AG"),
+                    "PT": price_series("PT"),
+                    "PD": price_series("PD"),
+                }
+
+                au_ag_30d, au_ag_60d = compute_pair(series["AU"], series["AG"])
+                au_pt_30d, au_pt_60d = compute_pair(series["AU"], series["PT"])
+                au_pd_30d, au_pd_60d = compute_pair(series["AU"], series["PD"])
+                ag_pt_30d, ag_pt_60d = compute_pair(series["AG"], series["PT"])
+                ag_pd_30d, ag_pd_60d = compute_pair(series["AG"], series["PD"])
+                pt_pd_30d, pt_pd_60d = compute_pair(series["PT"], series["PD"])
+
+                if not any([au_ag_60d, au_pt_60d, au_pd_60d, ag_pt_60d, ag_pd_60d, pt_pd_60d]):
                     return 0
 
-                # Convert to returns for correlation
-                au_returns = [
-                    (au_prices[i].price_usd_per_oz - au_prices[i - 1].price_usd_per_oz) / au_prices[i - 1].price_usd_per_oz
-                    for i in range(1, len(au_prices))
-                ]
-
-                # For each other metal, compute correlation
-                ag_prices = db.query(MetalPrice).filter(
-                    MetalPrice.metal == "AG",
-                    MetalPrice.date >= cutoff_60d
-                ).order_by(MetalPrice.date).all()
-
-                if len(ag_prices) == len(au_prices):
-                    ag_returns = [
-                        (ag_prices[i].price_usd_per_oz - ag_prices[i - 1].price_usd_per_oz) / ag_prices[i - 1].price_usd_per_oz
-                        for i in range(1, len(ag_prices))
-                    ]
-
-                    # Compute Pearson correlation
-                    au_ag_corr_60d = self._pearson_correlation(au_returns, ag_returns)
-
-                    # Compute 30-day subset
-                    au_ag_corr_30d = self._pearson_correlation(au_returns[-30:], ag_returns[-30:])
-
-                    # Store correlation
-                    correlation = MetalCorrelation(
-                        date=datetime.utcnow(),
-                        au_ag_60d=au_ag_corr_60d,
-                        au_ag_30d=au_ag_corr_30d
-                    )
-                    db.add(correlation)
-                    count += 1
-                    db.commit()
+                correlation = MetalCorrelation(
+                    date=datetime.utcnow(),
+                    au_ag_60d=au_ag_60d,
+                    au_ag_30d=au_ag_30d,
+                    au_pt_60d=au_pt_60d,
+                    au_pt_30d=au_pt_30d,
+                    au_pd_60d=au_pd_60d,
+                    au_pd_30d=au_pd_30d,
+                    ag_pt_60d=ag_pt_60d,
+                    ag_pt_30d=ag_pt_30d,
+                    ag_pd_60d=ag_pd_60d,
+                    ag_pd_30d=ag_pd_30d,
+                    pt_pd_60d=pt_pd_60d,
+                    pt_pd_30d=pt_pd_30d,
+                )
+                db.add(correlation)
+                count += 1
+                db.commit()
 
             except Exception as e:
                 logger.error(f"Error computing correlations: {str(e)}")

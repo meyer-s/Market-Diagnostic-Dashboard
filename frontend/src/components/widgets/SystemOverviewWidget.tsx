@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   ComposedChart,
   Bar,
+  Cell,
   LineChart,
   Line,
   XAxis,
@@ -404,9 +405,11 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             green_pct: toPercent(green),
             yellow_pct: toPercent(yellow),
             red_pct: toPercent(red),
+            total_pct: safeTotal ? 100 : 0,
           };
         });
         const showStabilityBars = stabilityBandData.some((item) => (item.total_count ?? 0) > 0);
+        const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
         
         // Calculate domain with today at the end
         const timestamps = stabilityBandData.map(d => d.timestampNum);
@@ -475,22 +478,13 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                     formatter={(value: number, name: string, item: any) => {
                       const dataKey = typeof item?.dataKey === "string" ? item.dataKey : "";
                       const payload = item?.payload ?? {};
-                      if (dataKey === "green_pct") {
+                      if (dataKey === "total_pct") {
+                        const green = payload.green_count ?? 0;
+                        const yellow = payload.yellow_count ?? 0;
+                        const red = payload.red_count ?? 0;
                         return [
-                          `${payload.green_count ?? 0} (${value.toFixed(0)}%)`,
-                          "Green indicators",
-                        ];
-                      }
-                      if (dataKey === "yellow_pct") {
-                        return [
-                          `${payload.yellow_count ?? 0} (${value.toFixed(0)}%)`,
-                          "Yellow indicators",
-                        ];
-                      }
-                      if (dataKey === "red_pct") {
-                        return [
-                          `${payload.red_count ?? 0} (${value.toFixed(0)}%)`,
-                          "Red indicators",
+                          `Green ${green}, Yellow ${yellow}, Red ${red}`,
+                          "Indicator mix",
                         ];
                       }
                       return [`${value.toFixed(1)}`, "Score"];
@@ -515,30 +509,42 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                   />
                   {showStabilityBars && (
                     <>
+                      <defs>
+                        {stabilityBandData.map((item, index) => {
+                          const greenStop = clampPercent(item.green_pct ?? 0);
+                          const yellowStop = clampPercent(
+                            (item.green_pct ?? 0) + (item.yellow_pct ?? 0)
+                          );
+                          return (
+                            <linearGradient
+                              key={`stability-grad-${index}`}
+                              id={`stability-grad-${index}`}
+                              x1="0"
+                              y1="1"
+                              x2="0"
+                              y2="0"
+                            >
+                              <stop offset="0%" stopColor="#10b981" stopOpacity={0.18} />
+                              <stop offset={`${greenStop}%`} stopColor="#10b981" stopOpacity={0.18} />
+                              <stop offset={`${greenStop}%`} stopColor="#eab308" stopOpacity={0.18} />
+                              <stop offset={`${yellowStop}%`} stopColor="#eab308" stopOpacity={0.18} />
+                              <stop offset={`${yellowStop}%`} stopColor="#ef4444" stopOpacity={0.18} />
+                              <stop offset="100%" stopColor="#ef4444" stopOpacity={0.18} />
+                            </linearGradient>
+                          );
+                        })}
+                      </defs>
                       <Bar
                         yAxisId="counts"
-                        dataKey="green_pct"
-                        stackId="stability"
+                        dataKey="total_pct"
+                        barSize={10}
                         fill="#10b981"
                         fillOpacity={0.18}
-                        barSize={10}
-                      />
-                      <Bar
-                        yAxisId="counts"
-                        dataKey="yellow_pct"
-                        stackId="stability"
-                        fill="#eab308"
-                        fillOpacity={0.18}
-                        barSize={10}
-                      />
-                      <Bar
-                        yAxisId="counts"
-                        dataKey="red_pct"
-                        stackId="stability"
-                        fill="#ef4444"
-                        fillOpacity={0.18}
-                        barSize={10}
-                      />
+                      >
+                        {stabilityBandData.map((_, index) => (
+                          <Cell key={`stability-cell-${index}`} fill={`url(#stability-grad-${index})`} />
+                        ))}
+                      </Bar>
                     </>
                   )}
                   <Line

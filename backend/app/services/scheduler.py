@@ -6,10 +6,12 @@ Automatically refreshes indicator data at regular intervals.
 
 import asyncio
 import logging
+import os
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.services.ingestion.etl_runner import ETLRunner
+from app.services.options_alerts import run_options_alert_scan
 from app.services.sector_projection import (
     compute_sector_projections,
     detect_duplicate_series,
@@ -178,6 +180,15 @@ def start_scheduler():
         name="Indicator Data Ingestion",
         replace_existing=True,
     )
+
+    if os.getenv("OPTIONS_ALERTS_ENABLED", "false").lower() in {"1", "true", "yes"}:
+        scheduler.add_job(
+            run_options_alert_scan,
+            CronTrigger(minute="*/30", timezone="America/New_York"),
+            id="options_alerts",
+            name="Options Alert Scan",
+            replace_existing=True,
+        )
     
     scheduler.start()
     logger.info("📅 Scheduler started - ETL will run every 4 hours during market hours")

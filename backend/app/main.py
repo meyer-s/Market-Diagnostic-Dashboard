@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.db import Base, engine
+from app.models import options_alerts  # noqa: F401
 from app.api.health import router as health_router
 from app.api.status import router as status_router
 from app.api.indicators import router as indicators_router
@@ -11,6 +12,7 @@ from app.api.alerts import router as alerts_router
 from app.api.news import router as news_router
 from app.api.dow_theory import router as dow_theory_router
 from app.api.market_map import router as market_map_router
+from app.api.options_alerts import router as options_alerts_router
 from app.api.precious_metals import router as precious_metals_router
 from app.api.aap import router as aap_router
 
@@ -78,6 +80,7 @@ app.include_router(alerts_router, tags=["Alerts"])
 app.include_router(news_router, tags=["News"])
 app.include_router(dow_theory_router, tags=["DowTheory"])
 app.include_router(market_map_router, tags=["MarketMap"])
+app.include_router(options_alerts_router, tags=["OptionsAlerts"])
 
 # Sector Projections
 from app.api.sector_projection import router as sector_projection_router
