@@ -162,22 +162,6 @@ export default function Dashboard() {
       ? "Noisy read"
       : "Mixed read"
     : "";
-  const overallSignalLine = overallInsight
-    ? overallInsight.posture === "risk-on"
-      ? "Tailwinds lead"
-      : overallInsight.posture === "risk-off"
-      ? "Caution leads"
-      : "Signals are split"
-    : "";
-  const overallContextLine = overallInsight
-    ? `${overallTrendLabel} trend: ${capitalize(describeDirection(overallInsight.primaryDirection))}; recent move: ${capitalize(
-        describeDirection(overallInsight.secondaryDirection)
-      )}.`
-    : "";
-  const overallConfidenceLine = overallInsight
-    ? `Confidence: ${capitalize(overallInsight.confidence)} - ${confidenceLabel}.`
-    : "";
-
   const handleInsight = useCallback((insight: InsightSignal) => {
     setInsights((prev) => {
       const existing = prev[insight.id];
@@ -195,10 +179,10 @@ export default function Dashboard() {
     });
   }, []);
 
-  const stanceStyles = {
-    "risk-on": "bg-green-500/15 text-green-300 border-green-400/40",
-    "risk-off": "bg-red-500/15 text-red-300 border-red-400/40",
-    mixed: "bg-yellow-500/15 text-yellow-300 border-yellow-400/40",
+  const directionCardStyles = {
+    up: "bg-green-500/15 text-green-300 border-green-400/40",
+    down: "bg-red-500/15 text-red-300 border-red-400/40",
+    flat: "bg-yellow-500/15 text-yellow-300 border-yellow-400/40",
   } as const;
   const directionLabel = {
     up: "Uptrend",
@@ -347,20 +331,11 @@ export default function Dashboard() {
                 {confidenceLabel}
               </div>
             </div>
-            <div className="mt-2 text-sm text-stealth-200">
-              <span className="text-stealth-500">Signal:</span> {overallSignalLine}
-            </div>
-            <div className="text-sm text-stealth-400">
-              <span className="text-stealth-500">Context:</span> {overallContextLine}
-            </div>
-            <div className="mt-1 text-xs text-stealth-500">
-              {overallConfidenceLine}
-            </div>
             <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
               {insightList.map((insight) => (
                 <div
                   key={insight.id}
-                  className={`rounded-md border px-2 py-2 ${stanceStyles[insight.stance]}`}
+                  className={`rounded-md border px-2 py-2 ${directionCardStyles[insight.primaryDirection]}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-stealth-100">
