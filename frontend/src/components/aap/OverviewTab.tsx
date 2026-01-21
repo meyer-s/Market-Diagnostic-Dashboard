@@ -118,9 +118,9 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
   const metalsPercent = totalContribution > 0 ? (aapData.metals_contribution / totalContribution) * 100 : 50;
   const cryptoPercent = totalContribution > 0 ? (aapData.crypto_contribution / totalContribution) * 100 : 50;
   const metalsColor = getFamilyColor("metals");
-  const metalsFill = getFamilyColor("metals", "faint");
+  const metalsFill = getFamilyColor("metals");
   const cryptoColor = getFamilyColor("crypto");
-  const cryptoFill = getFamilyColor("crypto", "faint");
+  const cryptoFill = getFamilyColor("crypto");
   const benchmarkColor = getFamilyColor("benchmark");
 
   return (
@@ -194,11 +194,11 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
           </div>
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div>
-              <div className="text-amber-400 text-sm font-medium">Metals</div>
+              <div className="text-sm font-medium" style={{ color: metalsColor }}>Metals</div>
               <div className="text-2xl font-bold text-stealth-100">{metalsPercent.toFixed(1)}%</div>
             </div>
             <div>
-              <div className="text-blue-400 text-sm font-medium">Crypto</div>
+              <div className="text-sm font-medium" style={{ color: cryptoColor }}>Crypto</div>
               <div className="text-2xl font-bold text-stealth-100">{cryptoPercent.toFixed(1)}%</div>
             </div>
           </div>
@@ -256,7 +256,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
                 fill={metalsFill} 
                 stroke={metalsColor}
                 strokeWidth={2}
-                fillOpacity={0.5}
+                fillOpacity={0.3}
                 name="Metals"
               />
               <Area 
@@ -266,7 +266,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
                 fill={cryptoFill} 
                 stroke={cryptoColor}
                 strokeWidth={2}
-                fillOpacity={0.5}
+                fillOpacity={0.3}
                 name="Crypto"
               />
               <Line 

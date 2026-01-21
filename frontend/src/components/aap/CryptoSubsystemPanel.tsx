@@ -28,22 +28,23 @@ export function CryptoSubsystemPanel({
 }: CryptoSubsystemPanelProps) {
   const activeCount = components.filter(c => c.status === 'active').length;
   const totalCount = components.length;
+  const cryptoColor = getFamilyColor("crypto");
 
   return (
     <div className="bg-gradient-to-br from-blue-950/20 to-stealth-850 border border-blue-900/30 rounded-lg p-4 md:p-6">
       <div className="flex items-center gap-3 mb-4">
-        <svg className="w-6 h-6 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" style={{ color: cryptoColor }}>
           <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" />
           <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" />
         </svg>
         <div className="flex-1">
-          <h3 className="text-xl font-semibold text-blue-400">Crypto Subsystem</h3>
+          <h3 className="text-xl font-semibold" style={{ color: cryptoColor }}>Crypto Subsystem</h3>
           <div className="text-xs text-stealth-400 mt-0.5">
             Digital assets as alternative stores of value & fiat alternatives
           </div>
         </div>
         <div className="text-right">
-          <div className="text-2xl font-bold text-blue-400">
+          <div className="text-2xl font-bold" style={{ color: cryptoColor }}>
             {(sharePercent ?? (contribution * 100)).toFixed(1)}%
           </div>
           <div className="text-xs text-stealth-400">{activeCount}/{totalCount} active</div>
@@ -79,7 +80,9 @@ export function CryptoSubsystemPanel({
                   </div>
                   <div>
                     <div className="text-xs text-stealth-500">Contribution</div>
-                    <div className="text-sm font-semibold text-blue-400">{component.contribution.toFixed(2)}</div>
+                    <div className="text-sm font-semibold" style={{ color: cryptoColor }}>
+                      {component.contribution.toFixed(2)}
+                    </div>
                   </div>
                 </>
               )}
@@ -112,7 +115,7 @@ export function CryptoSubsystemPanel({
                   }));
 
                   const rawColor = getFamilyColor("crypto", "muted");
-                  const smoothColor = getFamilyColor("crypto");
+                  const smoothColor = cryptoColor;
 
                   return (
                     <ResponsiveContainer width="100%" height="100%">

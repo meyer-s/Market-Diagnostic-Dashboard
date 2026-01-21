@@ -42,8 +42,10 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const [chartData, setChartData] = useState<HistoricalData[]>([]);
   const metalsColor = getFamilyColor("metals");
   const cryptoColor = getFamilyColor("crypto");
-  const metalsFill = getFamilyColor("metals", "faint");
-  const cryptoFill = getFamilyColor("crypto", "faint");
+  const metalsFill = getFamilyColor("metals");
+  const cryptoFill = getFamilyColor("crypto");
+  const metalsSoft = getFamilyColor("metals", "faint");
+  const cryptoSoft = getFamilyColor("crypto", "faint");
   const benchmarkColor = getFamilyColor("benchmark");
 
   useEffect(() => {
@@ -277,18 +279,40 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
         <div className="mb-4">
           <p className="text-xs text-stealth-400 mb-2">Current Breakdown</p>
           <div className="flex gap-2">
-            <div className={`flex-1 p-2 rounded text-center text-xs font-semibold ${
-              aasData.primary_driver === 'metals' 
-                ? 'bg-amber-500/20 border border-amber-500/50 text-amber-300' 
-                : 'bg-stealth-700/50 border border-stealth-600 text-stealth-400'
-            }`}>
+            <div
+              className={`flex-1 p-2 rounded text-center text-xs font-semibold ${
+                aasData.primary_driver === "metals"
+                  ? ""
+                  : "bg-stealth-700/50 border border-stealth-600 text-stealth-400"
+              }`}
+              style={
+                aasData.primary_driver === "metals"
+                  ? {
+                      backgroundColor: metalsSoft,
+                      border: `1px solid ${metalsColor}`,
+                      color: metalsColor,
+                    }
+                  : undefined
+              }
+            >
               Metals {metalsPercent.toFixed(0)}%
             </div>
-            <div className={`flex-1 p-2 rounded text-center text-xs font-semibold ${
-              aasData.primary_driver === 'crypto' 
-                ? 'bg-blue-500/20 border border-blue-500/50 text-blue-300' 
-                : 'bg-stealth-700/50 border border-stealth-600 text-stealth-400'
-            }`}>
+            <div
+              className={`flex-1 p-2 rounded text-center text-xs font-semibold ${
+                aasData.primary_driver === "crypto"
+                  ? ""
+                  : "bg-stealth-700/50 border border-stealth-600 text-stealth-400"
+              }`}
+              style={
+                aasData.primary_driver === "crypto"
+                  ? {
+                      backgroundColor: cryptoSoft,
+                      border: `1px solid ${cryptoColor}`,
+                      color: cryptoColor,
+                    }
+                  : undefined
+              }
+            >
               Crypto {cryptoPercent.toFixed(0)}%
             </div>
           </div>
@@ -329,7 +353,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                     fill={metalsFill}
                     stroke={metalsColor}
                     strokeWidth={1.5}
-                    fillOpacity={0.5}
+                    fillOpacity={0.3}
                     name="Metals"
                   />
                   <Area 
@@ -339,7 +363,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                     fill={cryptoFill}
                     stroke={cryptoColor}
                     strokeWidth={1.5}
-                    fillOpacity={0.5}
+                    fillOpacity={0.3}
                     name="Crypto"
                   />
                   <Line 
