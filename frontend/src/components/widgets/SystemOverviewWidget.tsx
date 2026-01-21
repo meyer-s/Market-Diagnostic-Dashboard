@@ -259,7 +259,6 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             <h3 className="text-base sm:text-lg font-semibold text-stealth-100 whitespace-nowrap">
               System Overview
             </h3>
-            <span className="text-xs text-stealth-500 flex-shrink-0">→ View</span>
           </div>
           <span className="text-xs text-stealth-400 flex-shrink-0">
             {data.timestamp ? formatTime(data.timestamp) : 'N/A'}
@@ -524,12 +523,12 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                               x2="0"
                               y2="0"
                             >
-                              <stop offset="0%" stopColor="#10b981" stopOpacity={0.18} />
-                              <stop offset={`${greenStop}%`} stopColor="#10b981" stopOpacity={0.18} />
-                              <stop offset={`${greenStop}%`} stopColor="#eab308" stopOpacity={0.18} />
-                              <stop offset={`${yellowStop}%`} stopColor="#eab308" stopOpacity={0.18} />
-                              <stop offset={`${yellowStop}%`} stopColor="#ef4444" stopOpacity={0.18} />
-                              <stop offset="100%" stopColor="#ef4444" stopOpacity={0.18} />
+                              <stop offset="0%" stopColor="#10b981" stopOpacity={0.5} />
+                              <stop offset={`${greenStop}%`} stopColor="#10b981" stopOpacity={0.5} />
+                              <stop offset={`${greenStop}%`} stopColor="#eab308" stopOpacity={0.5} />
+                              <stop offset={`${yellowStop}%`} stopColor="#eab308" stopOpacity={0.5} />
+                              <stop offset={`${yellowStop}%`} stopColor="#ef4444" stopOpacity={0.5} />
+                              <stop offset="100%" stopColor="#ef4444" stopOpacity={0.5} />
                             </linearGradient>
                           );
                         })}

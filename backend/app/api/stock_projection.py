@@ -47,6 +47,260 @@ def sanitize_for_json(obj):
     return obj
 T_WINDOW_DAYS = 21
 
+
+def _get_quarterly_df(stock: yf.Ticker, getters) -> pd.DataFrame:
+    for getter in getters:
+        try:
+            df = getter()
+        except Exception:
+            continue
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            return df
+    return pd.DataFrame()
+
+
+def _normalize_quarter_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    try:
+        df = df.copy()
+        df.columns = pd.to_datetime(df.columns, errors="coerce")
+        df = df.loc[:, df.columns.notna()]
+        return df
+    except Exception:
+        return df
+
+
+def _row_series(df: pd.DataFrame, row_names) -> Optional[pd.Series]:
+    if df is None or df.empty:
+        return None
+    for name in row_names:
+        if name in df.index:
+            series = df.loc[name]
+            if isinstance(series, pd.Series):
+                return series.dropna()
+    return None
+
+
+def _series_from_row(df: pd.DataFrame, row_names, max_points: int = 8) -> list:
+    series = _row_series(df, row_names)
+    if series is None or series.empty:
+        return []
+    data = []
+    for col, value in series.items():
+        if pd.isna(value):
+            continue
+        date = pd.to_datetime(col, errors="coerce")
+        if pd.isna(date):
+            continue
+        data.append({"date": date.date().isoformat(), "value": float(value)})
+    data.sort(key=lambda item: item["date"])
+    return data[-max_points:]
+
+
+def _price_on_or_before(df: pd.DataFrame, date: pd.Timestamp) -> Optional[float]:
+    if df is None or df.empty or "Close" not in df.columns:
+        return None
+    try:
+        price_df = df.copy()
+        if not isinstance(price_df.index, pd.DatetimeIndex):
+            price_df.index = pd.to_datetime(price_df.index, errors="coerce")
+        price_df = price_df[price_df.index.notna()]
+        subset = price_df[price_df.index <= date]
+        if subset.empty:
+            return None
+        return float(subset["Close"].iloc[-1])
+    except Exception:
+        return None
+
+
+def _last_quarter_dates(df: pd.DataFrame, max_points: int = 8) -> list:
+    if df is None or df.empty:
+        return []
+    try:
+        idx = pd.to_datetime(df.index, errors="coerce")
+        idx = idx[idx.notna()]
+        if idx.empty:
+            return []
+        quarter_ends = idx.to_period("Q").end_time
+        unique_dates = sorted({date.date().isoformat() for date in quarter_ends})
+        return unique_dates[-max_points:]
+    except Exception:
+        return []
+
+
+def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
+    income_df = _get_quarterly_df(
+        stock,
+        [
+            lambda: stock.quarterly_financials,
+            lambda: stock.get_income_stmt(freq="quarterly"),
+        ],
+    )
+    balance_df = _get_quarterly_df(
+        stock,
+        [
+            lambda: stock.quarterly_balance_sheet,
+            lambda: stock.get_balance_sheet(freq="quarterly"),
+        ],
+    )
+    cashflow_df = _get_quarterly_df(
+        stock,
+        [
+            lambda: stock.quarterly_cashflow,
+            lambda: stock.get_cashflow(freq="quarterly"),
+        ],
+    )
+
+    income_df = _normalize_quarter_columns(income_df)
+    balance_df = _normalize_quarter_columns(balance_df)
+    cashflow_df = _normalize_quarter_columns(cashflow_df)
+
+    net_income_series = _series_from_row(
+        income_df,
+        [
+            "Net Income",
+            "Net Income Applicable To Common Shares",
+            "Net Income Common Stockholders",
+        ],
+    )
+
+    equity_series = _series_from_row(
+        balance_df,
+        [
+            "Total Stockholder Equity",
+            "Total Equity Gross Minority Interest",
+            "Total Equity",
+        ],
+    )
+
+    shares_outstanding = None
+    try:
+        shares_outstanding = stock.info.get("sharesOutstanding")
+    except Exception:
+        shares_outstanding = None
+    if not shares_outstanding:
+        try:
+            shares_outstanding = stock.fast_info.get("shares")
+        except Exception:
+            shares_outstanding = None
+
+    eps_series = []
+    if shares_outstanding and net_income_series:
+        for point in net_income_series:
+            eps_series.append(
+                {
+                    "date": point["date"],
+                    "value": float(point["value"]) / float(shares_outstanding),
+                }
+            )
+
+    roe_series = []
+    if net_income_series and equity_series:
+        equity_by_date = {point["date"]: point["value"] for point in equity_series}
+        for point in net_income_series:
+            equity_value = equity_by_date.get(point["date"])
+            if equity_value is None or equity_value == 0:
+                continue
+            roe_series.append(
+                {
+                    "date": point["date"],
+                    "value": float(point["value"]) / float(equity_value) * 100,
+                }
+            )
+
+    fcf_series = []
+    if not cashflow_df.empty:
+        free_cash = _row_series(cashflow_df, ["Free Cash Flow"])
+        if free_cash is not None and not free_cash.empty:
+            for col, value in free_cash.items():
+                if pd.isna(value):
+                    continue
+                date = pd.to_datetime(col, errors="coerce")
+                if pd.isna(date):
+                    continue
+                fcf_series.append({"date": date.date().isoformat(), "value": float(value)})
+        else:
+            operating = _row_series(
+                cashflow_df,
+                [
+                    "Total Cash From Operating Activities",
+                    "Operating Cash Flow",
+                    "Total Cash From Operating Activities Continued Operations",
+                ],
+            )
+            capex = _row_series(
+                cashflow_df,
+                [
+                    "Capital Expenditures",
+                    "CapitalExpenditures",
+                    "Capital Expenditure",
+                ],
+            )
+            if operating is not None and capex is not None:
+                for col, op_value in operating.items():
+                    cap_value = capex.get(col)
+                    if pd.isna(op_value) or pd.isna(cap_value):
+                        continue
+                    date = pd.to_datetime(col, errors="coerce")
+                    if pd.isna(date):
+                        continue
+                    fcf_series.append(
+                        {"date": date.date().isoformat(), "value": float(op_value) + float(cap_value)}
+                    )
+
+    market_cap_series = []
+    if shares_outstanding:
+        quarter_dates = sorted(
+            {
+                point["date"]
+                for series in (net_income_series, equity_series, fcf_series, eps_series)
+                for point in series
+            }
+        )
+        if not quarter_dates:
+            quarter_dates = _last_quarter_dates(price_df, max_points=8)
+        for date_str in quarter_dates:
+            date = pd.to_datetime(date_str, errors="coerce")
+            if pd.isna(date):
+                continue
+            price = _price_on_or_before(price_df, date)
+            if price is None:
+                continue
+            market_cap_series.append(
+                {"date": date.date().isoformat(), "value": float(price) * float(shares_outstanding)}
+            )
+
+    pe_series = []
+    if eps_series:
+        eps_series_sorted = sorted(eps_series, key=lambda item: item["date"])
+        for idx, point in enumerate(eps_series_sorted):
+            if idx < 3:
+                continue
+            trailing_eps = sum(p["value"] for p in eps_series_sorted[idx - 3 : idx + 1])
+            if trailing_eps <= 0:
+                continue
+            date = pd.to_datetime(point["date"], errors="coerce")
+            if pd.isna(date):
+                continue
+            price = _price_on_or_before(price_df, date)
+            if price is None:
+                continue
+            pe_series.append({"date": point["date"], "value": float(price) / trailing_eps})
+
+    def _limit(series: list, max_points: int = 8) -> list:
+        series.sort(key=lambda item: item["date"])
+        return series[-max_points:]
+
+    return {
+        "as_of": datetime.utcnow().isoformat(),
+        "eps": {"series": _limit(eps_series), "derived": True},
+        "roe": {"series": _limit(roe_series), "derived": True},
+        "free_cash_flow": {"series": _limit(fcf_series), "derived": True},
+        "market_cap": {"series": _limit(market_cap_series), "derived": True},
+        "pe_ratio": {"series": _limit(pe_series), "derived": True},
+    }
+
 def fetch_stock_data(ticker: str, days: int = 2000) -> pd.DataFrame:
     """Fetch historical price data for a stock"""
     try:
@@ -354,7 +608,7 @@ def calculate_stop_loss(current_price: float, volatility: float, risk_score: flo
     horizon_factor = 1 + (min(horizon_days, 252) / 252 * 0.15)
     
     stop_loss = current_price - (atr_equivalent * (1 + risk_adjustment) * horizon_factor)
-    return stop_loss
+    return max(0.0, stop_loss)
 
 
 def calculate_rsi(df: pd.DataFrame, period: int = 14) -> tuple:
@@ -660,6 +914,8 @@ def get_stock_projections(
     
     # Calculate technical indicators for 252-day lookback
     technical_data = calculate_technical_indicators(df, lookback_days=252)
+
+    fundamentals = compute_fundamentals(stock, df)
     
     result = {
         "ticker": ticker,
@@ -676,6 +932,7 @@ def get_stock_projections(
             "score_3m_ago": historical_score  # What the score was 90 days ago
         },
         "technical": technical_data,
+        "fundamentals": fundamentals,
     }
     
     # Sanitize NaN/Inf values before returning

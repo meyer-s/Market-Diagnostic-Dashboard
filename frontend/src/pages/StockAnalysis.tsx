@@ -14,6 +14,14 @@
  */
 
 import { useState } from "react";
+import {
+  LineChart,
+  Line,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
 import { PriceAnalysisChart } from "../components/widgets/PriceAnalysisChart";
 import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
 import { TechnicalIndicators } from "../components/widgets/TechnicalIndicators.tsx";
@@ -81,6 +89,24 @@ interface OptionalityMetrics {
   avg_edr: number | null;
 }
 
+interface FundamentalPoint {
+  date: string;
+  value: number;
+}
+
+interface FundamentalSeries {
+  series: FundamentalPoint[];
+  derived?: boolean;
+}
+
+interface FundamentalsPayload {
+  eps: FundamentalSeries;
+  roe: FundamentalSeries;
+  free_cash_flow: FundamentalSeries;
+  market_cap: FundamentalSeries;
+  pe_ratio: FundamentalSeries;
+}
+
 export default function StockAnalysis() {
   const [ticker, setTicker] = useState("");
   const [searchTicker, setSearchTicker] = useState("");
@@ -88,6 +114,7 @@ export default function StockAnalysis() {
   const [technicalData, setTechnicalData] = useState<any>(null);
   const [optionsFlow, setOptionsFlow] = useState<OptionsFlowData | null>(null);
   const [optionalityMetrics, setOptionalityMetrics] = useState<OptionalityMetrics | null>(null);
+  const [fundamentals, setFundamentals] = useState<FundamentalsPayload | null>(null);
   const [analystTarget, setAnalystTarget] = useState<number | null>(null);
   const [analystCount, setAnalystCount] = useState<number | null>(null);
   const [historicalScore, setHistoricalScore] = useState<number | null>(null);
@@ -111,10 +138,11 @@ export default function StockAnalysis() {
     try {
       const projData = await apiFetch<any>(`/stocks/${ticker.toUpperCase()}/projections`);
       setProjections(projData.projections);
-      setHistoricalScore(projData.historical?.score_3m_ago || null);
+      setHistoricalScore(projData.historical?.score_3m_ago ?? null);
       setTechnicalData(projData.technical || null);
       setOptionsFlow(projData.options_flow || null);
       setOptionalityMetrics(projData.optionality || null);
+      setFundamentals(projData.fundamentals || null);
       setAnalystTarget(projData.analyst_target ?? null);
       setAnalystCount(projData.analyst_count ?? null);
       setDataWarnings(projData.data_warnings || []);
@@ -133,6 +161,7 @@ export default function StockAnalysis() {
       setTechnicalData(null);
       setOptionsFlow(null);
       setOptionalityMetrics(null);
+      setFundamentals(null);
       setAnalystTarget(null);
       setAnalystCount(null);
       setNews([]);
@@ -146,16 +175,28 @@ export default function StockAnalysis() {
 
   // Prepare data for line chart
   const getChartData = () => {
-    if (!projections["3m"]) return null;
+    const tScore = projections["T"]?.score_total;
+    const score3m = projections["3m"]?.score_total;
+    const score6m = projections["6m"]?.score_total;
+    const score12m = projections["12m"]?.score_total;
+
+    if (
+      tScore === undefined ||
+      score3m === undefined ||
+      score6m === undefined ||
+      score12m === undefined
+    ) {
+      return null;
+    }
 
     return {
       ticker: searchTicker,
       name: projections["3m"].name,
       scores: {
-        "T": projections["T"]?.score_total || projections["3m"]?.score_total || 50,
-        "3m": projections["3m"]?.score_total || 50,
-        "6m": projections["6m"]?.score_total || 50,
-        "12m": projections["12m"]?.score_total || 50,
+        "T": tScore,
+        "3m": score3m,
+        "6m": score6m,
+        "12m": score12m,
       },
     };
   };
@@ -180,6 +221,27 @@ export default function StockAnalysis() {
     if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
+
+  const formatCompact = (value: number, digits = 1) =>
+    new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: digits,
+    }).format(value);
+
+  const formatDollars = (value: number, digits = 2) =>
+    `$${value.toFixed(digits)}`;
+
+  const formatPercent = (value: number, digits = 1) =>
+    `${value.toFixed(digits)}%`;
+
+  const formatDateLabel = (date: string) =>
+    new Date(date).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+
+  const derivedBadge = (
+    <span className="ml-1 text-[10px] text-amber-300/90" title="Derived from reported filings">
+      *
+    </span>
+  );
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto text-gray-100">
@@ -284,7 +346,9 @@ export default function StockAnalysis() {
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
                   <p className="text-gray-400 mb-1">Stop Loss</p>
-                  <p className="font-semibold text-red-400">${projections["T"].stop_loss.toFixed(2)}</p>
+                  <p className="font-semibold text-red-400">
+                    ${Math.max(0, projections["T"].stop_loss).toFixed(2)}
+                  </p>
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
                   <p className="text-gray-400 mb-1">Risk</p>
@@ -326,6 +390,123 @@ export default function StockAnalysis() {
             />
           )}
 
+          {/* Fundamental Analysis */}
+          {fundamentals && (
+            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
+                <span className="text-[10px] sm:text-xs text-gray-500">Last 2 years (quarterly)</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  {
+                    key: "eps",
+                    title: "EPS",
+                    series: fundamentals.eps?.series || [],
+                    derived: fundamentals.eps?.derived,
+                    color: getFamilyColor("equity"),
+                    format: (value: number) => formatDollars(value, 2),
+                    axis: (value: number) => formatDollars(value, 0),
+                  },
+                  {
+                    key: "roe",
+                    title: "ROE",
+                    series: fundamentals.roe?.series || [],
+                    derived: fundamentals.roe?.derived,
+                    color: getFamilyColor("growth"),
+                    format: (value: number) => formatPercent(value, 1),
+                    axis: (value: number) => `${value.toFixed(0)}%`,
+                  },
+                  {
+                    key: "free_cash_flow",
+                    title: "Free Cash Flow",
+                    series: fundamentals.free_cash_flow?.series || [],
+                    derived: fundamentals.free_cash_flow?.derived,
+                    color: getFamilyColor("liquidity"),
+                    format: (value: number) => `$${formatCompact(value, 2)}`,
+                    axis: (value: number) => formatCompact(value, 0),
+                  },
+                  {
+                    key: "market_cap",
+                    title: "Market Cap",
+                    series: fundamentals.market_cap?.series || [],
+                    derived: fundamentals.market_cap?.derived,
+                    color: getFamilyColor("financials"),
+                    format: (value: number) => `$${formatCompact(value, 2)}`,
+                    axis: (value: number) => formatCompact(value, 0),
+                  },
+                  {
+                    key: "pe_ratio",
+                    title: "PE Ratio",
+                    series: fundamentals.pe_ratio?.series || [],
+                    derived: fundamentals.pe_ratio?.derived,
+                    color: getFamilyColor("sentiment"),
+                    format: (value: number) => value.toFixed(1),
+                    axis: (value: number) => value.toFixed(0),
+                  },
+                ].map((card) => (
+                  <div key={card.key} className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-semibold text-gray-100">
+                        {card.title}
+                        {card.derived ? derivedBadge : null}
+                      </div>
+                      {card.series.length > 0 && (
+                        <span className="text-[10px] text-gray-500">
+                          {formatDateLabel(card.series[0].date)} → {formatDateLabel(card.series[card.series.length - 1].date)}
+                        </span>
+                      )}
+                    </div>
+                    {card.series.length > 1 ? (
+                      <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={card.series}>
+                            <XAxis
+                              dataKey="date"
+                              tickFormatter={(value) => formatDateLabel(String(value))}
+                              tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis
+                              tickFormatter={card.axis}
+                              tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <Tooltip
+                              formatter={(value) => card.format(Number(value))}
+                              labelFormatter={(label) => `Quarter: ${formatDateLabel(String(label))}`}
+                              contentStyle={{
+                                background: "#111827",
+                                border: "1px solid #374151",
+                                borderRadius: "8px",
+                                fontSize: "12px",
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="value"
+                              stroke={card.color}
+                              strokeWidth={2}
+                              dot={{ r: 2 }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-500">
+                        {card.series.length === 1
+                          ? `Latest: ${card.format(card.series[0].value)}`
+                          : "No data available for this metric."}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Interactive Chart */}
           <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
             <h3 className="text-base sm:text-lg font-semibold mb-4">Score Trends</h3>
@@ -350,14 +531,12 @@ export default function StockAnalysis() {
                 {(() => {
                   const color = getFamilyColor("equity");
                   
-                  // Calculate points - 5 data points total: -3M, T(now), 3M, 6M, 12M
-                  // Use real historical score from backend, fallback to estimation if unavailable
-                  const histScore = historicalScore !== null 
-                    ? historicalScore 
-                    : chartData.scores["3m"] - 8; // Fallback estimation
+                  // Calculate points - -3M is shown only when history exists
+                  const hasHistory = historicalScore !== null;
+                  const histScore = historicalScore ?? null;
                   
                   const xHist = 150;   // -3M
-                  const yHist = 260 - (histScore * 2.4);
+                  const yHist = hasHistory ? 260 - ((histScore as number) * 2.4) : 0;
                   const x0 = 375;      // Now (T)
                   const y0 = 260 - (chartData.scores["T"] * 2.4);
                   const x1 = 575;      // +3M
@@ -383,10 +562,12 @@ export default function StockAnalysis() {
                   const lower3 = y3 + (sigma12m * 2.4);
                   
                   // Historical path (solid, no cone, -3M to T)
-                  const historicalPath = `
-                    M ${xHist} ${yHist}
-                    Q ${(xHist + x0) / 2} ${(yHist + y0) / 2}, ${x0} ${y0}
-                  `;
+                  const historicalPath = hasHistory
+                    ? `
+                      M ${xHist} ${yHist}
+                      Q ${(xHist + x0) / 2} ${(yHist + y0) / 2}, ${x0} ${y0}
+                    `
+                    : null;
                   
                   // Future path - full (from T through all horizons)
                   // Path from T to 6M (solid, normal opacity)
@@ -431,15 +612,17 @@ export default function StockAnalysis() {
                       </defs>
                       
                       {/* Historical line (solid, brighter, -3M to T) */}
-                      <path 
-                        d={historicalPath} 
-                        stroke={color} 
-                        strokeWidth="3" 
-                        fill="none" 
-                        opacity={0.9}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
+                      {historicalPath && (
+                        <path 
+                          d={historicalPath} 
+                          stroke={color} 
+                          strokeWidth="3" 
+                          fill="none" 
+                          opacity={0.9}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      )}
                       
                       {/* Uncertainty cone */}
                       <path
@@ -500,7 +683,9 @@ export default function StockAnalysis() {
                       />
                       
                       {/* Points - 5 data points */}
-                      <circle cx={xHist} cy={yHist} r="4" fill={color} opacity={0.7} />
+                      {hasHistory && (
+                        <circle cx={xHist} cy={yHist} r="4" fill={color} opacity={0.7} />
+                      )}
                       <circle cx={x0} cy={y0} r="6" fill={color} opacity={0.9} stroke={getFamilyColor("benchmark")} strokeWidth="2" />
                       <circle cx={x1} cy={y1} r="5" fill={color} opacity={0.8} />
                       <circle cx={x2} cy={y2} r="5" fill={color} opacity={0.6} />

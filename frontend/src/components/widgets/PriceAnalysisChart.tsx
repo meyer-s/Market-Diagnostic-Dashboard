@@ -25,8 +25,9 @@ export function PriceAnalysisChart({
   analystCount,
 }: PriceAnalysisChartProps) {
   // Calculate percentages for visualization
+  const safeStopLoss = Math.max(0, stopLoss);
   const tpUpside = ((takeProfit - currentPrice) / currentPrice) * 100;
-  const slDownside = ((currentPrice - stopLoss) / currentPrice) * 100;
+  const slDownside = ((currentPrice - safeStopLoss) / currentPrice) * 100;
   const trailingPercent = trailingReturn;
 
   // Color coding
@@ -103,7 +104,7 @@ export function PriceAnalysisChart({
             </div>
             <div className="text-center">
               <p className="text-xs text-red-400 font-semibold">Stop Loss</p>
-              <p className="text-xs text-red-300">${stopLoss.toFixed(2)}</p>
+              <p className="text-xs text-red-300">${safeStopLoss.toFixed(2)}</p>
               <p className="text-xs text-red-200">-{slDownside.toFixed(1)}%</p>
             </div>
           </div>

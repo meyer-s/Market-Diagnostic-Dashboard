@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useApi } from "../hooks/useApi";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
@@ -7,11 +7,11 @@ import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricCol
 import { apiFetch } from "../utils/apiUtils";
 
 interface RegimeStatus {
-  gold_bias: "MONETARY_HEDGE" | "NEUTRAL" | "FINANCIAL_ASSET";
-  silver_bias: "INDUSTRIAL_MONETARY" | "INDUSTRIAL" | "MONETARY";
-  pgm_bias: "GROWTH" | "NEUTRAL" | "RECESSION";
-  paper_physical_risk: "LOW" | "MODERATE" | "HIGH";
-  overall_regime: "MONETARY_STRESS" | "INFLATION_HEDGE" | "GROWTH_REFLATION" | "LIQUIDITY_CRISIS" | "INDUSTRIAL_COMMODITY";
+  gold_bias: "MONETARY_HEDGE" | "NEUTRAL" | "FINANCIAL_ASSET" | null;
+  silver_bias: "INDUSTRIAL_MONETARY" | "INDUSTRIAL" | "MONETARY" | null;
+  pgm_bias: "GROWTH" | "NEUTRAL" | "RECESSION" | null;
+  paper_physical_risk: "LOW" | "MODERATE" | "HIGH" | null;
+  overall_regime: "MONETARY_STRESS" | "INFLATION_HEDGE" | "GROWTH_REFLATION" | "LIQUIDITY_CRISIS" | "INDUSTRIAL_COMMODITY" | null;
 }
 
 interface MetalProjection {
@@ -47,74 +47,74 @@ interface MetalProjection {
 interface MetalIndicators {
   regime: RegimeStatus;
   cb_context: {
-    global_cb_gold_pct_reserves: number;
-    net_purchases_yoy: number;
-    structural_monetary_bid: number;
-    em_accumulation_momentum: number;
+    global_cb_gold_pct_reserves: number | null;
+    net_purchases_yoy: number | null;
+    structural_monetary_bid: number | null;
+    em_accumulation_momentum: number | null;
   };
   price_anchors: {
-    au_dxy_ratio_zscore: number;
-    ag_dxy_ratio_zscore: number;
-    real_rate_signal: number;
-    monetary_hedge_strength: number;
+    au_dxy_ratio_zscore: number | null;
+    ag_dxy_ratio_zscore: number | null;
+    real_rate_signal: number | null;
+    monetary_hedge_strength: number | null;
   };
   relative_value: {
-    au_ag_ratio: number;
-    au_ag_ratio_zscore: number;
-    pt_au_ratio: number;
-    pt_au_ratio_zscore: number;
-    pd_au_ratio: number;
-    pd_au_ratio_zscore: number;
+    au_ag_ratio: number | null;
+    au_ag_ratio_zscore: number | null;
+    pt_au_ratio: number | null;
+    pt_au_ratio_zscore: number | null;
+    pd_au_ratio: number | null;
+    pd_au_ratio_zscore: number | null;
   };
   physical_paper: {
-    paper_credibility_index: number;
-    oi_registered_ratio: number;
-    comex_registered_inventory_change_yoy: number;
-    backwardation_severity: number;
-    etf_flow_divergence: number;
+    paper_credibility_index: number | null;
+    oi_registered_ratio: number | null;
+    comex_registered_inventory_change_yoy: number | null;
+    backwardation_severity: number | null;
+    etf_flow_divergence: number | null;
   };
 }
 
 interface CorrelationMatrix {
   timestamp: string;
-  au_ag: number;
-  au_pt: number;
-  au_pd: number;
-  ag_pt: number;
-  ag_pd: number;
-  pt_pd: number;
-  au_spy: number;
-  au_tlt: number;
-  au_dxy: number;
-  au_vix: number;
+  au_ag: number | null;
+  au_pt: number | null;
+  au_pd: number | null;
+  ag_pt: number | null;
+  ag_pd: number | null;
+  pt_pd: number | null;
+  au_spy: number | null;
+  au_tlt: number | null;
+  au_dxy: number | null;
+  au_vix: number | null;
 }
 
 interface CBHolding {
   country: string;
   gold_tonnes: number;
   pct_of_reserves: number;
-  net_purchase_qty: number;
-  net_purchase_yoy_pct: number;
+  net_purchase_qty: number | null;
+  net_purchase_yoy_pct: number | null;
 }
 
 interface SupplyData {
   metal: string;
-  production_tonnes_yoy_pct: number;
-  aisc_per_oz: number;
-  current_spot_price: number;
-  margin_pct: number;
-  recycling_pct_of_supply: number;
+  production_tonnes_yoy_pct: number | null;
+  aisc_per_oz: number | null;
+  current_spot_price: number | null;
+  margin_pct: number | null;
+  recycling_pct_of_supply: number | null;
 }
 
 interface DemandData {
   metal: string;
   period: string;
-  investment_tonnes: number;
-  industrial_tonnes: number;
-  jewelry_tonnes: number;
-  jewelry_asia_tonnes: number;
-  other_tonnes: number;
-  total_tonnes: number;
+  investment_tonnes: number | null;
+  industrial_tonnes: number | null;
+  jewelry_tonnes: number | null;
+  jewelry_asia_tonnes: number | null;
+  other_tonnes: number | null;
+  total_tonnes: number | null;
 }
 
 interface PriceHistory {
@@ -136,7 +136,25 @@ const getMetalName = (metal: string): string => {
   return METAL_LABELS[metal] || metal;
 };
 
-const getRegimeBadgeClass = (regime: string): string => {
+const DERIVED_TITLE = "Derived from ingested data";
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const formatValue = (value: number | null | undefined, digits = 1) =>
+  isNumber(value) ? value.toFixed(digits) : "n/a";
+
+const formatSignedValue = (value: number | null | undefined, digits = 1) =>
+  isNumber(value) ? `${value > 0 ? "+" : ""}${value.toFixed(digits)}` : "n/a";
+
+const DerivedLabel = ({ label }: { label: ReactNode }) => (
+  <span className="inline-flex items-center gap-1" title={DERIVED_TITLE}>
+    {label}
+    <span className="text-stealth-500">*</span>
+  </span>
+);
+
+const getRegimeBadgeClass = (regime: string | null): string => {
   switch (regime) {
     case "MONETARY_STRESS":
       return "bg-red-900/30 border-red-600 text-red-200";
@@ -153,13 +171,15 @@ const getRegimeBadgeClass = (regime: string): string => {
   }
 };
 
-const getRiskBadgeClass = (risk: string): string => {
+const getRiskBadgeClass = (risk: string | null): string => {
+  if (!risk) return "bg-stealth-700 border-stealth-600 text-gray-300";
   if (risk === "HIGH") return "bg-red-900/30 border-red-600 text-red-200";
   if (risk === "MODERATE") return "bg-yellow-900/30 border-yellow-600 text-yellow-200";
   return "bg-green-900/30 border-green-600 text-green-200";
 };
 
-const getBiasText = (bias: string): string => {
+const getBiasText = (bias: string | null): string => {
+  if (!bias) return "Unknown";
   if (bias.includes("MONETARY")) return "Monetary Hedge";
   if (bias.includes("INDUSTRIAL")) return "Industrial + Monetary";
   if (bias.includes("FINANCIAL")) return "Financial Asset";
@@ -250,14 +270,16 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           {/* Paper/Physical Risk Card */}
           <div className={`border rounded-lg p-3 md:p-4 ${getRiskBadgeClass(indicators.regime.paper_physical_risk)}`}>
             <div className="text-xs md:text-sm font-semibold text-stealth-300 mb-1">P/P RISK</div>
-            <div className="text-sm md:text-base font-bold">{indicators.regime.paper_physical_risk}</div>
+            <div className="text-sm md:text-base font-bold">{indicators.regime.paper_physical_risk || "Unknown"}</div>
           </div>
 
           {/* Overall Regime Card */}
           <div className={`border rounded-lg p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.overall_regime)}`}>
             <div className="text-xs md:text-sm font-semibold text-stealth-300 mb-1">REGIME</div>
             <div className="text-sm md:text-base font-bold">
-              {indicators.regime.overall_regime.replace(/_/g, " ")}
+              {indicators.regime.overall_regime
+                ? indicators.regime.overall_regime.replace(/_/g, " ")
+                : "Unknown"}
             </div>
           </div>
         </div>
@@ -315,7 +337,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
             <CBContextPanel cb_holdings={cb_holdings} indicators={indicators} />
 
             {/* Section 3: Price vs Monetary Anchors */}
-            <PriceAnchorsPanel indicators={indicators} />
+              <PriceAnchorsPanel indicators={indicators} correlations={correlations} />
           </div>
 
           {/* SECTION 4 & 5: RELATIVE VALUE & PHYSICAL/PAPER (2-COLUMN) */}
@@ -593,6 +615,30 @@ function MethodologyPanel() {
 }
 
 function CBContextPanel({ cb_holdings, indicators }: any) {
+  const cbContext = indicators.cb_context;
+  const goldPct = cbContext.global_cb_gold_pct_reserves;
+  const netPurchases = cbContext.net_purchases_yoy;
+  const smb = cbContext.structural_monetary_bid;
+  const netPurchasesColor = isNumber(netPurchases)
+    ? (netPurchases > 200 ? "text-green-400" : "text-yellow-400")
+    : "text-stealth-400";
+  const netPurchasesText = isNumber(netPurchases)
+    ? `${netPurchases > 0 ? "+" : ""}${netPurchases.toFixed(0)}%`
+    : "n/a";
+  const netPurchasesSummary = isNumber(netPurchases)
+    ? (netPurchases > 200
+      ? "Yes - buying accelerated sharply vs last year"
+      : "Steady accumulation, not urgent")
+    : "Data unavailable";
+  const smbColor = isNumber(smb) ? (smb > 0 ? "text-green-400" : "text-red-400") : "text-stealth-400";
+  const smbBarColor = isNumber(smb) ? (smb > 0 ? "bg-green-500" : "bg-red-500") : "bg-stealth-600";
+  const smbText = isNumber(smb) ? `${smb > 0 ? "+" : ""}${smb.toFixed(0)}` : "n/a";
+  const goldPctWidth = isNumber(goldPct)
+    ? Math.min((goldPct / 15) * 100, 100)
+    : 0;
+  const smbWidth = isNumber(smb)
+    ? Math.min(Math.abs((smb / 100) * 100), 100)
+    : 0;
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Government Gold Buying Pressure</h3>
@@ -601,71 +647,107 @@ function CBContextPanel({ cb_holdings, indicators }: any) {
       <div className="space-y-6">
         {/* CB Gold % of Reserves */}
         <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">How much central banks trust gold vs fiat</span>
-            <span className="text-lg font-bold text-blue-300">{indicators.cb_context.global_cb_gold_pct_reserves.toFixed(1)}%</span>
-          </div>
-          <div className="w-full bg-stealth-700 rounded-full h-2">
-            <div
-              className="bg-blue-500 h-2 rounded-full"
-              style={{ width: `${Math.min((indicators.cb_context.global_cb_gold_pct_reserves / 15) * 100, 100)}%` }}
-            />
-          </div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="How much central banks trust gold vs fiat" />
+              </span>
+              <span className="text-lg font-bold text-blue-300">
+                {isNumber(goldPct) ? `${goldPct.toFixed(1)}%` : "n/a"}
+              </span>
+            </div>
+            <div className="w-full bg-stealth-700 rounded-full h-2">
+              <div
+                className="bg-blue-500 h-2 rounded-full"
+                style={{ width: `${goldPctWidth}%` }}
+              />
+            </div>
           <p className="text-xs text-stealth-400 mt-1">Above 11% = governments hedging currency risk</p>
         </div>
 
         {/* Net CB Purchases YoY */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Are governments panic-buying?</span>
-            <span className={`text-lg font-bold ${indicators.cb_context.net_purchases_yoy > 200 ? "text-green-400" : "text-yellow-400"}`}>
-              {indicators.cb_context.net_purchases_yoy > 0 ? "+" : ""}{indicators.cb_context.net_purchases_yoy.toFixed(0)}%
-            </span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Are governments panic-buying?" />
+              </span>
+              <span className={`text-lg font-bold ${netPurchasesColor}`}>
+                {netPurchasesText}
+              </span>
+            </div>
+            <p className="text-xs text-stealth-400">{netPurchasesSummary}</p>
           </div>
-          <p className="text-xs text-stealth-400">
-            {indicators.cb_context.net_purchases_yoy > 200
-              ? "Yes - buying accelerated sharply vs last year"
-              : "Steady accumulation, not urgent"}
-          </p>
-        </div>
 
         {/* Structural Monetary Bid */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Official sector support (floor under price)</span>
-            <span className={`text-lg font-bold ${indicators.cb_context.structural_monetary_bid > 0 ? "text-green-400" : "text-red-400"}`}>
-              {indicators.cb_context.structural_monetary_bid > 0 ? "+" : ""}{indicators.cb_context.structural_monetary_bid.toFixed(0)}
-            </span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Official sector support (floor under price)" />
+              </span>
+              <span className={`text-lg font-bold ${smbColor}`}>
+                {smbText}
+              </span>
+            </div>
+            <div className="w-full bg-stealth-700 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full ${smbBarColor}`}
+                style={{ width: `${smbWidth}%` }}
+              />
+            </div>
+            <p className="text-xs text-stealth-400 mt-1">Range: -100 to +100. Positive = structural demand</p>
           </div>
-          <div className="w-full bg-stealth-700 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full ${indicators.cb_context.structural_monetary_bid > 0 ? "bg-green-500" : "bg-red-500"}`}
-              style={{ width: `${Math.min(Math.abs((indicators.cb_context.structural_monetary_bid / 100) * 100), 100)}%` }}
-            />
-          </div>
-          <p className="text-xs text-stealth-400 mt-1">Range: -100 to +100. Positive = structural demand</p>
-        </div>
 
         {/* EM Accumulation */}
-        {cb_holdings && cb_holdings.length > 0 && (
-          <div>
-            <span className="text-sm font-semibold text-stealth-300 block mb-2">Top Accumulators (Recent Quarter)</span>
-            <div className="space-y-1">
-              {cb_holdings.slice(0, 3).map((holding: any, idx: number) => (
-                <div key={idx} className="flex justify-between text-xs text-stealth-300">
-                  <span>{holding.country}</span>
-                  <span>{holding.net_purchase_yoy_pct > 0 ? "+" : ""}{holding.net_purchase_yoy_pct.toFixed(0)}% YoY</span>
-                </div>
-              ))}
+          {cb_holdings && cb_holdings.length > 0 && (
+            <div>
+              <span className="text-sm font-semibold text-stealth-300 block mb-2">
+                <DerivedLabel label="Top Accumulators (Recent Quarter)" />
+              </span>
+              <div className="space-y-1">
+                {cb_holdings.slice(0, 3).map((holding: any, idx: number) => (
+                  <div key={idx} className="flex justify-between text-xs text-stealth-300">
+                    <span>{holding.country}</span>
+                    <span>
+                      {isNumber(holding.net_purchase_yoy_pct)
+                        ? `${formatSignedValue(holding.net_purchase_yoy_pct, 0)}% YoY`
+                        : "n/a"}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+          <p className="text-xs text-stealth-500 mt-3">* Derived from ingested data</p>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-function PriceAnchorsPanel({ indicators }: any) {
+function PriceAnchorsPanel({ indicators, correlations }: any) {
+  const anchors = indicators.price_anchors;
+  const mhs = anchors.monetary_hedge_strength;
+  const auDxy = anchors.au_dxy_ratio_zscore;
+  const realRate = anchors.real_rate_signal;
+  const mhsColor = isNumber(mhs) ? (mhs > 0 ? "text-green-400" : "text-red-400") : "text-stealth-400";
+  const mhsBarColor = isNumber(mhs) ? (mhs > 0 ? "bg-green-500" : "bg-red-500") : "bg-stealth-600";
+  const mhsWidth = isNumber(mhs) ? Math.min(Math.abs((mhs / 100) * 100), 100) : 0;
+  const auDxyClass = isNumber(auDxy)
+    ? (Math.abs(auDxy) > 1.5 ? "text-red-400" : "text-yellow-400")
+    : "text-stealth-400";
+  const auDxyText = isNumber(auDxy)
+    ? `${auDxy > 0 ? "+" : ""}${auDxy.toFixed(2)} sigma`
+    : "n/a";
+  const auDxySummary = isNumber(auDxy)
+    ? (Math.abs(auDxy) > 2
+      ? "Warning: Extreme deviation from 2Y norm"
+      : Math.abs(auDxy) > 1.5
+        ? "High valuation"
+        : "Normal range")
+    : "Data unavailable";
+  const realRateColor = isNumber(realRate) ? (realRate < 0 ? "text-green-400" : "text-red-400") : "text-stealth-400";
+  const corrAuSpy = correlations?.au_spy;
+  const corrAuTlt = correlations?.au_tlt;
+  const corrAuDxy = correlations?.au_dxy;
+  const corrAuVix = correlations?.au_vix;
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Where Prices Tend to Bounce or Break</h3>
@@ -673,76 +755,87 @@ function PriceAnchorsPanel({ indicators }: any) {
 
       <div className="space-y-4">
         {/* MHS Score */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Monetary Hedge Strength</span>
-            <span className={`text-lg font-bold ${indicators.price_anchors.monetary_hedge_strength > 0 ? "text-green-400" : "text-red-400"}`}>
-              {indicators.price_anchors.monetary_hedge_strength.toFixed(0)}
-            </span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Monetary Hedge Strength" />
+              </span>
+              <span className={`text-lg font-bold ${mhsColor}`}>
+                {formatValue(mhs, 0)}
+              </span>
+            </div>
+            <div className="w-full bg-stealth-700 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full ${mhsBarColor}`}
+                style={{ width: `${mhsWidth}%` }}
+              />
+            </div>
+            <p className="text-xs text-stealth-400 mt-1">-100 to +100: Is gold priced as currency or commodity?</p>
           </div>
-          <div className="w-full bg-stealth-700 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full ${indicators.price_anchors.monetary_hedge_strength > 0 ? "bg-green-500" : "bg-red-500"}`}
-              style={{ width: `${Math.min(Math.abs((indicators.price_anchors.monetary_hedge_strength / 100) * 100), 100)}%` }}
-            />
-          </div>
-          <p className="text-xs text-stealth-400 mt-1">-100 to +100: Is gold priced as currency or commodity?</p>
-        </div>
 
         {/* Au/DXY Z-Score */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Au/DXY Ratio (Z-Score)</span>
-            <span className={`text-lg font-bold ${Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) > 1.5 ? "text-red-400" : "text-yellow-400"}`}>
-              {indicators.price_anchors.au_dxy_ratio_zscore > 0 ? "+" : ""}{indicators.price_anchors.au_dxy_ratio_zscore.toFixed(2)} sigma
-            </span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Au/DXY Ratio (Z-Score)" />
+              </span>
+              <span className={`text-lg font-bold ${auDxyClass}`}>
+                {auDxyText}
+              </span>
+            </div>
+            <p className="text-xs text-stealth-400">{auDxySummary}</p>
           </div>
-          <p className="text-xs text-stealth-400">
-            {Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) > 2 && "Warning: Extreme deviation from 2Y norm"}
-            {Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) > 1.5 && Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) <= 2 && "High valuation"}
-            {Math.abs(indicators.price_anchors.au_dxy_ratio_zscore) <= 1.5 && "Normal range"}
-          </p>
-        </div>
 
         {/* Real Rate Signal */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Real Rate Signal</span>
-            <span className={`text-lg font-bold ${indicators.price_anchors.real_rate_signal < 0 ? "text-green-400" : "text-red-400"}`}>
-              {indicators.price_anchors.real_rate_signal.toFixed(2)}
-            </span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Real Rate Signal" />
+              </span>
+              <span className={`text-lg font-bold ${realRateColor}`}>
+                {formatValue(realRate, 2)}
+              </span>
+            </div>
+            <p className="text-xs text-stealth-400">Negative = lower real rates favor gold</p>
           </div>
-          <p className="text-xs text-stealth-400">Negative = lower real rates favor gold</p>
-        </div>
 
         {/* Correlation Summary */}
-        <div className="border-t border-stealth-600 pt-3 mt-3">
-          <span className="text-xs font-semibold text-stealth-300 block mb-2">Key Correlations (60-day)</span>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="flex justify-between">
-              <span className="text-stealth-400">Au {"<->"} SPY:</span>
-              <span className="text-stealth-300">-0.15</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-stealth-400">Au {"<->"} TLT:</span>
-              <span className="text-stealth-300">+0.42</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-stealth-400">Au {"<->"} DXY:</span>
-              <span className="text-stealth-300">-0.68</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-stealth-400">Au {"<->"} VIX:</span>
-              <span className="text-stealth-300">+0.55</span>
+          <div className="border-t border-stealth-600 pt-3 mt-3">
+            <span className="text-xs font-semibold text-stealth-300 block mb-2">
+              <DerivedLabel label="Key Correlations (60-day)" />
+            </span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-stealth-400">Au {"<->"} SPY:</span>
+                <span className="text-stealth-300">{formatSignedValue(corrAuSpy, 2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stealth-400">Au {"<->"} TLT:</span>
+                <span className="text-stealth-300">{formatSignedValue(corrAuTlt, 2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stealth-400">Au {"<->"} DXY:</span>
+                <span className="text-stealth-300">{formatSignedValue(corrAuDxy, 2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stealth-400">Au {"<->"} VIX:</span>
+                <span className="text-stealth-300">{formatSignedValue(corrAuVix, 2)}</span>
+              </div>
             </div>
           </div>
-        </div>
       </div>
     </div>
   );
 }
 
 function RelativeValuePanel({ indicators }: any) {
+  const rv = indicators.relative_value;
+  const auAg = rv.au_ag_ratio;
+  const auAgZ = rv.au_ag_ratio_zscore;
+  const ptAu = rv.pt_au_ratio;
+  const ptAuZ = rv.pt_au_ratio_zscore;
+  const pdAu = rv.pd_au_ratio;
+  const pdAuZ = rv.pd_au_ratio_zscore;
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Which Metal Is Cheap vs Others</h3>
@@ -750,20 +843,32 @@ function RelativeValuePanel({ indicators }: any) {
 
       <div className="space-y-4">
         {/* Au/Ag Ratio */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">
-              <span style={{ color: getMetalColor('AU') }}>Au</span>/
-              <span style={{ color: getMetalColor('AG') }}>Ag</span> Ratio
-            </span>
-            <span className="text-lg font-bold text-blue-300">{indicators.relative_value.au_ag_ratio.toFixed(1)}</span>
-          </div>
-          <div className="flex justify-between text-xs text-stealth-400 mb-2">
-            <span>Z-Score: {indicators.relative_value.au_ag_ratio_zscore.toFixed(2)} sigma</span>
-            <span className={indicators.relative_value.au_ag_ratio > 70 ? "text-red-400" : indicators.relative_value.au_ag_ratio < 50 ? "text-green-400" : "text-yellow-400"}>
-              {indicators.relative_value.au_ag_ratio > 70 ? "Monetary stress bias" : indicators.relative_value.au_ag_ratio < 50 ? "Industrial demand" : "Balanced"}
-            </span>
-          </div>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label={
+                  <span>
+                    <span style={{ color: getMetalColor('AU') }}>Au</span>/
+                    <span style={{ color: getMetalColor('AG') }}>Ag</span> Ratio
+                  </span>
+                } />
+              </span>
+              <span className="text-lg font-bold text-blue-300">
+                {isNumber(auAg) ? auAg.toFixed(1) : "n/a"}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs text-stealth-400 mb-2">
+              <span>Z-Score: {isNumber(auAgZ) ? `${auAgZ.toFixed(2)} sigma` : "n/a"}</span>
+              <span className={
+                isNumber(auAg)
+                  ? (auAg > 70 ? "text-red-400" : auAg < 50 ? "text-green-400" : "text-yellow-400")
+                  : "text-stealth-400"
+              }>
+                {isNumber(auAg)
+                  ? (auAg > 70 ? "Monetary stress bias" : auAg < 50 ? "Industrial demand" : "Balanced")
+                  : "Unknown"}
+              </span>
+            </div>
           <div className="bg-stealth-700 rounded p-2">
             <div className="flex justify-between text-xs text-stealth-400">
               <span>50 (Industrial)</span>
@@ -774,41 +879,68 @@ function RelativeValuePanel({ indicators }: any) {
         </div>
 
         {/* Pt/Au Ratio */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">
-              <span style={{ color: getMetalColor('PT') }}>Pt</span>/
-              <span style={{ color: getMetalColor('AU') }}>Au</span> Ratio
-            </span>
-            <span className="text-lg font-bold text-blue-300">{indicators.relative_value.pt_au_ratio.toFixed(3)}</span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label={
+                  <span>
+                    <span style={{ color: getMetalColor('PT') }}>Pt</span>/
+                    <span style={{ color: getMetalColor('AU') }}>Au</span> Ratio
+                  </span>
+                } />
+              </span>
+              <span className="text-lg font-bold text-blue-300">
+                {isNumber(ptAu) ? ptAu.toFixed(3) : "n/a"}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs text-stealth-400">
+              <span>Z-Score: {isNumber(ptAuZ) ? `${ptAuZ.toFixed(2)} sigma` : "n/a"}</span>
+              <span className={isNumber(ptAuZ) ? (ptAuZ < -1 ? "text-red-400" : "text-green-400") : "text-stealth-400"}>
+                {isNumber(ptAuZ) ? (ptAuZ < -1 ? "Recession signal" : "Growth neutral") : "Unknown"}
+              </span>
+            </div>
           </div>
-          <div className="flex justify-between text-xs text-stealth-400">
-            <span>Z-Score: {indicators.relative_value.pt_au_ratio_zscore.toFixed(2)} sigma</span>
-            <span className={indicators.relative_value.pt_au_ratio_zscore < -1 ? "text-red-400" : "text-green-400"}>
-              {indicators.relative_value.pt_au_ratio_zscore < -1 ? "Recession signal" : "Growth neutral"}
-            </span>
-          </div>
-        </div>
 
         {/* Pd/Au Ratio */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">
-              <span style={{ color: getMetalColor('PD') }}>Pd</span>/
-              <span style={{ color: getMetalColor('AU') }}>Au</span> Ratio
-            </span>
-            <span className="text-lg font-bold text-blue-300">{indicators.relative_value.pd_au_ratio.toFixed(3)}</span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label={
+                  <span>
+                    <span style={{ color: getMetalColor('PD') }}>Pd</span>/
+                    <span style={{ color: getMetalColor('AU') }}>Au</span> Ratio
+                  </span>
+                } />
+              </span>
+              <span className="text-lg font-bold text-blue-300">
+                {isNumber(pdAu) ? pdAu.toFixed(3) : "n/a"}
+              </span>
+            </div>
+            <p className="text-xs text-stealth-400">
+              Z-Score: {isNumber(pdAuZ) ? `${pdAuZ.toFixed(2)} sigma` : "n/a"} - Indicator of auto cycle demand
+            </p>
           </div>
-          <p className="text-xs text-stealth-400">
-            Z-Score: {indicators.relative_value.pd_au_ratio_zscore.toFixed(2)} sigma - Indicator of auto cycle demand
-          </p>
-        </div>
       </div>
     </div>
   );
 }
 
 function PhysicalPaperPanel({ indicators }: any) {
+  const pp = indicators.physical_paper;
+  const pci = pp.paper_credibility_index;
+  const oiRatio = pp.oi_registered_ratio;
+  const comexChange = pp.comex_registered_inventory_change_yoy;
+  const backwardation = pp.backwardation_severity;
+  const pciColor = isNumber(pci)
+    ? (pci > 75 ? "text-green-400" : pci > 50 ? "text-yellow-400" : "text-red-400")
+    : "text-stealth-400";
+  const pciBarColor = isNumber(pci)
+    ? (pci > 75 ? "bg-green-500" : pci > 50 ? "bg-yellow-500" : "bg-red-500")
+    : "bg-stealth-600";
+  const comexColor = isNumber(comexChange) ? (comexChange < -5 ? "text-red-400" : "text-yellow-400") : "text-stealth-400";
+  const backwardationText = isNumber(backwardation)
+    ? `${backwardation.toFixed(0)}`
+    : "n/a";
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Is There a Physical Squeeze Brewing?</h3>
@@ -816,72 +948,76 @@ function PhysicalPaperPanel({ indicators }: any) {
 
       <div className="space-y-4">
         {/* PCI Score */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Paper Credibility Index (PCI)</span>
-            <span className={`text-lg font-bold ${
-              indicators.physical_paper.paper_credibility_index > 75
-                ? "text-green-400"
-                : indicators.physical_paper.paper_credibility_index > 50
-                ? "text-yellow-400"
-                : "text-red-400"
-            }`}>
-              {indicators.physical_paper.paper_credibility_index.toFixed(0)}
-            </span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Paper Credibility Index (PCI)" />
+              </span>
+              <span className={`text-lg font-bold ${pciColor}`}>
+                {formatValue(pci, 0)}
+              </span>
+            </div>
+            <div className="w-full bg-stealth-700 rounded-full h-3">
+              <div
+                className={`h-3 rounded-full ${pciBarColor}`}
+                style={{ width: `${isNumber(pci) ? pci : 0}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-stealth-400 mt-1">
+              <span>0 (Stress)</span>
+              <span>50 (Caution)</span>
+              <span>75+ (Healthy)</span>
+            </div>
           </div>
-          <div className="w-full bg-stealth-700 rounded-full h-3">
-            <div
-              className={`h-3 rounded-full ${
-                indicators.physical_paper.paper_credibility_index > 75
-                  ? "bg-green-500"
-                  : indicators.physical_paper.paper_credibility_index > 50
-                  ? "bg-yellow-500"
-                  : "bg-red-500"
-              }`}
-              style={{ width: `${indicators.physical_paper.paper_credibility_index}%` }}
-            />
-          </div>
-          <div className="flex justify-between text-xs text-stealth-400 mt-1">
-            <span>0 (Stress)</span>
-            <span>50 (Caution)</span>
-            <span>75+ (Healthy)</span>
-          </div>
-        </div>
 
         {/* OI / Registered Ratio */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Futures OI / Registered Inventory</span>
-            <span className="text-lg font-bold text-blue-300">{indicators.physical_paper.oi_registered_ratio.toFixed(2)}x</span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Futures OI / Registered Inventory" />
+              </span>
+              <span className="text-lg font-bold text-blue-300">
+                {isNumber(oiRatio) ? `${oiRatio.toFixed(2)}x` : "n/a"}
+              </span>
+            </div>
+            <p className="text-xs text-stealth-400">
+              Normal: 0.9-1.0x. {isNumber(oiRatio) ? (oiRatio > 1.3 ? "Warning: Elevated stress" : "Healthy") : "Data unavailable"}
+            </p>
           </div>
-          <p className="text-xs text-stealth-400">Normal: 0.9-1.0x. {indicators.physical_paper.oi_registered_ratio > 1.3 ? "Warning: Elevated stress" : "Healthy"}</p>
-        </div>
 
         {/* Inventory Change */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Registered Inventory (YoY %)</span>
-            <span className={`text-lg font-bold ${indicators.physical_paper.comex_registered_inventory_change_yoy < -5 ? "text-red-400" : "text-yellow-400"}`}>
-              {indicators.physical_paper.comex_registered_inventory_change_yoy.toFixed(0)}%
-            </span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Registered Inventory (YoY %)" />
+              </span>
+              <span className={`text-lg font-bold ${comexColor}`}>
+                {isNumber(comexChange) ? `${comexChange.toFixed(0)}%` : "n/a"}
+              </span>
+            </div>
+            <p className="text-xs text-stealth-400">
+              {isNumber(comexChange)
+                ? (comexChange < -10
+                  ? "Warning: Significant decline-monitor tightness"
+                  : "Normal range")
+                : "Data unavailable"}
+            </p>
           </div>
-          <p className="text-xs text-stealth-400">
-            {indicators.physical_paper.comex_registered_inventory_change_yoy < -10
-              ? "Warning: Significant decline-monitor tightness"
-              : "Normal range"}
-          </p>
-        </div>
 
         {/* Backwardation */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-stealth-300">Backwardation Severity (bps)</span>
-            <span className="text-lg font-bold text-blue-300">{indicators.physical_paper.backwardation_severity.toFixed(0)}</span>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-stealth-300">
+                <DerivedLabel label="Backwardation Severity (bps)" />
+              </span>
+              <span className="text-lg font-bold text-blue-300">{backwardationText}</span>
+            </div>
+            <p className="text-xs text-stealth-400">
+              {isNumber(backwardation)
+                ? (backwardation > 500 ? "Warning: Deep backwardation = stress" : "Normal contango structure")
+                : "Data unavailable"}
+            </p>
           </div>
-          <p className="text-xs text-stealth-400">
-            {indicators.physical_paper.backwardation_severity > 500 ? "Warning: Deep backwardation = stress" : "Normal contango structure"}
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -893,40 +1029,60 @@ function SupplyPanel({ supply_data }: any) {
       <h3 className="text-lg font-bold mb-4 text-white">Are Miners Profitable or Squeezed?</h3>
       <p className="text-xs text-stealth-400 mb-4">Low margins = production cuts ahead = tighter supply = bullish</p>
 
-      {supply_data && supply_data.length > 0 ? (
-        <div className="space-y-4">
-          {supply_data.map((metal: any, idx: number) => (
-            <div key={idx} className="border-b border-stealth-600 pb-3 last:border-b-0">
-              <div className="flex justify-between items-start mb-2">
-                <span 
-                  className="text-sm font-semibold" 
-                  style={{ color: getMetalColor(metal.metal) }}
-                >
-                  {getMetalName(metal.metal)} ({metal.metal})
-                </span>
-                <span className={`text-xs font-bold ${metal.production_tonnes_yoy_pct < 0 ? "text-red-400" : "text-green-400"}`}>
-                  {metal.production_tonnes_yoy_pct > 0 ? "+" : ""}{metal.production_tonnes_yoy_pct.toFixed(0)}% YoY
-                </span>
+        {supply_data && supply_data.length > 0 ? (
+          <div className="space-y-4">
+            {supply_data.map((metal: any, idx: number) => (
+              <div key={idx} className="border-b border-stealth-600 pb-3 last:border-b-0">
+                {(() => {
+                  const prod = metal.production_tonnes_yoy_pct;
+                  const prodColor = isNumber(prod)
+                    ? (prod < 0 ? "text-red-400" : "text-green-400")
+                    : "text-stealth-400";
+                  const prodText = isNumber(prod)
+                    ? `${prod > 0 ? "+" : ""}${prod.toFixed(0)}% YoY`
+                    : "n/a";
+                  const marginColor = isNumber(metal.margin_pct)
+                    ? (metal.margin_pct > 50 ? "text-green-400" : "text-yellow-400")
+                    : "text-stealth-400";
+                  return (
+                    <>
+                      <div className="flex justify-between items-start mb-2">
+                        <span 
+                          className="text-sm font-semibold" 
+                          style={{ color: getMetalColor(metal.metal) }}
+                        >
+                          {getMetalName(metal.metal)} ({metal.metal})
+                        </span>
+                        <span className={`text-xs font-bold ${prodColor}`}>
+                          {prodText}
+                        </span>
+                      </div>
+                      <div className="text-xs text-stealth-400 space-y-1">
+                        <div className="flex justify-between">
+                          <span>AISC: {isNumber(metal.aisc_per_oz) ? `$${metal.aisc_per_oz.toFixed(0)}/oz` : "n/a"}</span>
+                          <span>Spot: {isNumber(metal.current_spot_price) ? `$${metal.current_spot_price.toFixed(0)}/oz` : "n/a"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Margin:</span>
+                          <span className={marginColor}>
+                            {isNumber(metal.margin_pct) ? `${metal.margin_pct.toFixed(0)}%` : "n/a"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Recycling:</span>
+                          <span>
+                            {isNumber(metal.recycling_pct_of_supply)
+                              ? `${metal.recycling_pct_of_supply.toFixed(0)}% of supply`
+                              : "n/a"}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-              <div className="text-xs text-stealth-400 space-y-1">
-                <div className="flex justify-between">
-                  <span>AISC: ${metal.aisc_per_oz.toFixed(0)}/oz</span>
-                  <span>Spot: ${metal.current_spot_price.toFixed(0)}/oz</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Margin:</span>
-                  <span className={metal.margin_pct > 50 ? "text-green-400" : "text-yellow-400"}>
-                    {metal.margin_pct.toFixed(0)}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Recycling:</span>
-                  <span>{metal.recycling_pct_of_supply.toFixed(0)}% of supply</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
       ) : (
         <p className="text-sm text-stealth-400">Supply data loading...</p>
       )}
@@ -943,62 +1099,76 @@ function DemandPanel({ demand_data }: any) {
   };
 
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
-      <h3 className="text-lg font-bold mb-4 text-white">Who's Buying and Why</h3>
-      <p className="text-xs text-stealth-400 mb-4">Industrial demand = economy strong, Investment demand = fear rising, Jewelry = wealth in Asia</p>
+      <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+        <h3 className="text-lg font-bold mb-4 text-white">Who's Buying and Why</h3>
+        <p className="text-xs text-stealth-400 mb-4">Industrial demand = economy strong, Investment demand = fear rising, Jewelry = wealth in Asia</p>
 
-      {demand_data && demand_data.length > 0 ? (
-        <div className="space-y-4">
-          {demand_data.map((metal: any, idx: number) => {
-            const total = metal.total_tonnes || 1;
-            const categories = [
-              { label: "Investment", value: metal.investment_tonnes, pct: (metal.investment_tonnes / total) * 100, color: categoryColors.investment },
-              { label: "Industrial", value: metal.industrial_tonnes, pct: (metal.industrial_tonnes / total) * 100, color: categoryColors.industrial },
-              { label: "Jewelry", value: metal.jewelry_tonnes, pct: (metal.jewelry_tonnes / total) * 100, color: categoryColors.jewelry },
-              { label: "Other", value: metal.other_tonnes, pct: (metal.other_tonnes / total) * 100, color: categoryColors.other }
-            ].filter(cat => cat.value > 0);
+        {demand_data && demand_data.length > 0 ? (
+          <div className="space-y-4">
+            {demand_data.map((metal: any, idx: number) => {
+              const parts = [
+                metal.investment_tonnes,
+                metal.industrial_tonnes,
+                metal.jewelry_tonnes,
+                metal.other_tonnes
+              ].filter(isNumber);
+              const fallbackTotal = parts.reduce((sum: number, value: number) => sum + value, 0);
+              const total = isNumber(metal.total_tonnes) ? metal.total_tonnes : fallbackTotal;
+              const hasTotal = isNumber(total) && total > 0;
+              const categories = [
+                { label: "Investment", value: metal.investment_tonnes, pct: hasTotal && isNumber(metal.investment_tonnes) ? (metal.investment_tonnes / total) * 100 : null, color: categoryColors.investment },
+                { label: "Industrial", value: metal.industrial_tonnes, pct: hasTotal && isNumber(metal.industrial_tonnes) ? (metal.industrial_tonnes / total) * 100 : null, color: categoryColors.industrial },
+                { label: "Jewelry", value: metal.jewelry_tonnes, pct: hasTotal && isNumber(metal.jewelry_tonnes) ? (metal.jewelry_tonnes / total) * 100 : null, color: categoryColors.jewelry },
+                { label: "Other", value: metal.other_tonnes, pct: hasTotal && isNumber(metal.other_tonnes) ? (metal.other_tonnes / total) * 100 : null, color: categoryColors.other }
+              ].filter(cat => isNumber(cat.value) && cat.value > 0);
 
             return (
               <div key={idx} className="border-b border-stealth-600 pb-3 last:border-b-0">
-                <div className="flex justify-between items-start mb-2">
-                  <span 
-                    className="text-sm font-semibold" 
-                    style={{ color: getMetalColor(metal.metal) }}
-                  >
-                    {getMetalName(metal.metal)} ({metal.metal})
-                  </span>
-                  <span className="text-xs text-stealth-400">{metal.period}</span>
-                </div>
-                
-                {/* Stacked bar showing demand composition */}
-                <div className="w-full h-6 bg-stealth-700 rounded overflow-hidden flex mb-2">
-                  {categories.map((cat, i) => (
-                    <div
-                      key={i}
-                      style={{ width: `${cat.pct}%`, backgroundColor: cat.color }}
-                      className="flex items-center justify-center text-[10px] font-bold text-white"
-                      title={`${cat.label}: ${cat.value.toFixed(0)}t (${cat.pct.toFixed(1)}%)`}
+                  <div className="flex justify-between items-start mb-2">
+                    <span 
+                      className="text-sm font-semibold" 
+                      style={{ color: getMetalColor(metal.metal) }}
                     >
-                      {cat.pct > 8 && `${cat.pct.toFixed(0)}%`}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Legend and values */}
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {categories.map((cat, i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 rounded" style={{ backgroundColor: cat.color }} />
-                        <span className="text-stealth-400">{cat.label}:</span>
+                      {getMetalName(metal.metal)} ({metal.metal})
+                    </span>
+                    <span className="text-xs text-stealth-400">{metal.period}</span>
+                  </div>
+                  
+                  {categories.length > 0 ? (
+                    <>
+                      {/* Stacked bar showing demand composition */}
+                      <div className="w-full h-6 bg-stealth-700 rounded overflow-hidden flex mb-2">
+                        {categories.map((cat, i) => (
+                          <div
+                            key={i}
+                            style={{ width: `${cat.pct}%`, backgroundColor: cat.color }}
+                            className="flex items-center justify-center text-[10px] font-bold text-white"
+                            title={`${cat.label}: ${cat.value.toFixed(0)}t (${cat.pct?.toFixed(1)}%)`}
+                          >
+                            {isNumber(cat.pct) && cat.pct > 8 ? `${cat.pct.toFixed(0)}%` : ""}
+                          </div>
+                        ))}
                       </div>
-                      <span className="text-stealth-200 font-semibold">{cat.value.toFixed(0)}t</span>
-                    </div>
-                  ))}
+        
+                      {/* Legend and values */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {categories.map((cat, i) => (
+                          <div key={i} className="flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 rounded" style={{ backgroundColor: cat.color }} />
+                              <span className="text-stealth-400">{cat.label}:</span>
+                            </div>
+                            <span className="text-stealth-200 font-semibold">{cat.value.toFixed(0)}t</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-stealth-500">Demand breakdown unavailable.</div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       ) : (
         <p className="text-sm text-stealth-400">Demand data loading...</p>
@@ -1017,100 +1187,131 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
     );
   }
 
-  const formatMarketCap = (value: number) => {
+  const formatMarketCap = (value: number | null | undefined) => {
+    if (!isNumber(value)) return "n/a";
     if (value >= 1e12) return `$${(value / 1e12).toFixed(1)}T`;
     if (value >= 1e9) return `$${(value / 1e9).toFixed(0)}B`;
     return `$${(value / 1e6).toFixed(0)}M`;
   };
 
-  const gold_cap = market_caps.metals?.AU?.market_cap_usd || 0;
-  const silver_cap = market_caps.metals?.AG?.market_cap_usd || 0;
-  const platinum_cap = market_caps.metals?.PT?.market_cap_usd || 0;
-  const palladium_cap = market_caps.metals?.PD?.market_cap_usd || 0;
-  const total_cap = market_caps.total_market_cap_usd || 0;
-  const m2_ratio = market_caps.metals_to_m2_pct || 0;
+  const gold_cap = market_caps.metals?.AU?.market_cap_usd ?? null;
+  const silver_cap = market_caps.metals?.AG?.market_cap_usd ?? null;
+  const platinum_cap = market_caps.metals?.PT?.market_cap_usd ?? null;
+  const palladium_cap = market_caps.metals?.PD?.market_cap_usd ?? null;
+  const total_cap = market_caps.total_market_cap_usd ?? null;
+  const m2_ratio = market_caps.metals_to_m2_pct ?? null;
   
-  const gold_pct = total_cap > 0 ? (gold_cap / total_cap * 100) : 0;
-  const others_cap = total_cap - gold_cap;
+  const gold_pct = isNumber(total_cap) && isNumber(gold_cap) && total_cap > 0
+    ? (gold_cap / total_cap * 100)
+    : null;
+  const others_cap = isNumber(total_cap) && isNumber(gold_cap)
+    ? total_cap - gold_cap
+    : null;
 
-  // Calculate scenario prices
-  const gold_price = market_caps.metals?.AU?.price_usd_per_oz || 4000;
-  const scenario_3k_total = (3000 / gold_price) * total_cap;
-  const scenario_5k_total = (5000 / gold_price) * total_cap;
+  // Calculate scenario prices (derived from ingested pricing when available)
+  const gold_price = market_caps.metals?.AU?.price_usd_per_oz ?? null;
+  const scenario_3k_total = isNumber(gold_price) && isNumber(total_cap)
+    ? (3000 / gold_price) * total_cap
+    : null;
+  const scenario_5k_total = isNumber(gold_price) && isNumber(total_cap)
+    ? (5000 / gold_price) * total_cap
+    : null;
+  const history = market_caps_history?.history || [];
+  const ratioHistory = history.filter((entry: any) => isNumber(entry?.metals_to_m2_pct));
+  const latestHistory = history.length ? history[history.length - 1] : null;
 
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">How Big Is This Asset Class?</h3>
       <p className="text-xs text-stealth-400 mb-4">Tiny markets = easier to move = more volatility = bigger % gains possible</p>
       <div className="space-y-4 text-sm">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-stealth-700 rounded p-3">
-            <div className="text-stealth-400 text-xs mb-1">Gold ({gold_pct.toFixed(1)}%)</div>
-            <div className="text-lg font-bold text-blue-300">{formatMarketCap(gold_cap)}</div>
-            <div className="text-xs text-stealth-500">
-              {(market_caps.metals?.AU?.stock_oz / 1e9).toFixed(1)}B oz @ ${gold_price.toFixed(0)}/oz
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-stealth-700 rounded p-3">
+              <div className="text-stealth-400 text-xs mb-1">
+                Gold ({isNumber(gold_pct) ? `${gold_pct.toFixed(1)}%` : "n/a"})
+              </div>
+              <div className="text-lg font-bold text-blue-300">{formatMarketCap(gold_cap)}</div>
+              <div className="text-xs text-stealth-500">
+                {isNumber(market_caps.metals?.AU?.stock_oz) && isNumber(gold_price)
+                  ? `${(market_caps.metals.AU.stock_oz / 1e9).toFixed(1)}B oz @ $${gold_price.toFixed(0)}/oz`
+                  : "n/a"}
+              </div>
+            </div>
+            <div className="bg-stealth-700 rounded p-3">
+              <div className="text-stealth-400 text-xs mb-1">Other 3 Metals</div>
+              <div className="text-lg font-bold text-blue-300">{formatMarketCap(others_cap)}</div>
+              <div className="text-xs text-stealth-500">Silver, Platinum, Palladium</div>
             </div>
           </div>
           <div className="bg-stealth-700 rounded p-3">
-            <div className="text-stealth-400 text-xs mb-1">Other 3 Metals</div>
-            <div className="text-lg font-bold text-blue-300">{formatMarketCap(others_cap)}</div>
-            <div className="text-xs text-stealth-500">Silver, Platinum, Palladium</div>
+            <div className="text-stealth-400 text-xs mb-2">
+              <DerivedLabel label="Current Ratio to Global M2" />
+            </div>
+            <div className="flex justify-between items-center">
+              <span>Metals / M2:</span>
+              <span className="text-lg font-bold text-blue-300">
+                {isNumber(m2_ratio) ? `${m2_ratio.toFixed(1)}%` : "n/a"}
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="bg-stealth-700 rounded p-3">
-          <div className="text-stealth-400 text-xs mb-2">Current Ratio to Global M2</div>
-          <div className="flex justify-between items-center">
-            <span>Metals / M2:</span>
-            <span className="text-lg font-bold text-blue-300">{m2_ratio.toFixed(1)}%</span>
-          </div>
-          <div className="text-xs text-stealth-400 mt-1">Historical: Pre-1971 (20%), Post-1980 (2-5%)</div>
-        </div>
         
         {/* 100-Year History Chart */}
-        <div className="border-t border-stealth-600 pt-4 mt-4">
-          <div className="text-stealth-400 text-xs mb-3 font-semibold">100-Year History: Metals/M2 Ratio</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={market_caps_history.history}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
-              <XAxis 
-                dataKey="year" 
-                stroke={CHART_NEUTRAL.axis} 
-                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                tickFormatter={(year) => year % 10 === 0 ? year : ''}
-              />
-              <YAxis 
-                stroke={CHART_NEUTRAL.axis} 
-                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                label={{ value: 'Metals/M2 %', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 10 } }}
-              />
-              <Tooltip 
-                contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: '4px' }}
-                formatter={(value: any) => [`${value}%`, 'Metals/M2']}
-                labelFormatter={(year) => `Year: ${year}`}
-              />
-              <ReferenceLine y={20} stroke={getFamilyColor("gold")} strokeDasharray="3 3" label={{ value: 'Gold Standard (~20%)', fill: getFamilyColor("gold"), fontSize: 9 }} />
-              <ReferenceLine y={5} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" label={{ value: 'Fiat Era Avg (~5%)', fill: getFamilyColor("benchmark"), fontSize: 9 }} />
-              <ReferenceLine x={1971} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: '1971: Nixon Shock', fill: statePalette.red, fontSize: 9, position: 'top' }} />
-              <Line 
-                type="monotone" 
-                dataKey="metals_to_m2_pct" 
-                stroke={getFamilyColor("metals")} 
-                strokeWidth={2} 
-                dot={false}
-                activeDot={{ r: 4, fill: getFamilyColor("metals") }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-          <p className="text-xs text-stealth-500 mt-2">
-            Pre-1971: Gold fixed at $35/oz (20% ratio). Post-1971: Free-floating gold (2-8% ratio). 
-            Peaks: 1980 inflation crisis (19%), 2011 financial crisis (8.5%). Current: {m2_ratio.toFixed(1)}%.
+          <div className="border-t border-stealth-600 pt-4 mt-4">
+            <div className="text-stealth-400 text-xs mb-3 font-semibold">
+              Metals/M2 Ratio History (Ingested)
+            </div>
+            {ratioHistory.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={ratioHistory}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                    <XAxis
+                      dataKey="date"
+                      stroke={CHART_NEUTRAL.axis}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      tickFormatter={(value) => String(value).slice(0, 4)}
+                    />
+                    <YAxis
+                      stroke={CHART_NEUTRAL.axis}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      label={{ value: 'Metals/M2 %', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 10 } }}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: '4px' }}
+                      formatter={(value: any) => [`${value}%`, 'Metals/M2']}
+                      labelFormatter={(date) => `Date: ${date}`}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="metals_to_m2_pct"
+                      stroke={getFamilyColor("metals")}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4, fill: getFamilyColor("metals") }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-stealth-500 mt-2">
+                  Current: {isNumber(m2_ratio) ? `${m2_ratio.toFixed(1)}%` : "n/a"}.
+                </p>
+              </>
+            ) : (
+              <div className="text-xs text-stealth-500">
+                Metals/M2 ratio requires ingested above-ground stock data. Latest gold price and global M2 shown below.
+                {latestHistory && (
+                  <div className="mt-2 text-stealth-400">
+                    Gold: {isNumber(latestHistory.gold_price) ? `$${latestHistory.gold_price.toFixed(2)}` : "n/a"} ·
+                    Global M2: {isNumber(latestHistory.global_m2_trillions) ? `${latestHistory.global_m2_trillions.toFixed(2)}T` : "n/a"}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <p className="text-xs text-stealth-400 border-t border-stealth-600 pt-3 mt-3">
+            Non-predictive scenarios: If Au {"->"} $3,000/oz, metals {"->"} {formatMarketCap(scenario_3k_total)}. 
+            If Au {"->"} $5,000/oz, {"->"} {formatMarketCap(scenario_5k_total)}.
           </p>
-        </div>
-        
-        <p className="text-xs text-stealth-400 border-t border-stealth-600 pt-3 mt-3">
-          Non-predictive scenarios: If Au {"->"} $3,000/oz, metals {"->"} {formatMarketCap(scenario_3k_total)}. 
-          If Au {"->"} $5,000/oz, {"->"} {formatMarketCap(scenario_5k_total)}.
-        </p>
       </div>
     </div>
   );
@@ -1125,6 +1326,8 @@ function CorrelationPanel({ correlations }: any) {
       </div>
     );
   }
+  const formatCorr = (value: number | null | undefined) =>
+    isNumber(value) ? value.toFixed(2) : "n/a";
 
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
@@ -1145,35 +1348,35 @@ function CorrelationPanel({ correlations }: any) {
               <td className="py-2">
                 <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} <span style={{ color: getMetalColor('AG') }}>Ag</span>
               </td>
-              <td className="text-right font-semibold">{correlations.au_ag.toFixed(2)}</td>
+                <td className="text-right font-semibold">{formatCorr(correlations.au_ag)}</td>
               <td className="text-right">High correlation (both monetary)</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
                 <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} SPY
               </td>
-              <td className="text-right font-semibold">{correlations.au_spy.toFixed(2)}</td>
+                <td className="text-right font-semibold">{formatCorr(correlations.au_spy)}</td>
               <td className="text-right">Diversification benefit</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
                 <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} TLT
               </td>
-              <td className="text-right font-semibold">{correlations.au_tlt.toFixed(2)}</td>
+                <td className="text-right font-semibold">{formatCorr(correlations.au_tlt)}</td>
               <td className="text-right">Bond substitute signal</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
                 <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} DXY
               </td>
-              <td className="text-right font-semibold">{correlations.au_dxy.toFixed(2)}</td>
+                <td className="text-right font-semibold">{formatCorr(correlations.au_dxy)}</td>
               <td className="text-right">Currency hedge effect</td>
             </tr>
             <tr>
               <td className="py-2">
                 <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} VIX
               </td>
-              <td className="text-right font-semibold">{correlations.au_vix.toFixed(2)}</td>
+                <td className="text-right font-semibold">{formatCorr(correlations.au_vix)}</td>
               <td className="text-right">Stress indicator</td>
             </tr>
           </tbody>
