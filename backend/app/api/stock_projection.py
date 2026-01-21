@@ -106,6 +106,10 @@ def _price_on_or_before(df: pd.DataFrame, date: pd.Timestamp) -> Optional[float]
         if not isinstance(price_df.index, pd.DatetimeIndex):
             price_df.index = pd.to_datetime(price_df.index, errors="coerce")
         price_df = price_df[price_df.index.notna()]
+        if price_df.index.tz is not None:
+            price_df.index = price_df.index.tz_localize(None)
+        if date.tzinfo is not None:
+            date = date.tz_localize(None)
         subset = price_df[price_df.index <= date]
         if subset.empty:
             return None
