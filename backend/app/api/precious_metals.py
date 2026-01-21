@@ -489,7 +489,7 @@ def get_cb_holdings():
             for holding in holdings:
                 prior_year = db.query(CBHolding).filter(
                     CBHolding.country == holding.country,
-                    CBHolding.date < holding.date - timedelta(days=365)
+                    CBHolding.date <= holding.date - timedelta(days=330)
                 ).order_by(desc(CBHolding.date)).first()
                 
                 yoy_pct = None

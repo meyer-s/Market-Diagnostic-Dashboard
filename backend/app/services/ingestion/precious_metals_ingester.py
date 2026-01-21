@@ -12,6 +12,7 @@ import requests
 import xml.etree.ElementTree as ET
 
 from app.utils.db_helpers import get_db_session
+from app.models.alternative_assets import EquityPrice
 from app.models.precious_metals import (
     MetalPrice, MetalRatio, CBHolding, COMEXInventory, ETFHolding,
     MetalCorrelation, BackwardationData, LBMAPremium, MetalVolatility,
@@ -46,6 +47,13 @@ class PreciousMetalsIngester:
         }
 
         try:
+            with get_db_session() as db:
+                recent_count = db.query(MetalPrice).filter(
+                    MetalPrice.date >= datetime.utcnow() - timedelta(days=120)
+                ).count()
+            if recent_count < 60:
+                self.backfill_historical_prices(days=180)
+
             # 1. Ingest spot prices
             results["prices_ingested"] = self._ingest_spot_prices()
             logger.info(f"Ingested {results['prices_ingested']} metal prices")
@@ -486,6 +494,17 @@ class PreciousMetalsIngester:
                         if price.price_usd_per_oz is not None
                     }
 
+                def equity_series(symbol: str) -> dict:
+                    prices = db.query(EquityPrice).filter(
+                        EquityPrice.symbol == symbol,
+                        EquityPrice.date >= cutoff_60d
+                    ).order_by(EquityPrice.date).all()
+                    return {
+                        price.date.date(): price.close
+                        for price in prices
+                        if price.close is not None
+                    }
+
                 def aligned_returns(series_a: dict, series_b: dict) -> list:
                     common_dates = sorted(set(series_a.keys()) & set(series_b.keys()))
                     if len(common_dates) < 2:
@@ -522,6 +541,12 @@ class PreciousMetalsIngester:
                     "PT": price_series("PT"),
                     "PD": price_series("PD"),
                 }
+                equity = {
+                    "SPY": equity_series("SPY"),
+                    "TLT": equity_series("TLT"),
+                    "DXY": equity_series("DXY"),
+                    "VIX": equity_series("VIX"),
+                }
 
                 au_ag_30d, au_ag_60d = compute_pair(series["AU"], series["AG"])
                 au_pt_30d, au_pt_60d = compute_pair(series["AU"], series["PT"])
@@ -529,8 +554,15 @@ class PreciousMetalsIngester:
                 ag_pt_30d, ag_pt_60d = compute_pair(series["AG"], series["PT"])
                 ag_pd_30d, ag_pd_60d = compute_pair(series["AG"], series["PD"])
                 pt_pd_30d, pt_pd_60d = compute_pair(series["PT"], series["PD"])
+                au_spy_30d, au_spy_60d = compute_pair(series["AU"], equity["SPY"])
+                au_tlt_30d, au_tlt_60d = compute_pair(series["AU"], equity["TLT"])
+                au_dxy_30d, au_dxy_60d = compute_pair(series["AU"], equity["DXY"])
+                au_vix_30d, au_vix_60d = compute_pair(series["AU"], equity["VIX"])
 
-                if not any([au_ag_60d, au_pt_60d, au_pd_60d, ag_pt_60d, ag_pd_60d, pt_pd_60d]):
+                if not any([
+                    au_ag_60d, au_pt_60d, au_pd_60d, ag_pt_60d, ag_pd_60d, pt_pd_60d,
+                    au_spy_60d, au_tlt_60d, au_dxy_60d, au_vix_60d,
+                ]):
                     return 0
 
                 correlation = MetalCorrelation(
@@ -547,6 +579,14 @@ class PreciousMetalsIngester:
                     ag_pd_30d=ag_pd_30d,
                     pt_pd_60d=pt_pd_60d,
                     pt_pd_30d=pt_pd_30d,
+                    au_spy_60d=au_spy_60d,
+                    au_spy_30d=au_spy_30d,
+                    au_tlt_60d=au_tlt_60d,
+                    au_tlt_30d=au_tlt_30d,
+                    au_dxy_60d=au_dxy_60d,
+                    au_dxy_30d=au_dxy_30d,
+                    au_vix_60d=au_vix_60d,
+                    au_vix_30d=au_vix_30d,
                 )
                 db.add(correlation)
                 count += 1

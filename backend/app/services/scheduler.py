@@ -56,6 +56,26 @@ async def scheduled_etl_job():
         except Exception as e:
             logger.error(f"❌ AAP data ingestion failed: {e}", exc_info=True)
         
+        # --- Precious Metals Ingestion ---
+        logger.info("?? Ingesting precious metals data...")
+        try:
+            from app.services.ingestion.precious_metals_ingester import (
+                ingest_precious_metals_daily,
+                ingest_precious_metals_weekly,
+                ingest_precious_metals_monthly,
+            )
+            daily_results = ingest_precious_metals_daily()
+            weekly_results = ingest_precious_metals_weekly()
+            monthly_results = ingest_precious_metals_monthly()
+            logger.info(
+                "? Precious metals ingestion completed (daily=%s, weekly=%s, monthly=%s)",
+                daily_results,
+                weekly_results,
+                monthly_results,
+            )
+        except Exception as e:
+            logger.error(f"? Precious metals ingestion failed: {e}", exc_info=True)
+
         # --- AAP Calculation ---
         logger.info("🎯 Calculating AAP indicator...")
         try:

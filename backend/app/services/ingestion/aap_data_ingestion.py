@@ -660,7 +660,7 @@ class CryptoEcosystemIngestion:
 
 
 class EquityPriceIngestion:
-    """Fetch daily equity prices (SPY, GDX) via yfinance."""
+    """Fetch daily equity prices (SPY, GDX, GLD, TLT, VIX, DXY) via yfinance."""
 
     def __init__(self, db: Session):
         self.db = db
@@ -668,8 +668,16 @@ class EquityPriceIngestion:
     def fetch_daily_prices(self) -> int:
         count = 0
         try:
-            for symbol in ["SPY", "GDX", "GLD"]:
-                data = yf.download(symbol, period="60d", progress=False, auto_adjust=True)
+            symbol_map = {
+                "SPY": "SPY",
+                "GDX": "GDX",
+                "GLD": "GLD",
+                "TLT": "TLT",
+                "VIX": "^VIX",
+                "DXY": "DX-Y.NYB",
+            }
+            for symbol, ticker in symbol_map.items():
+                data = yf.download(ticker, period="120d", progress=False, auto_adjust=True)
                 if data.empty:
                     continue
 
@@ -1007,7 +1015,7 @@ def run_daily_ingestion():
         else:
             logger.warning("Bitcoin network metrics not available")
 
-        # Fetch SPY prices for correlation calculations
+        # Fetch market prices for correlation calculations
         equity_ingest = EquityPriceIngestion(db)
         equity_updates = equity_ingest.fetch_daily_prices()
         logger.info("Equity prices updated: %s rows", equity_updates)
