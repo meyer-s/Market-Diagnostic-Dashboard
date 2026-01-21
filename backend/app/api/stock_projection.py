@@ -143,11 +143,19 @@ def compute_options_flow(stock: yf.Ticker) -> Optional[dict]:
         expiries = stock.options or []
         if not expiries:
             return None
-
-        expiry = expiries[0]
-        chain = stock.option_chain(expiry)
-        calls = chain.calls if chain and hasattr(chain, "calls") else pd.DataFrame()
-        puts = chain.puts if chain and hasattr(chain, "puts") else pd.DataFrame()
+        expiry = None
+        calls = pd.DataFrame()
+        puts = pd.DataFrame()
+        for exp in expiries:
+            try:
+                chain = stock.option_chain(exp)
+            except Exception:
+                continue
+            calls = chain.calls if chain and hasattr(chain, "calls") else pd.DataFrame()
+            puts = chain.puts if chain and hasattr(chain, "puts") else pd.DataFrame()
+            if not calls.empty or not puts.empty:
+                expiry = exp
+                break
 
         if calls.empty and puts.empty:
             return None
@@ -231,6 +239,16 @@ def compute_optionality_metrics(
     edr_values = []
     iv30 = None
 
+    def collect_iv_values(df: pd.DataFrame) -> None:
+        if df is None or df.empty:
+            return
+        iv_series = df.get("impliedVolatility")
+        if iv_series is None:
+            return
+        for val in iv_series.dropna().tolist():
+            if val and val > 0:
+                iv_values.append(float(val) * 100)
+
     for expiry, _ in front_expiries:
         try:
             chain = stock.option_chain(expiry)
@@ -240,15 +258,22 @@ def compute_optionality_metrics(
         calls = chain.calls if chain and hasattr(chain, "calls") else pd.DataFrame()
         puts = chain.puts if chain and hasattr(chain, "puts") else pd.DataFrame()
 
-        near_calls = _near_atm(calls, current_price)
-        near_puts = _near_atm(puts, current_price)
-        near_chain = pd.concat([near_calls, near_puts], ignore_index=True)
+        thresholds = [0.05, 0.1, 0.2]
+        near_calls = pd.DataFrame()
+        near_puts = pd.DataFrame()
+        near_chain = pd.DataFrame()
+        for threshold in thresholds:
+            near_calls = _near_atm(calls, current_price, threshold)
+            near_puts = _near_atm(puts, current_price, threshold)
+            near_chain = pd.concat([near_calls, near_puts], ignore_index=True)
+            if not near_chain.empty:
+                break
+
         if near_chain.empty:
+            collect_iv_values(pd.concat([calls, puts], ignore_index=True))
             continue
 
-        iv_series = near_chain.get("impliedVolatility")
-        if iv_series is not None:
-            iv_values.extend([float(v) * 100 for v in iv_series.dropna().tolist() if v > 0])
+        collect_iv_values(near_chain)
 
         for _, row in near_calls.iterrows():
             price = _option_mid_price(row)
@@ -266,10 +291,15 @@ def compute_optionality_metrics(
             extrinsic = max(price - intrinsic, 0)
             edr_values.append(extrinsic / price if price > 0 else 0)
 
-        if expiry == target_expiry and iv_series is not None and not iv_series.dropna().empty:
-            iv30 = round(float(iv_series.dropna().median() * 100), 2)
+        if expiry == target_expiry:
+            iv_series = near_chain.get("impliedVolatility")
+            if iv_series is not None and not iv_series.dropna().empty:
+                iv30 = round(float(iv_series.dropna().median() * 100), 2)
 
     iv_percentile = None
+    if iv30 is None and iv_values:
+        iv30 = round(float(np.median(iv_values)), 2)
+
     if iv30 is not None and iv_values:
         sorted_vals = sorted(iv_values)
         count = sum(1 for v in sorted_vals if v <= iv30)

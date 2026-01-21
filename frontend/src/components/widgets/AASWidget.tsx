@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
 import { Link } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { getFamilyColor } from "../../theme/metricColors";
 import {
   analyzeSeries,
   getTrendTone,
@@ -39,6 +40,11 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const [metalsPercent, setMetalsPercent] = useState(50);
   const [cryptoPercent, setCryptoPercent] = useState(50);
   const [chartData, setChartData] = useState<HistoricalData[]>([]);
+  const metalsColor = getFamilyColor("metals");
+  const cryptoColor = getFamilyColor("crypto");
+  const metalsFill = getFamilyColor("metals", "faint");
+  const cryptoFill = getFamilyColor("crypto", "faint");
+  const benchmarkColor = getFamilyColor("benchmark");
 
   useEffect(() => {
     if (aasData) {
@@ -320,8 +326,8 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                     type="monotone" 
                     dataKey="metals_contribution" 
                     stackId="1" 
-                    fill="#f59e0b" 
-                    stroke="#f59e0b"
+                    fill={metalsFill}
+                    stroke={metalsColor}
                     strokeWidth={1.5}
                     fillOpacity={0.5}
                     name="Metals"
@@ -330,8 +336,8 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                     type="monotone" 
                     dataKey="crypto_contribution" 
                     stackId="1" 
-                    fill="#3b82f6" 
-                    stroke="#3b82f6"
+                    fill={cryptoFill}
+                    stroke={cryptoColor}
                     strokeWidth={1.5}
                     fillOpacity={0.5}
                     name="Crypto"
@@ -340,7 +346,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                     yAxisId="right"
                     type="monotone" 
                     dataKey="sma20" 
-                    stroke="#f59e0b" 
+                    stroke={benchmarkColor}
                     strokeWidth={3}
                     dot={false}
                     name="20-Day SMA"
