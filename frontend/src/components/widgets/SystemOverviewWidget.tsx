@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  ComposedChart,
+  Bar,
   LineChart,
   Line,
   XAxis,
@@ -35,6 +37,10 @@ interface SystemHistoryPoint {
   timestamp: string;
   composite_score: number;
   state: string;
+  red_count?: number;
+  yellow_count?: number;
+  green_count?: number;
+  total_count?: number;
 }
 
 interface NewsArticle {
@@ -364,9 +370,28 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
           ...item,
           timestampNum: new Date(item.timestamp).getTime()
         }));
+        const resolvedChartData = chartData.map((item) => {
+          const red = item.red_count ?? 0;
+          const yellow = item.yellow_count ?? 0;
+          const providedGreen = item.green_count;
+          const totalFromPayload = item.total_count ?? 0;
+          const green =
+            typeof providedGreen === "number"
+              ? providedGreen
+              : totalFromPayload
+              ? Math.max(0, totalFromPayload - red - yellow)
+              : 0;
+          const total = totalFromPayload || red + yellow + green;
+          return {
+            ...item,
+            green_count: green,
+            total_count: total,
+          };
+        });
+        const showStabilityBars = resolvedChartData.some((item) => (item.total_count ?? 0) > 0);
         
         // Calculate domain with today at the end
-        const timestamps = chartData.map(d => d.timestampNum);
+        const timestamps = resolvedChartData.map(d => d.timestampNum);
         const minTime = Math.min(...timestamps);
         const maxTime = Math.max(...timestamps);
         
@@ -376,7 +401,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
           tickPositions.push(minTime + (maxTime - minTime) * (i / 4));
         }
         
-        console.log('SystemOverview chart data sample:', chartData.slice(0, 3), 'total:', chartData.length);
+        console.log('SystemOverview chart data sample:', resolvedChartData.slice(0, 3), 'total:', resolvedChartData.length);
         
         return (
             <div className="pt-6 border-t border-stealth-700">
@@ -385,7 +410,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             </h4>
             <div className="w-full h-60 sm:h-72 lg:h-80 -mx-6 sm:mx-0 px-3 sm:px-0">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={CHART_MARGIN}>
+                <ComposedChart data={resolvedChartData} margin={CHART_MARGIN}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                   <XAxis
                     dataKey="timestampNum"
@@ -406,11 +431,20 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                     stroke="#555560"
                   />
                   <YAxis
+                    yAxisId="score"
                     tick={{ fill: "#6b7280", fontSize: 10 }}
                     stroke="#555560"
                     domain={['dataMin - 5', 'dataMax + 5']}
                     scale="linear"
                   />
+                  {showStabilityBars && (
+                    <YAxis
+                      yAxisId="counts"
+                      orientation="right"
+                      hide
+                      domain={[0, "dataMax"]}
+                    />
+                  )}
                   <Tooltip
                     contentStyle={{
                       backgroundColor: "#161619",
@@ -420,22 +454,68 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                     }}
                     labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
                     itemStyle={{ color: "#ffffff", fontSize: 11 }}
-                    formatter={(value: number) => [`${value.toFixed(1)}`, "Score"]}
+                    formatter={(value: number, name: string) => {
+                      if (name === "green_count") return [Math.round(value), "Green indicators"];
+                      if (name === "yellow_count") return [Math.round(value), "Yellow indicators"];
+                      if (name === "red_count") return [Math.round(value), "Red indicators"];
+                      return [`${value.toFixed(1)}`, "Score"];
+                    }}
                     labelFormatter={(label: string | number) =>
                       new Date(label).toLocaleDateString()
                     }
                   />
-                  <ReferenceLine y={70} stroke="#10b981" strokeDasharray="3 3" opacity={0.3} />
-                  <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" opacity={0.3} />
+                  <ReferenceLine
+                    yAxisId="score"
+                    y={70}
+                    stroke="#10b981"
+                    strokeDasharray="3 3"
+                    opacity={0.3}
+                  />
+                  <ReferenceLine
+                    yAxisId="score"
+                    y={40}
+                    stroke="#ef4444"
+                    strokeDasharray="3 3"
+                    opacity={0.3}
+                  />
+                  {showStabilityBars && (
+                    <>
+                      <Bar
+                        yAxisId="counts"
+                        dataKey="green_count"
+                        stackId="stability"
+                        fill="#10b981"
+                        fillOpacity={0.18}
+                        barSize={10}
+                      />
+                      <Bar
+                        yAxisId="counts"
+                        dataKey="yellow_count"
+                        stackId="stability"
+                        fill="#eab308"
+                        fillOpacity={0.18}
+                        barSize={10}
+                      />
+                      <Bar
+                        yAxisId="counts"
+                        dataKey="red_count"
+                        stackId="stability"
+                        fill="#ef4444"
+                        fillOpacity={0.18}
+                        barSize={10}
+                      />
+                    </>
+                  )}
                   <Line
                     type="monotone"
+                    yAxisId="score"
                     dataKey="composite_score"
                     stroke="#60a5fa"
                     strokeWidth={2}
                     dot={false}
                     animationDuration={300}
                   />
-                </LineChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>

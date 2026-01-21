@@ -29,6 +29,15 @@ type OverallInsight = {
   confidence: InsightSignal["confidence"];
 };
 
+const describeDirection = (direction: InsightSignal["primaryDirection"]) => {
+  if (direction === "up") return "an uptrend";
+  if (direction === "down") return "a downtrend";
+  return "a sideways move";
+};
+
+const capitalize = (value: string) =>
+  value.length ? `${value[0].toUpperCase()}${value.slice(1)}` : value;
+
 const buildOverallInsight = (
   signals: InsightSignal[],
   trendLabel: string
@@ -80,13 +89,15 @@ const buildOverallInsight = (
       : posture === "risk-off"
       ? "text-red-400"
       : "text-yellow-400";
+  const primaryPhrase = describeDirection(primaryDirection);
+  const secondaryPhrase = describeDirection(secondaryDirection);
   let summary = "";
   if (posture === "risk-on") {
-    summary = `Tailwinds lead. ${trendLabel} ${primaryDirection}, recent ${secondaryDirection}.`;
+    summary = `Tailwinds lead. ${trendLabel} shows ${primaryPhrase}, with ${secondaryPhrase} recently.`;
   } else if (posture === "risk-off") {
-    summary = `Caution leads. ${trendLabel} ${primaryDirection}, recent ${secondaryDirection}.`;
+    summary = `Caution leads. ${trendLabel} shows ${primaryPhrase}, with ${secondaryPhrase} recently.`;
   } else {
-    summary = `Signals split. ${trendLabel} ${primaryDirection}, recent ${secondaryDirection}.`;
+    summary = `Signals are split. ${trendLabel} shows ${primaryPhrase}, with ${secondaryPhrase} recently.`;
   }
 
   if (confidence === "low") {
@@ -139,10 +150,7 @@ export default function Dashboard() {
     () => insightOrder.map((id) => insights[id]).filter(Boolean) as InsightSignal[],
     [insights]
   );
-  const overallTrendLabel = useMemo(
-    () => getTrendWindows(trendPeriod).label.toLowerCase(),
-    [trendPeriod]
-  );
+  const overallTrendLabel = useMemo(() => getTrendWindows(trendPeriod).label, [trendPeriod]);
   const overallInsight = useMemo(
     () => buildOverallInsight(insightList, overallTrendLabel),
     [insightList, overallTrendLabel]
@@ -171,9 +179,9 @@ export default function Dashboard() {
     mixed: "bg-yellow-500/15 text-yellow-300 border-yellow-400/40",
   } as const;
   const directionLabel = {
-    up: "up",
-    down: "down",
-    flat: "flat",
+    up: "Uptrend",
+    down: "Downtrend",
+    flat: "Sideways",
   } as const;
   const directionStyles = {
     up: "text-green-300",
@@ -307,11 +315,7 @@ export default function Dashboard() {
                 <div className={`text-lg font-semibold ${overallInsight.color}`}>{overallInsight.label}</div>
               </div>
               <div className="text-xs text-stealth-500 text-right">
-                {overallInsight.confidence === "high"
-                  ? "clear read"
-                  : overallInsight.confidence === "low"
-                  ? "noisy read"
-                  : "mixed read"}
+                {confidenceLabel}
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -329,7 +333,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <div className="text-[10px] text-stealth-200 mt-1 truncate">
-                    {insight.summary}
+                    {formatInsightSummary(insight)}
                   </div>
                 </div>
               ))}
@@ -365,3 +369,16 @@ export default function Dashboard() {
     </div>
   );
 }
+  const formatInsightSummary = (insight: InsightSignal) => {
+    const primary = capitalize(describeDirection(insight.primaryDirection));
+    const secondary = capitalize(describeDirection(insight.secondaryDirection));
+    return `${overallTrendLabel}: ${primary}. Recent: ${secondary}.`;
+  };
+
+  const confidenceLabel = overallInsight
+    ? overallInsight.confidence === "high"
+      ? "Clear read"
+      : overallInsight.confidence === "low"
+      ? "Noisy read"
+      : "Mixed read"
+    : "";

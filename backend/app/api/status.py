@@ -88,6 +88,9 @@ def get_system_history(days: int = 365):
                     elif val.state == "YELLOW":
                         yellow_count += 1
             
+            total_count = len(latest_per_indicator)
+            green_count = max(0, total_count - red_count - yellow_count)
+
             if total_weight > 0:
                 composite_score = total_weighted_score / total_weight
                 
@@ -113,6 +116,8 @@ def get_system_history(days: int = 365):
                     "state": state,
                     "red_count": red_count,
                     "yellow_count": yellow_count,
+                    "green_count": green_count,
+                    "total_count": total_count,
                     "contributions": contributions,
                 })
         
