@@ -130,6 +130,7 @@ def _last_quarter_dates(df: pd.DataFrame, max_points: int = 8) -> list:
 
 
 def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
+    max_points = 12
     income_df = _get_quarterly_df(
         stock,
         [
@@ -162,7 +163,10 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
             "Net Income",
             "Net Income Applicable To Common Shares",
             "Net Income Common Stockholders",
+            "Net Income Continuous Operations",
+            "Net Income From Continuing Operations",
         ],
+        max_points=max_points,
     )
 
     equity_series = _series_from_row(
@@ -172,6 +176,7 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
             "Total Equity Gross Minority Interest",
             "Total Equity",
         ],
+        max_points=max_points,
     )
 
     shares_outstanding = None
@@ -185,15 +190,72 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         except Exception:
             shares_outstanding = None
 
+    reported_eps_series = _series_from_row(
+        income_df,
+        [
+            "Diluted EPS",
+            "Basic EPS",
+            "Diluted EPS Continued Operations",
+            "Basic EPS Continued Operations",
+            "Diluted EPS Continuing Operations",
+            "Basic EPS Continuing Operations",
+            "EPS",
+        ],
+        max_points=max_points,
+    )
+
+    share_count_series = _series_from_row(
+        balance_df,
+        [
+            "Ordinary Shares Number",
+            "Share Issued",
+            "Common Stock Shares Outstanding",
+            "Common Stock Shares Issued",
+            "Common Shares Outstanding",
+            "Shares Outstanding",
+        ],
+        max_points=max_points,
+    )
+    if not share_count_series:
+        share_count_series = _series_from_row(
+            income_df,
+            [
+                "Diluted Average Shares",
+                "Basic Average Shares",
+                "Diluted Weighted Average Shares",
+                "Basic Weighted Average Shares",
+                "Weighted Average Shares",
+            ],
+            max_points=max_points,
+        )
+
     eps_series = []
-    if shares_outstanding and net_income_series:
-        for point in net_income_series:
-            eps_series.append(
-                {
-                    "date": point["date"],
-                    "value": float(point["value"]) / float(shares_outstanding),
-                }
-            )
+    eps_derived = False
+    if reported_eps_series:
+        eps_series = reported_eps_series
+    elif net_income_series:
+        share_by_date = {point["date"]: point["value"] for point in share_count_series}
+        if share_by_date:
+            for point in net_income_series:
+                shares = share_by_date.get(point["date"])
+                if shares is None or shares == 0:
+                    continue
+                eps_series.append(
+                    {
+                        "date": point["date"],
+                        "value": float(point["value"]) / float(shares),
+                    }
+                )
+            eps_derived = True
+        elif shares_outstanding:
+            for point in net_income_series:
+                eps_series.append(
+                    {
+                        "date": point["date"],
+                        "value": float(point["value"]) / float(shares_outstanding),
+                    }
+                )
+            eps_derived = True
 
     roe_series = []
     if net_income_series and equity_series:
@@ -249,8 +311,24 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
                         {"date": date.date().isoformat(), "value": float(op_value) + float(cap_value)}
                     )
 
+    fcf_derived = True
+    if _row_series(cashflow_df, ["Free Cash Flow"]) is not None:
+        fcf_derived = False
+
     market_cap_series = []
-    if shares_outstanding:
+    shares_by_date = {point["date"]: point["value"] for point in share_count_series}
+    if shares_by_date:
+        for date_str, shares in shares_by_date.items():
+            date = pd.to_datetime(date_str, errors="coerce")
+            if pd.isna(date):
+                continue
+            price = _price_on_or_before(price_df, date)
+            if price is None or shares is None or shares == 0:
+                continue
+            market_cap_series.append(
+                {"date": date.date().isoformat(), "value": float(price) * float(shares)}
+            )
+    elif shares_outstanding:
         quarter_dates = sorted(
             {
                 point["date"]
@@ -259,7 +337,7 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
             }
         )
         if not quarter_dates:
-            quarter_dates = _last_quarter_dates(price_df, max_points=8)
+            quarter_dates = _last_quarter_dates(price_df, max_points=max_points)
         for date_str in quarter_dates:
             date = pd.to_datetime(date_str, errors="coerce")
             if pd.isna(date):
@@ -288,17 +366,17 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
                 continue
             pe_series.append({"date": point["date"], "value": float(price) / trailing_eps})
 
-    def _limit(series: list, max_points: int = 8) -> list:
+    def _limit(series: list, limit: int) -> list:
         series.sort(key=lambda item: item["date"])
-        return series[-max_points:]
+        return series[-limit:]
 
     return {
         "as_of": datetime.utcnow().isoformat(),
-        "eps": {"series": _limit(eps_series), "derived": True},
-        "roe": {"series": _limit(roe_series), "derived": True},
-        "free_cash_flow": {"series": _limit(fcf_series), "derived": True},
-        "market_cap": {"series": _limit(market_cap_series), "derived": True},
-        "pe_ratio": {"series": _limit(pe_series), "derived": True},
+        "eps": {"series": _limit(eps_series, max_points), "derived": eps_derived},
+        "roe": {"series": _limit(roe_series, max_points), "derived": True},
+        "free_cash_flow": {"series": _limit(fcf_series, max_points), "derived": fcf_derived},
+        "market_cap": {"series": _limit(market_cap_series, max_points), "derived": True},
+        "pe_ratio": {"series": _limit(pe_series, max_points), "derived": True},
     }
 
 def fetch_stock_data(ticker: str, days: int = 2000) -> pd.DataFrame:

@@ -395,7 +395,7 @@ export default function StockAnalysis() {
             <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
-                <span className="text-[10px] sm:text-xs text-gray-500">Last 2 years (quarterly)</span>
+                <span className="text-[10px] sm:text-xs text-gray-500">Last 3 years (quarterly)</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
