@@ -98,6 +98,15 @@ def _series_from_row(df: pd.DataFrame, row_names, max_points: int = 8) -> list:
     return data[-max_points:]
 
 
+def _merge_series(primary: list, secondary: list, max_points: int) -> list:
+    merged = {item["date"]: item for item in secondary}
+    for item in primary:
+        merged[item["date"]] = item
+    combined = list(merged.values())
+    combined.sort(key=lambda item: item["date"])
+    return combined[-max_points:]
+
+
 def _price_on_or_before(df: pd.DataFrame, date: pd.Timestamp) -> Optional[float]:
     if df is None or df.empty or "Close" not in df.columns:
         return None
@@ -118,6 +127,28 @@ def _price_on_or_before(df: pd.DataFrame, date: pd.Timestamp) -> Optional[float]
         return None
 
 
+def _value_on_or_before(series: pd.Series, date: pd.Timestamp) -> Optional[float]:
+    if series is None or series.empty:
+        return None
+    try:
+        data = series.dropna()
+        if data.empty:
+            return None
+        if not isinstance(data.index, pd.DatetimeIndex):
+            data.index = pd.to_datetime(data.index, errors="coerce")
+        data = data[data.index.notna()]
+        if data.index.tz is not None:
+            data.index = data.index.tz_localize(None)
+        if date.tzinfo is not None:
+            date = date.tz_localize(None)
+        subset = data[data.index <= date]
+        if subset.empty:
+            return None
+        return float(subset.iloc[-1])
+    except Exception:
+        return None
+
+
 def _last_quarter_dates(df: pd.DataFrame, max_points: int = 8) -> list:
     if df is None or df.empty:
         return []
@@ -131,6 +162,36 @@ def _last_quarter_dates(df: pd.DataFrame, max_points: int = 8) -> list:
         return unique_dates[-max_points:]
     except Exception:
         return []
+
+
+def _series_from_earnings_dates(stock: yf.Ticker, max_points: int = 12) -> list:
+    try:
+        earnings = stock.get_earnings_dates(limit=max_points * 3)
+    except Exception:
+        return []
+    if earnings is None or earnings.empty:
+        return []
+
+    eps_column = None
+    for col in earnings.columns:
+        if "reported" in str(col).lower() and "eps" in str(col).lower():
+            eps_column = col
+            break
+    if eps_column is None:
+        return []
+
+    data = []
+    for idx, row in earnings.iterrows():
+        eps_value = row.get(eps_column)
+        if pd.isna(eps_value):
+            continue
+        date = pd.to_datetime(idx, errors="coerce")
+        if pd.isna(date):
+            continue
+        data.append({"date": date.date().isoformat(), "value": float(eps_value)})
+
+    data.sort(key=lambda item: item["date"])
+    return data[-max_points:]
 
 
 def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
@@ -194,6 +255,13 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         except Exception:
             shares_outstanding = None
 
+    shares_full = None
+    try:
+        start = (datetime.utcnow() - timedelta(days=365 * 3 + 30)).date().isoformat()
+        shares_full = stock.get_shares_full(start=start)
+    except Exception:
+        shares_full = None
+
     reported_eps_series = _series_from_row(
         income_df,
         [
@@ -207,6 +275,7 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         ],
         max_points=max_points,
     )
+    earnings_eps_series = _series_from_earnings_dates(stock, max_points=max_points)
 
     share_count_series = _series_from_row(
         balance_df,
@@ -237,6 +306,8 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
     eps_derived = False
     if reported_eps_series:
         eps_series = reported_eps_series
+        if len(eps_series) < max_points and earnings_eps_series:
+            eps_series = _merge_series(eps_series, earnings_eps_series, max_points)
     elif net_income_series:
         share_by_date = {point["date"]: point["value"] for point in share_count_series}
         if share_by_date:
@@ -260,6 +331,9 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
                     }
                 )
             eps_derived = True
+    if not eps_series and earnings_eps_series:
+        eps_series = earnings_eps_series
+        eps_derived = False
 
     roe_series = []
     if net_income_series and equity_series:
@@ -328,6 +402,18 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
                 continue
             price = _price_on_or_before(price_df, date)
             if price is None or shares is None or shares == 0:
+                continue
+            market_cap_series.append(
+                {"date": date.date().isoformat(), "value": float(price) * float(shares)}
+            )
+    elif isinstance(shares_full, pd.Series) and not shares_full.empty:
+        for point in eps_series or []:
+            date = pd.to_datetime(point["date"], errors="coerce")
+            if pd.isna(date):
+                continue
+            shares = _value_on_or_before(shares_full, date)
+            price = _price_on_or_before(price_df, date)
+            if shares is None or price is None:
                 continue
             market_cap_series.append(
                 {"date": date.date().isoformat(), "value": float(price) * float(shares)}
