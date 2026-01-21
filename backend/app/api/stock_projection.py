@@ -406,7 +406,8 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
             market_cap_series.append(
                 {"date": date.date().isoformat(), "value": float(price) * float(shares)}
             )
-    elif isinstance(shares_full, pd.Series) and not shares_full.empty:
+    market_cap_full = []
+    if isinstance(shares_full, pd.Series) and not shares_full.empty:
         for point in eps_series or []:
             date = pd.to_datetime(point["date"], errors="coerce")
             if pd.isna(date):
@@ -415,9 +416,11 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
             price = _price_on_or_before(price_df, date)
             if shares is None or price is None:
                 continue
-            market_cap_series.append(
+            market_cap_full.append(
                 {"date": date.date().isoformat(), "value": float(price) * float(shares)}
             )
+    if market_cap_full:
+        market_cap_series = _merge_series(market_cap_series, market_cap_full, max_points)
     elif shares_outstanding:
         quarter_dates = sorted(
             {
