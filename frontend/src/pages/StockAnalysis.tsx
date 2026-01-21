@@ -395,7 +395,21 @@ export default function StockAnalysis() {
             <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
-                <span className="text-[10px] sm:text-xs text-gray-500">Last 3 years (quarterly)</span>
+                <span className="text-[10px] sm:text-xs text-gray-500">Up to 3 years (quarterly)</span>
+              </div>
+              <div className="text-[11px] text-gray-400 mb-4">
+                Source: Yahoo Finance filings via yfinance. Cadence: quarterly. Coverage varies by metric.
+                {" "}
+                {[
+                  { label: "EPS", series: fundamentals.eps?.series },
+                  { label: "ROE", series: fundamentals.roe?.series },
+                  { label: "FCF", series: fundamentals.free_cash_flow?.series },
+                  { label: "MCap", series: fundamentals.market_cap?.series },
+                  { label: "P/E", series: fundamentals.pe_ratio?.series },
+                ]
+                  .map((item) => `${item.label}: ${item.series?.length ?? 0}q`)
+                  .join(" · ")}
+                .
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
