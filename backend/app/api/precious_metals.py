@@ -122,6 +122,25 @@ def _latest_cb_gold_oz(db) -> Optional[float]:
     return total_tonnes * TONNES_TO_OZ
 
 
+def _cb_gold_oz_series(db) -> dict:
+    subq = db.query(
+        CBHolding.date.label("date"),
+        CBHolding.country.label("country"),
+        func.max(CBHolding.id).label("max_id")
+    ).filter(
+        CBHolding.gold_tonnes.isnot(None)
+    ).group_by(CBHolding.date, CBHolding.country).subquery()
+
+    rows = db.query(
+        subq.c.date,
+        func.sum(CBHolding.gold_tonnes)
+    ).join(
+        CBHolding,
+        CBHolding.id == subq.c.max_id
+    ).group_by(subq.c.date).order_by(subq.c.date).all()
+    return {row[0].date(): row[1] * TONNES_TO_OZ for row in rows if row[1] is not None}
+
+
 def _compute_real_rate_signal(db) -> Optional[float]:
     values = [
         row[0] for row in db.query(MacroLiquidityData.real_rate_10y)
@@ -526,12 +545,20 @@ def get_cb_holdings():
                 yoy_pct = None
                 if prior_year and prior_year.gold_tonnes:
                     yoy_pct = (holding.gold_tonnes - prior_year.gold_tonnes) / prior_year.gold_tonnes * 100
+
+                prior_snapshot = db.query(CBHolding).filter(
+                    CBHolding.country == holding.country,
+                    CBHolding.date < holding.date
+                ).order_by(desc(CBHolding.date)).first()
+                net_purchase_qty = None
+                if prior_snapshot and prior_snapshot.gold_tonnes is not None:
+                    net_purchase_qty = holding.gold_tonnes - prior_snapshot.gold_tonnes
                 
                 result.append({
                     "country": holding.country,
                     "gold_tonnes": holding.gold_tonnes,
                     "pct_of_reserves": holding.pct_of_reserves,
-                    "net_purchase_qty": None,
+                    "net_purchase_qty": net_purchase_qty,
                     "net_purchase_yoy_pct": yoy_pct
                 })
             
@@ -787,6 +814,7 @@ async def get_market_caps_history():
 
         price_map = {p.date.date(): p.price_usd_per_oz for p in gold_prices}
         m2_map = {m.date.date(): m.global_m2 for m in macro}
+        cb_gold_map = _cb_gold_oz_series(db)
         gld_holdings = db.query(ETFHolding).filter(
             ETFHolding.ticker == "GLD",
             ETFHolding.holdings.isnot(None)
@@ -796,11 +824,20 @@ async def get_market_caps_history():
         overlap_dates = sorted(set(price_map.keys()) & set(m2_map.keys()))
 
         history = []
+        cb_dates = sorted(cb_gold_map.keys())
+        cb_index = 0
+        last_cb_oz = None
         last_holdings = None
         for date in overlap_dates:
             if date in holdings_map:
                 last_holdings = holdings_map[date]
-            tracked_gold_oz = (last_holdings or 0.0) + cb_gold_oz if last_holdings is not None else None
+            while cb_index < len(cb_dates) and cb_dates[cb_index] <= date:
+                last_cb_oz = cb_gold_map[cb_dates[cb_index]]
+                cb_index += 1
+            tracked_cb_oz = last_cb_oz if last_cb_oz is not None else cb_gold_oz
+            tracked_gold_oz = None
+            if last_holdings is not None or tracked_cb_oz is not None:
+                tracked_gold_oz = (last_holdings or 0.0) + (tracked_cb_oz or 0.0)
             tracked_value = (tracked_gold_oz * price_map[date]) if tracked_gold_oz is not None else None
             metals_to_m2 = (
                 (tracked_value / (m2_map[date] * 1e12)) * 100
@@ -817,7 +854,7 @@ async def get_market_caps_history():
         return {
             'history': history,
             'notes': {
-                'metals_to_m2_pct': 'Tracked using GLD holdings and latest CB gold holdings.'
+                'metals_to_m2_pct': 'Tracked using GLD holdings and CB gold holdings (carried forward).'
             }
         }
 

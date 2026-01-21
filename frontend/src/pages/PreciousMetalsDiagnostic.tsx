@@ -709,7 +709,9 @@ function CBContextPanel({ cb_holdings, indicators }: any) {
                     <span>
                       {isNumber(holding.net_purchase_yoy_pct)
                         ? `${formatSignedValue(holding.net_purchase_yoy_pct, 0)}% YoY`
-                        : "n/a"}
+                        : isNumber(holding.net_purchase_qty)
+                          ? `${formatSignedValue(holding.net_purchase_qty, 1)}t`
+                          : "n/a"}
                     </span>
                   </div>
                 ))}
