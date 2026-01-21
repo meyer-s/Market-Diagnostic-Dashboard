@@ -4,7 +4,11 @@ Handles daily price updates, ratio calculations, and periodic fundamental data
 """
 
 import logging
-from datetime import datetime, timedelta
+import os
+import csv
+import json
+from io import StringIO
+from datetime import datetime, timedelta, date
 from typing import List, Dict, Tuple, Optional
 import statistics
 import yfinance as yf
@@ -692,69 +696,286 @@ class PreciousMetalsIngester:
 
     # ==================== WEEKLY INGESTION ====================
 
+    @staticmethod
+    def _get_row_value(row: Dict[str, object], keys: List[str]) -> Optional[object]:
+        for key in keys:
+            if key in row:
+                return row[key]
+        lower_map = {str(k).lower(): k for k in row.keys()}
+        for key in keys:
+            match = lower_map.get(key.lower())
+            if match is not None:
+                return row[match]
+        return None
+
+    @staticmethod
+    def _parse_comex_number(value: object) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip()
+        if not text or text.lower() in {"n/a", "na", "null", "none", "-"}:
+            return None
+        negative = False
+        if text.startswith("(") and text.endswith(")"):
+            negative = True
+            text = text[1:-1]
+        text = text.replace(",", "")
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+        return -number if negative else number
+
+    @staticmethod
+    def _parse_comex_date(value: object) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, date):
+            return datetime(value.year, value.month, value.day)
+        text = str(value).strip()
+        if not text:
+            return None
+        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y%m%d", "%d-%b-%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def _normalize_comex_metal(value: object) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip().upper()
+        if not text:
+            return None
+        mapping = {
+            "GOLD": "AU",
+            "AU": "AU",
+            "XAU": "AU",
+            "GC": "AU",
+            "GC=F": "AU",
+            "SILVER": "AG",
+            "AG": "AG",
+            "XAG": "AG",
+            "SI": "AG",
+            "SI=F": "AG",
+            "PLATINUM": "PT",
+            "PT": "PT",
+            "XPT": "PT",
+            "PL": "PT",
+            "PL=F": "PT",
+            "PALLADIUM": "PD",
+            "PD": "PD",
+            "XPD": "PD",
+            "PA": "PD",
+            "PA=F": "PD",
+        }
+        if text in mapping:
+            return mapping[text]
+        if text.startswith("GOLD"):
+            return "AU"
+        if text.startswith("SILVER"):
+            return "AG"
+        if text.startswith("PLATINUM"):
+            return "PT"
+        if text.startswith("PALLADIUM"):
+            return "PD"
+        if len(text) == 2 and text.isalpha():
+            return text
+        return None
+
+    @staticmethod
+    def _extract_rows_from_json(payload: object) -> List[Dict[str, object]]:
+        if isinstance(payload, list):
+            return payload
+        if isinstance(payload, dict):
+            for key in ("data", "rows", "items", "results", "values"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return value
+            for value in payload.values():
+                if isinstance(value, list):
+                    return value
+        return []
+
+    @staticmethod
+    def _read_comex_source(source: str) -> List[Dict[str, object]]:
+        if not source:
+            return []
+        if source.startswith("http://") or source.startswith("https://"):
+            response = requests.get(source, timeout=30)
+            response.raise_for_status()
+            content = response.text
+        else:
+            if not os.path.exists(source):
+                logger.warning("COMEX source not found: %s", source)
+                return []
+            with open(source, "r", encoding="utf-8") as handle:
+                content = handle.read()
+        if not content or not content.strip():
+            return []
+        stripped = content.lstrip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            payload = json.loads(content)
+            return PreciousMetalsIngester._extract_rows_from_json(payload)
+        reader = csv.DictReader(StringIO(content))
+        return [row for row in reader if row]
+
+    def _build_open_interest_lookup(self, rows: List[Dict[str, object]]) -> Dict[Tuple[date, str], float]:
+        lookup: Dict[Tuple[date, str], float] = {}
+        date_keys = ["date", "trade_date", "report_date", "as_of", "asof", "timestamp"]
+        metal_keys = ["metal", "commodity", "symbol", "product", "name"]
+        oi_keys = ["open_interest", "openinterest", "oi", "open_int", "openinterest_total"]
+        for row in rows:
+            date_value = self._parse_comex_date(self._get_row_value(row, date_keys))
+            metal_value = self._normalize_comex_metal(self._get_row_value(row, metal_keys))
+            oi_value = self._parse_comex_number(self._get_row_value(row, oi_keys))
+            if not date_value or not metal_value or oi_value is None:
+                continue
+            lookup[(date_value.date(), metal_value)] = oi_value
+        return lookup
+
     def _ingest_comex_data(self) -> int:
-        """Ingest COMEX inventory data"""
+        """Ingest COMEX inventory data from configured sources."""
         count = 0
+        inventory_source = getattr(settings, "COMEX_INVENTORY_URL", None) or getattr(settings, "COMEX_INVENTORY_PATH", None)
+        oi_source = getattr(settings, "COMEX_OPEN_INTEREST_URL", None) or getattr(settings, "COMEX_OPEN_INTEREST_PATH", None)
+        source_label = getattr(settings, "COMEX_SOURCE", None) or "COMEX"
+        allow_estimates = str(getattr(settings, "COMEX_ALLOW_ESTIMATES", "")).lower() in {"1", "true", "yes"}
+        placeholder_sources = {"SEED", "ESTIMATED_FROM_PRICES"}
+
         with get_db_session() as db:
             try:
-                # If real COMEX data exists recently, avoid overwriting with estimates.
-                recent_real = db.query(COMEXInventory).filter(
-                    COMEXInventory.metal == "AU",
-                    COMEXInventory.date >= datetime.utcnow() - timedelta(days=14),
-                    COMEXInventory.source.notin_(["ESTIMATED_FROM_PRICES", "SEED"])
-                ).count()
+                rows = self._read_comex_source(inventory_source) if inventory_source else []
+                if not rows:
+                    if not allow_estimates:
+                        logger.info("No COMEX inventory source configured; skipping COMEX ingestion")
+                        return 0
+                open_interest_lookup: Dict[Tuple[date, str], float] = {}
+                if oi_source:
+                    oi_rows = self._read_comex_source(oi_source)
+                    open_interest_lookup = self._build_open_interest_lookup(oi_rows)
 
-                if recent_real:
-                    logger.info("Real COMEX data detected; skipping estimates")
-                    return 0
+                if rows:
+                    date_keys = ["date", "trade_date", "report_date", "as_of", "asof", "timestamp"]
+                    metal_keys = ["metal", "commodity", "symbol", "product", "name"]
+                    registered_keys = ["registered_oz", "registered", "registered_ounces", "reg_oz", "registered_ozs"]
+                    eligible_keys = ["eligible_oz", "eligible", "eligible_ounces", "elig_oz", "eligible_ozs"]
+                    total_keys = ["total_oz", "total", "total_ounces", "total_ozs"]
+                    open_interest_keys = ["open_interest", "openinterest", "oi", "open_int", "openinterest_total"]
+                    ratio_keys = ["oi_to_registered_ratio", "oi_to_registered", "oi_registered_ratio", "open_interest_ratio"]
+                    source_keys = ["source", "data_source"]
 
-                gold_prices = db.query(MetalPrice).filter(
-                    MetalPrice.metal == "AU",
-                    MetalPrice.date >= datetime.utcnow() - timedelta(days=90)
-                ).order_by(MetalPrice.date).all()
+                    for row in rows:
+                        date_value = self._parse_comex_date(self._get_row_value(row, date_keys))
+                        metal_value = self._normalize_comex_metal(self._get_row_value(row, metal_keys))
+                        if not date_value or not metal_value:
+                            continue
 
-                if len(gold_prices) < 2:
-                    logger.info("Insufficient gold prices to estimate COMEX inventory")
-                    return 0
+                        registered_oz = self._parse_comex_number(self._get_row_value(row, registered_keys))
+                        eligible_oz = self._parse_comex_number(self._get_row_value(row, eligible_keys))
+                        total_oz = self._parse_comex_number(self._get_row_value(row, total_keys))
+                        open_interest = self._parse_comex_number(self._get_row_value(row, open_interest_keys))
 
-                for idx in range(1, len(gold_prices)):
-                    prev_price = gold_prices[idx - 1].price_usd_per_oz
-                    curr_price = gold_prices[idx].price_usd_per_oz
-                    if not prev_price or not curr_price:
-                        continue
+                        if open_interest is None and open_interest_lookup:
+                            open_interest = open_interest_lookup.get((date_value.date(), metal_value))
 
-                    date_key = gold_prices[idx].date.replace(hour=0, minute=0, second=0, microsecond=0)
-                    existing = db.query(COMEXInventory).filter(
-                        COMEXInventory.metal == "AU",
-                        COMEXInventory.date >= date_key,
-                        COMEXInventory.date < date_key + timedelta(days=1)
-                    ).first()
-                    if existing:
-                        continue
+                        if total_oz is None and registered_oz is not None and eligible_oz is not None:
+                            total_oz = registered_oz + eligible_oz
 
-                    daily_return = abs(curr_price - prev_price) / prev_price
-                    volatility_stress = min(daily_return * 100, 0.65)
+                        oi_ratio = self._parse_comex_number(self._get_row_value(row, ratio_keys))
+                        if oi_ratio is None and open_interest is not None and registered_oz:
+                            oi_ratio = open_interest / (registered_oz / 100)
 
-                    registered_oz = 10_000_000 * (1.0 - volatility_stress)
-                    eligible_oz = 8_000_000 * (1.0 - volatility_stress * 0.5)
-                    total_oz = registered_oz + eligible_oz
-                    open_interest = 500_000 * (1.0 + volatility_stress * 2.0)
-                    oi_to_reg = open_interest / (registered_oz / 100) if registered_oz else None
+                        if registered_oz is None:
+                            continue
 
-                    comex_record = COMEXInventory(
-                        date=date_key,
-                        metal="AU",
-                        registered_oz=registered_oz,
-                        eligible_oz=eligible_oz,
-                        total_oz=total_oz,
-                        open_interest=open_interest,
-                        oi_to_registered_ratio=oi_to_reg,
-                        source="ESTIMATED_FROM_PRICES"
-                    )
-                    db.add(comex_record)
-                    count += 1
+                        source_value = self._get_row_value(row, source_keys)
+                        source_value = str(source_value).strip() if source_value is not None else source_label
+                        if not source_value:
+                            source_value = source_label
 
-                db.commit()
+                        date_key = date_value.replace(hour=0, minute=0, second=0, microsecond=0)
+                        existing = db.query(COMEXInventory).filter(
+                            COMEXInventory.metal == metal_value,
+                            COMEXInventory.date >= date_key,
+                            COMEXInventory.date < date_key + timedelta(days=1)
+                        ).first()
+                        if existing:
+                            if existing.source in placeholder_sources:
+                                db.delete(existing)
+                            else:
+                                continue
+
+                        db.add(COMEXInventory(
+                            date=date_key,
+                            metal=metal_value,
+                            registered_oz=registered_oz,
+                            eligible_oz=eligible_oz,
+                            total_oz=total_oz,
+                            open_interest=open_interest,
+                            oi_to_registered_ratio=oi_ratio,
+                            source=source_value
+                        ))
+                        count += 1
+
+                    db.commit()
+                    return count
+
+                if allow_estimates:
+                    gold_prices = db.query(MetalPrice).filter(
+                        MetalPrice.metal == "AU",
+                        MetalPrice.date >= datetime.utcnow() - timedelta(days=90)
+                    ).order_by(MetalPrice.date).all()
+
+                    if len(gold_prices) < 2:
+                        logger.info("Insufficient gold prices to estimate COMEX inventory")
+                        return 0
+
+                    for idx in range(1, len(gold_prices)):
+                        prev_price = gold_prices[idx - 1].price_usd_per_oz
+                        curr_price = gold_prices[idx].price_usd_per_oz
+                        if not prev_price or not curr_price:
+                            continue
+
+                        date_key = gold_prices[idx].date.replace(hour=0, minute=0, second=0, microsecond=0)
+                        existing = db.query(COMEXInventory).filter(
+                            COMEXInventory.metal == "AU",
+                            COMEXInventory.date >= date_key,
+                            COMEXInventory.date < date_key + timedelta(days=1)
+                        ).first()
+                        if existing:
+                            continue
+
+                        daily_return = abs(curr_price - prev_price) / prev_price
+                        volatility_stress = min(daily_return * 100, 0.65)
+
+                        registered_oz = 10_000_000 * (1.0 - volatility_stress)
+                        eligible_oz = 8_000_000 * (1.0 - volatility_stress * 0.5)
+                        total_oz = registered_oz + eligible_oz
+                        open_interest = 500_000 * (1.0 + volatility_stress * 2.0)
+                        oi_to_reg = open_interest / (registered_oz / 100) if registered_oz else None
+
+                        comex_record = COMEXInventory(
+                            date=date_key,
+                            metal="AU",
+                            registered_oz=registered_oz,
+                            eligible_oz=eligible_oz,
+                            total_oz=total_oz,
+                            open_interest=open_interest,
+                            oi_to_registered_ratio=oi_to_reg,
+                            source="ESTIMATED_FROM_PRICES"
+                        )
+                        db.add(comex_record)
+                        count += 1
+
+                    db.commit()
+                    return count
             except Exception as e:
                 logger.error(f"Error ingesting COMEX data: {str(e)}")
 

@@ -25,6 +25,7 @@ from app.models.alternative_assets import (
 from app.models.precious_metals import MetalPrice, MetalRatio, COMEXInventory, CBHolding, ETFHolding
 
 logger = logging.getLogger(__name__)
+COMEX_PLACEHOLDER_SOURCES = ["SEED", "ESTIMATED_FROM_PRICES"]
 
 
 class AAPCalculator:
@@ -477,7 +478,8 @@ class AAPCalculator:
         records = self.db.query(COMEXInventory).filter(
             COMEXInventory.metal == 'AU',
             COMEXInventory.date >= date - timedelta(days=180),
-            COMEXInventory.date <= date
+            COMEXInventory.date <= date,
+            COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
         ).order_by(COMEXInventory.date).all()
 
         values = [r.registered_oz for r in records if r.registered_oz]
@@ -498,7 +500,8 @@ class AAPCalculator:
         records = self.db.query(COMEXInventory).filter(
             COMEXInventory.metal == 'AU',
             COMEXInventory.date >= date - timedelta(days=180),
-            COMEXInventory.date <= date
+            COMEXInventory.date <= date,
+            COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
         ).order_by(COMEXInventory.date).all()
 
         values = [r.oi_to_registered_ratio for r in records if r.oi_to_registered_ratio]
@@ -799,7 +802,8 @@ class AAPCalculator:
         High OI/registered = paper vs physical stress
         """
         comex = self.db.query(COMEXInventory).filter(
-            COMEXInventory.date <= date
+            COMEXInventory.date <= date,
+            COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
         ).order_by(desc(COMEXInventory.date)).first()
         
         if not comex or not comex.oi_to_registered_ratio:

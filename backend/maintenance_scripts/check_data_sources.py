@@ -10,7 +10,9 @@ try:
     ratios = db.query(MetalRatio).count()
     
     comex = db.query(COMEXInventory).count()
-    comex_real = db.query(COMEXInventory).filter(COMEXInventory.source != 'SEED').count()
+    comex_real = db.query(COMEXInventory).filter(
+        COMEXInventory.source.notin_(['SEED', 'ESTIMATED_FROM_PRICES'])
+    ).count()
     
     cb = db.query(CBHolding).count()
     cb_real = db.query(CBHolding).filter(CBHolding.source != 'SEED').count()

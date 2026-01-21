@@ -5,7 +5,7 @@ This script orchestrates the complete data refresh:
 1. Precious metals (already working from YAHOO/FRED)
 2. Crypto prices (BTC/ETH from FRED)
 3. Macro liquidity (Fed BS, ECB, M2 from FRED)
-4. COMEX inventory (estimated from price volatility)
+4. COMEX inventory (from configured source)
 5. CB holdings (from WGC/IMF Q4 2025 data)
 6. Extended crypto (dominance, DeFi TVL, stablecoins)
 
@@ -23,7 +23,7 @@ print("This script will:")
 print("  1. Fetch/update precious metals data")
 print("  2. Fetch crypto prices (BTC/ETH)")
 print("  3. Fetch macro liquidity data")
-print("  4. Estimate COMEX inventory")
+print("  4. Ingest COMEX inventory")
 print("  5. Fetch CB gold holdings")
 print("  6. Extend crypto market data")
 print("  7. Clean up seed data")
@@ -72,7 +72,7 @@ except Exception as e:
 time.sleep(2)
 
 print("\n" + "="*70)
-print(" Step 4: COMEX Inventory Estimation")
+print(" Step 4: COMEX Inventory Ingestion")
 print("="*70 + "\n")
 
 from fetch_comex_data import main as fetch_comex
@@ -146,7 +146,7 @@ with get_db_session() as db:
     # COMEX
     comex_count = db.query(func.count(COMEXInventory.id)).scalar()
     comex_real = db.query(func.count(COMEXInventory.id)).filter(
-        COMEXInventory.source.notin_(['SEED'])
+        COMEXInventory.source.notin_(['SEED', 'ESTIMATED_FROM_PRICES'])
     ).scalar()
     print(f"  COMEX: {comex_real}/{comex_count} real/estimated")
     

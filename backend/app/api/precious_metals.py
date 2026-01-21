@@ -16,6 +16,7 @@ from app.utils.db_helpers import get_db_session
 router = APIRouter(prefix="/precious-metals", tags=["precious-metals"])
 
 TONNES_TO_OZ = 32150.7466
+COMEX_PLACEHOLDER_SOURCES = ["SEED", "ESTIMATED_FROM_PRICES"]
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -272,14 +273,17 @@ def calculate_paper_credibility_index(db) -> Optional[float]:
     Adjusted for backwardation & spreads
     """
     # Get latest COMEX inventory
-    latest_comex = db.query(COMEXInventory).order_by(desc(COMEXInventory.date)).first()
+    latest_comex = db.query(COMEXInventory).filter(
+        COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
+    ).order_by(desc(COMEXInventory.date)).first()
     
     if not latest_comex or not latest_comex.oi_to_registered_ratio:
         return None
     
     # Get historical 90th percentile
     all_ratios = db.query(COMEXInventory.oi_to_registered_ratio).filter(
-        COMEXInventory.oi_to_registered_ratio.isnot(None)
+        COMEXInventory.oi_to_registered_ratio.isnot(None),
+        COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
     ).all()
     
     if not all_ratios:
@@ -432,11 +436,14 @@ def get_regime_classification():
             ).order_by(desc(MetalRatio.date)).first()
             
             # Get COMEX data
-            comex = db.query(COMEXInventory).order_by(desc(COMEXInventory.date)).first()
+            comex = db.query(COMEXInventory).filter(
+                COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
+            ).order_by(desc(COMEXInventory.date)).first()
             comex_change = None
             if comex:
                 prior_comex = db.query(COMEXInventory).filter(
-                    COMEXInventory.date < comex.date
+                    COMEXInventory.date < comex.date,
+                    COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
                 ).order_by(desc(COMEXInventory.date)).first()
                 if prior_comex:
                     comex_change = (comex.registered_oz - prior_comex.registered_oz) / prior_comex.registered_oz * 100
