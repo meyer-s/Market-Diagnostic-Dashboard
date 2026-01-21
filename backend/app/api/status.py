@@ -52,48 +52,68 @@ def get_system_history(days: int = 365):
         for val in values:
             date_key = val.timestamp.date()
             date_values[date_key].append(val)
-        
+
+        # Seed last known values before cutoff so counts carry forward
+        last_seen = {}
+        for indicator in indicators:
+            last_value = (
+                db.query(IndicatorValue)
+                .filter(
+                    IndicatorValue.indicator_id == indicator.id,
+                    IndicatorValue.timestamp < cutoff,
+                )
+                .order_by(IndicatorValue.timestamp.desc())
+                .first()
+            )
+            if last_value:
+                last_seen[indicator.id] = last_value
+
         # Calculate composite score for each date
         history = []
-        for date_key in sorted(date_values.keys()):
-            day_values = date_values[date_key]
-            
-            # Get the latest value for each indicator on this date
-            latest_per_indicator = {}
+        start_date = cutoff.date()
+        end_date = datetime.utcnow().date()
+        current_date = start_date
+        while current_date <= end_date:
+            day_values = date_values.get(current_date, [])
+
             for val in day_values:
-                if val.indicator_id not in latest_per_indicator:
-                    latest_per_indicator[val.indicator_id] = val
-                elif val.timestamp > latest_per_indicator[val.indicator_id].timestamp:
-                    latest_per_indicator[val.indicator_id] = val
-            
-            # Calculate weighted composite score
+                existing = last_seen.get(val.indicator_id)
+                if not existing or val.timestamp > existing.timestamp:
+                    last_seen[val.indicator_id] = val
+
+            if not last_seen:
+                current_date += timedelta(days=1)
+                continue
+
+            # Calculate weighted composite score using carried-forward values
             total_weighted_score = 0
             total_weight = 0
             weighted_scores_by_code = {code: 0.0 for code in indicator_codes}
             red_count = 0
             yellow_count = 0
-            
-            for indicator_id, val in latest_per_indicator.items():
-                if indicator_id in indicator_map:
-                    indicator = indicator_map[indicator_id]
-                    weight = indicator.weight or 0
-                    score = val.score if val.score is not None else 0
-                    weighted_score = score * weight
-                    total_weighted_score += weighted_score
-                    total_weight += weight
-                    weighted_scores_by_code[indicator.code] = weighted_score
-                    
-                    if val.state == "RED":
-                        red_count += 1
-                    elif val.state == "YELLOW":
-                        yellow_count += 1
-            
-            total_count = len(latest_per_indicator)
+
+            for indicator_id, val in last_seen.items():
+                indicator = indicator_map.get(indicator_id)
+                if not indicator:
+                    continue
+                weight = indicator.weight or 0
+                score = val.score if val.score is not None else 0
+                weighted_score = score * weight
+                total_weighted_score += weighted_score
+                total_weight += weight
+                weighted_scores_by_code[indicator.code] = weighted_score
+
+                if val.state == "RED":
+                    red_count += 1
+                elif val.state == "YELLOW":
+                    yellow_count += 1
+
+            total_count = len(last_seen)
             green_count = max(0, total_count - red_count - yellow_count)
 
             if total_weight > 0:
                 composite_score = total_weighted_score / total_weight
-                
+
                 # Determine system state based on composite score
                 if composite_score >= 70:
                     state = "GREEN"
@@ -101,10 +121,10 @@ def get_system_history(days: int = 365):
                     state = "YELLOW"
                 else:
                     state = "RED"
-                
+
                 # Use end of day for timestamp
-                timestamp = datetime.combine(date_key, datetime.max.time())
-                
+                timestamp = datetime.combine(current_date, datetime.max.time())
+
                 contributions = {
                     code: round(weighted_scores_by_code[code] / total_weight, 2)
                     for code in indicator_codes
@@ -120,7 +140,9 @@ def get_system_history(days: int = 365):
                     "total_count": total_count,
                     "contributions": contributions,
                 })
-        
+
+            current_date += timedelta(days=1)
+
         return history
 
 @router.get("/indicators")

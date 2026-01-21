@@ -28,6 +28,13 @@ body {
   height: 100vh;
 }
 
+/* Prevent Recharts containers from collapsing in flex layouts */
+.recharts-responsive-container,
+.recharts-wrapper {
+  min-width: 0;
+  min-height: 0;
+}
+
 /* Collapsible sections styling */
 .collapsible-section {
   @apply bg-stealth-800 border border-stealth-700 rounded-lg mb-4 md:mb-6;

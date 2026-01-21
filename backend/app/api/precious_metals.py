@@ -492,18 +492,28 @@ def get_correlations():
                     "au_vix": 0.55
                 }
             
+            au_pt = getattr(latest, "au_pt_60d", None)
+            au_pd = getattr(latest, "au_pd_60d", None)
+            ag_pt = getattr(latest, "ag_pt_60d", None)
+            ag_pd = getattr(latest, "ag_pd_60d", None)
+            pt_pd = getattr(latest, "pt_pd_60d", None)
+            au_spy = getattr(latest, "au_spy_60d", None)
+            au_tlt = getattr(latest, "au_tlt_60d", None)
+            au_dxy = getattr(latest, "au_dxy_60d", None)
+            au_vix = getattr(latest, "au_vix_60d", None)
+
             return {
                 "timestamp": latest.date.isoformat(),
                 "au_ag": latest.au_ag_60d or 0.72,
-                "au_pt": latest.au_pt_60d or 0.61,
-                "au_pd": latest.au_pd_60d or 0.48,
-                "ag_pt": latest.ag_pt_60d or 0.68,
-                "ag_pd": latest.ag_pd_60d or 0.52,
-                "pt_pd": (latest.au_pd_60d or 0.5),  # Placeholder
-                "au_spy": latest.au_spy_60d or -0.15,
-                "au_tlt": latest.au_tlt_60d or 0.42,
-                "au_dxy": latest.au_dxy_60d or -0.68,
-                "au_vix": latest.au_vix_60d or 0.55
+                "au_pt": au_pt if au_pt is not None else 0.61,
+                "au_pd": au_pd if au_pd is not None else 0.48,
+                "ag_pt": ag_pt if ag_pt is not None else 0.68,
+                "ag_pd": ag_pd if ag_pd is not None else 0.52,
+                "pt_pd": pt_pd if pt_pd is not None else 0.71,
+                "au_spy": au_spy if au_spy is not None else -0.15,
+                "au_tlt": au_tlt if au_tlt is not None else 0.42,
+                "au_dxy": au_dxy if au_dxy is not None else -0.68,
+                "au_vix": au_vix if au_vix is not None else 0.55
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
