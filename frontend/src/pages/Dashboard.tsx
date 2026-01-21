@@ -155,6 +155,28 @@ export default function Dashboard() {
     () => buildOverallInsight(insightList, overallTrendLabel),
     [insightList, overallTrendLabel]
   );
+  const confidenceLabel = overallInsight
+    ? overallInsight.confidence === "high"
+      ? "Clear read"
+      : overallInsight.confidence === "low"
+      ? "Noisy read"
+      : "Mixed read"
+    : "";
+  const overallSignalLine = overallInsight
+    ? overallInsight.posture === "risk-on"
+      ? "Tailwinds lead"
+      : overallInsight.posture === "risk-off"
+      ? "Caution leads"
+      : "Signals are split"
+    : "";
+  const overallContextLine = overallInsight
+    ? `${overallTrendLabel} trend: ${capitalize(describeDirection(overallInsight.primaryDirection))}; recent move: ${capitalize(
+        describeDirection(overallInsight.secondaryDirection)
+      )}.`
+    : "";
+  const overallConfidenceLine = overallInsight
+    ? `Confidence: ${capitalize(overallInsight.confidence)} - ${confidenceLabel}.`
+    : "";
 
   const handleInsight = useCallback((insight: InsightSignal) => {
     setInsights((prev) => {
@@ -195,13 +217,6 @@ export default function Dashboard() {
     return `${overallTrendLabel}: ${primary}. Recent: ${secondary}.`;
   };
 
-  const confidenceLabel = overallInsight
-    ? overallInsight.confidence === "high"
-      ? "Clear read"
-      : overallInsight.confidence === "low"
-      ? "Noisy read"
-      : "Mixed read"
-    : "";
 
   // Manual refresh function - triggers ETL ingestion for all indicators
   const handleRefresh = async () => {
@@ -331,6 +346,15 @@ export default function Dashboard() {
               <div className="text-xs text-stealth-500 text-right">
                 {confidenceLabel}
               </div>
+            </div>
+            <div className="mt-2 text-sm text-stealth-200">
+              <span className="text-stealth-500">Signal:</span> {overallSignalLine}
+            </div>
+            <div className="text-sm text-stealth-400">
+              <span className="text-stealth-500">Context:</span> {overallContextLine}
+            </div>
+            <div className="mt-1 text-xs text-stealth-500">
+              {overallConfidenceLine}
             </div>
             <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
               {insightList.map((insight) => (

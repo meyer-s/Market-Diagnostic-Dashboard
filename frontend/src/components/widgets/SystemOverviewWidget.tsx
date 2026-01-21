@@ -388,10 +388,28 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             total_count: total,
           };
         });
-        const showStabilityBars = resolvedChartData.some((item) => (item.total_count ?? 0) > 0);
+        const stabilityBandData = resolvedChartData.map((item) => {
+          const total = item.total_count ?? 0;
+          const red = item.red_count ?? 0;
+          const yellow = item.yellow_count ?? 0;
+          const green = item.green_count ?? 0;
+          const safeTotal = total > 0 ? total : red + yellow + green;
+          const toPercent = (value: number) => (safeTotal ? (value / safeTotal) * 100 : 0);
+          return {
+            ...item,
+            total_count: safeTotal,
+            green_count: green,
+            yellow_count: yellow,
+            red_count: red,
+            green_pct: toPercent(green),
+            yellow_pct: toPercent(yellow),
+            red_pct: toPercent(red),
+          };
+        });
+        const showStabilityBars = stabilityBandData.some((item) => (item.total_count ?? 0) > 0);
         
         // Calculate domain with today at the end
-        const timestamps = resolvedChartData.map(d => d.timestampNum);
+        const timestamps = stabilityBandData.map(d => d.timestampNum);
         const minTime = Math.min(...timestamps);
         const maxTime = Math.max(...timestamps);
         
@@ -401,7 +419,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
           tickPositions.push(minTime + (maxTime - minTime) * (i / 4));
         }
         
-        console.log('SystemOverview chart data sample:', resolvedChartData.slice(0, 3), 'total:', resolvedChartData.length);
+        console.log('SystemOverview chart data sample:', stabilityBandData.slice(0, 3), 'total:', stabilityBandData.length);
         
         return (
             <div className="pt-6 border-t border-stealth-700">
@@ -410,7 +428,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             </h4>
             <div className="w-full h-60 sm:h-72 lg:h-80 -mx-6 sm:mx-0 px-3 sm:px-0">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={resolvedChartData} margin={CHART_MARGIN}>
+                <ComposedChart data={stabilityBandData} margin={CHART_MARGIN}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                   <XAxis
                     dataKey="timestampNum"
@@ -442,7 +460,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                       yAxisId="counts"
                       orientation="right"
                       hide
-                      domain={[0, "dataMax"]}
+                      domain={[0, 100]}
                     />
                   )}
                   <Tooltip
@@ -454,10 +472,27 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                     }}
                     labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
                     itemStyle={{ color: "#ffffff", fontSize: 11 }}
-                    formatter={(value: number, name: string) => {
-                      if (name === "green_count") return [Math.round(value), "Green indicators"];
-                      if (name === "yellow_count") return [Math.round(value), "Yellow indicators"];
-                      if (name === "red_count") return [Math.round(value), "Red indicators"];
+                    formatter={(value: number, name: string, item: any) => {
+                      const dataKey = typeof item?.dataKey === "string" ? item.dataKey : "";
+                      const payload = item?.payload ?? {};
+                      if (dataKey === "green_pct") {
+                        return [
+                          `${payload.green_count ?? 0} (${value.toFixed(0)}%)`,
+                          "Green indicators",
+                        ];
+                      }
+                      if (dataKey === "yellow_pct") {
+                        return [
+                          `${payload.yellow_count ?? 0} (${value.toFixed(0)}%)`,
+                          "Yellow indicators",
+                        ];
+                      }
+                      if (dataKey === "red_pct") {
+                        return [
+                          `${payload.red_count ?? 0} (${value.toFixed(0)}%)`,
+                          "Red indicators",
+                        ];
+                      }
                       return [`${value.toFixed(1)}`, "Score"];
                     }}
                     labelFormatter={(label: string | number) =>
@@ -482,7 +517,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                     <>
                       <Bar
                         yAxisId="counts"
-                        dataKey="green_count"
+                        dataKey="green_pct"
                         stackId="stability"
                         fill="#10b981"
                         fillOpacity={0.18}
@@ -490,7 +525,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                       />
                       <Bar
                         yAxisId="counts"
-                        dataKey="yellow_count"
+                        dataKey="yellow_pct"
                         stackId="stability"
                         fill="#eab308"
                         fillOpacity={0.18}
@@ -498,7 +533,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                       />
                       <Bar
                         yAxisId="counts"
-                        dataKey="red_count"
+                        dataKey="red_pct"
                         stackId="stability"
                         fill="#ef4444"
                         fillOpacity={0.18}
