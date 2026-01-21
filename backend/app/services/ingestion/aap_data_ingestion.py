@@ -680,21 +680,24 @@ class EquityPriceIngestion:
                 data = yf.download(ticker, period="120d", progress=False, auto_adjust=True)
                 if data.empty:
                     continue
+                close_series = data["Close"]
+                if hasattr(close_series, "columns"):
+                    close_series = close_series.iloc[:, 0]
 
-                for date_idx, row in data.iterrows():
+                for date_idx, close_value in close_series.items():
                     date_key = date_idx.to_pydatetime().replace(hour=0, minute=0, second=0, microsecond=0)
                     existing = self.db.query(EquityPrice).filter(
                         EquityPrice.symbol == symbol,
                         EquityPrice.date == date_key
                     ).first()
                     if existing:
-                        existing.close = float(row["Close"])
+                        existing.close = float(close_value)
                         continue
 
                     self.db.add(EquityPrice(
                         symbol=symbol,
                         date=date_key,
-                        close=float(row["Close"]),
+                        close=float(close_value),
                         source="YAHOO"
                     ))
                     count += 1
