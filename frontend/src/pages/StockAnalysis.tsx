@@ -642,50 +642,55 @@ export default function StockAnalysis() {
                         </span>
                       )}
                     </div>
-                    {card.series.length > 1 ? (
-                      <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={card.series}>
-                            <XAxis
-                              dataKey="date"
-                              tickFormatter={(value) => formatDateLabel(String(value))}
-                              tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                              tickLine={false}
-                              axisLine={false}
-                            />
-                            <YAxis
-                              tickFormatter={card.axis}
-                              tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                              tickLine={false}
-                              axisLine={false}
-                            />
-                            <Tooltip
-                              formatter={(value) => card.format(Number(value))}
-                              labelFormatter={(label) => `Quarter: ${formatDateLabel(String(label))}`}
-                              contentStyle={{
-                                background: "#111827",
-                                border: "1px solid #374151",
-                                borderRadius: "8px",
-                                fontSize: "12px",
-                              }}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="value"
-                              stroke={card.color}
-                              strokeWidth={2}
-                              dot={{ r: 2 }}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
+                    {card.series.length > 0 ? (
+                      <>
+                        <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={card.series}>
+                              <XAxis
+                                dataKey="date"
+                                tickFormatter={(value) => formatDateLabel(String(value))}
+                                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                                tickLine={false}
+                                axisLine={false}
+                              />
+                              <YAxis
+                                tickFormatter={card.axis}
+                                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                                tickLine={false}
+                                axisLine={false}
+                              />
+                              <Tooltip
+                                formatter={(value) => card.format(Number(value))}
+                                labelFormatter={(label) => `Quarter: ${formatDateLabel(String(label))}`}
+                                contentStyle={{
+                                  background: "#111827",
+                                  border: "1px solid #374151",
+                                  borderRadius: "8px",
+                                  fontSize: "12px",
+                                }}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="value"
+                                stroke={card.color}
+                                strokeWidth={2}
+                                dot={{ r: 2 }}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                        {card.key === "revenue_yoy" && card.series.length === 1 && (
+                          <div className="mt-2 text-[11px] text-gray-500">
+                            Limited quarterly history from provider; showing the latest YoY point only.
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="text-xs text-gray-500">
-                        {card.series.length === 1
-                          ? `Latest: ${card.format(card.series[0].value)}`
-                          : card.key === "revenue_yoy"
-                            ? "Need at least 5 quarterly points to plot YoY growth."
-                            : "No data available for this metric."}
+                        {card.key === "revenue_yoy"
+                          ? "YoY growth needs quarterly history; no usable data returned."
+                          : "No data available for this metric."}
                       </div>
                     )}
                   </div>
