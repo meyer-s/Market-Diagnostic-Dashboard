@@ -293,7 +293,7 @@ export default function StockAnalysis() {
   const calcAverage = (values: number[]) =>
     values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 
-  const buildSummaryInput = (): SummaryInput | null => {
+  function buildSummaryInput(): SummaryInput | null {
     if (!searchTicker || !technicalData) return null;
 
     const candles = (technicalData.candles || []).map((c: any) => ({
@@ -392,7 +392,7 @@ export default function StockAnalysis() {
         avg_edr: optionalityMetrics?.avg_edr ?? null,
       },
     };
-  };
+  }
 
   const derivedBadge = (
     <span className="ml-1 text-[10px] text-amber-300/90" title="Derived from reported filings">
