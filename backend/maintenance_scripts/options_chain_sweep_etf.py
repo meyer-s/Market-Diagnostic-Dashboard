@@ -6,6 +6,7 @@ import pandas as pd
 import requests
 
 from maintenance_scripts.options_chain_sweep import _scan_tickers
+from app.services.options_alerts import _send_webhook
 
 SP500_IVV_URL = (
     "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/"
@@ -66,6 +67,10 @@ def main() -> None:
     args = parser.parse_args()
 
     max_count = args.max if args.max and args.max > 0 else None
+    _send_webhook(
+        f":mag: Options sweep started (IVV holdings). Threshold {args.threshold:.1f}%"
+        f"{'' if max_count is None else f', max {max_count}'}."
+    )
     hits = _run_sweep(
         _fetch_ishares_tickers(SP500_IVV_URL),
         "S&P 500 (IVV)",
@@ -74,14 +79,19 @@ def main() -> None:
         args.pause,
     )
     if hits > 0:
+        _send_webhook(f":white_check_mark: Options sweep finished. S&P 500 (IVV) hits: {hits}.")
         return
 
-    _run_sweep(
+    r2k_hits = _run_sweep(
         _fetch_ishares_tickers(R2K_IWM_URL),
         "Russell 2000 (IWM)",
         args.threshold,
         max_count,
         args.pause,
+    )
+    _send_webhook(
+        f":white_check_mark: Options sweep finished. S&P 500 (IVV) hits: {hits}. "
+        f"Russell 2000 (IWM) hits: {r2k_hits}."
     )
 
 

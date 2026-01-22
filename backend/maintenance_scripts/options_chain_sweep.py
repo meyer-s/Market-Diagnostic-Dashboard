@@ -138,22 +138,34 @@ def main() -> None:
     parser.add_argument("--pause", type=float, default=0.2)
     args = parser.parse_args()
 
+    max_count = args.max if args.max and args.max > 0 else None
+    _send_webhook(
+        f":mag: Options sweep started (S&P 500). Threshold {args.threshold:.1f}%"
+        f"{'' if max_count is None else f', max {max_count}'}."
+    )
     sp500 = _fetch_tickers([SP500_URL])
     if not sp500:
         print("Failed to fetch S&P 500 tickers.")
+        _send_webhook(":warning: Options sweep aborted. Failed to fetch S&P 500 tickers.")
         return
 
-    max_count = args.max if args.max and args.max > 0 else None
     hits = _scan_tickers(sp500, "S&P 500", args.threshold, max_count, args.pause)
     if hits > 0:
+        _send_webhook(f":white_check_mark: Options sweep finished. S&P 500 hits: {hits}.")
         return
 
     russell = _fetch_tickers(RUSSELL_URLS)
     if not russell:
         print("Failed to fetch Russell 2000 tickers.")
+        _send_webhook(
+            f":warning: Options sweep ended. S&P 500 hits: {hits}. Failed to fetch Russell 2000 tickers."
+        )
         return
 
-    _scan_tickers(russell, "Russell 2000", args.threshold, max_count, args.pause)
+    r2k_hits = _scan_tickers(russell, "Russell 2000", args.threshold, max_count, args.pause)
+    _send_webhook(
+        f":white_check_mark: Options sweep finished. S&P 500 hits: {hits}. Russell 2000 hits: {r2k_hits}."
+    )
 
 
 if __name__ == "__main__":
