@@ -852,6 +852,7 @@ class PreciousMetalsIngester:
             logger.warning("Failed to parse COMEX excel source %s: %s", source, exc)
             return []
         header_row = None
+        header_score = 0
         for idx, row in data.iterrows():
             cells = [
                 str(value).strip().lower()
@@ -864,10 +865,10 @@ class PreciousMetalsIngester:
                 1 for cell in cells
                 if any(key in cell for key in ("registered", "eligible", "total", "inventory"))
             )
-            if matches >= 2:
+            if matches > header_score:
                 header_row = idx
-                break
-        if header_row is None:
+                header_score = matches
+        if header_row is None or header_score == 0:
             logger.warning("Unable to locate header row in COMEX excel source %s", source)
             return []
         header = [
