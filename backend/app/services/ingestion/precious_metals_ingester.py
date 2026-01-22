@@ -747,7 +747,22 @@ class PreciousMetalsIngester:
         text = str(value).strip()
         if not text:
             return None
-        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y%m%d", "%d-%b-%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        for fmt in (
+            "%Y-%m-%d",
+            "%m/%d/%Y",
+            "%Y%m%d",
+            "%d-%b-%Y",
+            "%b %d, %Y",
+            "%B %d, %Y",
+            "%b %d %Y",
+            "%B %d %Y",
+            "%a, %b %d, %Y",
+            "%A, %b %d, %Y",
+            "%a, %B %d, %Y",
+            "%A, %B %d, %Y",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+        ):
             try:
                 return datetime.strptime(text, fmt)
             except ValueError:
