@@ -12,6 +12,7 @@ httpx
 yfinance
 numpy
 pandas
+xlrd
 psycopg2-binary
 apscheduler
 lxml

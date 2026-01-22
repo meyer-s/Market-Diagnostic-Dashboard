@@ -7,10 +7,12 @@ import logging
 import os
 import csv
 import json
-from io import StringIO
+import mimetypes
+from io import StringIO, BytesIO
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Tuple, Optional
 import statistics
+import pandas as pd
 import yfinance as yf
 import requests
 import xml.etree.ElementTree as ET
@@ -764,6 +766,10 @@ class PreciousMetalsIngester:
             "XAG": "AG",
             "SI": "AG",
             "SI=F": "AG",
+            "COPPER": "CU",
+            "CU": "CU",
+            "HG": "CU",
+            "HG=F": "CU",
             "PLATINUM": "PT",
             "PT": "PT",
             "XPT": "PT",
@@ -781,6 +787,8 @@ class PreciousMetalsIngester:
             return "AU"
         if text.startswith("SILVER"):
             return "AG"
+        if text.startswith("COPPER"):
+            return "CU"
         if text.startswith("PLATINUM"):
             return "PT"
         if text.startswith("PALLADIUM"):
@@ -804,26 +812,113 @@ class PreciousMetalsIngester:
         return []
 
     @staticmethod
+    def _row_has_total_label(row: Dict[str, object]) -> int:
+        for value in row.values():
+            if not isinstance(value, str):
+                continue
+            text = value.strip().lower()
+            if not text:
+                continue
+            if "grand total" in text:
+                return 2
+            if "total" in text:
+                return 1
+        return 0
+
+    @staticmethod
+    def _infer_comex_date(rows: List[Dict[str, object]]) -> Optional[datetime]:
+        dates: List[datetime] = []
+        for row in rows:
+            for value in row.values():
+                parsed = PreciousMetalsIngester._parse_comex_date(value)
+                if parsed:
+                    dates.append(parsed)
+        if not dates:
+            return None
+        return max(dates)
+
+    @staticmethod
+    def _read_excel_rows(content: bytes, source: str) -> List[Dict[str, object]]:
+        if not content:
+            return []
+        extension = os.path.splitext(source)[1].lower()
+        buffer = BytesIO(content)
+        try:
+            if extension == ".xls":
+                data = pd.read_excel(buffer, header=None, engine="xlrd")
+            else:
+                data = pd.read_excel(buffer, header=None)
+        except Exception as exc:
+            logger.warning("Failed to parse COMEX excel source %s: %s", source, exc)
+            return []
+        header_row = None
+        for idx, row in data.iterrows():
+            cells = [
+                str(value).strip().lower()
+                for value in row.values
+                if value is not None and str(value).strip()
+            ]
+            if not cells:
+                continue
+            matches = sum(
+                1 for cell in cells
+                if any(key in cell for key in ("registered", "eligible", "total", "inventory"))
+            )
+            if matches >= 2:
+                header_row = idx
+                break
+        if header_row is None:
+            logger.warning("Unable to locate header row in COMEX excel source %s", source)
+            return []
+        header = [
+            str(value).strip() if value is not None else ""
+            for value in data.iloc[header_row].tolist()
+        ]
+        data = data.iloc[header_row + 1:].copy()
+        data.columns = header
+        data = data.dropna(how="all")
+        if data.empty:
+            return []
+        data = data.where(pd.notnull(data), None)
+        return data.to_dict(orient="records")
+
+    @staticmethod
     def _read_comex_source(source: str) -> List[Dict[str, object]]:
         if not source:
             return []
+        content_type = ""
         if source.startswith("http://") or source.startswith("https://"):
-            response = requests.get(source, timeout=30)
+            response = requests.get(source, timeout=60)
             response.raise_for_status()
-            content = response.text
+            content_type = response.headers.get("Content-Type", "").lower()
+            content = response.content
         else:
             if not os.path.exists(source):
                 logger.warning("COMEX source not found: %s", source)
                 return []
-            with open(source, "r", encoding="utf-8") as handle:
+            with open(source, "rb") as handle:
                 content = handle.read()
-        if not content or not content.strip():
+            guessed_type, _ = mimetypes.guess_type(source)
+            content_type = (guessed_type or "").lower()
+        if not content:
             return []
-        stripped = content.lstrip()
+        extension = os.path.splitext(source)[1].lower()
+        if extension == ".pdf" or "pdf" in content_type:
+            logger.warning("COMEX source appears to be PDF and is not parsed: %s", source)
+            return []
+        if extension in {".xls", ".xlsx"} or "excel" in content_type or "spreadsheet" in content_type:
+            return PreciousMetalsIngester._read_excel_rows(content, source)
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1", errors="ignore")
+        if not text or not text.strip():
+            return []
+        stripped = text.lstrip()
         if stripped.startswith("{") or stripped.startswith("["):
-            payload = json.loads(content)
+            payload = json.loads(text)
             return PreciousMetalsIngester._extract_rows_from_json(payload)
-        reader = csv.DictReader(StringIO(content))
+        reader = csv.DictReader(StringIO(text))
         return [row for row in reader if row]
 
     def _build_open_interest_lookup(self, rows: List[Dict[str, object]]) -> Dict[Tuple[date, str], float]:
@@ -843,37 +938,76 @@ class PreciousMetalsIngester:
     def _ingest_comex_data(self) -> int:
         """Ingest COMEX inventory data from configured sources."""
         count = 0
-        inventory_source = getattr(settings, "COMEX_INVENTORY_URL", None) or getattr(settings, "COMEX_INVENTORY_PATH", None)
-        oi_source = getattr(settings, "COMEX_OPEN_INTEREST_URL", None) or getattr(settings, "COMEX_OPEN_INTEREST_PATH", None)
+        def _get_setting(*names: str) -> Optional[str]:
+            for name in names:
+                value = getattr(settings, name, None)
+                if value:
+                    return value
+            return None
+
+        inventory_sources: List[Dict[str, Optional[str]]] = []
+        generic_source = _get_setting("COMEX_INVENTORY_URL", "COMEX_INVENTORY_PATH")
+        if generic_source:
+            inventory_sources.append({"source": generic_source, "metal": None})
+        gold_source = _get_setting("COMEX_INVENTORY_GOLD_URL", "COMEX_INVENTORY_GOLD_PATH")
+        if gold_source:
+            inventory_sources.append({"source": gold_source, "metal": "AU"})
+        silver_source = _get_setting("COMEX_INVENTORY_SILVER_URL", "COMEX_INVENTORY_SILVER_PATH")
+        if silver_source:
+            inventory_sources.append({"source": silver_source, "metal": "AG"})
+        copper_source = _get_setting("COMEX_INVENTORY_COPPER_URL", "COMEX_INVENTORY_COPPER_PATH")
+        if copper_source:
+            inventory_sources.append({"source": copper_source, "metal": "CU"})
+        plat_pall_source = _get_setting("COMEX_INVENTORY_PLAT_PALL_URL", "COMEX_INVENTORY_PLAT_PALL_PATH")
+        if plat_pall_source:
+            inventory_sources.append({"source": plat_pall_source, "metal": None})
+        platinum_source = _get_setting("COMEX_INVENTORY_PLATINUM_URL", "COMEX_INVENTORY_PLATINUM_PATH")
+        if platinum_source:
+            inventory_sources.append({"source": platinum_source, "metal": "PT"})
+        palladium_source = _get_setting("COMEX_INVENTORY_PALLADIUM_URL", "COMEX_INVENTORY_PALLADIUM_PATH")
+        if palladium_source:
+            inventory_sources.append({"source": palladium_source, "metal": "PD"})
+
+        oi_source = _get_setting("COMEX_OPEN_INTEREST_URL", "COMEX_OPEN_INTEREST_PATH")
         source_label = getattr(settings, "COMEX_SOURCE", None) or "COMEX"
         allow_estimates = str(getattr(settings, "COMEX_ALLOW_ESTIMATES", "")).lower() in {"1", "true", "yes"}
         placeholder_sources = {"SEED", "ESTIMATED_FROM_PRICES"}
 
         with get_db_session() as db:
             try:
-                rows = self._read_comex_source(inventory_source) if inventory_source else []
-                if not rows:
+                if not inventory_sources:
                     if not allow_estimates:
-                        logger.info("No COMEX inventory source configured; skipping COMEX ingestion")
+                        logger.info("No COMEX inventory sources configured; skipping COMEX ingestion")
                         return 0
                 open_interest_lookup: Dict[Tuple[date, str], float] = {}
                 if oi_source:
                     oi_rows = self._read_comex_source(oi_source)
                     open_interest_lookup = self._build_open_interest_lookup(oi_rows)
 
-                if rows:
-                    date_keys = ["date", "trade_date", "report_date", "as_of", "asof", "timestamp"]
-                    metal_keys = ["metal", "commodity", "symbol", "product", "name"]
-                    registered_keys = ["registered_oz", "registered", "registered_ounces", "reg_oz", "registered_ozs"]
-                    eligible_keys = ["eligible_oz", "eligible", "eligible_ounces", "elig_oz", "eligible_ozs"]
-                    total_keys = ["total_oz", "total", "total_ounces", "total_ozs"]
-                    open_interest_keys = ["open_interest", "openinterest", "oi", "open_int", "openinterest_total"]
-                    ratio_keys = ["oi_to_registered_ratio", "oi_to_registered", "oi_registered_ratio", "open_interest_ratio"]
-                    source_keys = ["source", "data_source"]
+                aggregated: Dict[Tuple[datetime, str], Dict[str, object]] = {}
+                date_keys = ["date", "trade_date", "report_date", "as_of", "asof", "timestamp"]
+                metal_keys = ["metal", "commodity", "symbol", "product", "name"]
+                registered_keys = ["registered_oz", "registered", "registered_ounces", "reg_oz", "registered_ozs"]
+                eligible_keys = ["eligible_oz", "eligible", "eligible_ounces", "elig_oz", "eligible_ozs"]
+                total_keys = ["total_oz", "total", "total_ounces", "total_ozs"]
+                open_interest_keys = ["open_interest", "openinterest", "oi", "open_int", "openinterest_total"]
+                ratio_keys = ["oi_to_registered_ratio", "oi_to_registered", "oi_registered_ratio", "open_interest_ratio"]
+
+                for source_info in inventory_sources:
+                    source = source_info.get("source")
+                    if not source:
+                        continue
+                    rows = self._read_comex_source(source)
+                    if not rows:
+                        logger.warning("No COMEX inventory rows found for %s", source)
+                        continue
+                    fallback_date = self._infer_comex_date(rows)
 
                     for row in rows:
-                        date_value = self._parse_comex_date(self._get_row_value(row, date_keys))
-                        metal_value = self._normalize_comex_metal(self._get_row_value(row, metal_keys))
+                        date_value = self._parse_comex_date(self._get_row_value(row, date_keys)) or fallback_date
+                        metal_value = source_info.get("metal") or self._normalize_comex_metal(
+                            self._get_row_value(row, metal_keys)
+                        )
                         if not date_value or not metal_value:
                             continue
 
@@ -881,26 +1015,78 @@ class PreciousMetalsIngester:
                         eligible_oz = self._parse_comex_number(self._get_row_value(row, eligible_keys))
                         total_oz = self._parse_comex_number(self._get_row_value(row, total_keys))
                         open_interest = self._parse_comex_number(self._get_row_value(row, open_interest_keys))
+                        oi_ratio = self._parse_comex_number(self._get_row_value(row, ratio_keys))
 
-                        if open_interest is None and open_interest_lookup:
-                            open_interest = open_interest_lookup.get((date_value.date(), metal_value))
+                        if registered_oz is None and eligible_oz is None and total_oz is None:
+                            continue
+
+                        date_key = date_value.replace(hour=0, minute=0, second=0, microsecond=0)
+                        aggregate_key = (date_key, metal_value)
+                        entry = aggregated.setdefault(aggregate_key, {
+                            "registered_sum": 0.0,
+                            "eligible_sum": 0.0,
+                            "total_sum": 0.0,
+                            "registered_total": None,
+                            "eligible_total": None,
+                            "total_total": None,
+                            "open_interest": None,
+                            "oi_ratio": None,
+                            "total_rank": 0,
+                            "use_total": False,
+                            "source": source_label
+                        })
+
+                        total_rank = self._row_has_total_label(row)
+                        if total_rank > 0:
+                            if total_rank >= entry["total_rank"]:
+                                entry["registered_total"] = registered_oz
+                                entry["eligible_total"] = eligible_oz
+                                entry["total_total"] = total_oz
+                                entry["total_rank"] = total_rank
+                                entry["use_total"] = True
+                                if open_interest is not None:
+                                    entry["open_interest"] = open_interest
+                                if oi_ratio is not None:
+                                    entry["oi_ratio"] = oi_ratio
+                            continue
+
+                        if not entry["use_total"]:
+                            if registered_oz is not None:
+                                entry["registered_sum"] += registered_oz
+                            if eligible_oz is not None:
+                                entry["eligible_sum"] += eligible_oz
+                            if total_oz is not None:
+                                entry["total_sum"] += total_oz
+                            if entry["open_interest"] is None and open_interest is not None:
+                                entry["open_interest"] = open_interest
+                            if entry["oi_ratio"] is None and oi_ratio is not None:
+                                entry["oi_ratio"] = oi_ratio
+
+                if aggregated:
+                    for (date_key, metal_value), entry in aggregated.items():
+                        if entry["use_total"]:
+                            registered_oz = entry["registered_total"]
+                            eligible_oz = entry["eligible_total"]
+                            total_oz = entry["total_total"]
+                        else:
+                            registered_oz = entry["registered_sum"] if entry["registered_sum"] else None
+                            eligible_oz = entry["eligible_sum"] if entry["eligible_sum"] else None
+                            total_oz = entry["total_sum"] if entry["total_sum"] else None
 
                         if total_oz is None and registered_oz is not None and eligible_oz is not None:
                             total_oz = registered_oz + eligible_oz
 
-                        oi_ratio = self._parse_comex_number(self._get_row_value(row, ratio_keys))
+                        open_interest = entry["open_interest"]
+                        if open_interest is None and open_interest_lookup:
+                            open_interest = open_interest_lookup.get((date_key.date(), metal_value))
+
+                        oi_ratio = entry["oi_ratio"]
                         if oi_ratio is None and open_interest is not None and registered_oz:
                             oi_ratio = open_interest / (registered_oz / 100)
 
                         if registered_oz is None:
                             continue
 
-                        source_value = self._get_row_value(row, source_keys)
-                        source_value = str(source_value).strip() if source_value is not None else source_label
-                        if not source_value:
-                            source_value = source_label
-
-                        date_key = date_value.replace(hour=0, minute=0, second=0, microsecond=0)
                         existing = db.query(COMEXInventory).filter(
                             COMEXInventory.metal == metal_value,
                             COMEXInventory.date >= date_key,
@@ -920,7 +1106,7 @@ class PreciousMetalsIngester:
                             total_oz=total_oz,
                             open_interest=open_interest,
                             oi_to_registered_ratio=oi_ratio,
-                            source=source_value
+                            source=entry["source"]
                         ))
                         count += 1
 
