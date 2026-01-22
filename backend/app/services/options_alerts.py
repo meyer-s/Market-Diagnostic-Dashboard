@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import yfinance as yf
+import pandas as pd
 import requests
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
@@ -121,6 +122,62 @@ def _build_alert_reason(
     return "; ".join(reasons) if reasons else "Low IV percentile"
 
 
+def _direction_hint(history: Optional[pd.DataFrame]) -> tuple[str, str]:
+    if history is None or history.empty:
+        return "Neutral", "Insufficient price history"
+    close = history.get("Close")
+    if close is None:
+        return "Neutral", "Missing close data"
+    close = close.dropna()
+    if len(close) < 10:
+        return "Neutral", "Limited price history"
+
+    current = float(close.iloc[-1])
+    window = 50 if len(close) >= 50 else 20
+    ma = close.rolling(window).mean().iloc[-1]
+    ma_value = float(ma) if pd.notna(ma) else None
+
+    ret_window = 20 if len(close) >= 21 else 5
+    if len(close) >= ret_window + 1:
+        ret = (current / float(close.iloc[-(ret_window + 1)]) - 1) * 100
+    else:
+        ret = 0.0
+
+    if ma_value is not None and current > ma_value and ret > 2:
+        return "Calls", f"{ret_window}d return +{ret:.1f}%, price above {window}D MA"
+    if ma_value is not None and current < ma_value and ret < -2:
+        return "Puts", f"{ret_window}d return {ret:.1f}%, price below {window}D MA"
+    return "Neutral", f"{ret_window}d return {ret:.1f}%"
+
+
+def _format_value(value: Optional[float], digits: int = 1) -> str:
+    return f"{value:.{digits}f}" if value is not None else "n/a"
+
+
+def _format_alert_message(
+    label: str,
+    symbol: str,
+    iv_percentile: Optional[float],
+    iv30: Optional[float],
+    hv30: Optional[float],
+    avg_edr: Optional[float],
+    reason: str,
+    direction: str,
+    direction_reason: str,
+    threshold: Optional[float],
+) -> str:
+    threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
+    lines = [
+        f"**Options Alert - {label}**",
+        f"`{symbol}`",
+        f"- IV percentile: **{_format_value(iv_percentile, 1)}%** (threshold {threshold_text}%)",
+        f"- IV30 / HV30 / EDR: {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}%",
+        f"- Reason: {reason}",
+        f"- Direction hint: **{direction}** ({direction_reason})",
+    ]
+    return "\n".join(lines)
+
+
 def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float], bias: str) -> bool:
     if iv_percentile is None:
         return False
@@ -167,16 +224,23 @@ def run_options_alert_scan() -> dict:
                     bias,
                     votes,
                 )
+                direction, direction_reason = _direction_hint(hist)
                 if watch.last_triggered_at:
                     cooldown = timedelta(minutes=watch.cooldown_minutes or 0)
                     if datetime.utcnow() - watch.last_triggered_at < cooldown:
                         continue
 
-                message = (
-                    f"Options alert: {symbol} IV percentile {iv_percentile}% "
-                    f"(IV30 {iv30}, HV30 {metrics.get('hv30')}, "
-                    f"EDR {avg_edr}) "
-                    f"Reason: {reason}"
+                message = _format_alert_message(
+                    "Watchlist",
+                    symbol,
+                    iv_percentile,
+                    iv30,
+                    metrics.get("hv30"),
+                    avg_edr,
+                    reason,
+                    direction,
+                    direction_reason,
+                    watch.iv_percentile_max,
                 )
 
                 delivered, channel, error = _send_webhook(message)
