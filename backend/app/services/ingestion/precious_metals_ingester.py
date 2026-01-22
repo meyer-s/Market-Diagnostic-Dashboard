@@ -1143,9 +1143,9 @@ class PreciousMetalsIngester:
         month_pattern = (
             r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
             r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|"
-            r"Dec(?:ember)?)\\s+\\d{1,2},?\\s+\\d{4}"
+            r"Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}"
         )
-        numeric_pattern = r"\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b"
+        numeric_pattern = r"\b\d{1,2}/\d{1,2}/\d{2,4}\b"
         for pattern in (month_pattern, numeric_pattern):
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
