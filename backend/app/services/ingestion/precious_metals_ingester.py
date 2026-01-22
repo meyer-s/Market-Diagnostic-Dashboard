@@ -9,6 +9,7 @@ import csv
 import json
 import mimetypes
 import re
+import math
 from io import StringIO, BytesIO
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Tuple, Optional
@@ -716,7 +717,10 @@ class PreciousMetalsIngester:
         if value is None:
             return None
         if isinstance(value, (int, float)):
-            return float(value)
+            number = float(value)
+            if isinstance(number, float) and math.isnan(number):
+                return None
+            return number
         text = str(value).strip()
         if not text or text.lower() in {"n/a", "na", "null", "none", "-"}:
             return None
