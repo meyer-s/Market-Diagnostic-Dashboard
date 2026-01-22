@@ -170,18 +170,23 @@ def _format_alert_message(
         direction_label = "Bullish"
     elif direction.lower() == "puts":
         direction_label = "Bearish"
+    votes_text = ", ".join(votes) if votes else "n/a"
     lines = [
-        f"Options Bot: `{symbol}` — {label}",
+        "---",
+        f"**{symbol}** — {label}",
         "",
-        f"IV percentile: {_format_value(iv_percentile, 1)}% (≤ {threshold_text}%)",
-        f"IV30 / HV30 / EDR: {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}%",
+        "**Volatility Snapshot**",
+        f"- **IV percentile**: {_format_value(iv_percentile, 1)}% (≤ {threshold_text}%)",
+        f"- **IV30 / HV30 / EDR**: {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}%",
         "",
-        f"Mispricing: {bias} (consensus)",
-        f"Votes: {', '.join(votes) if votes else 'n/a'}",
-        f"Details: {reason}",
+        "**Mispricing**",
+        f"- **Consensus**: {bias}",
+        f"- **Votes**: {votes_text}",
+        f"- **Details**: {reason}",
         "",
-        f"Directional bias: {direction_label}",
-        f"Context: {direction_reason}",
+        "**Directional Bias**",
+        f"- **{direction_label}** — {direction_reason}",
+        "---",
     ]
     return "\n".join(lines)
 
