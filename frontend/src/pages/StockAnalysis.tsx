@@ -206,11 +206,6 @@ export default function StockAnalysis() {
   };
 
   const chartData = getChartData();
-  const summaryInput = useMemo(() => buildSummaryInput(), [searchTicker, technicalData, fundamentals, optionalityMetrics, dataAsOf]);
-  const holisticSummary = useMemo(
-    () => (summaryInput ? buildHolisticSummary(summaryInput) : null),
-    [summaryInput]
-  );
 
   const isSelectedHorizon = (h: "T" | "3m" | "6m" | "12m") => selectedHorizon === h;
 
@@ -393,6 +388,15 @@ export default function StockAnalysis() {
       },
     };
   }
+
+  const summaryInput = useMemo(
+    () => buildSummaryInput(),
+    [searchTicker, technicalData, fundamentals, optionalityMetrics, dataAsOf]
+  );
+  const holisticSummary = useMemo(
+    () => (summaryInput ? buildHolisticSummary(summaryInput) : null),
+    [summaryInput]
+  );
 
   const derivedBadge = (
     <span className="ml-1 text-[10px] text-amber-300/90" title="Derived from reported filings">
