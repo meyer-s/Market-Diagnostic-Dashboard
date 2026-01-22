@@ -1329,7 +1329,12 @@ class PreciousMetalsIngester:
 
                         open_interest = entry["open_interest"]
                         if open_interest is None and open_interest_lookup:
-                            open_interest = open_interest_lookup.get((date_key.date(), metal_value))
+                            # Open interest reports can lag the warehouse report by 1-3 days.
+                            for offset in (0, -1, -2, -3, 1):
+                                candidate_date = (date_key + timedelta(days=offset)).date()
+                                open_interest = open_interest_lookup.get((candidate_date, metal_value))
+                                if open_interest is not None:
+                                    break
 
                         oi_ratio = entry["oi_ratio"]
                         if oi_ratio is None and open_interest is not None and registered_oz:
