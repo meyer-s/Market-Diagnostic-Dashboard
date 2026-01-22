@@ -99,6 +99,8 @@ def _scan_tickers(
                 iv30,
                 metrics.get("hv30"),
                 metrics.get("avg_edr"),
+                bias,
+                votes,
                 reason,
                 direction,
                 direction_reason,

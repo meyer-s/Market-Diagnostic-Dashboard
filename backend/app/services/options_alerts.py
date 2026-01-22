@@ -106,10 +106,6 @@ def _build_alert_reason(
     votes: Optional[list[str]],
 ) -> str:
     reasons = []
-    if bias:
-        reasons.append(f"{bias} consensus")
-    if votes:
-        reasons.append(", ".join(votes))
     if iv_percentile is not None:
         limit = threshold if threshold is not None else 0
         reasons.append(f"IV percentile {iv_percentile:.1f}% <= {limit:.1f}%")
@@ -161,19 +157,31 @@ def _format_alert_message(
     iv30: Optional[float],
     hv30: Optional[float],
     avg_edr: Optional[float],
+    bias: str,
+    votes: list[str],
     reason: str,
     direction: str,
     direction_reason: str,
     threshold: Optional[float],
 ) -> str:
     threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
+    direction_label = "Neutral"
+    if direction.lower() == "calls":
+        direction_label = "Bullish"
+    elif direction.lower() == "puts":
+        direction_label = "Bearish"
     lines = [
-        f"**Options Alert - {label}**",
-        f"`{symbol}`",
-        f"- IV percentile: **{_format_value(iv_percentile, 1)}%** (threshold {threshold_text}%)",
-        f"- IV30 / HV30 / EDR: {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}%",
-        f"- Reason: {reason}",
-        f"- Direction hint: **{direction}** ({direction_reason})",
+        f"Options Bot: `{symbol}` — {label}",
+        "",
+        f"IV percentile: {_format_value(iv_percentile, 1)}% (≤ {threshold_text}%)",
+        f"IV30 / HV30 / EDR: {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}%",
+        "",
+        f"Mispricing: {bias} (consensus)",
+        f"Votes: {', '.join(votes) if votes else 'n/a'}",
+        f"Details: {reason}",
+        "",
+        f"Directional bias: {direction_label}",
+        f"Context: {direction_reason}",
     ]
     return "\n".join(lines)
 
@@ -237,6 +245,8 @@ def run_options_alert_scan() -> dict:
                     iv30,
                     metrics.get("hv30"),
                     avg_edr,
+                    bias,
+                    votes,
                     reason,
                     direction,
                     direction_reason,
