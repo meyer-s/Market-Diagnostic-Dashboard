@@ -8,6 +8,7 @@ import os
 import csv
 import json
 import mimetypes
+import re
 from io import StringIO, BytesIO
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Tuple, Optional
@@ -746,6 +747,18 @@ class PreciousMetalsIngester:
                 return datetime.strptime(text, fmt)
             except ValueError:
                 continue
+        match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
+        if match:
+            try:
+                return datetime.strptime(match.group(1), "%m/%d/%Y")
+            except ValueError:
+                pass
+        match = re.search(r"(\d{4}-\d{2}-\d{2})", text)
+        if match:
+            try:
+                return datetime.strptime(match.group(1), "%Y-%m-%d")
+            except ValueError:
+                pass
         return None
 
     @staticmethod
@@ -883,6 +896,81 @@ class PreciousMetalsIngester:
         data = data.where(pd.notnull(data), None)
         return data.to_dict(orient="records")
 
+    def _extract_warehouse_totals(
+        self,
+        rows: List[Dict[str, object]],
+        metal_hint: Optional[str] = None
+    ) -> List[Dict[str, object]]:
+        totals: Dict[str, Dict[str, Optional[float]]] = {}
+        metal_dates: Dict[str, datetime] = {}
+        current_metal = metal_hint
+        current_date: Optional[datetime] = None
+
+        for row in rows:
+            row_texts = [
+                str(value).strip()
+                for value in row.values()
+                if isinstance(value, str) and str(value).strip()
+            ]
+            if not row_texts:
+                continue
+            joined = " ".join(text.lower() for text in row_texts)
+
+            for value in row.values():
+                metal_candidate = self._normalize_comex_metal(value)
+                if metal_candidate:
+                    current_metal = metal_candidate
+                    break
+
+            row_date = None
+            for value in row.values():
+                row_date = self._parse_comex_date(value)
+                if row_date:
+                    break
+            if row_date:
+                current_date = row_date
+                if current_metal:
+                    metal_dates[current_metal] = row_date
+
+            if not current_metal:
+                continue
+
+            numbers = [
+                self._parse_comex_number(value)
+                for value in row.values()
+            ]
+            values = [value for value in numbers if value is not None]
+            if not values:
+                continue
+            amount = max(values)
+
+            entry = totals.setdefault(current_metal, {
+                "registered_oz": None,
+                "eligible_oz": None,
+                "total_oz": None
+            })
+
+            if "total registered" in joined:
+                entry["registered_oz"] = amount
+            elif "total eligible" in joined:
+                entry["eligible_oz"] = amount
+            elif "combined total" in joined:
+                entry["total_oz"] = amount
+
+        results: List[Dict[str, object]] = []
+        for metal, values in totals.items():
+            date_value = metal_dates.get(metal) or current_date or self._infer_comex_date(rows)
+            if not date_value:
+                continue
+            results.append({
+                "metal": metal,
+                "date": date_value,
+                "registered_oz": values.get("registered_oz"),
+                "eligible_oz": values.get("eligible_oz"),
+                "total_oz": values.get("total_oz")
+            })
+        return results
+
     @staticmethod
     def _read_comex_source(source: str) -> List[Dict[str, object]]:
         if not source:
@@ -1006,6 +1094,29 @@ class PreciousMetalsIngester:
                     if not rows:
                         logger.warning("No COMEX inventory rows found for %s", source)
                         continue
+                    warehouse_records = self._extract_warehouse_totals(
+                        rows,
+                        metal_hint=source_info.get("metal")
+                    )
+                    if warehouse_records:
+                        for record in warehouse_records:
+                            date_key = record["date"].replace(hour=0, minute=0, second=0, microsecond=0)
+                            aggregate_key = (date_key, record["metal"])
+                            aggregated[aggregate_key] = {
+                                "registered_sum": 0.0,
+                                "eligible_sum": 0.0,
+                                "total_sum": 0.0,
+                                "registered_total": record.get("registered_oz"),
+                                "eligible_total": record.get("eligible_oz"),
+                                "total_total": record.get("total_oz"),
+                                "open_interest": None,
+                                "oi_ratio": None,
+                                "total_rank": 2,
+                                "use_total": True,
+                                "source": source_label
+                            }
+                        continue
+
                     fallback_date = self._infer_comex_date(rows)
 
                     for row in rows:
