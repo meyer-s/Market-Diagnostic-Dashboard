@@ -64,9 +64,39 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=20.0)
     parser.add_argument("--max", type=int, default=0, help="Limit tickers scanned (0 = all).")
     parser.add_argument("--pause", type=float, default=0.2)
+    parser.add_argument("--r2k-only", action="store_true", help="Only run Russell 2000 (IWM) sweep.")
+    parser.add_argument("--sp500-only", action="store_true", help="Only run S&P 500 (IVV) sweep.")
     args = parser.parse_args()
 
     max_count = args.max if args.max and args.max > 0 else None
+    if args.r2k_only and not args.sp500_only:
+        _send_webhook(
+            f":mag: Options sweep started (IWM holdings). Threshold {args.threshold:.1f}%"
+            f"{'' if max_count is None else f', max {max_count}'}."
+        )
+        r2k_hits = _run_sweep(
+            _fetch_ishares_tickers(R2K_IWM_URL),
+            "Russell 2000 (IWM)",
+            args.threshold,
+            max_count,
+            args.pause,
+        )
+        _send_webhook(f":white_check_mark: Options sweep finished. Russell 2000 (IWM) hits: {r2k_hits}.")
+        return
+    if args.sp500_only and not args.r2k_only:
+        _send_webhook(
+            f":mag: Options sweep started (IVV holdings). Threshold {args.threshold:.1f}%"
+            f"{'' if max_count is None else f', max {max_count}'}."
+        )
+        hits = _run_sweep(
+            _fetch_ishares_tickers(SP500_IVV_URL),
+            "S&P 500 (IVV)",
+            args.threshold,
+            max_count,
+            args.pause,
+        )
+        _send_webhook(f":white_check_mark: Options sweep finished. S&P 500 (IVV) hits: {hits}.")
+        return
     _send_webhook(
         f":mag: Options sweep started (IVV holdings). Threshold {args.threshold:.1f}%"
         f"{'' if max_count is None else f', max {max_count}'}."
