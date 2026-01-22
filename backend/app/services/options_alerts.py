@@ -1,4 +1,5 @@
 import os
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -40,6 +41,33 @@ def _send_webhook(message: str) -> tuple[bool, Optional[str], Optional[str]]:
         return False, None, str(exc)
 
 
+def _is_iv_data_valid(iv30: Optional[float], hv30: Optional[float], iv_percentile: Optional[float]) -> bool:
+    if iv30 is None or iv30 <= 1:
+        return False
+    if iv_percentile is not None and iv_percentile == 0 and (hv30 or 0) > 10:
+        return False
+    return True
+
+
+def _build_alert_reason(
+    iv30: Optional[float],
+    hv30: Optional[float],
+    iv_percentile: Optional[float],
+    threshold: Optional[float],
+) -> str:
+    reasons = []
+    if iv_percentile is not None:
+        limit = threshold if threshold is not None else 0
+        reasons.append(f"IV percentile {iv_percentile:.1f}% <= {limit:.1f}%")
+    if iv30 is not None and hv30 is not None:
+        spread = iv30 - hv30
+        if spread < 0:
+            reasons.append(f"IV30 below HV30 by {abs(spread):.1f} pts")
+    if not reasons and iv_percentile is not None:
+        reasons.append(f"IV percentile {iv_percentile:.1f}%")
+    return "; ".join(reasons) if reasons else "Low IV percentile"
+
+
 def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float]) -> bool:
     if iv_percentile is None:
         return False
@@ -66,10 +94,15 @@ def run_options_alert_scan() -> dict:
                 hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
                 metrics = compute_optionality_metrics(stock, current_price, hv30)
                 iv_percentile = metrics.get("iv_percentile")
+                iv30 = metrics.get("iv30")
+
+                if not _is_iv_data_valid(iv30, hv30, iv_percentile):
+                    continue
 
                 if not _should_trigger(watch, iv_percentile):
                     continue
 
+                reason = _build_alert_reason(iv30, hv30, iv_percentile, watch.iv_percentile_max)
                 if watch.last_triggered_at:
                     cooldown = timedelta(minutes=watch.cooldown_minutes or 0)
                     if datetime.utcnow() - watch.last_triggered_at < cooldown:
@@ -77,14 +110,15 @@ def run_options_alert_scan() -> dict:
 
                 message = (
                     f"Options alert: {symbol} IV percentile {iv_percentile}% "
-                    f"(IV30 {metrics.get('iv30')}, HV30 {metrics.get('hv30')}, "
-                    f"EDR {metrics.get('avg_edr')})"
+                    f"(IV30 {iv30}, HV30 {metrics.get('hv30')}, "
+                    f"EDR {metrics.get('avg_edr')}) "
+                    f"Reason: {reason}"
                 )
 
                 delivered, channel, error = _send_webhook(message)
                 event = OptionAlertEvent(
                     symbol=symbol,
-                    iv30=metrics.get("iv30"),
+                    iv30=iv30,
                     hv30=metrics.get("hv30"),
                     iv_percentile=iv_percentile,
                     avg_edr=metrics.get("avg_edr"),

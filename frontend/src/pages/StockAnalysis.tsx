@@ -13,7 +13,7 @@
  * - Comparison against SPY benchmark
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -30,6 +30,8 @@ import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
+import { buildHolisticSummary } from "../utils/holisticSummary";
+import type { SummaryInput } from "../types/holisticSummary";
 
 interface StockProjection {
   ticker: string;
@@ -105,6 +107,7 @@ interface FundamentalsPayload {
   free_cash_flow: FundamentalSeries;
   market_cap: FundamentalSeries;
   pe_ratio: FundamentalSeries;
+  revenue_yoy?: FundamentalSeries;
 }
 
 export default function StockAnalysis() {
@@ -126,6 +129,7 @@ export default function StockAnalysis() {
   const [selectedHorizon, setSelectedHorizon] = useState<"T" | "3m" | "6m" | "12m">("12m");
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [dataAsOf, setDataAsOf] = useState<string | null>(null);
+  const [showSummaryDebug, setShowSummaryDebug] = useState(false);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,6 +206,11 @@ export default function StockAnalysis() {
   };
 
   const chartData = getChartData();
+  const summaryInput = useMemo(() => buildSummaryInput(), [searchTicker, technicalData, fundamentals, optionalityMetrics, dataAsOf]);
+  const holisticSummary = useMemo(
+    () => (summaryInput ? buildHolisticSummary(summaryInput) : null),
+    [summaryInput]
+  );
 
   const isSelectedHorizon = (h: "T" | "3m" | "6m" | "12m") => selectedHorizon === h;
 
@@ -236,6 +245,154 @@ export default function StockAnalysis() {
 
   const formatDateLabel = (date: string) =>
     new Date(date).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+
+  const calcSmaSeries = (values: number[], window: number) => {
+    if (values.length < window) return Array(values.length).fill(null);
+    const result: Array<number | null> = [];
+    let sum = 0;
+    for (let i = 0; i < values.length; i += 1) {
+      sum += values[i];
+      if (i >= window) {
+        sum -= values[i - window];
+      }
+      result.push(i >= window - 1 ? sum / window : null);
+    }
+    return result;
+  };
+
+  const calcSlopeFromSeries = (series: Array<number | null>, window = 10) => {
+    const values = series.filter((value): value is number => Number.isFinite(value));
+    if (values.length <= window) return null;
+    return (values[values.length - 1] - values[values.length - 1 - window]) / window;
+  };
+
+  const calcAtrSeries = (candles: Array<{ high: number; low: number; close: number }>, window = 14) => {
+    if (candles.length < 2) return [];
+    const trs: number[] = [];
+    for (let i = 1; i < candles.length; i += 1) {
+      const prevClose = candles[i - 1].close;
+      const highLow = candles[i].high - candles[i].low;
+      const highClose = Math.abs(candles[i].high - prevClose);
+      const lowClose = Math.abs(candles[i].low - prevClose);
+      trs.push(Math.max(highLow, highClose, lowClose));
+    }
+    const atrs: Array<number | null> = Array(candles.length).fill(null);
+    let sum = 0;
+    for (let i = 0; i < trs.length; i += 1) {
+      sum += trs[i];
+      if (i >= window) {
+        sum -= trs[i - window];
+      }
+      if (i >= window - 1) {
+        atrs[i + 1] = sum / window;
+      }
+    }
+    return atrs;
+  };
+
+  const calcAverage = (values: number[]) =>
+    values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+
+  const buildSummaryInput = (): SummaryInput | null => {
+    if (!searchTicker || !technicalData) return null;
+
+    const candles = (technicalData.candles || []).map((c: any) => ({
+      close: Number(c.close),
+      high: Number(c.high),
+      low: Number(c.low),
+      volume: Number(c.volume ?? 0),
+    }));
+    if (!candles.length) return null;
+
+    const closes = candles.map((c) => c.close).filter((v) => Number.isFinite(v));
+    const ma50Series = calcSmaSeries(closes, 50);
+    const ma200Series = calcSmaSeries(closes, 200);
+    const ma50Slope = calcSlopeFromSeries(ma50Series);
+    const ma200Slope = calcSlopeFromSeries(ma200Series);
+
+    const rsiSeries = technicalData?.rsi?.series || [];
+    const rsiSlope = calcSlopeFromSeries(rsiSeries);
+    const macdHistSeries = technicalData?.macd?.histogram_series || [];
+    const macdHistSlope = calcSlopeFromSeries(macdHistSeries);
+
+    const atrSeries = calcAtrSeries(candles);
+    const atrPctSeries = atrSeries.map((atr, idx) =>
+      Number.isFinite(atr) && candles[idx] ? (atr as number) / candles[idx].close * 100 : null
+    );
+    const atrPctSlope = calcSlopeFromSeries(atrPctSeries);
+    const atr14Pct = atrPctSeries.filter((value): value is number => Number.isFinite(value)).slice(-1)[0] ?? null;
+
+    const volumes = candles.map((c) => c.volume).filter((v) => Number.isFinite(v) && v > 0);
+    const currentVolume = volumes[volumes.length - 1];
+    const avg20 = calcAverage(volumes.slice(-20));
+    const volVs20 = Number.isFinite(currentVolume) && Number.isFinite(avg20) && avg20
+      ? currentVolume / avg20
+      : null;
+
+    const recent20 = candles.slice(-20);
+    const recent60 = candles.slice(-60);
+    const support1 = recent20.length ? Math.min(...recent20.map((c) => c.low)) : null;
+    const resistance1 = recent20.length ? Math.max(...recent20.map((c) => c.high)) : null;
+    const support2 = recent60.length ? Math.min(...recent60.map((c) => c.low)) : null;
+    const resistance2 = recent60.length ? Math.max(...recent60.map((c) => c.high)) : null;
+
+    const mapSeries = (series?: FundamentalPoint[]) => ({
+      values: series?.map((point) => point.value) ?? [],
+      dates: series?.map((point) => point.date) ?? [],
+    });
+
+    const eps = mapSeries(fundamentals?.eps?.series);
+    const roe = mapSeries(fundamentals?.roe?.series);
+    const fcf = mapSeries(fundamentals?.free_cash_flow?.series);
+    const mcap = mapSeries(fundamentals?.market_cap?.series);
+    const pe = mapSeries(fundamentals?.pe_ratio?.series);
+    const revenue = mapSeries(fundamentals?.revenue_yoy?.series);
+
+    return {
+      symbol: searchTicker,
+      asOf: dataAsOf || new Date().toISOString(),
+      technicals: {
+        price: technicalData?.current_price ?? null,
+        ma50: technicalData?.sma_50 ?? null,
+        ma200: technicalData?.sma_200 ?? null,
+        ma50_slope: ma50Slope,
+        ma200_slope: ma200Slope,
+        rsi14: technicalData?.rsi?.current ?? null,
+        rsi14_slope: rsiSlope,
+        macd: technicalData?.macd?.current ?? null,
+        macd_signal: technicalData?.macd?.signal ?? null,
+        macd_hist: technicalData?.macd?.histogram ?? null,
+        macd_hist_slope: macdHistSlope,
+        atr14_pct: atr14Pct,
+        atr14_pct_slope: atrPctSlope,
+        vol_vs_20d: volVs20,
+        support1,
+        support2,
+        resistance1,
+        resistance2,
+      },
+      fundamentals: {
+        eps_series: eps.values,
+        eps_dates: eps.dates,
+        roe_series: roe.values,
+        roe_dates: roe.dates,
+        fcf_series: fcf.values,
+        fcf_dates: fcf.dates,
+        marketcap_series: mcap.values,
+        marketcap_dates: mcap.dates,
+        pe_series: pe.values,
+        pe_dates: pe.dates,
+        revenue_yoy_series: revenue.values,
+        revenue_yoy_dates: revenue.dates,
+      },
+      options: {
+        iv30: optionalityMetrics?.iv30 ?? null,
+        hv30: optionalityMetrics?.hv30 ?? null,
+        iv_percentile: optionalityMetrics?.iv_percentile ?? null,
+        avg_edr: optionalityMetrics?.avg_edr ?? null,
+      },
+    };
+  };
 
   const derivedBadge = (
     <span className="ml-1 text-[10px] text-amber-300/90" title="Derived from reported filings">
@@ -390,6 +547,60 @@ export default function StockAnalysis() {
             />
           )}
 
+          {/* Holistic Summary */}
+          {holisticSummary && (
+            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base sm:text-lg font-semibold">Holistic Summary</h3>
+                <span className="text-[10px] sm:text-xs text-gray-300 bg-gray-900 border border-gray-700 px-2 py-1 rounded-full">
+                  {holisticSummary.regime}
+                </span>
+              </div>
+              <p className="text-sm text-gray-300 leading-relaxed mb-4">
+                {holisticSummary.narrative}
+              </p>
+              <div className="space-y-2 text-sm text-gray-400">
+                {holisticSummary.bullets.map((bullet) => (
+                  <div key={bullet.axis}>
+                    <span className="text-gray-500">{bullet.axis}:</span> {bullet.text}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-sm text-gray-400">
+                <span className="text-gray-500">Watch:</span> {holisticSummary.watch}
+              </div>
+              {holisticSummary.debug && (
+                <button
+                  type="button"
+                  onClick={() => setShowSummaryDebug((prev) => !prev)}
+                  className="mt-3 text-xs text-blue-300 hover:text-blue-200 transition"
+                >
+                  {showSummaryDebug ? "Hide debug" : "Show debug"}
+                </button>
+              )}
+              {showSummaryDebug && holisticSummary.debug && (
+                <div className="mt-3 bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 space-y-2">
+                  {[
+                    holisticSummary.debug.technical,
+                    holisticSummary.debug.fundamental,
+                    holisticSummary.debug.options,
+                  ].map((axis) => (
+                    <div key={axis.label}>
+                      <span className="text-gray-500">{axis.label}:</span>{" "}
+                      {axis.bias} · score {axis.score} · confidence {axis.confidence} · rules{" "}
+                      {Array.isArray(axis.debug?.rules) ? axis.debug?.rules.join(", ") : "n/a"}
+                    </div>
+                  ))}
+                  <div>
+                    <span className="text-gray-500">Regime:</span>{" "}
+                    {holisticSummary.debug.regime_matrix.key} ·{" "}
+                    {holisticSummary.debug.regime_matrix.rationale.join("; ")}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Fundamental Analysis */}
           {fundamentals && (
             <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
@@ -402,11 +613,12 @@ export default function StockAnalysis() {
                 {" "}
                 {[
                   { label: "EPS", series: fundamentals.eps?.series },
-                  { label: "ROE", series: fundamentals.roe?.series },
-                  { label: "FCF", series: fundamentals.free_cash_flow?.series },
-                  { label: "MCap", series: fundamentals.market_cap?.series },
-                  { label: "P/E", series: fundamentals.pe_ratio?.series },
-                ]
+                { label: "ROE", series: fundamentals.roe?.series },
+                { label: "FCF", series: fundamentals.free_cash_flow?.series },
+                { label: "Rev YoY", series: fundamentals.revenue_yoy?.series },
+                { label: "MCap", series: fundamentals.market_cap?.series },
+                { label: "P/E", series: fundamentals.pe_ratio?.series },
+              ]
                   .map((item) => `${item.label}: ${item.series?.length ?? 0}q`)
                   .join(" · ")}
                 .
@@ -439,6 +651,15 @@ export default function StockAnalysis() {
                     color: getFamilyColor("liquidity"),
                     format: (value: number) => `$${formatCompact(value, 2)}`,
                     axis: (value: number) => formatCompact(value, 0),
+                  },
+                  {
+                    key: "revenue_yoy",
+                    title: "Revenue Growth (YoY)",
+                    series: fundamentals.revenue_yoy?.series || [],
+                    derived: fundamentals.revenue_yoy?.derived,
+                    color: getFamilyColor("growth"),
+                    format: (value: number) => formatPercent(value, 1),
+                    axis: (value: number) => `${value.toFixed(0)}%`,
                   },
                   {
                     key: "market_cap",

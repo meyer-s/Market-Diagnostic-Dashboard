@@ -6,6 +6,7 @@ import pandas as pd
 import yfinance as yf
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
+from app.services.options_alerts import _build_alert_reason, _is_iv_data_valid
 from app.models.options_alerts import OptionAlertEvent
 from app.services.options_alerts import _send_webhook, _get_current_price
 from app.utils.db_helpers import get_db_session
@@ -74,21 +75,27 @@ def _scan_tickers(
             hv30 = compute_historical_volatility(history, 30) if history is not None else None
             metrics = compute_optionality_metrics(stock, current_price, hv30)
             iv_percentile = metrics.get("iv_percentile")
+            iv30 = metrics.get("iv30")
+
+            if not _is_iv_data_valid(iv30, hv30, iv_percentile):
+                continue
 
             if iv_percentile is None or iv_percentile > threshold:
                 continue
 
+            reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold)
             message = (
                 f"Options alert ({label}): {symbol} IV percentile {iv_percentile}% "
-                f"(IV30 {metrics.get('iv30')}, HV30 {metrics.get('hv30')}, "
-                f"EDR {metrics.get('avg_edr')})"
+                f"(IV30 {iv30}, HV30 {metrics.get('hv30')}, "
+                f"EDR {metrics.get('avg_edr')}) "
+                f"Reason: {reason}"
             )
             delivered, channel, error = _send_webhook(message)
             with get_db_session() as db:
                 db.add(
                     OptionAlertEvent(
                         symbol=symbol,
-                        iv30=metrics.get("iv30"),
+                        iv30=iv30,
                         hv30=metrics.get("hv30"),
                         iv_percentile=iv_percentile,
                         avg_edr=metrics.get("avg_edr"),

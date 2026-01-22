@@ -233,6 +233,17 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         ],
         max_points=max_points,
     )
+    revenue_series = _series_from_row(
+        income_df,
+        [
+            "Total Revenue",
+            "TotalRevenue",
+            "Revenue",
+            "Total Revenue As Reported",
+            "Revenue From Contract With Customer Excluding Assessed Tax",
+        ],
+        max_points=max_points,
+    )
 
     equity_series = _series_from_row(
         balance_df,
@@ -463,6 +474,23 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         series.sort(key=lambda item: item["date"])
         return series[-limit:]
 
+    revenue_yoy_series = []
+    if revenue_series:
+        revenue_sorted = sorted(revenue_series, key=lambda item: item["date"])
+        for idx in range(4, len(revenue_sorted)):
+            current = revenue_sorted[idx]
+            prior = revenue_sorted[idx - 4]
+            prior_value = prior.get("value")
+            current_value = current.get("value")
+            if prior_value is None or current_value is None or prior_value == 0:
+                continue
+            revenue_yoy_series.append(
+                {
+                    "date": current["date"],
+                    "value": (float(current_value) - float(prior_value)) / float(prior_value) * 100,
+                }
+            )
+
     return {
         "as_of": datetime.utcnow().isoformat(),
         "eps": {"series": _limit(eps_series, max_points), "derived": eps_derived},
@@ -470,6 +498,7 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         "free_cash_flow": {"series": _limit(fcf_series, max_points), "derived": fcf_derived},
         "market_cap": {"series": _limit(market_cap_series, max_points), "derived": True},
         "pe_ratio": {"series": _limit(pe_series, max_points), "derived": True},
+        "revenue_yoy": {"series": _limit(revenue_yoy_series, max_points), "derived": True},
     }
 
 def fetch_stock_data(ticker: str, days: int = 2000) -> pd.DataFrame:

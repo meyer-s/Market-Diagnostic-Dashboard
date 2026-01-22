@@ -21,3 +21,12 @@ export interface IndicatorHistoryPoint {
   score: number;
   state: "GREEN" | "YELLOW" | "RED";
 }
+
+export type {
+  AxisBias,
+  TechBias,
+  OptBias,
+  AxisScore,
+  HolisticSummary,
+  SummaryInput,
+} from "./holisticSummary";
