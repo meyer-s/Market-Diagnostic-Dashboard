@@ -1093,6 +1093,11 @@ class PreciousMetalsIngester:
 
         with get_db_session() as db:
             try:
+                if inventory_sources:
+                    logger.info(
+                        "COMEX inventory sources: %s",
+                        [source["source"] for source in inventory_sources if source.get("source")]
+                    )
                 if not inventory_sources:
                     if not allow_estimates:
                         logger.info("No COMEX inventory sources configured; skipping COMEX ingestion")
@@ -1124,6 +1129,7 @@ class PreciousMetalsIngester:
                         metal_hint=source_info.get("metal")
                     )
                     if warehouse_records:
+                        logger.info("Parsed %s COMEX warehouse totals from %s", len(warehouse_records), source)
                         for record in warehouse_records:
                             date_key = record["date"].replace(hour=0, minute=0, second=0, microsecond=0)
                             aggregate_key = (date_key, record["metal"])
@@ -1204,6 +1210,7 @@ class PreciousMetalsIngester:
                                 entry["oi_ratio"] = oi_ratio
 
                 if aggregated:
+                    logger.info("COMEX aggregated records ready: %s", len(aggregated))
                     for (date_key, metal_value), entry in aggregated.items():
                         if entry["use_total"]:
                             registered_oz = entry["registered_total"]
