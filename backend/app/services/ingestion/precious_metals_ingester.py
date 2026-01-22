@@ -864,6 +864,24 @@ class PreciousMetalsIngester:
         except Exception as exc:
             logger.warning("Failed to parse COMEX excel source %s: %s", source, exc)
             return []
+        warehouse_keys = ("total registered", "total eligible", "combined total")
+        has_warehouse_totals = False
+        for _, row in data.iterrows():
+            for value in row.values:
+                if not isinstance(value, str):
+                    continue
+                text = value.strip().lower()
+                if any(key in text for key in warehouse_keys):
+                    has_warehouse_totals = True
+                    break
+            if has_warehouse_totals:
+                break
+        if has_warehouse_totals:
+            data = data.dropna(how="all")
+            data.columns = [f"col_{idx}" for idx in range(len(data.columns))]
+            data = data.where(pd.notnull(data), None)
+            return data.to_dict(orient="records")
+
         header_row = None
         header_score = 0
         for idx, row in data.iterrows():
