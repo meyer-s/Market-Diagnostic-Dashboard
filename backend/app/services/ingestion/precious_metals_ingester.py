@@ -952,7 +952,7 @@ class PreciousMetalsIngester:
                 row_date = self._parse_comex_date(value)
                 if row_date:
                     break
-            if row_date:
+            if row_date and ("report date" in joined or current_date is None):
                 current_date = row_date
                 if current_metal:
                     metal_dates[current_metal] = row_date
