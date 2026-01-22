@@ -551,60 +551,6 @@ export default function StockAnalysis() {
             />
           )}
 
-          {/* Holistic Summary */}
-          {holisticSummary && (
-            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-base sm:text-lg font-semibold">Holistic Summary</h3>
-                <span className="text-[10px] sm:text-xs text-gray-300 bg-gray-900 border border-gray-700 px-2 py-1 rounded-full">
-                  {holisticSummary.regime}
-                </span>
-              </div>
-              <p className="text-sm text-gray-300 leading-relaxed mb-4">
-                {holisticSummary.narrative}
-              </p>
-              <div className="space-y-2 text-sm text-gray-400">
-                {holisticSummary.bullets.map((bullet) => (
-                  <div key={bullet.axis}>
-                    <span className="text-gray-500">{bullet.axis}:</span> {bullet.text}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 text-sm text-gray-400">
-                <span className="text-gray-500">Watch:</span> {holisticSummary.watch}
-              </div>
-              {holisticSummary.debug && (
-                <button
-                  type="button"
-                  onClick={() => setShowSummaryDebug((prev) => !prev)}
-                  className="mt-3 text-xs text-blue-300 hover:text-blue-200 transition"
-                >
-                  {showSummaryDebug ? "Hide debug" : "Show debug"}
-                </button>
-              )}
-              {showSummaryDebug && holisticSummary.debug && (
-                <div className="mt-3 bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 space-y-2">
-                  {[
-                    holisticSummary.debug.technical,
-                    holisticSummary.debug.fundamental,
-                    holisticSummary.debug.options,
-                  ].map((axis) => (
-                    <div key={axis.label}>
-                      <span className="text-gray-500">{axis.label}:</span>{" "}
-                      {axis.bias} · score {axis.score} · confidence {axis.confidence} · rules{" "}
-                      {Array.isArray(axis.debug?.rules) ? axis.debug?.rules.join(", ") : "n/a"}
-                    </div>
-                  ))}
-                  <div>
-                    <span className="text-gray-500">Regime:</span>{" "}
-                    {holisticSummary.debug.regime_matrix.key} ·{" "}
-                    {holisticSummary.debug.regime_matrix.rationale.join("; ")}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Fundamental Analysis */}
           {fundamentals && (
             <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
@@ -737,12 +683,68 @@ export default function StockAnalysis() {
                       <div className="text-xs text-gray-500">
                         {card.series.length === 1
                           ? `Latest: ${card.format(card.series[0].value)}`
-                          : "No data available for this metric."}
+                          : card.key === "revenue_yoy"
+                            ? "Need at least 5 quarterly points to plot YoY growth."
+                            : "No data available for this metric."}
                       </div>
                     )}
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Holistic Summary */}
+          {holisticSummary && (
+            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base sm:text-lg font-semibold">Holistic Summary</h3>
+                <span className="text-[10px] sm:text-xs text-gray-300 bg-gray-900 border border-gray-700 px-2 py-1 rounded-full">
+                  {holisticSummary.regime}
+                </span>
+              </div>
+              <p className="text-sm text-gray-300 leading-relaxed mb-4">
+                {holisticSummary.narrative}
+              </p>
+              <div className="space-y-2 text-sm text-gray-400">
+                {holisticSummary.bullets.map((bullet) => (
+                  <div key={bullet.axis}>
+                    <span className="text-gray-500">{bullet.axis}:</span> {bullet.text}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-sm text-gray-400">
+                <span className="text-gray-500">Watch:</span> {holisticSummary.watch}
+              </div>
+              {holisticSummary.debug && (
+                <button
+                  type="button"
+                  onClick={() => setShowSummaryDebug((prev) => !prev)}
+                  className="mt-3 text-xs text-blue-300 hover:text-blue-200 transition"
+                >
+                  {showSummaryDebug ? "Hide debug" : "Show debug"}
+                </button>
+              )}
+              {showSummaryDebug && holisticSummary.debug && (
+                <div className="mt-3 bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 space-y-2">
+                  {[
+                    holisticSummary.debug.technical,
+                    holisticSummary.debug.fundamental,
+                    holisticSummary.debug.options,
+                  ].map((axis) => (
+                    <div key={axis.label}>
+                      <span className="text-gray-500">{axis.label}:</span>{" "}
+                      {axis.bias} · score {axis.score} · confidence {axis.confidence} · rules{" "}
+                      {Array.isArray(axis.debug?.rules) ? axis.debug?.rules.join(", ") : "n/a"}
+                    </div>
+                  ))}
+                  <div>
+                    <span className="text-gray-500">Regime:</span>{" "}
+                    {holisticSummary.debug.regime_matrix.key} ·{" "}
+                    {holisticSummary.debug.regime_matrix.rationale.join("; ")}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

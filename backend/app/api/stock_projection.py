@@ -49,14 +49,20 @@ T_WINDOW_DAYS = 21
 
 
 def _get_quarterly_df(stock: yf.Ticker, getters) -> pd.DataFrame:
+    best_df = None
+    best_columns = 0
     for getter in getters:
         try:
             df = getter()
         except Exception:
             continue
-        if isinstance(df, pd.DataFrame) and not df.empty:
-            return df
-    return pd.DataFrame()
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        col_count = len(df.columns)
+        if col_count > best_columns:
+            best_columns = col_count
+            best_df = df
+    return best_df if best_df is not None else pd.DataFrame()
 
 
 def _normalize_quarter_columns(df: pd.DataFrame) -> pd.DataFrame:
