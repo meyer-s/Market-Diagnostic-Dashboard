@@ -888,7 +888,11 @@ class PreciousMetalsIngester:
             return []
         content_type = ""
         if source.startswith("http://") or source.startswith("https://"):
-            response = requests.get(source, timeout=60)
+            response = requests.get(
+                source,
+                timeout=60,
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "").lower()
             content = response.content
