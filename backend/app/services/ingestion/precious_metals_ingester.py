@@ -18,6 +18,7 @@ import pandas as pd
 import yfinance as yf
 import requests
 import xml.etree.ElementTree as ET
+from pypdf import PdfReader
 
 from app.utils.db_helpers import get_db_session
 from app.models.alternative_assets import EquityPrice
@@ -997,7 +998,7 @@ class PreciousMetalsIngester:
         return results
 
     @staticmethod
-    def _read_comex_source(source: str) -> List[Dict[str, object]]:
+    def _read_comex_source(source: str, *, parse_pdf: bool = False) -> List[Dict[str, object]]:
         if not source:
             return []
         content_type = ""
@@ -1022,6 +1023,8 @@ class PreciousMetalsIngester:
             return []
         extension = os.path.splitext(source)[1].lower()
         if extension == ".pdf" or "pdf" in content_type:
+            if parse_pdf:
+                return PreciousMetalsIngester._read_comex_open_interest_pdf(content, source)
             logger.warning("COMEX source appears to be PDF and is not parsed: %s", source)
             return []
         if extension in {".xls", ".xlsx"} or "excel" in content_type or "spreadsheet" in content_type:
@@ -1038,6 +1041,125 @@ class PreciousMetalsIngester:
             return PreciousMetalsIngester._extract_rows_from_json(payload)
         reader = csv.DictReader(StringIO(text))
         return [row for row in reader if row]
+
+    @staticmethod
+    def _read_comex_open_interest_pdf(content: bytes, source: str) -> List[Dict[str, object]]:
+        if not content:
+            return []
+        try:
+            reader = PdfReader(BytesIO(content))
+        except Exception as exc:
+            logger.warning("COMEX open interest PDF parse failed for %s: %s", source, exc)
+            return []
+
+        pages_text: List[str] = []
+        for page in reader.pages:
+            try:
+                page_text = page.extract_text() or ""
+            except Exception:
+                continue
+            if page_text:
+                pages_text.append(page_text)
+
+        if not pages_text:
+            logger.warning("COMEX open interest PDF has no extractable text: %s", source)
+            return []
+
+        return PreciousMetalsIngester._parse_comex_open_interest_text("\n".join(pages_text), source)
+
+    @staticmethod
+    def _parse_comex_open_interest_text(text: str, source: str) -> List[Dict[str, object]]:
+        cleaned = text.replace("\u00a0", " ")
+        report_date = PreciousMetalsIngester._extract_comex_report_date(cleaned)
+        if not report_date:
+            logger.warning("COMEX open interest report date not found in %s", source)
+            return []
+
+        metal_aliases = {
+            "GOLD": "AU",
+            "SILVER": "AG",
+            "COPPER": "CU",
+            "PLATINUM": "PT",
+            "PALLADIUM": "PD",
+        }
+
+        results: Dict[str, float] = {}
+        current_metal: Optional[str] = None
+        open_interest_section = False
+
+        for raw_line in cleaned.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            normalized = re.sub(r"\s+", " ", line).upper()
+
+            for name, symbol in metal_aliases.items():
+                if re.search(rf"\\b{name}\\b", normalized):
+                    current_metal = symbol
+                    break
+
+            if not current_metal:
+                continue
+
+            if "OPEN INTEREST" in normalized:
+                open_interest_section = True
+
+            if "TOTAL" not in normalized and "OPEN INTEREST" not in normalized:
+                continue
+
+            if not open_interest_section and "OPEN INTEREST" not in normalized:
+                continue
+
+            value = PreciousMetalsIngester._extract_open_interest_value(line)
+            if value is None:
+                continue
+
+            existing = results.get(current_metal)
+            if existing is None or value > existing:
+                results[current_metal] = value
+
+        return [
+            {"metal": metal, "date": report_date, "open_interest": value}
+            for metal, value in results.items()
+        ]
+
+    @staticmethod
+    def _extract_comex_report_date(text: str) -> Optional[datetime]:
+        month_pattern = (
+            r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+            r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|"
+            r"Dec(?:ember)?)\\s+\\d{1,2},?\\s+\\d{4}"
+        )
+        numeric_pattern = r"\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b"
+        for pattern in (month_pattern, numeric_pattern):
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                date_value = PreciousMetalsIngester._parse_comex_date(match.group(0))
+                if date_value:
+                    return date_value
+        return None
+
+    @staticmethod
+    def _extract_open_interest_value(line: str) -> Optional[float]:
+        numbers = re.findall(
+            r"[-+]?\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|[-+]?\\d+(?:\\.\\d+)?",
+            line
+        )
+        if not numbers:
+            return None
+        values = [
+            PreciousMetalsIngester._parse_comex_number(value)
+            for value in numbers
+        ]
+        values = [value for value in values if value is not None]
+        if not values:
+            return None
+        candidate = values[-1]
+        if candidate is None:
+            return None
+        if candidate < 100:
+            return None
+        return candidate
 
     def _build_open_interest_lookup(self, rows: List[Dict[str, object]]) -> Dict[Tuple[date, str], float]:
         lookup: Dict[Tuple[date, str], float] = {}
@@ -1104,7 +1226,7 @@ class PreciousMetalsIngester:
                         return 0
                 open_interest_lookup: Dict[Tuple[date, str], float] = {}
                 if oi_source:
-                    oi_rows = self._read_comex_source(oi_source)
+                    oi_rows = self._read_comex_source(oi_source, parse_pdf=True)
                     open_interest_lookup = self._build_open_interest_lookup(oi_rows)
 
                 aggregated: Dict[Tuple[datetime, str], Dict[str, object]] = {}
