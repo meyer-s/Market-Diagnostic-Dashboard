@@ -49,20 +49,23 @@ T_WINDOW_DAYS = 21
 
 
 def _get_quarterly_df(stock: yf.Ticker, getters) -> pd.DataFrame:
-    best_df = None
-    best_columns = 0
+    frames = []
     for getter in getters:
         try:
             df = getter()
         except Exception:
             continue
-        if not isinstance(df, pd.DataFrame) or df.empty:
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            frames.append(df)
+    if not frames:
+        return pd.DataFrame()
+    merged = frames[0].copy()
+    for df in frames[1:]:
+        try:
+            merged = merged.combine_first(df)
+        except Exception:
             continue
-        col_count = len(df.columns)
-        if col_count > best_columns:
-            best_columns = col_count
-            best_df = df
-    return best_df if best_df is not None else pd.DataFrame()
+    return merged
 
 
 def _normalize_quarter_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -504,6 +507,7 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         "free_cash_flow": {"series": _limit(fcf_series, max_points), "derived": fcf_derived},
         "market_cap": {"series": _limit(market_cap_series, max_points), "derived": True},
         "pe_ratio": {"series": _limit(pe_series, max_points), "derived": True},
+        "revenue": {"series": _limit(revenue_series, max_points), "derived": False},
         "revenue_yoy": {"series": _limit(revenue_yoy_series, max_points), "derived": True},
     }
 

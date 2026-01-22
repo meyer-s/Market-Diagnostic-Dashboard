@@ -107,6 +107,7 @@ interface FundamentalsPayload {
   free_cash_flow: FundamentalSeries;
   market_cap: FundamentalSeries;
   pe_ratio: FundamentalSeries;
+  revenue?: FundamentalSeries;
   revenue_yoy?: FundamentalSeries;
 }
 
@@ -341,7 +342,8 @@ export default function StockAnalysis() {
     const fcf = mapSeries(fundamentals?.free_cash_flow?.series);
     const mcap = mapSeries(fundamentals?.market_cap?.series);
     const pe = mapSeries(fundamentals?.pe_ratio?.series);
-    const revenue = mapSeries(fundamentals?.revenue_yoy?.series);
+    const revenue = mapSeries(fundamentals?.revenue?.series);
+    const revenueYoY = mapSeries(fundamentals?.revenue_yoy?.series);
 
     return {
       symbol: searchTicker,
@@ -377,8 +379,8 @@ export default function StockAnalysis() {
         marketcap_dates: mcap.dates,
         pe_series: pe.values,
         pe_dates: pe.dates,
-        revenue_yoy_series: revenue.values,
-        revenue_yoy_dates: revenue.dates,
+        revenue_yoy_series: revenueYoY.values,
+        revenue_yoy_dates: revenueYoY.dates,
       },
       options: {
         iv30: optionalityMetrics?.iv30 ?? null,
@@ -562,10 +564,10 @@ export default function StockAnalysis() {
                 Source: Yahoo Finance filings via yfinance. Cadence: quarterly. Coverage varies by metric.
                 {" "}
                 {[
-                  { label: "EPS", series: fundamentals.eps?.series },
+                { label: "EPS", series: fundamentals.eps?.series },
                 { label: "ROE", series: fundamentals.roe?.series },
                 { label: "FCF", series: fundamentals.free_cash_flow?.series },
-                { label: "Rev YoY", series: fundamentals.revenue_yoy?.series },
+                { label: "Revenue", series: fundamentals.revenue?.series },
                 { label: "MCap", series: fundamentals.market_cap?.series },
                 { label: "P/E", series: fundamentals.pe_ratio?.series },
               ]
@@ -603,13 +605,13 @@ export default function StockAnalysis() {
                     axis: (value: number) => formatCompact(value, 0),
                   },
                   {
-                    key: "revenue_yoy",
-                    title: "Revenue Growth (YoY)",
-                    series: fundamentals.revenue_yoy?.series || [],
-                    derived: fundamentals.revenue_yoy?.derived,
-                    color: getFamilyColor("growth"),
-                    format: (value: number) => formatPercent(value, 1),
-                    axis: (value: number) => `${value.toFixed(0)}%`,
+                    key: "revenue",
+                    title: "Revenue (Quarterly)",
+                    series: fundamentals.revenue?.series || [],
+                    derived: fundamentals.revenue?.derived,
+                    color: getFamilyColor("equity"),
+                    format: (value: number) => `$${formatCompact(value, 2)}`,
+                    axis: (value: number) => formatCompact(value, 0),
                   },
                   {
                     key: "market_cap",
@@ -680,16 +682,16 @@ export default function StockAnalysis() {
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
-                        {card.key === "revenue_yoy" && card.series.length === 1 && (
+                        {card.key === "revenue" && card.series.length === 1 && (
                           <div className="mt-2 text-[11px] text-gray-500">
-                            Limited quarterly history from provider; showing the latest YoY point only.
+                            Limited quarterly history from provider; showing a single revenue point.
                           </div>
                         )}
                       </>
                     ) : (
                       <div className="text-xs text-gray-500">
-                        {card.key === "revenue_yoy"
-                          ? "YoY growth needs quarterly history; no usable data returned."
+                        {card.key === "revenue"
+                          ? "Quarterly revenue history not available from provider."
                           : "No data available for this metric."}
                       </div>
                     )}
