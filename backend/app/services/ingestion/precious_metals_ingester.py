@@ -1098,44 +1098,32 @@ class PreciousMetalsIngester:
             "PALLADIUM": "PD",
         }
 
-        results: Dict[str, float] = {}
-        current_metal: Optional[str] = None
-        open_interest_section = False
+        totals: Dict[str, float] = {}
 
         for raw_line in cleaned.splitlines():
             line = raw_line.strip()
             if not line:
                 continue
             normalized = re.sub(r"\s+", " ", line).upper()
+            if "FUTURES" not in normalized and "OPTIONS" not in normalized:
+                continue
 
             for name, symbol in metal_aliases.items():
-                if re.search(rf"\\b{name}\\b", normalized):
-                    current_metal = symbol
-                    break
-
-            if not current_metal:
-                continue
-
-            if "OPEN INTEREST" in normalized:
-                open_interest_section = True
-
-            if "TOTAL" not in normalized and "OPEN INTEREST" not in normalized:
-                continue
-
-            if not open_interest_section and "OPEN INTEREST" not in normalized:
-                continue
-
-            value = PreciousMetalsIngester._extract_open_interest_value(line)
-            if value is None:
-                continue
-
-            existing = results.get(current_metal)
-            if existing is None or value > existing:
-                results[current_metal] = value
+                index = normalized.find(name)
+                if index == -1:
+                    continue
+                tail = line[index + len(name):]
+                match = re.search(r"(\d[\d,]*)", tail)
+                if not match:
+                    continue
+                value = PreciousMetalsIngester._parse_comex_number(match.group(1))
+                if value is None:
+                    continue
+                totals[symbol] = totals.get(symbol, 0.0) + value
 
         return [
             {"metal": metal, "date": report_date, "open_interest": value}
-            for metal, value in results.items()
+            for metal, value in totals.items()
         ]
 
     @staticmethod
@@ -1153,28 +1141,6 @@ class PreciousMetalsIngester:
                 if date_value:
                     return date_value
         return None
-
-    @staticmethod
-    def _extract_open_interest_value(line: str) -> Optional[float]:
-        numbers = re.findall(
-            r"[-+]?\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|[-+]?\\d+(?:\\.\\d+)?",
-            line
-        )
-        if not numbers:
-            return None
-        values = [
-            PreciousMetalsIngester._parse_comex_number(value)
-            for value in numbers
-        ]
-        values = [value for value in values if value is not None]
-        if not values:
-            return None
-        candidate = values[-1]
-        if candidate is None:
-            return None
-        if candidate < 100:
-            return None
-        return candidate
 
     def _build_open_interest_lookup(self, rows: List[Dict[str, object]]) -> Dict[Tuple[date, str], float]:
         lookup: Dict[Tuple[date, str], float] = {}
