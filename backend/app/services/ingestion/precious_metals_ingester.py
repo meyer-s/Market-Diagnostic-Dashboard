@@ -1347,6 +1347,15 @@ class PreciousMetalsIngester:
                             if existing.source in placeholder_sources:
                                 db.delete(existing)
                             else:
+                                updated = False
+                                if existing.open_interest is None and open_interest is not None:
+                                    existing.open_interest = open_interest
+                                    updated = True
+                                if existing.oi_to_registered_ratio is None and oi_ratio is not None:
+                                    existing.oi_to_registered_ratio = oi_ratio
+                                    updated = True
+                                if updated:
+                                    count += 1
                                 continue
 
                         db.add(COMEXInventory(
