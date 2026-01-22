@@ -274,6 +274,8 @@ def calculate_paper_credibility_index(db) -> Optional[float]:
     """
     # Get latest COMEX inventory
     latest_comex = db.query(COMEXInventory).filter(
+        COMEXInventory.metal == "AU",
+        COMEXInventory.oi_to_registered_ratio.isnot(None),
         COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
     ).order_by(desc(COMEXInventory.date)).first()
     
@@ -282,6 +284,7 @@ def calculate_paper_credibility_index(db) -> Optional[float]:
     
     # Get historical 90th percentile
     all_ratios = db.query(COMEXInventory.oi_to_registered_ratio).filter(
+        COMEXInventory.metal == "AU",
         COMEXInventory.oi_to_registered_ratio.isnot(None),
         COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
     ).all()
@@ -806,17 +809,20 @@ def get_metal_price_history(metal: str, days: int = 365):
 
 
 @router.get("/market-caps/history")
-async def get_market_caps_history():
+async def get_market_caps_history(years: int = 25):
     """
     Calculate Metals/M2 ratio history using ingested prices and macro data.
     """
     with get_db_session() as db:
+        start_date = datetime.utcnow().date() - timedelta(days=years * 365)
         gold_prices = db.query(MetalPrice).filter(
             MetalPrice.metal == 'AU',
-            MetalPrice.price_usd_per_oz.isnot(None)
+            MetalPrice.price_usd_per_oz.isnot(None),
+            MetalPrice.date >= start_date
         ).order_by(MetalPrice.date).all()
         macro = db.query(MacroLiquidityData).filter(
-            MacroLiquidityData.global_m2.isnot(None)
+            MacroLiquidityData.global_m2.isnot(None),
+            MacroLiquidityData.date >= start_date
         ).order_by(MacroLiquidityData.date).all()
 
         price_map = {p.date.date(): p.price_usd_per_oz for p in gold_prices}

@@ -195,7 +195,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   const { data: supply_data } = useApi<SupplyData[]>("/precious-metals/supply");
   const { data: demand_data } = useApi<DemandData[]>("/precious-metals/demand");
   const { data: market_caps } = useApi<any>("/precious-metals/market-caps");
-  const { data: market_caps_history } = useApi<any>("/precious-metals/market-caps/history");
+  const { data: market_caps_history } = useApi<any>("/precious-metals/market-caps/history?years=25");
   const { data: projectionsData } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
 
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
@@ -703,16 +703,9 @@ function CBContextPanel({ cb_holdings, indicators }: any) {
                 <DerivedLabel label="Top Accumulators (Recent Quarter)" />
               </span>
               <div className="space-y-1">
-                {cb_holdings.slice(0, 3).map((holding: any, idx: number) => (
+                {cb_holdings.slice(0, 5).map((holding: any, idx: number) => (
                   <div key={idx} className="flex justify-between text-xs text-stealth-300">
-                    <span>{holding.country}</span>
-                    <span>
-                      {isNumber(holding.net_purchase_yoy_pct)
-                        ? `${formatSignedValue(holding.net_purchase_yoy_pct, 0)}% YoY`
-                        : isNumber(holding.net_purchase_qty)
-                          ? `${formatSignedValue(holding.net_purchase_qty, 1)}t`
-                          : "n/a"}
-                    </span>
+                    <span>{idx + 1}. {holding.country}</span>
                   </div>
                 ))}
               </div>
@@ -1202,6 +1195,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
   const palladium_cap = market_caps.metals?.PD?.market_cap_usd ?? null;
   const total_cap = market_caps.total_market_cap_usd ?? null;
   const m2_ratio = market_caps.metals_to_m2_pct ?? null;
+  const m2_ratio_bps = isNumber(m2_ratio) ? m2_ratio * 100 : null;
   
   const gold_pct = isNumber(total_cap) && isNumber(gold_cap) && total_cap > 0
     ? (gold_cap / total_cap * 100)
@@ -1219,7 +1213,12 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
     ? (5000 / gold_price) * total_cap
     : null;
   const history = market_caps_history?.history || [];
-  const ratioHistory = history.filter((entry: any) => isNumber(entry?.metals_to_m2_pct));
+  const ratioHistory = history
+    .filter((entry: any) => isNumber(entry?.metals_to_m2_pct))
+    .map((entry: any) => ({
+      ...entry,
+      metals_to_m2_bps: entry.metals_to_m2_pct * 100,
+    }));
   const latestHistory = history.length ? history[history.length - 1] : null;
 
   return (
@@ -1253,7 +1252,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
               <div className="flex justify-between items-center">
                 <span>Tracked Metals / M2:</span>
                 <span className="text-lg font-bold text-blue-300">
-                  {isNumber(m2_ratio) ? `${m2_ratio.toFixed(1)}%` : "n/a"}
+                  {isNumber(m2_ratio_bps) ? `${m2_ratio_bps.toFixed(2)} bps` : "n/a"}
                 </span>
               </div>
             </div>
@@ -1277,16 +1276,17 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
                     <YAxis
                       stroke={CHART_NEUTRAL.axis}
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      label={{ value: 'Metals/M2 %', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 10 } }}
+                      tickFormatter={(value) => Number(value).toFixed(2)}
+                      label={{ value: 'Metals/M2 (bps)', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 10 } }}
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: '4px' }}
-                      formatter={(value: any) => [`${value}%`, 'Metals/M2']}
+                      formatter={(value: any) => [`${Number(value).toFixed(2)} bps`, 'Metals/M2']}
                       labelFormatter={(date) => `Date: ${date}`}
                     />
                     <Line
                       type="monotone"
-                      dataKey="metals_to_m2_pct"
+                      dataKey="metals_to_m2_bps"
                       stroke={getFamilyColor("metals")}
                       strokeWidth={2}
                       dot={false}
@@ -1295,7 +1295,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
                   </LineChart>
                 </ResponsiveContainer>
                   <p className="text-xs text-stealth-500 mt-2">
-                    Current: {isNumber(m2_ratio) ? `${m2_ratio.toFixed(1)}%` : "n/a"}.
+                    Current: {isNumber(m2_ratio_bps) ? `${m2_ratio_bps.toFixed(2)} bps` : "n/a"}.
                   </p>
                 </>
               ) : (
