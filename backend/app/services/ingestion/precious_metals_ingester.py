@@ -889,7 +889,10 @@ class PreciousMetalsIngester:
             for value in data.iloc[header_row].tolist()
         ]
         data = data.iloc[header_row + 1:].copy()
-        data.columns = header
+        if len(set(header)) != len(header):
+            data.columns = [f"col_{idx}" for idx in range(len(data.columns))]
+        else:
+            data.columns = header
         data = data.dropna(how="all")
         if data.empty:
             return []
