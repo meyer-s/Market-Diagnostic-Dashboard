@@ -79,6 +79,41 @@ def _calc_yoy_change(latest_total: Optional[float], prior_total: Optional[float]
     return ((latest_total - prior_total) / prior_total) * 100
 
 
+def _calc_etf_holdings_zscore(
+    db, ticker: str = "GLD", window_days: int = 730
+) -> Optional[float]:
+    records = db.query(ETFHolding).filter(
+        ETFHolding.ticker == ticker,
+        ETFHolding.holdings.isnot(None),
+        ETFHolding.date >= datetime.utcnow() - timedelta(days=window_days)
+    ).order_by(ETFHolding.date).all()
+    values = [r.holdings for r in records if r.holdings is not None]
+    if len(values) < 20:
+        return None
+    mean = statistics.mean(values)
+    stdev = statistics.pstdev(values)
+    if stdev == 0:
+        return 0.0
+    return (values[-1] - mean) / stdev
+
+
+def _calc_etf_holdings_yoy(db, ticker: str = "GLD") -> Optional[float]:
+    latest = db.query(ETFHolding).filter(
+        ETFHolding.ticker == ticker,
+        ETFHolding.holdings.isnot(None)
+    ).order_by(desc(ETFHolding.date)).first()
+    if not latest or latest.holdings is None:
+        return None
+    prior = db.query(ETFHolding).filter(
+        ETFHolding.ticker == ticker,
+        ETFHolding.holdings.isnot(None),
+        ETFHolding.date <= latest.date - timedelta(days=330)
+    ).order_by(desc(ETFHolding.date)).first()
+    if not prior or prior.holdings is None:
+        return None
+    return ((latest.holdings - prior.holdings) / prior.holdings) * 100
+
+
 def _calc_cb_net_purchases_yoy(db) -> Optional[float]:
     recent_purchases = db.query(CBPurchase).filter(
         CBPurchase.tonnes_net_yoy_pct.isnot(None)
@@ -269,35 +304,37 @@ def calculate_monetary_hedge_strength(
 
 def calculate_paper_credibility_index(db) -> Optional[float]:
     """
-    PCI = 100 - (OI_to_Registered_Ratio / Historical_90th_Percentile) × 100
-    Adjusted for backwardation & spreads
+    PCI derived from ETF holdings (primary) or COMEX ratio (fallback).
+    Adjusted for backwardation & spreads.
     """
-    # Get latest COMEX inventory
-    latest_comex = db.query(COMEXInventory).filter(
-        COMEXInventory.metal == "AU",
-        COMEXInventory.oi_to_registered_ratio.isnot(None),
-        COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
-    ).order_by(desc(COMEXInventory.date)).first()
-    
-    if not latest_comex or not latest_comex.oi_to_registered_ratio:
-        return None
-    
-    # Get historical 90th percentile
-    all_ratios = db.query(COMEXInventory.oi_to_registered_ratio).filter(
-        COMEXInventory.metal == "AU",
-        COMEXInventory.oi_to_registered_ratio.isnot(None),
-        COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
-    ).all()
-    
-    if not all_ratios:
-        return None
-    
-    ratios_list = [r[0] for r in all_ratios]
-    p90 = statistics.quantiles(ratios_list, n=10)[8] if len(ratios_list) > 10 else max(ratios_list)
-    
-    stress_factor = (latest_comex.oi_to_registered_ratio / p90) if p90 > 0 else 1.0
-    pci = 100 - (stress_factor * 100)
-    
+    gld_zscore = _calc_etf_holdings_zscore(db, "GLD")
+    if gld_zscore is not None:
+        pci = max(0, min(100, ((gld_zscore + 2) / 4) * 100))
+    else:
+        # COMEX fallback
+        latest_comex = db.query(COMEXInventory).filter(
+            COMEXInventory.metal == "AU",
+            COMEXInventory.oi_to_registered_ratio.isnot(None),
+            COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
+        ).order_by(desc(COMEXInventory.date)).first()
+
+        if not latest_comex or not latest_comex.oi_to_registered_ratio:
+            return None
+
+        all_ratios = db.query(COMEXInventory.oi_to_registered_ratio).filter(
+            COMEXInventory.metal == "AU",
+            COMEXInventory.oi_to_registered_ratio.isnot(None),
+            COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
+        ).all()
+
+        if not all_ratios:
+            return None
+
+        ratios_list = [r[0] for r in all_ratios]
+        p90 = statistics.quantiles(ratios_list, n=10)[8] if len(ratios_list) > 10 else max(ratios_list)
+        stress_factor = (latest_comex.oi_to_registered_ratio / p90) if p90 > 0 else 1.0
+        pci = 100 - (stress_factor * 100)
+
     # Adjust for backwardation
     latest_backwardation = db.query(BackwardationData).order_by(desc(BackwardationData.date)).first()
     if latest_backwardation and latest_backwardation.backwardation_bps > 500:
@@ -438,7 +475,7 @@ def get_regime_classification():
                 MetalRatio.metal1 == "AG", MetalRatio.metal2 == "DXY"
             ).order_by(desc(MetalRatio.date)).first()
             
-            # Get COMEX data
+            # COMEX data (optional)
             comex = db.query(COMEXInventory).filter(
                 COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
             ).order_by(desc(COMEXInventory.date)).first()
@@ -448,7 +485,7 @@ def get_regime_classification():
                     COMEXInventory.date < comex.date,
                     COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
                 ).order_by(desc(COMEXInventory.date)).first()
-                if prior_comex:
+                if prior_comex and prior_comex.registered_oz:
                     comex_change = (comex.registered_oz - prior_comex.registered_oz) / prior_comex.registered_oz * 100
             
             # Get backwardation data
@@ -470,6 +507,9 @@ def get_regime_classification():
                 if prior_etf and latest_etf.holdings and prior_etf.holdings:
                     etf_divergence = ((latest_etf.holdings - prior_etf.holdings) / prior_etf.holdings) * 100
             
+            gld_holdings_zscore = _calc_etf_holdings_zscore(db, "GLD")
+            gld_holdings_yoy = _calc_etf_holdings_yoy(db, "GLD")
+
             latest_cb_date, prior_cb_date = _get_latest_cb_dates(db)
             global_cb_gold_pct_reserves = _calc_global_cb_gold_pct_reserves(db, latest_cb_date)
             net_purchases_yoy = _calc_cb_net_purchases_yoy(db)
@@ -512,6 +552,8 @@ def get_regime_classification():
                     "paper_credibility_index": pci,
                     "oi_registered_ratio": comex.oi_to_registered_ratio if comex else None,
                     "comex_registered_inventory_change_yoy": comex_change if comex else None,
+                    "etf_holdings_zscore": gld_holdings_zscore,
+                    "etf_holdings_change_yoy": gld_holdings_yoy,
                     "backwardation_severity": back_severity if backwardation else None,
                     "etf_flow_divergence": etf_divergence if latest_etf else None
                 },

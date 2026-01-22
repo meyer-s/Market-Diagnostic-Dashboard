@@ -473,8 +473,56 @@ class AAPCalculator:
         """Central bank net accumulation momentum"""
         return self._calc_cb_gold_momentum(date)
 
+    def _calc_gld_holdings_score(self, date: datetime, window_days: int = 180) -> Optional[float]:
+        """GLD holdings z-score normalized to 0-1 (low holdings = higher pressure)."""
+        records = self.db.query(ETFHolding).filter(
+            ETFHolding.ticker == 'GLD',
+            ETFHolding.holdings.isnot(None),
+            ETFHolding.date >= date - timedelta(days=window_days),
+            ETFHolding.date <= date
+        ).order_by(ETFHolding.date).all()
+
+        values = [r.holdings for r in records if r.holdings is not None]
+        if len(values) < 20:
+            return None
+
+        mean = np.mean(values)
+        std = np.std(values)
+        if std == 0:
+            return None
+
+        zscore = (values[-1] - mean) / std
+        normalized = (-zscore + 2) / 4
+        return max(0.0, min(1.0, normalized))
+
+    def _calc_gld_flow_score(self, date: datetime, window_days: int = 180) -> Optional[float]:
+        """GLD flow z-score normalized to 0-1 (higher inflows = higher pressure)."""
+        records = self.db.query(ETFHolding).filter(
+            ETFHolding.ticker == 'GLD',
+            ETFHolding.date >= date - timedelta(days=window_days),
+            ETFHolding.date <= date
+        ).order_by(ETFHolding.date).all()
+
+        flows_pct = [r.daily_flow_pct for r in records if r.daily_flow_pct is not None]
+        values = flows_pct if len(flows_pct) >= 20 else [r.daily_flow for r in records if r.daily_flow is not None]
+        if len(values) < 20:
+            return None
+
+        mean = np.mean(values)
+        std = np.std(values)
+        if std == 0:
+            return None
+
+        zscore = (values[-1] - mean) / std
+        normalized = (zscore + 2) / 4
+        return max(0.0, min(1.0, normalized))
+
     def _calc_comex_registered_inventory(self, date: datetime) -> Optional[float]:
         """COMEX registered inventory (low inventory = high pressure)"""
+        gld_score = self._calc_gld_holdings_score(date)
+        if gld_score is not None:
+            return gld_score
+
         records = self.db.query(COMEXInventory).filter(
             COMEXInventory.metal == 'AU',
             COMEXInventory.date >= date - timedelta(days=180),
@@ -485,14 +533,13 @@ class AAPCalculator:
         values = [r.registered_oz for r in records if r.registered_oz]
         if not values:
             return None
-        if len(values) < 5:
-            logger.info("COMEX registered inventory: limited samples (%s); using neutral score", len(values))
-            return 0.5
+        if len(values) < 2:
+            return None
 
         mean = np.mean(values)
         std = np.std(values)
         if std == 0:
-            return 0.5
+            return None
 
         zscore = (values[-1] - mean) / std
         normalized = (-zscore + 2) / 4
@@ -500,6 +547,10 @@ class AAPCalculator:
 
     def _calc_oi_to_registered_ratio(self, date: datetime) -> Optional[float]:
         """Open interest to registered inventory ratio"""
+        gld_flow_score = self._calc_gld_flow_score(date)
+        if gld_flow_score is not None:
+            return gld_flow_score
+
         records = self.db.query(COMEXInventory).filter(
             COMEXInventory.metal == 'AU',
             COMEXInventory.date >= date - timedelta(days=180),
@@ -510,14 +561,13 @@ class AAPCalculator:
         values = [r.oi_to_registered_ratio for r in records if r.oi_to_registered_ratio]
         if not values:
             return None
-        if len(values) < 5:
-            logger.info("COMEX OI/registered ratio: limited samples (%s); using neutral score", len(values))
-            return 0.5
+        if len(values) < 2:
+            return None
 
         mean = np.mean(values)
         std = np.std(values)
         if std == 0:
-            return 0.5
+            return None
 
         zscore = (values[-1] - mean) / std
         normalized = (zscore + 2) / 4

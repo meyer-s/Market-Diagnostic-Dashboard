@@ -68,6 +68,8 @@ interface MetalIndicators {
   };
   physical_paper: {
     paper_credibility_index: number | null;
+    etf_holdings_zscore: number | null;
+    etf_holdings_change_yoy: number | null;
     oi_registered_ratio: number | null;
     comex_registered_inventory_change_yoy: number | null;
     backwardation_severity: number | null;
@@ -195,7 +197,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   const { data: supply_data } = useApi<SupplyData[]>("/precious-metals/supply");
   const { data: demand_data } = useApi<DemandData[]>("/precious-metals/demand");
   const { data: market_caps } = useApi<any>("/precious-metals/market-caps");
-  const { data: market_caps_history } = useApi<any>("/precious-metals/market-caps/history?years=25");
+  const { data: market_caps_history } = useApi<any>("/precious-metals/market-caps/history?years=50");
   const { data: projectionsData } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
 
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
@@ -923,16 +925,24 @@ function RelativeValuePanel({ indicators }: any) {
 function PhysicalPaperPanel({ indicators }: any) {
   const pp = indicators.physical_paper;
   const pci = pp.paper_credibility_index;
+  const holdingsZ = pp.etf_holdings_zscore;
+  const holdingsYoY = pp.etf_holdings_change_yoy;
   const oiRatio = pp.oi_registered_ratio;
   const comexChange = pp.comex_registered_inventory_change_yoy;
   const backwardation = pp.backwardation_severity;
+  const useEtfZ = isNumber(holdingsZ);
+  const useEtfYoY = isNumber(holdingsYoY);
   const pciColor = isNumber(pci)
     ? (pci > 75 ? "text-green-400" : pci > 50 ? "text-yellow-400" : "text-red-400")
     : "text-stealth-400";
   const pciBarColor = isNumber(pci)
     ? (pci > 75 ? "bg-green-500" : pci > 50 ? "bg-yellow-500" : "bg-red-500")
     : "bg-stealth-600";
-  const comexColor = isNumber(comexChange) ? (comexChange < -5 ? "text-red-400" : "text-yellow-400") : "text-stealth-400";
+  const yoyColor = isNumber(holdingsYoY)
+    ? (holdingsYoY < -2 ? "text-red-400" : "text-green-400")
+    : isNumber(comexChange)
+      ? (comexChange < -5 ? "text-red-400" : "text-yellow-400")
+      : "text-stealth-400";
   const backwardationText = isNumber(backwardation)
     ? `${backwardation.toFixed(0)}`
     : "n/a";
@@ -969,14 +979,22 @@ function PhysicalPaperPanel({ indicators }: any) {
           <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-semibold text-stealth-300">
-                <DerivedLabel label="Futures OI / Registered Inventory" />
+                <DerivedLabel label={useEtfZ ? "GLD Holdings (Z-Score)" : "Futures OI / Registered Inventory"} />
               </span>
               <span className="text-lg font-bold text-blue-300">
-                {isNumber(oiRatio) ? `${oiRatio.toFixed(2)}x` : "n/a"}
+                {useEtfZ
+                  ? `${formatSignedValue(holdingsZ, 2)} sigma`
+                  : isNumber(oiRatio)
+                    ? `${oiRatio.toFixed(2)}x`
+                    : "n/a"}
               </span>
             </div>
             <p className="text-xs text-stealth-400">
-              Normal: 0.9-1.0x. {isNumber(oiRatio) ? (oiRatio > 1.3 ? "Warning: Elevated stress" : "Healthy") : "Data unavailable"}
+              {useEtfZ
+                ? "ETF holdings vs 2Y norm (yfinance)."
+                : isNumber(oiRatio)
+                  ? `Normal: 0.9-1.0x. ${oiRatio > 1.3 ? "Warning: Elevated stress" : "Healthy"}`
+                  : "Data unavailable"}
             </p>
           </div>
 
@@ -984,18 +1002,24 @@ function PhysicalPaperPanel({ indicators }: any) {
           <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-semibold text-stealth-300">
-                <DerivedLabel label="Registered Inventory (YoY %)" />
+                <DerivedLabel label={useEtfYoY ? "GLD Holdings (YoY %)" : "Registered Inventory (YoY %)"} />
               </span>
-              <span className={`text-lg font-bold ${comexColor}`}>
-                {isNumber(comexChange) ? `${comexChange.toFixed(0)}%` : "n/a"}
+              <span className={`text-lg font-bold ${yoyColor}`}>
+                {useEtfYoY
+                  ? `${formatSignedValue(holdingsYoY, 1)}%`
+                  : isNumber(comexChange)
+                    ? `${comexChange.toFixed(0)}%`
+                    : "n/a"}
               </span>
             </div>
             <p className="text-xs text-stealth-400">
-              {isNumber(comexChange)
-                ? (comexChange < -10
-                  ? "Warning: Significant decline-monitor tightness"
-                  : "Normal range")
-                : "Data unavailable"}
+              {useEtfYoY
+                ? "Change in ETF holdings over 12 months."
+                : isNumber(comexChange)
+                  ? (comexChange < -10
+                    ? "Warning: Significant decline-monitor tightness"
+                    : "Normal range")
+                  : "Data unavailable"}
             </p>
           </div>
 
@@ -1217,9 +1241,41 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
     .filter((entry: any) => isNumber(entry?.metals_to_m2_pct))
     .map((entry: any) => ({
       ...entry,
+      year: Number(String(entry.date).slice(0, 4)),
       metals_to_m2_bps: entry.metals_to_m2_pct * 100,
     }));
+  const yearlyRatioHistory = Object.values(
+    ratioHistory.reduce((acc: Record<number, { year: number; sum: number; count: number }>, entry: any) => {
+      if (!isNumber(entry.year) || !isNumber(entry.metals_to_m2_bps)) {
+        return acc;
+      }
+      if (!acc[entry.year]) {
+        acc[entry.year] = { year: entry.year, sum: 0, count: 0 };
+      }
+      acc[entry.year].sum += entry.metals_to_m2_bps;
+      acc[entry.year].count += 1;
+      return acc;
+    }, {})
+  )
+    .map((entry) => ({
+      year: entry.year,
+      metals_to_m2_bps: entry.count ? entry.sum / entry.count : 0,
+    }))
+    .filter((entry) => entry.metals_to_m2_bps > 0)
+    .sort((a, b) => a.year - b.year);
+  const minPositiveBps = yearlyRatioHistory.reduce((min, entry) => {
+    if (!isNumber(entry.metals_to_m2_bps) || entry.metals_to_m2_bps <= 0) {
+      return min;
+    }
+    return Math.min(min, entry.metals_to_m2_bps);
+  }, Number.POSITIVE_INFINITY);
+  const hasLogHistory = Number.isFinite(minPositiveBps);
   const latestHistory = history.length ? history[history.length - 1] : null;
+  const formatBps = (value: number) => {
+    if (!isNumber(value)) return "n/a";
+    if (Math.abs(value) < 0.01) return "<0.01";
+    return value.toFixed(2);
+  };
 
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
@@ -1257,32 +1313,34 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
               </div>
             </div>
         
-        {/* 100-Year History Chart */}
+        {/* Annual Average History Chart */}
             <div className="border-t border-stealth-600 pt-4 mt-4">
               <div className="text-stealth-400 text-xs mb-3 font-semibold">
-                Tracked Metals/M2 Ratio History
+                Tracked Metals/M2 Annual Average (log scale)
               </div>
-            {ratioHistory.length > 0 ? (
+            {yearlyRatioHistory.length > 0 && hasLogHistory ? (
               <>
                 <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={ratioHistory}>
+                  <LineChart data={yearlyRatioHistory}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
-                      dataKey="date"
+                      dataKey="year"
                       stroke={CHART_NEUTRAL.axis}
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickFormatter={(value) => String(value).slice(0, 4)}
+                      tickFormatter={(value) => String(value)}
                     />
                     <YAxis
                       stroke={CHART_NEUTRAL.axis}
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickFormatter={(value) => Number(value).toFixed(2)}
-                      label={{ value: 'Metals/M2 (bps)', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 10 } }}
+                      scale="log"
+                      domain={[minPositiveBps * 0.8, 'auto']}
+                      tickFormatter={(value) => formatBps(Number(value))}
+                      label={{ value: 'Metals/M2 (bps, log)', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 10 } }}
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: '4px' }}
-                      formatter={(value: any) => [`${Number(value).toFixed(2)} bps`, 'Metals/M2']}
-                      labelFormatter={(date) => `Date: ${date}`}
+                      formatter={(value: any) => [`${formatBps(Number(value))} bps`, 'Metals/M2']}
+                      labelFormatter={(year) => `Year: ${year}`}
                     />
                     <Line
                       type="monotone"
@@ -1295,7 +1353,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
                   </LineChart>
                 </ResponsiveContainer>
                   <p className="text-xs text-stealth-500 mt-2">
-                    Current: {isNumber(m2_ratio_bps) ? `${m2_ratio_bps.toFixed(2)} bps` : "n/a"}.
+                    Latest daily: {isNumber(m2_ratio_bps) ? `${m2_ratio_bps.toFixed(2)} bps` : "n/a"}.
                   </p>
                 </>
               ) : (
