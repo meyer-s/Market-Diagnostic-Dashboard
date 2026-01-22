@@ -483,8 +483,11 @@ class AAPCalculator:
         ).order_by(COMEXInventory.date).all()
 
         values = [r.registered_oz for r in records if r.registered_oz]
-        if len(values) < 20:
+        if not values:
             return None
+        if len(values) < 5:
+            logger.info("COMEX registered inventory: limited samples (%s); using neutral score", len(values))
+            return 0.5
 
         mean = np.mean(values)
         std = np.std(values)
@@ -505,8 +508,11 @@ class AAPCalculator:
         ).order_by(COMEXInventory.date).all()
 
         values = [r.oi_to_registered_ratio for r in records if r.oi_to_registered_ratio]
-        if len(values) < 20:
+        if not values:
             return None
+        if len(values) < 5:
+            logger.info("COMEX OI/registered ratio: limited samples (%s); using neutral score", len(values))
+            return 0.5
 
         mean = np.mean(values)
         std = np.std(values)
