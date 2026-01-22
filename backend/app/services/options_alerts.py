@@ -49,13 +49,66 @@ def _is_iv_data_valid(iv30: Optional[float], hv30: Optional[float], iv_percentil
     return True
 
 
+def _compute_option_bias(
+    iv30: Optional[float],
+    hv30: Optional[float],
+    iv_percentile: Optional[float],
+    avg_edr: Optional[float],
+) -> tuple[str, list[str]]:
+    votes: list[str] = []
+
+    if iv30 is not None and hv30 is not None:
+        spread = iv30 - hv30
+        if spread > 5:
+            votes.append("EXPENSIVE:IV_SPREAD")
+        elif spread < -5:
+            votes.append("CHEAP:IV_SPREAD")
+        else:
+            votes.append("FAIR:IV_SPREAD")
+
+    if iv_percentile is not None:
+        if iv_percentile > 70:
+            votes.append("EXPENSIVE:IV_PCTL")
+        elif iv_percentile < 30:
+            votes.append("CHEAP:IV_PCTL")
+        else:
+            votes.append("FAIR:IV_PCTL")
+
+    if avg_edr is not None:
+        if avg_edr > 60:
+            votes.append("EXPENSIVE:EDR")
+        elif avg_edr < 40:
+            votes.append("CHEAP:EDR")
+        else:
+            votes.append("FAIR:EDR")
+
+    if not votes:
+        return "UNKNOWN", votes
+
+    tally = {"CHEAP": 0, "FAIR": 0, "EXPENSIVE": 0}
+    for vote in votes:
+        bias = vote.split(":")[0]
+        tally[bias] += 1
+
+    sorted_votes = sorted(tally.items(), key=lambda item: item[1], reverse=True)
+    if len(sorted_votes) > 1 and sorted_votes[0][1] == sorted_votes[1][1]:
+        return "FAIR", votes
+    return sorted_votes[0][0], votes
+
+
 def _build_alert_reason(
     iv30: Optional[float],
     hv30: Optional[float],
     iv_percentile: Optional[float],
     threshold: Optional[float],
+    bias: Optional[str],
+    votes: Optional[list[str]],
 ) -> str:
     reasons = []
+    if bias:
+        reasons.append(f"{bias} consensus")
+    if votes:
+        reasons.append(", ".join(votes))
     if iv_percentile is not None:
         limit = threshold if threshold is not None else 0
         reasons.append(f"IV percentile {iv_percentile:.1f}% <= {limit:.1f}%")
@@ -68,10 +121,12 @@ def _build_alert_reason(
     return "; ".join(reasons) if reasons else "Low IV percentile"
 
 
-def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float]) -> bool:
+def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float], bias: str) -> bool:
     if iv_percentile is None:
         return False
     if not watch.active:
+        return False
+    if bias != "CHEAP":
         return False
     return iv_percentile <= (watch.iv_percentile_max or 0)
 
@@ -95,14 +150,23 @@ def run_options_alert_scan() -> dict:
                 metrics = compute_optionality_metrics(stock, current_price, hv30)
                 iv_percentile = metrics.get("iv_percentile")
                 iv30 = metrics.get("iv30")
+                avg_edr = metrics.get("avg_edr")
 
                 if not _is_iv_data_valid(iv30, hv30, iv_percentile):
                     continue
 
-                if not _should_trigger(watch, iv_percentile):
+                bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, avg_edr)
+                if not _should_trigger(watch, iv_percentile, bias):
                     continue
 
-                reason = _build_alert_reason(iv30, hv30, iv_percentile, watch.iv_percentile_max)
+                reason = _build_alert_reason(
+                    iv30,
+                    hv30,
+                    iv_percentile,
+                    watch.iv_percentile_max,
+                    bias,
+                    votes,
+                )
                 if watch.last_triggered_at:
                     cooldown = timedelta(minutes=watch.cooldown_minutes or 0)
                     if datetime.utcnow() - watch.last_triggered_at < cooldown:
@@ -111,7 +175,7 @@ def run_options_alert_scan() -> dict:
                 message = (
                     f"Options alert: {symbol} IV percentile {iv_percentile}% "
                     f"(IV30 {iv30}, HV30 {metrics.get('hv30')}, "
-                    f"EDR {metrics.get('avg_edr')}) "
+                    f"EDR {avg_edr}) "
                     f"Reason: {reason}"
                 )
 
