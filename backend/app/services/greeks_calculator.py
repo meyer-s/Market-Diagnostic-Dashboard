@@ -183,12 +183,10 @@ def calculate_greeks(
     theta_per_day_per_contract = (theta_annual / 365.0) * 100.0
     
     # Vega (per 1 vol point per contract)
-    # vega is in $ per 1% change in vol
-    # Since sigma is in decimal, we calculate vega and multiply by 100 for contract
+    # Vega measures $ change per 1 percentage point change in vol (e.g., 30% -> 31%)
+    # vega_per_share * 100 shares per contract / 100 to convert from decimal to percentage point
     vega_per_share = S * math.exp(-q * T) * nd1 * sqrt_T
-    vega_per_contract = vega_per_share * 100.0 / 100.0  # per 1 vol point (e.g., 0.35 -> 0.36)
-    # Actually vega should be per 1 percentage point, so divide by 100
-    vega_per_contract = vega_per_share * 100.0 / 100.0
+    vega_per_contract = vega_per_share * 100.0  # 100 shares per contract
     
     # Price (per share, for reference)
     price = black_scholes_price(S, K, T, r, sigma, option_type, q)
