@@ -6,6 +6,7 @@ import os
 from typing import Optional
 
 import asyncio
+import threading
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from nacl.signing import VerifyKey
@@ -118,13 +119,21 @@ async def discord_interactions(
                 }
             }
             
-            # Schedule the sweep as a detached asyncio task so Starlette
-            # does not await the coroutine during the response lifecycle.
-            # Use BackgroundTasks to call asyncio.create_task(coroutine).
-            background_tasks.add_task(
-                asyncio.create_task,
-                execute_sweep(symbol, threshold, interaction.token, interaction.application_id),
-            )
+            # Start the sweep in a dedicated background thread so the
+            # interaction response is returned immediately and any
+            # long-running work runs independently.
+            def _start_sweep_thread(sym, thr, token, app_id):
+                def _runner():
+                    try:
+                        asyncio.run(execute_sweep(sym, thr, token, app_id))
+                    except Exception as e:
+                        # Log exception to stdout; background thread
+                        print(f"[Discord Sweep] Background exception: {e}")
+
+                t = threading.Thread(target=_runner, daemon=True)
+                t.start()
+
+            _start_sweep_thread(symbol, threshold, interaction.token, interaction.application_id)
             
             return response
         
