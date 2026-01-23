@@ -131,7 +131,7 @@ def _scan_tickers_for_discord(
     return alerts
 
 
-def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, scanned: int = 25) -> dict:
+def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, scanned: int = 50) -> dict:
     """Format alerts as Discord embed"""
     if not alerts:
         return {
@@ -235,14 +235,20 @@ async def execute_sweep(
         )
         return
     
-    # Run the scan (reduced to 25 to stay within 3-minute Discord timeout)
-    print(f"[Discord Sweep] Starting scan of 25 {label} tickers...")
-    alerts = _scan_tickers_for_discord(tickers, label, threshold, max_count=25)
+    # Send immediate message to prevent timeout
+    initial_message = {
+        "content": f"🔍 Scanning 50 {label} tickers for cheap options (IV percentile < {threshold}%)...\nThis may take 2-3 minutes."
+    }
+    message_id = await _send_followup(application_id, interaction_token, initial_message, bot_token)
+    
+    # Run the scan (all 50 tickers)
+    print(f"[Discord Sweep] Starting scan of 50 {label} tickers...")
+    alerts = _scan_tickers_for_discord(tickers, label, threshold, max_count=50)
     print(f"[Discord Sweep] Scan complete. Found {len(alerts)} cheap options.")
     
-    # Format and send results
-    response_data = _format_discord_embed(symbol, alerts, threshold, 25)
-    await _send_followup(application_id, interaction_token, response_data, bot_token)
+    # Edit the message with results
+    response_data = _format_discord_embed(symbol, alerts, threshold, 50)
+    await _edit_followup(application_id, interaction_token, message_id, response_data, bot_token)
 
 
 async def _send_followup(
@@ -250,8 +256,8 @@ async def _send_followup(
     interaction_token: str,
     data: dict,
     bot_token: str
-):
-    """Send a followup message to Discord after deferred response"""
+) -> Optional[str]:
+    """Send a followup message to Discord after deferred response. Returns message ID."""
     url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}"
     headers = {
         "Authorization": f"Bot {bot_token}",
@@ -261,6 +267,31 @@ async def _send_followup(
     try:
         response = requests.post(url, json=data, headers=headers, timeout=10)
         response.raise_for_status()
+        message_data = response.json()
         print(f"✓ Sent followup message to Discord")
+        return message_data.get("id")
+    except Exception as e:
+        print(f"✗ Failed to send followup: {e}")
+        return None
+
+
+async def _edit_followup(
+    application_id: str,
+    interaction_token: str,
+    message_id: str,
+    data: dict,
+    bot_token: str
+):
+    """Edit a followup message on Discord"""
+    url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}/messages/{message_id}"
+    headers = {
+        "Authorization": f"Bot {bot_token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.patch(url, json=data, headers=headers, timeout=10)
+        response.raise_for_status()
+        print(f"✓ Edited followup message on Discord")
     except Exception as e:
         print(f"✗ Failed to send followup: {e}")
