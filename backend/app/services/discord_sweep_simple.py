@@ -99,12 +99,15 @@ async def execute_sweep(
     print(f"[Discord Sweep] Starting scan of {len(tickers)} {label} tickers...")
     hits = _scan_tickers(tickers, label, threshold, None, pause_seconds=0.2)
     print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
-    
-    # Send a follow-up message with results (creates new message instead of editing)
+
+    total = len(tickers)
+    # Send a follow-up message summarizing results
     await _send_followup_message(
         application_id=application_id,
         interaction_token=interaction_token,
-        content=f"✅ **Scan Complete!** Found **{hits}** cheap options with IV percentile < {threshold}%."
+        content=(
+            f"Options sweep finished. {label} Scanned tickers {total} Hits: {hits}"
+        ),
     )
 
 
