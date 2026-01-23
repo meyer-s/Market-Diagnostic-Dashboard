@@ -217,8 +217,8 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
     # Determine volatility to use
     volatility = None
     
-    # Priority 1: Chain IV
-    if implied_vol is not None and implied_vol > 0:
+    # Priority 1: Chain IV (but only if realistic - between 5% and 500%)
+    if implied_vol is not None and 0.05 <= implied_vol <= 5.0:
         volatility = implied_vol
         iv_source = "chain"
     # Priority 2: Invert from option price if available
