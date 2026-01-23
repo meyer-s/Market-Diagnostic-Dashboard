@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-import math
 from typing import Dict, Optional
 
 import pandas as pd
@@ -12,8 +11,17 @@ from pydantic import BaseModel
 from app.api.stock_projection import compute_historical_volatility
 from app.models.option_positions import OptionPosition
 from app.utils.db_helpers import get_db_session
+from app.services.greeks_calculator import (
+    calculate_greeks,
+    implied_volatility,
+    generate_delta_gamma_curve,
+    generate_theta_curve
+)
 
 router = APIRouter(prefix="/secret/options", tags=["SecretOptions"])
+
+# Risk-free rate configuration (can be adjusted based on current T-bill rates)
+RISK_FREE_RATE = 0.0425  # 4.25% - adjust as needed
 
 
 class OptionPositionCreate(BaseModel):
@@ -34,51 +42,7 @@ class OptionPositionCreate(BaseModel):
     underlying_reference: Optional[float] = None
 
 
-def _norm_cdf(value: float) -> float:
-    return 0.5 * (1.0 + math.erf(value / math.sqrt(2.0)))
-
-
-def _norm_pdf(value: float) -> float:
-    return (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * value * value)
-
-
-def _black_scholes_greeks(
-    spot: float,
-    strike: float,
-    time_to_expiry: float,
-    volatility: float,
-    option_type: str,
-    risk_free_rate: float = 0.045,
-) -> Dict[str, float]:
-    if spot <= 0 or strike <= 0 or time_to_expiry <= 0 or volatility <= 0:
-        return {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
-
-    sqrt_t = math.sqrt(time_to_expiry)
-    d1 = (math.log(spot / strike) + (risk_free_rate + 0.5 * volatility * volatility) * time_to_expiry) / (
-        volatility * sqrt_t
-    )
-    d2 = d1 - volatility * sqrt_t
-    pdf = _norm_pdf(d1)
-
-    if option_type.lower() == "put":
-        delta = _norm_cdf(d1) - 1.0
-        theta = (
-            -spot * pdf * volatility / (2.0 * sqrt_t)
-            + risk_free_rate * strike * math.exp(-risk_free_rate * time_to_expiry) * _norm_cdf(-d2)
-        )
-    else:
-        delta = _norm_cdf(d1)
-        theta = (
-            -spot * pdf * volatility / (2.0 * sqrt_t)
-            - risk_free_rate * strike * math.exp(-risk_free_rate * time_to_expiry) * _norm_cdf(d2)
-        )
-
-    gamma = pdf / (spot * volatility * sqrt_t)
-    vega = spot * pdf * sqrt_t
-
-    # Theta is per year; convert to per-day.
-    theta_per_day = theta / 365.0
-    return {"delta": delta, "gamma": gamma, "theta": theta_per_day, "vega": vega}
+# Old Greeks functions removed - now using greeks_calculator module
 
 
 def _parse_date(value: Optional[str]) -> Optional[date]:
@@ -222,34 +186,80 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
     implied_vol = None
     option_price = None
     option_price_source = None
+    iv_source = None
+    
     if option_row is not None:
+        # Try to get IV from option chain
         implied_vol = option_row.get("impliedVolatility")
         if pd.notna(implied_vol):
             implied_vol = float(implied_vol)
+            iv_source = "chain"
+        
+        # Get option price (prefer mid, fallback to last)
         last_price = option_row.get("lastPrice")
         bid = option_row.get("bid")
         ask = option_row.get("ask")
-        if pd.notna(last_price) and last_price > 0:
-            option_price = float(last_price)
-            option_price_source = "last"
-        elif pd.notna(bid) and pd.notna(ask):
+        
+        if pd.notna(bid) and pd.notna(ask) and bid > 0 and ask > 0:
             option_price = float(bid + ask) / 2.0
             option_price_source = "mid"
+        elif pd.notna(last_price) and last_price > 0:
+            option_price = float(last_price)
+            option_price_source = "last"
 
+    # Get historical volatility as fallback
     hist = stock.history(period="6mo")
     hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
-    volatility = implied_vol if implied_vol is not None else hv30
-    volatility_source = "implied" if implied_vol is not None else "historical" if hv30 is not None else "none"
+    
+    # Determine spot price
+    spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
+    
+    # Determine volatility to use
+    volatility = None
+    
+    # Priority 1: Chain IV
+    if implied_vol is not None and implied_vol > 0:
+        volatility = implied_vol
+        iv_source = "chain"
+    # Priority 2: Invert from option price if available
+    elif option_price is not None and spot and spot > 0:
+        dte = max((position.expiration - date.today()).days, 0)
+        T = max(dte, 0) / 365.0
+        if T > 0:
+            inverted_iv = implied_volatility(
+                option_price,
+                spot,
+                position.strike,
+                T,
+                RISK_FREE_RATE,
+                position.option_type
+            )
+            if inverted_iv is not None:
+                volatility = inverted_iv
+                iv_source = f"inverted ({option_price_source})"
+    
+    # Priority 3: Historical volatility
+    if volatility is None and hv30 is not None:
+        volatility = hv30
+        iv_source = "historical"
+    
+    # If still no volatility, try a default
+    if volatility is None:
+        volatility = 0.30  # 30% default
+        iv_source = "default"
+    
+    volatility_source = iv_source
 
     dte = max((position.expiration - date.today()).days, 0)
     time_to_expiry = max(dte, 0) / 365.0
-    spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
+    
     greeks = None
     if spot and volatility and time_to_expiry > 0:
-        greeks = _black_scholes_greeks(
+        greeks = calculate_greeks(
             spot,
             position.strike,
             time_to_expiry,
+            RISK_FREE_RATE,
             volatility,
             position.option_type,
         )
@@ -271,7 +281,7 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
     return {
         "market": {
             **market,
-            "implied_volatility": implied_vol,
+            "implied_volatility": implied_vol,  # Original chain IV if available
         },
         "option_price": option_price,
         "option_price_source": option_price_source,
@@ -357,6 +367,15 @@ def get_position_greeks(
     price_range_pct: float = Query(0.3, ge=0.05, le=1.0),
     time_range_days: int = Query(60, ge=5, le=365),
 ):
+    """
+    Get detailed Greeks curves for a position.
+    
+    Returns:
+        - price_curve: delta and gamma vs underlying price
+        - theta_curve: theta vs days to expiry
+        - current_greeks: Greeks at current spot price
+        - model_info: Information about the model and parameters used
+    """
     with get_db_session() as db:
         position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
         if not position:
@@ -366,43 +385,62 @@ def get_position_greeks(
         spot = metrics["market"].get("current_price") or position.underlying_reference or position.underlying_at_entry
         volatility = metrics.get("volatility")
         dte = metrics.get("dte") or 0
+        
         if not spot or not volatility or dte <= 0:
-            return {"price_curve": [], "theta_curve": []}
-
-        lower = spot * (1 - price_range_pct)
-        upper = spot * (1 + price_range_pct)
-        steps = 31
-        price_curve = []
-        for idx in range(steps):
-            price = lower + (upper - lower) * idx / (steps - 1)
-            greeks = _black_scholes_greeks(
-                price,
-                position.strike,
-                dte / 365.0,
-                volatility,
-                position.option_type,
-            )
-            price_curve.append(
-                {
-                    "price": round(price, 2),
-                    "delta": greeks["delta"],
-                    "gamma": greeks["gamma"],
+            return {
+                "price_curve": [],
+                "theta_curve": [],
+                "current_greeks": None,
+                "model_info": {
+                    "error": "Insufficient data for Greeks calculation"
                 }
-            )
+            }
 
+        T = dte / 365.0
+        
+        # Generate price curves (delta and gamma)
+        price_curve = generate_delta_gamma_curve(
+            K=position.strike,
+            T=T,
+            r=RISK_FREE_RATE,
+            sigma=volatility,
+            option_type=position.option_type,
+            current_price=spot,
+            price_range_pct=price_range_pct,
+            num_points=51
+        )
+        
+        # Generate theta curve (from current DTE down to 1 day)
         max_days = min(time_range_days, max(dte, 1))
-        theta_curve = []
-        for day in range(1, max_days + 1):
-            greeks = _black_scholes_greeks(
-                spot,
-                position.strike,
-                day / 365.0,
-                volatility,
-                position.option_type,
-            )
-            theta_curve.append({"days": day, "theta": greeks["theta"]})
+        theta_curve = generate_theta_curve(
+            S=spot,
+            K=position.strike,
+            r=RISK_FREE_RATE,
+            sigma=volatility,
+            option_type=position.option_type,
+            current_dte=max_days,
+            min_days=1
+        )
+        
+        # Current Greeks
+        current_greeks = metrics.get("greeks")
 
         return {
             "price_curve": price_curve,
             "theta_curve": theta_curve,
+            "current_greeks": current_greeks,
+            "model_info": {
+                "model": "Black-Scholes (European)",
+                "risk_free_rate": RISK_FREE_RATE,
+                "volatility": volatility,
+                "volatility_source": metrics.get("volatility_source"),
+                "spot_price": spot,
+                "dte": dte,
+                "units": {
+                    "delta": "per 1 share",
+                    "gamma": "per $1 move per share",
+                    "theta": "per day per contract (100 shares)",
+                    "vega": "per 1 vol point per contract"
+                }
+            }
         }

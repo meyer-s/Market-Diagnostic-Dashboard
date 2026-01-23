@@ -66,6 +66,28 @@ interface PositionPayload {
 interface GreeksPayload {
   price_curve: { price: number; delta: number; gamma: number }[];
   theta_curve: { days: number; theta: number }[];
+  current_greeks: {
+    delta: number;
+    gamma: number;
+    theta: number;
+    vega: number;
+    price: number;
+  } | null;
+  model_info: {
+    model?: string;
+    risk_free_rate?: number;
+    volatility?: number;
+    volatility_source?: string;
+    spot_price?: number;
+    dte?: number;
+    units?: {
+      delta: string;
+      gamma: string;
+      theta: string;
+      vega: string;
+    };
+    error?: string;
+  };
 }
 
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
@@ -90,6 +112,24 @@ const formatSigned = (value: number | null | undefined, digits = 2) => {
   return `${sign}${value.toFixed(digits)}`;
 };
 
+const initialFormState = {
+  trade_date: "",
+  account: "",
+  action: "Buy to Open",
+  contracts: "",
+  symbol: "",
+  expiration: "",
+  strike: "",
+  option_type: "call",
+  fill_price: "",
+  total_cost: "",
+  underlying_at_entry: "",
+  estimated_delta: "",
+  shares_equivalent: "",
+  dte_at_entry: "",
+  underlying_reference: "",
+};
+
 export default function SecretOptions() {
   const [positions, setPositions] = useState<PositionPayload[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -97,6 +137,9 @@ export default function SecretOptions() {
   const [loading, setLoading] = useState(false);
   const [loadingGreeks, setLoadingGreeks] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState(initialFormState);
 
   const loadPositions = async () => {
     setLoading(true);
@@ -123,6 +166,71 @@ export default function SecretOptions() {
       setGreeksData(null);
     } finally {
       setLoadingGreeks(false);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData(initialFormState);
+  };
+
+  const handleFieldChange =
+    (field: keyof typeof initialFormState) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: event.target.value }));
+    };
+
+  const handleCreatePosition = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setFormError(null);
+
+    if (!formData.trade_date || !formData.symbol || !formData.expiration) {
+      setFormError("Trade date, symbol, and expiration are required.");
+      return;
+    }
+    const contracts = Number(formData.contracts);
+    const strike = Number(formData.strike);
+    const fillPrice = Number(formData.fill_price);
+    const totalCost = Number(formData.total_cost);
+    if (!contracts || !strike || !fillPrice || !totalCost) {
+      setFormError("Contracts, strike, fill price, and total cost are required.");
+      return;
+    }
+
+    const optionalNumber = (value: string) => {
+      if (!value) return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    setSubmitting(true);
+    try {
+      await apiFetch("/secret/options/positions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trade_date: formData.trade_date,
+          account: formData.account || null,
+          action: formData.action || null,
+          contracts,
+          symbol: formData.symbol.toUpperCase(),
+          expiration: formData.expiration,
+          strike,
+          option_type: formData.option_type,
+          fill_price: fillPrice,
+          total_cost: totalCost,
+          underlying_at_entry: optionalNumber(formData.underlying_at_entry),
+          estimated_delta: optionalNumber(formData.estimated_delta),
+          shares_equivalent: optionalNumber(formData.shares_equivalent),
+          dte_at_entry: optionalNumber(formData.dte_at_entry),
+          underlying_reference: optionalNumber(formData.underlying_reference),
+        }),
+      });
+      resetForm();
+      await loadPositions();
+    } catch (err: any) {
+      setFormError(err.message || "Failed to add position.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -194,6 +302,193 @@ export default function SecretOptions() {
           <div className="text-xs text-gray-500">Active Positions</div>
           <div className="text-lg font-semibold">{totals.count}</div>
         </div>
+      </div>
+
+      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold">Add Position</h2>
+          <span className="text-xs text-gray-500">Manual entry</span>
+        </div>
+        {formError && (
+          <div className="bg-red-900/20 border border-red-700 text-red-300 text-xs rounded-lg p-2 mb-4">
+            {formError}
+          </div>
+        )}
+        <form onSubmit={handleCreatePosition} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <label className="text-xs text-gray-400">
+            Trade Date
+            <input
+              type="date"
+              value={formData.trade_date}
+              onChange={handleFieldChange("trade_date")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+              required
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Account
+            <input
+              type="text"
+              value={formData.account}
+              onChange={handleFieldChange("account")}
+              placeholder="ACTIVE TRADING"
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Action
+            <input
+              type="text"
+              value={formData.action}
+              onChange={handleFieldChange("action")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Contracts
+            <input
+              type="number"
+              min="1"
+              value={formData.contracts}
+              onChange={handleFieldChange("contracts")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+              required
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Symbol
+            <input
+              type="text"
+              value={formData.symbol}
+              onChange={handleFieldChange("symbol")}
+              placeholder="NKE"
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+              required
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Expiration
+            <input
+              type="date"
+              value={formData.expiration}
+              onChange={handleFieldChange("expiration")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+              required
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Strike
+            <input
+              type="number"
+              step="0.01"
+              value={formData.strike}
+              onChange={handleFieldChange("strike")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+              required
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Type
+            <select
+              value={formData.option_type}
+              onChange={handleFieldChange("option_type")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+            >
+              <option value="call">Call</option>
+              <option value="put">Put</option>
+            </select>
+          </label>
+          <label className="text-xs text-gray-400">
+            Fill Price
+            <input
+              type="number"
+              step="0.01"
+              value={formData.fill_price}
+              onChange={handleFieldChange("fill_price")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+              required
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Total Cost
+            <input
+              type="number"
+              step="0.01"
+              value={formData.total_cost}
+              onChange={handleFieldChange("total_cost")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+              required
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Underlying at Entry
+            <input
+              type="number"
+              step="0.01"
+              value={formData.underlying_at_entry}
+              onChange={handleFieldChange("underlying_at_entry")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Estimated Delta
+            <input
+              type="number"
+              step="0.01"
+              value={formData.estimated_delta}
+              onChange={handleFieldChange("estimated_delta")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Shares Eq.
+            <input
+              type="number"
+              step="1"
+              value={formData.shares_equivalent}
+              onChange={handleFieldChange("shares_equivalent")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            DTE (at entry)
+            <input
+              type="number"
+              step="1"
+              value={formData.dte_at_entry}
+              onChange={handleFieldChange("dte_at_entry")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Underlying (reference)
+            <input
+              type="number"
+              step="0.01"
+              value={formData.underlying_reference}
+              onChange={handleFieldChange("underlying_reference")}
+              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
+            />
+          </label>
+          <div className="flex items-end gap-3 md:col-span-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              className={`px-4 py-2 rounded-md text-sm font-semibold ${
+                submitting ? "bg-gray-700 text-gray-400" : "bg-stealth-600 text-stealth-100 hover:bg-stealth-500"
+              }`}
+            >
+              {submitting ? "Saving..." : "Add Position"}
+            </button>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-3 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
+            >
+              Reset
+            </button>
+          </div>
+        </form>
       </div>
 
       <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6">
@@ -309,6 +604,49 @@ export default function SecretOptions() {
             </div>
           )}
         </div>
+
+        {greeksData?.model_info && (
+          <div className="mb-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700/50">
+            <div className="text-xs text-gray-400 grid grid-cols-2 md:grid-cols-4 gap-2">
+              {greeksData.model_info.model && (
+                <div>
+                  <span className="text-gray-500">Model:</span>{" "}
+                  <span className="text-gray-300">{greeksData.model_info.model}</span>
+                </div>
+              )}
+              {greeksData.model_info.risk_free_rate !== undefined && (
+                <div>
+                  <span className="text-gray-500">Risk-free rate:</span>{" "}
+                  <span className="text-gray-300">{formatPercent(greeksData.model_info.risk_free_rate * 100, 2)}</span>
+                </div>
+              )}
+              {greeksData.model_info.volatility !== undefined && (
+                <div>
+                  <span className="text-gray-500">Vol (σ):</span>{" "}
+                  <span className="text-gray-300">{formatPercent(greeksData.model_info.volatility * 100, 1)}</span>
+                </div>
+              )}
+              {greeksData.model_info.volatility_source && (
+                <div>
+                  <span className="text-gray-500">Vol source:</span>{" "}
+                  <span className="text-gray-300">{greeksData.model_info.volatility_source}</span>
+                </div>
+              )}
+              {greeksData.model_info.spot_price && (
+                <div>
+                  <span className="text-gray-500">Spot:</span>{" "}
+                  <span className="text-gray-300">{formatCurrency(greeksData.model_info.spot_price)}</span>
+                </div>
+              )}
+              {greeksData.model_info.dte !== undefined && (
+                <div>
+                  <span className="text-gray-500">DTE:</span>{" "}
+                  <span className="text-gray-300">{greeksData.model_info.dte} days</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {loadingGreeks ? (
           <div className="text-sm text-gray-400">Loading Greeks...</div>
