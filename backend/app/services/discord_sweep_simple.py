@@ -97,7 +97,7 @@ async def execute_sweep(
     
     # Run the existing scan function (scans all tickers, sends webhooks)
     print(f"[Discord Sweep] Starting scan of {len(tickers)} {label} tickers...")
-    hits = _scan_tickers(tickers, label, threshold, max_count=50, pause_seconds=0.2)
+    hits = _scan_tickers(tickers, label, threshold, pause_seconds=0.2)
     print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
     
     # Send a follow-up message with results (creates new message instead of editing)
