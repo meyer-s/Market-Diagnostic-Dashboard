@@ -114,7 +114,7 @@ async def discord_interactions(
             response = {
                 "type": 4,  # CHANNEL_MESSAGE_WITH_SOURCE (immediate response)
                 "data": {
-                    "content": f"🔍 Scanning 50 {label} tickers for cheap options (IV percentile < {threshold}%)...\nThis may take 2-3 minutes."
+                    "content": f"🔍 Scanning {label} tickers for cheap options (IV percentile < {threshold}%)...\nThis may take a few minutes."
                 }
             }
             
