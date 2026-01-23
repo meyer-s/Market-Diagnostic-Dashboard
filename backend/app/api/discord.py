@@ -5,6 +5,7 @@ Handles slash commands like /sweep SPY and /sweep IWM
 import os
 from typing import Optional
 
+import asyncio
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from nacl.signing import VerifyKey
@@ -117,13 +118,12 @@ async def discord_interactions(
                 }
             }
             
-            # Run sweep in background (will edit the message)
+            # Schedule the sweep as a detached asyncio task so Starlette
+            # does not await the coroutine during the response lifecycle.
+            # Use BackgroundTasks to call asyncio.create_task(coroutine).
             background_tasks.add_task(
-                execute_sweep,
-                symbol=symbol,
-                threshold=threshold,
-                interaction_token=interaction.token,
-                application_id=interaction.application_id
+                asyncio.create_task,
+                execute_sweep(symbol, threshold, interaction.token, interaction.application_id),
             )
             
             return response
