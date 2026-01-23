@@ -8,6 +8,7 @@ from typing import List
 
 import pandas as pd
 import requests
+import httpx
 
 # Import existing sweep logic
 from maintenance_scripts.options_chain_sweep import _scan_tickers
@@ -99,9 +100,25 @@ async def execute_sweep(
     hits = _scan_tickers(tickers, label, threshold, max_count=50, pause_seconds=0.2)
     print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
     
-    # Note: We don't try to edit the original message because the scan takes 2+ minutes
-    # and Discord interaction tokens expire after 15 minutes but the initial message
-    # already times out. The webhook posts the detailed alerts, which is what matters.
+    # Send a follow-up message with results (creates new message instead of editing)
+    await _send_followup_message(
+        application_id=application_id,
+        interaction_token=interaction_token,
+        content=f"✅ **Scan Complete!** Found **{hits}** cheap options with IV percentile < {threshold}%."
+    )
+
+
+async def _send_followup_message(application_id: str, interaction_token: str, content: str):
+    """Send a follow-up message to the interaction (creates a new message)"""
+    url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}"
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, json={"content": content})
+            response.raise_for_status()
+            print(f"✓ Sent follow-up message: {content[:50]}...")
+        except Exception as e:
+            print(f"✗ Failed to send follow-up message: {e}")
 
 
 async def _edit_original_response(
@@ -110,7 +127,7 @@ async def _edit_original_response(
     data: dict,
     bot_token: str
 ):
-    """Edit the original interaction response"""
+    """Edit the original interaction response (kept for error handling)"""
     url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}/messages/@original"
     headers = {
         "Authorization": f"Bot {bot_token}",
