@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from nacl.signing import VerifyKey
 from nacl.exceptions import BadSignatureError
 
-from app.services.discord_sweep import execute_sweep
+from app.services.discord_sweep_simple import execute_sweep
 
 router = APIRouter(prefix="/discord", tags=["Discord"])
 
