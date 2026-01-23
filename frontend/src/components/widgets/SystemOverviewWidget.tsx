@@ -538,7 +538,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                         dataKey="total_pct"
                         barSize={10}
                         fill="#10b981"
-                        fillOpacity={0.18}
+                        fillOpacity={0.8}
                       >
                         {stabilityBandData.map((_, index) => (
                           <Cell key={`stability-cell-${index}`} fill={`url(#stability-grad-${index})`} />
