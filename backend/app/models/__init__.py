@@ -11,3 +11,4 @@ from .alternative_assets import (
     AAPIndicator, 
     AAPRegimeHistory
 )
+from .closed_positions import ClosedPosition

@@ -140,6 +140,13 @@ export default function SecretOptions() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState(initialFormState);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
+  const [exitPrice, setExitPrice] = useState("");
+  const [closeNotes, setCloseNotes] = useState("");
+  const [closedPositions, setClosedPositions] = useState<any[]>([]);
+  const [showClosedLog, setShowClosedLog] = useState(false);
 
   const loadPositions = async () => {
     setLoading(true);
@@ -226,12 +233,55 @@ export default function SecretOptions() {
         }),
       });
       resetForm();
+      setShowAddModal(false);
       await loadPositions();
     } catch (err: any) {
       setFormError(err.message || "Failed to add position.");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const loadClosedPositions = async () => {
+    try {
+      const data = await apiFetch<any>("/secret/options/closed-positions");
+      setClosedPositions(data.closed_positions);
+    } catch (err: any) {
+      console.error("Failed to load closed positions:", err);
+    }
+  };
+
+  const handleClosePosition = async () => {
+    if (!closingPositionId || !exitPrice) {
+      alert("Please enter an exit price");
+      return;
+    }
+
+    try {
+      await apiFetch(`/secret/options/positions/${closingPositionId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          exit_price: Number(exitPrice),
+          close_date: new Date().toISOString().split("T")[0],
+          notes: closeNotes || null,
+        }),
+      });
+      
+      setShowCloseModal(false);
+      setExitPrice("");
+      setCloseNotes("");
+      setClosingPositionId(null);
+      await loadPositions();
+      await loadClosedPositions();
+    } catch (err: any) {
+      alert(`Failed to close position: ${err.message}`);
+    }
+  };
+
+  const openCloseModal = (positionId: number) => {
+    setClosingPositionId(positionId);
+    setShowCloseModal(true);
   };
 
   useEffect(() => {
@@ -305,214 +355,28 @@ export default function SecretOptions() {
       </div>
 
       <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold">Add Position</h2>
-          <span className="text-xs text-gray-500">Manual entry</span>
-        </div>
-        {formError && (
-          <div className="bg-red-900/20 border border-red-700 text-red-300 text-xs rounded-lg p-2 mb-4">
-            {formError}
-          </div>
-        )}
-        <form onSubmit={handleCreatePosition} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <label className="text-xs text-gray-400">
-            Trade Date
-            <input
-              type="date"
-              value={formData.trade_date}
-              onChange={handleFieldChange("trade_date")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-              required
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Account
-            <input
-              type="text"
-              value={formData.account}
-              onChange={handleFieldChange("account")}
-              placeholder="ACTIVE TRADING"
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Action
-            <input
-              type="text"
-              value={formData.action}
-              onChange={handleFieldChange("action")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Contracts
-            <input
-              type="number"
-              min="1"
-              value={formData.contracts}
-              onChange={handleFieldChange("contracts")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-              required
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Symbol
-            <input
-              type="text"
-              value={formData.symbol}
-              onChange={handleFieldChange("symbol")}
-              placeholder="NKE"
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-              required
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Expiration
-            <input
-              type="date"
-              value={formData.expiration}
-              onChange={handleFieldChange("expiration")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-              required
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Strike
-            <input
-              type="number"
-              step="0.01"
-              value={formData.strike}
-              onChange={handleFieldChange("strike")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-              required
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Type
-            <select
-              value={formData.option_type}
-              onChange={handleFieldChange("option_type")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-            >
-              <option value="call">Call</option>
-              <option value="put">Put</option>
-            </select>
-          </label>
-          <label className="text-xs text-gray-400">
-            Fill Price
-            <input
-              type="number"
-              step="0.01"
-              value={formData.fill_price}
-              onChange={handleFieldChange("fill_price")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-              required
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Total Cost
-            <input
-              type="number"
-              step="0.01"
-              value={formData.total_cost}
-              onChange={handleFieldChange("total_cost")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-              required
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Underlying at Entry
-            <input
-              type="number"
-              step="0.01"
-              value={formData.underlying_at_entry}
-              onChange={handleFieldChange("underlying_at_entry")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Estimated Delta
-            <input
-              type="number"
-              step="0.01"
-              value={formData.estimated_delta}
-              onChange={handleFieldChange("estimated_delta")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Shares Eq.
-            <input
-              type="number"
-              step="1"
-              value={formData.shares_equivalent}
-              onChange={handleFieldChange("shares_equivalent")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            DTE (at entry)
-            <input
-              type="number"
-              step="1"
-              value={formData.dte_at_entry}
-              onChange={handleFieldChange("dte_at_entry")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-            />
-          </label>
-          <label className="text-xs text-gray-400">
-            Underlying (reference)
-            <input
-              type="number"
-              step="0.01"
-              value={formData.underlying_reference}
-              onChange={handleFieldChange("underlying_reference")}
-              className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200"
-            />
-          </label>
-          <div className="flex items-end gap-3 md:col-span-3">
-            <button
-              type="submit"
-              disabled={submitting}
-              className={`px-4 py-2 rounded-md text-sm font-semibold ${
-                submitting ? "bg-gray-700 text-gray-400" : "bg-stealth-600 text-stealth-100 hover:bg-stealth-500"
-              }`}
-            >
-              {submitting ? "Saving..." : "Add Position"}
-            </button>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="px-3 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
-            >
-              Reset
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
             <h2 className="text-base font-semibold">Position Summary</h2>
             <p className="text-xs text-gray-500">Click a row to inspect Greeks and curves.</p>
           </div>
-          <select
-            value={selectedId ?? ""}
-            onChange={(event) => {
-              const value = event.target.value;
-              setSelectedId(value ? Number(value) : null);
-            }}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
-          >
-            <option value="">Select a position</option>
-            {positions.map((item) => (
-              <option key={item.position.id} value={item.position.id}>
-                {item.position.symbol} {item.position.strike} {item.position.option_type.toUpperCase()} (
-                {formatDate(item.position.expiration)})
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5"
+            >
+              <span className="text-lg leading-none">+</span> Add Trade
+            </button>
+            <button
+              onClick={() => {
+                loadClosedPositions();
+                setShowClosedLog(true);
+              }}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+            >
+              P/L History
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -534,6 +398,7 @@ export default function SecretOptions() {
                   <th className="px-3 py-2 text-left">P&amp;L</th>
                   <th className="px-3 py-2 text-left">Delta</th>
                   <th className="px-3 py-2 text-left">Theta</th>
+                  <th className="px-3 py-2 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
@@ -576,6 +441,17 @@ export default function SecretOptions() {
                       </td>
                       <td className="px-3 py-2">
                         {metrics.greeks ? metrics.greeks.theta.toFixed(3) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCloseModal(position.id);
+                          }}
+                          className="bg-rose-700 hover:bg-rose-600 text-white px-2 py-1 rounded text-xs font-medium"
+                        >
+                          −
+                        </button>
                       </td>
                     </tr>
                   );
@@ -770,6 +646,312 @@ export default function SecretOptions() {
           <div className="text-sm text-gray-500">No Greeks data available for the selected position.</div>
         )}
       </div>
+
+      {/* Add Trade Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Add New Trade</h2>
+              <button
+                onClick={() => {
+                  setShowAddModal(false);
+                  resetForm();
+                  setFormError(null);
+                }}
+                className="text-gray-400 hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {formError && (
+              <div className="bg-red-900/20 border border-red-700 text-red-300 text-xs rounded-lg p-2 mb-4">
+                {formError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreatePosition} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="text-xs text-gray-400">
+                  Trade Date *
+                  <input
+                    type="date"
+                    value={formData.trade_date}
+                    onChange={handleFieldChange("trade_date")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+                
+                <label className="text-xs text-gray-400">
+                  Symbol *
+                  <input
+                    type="text"
+                    value={formData.symbol}
+                    onChange={handleFieldChange("symbol")}
+                    placeholder="AAPL"
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 uppercase"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Expiration *
+                  <input
+                    type="date"
+                    value={formData.expiration}
+                    onChange={handleFieldChange("expiration")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Strike *
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.strike}
+                    onChange={handleFieldChange("strike")}
+                    placeholder="100.00"
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Type *
+                  <select
+                    value={formData.option_type}
+                    onChange={handleFieldChange("option_type")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  >
+                    <option value="call">Call</option>
+                    <option value="put">Put</option>
+                  </select>
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Contracts *
+                  <input
+                    type="number"
+                    value={formData.contracts}
+                    onChange={handleFieldChange("contracts")}
+                    placeholder="1"
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Fill Price *
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.fill_price}
+                    onChange={handleFieldChange("fill_price")}
+                    placeholder="5.00"
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Total Cost *
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.total_cost}
+                    onChange={handleFieldChange("total_cost")}
+                    placeholder="503.37"
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Underlying at Entry
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.underlying_at_entry}
+                    onChange={handleFieldChange("underlying_at_entry")}
+                    placeholder="95.50"
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Account
+                  <input
+                    type="text"
+                    value={formData.account}
+                    onChange={handleFieldChange("account")}
+                    placeholder="Active Trading"
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  />
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddModal(false);
+                    resetForm();
+                    setFormError(null);
+                  }}
+                  className="px-4 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                >
+                  {submitting ? "Adding..." : "Add Trade"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Close Position Modal */}
+      {showCloseModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Close Position</h2>
+              <button
+                onClick={() => {
+                  setShowCloseModal(false);
+                  setExitPrice("");
+                  setCloseNotes("");
+                  setClosingPositionId(null);
+                }}
+                className="text-gray-400 hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <label className="block text-sm text-gray-400">
+                Exit Price (per contract) *
+                <input
+                  type="number"
+                  step="0.01"
+                  value={exitPrice}
+                  onChange={(e) => setExitPrice(e.target.value)}
+                  placeholder="5.50"
+                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  required
+                />
+              </label>
+
+              <label className="block text-sm text-gray-400">
+                Notes (optional)
+                <textarea
+                  value={closeNotes}
+                  onChange={(e) => setCloseNotes(e.target.value)}
+                  placeholder="Reason for closing..."
+                  rows={3}
+                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                />
+              </label>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setShowCloseModal(false);
+                    setExitPrice("");
+                    setCloseNotes("");
+                    setClosingPositionId(null);
+                  }}
+                  className="px-4 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleClosePosition}
+                  className="bg-rose-700 hover:bg-rose-600 text-white px-4 py-2 rounded-md text-sm font-medium"
+                >
+                  Close Position
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* P/L History Modal */}
+      {showClosedLog && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Closed Positions History</h2>
+              <button
+                onClick={() => setShowClosedLog(false)}
+                className="text-gray-400 hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            {closedPositions.length === 0 ? (
+              <div className="text-sm text-gray-400 text-center py-8">No closed positions yet</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm text-gray-300">
+                  <thead className="text-xs uppercase text-gray-500 border-b border-gray-700">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Symbol</th>
+                      <th className="px-3 py-2 text-left">Strike</th>
+                      <th className="px-3 py-2 text-left">Type</th>
+                      <th className="px-3 py-2 text-left">Entry</th>
+                      <th className="px-3 py-2 text-left">Exit</th>
+                      <th className="px-3 py-2 text-left">Close Date</th>
+                      <th className="px-3 py-2 text-left">P&amp;L $</th>
+                      <th className="px-3 py-2 text-left">P&amp;L %</th>
+                      <th className="px-3 py-2 text-left">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {closedPositions.map((pos) => (
+                      <tr key={pos.id} className="hover:bg-gray-900/40">
+                        <td className="px-3 py-2 font-semibold">{pos.symbol}</td>
+                        <td className="px-3 py-2">${formatNumber(pos.strike, 2)}</td>
+                        <td className="px-3 py-2 uppercase">{pos.option_type}</td>
+                        <td className="px-3 py-2">${formatNumber(pos.fill_price, 2)}</td>
+                        <td className="px-3 py-2">${formatNumber(pos.exit_price, 2)}</td>
+                        <td className="px-3 py-2">{formatDate(pos.close_date)}</td>
+                        <td
+                          className={`px-3 py-2 font-semibold ${
+                            pos.dollar_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                          }`}
+                        >
+                          {formatCurrency(pos.dollar_pnl, 0)}
+                        </td>
+                        <td
+                          className={`px-3 py-2 ${
+                            pos.percent_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                          }`}
+                        >
+                          {formatSigned(pos.percent_pnl, 1)}%
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-400">{pos.notes || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

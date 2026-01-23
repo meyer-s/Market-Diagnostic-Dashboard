@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.api.stock_projection import compute_historical_volatility
 from app.models.option_positions import OptionPosition
+from app.models.closed_positions import ClosedPosition
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
     calculate_greeks,
@@ -40,6 +41,12 @@ class OptionPositionCreate(BaseModel):
     shares_equivalent: Optional[int] = None
     dte_at_entry: Optional[int] = None
     underlying_reference: Optional[float] = None
+
+
+class ClosePositionRequest(BaseModel):
+    exit_price: float
+    close_date: Optional[str] = None
+    notes: Optional[str] = None
 
 
 # Old Greeks functions removed - now using greeks_calculator module
@@ -443,5 +450,118 @@ def get_position_greeks(
                     "theta": "per day per contract (100 shares)",
                     "vega": "per 1 vol point per contract"
                 }
+            }
+        }
+
+
+@router.delete("/positions/{position_id}")
+def close_position(position_id: int, request: ClosePositionRequest):
+    """
+    Close a position by moving it to closed_position table and deleting from active positions.
+    Calculates P/L and tracks historical performance.
+    """
+    with get_db_session() as db:
+        position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Position not found")
+        
+        # Calculate P/L
+        total_proceeds = request.exit_price * position.contracts * 100
+        dollar_pnl = total_proceeds - position.total_cost
+        percent_pnl = (dollar_pnl / position.total_cost) * 100 if position.total_cost else 0
+        
+        # Get current underlying price
+        market = _market_data_for_symbol(position.symbol)
+        underlying_at_exit = market.get("current_price")
+        
+        # Create closed position record
+        closed = ClosedPosition(
+            symbol=position.symbol,
+            option_type=position.option_type,
+            strike=position.strike,
+            expiration=position.expiration,
+            contracts=position.contracts,
+            trade_date=position.trade_date,
+            fill_price=position.fill_price,
+            total_cost=position.total_cost,
+            underlying_at_entry=position.underlying_at_entry,
+            close_date=_parse_date(request.close_date) if request.close_date else date.today(),
+            exit_price=request.exit_price,
+            total_proceeds=total_proceeds,
+            underlying_at_exit=underlying_at_exit,
+            dollar_pnl=dollar_pnl,
+            percent_pnl=percent_pnl,
+            account=position.account,
+            notes=request.notes
+        )
+        db.add(closed)
+        
+        # Delete active position
+        db.delete(position)
+        db.commit()
+        
+        return {
+            "message": "Position closed successfully",
+            "pnl": {
+                "dollar": dollar_pnl,
+                "percent": percent_pnl,
+                "total_proceeds": total_proceeds
+            }
+        }
+
+
+@router.get("/closed-positions")
+def get_closed_positions(
+    limit: int = Query(100, ge=1, le=500),
+    symbol: Optional[str] = None
+):
+    """
+    Get closed positions history with P/L information.
+    """
+    with get_db_session() as db:
+        query = db.query(ClosedPosition).order_by(ClosedPosition.close_date.desc())
+        
+        if symbol:
+            query = query.filter(ClosedPosition.symbol == symbol.upper())
+        
+        closed_positions = query.limit(limit).all()
+        
+        results = []
+        for pos in closed_positions:
+            results.append({
+                "id": pos.id,
+                "symbol": pos.symbol,
+                "option_type": pos.option_type,
+                "strike": pos.strike,
+                "expiration": pos.expiration.isoformat(),
+                "contracts": pos.contracts,
+                "trade_date": pos.trade_date.isoformat(),
+                "close_date": pos.close_date.isoformat(),
+                "fill_price": pos.fill_price,
+                "exit_price": pos.exit_price,
+                "total_cost": pos.total_cost,
+                "total_proceeds": pos.total_proceeds,
+                "dollar_pnl": pos.dollar_pnl,
+                "percent_pnl": pos.percent_pnl,
+                "underlying_at_entry": pos.underlying_at_entry,
+                "underlying_at_exit": pos.underlying_at_exit,
+                "account": pos.account,
+                "notes": pos.notes
+            })
+        
+        # Calculate summary stats
+        total_pnl = sum(pos.dollar_pnl for pos in closed_positions)
+        winning_trades = sum(1 for pos in closed_positions if pos.dollar_pnl > 0)
+        total_trades = len(closed_positions)
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        return {
+            "closed_positions": results,
+            "summary": {
+                "total_pnl": total_pnl,
+                "total_trades": total_trades,
+                "winning_trades": winning_trades,
+                "losing_trades": total_trades - winning_trades,
+                "win_rate": win_rate
             }
         }
