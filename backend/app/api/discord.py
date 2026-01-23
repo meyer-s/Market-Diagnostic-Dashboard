@@ -2,13 +2,13 @@
 Discord Bot Integration for Options Sweeps
 Handles slash commands like /sweep SPY and /sweep IWM
 """
-import hashlib
-import hmac
 import os
 from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 from pydantic import BaseModel
+from nacl.signing import VerifyKey
+from nacl.exceptions import BadSignatureError
 
 from app.services.discord_sweep import execute_sweep
 
@@ -32,14 +32,13 @@ class DiscordInteraction(BaseModel):
 
 
 def verify_discord_signature(body: bytes, signature: str, timestamp: str) -> bool:
-    """Verify Discord interaction signature"""
-    message = timestamp.encode() + body
-    expected = hmac.new(
-        bytes.fromhex(DISCORD_PUBLIC_KEY),
-        message,
-        hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(signature, expected)
+    """Verify Discord interaction signature using Ed25519"""
+    try:
+        verify_key = VerifyKey(bytes.fromhex(DISCORD_PUBLIC_KEY))
+        verify_key.verify(timestamp.encode() + body, bytes.fromhex(signature))
+        return True
+    except (BadSignatureError, ValueError):
+        return False
 
 
 @router.post("/interactions")
@@ -56,13 +55,15 @@ async def discord_interactions(
     """
     body = await request.body()
     
-    # Get signature headers (optional for initial verification)
+    # Verify Ed25519 signature
     signature = request.headers.get("X-Signature-Ed25519")
     timestamp = request.headers.get("X-Signature-Timestamp")
     
-    # Note: In production, you should verify the Ed25519 signature here
-    # For now, we skip verification to allow Discord's initial PING verification to work
-    # To implement: use PyNaCl library with DISCORD_PUBLIC_KEY
+    if not signature or not timestamp:
+        raise HTTPException(status_code=401, detail="Missing signature headers")
+    
+    if not verify_discord_signature(body, signature, timestamp):
+        raise HTTPException(status_code=401, detail="Invalid signature")
     
     try:
         interaction = DiscordInteraction.parse_raw(body)
