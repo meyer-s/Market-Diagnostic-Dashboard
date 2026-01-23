@@ -131,7 +131,7 @@ def _scan_tickers_for_discord(
     return alerts
 
 
-def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, scanned: int) -> dict:
+def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, scanned: int = 25) -> dict:
     """Format alerts as Discord embed"""
     if not alerts:
         return {
@@ -177,6 +177,9 @@ def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, sca
             "value": f"+{len(alerts) - 10} additional cheap options found",
             "inline": False
         })
+    
+    # Update footer with scan info
+    embed["embeds"][0]["footer"]["text"] = f"Scanned {scanned_count} tickers | Market Diagnostic Dashboard"
     
     return {
         "embeds": [{
@@ -232,11 +235,13 @@ async def execute_sweep(
         )
         return
     
-    # Run the scan
-    alerts = _scan_tickers_for_discord(tickers, label, threshold, max_count=50)
+    # Run the scan (reduced to 25 to stay within 3-minute Discord timeout)
+    print(f"[Discord Sweep] Starting scan of 25 {label} tickers...")
+    alerts = _scan_tickers_for_discord(tickers, label, threshold, max_count=25)
+    print(f"[Discord Sweep] Scan complete. Found {len(alerts)} cheap options.")
     
     # Format and send results
-    response_data = _format_discord_embed(symbol, alerts, threshold, len(tickers[:50]))
+    response_data = _format_discord_embed(symbol, alerts, threshold, 25)
     await _send_followup(application_id, interaction_token, response_data, bot_token)
 
 
