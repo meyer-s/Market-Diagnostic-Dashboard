@@ -108,12 +108,16 @@ async def discord_interactions(
                     }
                 }
             
-            # Acknowledge immediately (Discord requires response within 3 seconds)
+            # Send immediate scanning message (type 4 instead of deferred type 5)
+            label = "S&P 500 (SPY/IVV)" if symbol == "SPY" else "Russell 2000 (IWM)"
             response = {
-                "type": 5  # DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+                "type": 4,  # CHANNEL_MESSAGE_WITH_SOURCE (immediate response)
+                "data": {
+                    "content": f"🔍 Scanning 50 {label} tickers for cheap options (IV percentile < {threshold}%)...\nThis may take 2-3 minutes."
+                }
             }
             
-            # Run sweep in background
+            # Run sweep in background (will edit the message)
             background_tasks.add_task(
                 execute_sweep,
                 symbol=symbol,

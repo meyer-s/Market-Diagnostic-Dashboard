@@ -178,9 +178,6 @@ def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, sca
             "inline": False
         })
     
-    # Update footer with scan info
-    embed["embeds"][0]["footer"]["text"] = f"Scanned {scanned_count} tickers | Market Diagnostic Dashboard"
-    
     return {
         "embeds": [{
             "title": f"🎯 {symbol} Options Sweep - {len(alerts)} Cheap Options Found!",
@@ -227,7 +224,7 @@ async def execute_sweep(
         return
     
     if not tickers:
-        await _send_followup(
+        await _edit_original_response(
             application_id,
             interaction_token,
             {"content": f"❌ Failed to fetch {label} holdings"},
@@ -235,20 +232,35 @@ async def execute_sweep(
         )
         return
     
-    # Send immediate message to prevent timeout
-    initial_message = {
-        "content": f"🔍 Scanning 50 {label} tickers for cheap options (IV percentile < {threshold}%)...\nThis may take 2-3 minutes."
-    }
-    message_id = await _send_followup(application_id, interaction_token, initial_message, bot_token)
-    
     # Run the scan (all 50 tickers)
     print(f"[Discord Sweep] Starting scan of 50 {label} tickers...")
     alerts = _scan_tickers_for_discord(tickers, label, threshold, max_count=50)
     print(f"[Discord Sweep] Scan complete. Found {len(alerts)} cheap options.")
     
-    # Edit the message with results
+    # Edit the original message with results
     response_data = _format_discord_embed(symbol, alerts, threshold, 50)
-    await _edit_followup(application_id, interaction_token, message_id, response_data, bot_token)
+    await _edit_original_response(application_id, interaction_token, response_data, bot_token)
+
+
+async def _edit_original_response(
+    application_id: str,
+    interaction_token: str,
+    data: dict,
+    bot_token: str
+):
+    """Edit the original interaction response"""
+    url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}/messages/@original"
+    headers = {
+        "Authorization": f"Bot {bot_token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.patch(url, json=data, headers=headers, timeout=10)
+        response.raise_for_status()
+        print(f"✓ Edited original response on Discord")
+    except Exception as e:
+        print(f"✗ Failed to edit original response: {e}")
 
 
 async def _send_followup(
