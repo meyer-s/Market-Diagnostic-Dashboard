@@ -1,3 +1,4 @@
+-- Add closed_positions table to track P/L history
 CREATE TABLE IF NOT EXISTS closed_position (
     id SERIAL PRIMARY KEY,
     symbol VARCHAR NOT NULL,

@@ -17,6 +17,7 @@ from app.api.options_alerts import router as options_alerts_router
 from app.api.secret_options import router as secret_options_router
 from app.api.precious_metals import router as precious_metals_router
 from app.api.aap import router as aap_router
+from app.api.discord import router as discord_router
 
 # Set up logging
 logging.basicConfig(
@@ -113,3 +114,6 @@ app.include_router(metal_projections_router, prefix="/precious-metals", tags=["M
 
 # Alternative Asset Pressure (AAP) Indicator
 app.include_router(aap_router, tags=["AlternativeAssetPressure"])
+
+# Discord Bot Integration
+app.include_router(discord_router, tags=["Discord"])
