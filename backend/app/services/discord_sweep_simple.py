@@ -99,19 +99,9 @@ async def execute_sweep(
     hits = _scan_tickers(tickers, label, threshold, max_count=50, pause_seconds=0.2)
     print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
     
-    # Edit the original message with results
-    result_text = (
-        f"✅ **{symbol} Options Sweep Complete**\n\n"
-        f"📊 Scanned 50 {label} tickers\n"
-        f"🎯 Found **{hits}** cheap options (IV percentile < {threshold}%)\n\n"
-        f"Check your Discord webhook for detailed alerts!"
-    )
-    await _edit_original_response(
-        application_id,
-        interaction_token,
-        {"content": result_text},
-        bot_token
-    )
+    # Note: We don't try to edit the original message because the scan takes 2+ minutes
+    # and Discord interaction tokens expire after 15 minutes but the initial message
+    # already times out. The webhook posts the detailed alerts, which is what matters.
 
 
 async def _edit_original_response(
