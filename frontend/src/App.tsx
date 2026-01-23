@@ -11,6 +11,7 @@ import SystemBreakdown from "./pages/SystemBreakdown";
 import MarketMap from "./pages/MarketMap";
 import SectorProjections from "./pages/SectorProjections";
 import StockAnalysis from "./pages/StockAnalysis";
+import SecretOptions from "./pages/SecretOptions";
 import AlternativeAssetStability from "./pages/AlternativeAssetStability";
 import AAPComponentBreakdown from "./pages/AAPComponentBreakdown";
 import { trackPageView } from "./utils/analytics";
@@ -28,6 +29,7 @@ function AppWithAnalytics() {
                      location.pathname.includes('/market-map') ? 'Market Map' :
                      location.pathname.includes('/sector-projections') ? 'Sector Projections' :
                      location.pathname.includes('/stock-analysis') ? 'Stock Analysis' :
+                     location.pathname.includes('/secret/options') ? 'Secret Options' :
                      location.pathname.includes('/precious-metals') ? 'Precious Metals' :
                      location.pathname.includes('/alternative-assets') ? 'Alternative Assets' :
                      location.pathname.includes('/aap-breakdown') ? 'AAS Breakdown' :
@@ -52,6 +54,7 @@ function AppWithAnalytics() {
           <Route path="/market-map" element={<MarketMap />} />
           <Route path="/sector-projections" element={<SectorProjections />} />
           <Route path="/stock-analysis" element={<StockAnalysis />} />
+          <Route path="/secret/options" element={<SecretOptions />} />
           {/* Redirect old precious-metals route to alternative-assets */}
           <Route path="/precious-metals" element={<Navigate to="/alternative-assets?tab=metals" replace />} />
           <Route path="/alternative-assets" element={<AlternativeAssetStability />} />
