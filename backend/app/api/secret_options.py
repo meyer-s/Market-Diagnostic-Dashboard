@@ -334,19 +334,19 @@ def get_positions():
             _seed_positions(db)
             positions = db.query(OptionPosition).order_by(OptionPosition.trade_date.desc()).all()
             payload = []
-                for position in positions:
-                    try:
-                        metrics = _compute_position_metrics(position)
-                    except Exception as perr:
-                        # Log per-position errors but continue returning other positions
-                        traceback.print_exc()
-                        metrics = {"error": str(perr)}
-                    payload.append(
-                        {
-                            "position": _serialize_position(position),
-                            "metrics": metrics,
-                        }
-                    )
+            for position in positions:
+                try:
+                    metrics = _compute_position_metrics(position)
+                except Exception as perr:
+                    # Log per-position errors but continue returning other positions
+                    traceback.print_exc()
+                    metrics = {"error": str(perr)}
+                payload.append(
+                    {
+                        "position": _serialize_position(position),
+                        "metrics": metrics,
+                    }
+                )
             return {"positions": payload}
     except Exception as exc:
         # Log traceback to server logs for debugging
