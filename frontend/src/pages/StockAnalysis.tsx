@@ -32,6 +32,7 @@ import { getFamilyColor } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
 import { buildHolisticSummary } from "../utils/holisticSummary";
 import type { SummaryInput } from "../types/holisticSummary";
+import InfoTooltip from "../components/ui/InfoTooltip";
 
 interface StockProjection {
   ticker: string;
@@ -635,25 +636,28 @@ export default function StockAnalysis() {
                   <div key={card.key} className="bg-gray-900 rounded-lg border border-gray-700 p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="text-sm font-semibold text-gray-100">
-                        <span
-                          title={
-                            card.key === "eps"
-                              ? "Earnings per share reported for the quarter"
-                              : card.key === "roe"
-                              ? "Return on equity for the quarter"
-                              : card.key === "free_cash_flow"
-                              ? "Free cash flow (operating cash minus capital expenditures)"
-                              : card.key === "revenue"
-                              ? "Quarterly revenue (reported)"
-                              : card.key === "market_cap"
-                              ? "Market capitalization (total market value of equity)"
-                              : card.key === "pe_ratio"
-                              ? "Price-to-Earnings ratio (typically trailing P/E)"
-                              : card.title
-                          }
-                        >
-                          {card.title}
-                        </span>
+                        <div className="flex items-center">
+                          <span>{card.title}</span>
+                          {card.derived ? derivedBadge : null}
+                          <InfoTooltip
+                            id={`fund-tooltip-${card.key}`}
+                            text={
+                              card.key === "eps"
+                                ? "Earnings per share reported for the quarter"
+                                : card.key === "roe"
+                                ? "Return on equity for the quarter"
+                                : card.key === "free_cash_flow"
+                                ? "Free cash flow (operating cash minus capital expenditures)"
+                                : card.key === "revenue"
+                                ? "Quarterly revenue (reported)"
+                                : card.key === "market_cap"
+                                ? "Market capitalization (total market value of equity)"
+                                : card.key === "pe_ratio"
+                                ? "Price-to-Earnings ratio (typically trailing P/E)"
+                                : card.title
+                            }
+                          />
+                        </div>
                         {card.derived ? derivedBadge : null}
                       </div>
                       {card.series.length > 0 && (
