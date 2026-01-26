@@ -478,7 +478,7 @@ export default function StockAnalysis() {
 
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">52W Range</p>
+                  <p className="text-gray-400 mb-1" title="52-week price range (low - high) showing the observed trading band over the past year">52W Range</p>
                   <p className="font-semibold">
                     {technicalData?.low_52w !== undefined && technicalData?.high_52w !== undefined
                       ? `$${Number(technicalData.low_52w).toFixed(2)} - $${Number(technicalData.high_52w).toFixed(2)}`
@@ -486,7 +486,7 @@ export default function StockAnalysis() {
                   </p>
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Trend</p>
+                  <p className="text-gray-400 mb-1" title="Short-term technical trend derived from moving averages and momentum indicators">Trend</p>
                   <p
                     className={`font-semibold capitalize ${
                       technicalData?.trend === "uptrend"
@@ -500,21 +500,19 @@ export default function StockAnalysis() {
                   </p>
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Conviction</p>
+                  <p className="text-gray-400 mb-1" title="Model conviction level: higher values indicate stronger confidence in the projection">Conviction</p>
                   <p className="font-semibold text-purple-300">{Math.round(projections["T"].conviction)}%</p>
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Take Profit</p>
+                  <p className="text-gray-400 mb-1" title="Model-derived take-profit target for this horizon">Take Profit</p>
                   <p className="font-semibold text-green-400">${projections["T"].take_profit.toFixed(2)}</p>
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Stop Loss</p>
-                  <p className="font-semibold text-red-400">
-                    ${Math.max(0, projections["T"].stop_loss).toFixed(2)}
-                  </p>
+                  <p className="text-gray-400 mb-1" title="Model-recommended stop-loss level for this horizon">Stop Loss</p>
+                  <p className="font-semibold text-red-400">${Math.max(0, projections["T"].stop_loss).toFixed(2)}</p>
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Risk</p>
+                  <p className="text-gray-400 mb-1" title="Risk summary: annualized volatility and maximum drawdown for the horizon">Risk</p>
                   <p className="font-semibold text-gray-200">
                     Vol {projections["T"].volatility.toFixed(1)}% / DD {projections["T"].max_drawdown.toFixed(1)}%
                   </p>
