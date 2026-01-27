@@ -29,7 +29,7 @@ import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor } from "../theme/metricColors";
-import { apiFetch } from "../utils/apiUtils";
+import { apiFetch, buildApiUrl } from "../utils/apiUtils";
 import { buildHolisticSummary } from "../utils/holisticSummary";
 import type { SummaryInput } from "../types/holisticSummary";
 import InfoTooltip from "../components/ui/InfoTooltip";
@@ -127,6 +127,7 @@ export default function StockAnalysis() {
   const [dataWarnings, setDataWarnings] = useState<DataWarning[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projectionUnavailable, setProjectionUnavailable] = useState(false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [selectedHorizon, setSelectedHorizon] = useState<"T" | "3m" | "6m" | "12m">("12m");
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -137,31 +138,41 @@ export default function StockAnalysis() {
     e.preventDefault();
     if (!ticker.trim()) return;
 
-    setSearchTicker(ticker.toUpperCase());
+    const normalizedTicker = ticker.toUpperCase();
+    setSearchTicker(normalizedTicker);
     setLoading(true);
     setError(null);
+    setProjectionUnavailable(false);
+
+    const fetchTimestamp = new Date().toISOString();
+    let projectionsPayload: any | null = null;
 
     try {
-      const projData = await apiFetch<any>(`/stocks/${ticker.toUpperCase()}/projections`);
-      setProjections(projData.projections);
-      setHistoricalScore(projData.historical?.score_3m_ago ?? null);
-      setTechnicalData(projData.technical || null);
-      setOptionsFlow(projData.options_flow || null);
-      setOptionalityMetrics(projData.optionality || null);
-      setFundamentals(projData.fundamentals || null);
-      setAnalystTarget(projData.analyst_target ?? null);
-      setAnalystCount(projData.analyst_count ?? null);
-      setDataWarnings(projData.data_warnings || []);
-      setLastUpdated(new Date().toISOString());
-      setDataAsOf(projData.as_of_date || projData.created_at || null);
-
-      // Fetch news filtered by ticker (server-side to avoid missing relevant articles)
-      const tickerNews = await apiFetch<any[]>(`/news?hours=720&limit=50&symbol=${ticker.toUpperCase()}`).catch(() => null); // Last 30 days
-      if (tickerNews) {
-        setNews(tickerNews.slice(0, 10)); // Show top 10 articles
+      const response = await fetch(buildApiUrl(`/stocks/${normalizedTicker}/projections`));
+      if (response.status === 404) {
+        setProjectionUnavailable(true);
+      } else if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      } else {
+        projectionsPayload = await response.json();
       }
     } catch (err: any) {
       setError(err.message || "Failed to fetch stock data");
+    }
+
+    if (projectionsPayload) {
+      setProjections(projectionsPayload.projections ?? {});
+      setHistoricalScore(projectionsPayload.historical?.score_3m_ago ?? null);
+      setTechnicalData(projectionsPayload.technical || null);
+      setOptionsFlow(projectionsPayload.options_flow || null);
+      setOptionalityMetrics(projectionsPayload.optionality || null);
+      setFundamentals(projectionsPayload.fundamentals || null);
+      setAnalystTarget(projectionsPayload.analyst_target ?? null);
+      setAnalystCount(projectionsPayload.analyst_count ?? null);
+      setDataWarnings(projectionsPayload.data_warnings || []);
+      setLastUpdated(fetchTimestamp);
+      setDataAsOf(projectionsPayload.as_of_date || projectionsPayload.created_at || null);
+    } else {
       setProjections({});
       setHistoricalScore(null);
       setTechnicalData(null);
@@ -170,13 +181,25 @@ export default function StockAnalysis() {
       setFundamentals(null);
       setAnalystTarget(null);
       setAnalystCount(null);
-      setNews([]);
       setDataWarnings([]);
       setLastUpdated(null);
       setDataAsOf(null);
-    } finally {
-      setLoading(false);
     }
+
+    // Fetch news filtered by ticker (server-side to avoid missing relevant articles)
+    const tickerNews = await apiFetch<any[]>(
+      `/news?hours=720&limit=50&symbol=${normalizedTicker}`
+    ).catch(() => null); // Last 30 days
+    if (tickerNews) {
+      setNews(tickerNews.slice(0, 10)); // Show top 10 articles
+      if (!projectionsPayload) {
+        setLastUpdated(fetchTimestamp);
+      }
+    } else {
+      setNews([]);
+    }
+
+    setLoading(false);
   };
 
   // Prepare data for line chart
@@ -440,6 +463,12 @@ export default function StockAnalysis() {
           <p className="text-sm text-red-400 mt-2">
             Please check the ticker symbol and try again. The stock must have sufficient historical data available.
           </p>
+        </div>
+      )}
+
+      {projectionUnavailable && !error && (
+        <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4 mb-6">
+          <p className="text-yellow-200">Projections unavailable for this asset.</p>
         </div>
       )}
 
@@ -1156,41 +1185,6 @@ export default function StockAnalysis() {
             })()}
           </div>
 
-          {/* Recent News */}
-          {news.length > 0 && (
-            <div className="mt-6 bg-gray-800 rounded-lg shadow p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base sm:text-lg font-semibold">Recent News for {searchTicker}</h2>
-                {lastUpdated && (
-                  <span className="text-[10px] text-gray-500">
-                    Updated {getRelativeTime(lastUpdated)}
-                  </span>
-                )}
-              </div>
-              <div className="space-y-2 sm:space-y-3">
-                {news.map((article) => (
-                  <a
-                    key={article.id}
-                    href={article.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block bg-gray-900 rounded-lg p-3 sm:p-4 min-h-20 sm:min-h-24 hover:bg-gray-850 transition-colors border border-gray-700 hover:border-blue-500/50"
-                  >
-                    <h3 className="text-xs sm:text-sm font-semibold text-blue-400 mb-2 line-clamp-2">
-                      {article.title}
-                    </h3>
-                    <div className="flex items-center justify-between text-xs text-gray-400 gap-2">
-                      <span className="font-medium truncate">{article.source}</span>
-                      <span className="whitespace-nowrap">
-                        {getRelativeTime(article.published_at)}
-                      </span>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Understanding the Analysis */}
           <div className="mt-6 bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 sm:p-4">
             <h3 className="text-xs sm:text-sm font-semibold text-blue-200 mb-2">Understanding the Analysis</h3>
@@ -1290,8 +1284,43 @@ export default function StockAnalysis() {
         </div>
       )}
 
+      {/* Recent News */}
+      {news.length > 0 && (
+        <div className="mt-6 bg-gray-800 rounded-lg shadow p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base sm:text-lg font-semibold">Recent News for {searchTicker}</h2>
+            {lastUpdated && (
+              <span className="text-[10px] text-gray-500">
+                Updated {getRelativeTime(lastUpdated)}
+              </span>
+            )}
+          </div>
+          <div className="space-y-2 sm:space-y-3">
+            {news.map((article) => (
+              <a
+                key={article.id}
+                href={article.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block bg-gray-900 rounded-lg p-3 sm:p-4 min-h-20 sm:min-h-24 hover:bg-gray-850 transition-colors border border-gray-700 hover:border-blue-500/50"
+              >
+                <h3 className="text-xs sm:text-sm font-semibold text-blue-400 mb-2 line-clamp-2">
+                  {article.title}
+                </h3>
+                <div className="flex items-center justify-between text-xs text-gray-400 gap-2">
+                  <span className="font-medium truncate">{article.source}</span>
+                  <span className="whitespace-nowrap">
+                    {getRelativeTime(article.published_at)}
+                  </span>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Empty State */}
-      {!chartData && !loading && !error && (
+      {!chartData && !loading && !error && !projectionUnavailable && (
         <div className="bg-gray-800 rounded-lg p-12 text-center">
           <div className="text-gray-400 mb-4">
             <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
