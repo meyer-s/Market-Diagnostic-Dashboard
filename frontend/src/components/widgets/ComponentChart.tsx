@@ -7,6 +7,7 @@ interface ChartLine {
   stroke: string;
   strokeWidth?: number;
   conditional?: (data: any[]) => boolean; // Check if this line should render
+  connectNulls?: boolean;
 }
 
 interface ReferenceLineConfig {
@@ -80,7 +81,10 @@ export function ComponentChart({
             padding: "12px",
           }}
           labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
-          formatter={(value: number) => value.toFixed(2)}
+          formatter={(value: number | string | null | undefined) => {
+            const numeric = typeof value === "number" ? value : Number(value);
+            return Number.isFinite(numeric) ? numeric.toFixed(2) : "n/a";
+          }}
           labelFormatter={(label: number) => new Date(label).toLocaleDateString()}
         />
         {lines.map((line, idx) => {
@@ -98,6 +102,7 @@ export function ComponentChart({
               stroke={line.stroke}
               strokeWidth={line.strokeWidth || 2}
               dot={false}
+              connectNulls={line.connectNulls}
             />
           );
         })}

@@ -1755,6 +1755,18 @@ function MuniStressPanel({
     }
   };
 
+  const hasLineData = (rows: any[], dataKey: string, minPoints = 2) => {
+    let count = 0;
+    for (const row of rows) {
+      const value = row?.[dataKey];
+      if (Number.isFinite(value)) {
+        count += 1;
+        if (count >= minPoints) return true;
+      }
+    }
+    return false;
+  };
+
   const combined = React.useMemo(() => {
     const map = new Map<string, any>();
     data.series.forEach((series) => {
@@ -1781,6 +1793,10 @@ function MuniStressPanel({
   }, [data]);
 
   const { data: chartData, dateRange } = processComponentData(combined, chartRangeDays);
+  const missingSeries = data.series.filter((series) => !(series.history && series.history.length > 0));
+  const hasCurveLevel = hasLineData(chartData, "curve_level");
+  const hasCurveSlope = hasLineData(chartData, "curve_slope");
+  const hasCurveScore = hasLineData(chartData, "curve_score");
 
   return (
     <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-6">
@@ -1826,33 +1842,49 @@ function MuniStressPanel({
         ))}
       </div>
 
+      {missingSeries.length > 0 && (
+        <div className="text-[11px] text-stealth-500 mb-5">
+          No recent data available for: {missingSeries.map((series) => series.label).join(", ")}.
+        </div>
+      )}
+
       <div className="h-80 mb-6">
         <h4 className="text-sm font-semibold mb-2 text-stealth-200">Municipal Stress Stability Scores</h4>
-        <ComponentChart
-          data={chartData}
-          lines={[
-            ...data.series.map((series) => ({
-              dataKey: `${series.key}_score`,
-              name: series.label,
-              stroke: seriesColors(series.key),
-            })),
-            ...(data.curve && data.curve.status !== "unavailable"
-              ? [{
-                  dataKey: "curve_score",
-                  name: data.curve.label || "Muni Yield Curve",
-                  stroke: getFamilyColor("system"),
-                  strokeWidth: 3,
-                }]
-              : []),
-          ]}
-          referenceLines={[
-            { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
-            { y: 40, stroke: statePalette.red, label: "RED", labelFill: statePalette.red },
-          ]}
-          yAxisLabel="Stability Score (0-100)"
-          yAxisDomain={[0, 100]}
-          dateRange={dateRange}
-        />
+        {chartData.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-stealth-400">
+            No history available
+          </div>
+        ) : (
+          <ComponentChart
+            data={chartData}
+            lines={[
+              ...data.series.map((series) => ({
+                dataKey: `${series.key}_score`,
+                name: series.label,
+                stroke: seriesColors(series.key),
+                conditional: (rows) => hasLineData(rows, `${series.key}_score`),
+                connectNulls: true,
+              })),
+              ...(data.curve && data.curve.status !== "unavailable"
+                ? [{
+                    dataKey: "curve_score",
+                    name: data.curve.label || "Muni Yield Curve",
+                    stroke: getFamilyColor("system"),
+                    strokeWidth: 3,
+                    conditional: () => hasCurveScore,
+                    connectNulls: true,
+                  }]
+                : []),
+            ]}
+            referenceLines={[
+              { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
+              { y: 40, stroke: statePalette.red, label: "RED", labelFill: statePalette.red },
+            ]}
+            yAxisLabel="Stability Score (0-100)"
+            yAxisDomain={[0, 100]}
+            dateRange={dateRange}
+          />
+        )}
       </div>
 
       {data.curve?.status === "unavailable" ? (
@@ -1867,8 +1899,20 @@ function MuniStressPanel({
           <ComponentChart
             data={chartData}
             lines={[
-              { dataKey: "curve_level", name: "Long-End Level", stroke: getFamilyColor("rates") },
-              { dataKey: "curve_slope", name: "10y-2y Slope", stroke: getFamilyColor("growth") },
+              {
+                dataKey: "curve_level",
+                name: "Long-End Level",
+                stroke: getFamilyColor("rates"),
+                conditional: () => hasCurveLevel,
+                connectNulls: true,
+              },
+              {
+                dataKey: "curve_slope",
+                name: "10y-2y Slope",
+                stroke: getFamilyColor("growth"),
+                conditional: () => hasCurveSlope,
+                connectNulls: true,
+              },
             ]}
             yAxisLabel="Yield (%)"
             dateRange={dateRange}
