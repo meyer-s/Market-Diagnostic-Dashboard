@@ -11,6 +11,7 @@ import { formatDateTime } from "../utils/styleUtils";
 import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
+import MarketLoading from "../components/ui/MarketLoading";
 import {
   LineChart,
   Line,
@@ -183,6 +184,49 @@ interface AnalystAnxietyComponentData {
   };
 }
 
+interface MuniSeriesPoint {
+  date: string;
+  value: number | null;
+  score: number | null;
+}
+
+interface MuniSeries {
+  key: string;
+  label: string;
+  source?: string;
+  unit?: string;
+  is_proxy?: boolean;
+  notes?: string;
+  latest?: MuniSeriesPoint | null;
+  trend?: string;
+  history?: MuniSeriesPoint[];
+}
+
+interface MuniCurvePoint {
+  date: string;
+  yields?: Record<string, number | null>;
+  level?: number | null;
+  slope?: number | null;
+  score?: number | null;
+}
+
+interface MuniCurve {
+  label?: string;
+  source?: string;
+  notes?: string;
+  latest?: MuniCurvePoint | null;
+  trend?: string;
+  history?: MuniCurvePoint[];
+  status?: string;
+  reason?: string;
+}
+
+interface MuniSubsystemResponse {
+  as_of?: string;
+  series: MuniSeries[];
+  curve?: MuniCurve | null;
+}
+
 export default function IndicatorDetail() {
   const { code: routeCode } = useParams();
   const navigate = useNavigate();
@@ -192,6 +236,7 @@ export default function IndicatorDetail() {
   const isAnalystConfidence = apiCode === "ANALYST_ANXIETY";
   const [isRefetching, setIsRefetching] = React.useState(false);
   const [refetchMessage, setRefetchMessage] = React.useState<string | null>(null);
+  const [bondTab, setBondTab] = React.useState<"core" | "public">("core");
 
   React.useEffect(() => {
     if (normalizedCode === "ANALYST_ANXIETY") {
@@ -235,6 +280,11 @@ export default function IndicatorDetail() {
   const { data: sentimentCompositeComponents, refetch: refetchSentimentCompositeComponents } = useApi<SentimentCompositeComponentData[]>(
     apiCode === "SENTIMENT_COMPOSITE"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
+      : ""
+  );
+  const { data: muniSubsystem, loading: muniLoading, error: muniError } = useApi<MuniSubsystemResponse>(
+    apiCode === "BOND_MARKET_STABILITY"
+      ? `/indicators/${apiCode}/muni?days=${getHistoryDays()}`
       : ""
   );
 
@@ -526,8 +576,33 @@ export default function IndicatorDetail() {
         </div>
       )}
 
+      {apiCode === "BOND_MARKET_STABILITY" && (
+        <div className="mb-4 md:mb-6 border-b border-stealth-700 flex gap-4">
+          <button
+            onClick={() => setBondTab("core")}
+            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+              bondTab === "core"
+                ? "border-blue-500 text-blue-300"
+                : "border-transparent text-stealth-400 hover:text-gray-300"
+            }`}
+          >
+            Core Bond Stability
+          </button>
+          <button
+            onClick={() => setBondTab("public")}
+            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+              bondTab === "public"
+                ? "border-emerald-500 text-emerald-300"
+                : "border-transparent text-stealth-400 hover:text-gray-300"
+            }`}
+          >
+            Public-sector credit &amp; funding stress
+          </button>
+        </div>
+      )}
+
       {/* Component Breakdown for Bond Market Stability */}
-      {apiCode === "BOND_MARKET_STABILITY" && bondComponents && bondComponents.length > 0 && (
+      {apiCode === "BOND_MARKET_STABILITY" && bondTab === "core" && bondComponents && bondComponents.length > 0 && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
           <p className="text-xs md:text-sm text-stealth-400 mb-3 md:mb-4 break-all">
@@ -644,6 +719,15 @@ export default function IndicatorDetail() {
             })()}
           </div>
         </div>
+      )}
+
+      {apiCode === "BOND_MARKET_STABILITY" && bondTab === "public" && (
+        <MuniStressPanel
+          data={muniSubsystem}
+          loading={muniLoading}
+          error={muniError}
+          chartRangeDays={chartRange.days}
+        />
       )}
 
       {/* Component Breakdown for Liquidity Proxy */}
@@ -1598,6 +1682,199 @@ export default function IndicatorDetail() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MuniStressPanel({
+  data,
+  loading,
+  error,
+  chartRangeDays,
+}: {
+  data: MuniSubsystemResponse | null;
+  loading: boolean;
+  error: string | null;
+  chartRangeDays: number;
+}) {
+  if (loading) {
+    return (
+      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 mb-6">
+        <div className="flex justify-center py-6">
+          <MarketLoading size={90} variant="pulse" label="Loading municipal stress data..." />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-900/20 border border-red-700 text-red-200 p-4 rounded mb-6">
+        Error loading municipal subsystem: {error}
+      </div>
+    );
+  }
+
+  if (!data || !data.series || data.series.length === 0) {
+    return (
+      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 mb-6">
+        <div className="text-stealth-400">No municipal subsystem data available.</div>
+      </div>
+    );
+  }
+
+  const formatValue = (value: number | null | undefined, unit?: string) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return "n/a";
+    if (unit === "percent") return `${value.toFixed(2)}%`;
+    return value.toFixed(2);
+  };
+
+  const trendClass = (trend?: string) => {
+    switch (trend) {
+      case "improving":
+        return "text-green-400";
+      case "deteriorating":
+        return "text-red-400";
+      case "stable":
+        return "text-stealth-300";
+      default:
+        return "text-stealth-500";
+    }
+  };
+
+  const seriesColors = (key: string) => {
+    switch (key) {
+      case "revdex_proxy":
+        return getFamilyColor("credit");
+      case "bond_buyer_go_20":
+        return getFamilyColor("rates");
+      case "sifma_swap":
+        return getFamilyColor("liquidity");
+      default:
+        return getFamilyColor("system");
+    }
+  };
+
+  const combined = React.useMemo(() => {
+    const map = new Map<string, any>();
+    data.series.forEach((series) => {
+      series.history?.forEach((point) => {
+        if (!point?.date) return;
+        const existing = map.get(point.date) || { date: point.date };
+        existing[`${series.key}_score`] = point.score;
+        map.set(point.date, existing);
+      });
+    });
+
+    if (data.curve?.history) {
+      data.curve.history.forEach((point) => {
+        if (!point?.date) return;
+        const existing = map.get(point.date) || { date: point.date };
+        existing.curve_score = point.score;
+        existing.curve_level = point.level;
+        existing.curve_slope = point.slope;
+        map.set(point.date, existing);
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) => (a.date > b.date ? 1 : -1));
+  }, [data]);
+
+  const { data: chartData, dateRange } = processComponentData(combined, chartRangeDays);
+
+  return (
+    <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-6">
+      <div className="flex items-start justify-between flex-col gap-2 md:flex-row md:items-center mb-4">
+        <div>
+          <h3 className="text-lg md:text-xl font-semibold text-stealth-100">
+            Public-sector credit &amp; funding stress
+          </h3>
+          <p className="text-xs md:text-sm text-stealth-400 mt-1 max-w-3xl">
+            This layer answers a simple question: <em>Is stress building in the parts of the system that are supposed to be boring?</em>
+            If equities wobble without muni stress → noise. If muni stress rises before equities react → signal.
+          </p>
+        </div>
+        {data.as_of && (
+          <div className="text-xs text-stealth-500">As of {data.as_of}</div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
+        {data.series.map((series) => (
+          <div key={series.key} className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-stealth-400 mb-1">{series.label}</div>
+              {series.is_proxy && (
+                <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                  proxy
+                </span>
+              )}
+            </div>
+            <div className="text-lg font-bold" style={{ color: seriesColors(series.key) }}>
+              {formatValue(series.latest?.value ?? null, series.unit)}
+            </div>
+            <div className="text-xs text-stealth-500 mt-1">
+              Stability: {series.latest?.score !== null && series.latest?.score !== undefined ? series.latest?.score.toFixed(0) : "n/a"}
+            </div>
+            <div className={`text-xs mt-1 ${trendClass(series.trend)}`}>
+              Trend: {series.trend || "n/a"}
+            </div>
+            {series.notes && (
+              <div className="text-[11px] text-stealth-500 mt-2">{series.notes}</div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="h-80 mb-6">
+        <h4 className="text-sm font-semibold mb-2 text-stealth-200">Municipal Stress Stability Scores</h4>
+        <ComponentChart
+          data={chartData}
+          lines={[
+            ...data.series.map((series) => ({
+              dataKey: `${series.key}_score`,
+              name: series.label,
+              stroke: seriesColors(series.key),
+            })),
+            ...(data.curve && data.curve.status !== "unavailable"
+              ? [{
+                  dataKey: "curve_score",
+                  name: data.curve.label || "Muni Yield Curve",
+                  stroke: getFamilyColor("system"),
+                  strokeWidth: 3,
+                }]
+              : []),
+          ]}
+          referenceLines={[
+            { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
+            { y: 40, stroke: statePalette.red, label: "RED", labelFill: statePalette.red },
+          ]}
+          yAxisLabel="Stability Score (0-100)"
+          yAxisDomain={[0, 100]}
+          dateRange={dateRange}
+        />
+      </div>
+
+      {data.curve?.status === "unavailable" ? (
+        <div className="bg-stealth-900 border border-stealth-600 rounded p-4 text-xs text-stealth-400">
+          Yield curve data unavailable: {data.curve.reason}
+        </div>
+      ) : data.curve?.history && data.curve.history.length > 0 ? (
+        <div className="h-80">
+          <h4 className="text-sm font-semibold mb-2 text-stealth-200">
+            Municipal Yield Curve Structure (Level &amp; Slope)
+          </h4>
+          <ComponentChart
+            data={chartData}
+            lines={[
+              { dataKey: "curve_level", name: "Long-End Level", stroke: getFamilyColor("rates") },
+              { dataKey: "curve_slope", name: "10y-2y Slope", stroke: getFamilyColor("growth") },
+            ]}
+            yAxisLabel="Yield (%)"
+            dateRange={dateRange}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

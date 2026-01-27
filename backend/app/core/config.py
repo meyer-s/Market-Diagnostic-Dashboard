@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     COMEX_OPEN_INTEREST_PATH: Optional[str] = None
     COMEX_SOURCE: Optional[str] = None
     COMEX_ALLOW_ESTIMATES: Optional[str] = None
+    SIFMA_SWAP_URL: Optional[str] = None
+    EMMA_YIELD_CURVE_URL: Optional[str] = None
+    EMMA_YIELD_CURVE_PATH: Optional[str] = None
 
     class Config:
         env_file = ".env"

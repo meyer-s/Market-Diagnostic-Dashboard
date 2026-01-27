@@ -10,6 +10,7 @@ from app.utils.response_helpers import (
     format_indicator_detail,
     format_indicator_history,
 )
+from app.services.muni_data import get_muni_subsystem
 from app.models.virtual_indicator import VirtualIndicator
 from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 from app.models.system_status import SystemStatus
@@ -373,6 +374,16 @@ async def get_bond_composite_components(days: int = 365):
         })
     
     return result
+
+
+@router.get("/indicators/BOND_MARKET_STABILITY/muni")
+async def get_bond_muni_subsystem(days: int = 365):
+    """
+    Return municipal credit & funding stress subsystem data.
+    Includes Revdex proxy, Bond Buyer GO 20, SIFMA swap index,
+    and (optionally) EMMA yield curve metrics.
+    """
+    return await get_muni_subsystem(days=days)
 
 
 @router.get("/indicators/LIQUIDITY_PROXY/components")
