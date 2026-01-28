@@ -60,6 +60,10 @@ class ETLRunner:
             db.close()
             raise ValueError(f"Indicator {code} not found in DB")
 
+        if code == "AAP":
+            db.close()
+            return await self._ingest_aap(backfill_days)
+
         # Pull enough data for normalization + backfill
         lookback_days = max(800, backfill_days + ind.lookback_days_for_z)
         start_date = (datetime.utcnow() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
@@ -1105,6 +1109,57 @@ class ETLRunner:
                 "score": latest_score,
                 "state": latest_state
             }
+
+    async def _ingest_aap(self, backfill_days: int = 0):
+        from sqlalchemy import desc, func
+        from app.services.ingestion.aap_data_ingestion import run_daily_ingestion
+        from app.services.aap_calculator import AAPCalculator
+
+        run_daily_ingestion()
+
+        db: Session = SessionLocal()
+        try:
+            calculator = AAPCalculator(db)
+            backfilled = 0
+            latest_indicator = None
+
+            if backfill_days > 0:
+                start = datetime.utcnow().date() - timedelta(days=backfill_days - 1)
+                for offset in range(backfill_days):
+                    target_date = datetime.combine(start + timedelta(days=offset), datetime.min.time())
+                    result = calculator.calculate_for_date(target_date)
+                    if result:
+                        backfilled += 1
+                        latest_indicator = result
+            else:
+                latest_indicator = calculator.calculate_for_date(datetime.utcnow())
+
+            if not latest_indicator:
+                return {"indicator": "AAP", "error": "AAP calculation skipped - insufficient data"}
+
+            aap_indicator_def = db.query(Indicator).filter_by(code="AAP").first()
+            indicator_value = None
+            if aap_indicator_def:
+                indicator_value = (
+                    db.query(IndicatorValue)
+                    .filter(
+                        IndicatorValue.indicator_id == aap_indicator_def.id,
+                        func.date(IndicatorValue.timestamp) == latest_indicator.date.date(),
+                    )
+                    .order_by(desc(IndicatorValue.timestamp))
+                    .first()
+                )
+
+            return {
+                "indicator": "AAP",
+                "date": latest_indicator.date.date().isoformat(),
+                "raw": indicator_value.raw_value if indicator_value else latest_indicator.pressure_index,
+                "score": indicator_value.score if indicator_value else latest_indicator.stability_score,
+                "state": indicator_value.state if indicator_value else None,
+                **({"backfilled": backfilled} if backfill_days > 0 else {}),
+            }
+        finally:
+            db.close()
 
     async def ingest_all_indicators(self, backfill_days: int = 0):
         """
