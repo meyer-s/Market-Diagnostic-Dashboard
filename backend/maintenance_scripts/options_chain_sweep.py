@@ -9,6 +9,7 @@ from app.api.stock_projection import compute_historical_volatility, compute_opti
 from app.services.options_alerts import (
     _build_alert_reason,
     _compute_option_bias,
+    _compute_horizon_bias,
     _direction_hint,
     _format_alert_message,
     _is_iv_data_valid,
@@ -77,7 +78,7 @@ def _scan_tickers(
             if current_price is None:
                 continue
 
-            history = stock.history(period="6mo")
+            history = stock.history(period="1y")
             hv30 = compute_historical_volatility(history, 30) if history is not None else None
             metrics = compute_optionality_metrics(stock, current_price, hv30)
             iv_percentile = metrics.get("iv_percentile")
@@ -92,6 +93,7 @@ def _scan_tickers(
 
             reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold, bias, votes)
             direction, direction_reason = _direction_hint(history)
+            horizon_labels, horizon_returns = _compute_horizon_bias(history)
             message = _format_alert_message(
                 label,
                 symbol,
@@ -105,6 +107,8 @@ def _scan_tickers(
                 direction,
                 direction_reason,
                 threshold,
+                horizon_labels,
+                horizon_returns,
             )
             delivered, channel, error = _send_webhook(message)
             with get_db_session() as db:

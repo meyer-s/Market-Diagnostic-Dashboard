@@ -146,6 +146,68 @@ def _direction_hint(history: Optional[pd.DataFrame]) -> tuple[str, str]:
     return "Neutral", f"{ret_window}d return {ret:.1f}%"
 
 
+def _compute_horizon_bias(
+    history: Optional[pd.DataFrame],
+) -> tuple[dict[str, str], dict[str, Optional[float]]]:
+    if history is None or history.empty:
+        return {}, {}
+    close = history.get("Close")
+    if close is None:
+        return {}, {}
+    close = close.dropna()
+    if close.empty:
+        return {}, {}
+
+    current = float(close.iloc[-1])
+    labels: dict[str, str] = {}
+    returns: dict[str, Optional[float]] = {}
+
+    for horizon, window in HORIZON_WINDOWS.items():
+        if len(close) <= window:
+            labels[horizon] = "n/a"
+            returns[horizon] = None
+            continue
+        past = float(close.iloc[-(window + 1)])
+        if past == 0:
+            labels[horizon] = "n/a"
+            returns[horizon] = None
+            continue
+        ret = (current / past - 1) * 100
+        returns[horizon] = round(ret, 1)
+        labels[horizon] = "Bullish" if ret >= 0 else "Bearish"
+
+    return labels, returns
+
+
+def _format_horizon_lines(
+    labels: Optional[dict[str, str]],
+    returns: Optional[dict[str, Optional[float]]],
+) -> list[str]:
+    if not labels:
+        return []
+    returns = returns or {}
+    lines = []
+    for horizon in HORIZON_WINDOWS.keys():
+        label = labels.get(horizon, "n/a")
+        ret_val = returns.get(horizon)
+        ret_text = f"{ret_val:+.1f}%" if ret_val is not None else "n/a"
+        lines.append(f"- **{horizon}**: {label} ({ret_text})")
+    return lines
+
+
+def _format_horizon_summary(labels: Optional[dict[str, str]]) -> str:
+    if not labels:
+        return "n/a"
+    parts = []
+    for horizon in HORIZON_WINDOWS.keys():
+        label = labels.get(horizon)
+        if not label or label == "n/a":
+            parts.append(f"{horizon} n/a")
+        else:
+            parts.append(f"{horizon} {label}")
+    return " | ".join(parts)
+
+
 def _format_value(value: Optional[float], digits: int = 1) -> str:
     return f"{value:.{digits}f}" if value is not None else "n/a"
 
@@ -163,14 +225,17 @@ def _format_alert_message(
     direction: str,
     direction_reason: str,
     threshold: Optional[float],
+    horizon_labels: Optional[dict[str, str]] = None,
+    horizon_returns: Optional[dict[str, Optional[float]]] = None,
 ) -> str:
     threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
     direction_label = "Neutral"
     if direction.lower() == "calls":
-        direction_label = "Bullish"
+        direction_label = "Short-term Bullish"
     elif direction.lower() == "puts":
-        direction_label = "Bearish"
+        direction_label = "Short-term Bearish"
     votes_text = ", ".join(votes) if votes else "n/a"
+    horizon_lines = _format_horizon_lines(horizon_labels, horizon_returns)
     lines = [
         "---",
         f"**{symbol}** — {label}",
@@ -186,6 +251,7 @@ def _format_alert_message(
         "",
         "**Directional Bias**",
         f"- **{direction_label}** — {direction_reason}",
+        *horizon_lines,
         "---",
     ]
     return "\n".join(lines)
@@ -215,7 +281,7 @@ def run_options_alert_scan() -> dict:
                 if current_price is None:
                     continue
 
-                hist = stock.history(period="6mo")
+                hist = stock.history(period="1y")
                 hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
                 metrics = compute_optionality_metrics(stock, current_price, hv30)
                 iv_percentile = metrics.get("iv_percentile")
@@ -238,6 +304,7 @@ def run_options_alert_scan() -> dict:
                     votes,
                 )
                 direction, direction_reason = _direction_hint(hist)
+                horizon_labels, horizon_returns = _compute_horizon_bias(hist)
                 if watch.last_triggered_at:
                     cooldown = timedelta(minutes=watch.cooldown_minutes or 0)
                     if datetime.utcnow() - watch.last_triggered_at < cooldown:
@@ -256,6 +323,8 @@ def run_options_alert_scan() -> dict:
                     direction,
                     direction_reason,
                     watch.iv_percentile_max,
+                    horizon_labels,
+                    horizon_returns,
                 )
 
                 delivered, channel, error = _send_webhook(message)
@@ -279,3 +348,9 @@ def run_options_alert_scan() -> dict:
                 results["errors"] += 1
                 db.rollback()
     return results
+HORIZON_WINDOWS = {
+    "1m": 21,
+    "3m": 63,
+    "6m": 126,
+    "1y+": 252,
+}

@@ -14,8 +14,9 @@ from app.api.stock_projection import compute_historical_volatility, compute_opti
 from app.services.options_alerts import (
     _build_alert_reason,
     _compute_option_bias,
+    _compute_horizon_bias,
     _direction_hint,
-    _format_alert_message,
+    _format_horizon_summary,
     _get_current_price,
     _is_iv_data_valid,
 )
@@ -97,7 +98,7 @@ def _scan_tickers_for_discord(
             if current_price is None:
                 continue
             
-            history = stock.history(period="6mo")
+            history = stock.history(period="1y")
             hv30 = compute_historical_volatility(history, 30) if history is not None else None
             metrics = compute_optionality_metrics(stock, current_price, hv30)
             iv_percentile = metrics.get("iv_percentile")
@@ -112,6 +113,7 @@ def _scan_tickers_for_discord(
             
             # Found a hit!
             direction, direction_reason = _direction_hint(history)
+            horizon_labels, horizon_returns = _compute_horizon_bias(history)
             
             alerts.append({
                 "symbol": symbol,
@@ -121,6 +123,8 @@ def _scan_tickers_for_discord(
                 "iv_percentile": iv_percentile,
                 "bias": bias,
                 "direction": direction,
+                "horizon_labels": horizon_labels,
+                "horizon_returns": horizon_returns,
                 "votes": votes
             })
             
@@ -162,7 +166,7 @@ def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, sca
             f"Price: ${alert['price']:.2f}",
             f"IV: {alert['iv30']:.1f}% | HV: {alert.get('hv30', 0):.1f}%",
             f"IV Percentile: {alert['iv_percentile']:.1f}%",
-            f"Direction: {alert['direction']}"
+            f"Direction: {_format_horizon_summary(alert.get('horizon_labels'))}",
         ]
         fields.append({
             "name": f"📈 {alert['symbol']}",
