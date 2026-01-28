@@ -10,6 +10,7 @@ import { prepareExtendedComponentData } from "../utils/indicatorDetailHelpers";
 import { formatDateTime } from "../utils/styleUtils";
 import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
+import { muniPublicSectorThresholds, muniPublicSectorWeights } from "../theme/metricRegistry";
 import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
 import {
@@ -64,6 +65,7 @@ interface BondComponentData {
     hy_oas: number;
     ig_oas: number;
     stress_score: number;
+    stability_score: number;
     weight: number;
     contribution: number;
   };
@@ -72,6 +74,7 @@ interface BondComponentData {
     spread_10y3m: number;
     spread_30y5y: number;
     stress_score: number;
+    stability_score: number;
     weight: number;
     contribution: number;
   };
@@ -79,17 +82,20 @@ interface BondComponentData {
     roc_2y: number;
     roc_10y: number;
     stress_score: number;
+    stability_score: number;
     weight: number;
     contribution: number;
   };
   treasury_volatility_stress: {
     calculated_volatility: number;
     stress_score: number;
+    stability_score: number;
     weight: number;
     contribution: number;
   };
   composite: {
     stress_score: number;
+    stability_score: number;
   };
 }
 
@@ -187,19 +193,27 @@ interface AnalystAnxietyComponentData {
 interface MuniSeriesPoint {
   date: string;
   value: number | null;
-  score: number | null;
+  stability_score: number | null;
+  z_score?: number | null;
 }
 
 interface MuniSeries {
   key: string;
+  name?: string;
   label: string;
   source?: string;
   unit?: string;
   is_proxy?: boolean;
+  is_live?: boolean;
+  as_of?: string | null;
   notes?: string;
   latest?: MuniSeriesPoint | null;
   trend?: string;
   history?: MuniSeriesPoint[];
+  stress_cues?: {
+    stress_level?: "normal" | "stress" | "severe";
+    [key: string]: any;
+  };
 }
 
 interface MuniCurvePoint {
@@ -224,6 +238,16 @@ interface MuniCurve {
 interface MuniSubsystemResponse {
   as_of?: string;
   series: MuniSeries[];
+  composite?: {
+    score: number | null;
+    state: "GREEN" | "YELLOW" | "RED" | "UNKNOWN";
+    as_of?: string;
+    coverage_live: number;
+    coverage_total: number;
+    missing_keys: string[];
+    weights_used: Record<string, number>;
+    near_threshold?: "GREEN" | "RED" | null;
+  };
   curve?: MuniCurve | null;
 }
 
@@ -606,7 +630,7 @@ export default function IndicatorDetail() {
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
           <p className="text-xs md:text-sm text-stealth-400 mb-3 md:mb-4 break-all">
-            Composite Stress = (Credit x 44%) + (Curve x 23%) + (Momentum x 17%) + (Volatility x 16%)
+            Composite Stability = 100 - (Credit x 44% + Curve x 23% + Momentum x 17% + Volatility x 16%)
           </p>
           
           {/* Latest Component Values */}
@@ -614,7 +638,7 @@ export default function IndicatorDetail() {
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Credit Spreads</div>
               <div className="text-lg font-bold text-red-400">
-                {bondComponents[bondComponents.length - 1].credit_spread_stress.stress_score.toFixed(1)}
+                {bondComponents[bondComponents.length - 1].credit_spread_stress.stability_score.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
                 Weight: {(bondComponents[bondComponents.length - 1].credit_spread_stress.weight * 100).toFixed(0)}%
@@ -627,7 +651,7 @@ export default function IndicatorDetail() {
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Yield Curves</div>
               <div className="text-lg font-bold text-yellow-400">
-                {bondComponents[bondComponents.length - 1].yield_curve_stress.stress_score.toFixed(1)}
+                {bondComponents[bondComponents.length - 1].yield_curve_stress.stability_score.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
                 Weight: {(bondComponents[bondComponents.length - 1].yield_curve_stress.weight * 100).toFixed(0)}%
@@ -640,7 +664,7 @@ export default function IndicatorDetail() {
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Rates Momentum</div>
               <div className="text-lg font-bold text-orange-400">
-                {bondComponents[bondComponents.length - 1].rates_momentum_stress.stress_score.toFixed(1)}
+                {bondComponents[bondComponents.length - 1].rates_momentum_stress.stability_score.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
                 Weight: {(bondComponents[bondComponents.length - 1].rates_momentum_stress.weight * 100).toFixed(0)}%
@@ -653,7 +677,7 @@ export default function IndicatorDetail() {
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Treasury Vol</div>
               <div className="text-lg font-bold text-purple-400">
-                {bondComponents[bondComponents.length - 1].treasury_volatility_stress.stress_score.toFixed(1)}
+                {bondComponents[bondComponents.length - 1].treasury_volatility_stress.stability_score.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
                 Weight: {(bondComponents[bondComponents.length - 1].treasury_volatility_stress.weight * 100).toFixed(0)}%
@@ -664,11 +688,11 @@ export default function IndicatorDetail() {
             </div>
           </div>
 
-          {/* Component Stress Levels Chart - Internal Metrics */}
+          {/* Component Stability Levels Chart */}
           <div className="h-80 mb-6">
-            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Component Stress Levels Over Time (Internal Metrics)</h4>
+            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Component Stability Levels Over Time</h4>
             <p className="text-xs text-stealth-400 mb-2">
-              Note: These are intermediate stress calculations. Lower component stress contributes to higher final stability scores.
+              Note: Higher component stability contributes to a stronger overall stability score.
             </p>
             {(() => {
               const { data, dateRange } = processComponentData(bondComponents, chartRange.days);
@@ -677,47 +701,47 @@ export default function IndicatorDetail() {
                 <ComponentChart
                   data={data}
                   lines={[
-                    { dataKey: "credit_spread_stress.stress_score", name: "Credit Spreads", stroke: getMetricColor("credit_spread_stress") },
-                    { dataKey: "yield_curve_stress.stress_score", name: "Yield Curves", stroke: getMetricColor("yield_curve_stress") },
-                    { dataKey: "rates_momentum_stress.stress_score", name: "Rates Momentum", stroke: getMetricColor("rates_momentum_stress", "muted") },
-                    { dataKey: "treasury_volatility_stress.stress_score", name: "Treasury Volatility", stroke: getMetricColor("treasury_volatility_stress") }
+                    { dataKey: "credit_spread_stress.stability_score", name: "Credit Spreads", stroke: getMetricColor("credit_spread_stress") },
+                    { dataKey: "yield_curve_stress.stability_score", name: "Yield Curves", stroke: getMetricColor("yield_curve_stress") },
+                    { dataKey: "rates_momentum_stress.stability_score", name: "Rates Momentum", stroke: getMetricColor("rates_momentum_stress", "muted") },
+                    { dataKey: "treasury_volatility_stress.stability_score", name: "Treasury Volatility", stroke: getMetricColor("treasury_volatility_stress") }
                   ]}
                   referenceLines={[
-                    { y: 65, stroke: statePalette.red, label: "HIGH", labelFill: statePalette.red },
-                    { y: 35, stroke: statePalette.green, label: "LOW", labelFill: statePalette.green }
+                    { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
+                    { y: 40, stroke: statePalette.red, label: "RED", labelFill: statePalette.red }
                   ]}
-                  yAxisLabel="Stress Level (0-100, inverted for final score)"
+                  yAxisLabel="Stability Score (0-100)"
                   dateRange={dateRange}
                 />
               );
             })()}
           </div>
 
-          {/* Composite Stress Calculation - Internal Metric */}
-          <div className="h-80">
-            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Composite Stress Score (Internal Calculation)</h4>
-            <p className="text-xs text-stealth-400 mb-2">
-              Note: This intermediate stress score is inverted to produce the final stability score (higher stress here = lower stability score).
-            </p>
-            {(() => {
-              const { data, dateRange } = processComponentData(bondComponents, chartRange.days);
-              
-              return (
-                <ComponentChart
-                  data={data}
-                  lines={[
-                    { dataKey: "composite.stress_score", name: "Composite Stress", stroke: getFamilyColor("system"), strokeWidth: 3 }
-                  ]}
-                  referenceLines={[
-                    { y: 65, stroke: statePalette.red, label: "HIGH STRESS", labelFill: statePalette.red },
-                    { y: 35, stroke: statePalette.green, label: "LOW STRESS", labelFill: statePalette.green }
-                  ]}
-                  yAxisLabel="Composite Stress Score"
-                  dateRange={dateRange}
-                />
-              );
-            })()}
-          </div>
+            {/* Composite Stability Calculation */}
+            <div className="h-80">
+              <h4 className="text-sm font-semibold mb-2 text-stealth-200">Composite Stability Score</h4>
+              <p className="text-xs text-stealth-400 mb-2">
+                Note: Composite stability aggregates the component stability readings over time.
+              </p>
+              {(() => {
+                const { data, dateRange } = processComponentData(bondComponents, chartRange.days);
+                
+                return (
+                  <ComponentChart
+                    data={data}
+                    lines={[
+                      { dataKey: "composite.stability_score", name: "Composite Stability", stroke: getFamilyColor("system"), strokeWidth: 3 }
+                    ]}
+                    referenceLines={[
+                      { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
+                      { y: 40, stroke: statePalette.red, label: "RED", labelFill: statePalette.red }
+                    ]}
+                    yAxisLabel="Composite Stability Score"
+                    dateRange={dateRange}
+                  />
+                );
+              })()}
+            </div>
         </div>
       )}
 
@@ -1744,12 +1768,14 @@ function MuniStressPanel({
 
   const seriesColors = (key: string) => {
     switch (key) {
-      case "revdex_proxy":
+      case "MUNI_LONG_SPREAD":
         return getFamilyColor("credit");
-      case "bond_buyer_go_20":
-        return getFamilyColor("rates");
-      case "sifma_swap":
+      case "SIFMA_INDEX":
         return getFamilyColor("liquidity");
+      case "MUNI_CURVE_SLOPE_STABILITY":
+        return getFamilyColor("rates");
+      case "MUNI_LEVEL_STRESS":
+        return getFamilyColor("system");
       default:
         return getFamilyColor("system");
     }
@@ -1767,13 +1793,25 @@ function MuniStressPanel({
     return false;
   };
 
+  const orderedSeries = React.useMemo(() => {
+    const weightMap = muniPublicSectorWeights;
+    return [...data.series].sort((a, b) => {
+      const weightA = weightMap[a.key as keyof typeof weightMap] ?? 0;
+      const weightB = weightMap[b.key as keyof typeof weightMap] ?? 0;
+      if ((a.is_live ?? true) !== (b.is_live ?? true)) {
+        return (b.is_live ? 1 : 0) - (a.is_live ? 1 : 0);
+      }
+      return weightB - weightA;
+    });
+  }, [data.series]);
+
   const combined = React.useMemo(() => {
     const map = new Map<string, any>();
     data.series.forEach((series) => {
       series.history?.forEach((point) => {
         if (!point?.date) return;
         const existing = map.get(point.date) || { date: point.date };
-        existing[`${series.key}_score`] = point.score;
+        existing[`${series.key}_score`] = point.stability_score;
         map.set(point.date, existing);
       });
     });
@@ -1803,38 +1841,95 @@ function MuniStressPanel({
       <div className="flex items-start justify-between flex-col gap-2 md:flex-row md:items-center mb-4">
         <div>
           <h3 className="text-lg md:text-xl font-semibold text-stealth-100">
-            Public-sector credit &amp; funding stress
+            Public-sector credit &amp; funding stability
           </h3>
           <p className="text-xs md:text-sm text-stealth-400 mt-1 max-w-3xl">
-            This layer answers a simple question: <em>Is stress building in the parts of the system that are supposed to be boring?</em>
-            If equities wobble without muni stress → noise. If muni stress rises before equities react → signal.
+            This layer answers a simple question: <em>Is stability holding in the parts of the system that are supposed to be boring?</em>
+            If equities wobble while muni stability holds → noise. If muni stability erodes before equities react → signal.
           </p>
         </div>
-        {data.as_of && (
-          <div className="text-xs text-stealth-500">As of {data.as_of}</div>
-        )}
+        <div className="text-xs text-stealth-500">
+          {data.as_of && <div>As of {data.as_of}</div>}
+          {data.composite && (
+            <div className="mt-1">
+              Coverage: {data.composite.coverage_live}/{data.composite.coverage_total}
+              {data.composite.missing_keys?.length > 0 && (
+                <span className="text-amber-400"> (missing: {data.composite.missing_keys.join(", ")})</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
+      {data.composite && (
+        <div className="bg-stealth-900 border border-stealth-600 rounded p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-stealth-400">Composite Stability</div>
+            <div className="text-xs text-stealth-500">
+              Green ≥ {muniPublicSectorThresholds.green}, Yellow ≥ {muniPublicSectorThresholds.yellow}
+            </div>
+          </div>
+          <div className="flex items-baseline gap-3 mt-1">
+            <div className="text-2xl font-bold text-stealth-100">
+              {data.composite.score !== null && data.composite.score !== undefined
+                ? data.composite.score.toFixed(1)
+                : "n/a"}
+            </div>
+            <div
+              className={`text-sm font-semibold ${
+                data.composite.state === "GREEN"
+                  ? "text-green-400"
+                  : data.composite.state === "YELLOW"
+                  ? "text-yellow-400"
+                  : data.composite.state === "RED"
+                  ? "text-red-400"
+                  : "text-stealth-400"
+              }`}
+            >
+              {data.composite.state}
+              {data.composite.near_threshold ? " ±" : ""}
+            </div>
+          </div>
+          {data.composite.near_threshold && (
+            <div className="text-xs text-amber-400 mt-1">
+              Near {data.composite.near_threshold} boundary
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
-        {data.series.map((series) => (
+        {orderedSeries.map((series) => (
           <div key={series.key} className="bg-stealth-900 border border-stealth-600 rounded p-4">
             <div className="flex items-center justify-between">
               <div className="text-xs text-stealth-400 mb-1">{series.label}</div>
-              {series.is_proxy && (
+              <div className="flex items-center gap-2">
+                {series.is_live === false && (
+                  <span className="text-[10px] text-stealth-300 bg-stealth-500/10 border border-stealth-500/30 px-2 py-0.5 rounded-full">
+                    archived
+                  </span>
+                )}
+                {series.is_proxy && (
                 <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
                   proxy
                 </span>
-              )}
+                )}
+              </div>
             </div>
             <div className="text-lg font-bold" style={{ color: seriesColors(series.key) }}>
               {formatValue(series.latest?.value ?? null, series.unit)}
             </div>
             <div className="text-xs text-stealth-500 mt-1">
-              Stability: {series.latest?.score !== null && series.latest?.score !== undefined ? series.latest?.score.toFixed(0) : "n/a"}
+              Stability: {series.latest?.stability_score !== null && series.latest?.stability_score !== undefined ? series.latest?.stability_score.toFixed(0) : "n/a"}
             </div>
             <div className={`text-xs mt-1 ${trendClass(series.trend)}`}>
               Trend: {series.trend || "n/a"}
             </div>
+            {series.stress_cues?.stress_level && series.stress_cues.stress_level !== "normal" && (
+              <div className={`text-[11px] mt-1 ${series.stress_cues.stress_level === "severe" ? "text-red-400" : "text-amber-300"}`}>
+                {series.stress_cues.stress_level === "severe" ? "Severe stress cue" : "Stress cue"}
+              </div>
+            )}
             {series.notes && (
               <div className="text-[11px] text-stealth-500 mt-2">{series.notes}</div>
             )}
@@ -1848,8 +1943,22 @@ function MuniStressPanel({
         </div>
       )}
 
+      <div className="bg-stealth-900 border border-stealth-700 rounded p-4 mb-6 text-xs text-stealth-400">
+        <div className="text-stealth-200 font-semibold mb-2">Methodology (summary)</div>
+        <div>
+          Components &amp; default weights: Spread {(muniPublicSectorWeights.MUNI_LONG_SPREAD * 100).toFixed(0)}% ·
+          SIFMA {(muniPublicSectorWeights.SIFMA_INDEX * 100).toFixed(0)}% · Slope Stability {(muniPublicSectorWeights.MUNI_CURVE_SLOPE_STABILITY * 100).toFixed(0)}% ·
+          Level Stress {(muniPublicSectorWeights.MUNI_LEVEL_STRESS * 100).toFixed(0)}%.
+          Missing live inputs are dropped and remaining weights re-normalized.
+        </div>
+        <div className="mt-2">
+          Stability scoring uses rolling z-scores with direction adjustment, mapped to 0–100.
+          Composite states: Green ≥ {muniPublicSectorThresholds.green}, Yellow ≥ {muniPublicSectorThresholds.yellow}, Red &lt; {muniPublicSectorThresholds.yellow}.
+        </div>
+      </div>
+
       <div className="h-80 mb-6">
-        <h4 className="text-sm font-semibold mb-2 text-stealth-200">Municipal Stress Stability Scores</h4>
+        <h4 className="text-sm font-semibold mb-2 text-stealth-200">Municipal Stability Scores</h4>
         {chartData.length === 0 ? (
           <div className="flex items-center justify-center h-full text-stealth-400">
             No history available

@@ -13,6 +13,13 @@ import xml.etree.ElementTree as ET
 import httpx
 
 from app.core.config import settings
+from app.core.indicator_constants import (
+    MUNI_PUBLIC_SECTOR_COMPONENTS,
+    MUNI_PUBLIC_SECTOR_COVERAGE_TOTAL,
+    MUNI_PUBLIC_SECTOR_NEAR_THRESHOLD_DELTA,
+    MUNI_PUBLIC_SECTOR_STRESS_CUES,
+    MUNI_PUBLIC_SECTOR_THRESHOLDS,
+)
 from app.services.analytics_stub import compute_z_scores, direction_adjusted, map_z_to_score
 from app.services.ingestion.fred_client import FredClient
 from app.utils.data_helpers import series_to_dict, find_common_dates
@@ -83,13 +90,70 @@ def _parse_sifma_xlsx(content: bytes) -> List[Dict[str, Any]]:
     return results
 
 
-def _compute_scores(values: List[float], direction: int) -> List[int]:
+def _compute_scores(values: List[float], direction: int, lookback: int) -> List[int]:
     if not values:
         return []
-    lookback = min(252, len(values))
+    lookback = min(lookback, len(values))
     z_scores = compute_z_scores(values, lookback=lookback)
     adjusted = direction_adjusted(z_scores, direction)
     return [map_z_to_score(z) for z in adjusted]
+
+
+def _compute_z_scores(values: List[float], lookback: int) -> List[float]:
+    if not values:
+        return []
+    lookback = min(lookback, len(values))
+    return compute_z_scores(values, lookback=lookback)
+
+
+def _infer_series_lookback(dates: List[str], default_daily: int = 252, default_weekly: int = 104) -> int:
+    if len(dates) < 3:
+        return default_daily
+    parsed = []
+    for d in dates[-10:]:
+        parsed_date = _parse_date(d)
+        if parsed_date:
+            parsed.append(parsed_date)
+    if len(parsed) < 3:
+        return default_daily
+    deltas = [
+        (parsed[i] - parsed[i - 1]).days
+        for i in range(1, len(parsed))
+        if (parsed[i] - parsed[i - 1]).days > 0
+    ]
+    if not deltas:
+        return default_daily
+    median_delta = sorted(deltas)[len(deltas) // 2]
+    return default_weekly if median_delta >= 6 else default_daily
+
+
+def _compute_trend_from_metric(
+    dates: List[str],
+    values: List[float],
+    window_days: int,
+    threshold: float = 0.0,
+) -> str:
+    if len(values) < 2 or len(dates) < 2:
+        return "insufficient_data"
+    latest_value = values[-1]
+    latest_date = _parse_date(dates[-1])
+    if latest_date is None:
+        return "insufficient_data"
+    cutoff = latest_date - timedelta(days=window_days)
+    prior_idx = None
+    for i in range(len(dates) - 2, -1, -1):
+        date = _parse_date(dates[i])
+        if date and date <= cutoff:
+            prior_idx = i
+            break
+    if prior_idx is None:
+        prior_idx = max(0, len(values) - 2)
+    delta = latest_value - values[prior_idx]
+    if delta > threshold:
+        return "worsening"
+    if delta < -threshold:
+        return "improving"
+    return "stable"
 
 
 def _compute_trend(scores: List[float], threshold: float = 5.0) -> str:
@@ -133,36 +197,73 @@ def _build_series_payload(
     label: str,
     source: str,
     unit: str,
-    raw_series: List[Dict[str, Any]],
+    dates: List[str],
+    metric_values: List[float],
     direction: int,
     cutoff: datetime,
     notes: Optional[str] = None,
     is_proxy: bool = False,
+    is_live: bool = True,
+    trend_window_days: int = 30,
+    trend_threshold: float = 0.0,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    cleaned = [p for p in raw_series if p.get("value") is not None]
-    values = [float(p["value"]) for p in cleaned]
-    dates = [p["date"] for p in cleaned]
-    scores = _compute_scores(values, direction)
+    if not dates or not metric_values:
+        return {
+            "key": key,
+            "label": label,
+            "source": source,
+            "unit": unit,
+            "is_proxy": is_proxy,
+            "is_live": is_live,
+            "notes": notes,
+            "latest": None,
+            "trend": "insufficient_data",
+            "history": [],
+            **(extra or {}),
+        }
+    lookback = _infer_series_lookback(dates)
+    z_scores = _compute_z_scores(metric_values, lookback)
+    adjusted = direction_adjusted(z_scores, direction)
+    stability_scores = [map_z_to_score(z) for z in adjusted]
 
     history = [
-        {"date": date, "value": value, "score": score}
-        for date, value, score in zip(dates, values, scores)
+        {
+            "date": date,
+            "value": float(value),
+            "stability_score": float(score),
+            "z_score": float(z_score),
+        }
+        for date, value, score, z_score in zip(dates, metric_values, stability_scores, z_scores)
     ]
     history = _filter_history(history, cutoff)
 
+    filtered_dates = [p["date"] for p in history]
+    filtered_values = [p["value"] for p in history]
     latest = history[-1] if history else None
-    trend = _compute_trend([p["score"] for p in history if p.get("score") is not None])
+    trend = _compute_trend_from_metric(
+        filtered_dates,
+        filtered_values,
+        window_days=trend_window_days,
+        threshold=trend_threshold,
+    )
 
     return {
         "key": key,
+        "name": label,
         "label": label,
         "source": source,
         "unit": unit,
         "is_proxy": is_proxy,
+        "is_live": is_live,
         "notes": notes,
         "latest": latest,
+        "as_of": latest.get("date") if latest else None,
+        "value": latest.get("value") if latest else None,
+        "stability_score": latest.get("stability_score") if latest else None,
         "trend": trend,
         "history": history,
+        **(extra or {}),
     }
 
 
@@ -292,6 +393,7 @@ def _build_curve_payload(
     label: str,
     source: str,
     notes: Optional[str] = None,
+    is_muni: bool = False,
 ) -> Dict[str, Any]:
     points_sorted = sorted(points, key=lambda x: x.get("date", ""))
     history: List[Dict[str, Any]] = []
@@ -317,42 +419,110 @@ def _build_curve_payload(
 
     history = _filter_history(history, cutoff)
 
-    level_values = [p["level"] for p in history if p.get("level") is not None]
     slope_values = [p["slope"] for p in history if p.get("slope") is not None]
+    slope_dates = [p["date"] for p in history if p.get("slope") is not None]
+    if slope_values:
+        median_lookback = _infer_series_lookback(slope_dates)
+        window = 13 if median_lookback == 104 else 21
+        slope_vol = []
+        for i in range(len(slope_values)):
+            start_idx = max(0, i - window + 1)
+            window_vals = slope_values[start_idx : i + 1]
+            if len(window_vals) < 2:
+                slope_vol.append(0.0)
+            else:
+                mean = sum(window_vals) / len(window_vals)
+                var = sum((v - mean) ** 2 for v in window_vals) / len(window_vals)
+                slope_vol.append(var ** 0.5)
+    else:
+        slope_vol = []
 
-    level_scores = _compute_scores(level_values, direction=1)
-    slope_scores = _compute_scores(slope_values, direction=-1)
+    if slope_values and slope_vol:
+        slope_vol_scores = _compute_scores(
+            slope_vol,
+            direction=1,
+            lookback=_infer_series_lookback(slope_dates),
+        )
+    else:
+        slope_vol_scores = []
 
-    level_iter = iter(level_scores)
-    slope_iter = iter(slope_scores)
+    slope_vol_iter = iter(slope_vol_scores)
+    slope_val_iter = iter(slope_values)
+    slope_vol_values = iter(slope_vol)
 
     for point in history:
-        level_score = None
-        slope_score = None
-        if point.get("level") is not None:
-            level_score = next(level_iter)
-        if point.get("slope") is not None:
-            slope_score = next(slope_iter)
-
-        if level_score is not None and slope_score is not None:
-            composite = (level_score + slope_score) / 2
-        else:
-            composite = level_score if level_score is not None else slope_score
-
-        point["score"] = composite
+        if point.get("slope") is None:
+            point["slope_vol"] = None
+            point["slope_stability_score"] = None
+            point["score"] = None
+            continue
+        slope_val = next(slope_val_iter)
+        slope_vol_value = next(slope_vol_values)
+        slope_score = next(slope_vol_iter) if slope_vol_scores else None
+        point["slope"] = slope_val
+        point["slope_vol"] = slope_vol_value
+        point["slope_stability_score"] = slope_score
+        point["score"] = slope_score
 
     latest = history[-1] if history else None
-    trend_scores = [p["score"] for p in history if p.get("score") is not None]
-    trend = _compute_trend(trend_scores)
+    trend_metric = [p["slope_vol"] for p in history if p.get("slope_vol") is not None]
+    trend_dates = [p["date"] for p in history if p.get("slope_vol") is not None]
+    trend_window = 91 if (_infer_series_lookback(trend_dates) == 104) else 30
+    trend = _compute_trend_from_metric(trend_dates, trend_metric, window_days=trend_window)
 
     return {
         "label": label,
         "source": source,
         "notes": notes,
+        "is_muni": is_muni,
         "latest": latest,
         "trend": trend,
         "history": history,
     }
+
+
+def normalize_component_weights(
+    base_weights: Dict[str, float],
+    available_keys: List[str],
+) -> Dict[str, float]:
+    total_weight = sum(base_weights.get(key, 0.0) for key in available_keys)
+    if total_weight == 0:
+        return {key: 0.0 for key in available_keys}
+    return {key: base_weights[key] / total_weight for key in available_keys}
+
+
+def compute_composite_score(
+    latest_scores: Dict[str, Optional[float]],
+    weights_used: Dict[str, float],
+) -> Optional[float]:
+    if not weights_used:
+        return None
+    total = 0.0
+    for key, weight in weights_used.items():
+        score = latest_scores.get(key)
+        if score is None:
+            return None
+        total += score * weight
+    return total
+
+
+def compute_muni_long_spread(
+    muni_levels: Dict[str, float],
+    ust_levels: Dict[str, float],
+) -> Tuple[List[str], List[float]]:
+    if not muni_levels or not ust_levels:
+        return [], []
+    common_dates = sorted(set(muni_levels.keys()) & set(ust_levels.keys()))
+    spread_dates: List[str] = []
+    spread_values: List[float] = []
+    for date in common_dates:
+        muni_val = muni_levels.get(date)
+        ust_val = ust_levels.get(date)
+        if muni_val is None or ust_val is None:
+            continue
+        spread_dates.append(date)
+        spread_values.append(float(muni_val) - float(ust_val))
+    return spread_dates, spread_values
 
 
 async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
@@ -362,12 +532,6 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
     start_date = lookback_start.strftime("%Y-%m-%d")
 
     fred = FredClient()
-
-    bond_buyer_series = await fred.fetch_series("WSLB20", start_date=start_date)
-    bond_buyer_source = "FRED WSLB20"
-    if not [p for p in bond_buyer_series if p.get("value") is not None]:
-        bond_buyer_series = await fred.fetch_series("MSLB20", start_date=start_date)
-        bond_buyer_source = "FRED MSLB20"
 
     omrx_series = await fred.fetch_series("NASDAQOMRXMUNI", start_date=start_date)
 
@@ -399,7 +563,8 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
                 cutoff,
                 label="Municipal Yield Curve (EMMA export)",
                 source="EMMA export",
-                notes="Curve stability combines long-end level and 10y-2y slope.",
+                notes="Curve stability uses slope volatility (10y-2y) with level/slope readouts.",
+                is_muni=True,
             )
 
     if curve_payload is None:
@@ -411,50 +576,336 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
                     cutoff,
                     label="Municipal Curve Proxy (Treasury/FRED)",
                     source="FRED DGS1/DGS2/DGS5/DGS10/DGS20/DGS30",
-                    notes="Proxy curve when EMMA data is unavailable. Uses Treasury curve level + 10y-2y slope.",
+                    notes="Proxy curve when EMMA data is unavailable. Uses Treasury curve level + slope volatility.",
+                    is_muni=False,
                 )
         except Exception:
             curve_payload = None
 
-    series_payloads = [
+    # Normalize series ordering
+    def _sorted_series(raw_series: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return sorted(
+            [p for p in raw_series if p.get("value") is not None],
+            key=lambda x: x.get("date", ""),
+        )
+
+    omrx_clean = _sorted_series(omrx_series)
+    sifma_clean = _sorted_series(sifma_series)
+
+    # MUNI_LEVEL_STRESS: drawdown magnitude from 252d high
+    omrx_dates = [p["date"] for p in omrx_clean]
+    omrx_values = [float(p["value"]) for p in omrx_clean]
+    drawdown_metric = []
+    rolling_max = None
+    for value in omrx_values:
+        rolling_max = value if rolling_max is None else max(rolling_max, value)
+        drawdown_pct = ((value / rolling_max) - 1) * 100 if rolling_max else 0.0
+        drawdown_metric.append(abs(min(drawdown_pct, 0.0)))
+
+    # Volatility cue for Revdex proxy
+    omrx_returns = []
+    for i in range(1, len(omrx_values)):
+        prev = omrx_values[i - 1]
+        curr = omrx_values[i]
+        if prev == 0:
+            omrx_returns.append(0.0)
+        else:
+            omrx_returns.append((curr / prev - 1) * 100)
+    revdex_vol = []
+    window = 21
+    for i in range(len(omrx_returns)):
+        start_idx = max(0, i - window + 1)
+        window_vals = omrx_returns[start_idx : i + 1]
+        if len(window_vals) < 2:
+            revdex_vol.append(0.0)
+        else:
+            mean = sum(window_vals) / len(window_vals)
+            var = sum((v - mean) ** 2 for v in window_vals) / len(window_vals)
+            revdex_vol.append(var ** 0.5)
+    revdex_vol_z = _compute_z_scores(revdex_vol, _infer_series_lookback(omrx_dates))
+
+    def _stress_level(stress: bool, severe: bool) -> str:
+        if severe:
+            return "severe"
+        if stress:
+            return "stress"
+        return "normal"
+
+    # MUNI_CURVE_SLOPE_STABILITY: from slope volatility (curve payload)
+    slope_vol_dates = []
+    slope_vol_values = []
+    if curve_payload and curve_payload.get("history"):
+        for point in curve_payload["history"]:
+            if point.get("slope_vol") is None:
+                continue
+            slope_vol_dates.append(point["date"])
+            slope_vol_values.append(float(point["slope_vol"]))
+
+    # MUNI_LONG_SPREAD: muni long-end yield minus UST long-end yield (only if EMMA curve)
+    muni_spread_dates: List[str] = []
+    muni_spread_values: List[float] = []
+    if curve_payload and curve_payload.get("is_muni"):
+        muni_level_series = {
+            p["date"]: p.get("level")
+            for p in (curve_payload.get("history") or [])
+            if p.get("level") is not None
+        }
+        try:
+            ust_long = await fred.fetch_series("DGS20", start_date=start_date)
+            ust_source = "FRED DGS20"
+        except Exception:
+            ust_long = []
+            ust_source = "FRED DGS30"
+        if not [p for p in ust_long if p.get("value") is not None]:
+            ust_long = await fred.fetch_series("DGS30", start_date=start_date)
+            ust_source = "FRED DGS30"
+        ust_dict = {p["date"]: p["value"] for p in ust_long if p.get("value") is not None}
+        muni_spread_dates, muni_spread_values = compute_muni_long_spread(
+            muni_level_series,
+            ust_dict,
+        )
+    else:
+        ust_source = None
+
+    # SIFMA data cadence settings
+    sifma_trend_window = 91 if _infer_series_lookback([p["date"] for p in sifma_clean]) == 104 else 30
+
+    series_payloads = []
+
+    series_payloads.append(
         _build_series_payload(
-            key="revdex_proxy",
-            label="Revdex proxy (Nasdaq OMRX Muni Index)",
+            key="MUNI_LEVEL_STRESS",
+            label="Muni Level Stress (Revdex drawdown)",
             source="FRED NASDAQOMRXMUNI",
-            unit="index",
-            raw_series=omrx_series,
-            direction=-1,
-            cutoff=cutoff,
-            notes="Proxy for revenue bond stress using a broad muni price index.",
-            is_proxy=True,
-        ),
-        _build_series_payload(
-            key="bond_buyer_go_20",
-            label="Bond Buyer GO 20",
-            source=bond_buyer_source,
             unit="percent",
-            raw_series=bond_buyer_series,
+            dates=omrx_dates,
+            metric_values=drawdown_metric,
             direction=1,
             cutoff=cutoff,
-            notes="FRED series discontinued in 2016. Included for historical stress context.",
-            is_proxy=False,
-        ),
+            notes="Derived from Revdex proxy drawdown from 252d high.",
+            is_proxy=True,
+            is_live=True,
+            trend_window_days=30,
+            trend_threshold=0.5,
+            extra={
+                "stress_cues": {
+                    "drawdown_pct": ((omrx_values[-1] / max(omrx_values)) - 1) * 100 if omrx_values else None,
+                    "vol_z_score": revdex_vol_z[-1] if revdex_vol_z else None,
+                    "stress_level": _stress_level(
+                        stress=(
+                            omrx_values
+                            and ((omrx_values[-1] / max(omrx_values)) - 1) * 100
+                            <= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LEVEL_STRESS"]["stress_drawdown"]
+                        )
+                        or (
+                            revdex_vol_z
+                            and revdex_vol_z[-1] >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LEVEL_STRESS"]["stress_vol_z"]
+                        ),
+                        severe=revdex_vol_z and revdex_vol_z[-1] >= 2.0,
+                    ),
+                }
+            },
+        )
+    )
+
+    series_payloads.append(
         _build_series_payload(
-            key="sifma_swap",
+            key="SIFMA_INDEX",
             label="SIFMA Municipal Swap Index",
             source="SIFMA historical XLSX",
             unit="percent",
-            raw_series=sifma_series,
+            dates=[p["date"] for p in sifma_clean],
+            metric_values=[float(p["value"]) for p in sifma_clean],
             direction=1,
             cutoff=cutoff,
             notes="Weekly tax-exempt swap index (VRDO proxy).",
             is_proxy=False,
-        ),
+            is_live=True,
+            trend_window_days=sifma_trend_window,
+            trend_threshold=0.02,
+            extra={
+                "stress_cues": {
+                    "percentile": (
+                        (sum(1 for v in [float(p["value"]) for p in sifma_clean] if v <= float(sifma_clean[-1]["value"])) / len(sifma_clean)) * 100
+                        if sifma_clean
+                        else None
+                    ),
+                    "stress_level": _stress_level(
+                        stress=(
+                            sifma_clean
+                            and (sum(1 for v in [float(p["value"]) for p in sifma_clean] if v <= float(sifma_clean[-1]["value"])) / len(sifma_clean)) * 100
+                            >= MUNI_PUBLIC_SECTOR_STRESS_CUES["SIFMA_INDEX"]["stress_percentile"]
+                        ),
+                        severe=(
+                            sifma_clean
+                            and (sum(1 for v in [float(p["value"]) for p in sifma_clean] if v <= float(sifma_clean[-1]["value"])) / len(sifma_clean)) * 100
+                            >= MUNI_PUBLIC_SECTOR_STRESS_CUES["SIFMA_INDEX"]["severe_percentile"]
+                        ),
+                    ),
+                }
+            },
+        )
+    )
+
+    series_payloads.append(
+        _build_series_payload(
+            key="MUNI_CURVE_SLOPE_STABILITY",
+            label="Muni Curve Slope Stability (volatility)",
+            source=curve_payload["source"] if curve_payload else "Curve unavailable",
+            unit="percent",
+            dates=slope_vol_dates,
+            metric_values=slope_vol_values,
+            direction=1,
+            cutoff=cutoff,
+            notes="Stability from slope volatility (10y-2y).",
+            is_proxy=bool(curve_payload and not curve_payload.get("is_muni")),
+            is_live=True,
+            trend_window_days=30,
+            trend_threshold=0.01,
+            extra={
+                "stress_cues": {
+                    "z_score": _compute_z_scores(slope_vol_values, _infer_series_lookback(slope_vol_dates))[-1]
+                    if slope_vol_values
+                    else None,
+                    "stress_level": _stress_level(
+                        stress=(
+                            slope_vol_values
+                            and _compute_z_scores(slope_vol_values, _infer_series_lookback(slope_vol_dates))[-1]
+                            >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_CURVE_SLOPE_STABILITY"]["stress_z"]
+                        ),
+                        severe=(
+                            slope_vol_values
+                            and _compute_z_scores(slope_vol_values, _infer_series_lookback(slope_vol_dates))[-1]
+                            >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_CURVE_SLOPE_STABILITY"]["severe_z"]
+                        ),
+                    ),
+                }
+            },
+        )
+    )
+
+    if muni_spread_dates and muni_spread_values:
+        series_payloads.append(
+            _build_series_payload(
+                key="MUNI_LONG_SPREAD",
+                label="Muni–Treasury Long Spread",
+                source=f"EMMA long-end vs {ust_source}",
+                unit="percent",
+                dates=muni_spread_dates,
+                metric_values=muni_spread_values,
+                direction=1,
+                cutoff=cutoff,
+                notes="Long-end muni yield minus long-end Treasury yield.",
+                is_proxy=False,
+                is_live=True,
+                trend_window_days=30,
+                trend_threshold=0.05,
+                extra={
+                    "stress_cues": {
+                        "z_score": _compute_z_scores(muni_spread_values, _infer_series_lookback(muni_spread_dates))[-1]
+                        if muni_spread_values
+                        else None,
+                        "change_30d": muni_spread_values[-1] - muni_spread_values[-31]
+                        if len(muni_spread_values) > 31
+                        else None,
+                        "stress_level": _stress_level(
+                            stress=(
+                                muni_spread_values
+                                and _compute_z_scores(muni_spread_values, _infer_series_lookback(muni_spread_dates))[-1]
+                                >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_z"]
+                            )
+                            or (
+                                len(muni_spread_values) > 31
+                                and muni_spread_values[-1] - muni_spread_values[-31]
+                                >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_change_30d"]
+                            ),
+                            severe=(
+                                muni_spread_values
+                                and _compute_z_scores(muni_spread_values, _infer_series_lookback(muni_spread_dates))[-1]
+                                >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["severe_z"]
+                            ),
+                        ),
+                    }
+                },
+            )
+        )
+    else:
+        series_payloads.append(
+            _build_series_payload(
+                key="MUNI_LONG_SPREAD",
+                label="Muni–Treasury Long Spread",
+                source="Unavailable (requires EMMA curve + Treasury long-end)",
+                unit="percent",
+                dates=[],
+                metric_values=[],
+                direction=1,
+                cutoff=cutoff,
+                notes="Requires EMMA muni curve to compute long-end spread.",
+                is_proxy=False,
+                is_live=True,
+                extra={},
+            )
+        )
+
+    # Coverage + composite
+    live_series = {s["key"]: s for s in series_payloads if s.get("is_live")}
+    missing_keys = [
+        key for key in MUNI_PUBLIC_SECTOR_COMPONENTS.keys()
+        if not live_series.get(key) or live_series.get(key, {}).get("latest") is None
     ]
+    available_keys = [key for key in MUNI_PUBLIC_SECTOR_COMPONENTS.keys() if key not in missing_keys]
+    coverage_live = len(available_keys)
+
+    base_weights = {key: meta["weight"] for key, meta in MUNI_PUBLIC_SECTOR_COMPONENTS.items()}
+    raw_weights = normalize_component_weights(base_weights, available_keys)
+    weights_used = {key: round(weight, 4) for key, weight in raw_weights.items()}
+
+    latest_scores = {
+        key: live_series[key]["latest"].get("stability_score")
+        if live_series.get(key) and live_series[key].get("latest")
+        else None
+        for key in available_keys
+    }
+    composite_score = compute_composite_score(latest_scores, raw_weights)
+    composite_score = round(composite_score, 2) if composite_score is not None else None
+
+    if composite_score is None:
+        state = "UNKNOWN"
+    elif composite_score >= MUNI_PUBLIC_SECTOR_THRESHOLDS["GREEN"]:
+        state = "GREEN"
+    elif composite_score >= MUNI_PUBLIC_SECTOR_THRESHOLDS["YELLOW"]:
+        state = "YELLOW"
+    else:
+        state = "RED"
+
+    near_threshold = None
+    if composite_score is not None:
+        if abs(composite_score - MUNI_PUBLIC_SECTOR_THRESHOLDS["GREEN"]) <= MUNI_PUBLIC_SECTOR_NEAR_THRESHOLD_DELTA:
+            near_threshold = "GREEN"
+        elif abs(composite_score - MUNI_PUBLIC_SECTOR_THRESHOLDS["YELLOW"]) <= MUNI_PUBLIC_SECTOR_NEAR_THRESHOLD_DELTA:
+            near_threshold = "RED"
+
+    latest_dates = [
+        _parse_date(series.get("latest", {}).get("date"))
+        for series in live_series.values()
+        if series.get("latest") and series["latest"].get("date")
+    ]
+    latest_dates = [d for d in latest_dates if d is not None]
+    as_of_date = max(latest_dates).date().isoformat() if latest_dates else today.isoformat()
 
     return {
-        "as_of": today.isoformat(),
+        "as_of": as_of_date,
         "series": series_payloads,
+        "composite": {
+            "score": composite_score,
+            "state": state,
+            "as_of": as_of_date,
+            "coverage_live": coverage_live,
+            "coverage_total": MUNI_PUBLIC_SECTOR_COVERAGE_TOTAL,
+            "missing_keys": missing_keys,
+            "weights_used": weights_used,
+            "near_threshold": near_threshold,
+        },
         "curve": curve_payload or {
             "status": "unavailable",
             "reason": "EMMA_YIELD_CURVE_URL or EMMA_YIELD_CURVE_PATH not configured",

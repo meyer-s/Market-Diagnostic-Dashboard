@@ -344,6 +344,7 @@ async def get_bond_composite_components(days: int = 365):
                 "hy_oas": hy_vals[i],
                 "ig_oas": ig_vals[i],
                 "stress_score": credit_scores[i],
+                "stability_score": 100 - credit_scores[i],
                 "weight": weights['credit'],
                 "contribution": credit_scores[i] * weights['credit'],
             },
@@ -352,6 +353,7 @@ async def get_bond_composite_components(days: int = 365):
                 "spread_10y3m": curve_10y3m[i],
                 "spread_30y5y": curve_30y5y[i],
                 "stress_score": curve_scores[i],
+                "stability_score": 100 - curve_scores[i],
                 "weight": weights['curve'],
                 "contribution": curve_scores[i] * weights['curve'],
             },
@@ -359,17 +361,20 @@ async def get_bond_composite_components(days: int = 365):
                 "roc_2y": roc_2y[i],
                 "roc_10y": roc_10y[i],
                 "stress_score": momentum_scores[i],
+                "stability_score": 100 - momentum_scores[i],
                 "weight": weights['momentum'],
                 "contribution": momentum_scores[i] * weights['momentum'],
             },
             "treasury_volatility_stress": {
                 "calculated_volatility": treasury_vol[i],
                 "stress_score": vol_scores[i],
+                "stability_score": 100 - vol_scores[i],
                 "weight": weights['volatility'],
                 "contribution": vol_scores[i] * weights['volatility'],
             },
             "composite": {
                 "stress_score": composite_stress,
+                "stability_score": 100 - composite_stress,
             }
         })
     
@@ -380,8 +385,8 @@ async def get_bond_composite_components(days: int = 365):
 async def get_bond_muni_subsystem(days: int = 365):
     """
     Return municipal credit & funding stress subsystem data.
-    Includes Revdex proxy, Bond Buyer GO 20, SIFMA swap index,
-    and (optionally) EMMA yield curve metrics.
+    Includes Revdex drawdown stress, Muni–Treasury long spread,
+    SIFMA swap index, and curve slope stability (with EMMA curve if available).
     """
     return await get_muni_subsystem(days=days)
 
