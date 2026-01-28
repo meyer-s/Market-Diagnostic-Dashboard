@@ -206,11 +206,13 @@ def _build_series_payload(
     is_live: bool = True,
     trend_window_days: int = 30,
     trend_threshold: float = 0.0,
+    display_values: Optional[List[float]] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if not dates or not metric_values:
         return {
             "key": key,
+            "name": label,
             "label": label,
             "source": source,
             "unit": unit,
@@ -218,6 +220,9 @@ def _build_series_payload(
             "is_live": is_live,
             "notes": notes,
             "latest": None,
+            "as_of": None,
+            "value": None,
+            "stability_score": None,
             "trend": "insufficient_data",
             "history": [],
             **(extra or {}),
@@ -227,23 +232,29 @@ def _build_series_payload(
     adjusted = direction_adjusted(z_scores, direction)
     stability_scores = [map_z_to_score(z) for z in adjusted]
 
+    if display_values is None:
+        display_values = metric_values
+
     history = [
         {
             "date": date,
-            "value": float(value),
+            "value": float(display),
             "stability_score": float(score),
             "z_score": float(z_score),
         }
-        for date, value, score, z_score in zip(dates, metric_values, stability_scores, z_scores)
+        for date, display, score, z_score in zip(dates, display_values, stability_scores, z_scores)
     ]
     history = _filter_history(history, cutoff)
 
     filtered_dates = [p["date"] for p in history]
-    filtered_values = [p["value"] for p in history]
+    trend_metric_values = metric_values if direction == 1 else [-value for value in metric_values]
+    trend_metric_by_date = {date: value for date, value in zip(dates, trend_metric_values)}
+    trend_values = [trend_metric_by_date.get(date) for date in filtered_dates]
+    trend_values = [value for value in trend_values if value is not None]
     latest = history[-1] if history else None
     trend = _compute_trend_from_metric(
         filtered_dates,
-        filtered_values,
+        trend_values,
         window_days=trend_window_days,
         threshold=trend_threshold,
     )
@@ -592,37 +603,10 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
     omrx_clean = _sorted_series(omrx_series)
     sifma_clean = _sorted_series(sifma_series)
 
-    # MUNI_LEVEL_STRESS: drawdown magnitude from 252d high
+    # MUNI_REVENUE_PROXY: revenue bond price proxy (Revdex)
     omrx_dates = [p["date"] for p in omrx_clean]
     omrx_values = [float(p["value"]) for p in omrx_clean]
-    drawdown_metric = []
-    rolling_max = None
-    for value in omrx_values:
-        rolling_max = value if rolling_max is None else max(rolling_max, value)
-        drawdown_pct = ((value / rolling_max) - 1) * 100 if rolling_max else 0.0
-        drawdown_metric.append(abs(min(drawdown_pct, 0.0)))
-
-    # Volatility cue for Revdex proxy
-    omrx_returns = []
-    for i in range(1, len(omrx_values)):
-        prev = omrx_values[i - 1]
-        curr = omrx_values[i]
-        if prev == 0:
-            omrx_returns.append(0.0)
-        else:
-            omrx_returns.append((curr / prev - 1) * 100)
-    revdex_vol = []
-    window = 21
-    for i in range(len(omrx_returns)):
-        start_idx = max(0, i - window + 1)
-        window_vals = omrx_returns[start_idx : i + 1]
-        if len(window_vals) < 2:
-            revdex_vol.append(0.0)
-        else:
-            mean = sum(window_vals) / len(window_vals)
-            var = sum((v - mean) ** 2 for v in window_vals) / len(window_vals)
-            revdex_vol.append(var ** 0.5)
-    revdex_vol_z = _compute_z_scores(revdex_vol, _infer_series_lookback(omrx_dates))
+    revenue_proxy_metric = omrx_values[:]
 
     def _stress_level(stress: bool, severe: bool) -> str:
         if severe:
@@ -668,78 +652,93 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
         ust_source = None
 
     # SIFMA data cadence settings
-    sifma_trend_window = 91 if _infer_series_lookback([p["date"] for p in sifma_clean]) == 104 else 30
+    sifma_dates = [p["date"] for p in sifma_clean]
+    sifma_levels = [float(p["value"]) for p in sifma_clean]
+    sifma_is_weekly = _infer_series_lookback(sifma_dates) == 104
+    sifma_trend_window = 91 if sifma_is_weekly else 30
+
+    # SIFMA stability metric: rolling volatility of rate changes + positive drift penalty
+    sifma_changes = []
+    for i in range(1, len(sifma_levels)):
+        sifma_changes.append(sifma_levels[i] - sifma_levels[i - 1])
+    sifma_vol_window = 13 if sifma_is_weekly else 21
+    sifma_volatility = []
+    for i in range(len(sifma_changes)):
+        start_idx = max(0, i - sifma_vol_window + 1)
+        window_vals = sifma_changes[start_idx : i + 1]
+        if len(window_vals) < 2:
+            sifma_volatility.append(0.0)
+        else:
+            mean = sum(window_vals) / len(window_vals)
+            var = sum((v - mean) ** 2 for v in window_vals) / len(window_vals)
+            sifma_volatility.append(var ** 0.5)
+    # Align volatility series length with levels (pad leading 0)
+    if sifma_levels:
+        sifma_volatility = [0.0] + sifma_volatility
+
+    sifma_drift = []
+    drift_window = 13 if sifma_is_weekly else 30
+    for i in range(len(sifma_levels)):
+        if i < drift_window:
+            sifma_drift.append(0.0)
+        else:
+            delta = sifma_levels[i] - sifma_levels[i - drift_window]
+            sifma_drift.append(max(0.0, delta))
+
+    sifma_metric = [
+        vol + drift
+        for vol, drift in zip(sifma_volatility, sifma_drift)
+    ]
+    sifma_vol_z = _compute_z_scores(sifma_volatility, _infer_series_lookback(sifma_dates))
 
     series_payloads = []
 
     series_payloads.append(
         _build_series_payload(
-            key="MUNI_LEVEL_STRESS",
-            label="Muni Level Stress (Revdex drawdown)",
+            key="MUNI_REVENUE_PROXY",
+            label="Revenue Bond Price Proxy (Revdex)",
             source="FRED NASDAQOMRXMUNI",
-            unit="percent",
+            unit="index",
             dates=omrx_dates,
-            metric_values=drawdown_metric,
-            direction=1,
+            metric_values=revenue_proxy_metric,
+            direction=-1,
             cutoff=cutoff,
-            notes="Derived from Revdex proxy drawdown from 252d high.",
+            notes="Revdex proxy for revenue-bond pricing; higher levels = stronger demand.",
             is_proxy=True,
             is_live=True,
             trend_window_days=30,
-            trend_threshold=0.5,
-            extra={
-                "stress_cues": {
-                    "drawdown_pct": ((omrx_values[-1] / max(omrx_values)) - 1) * 100 if omrx_values else None,
-                    "vol_z_score": revdex_vol_z[-1] if revdex_vol_z else None,
-                    "stress_level": _stress_level(
-                        stress=(
-                            omrx_values
-                            and ((omrx_values[-1] / max(omrx_values)) - 1) * 100
-                            <= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LEVEL_STRESS"]["stress_drawdown"]
-                        )
-                        or (
-                            revdex_vol_z
-                            and revdex_vol_z[-1] >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LEVEL_STRESS"]["stress_vol_z"]
-                        ),
-                        severe=revdex_vol_z and revdex_vol_z[-1] >= 2.0,
-                    ),
-                }
-            },
+            trend_threshold=0.02,
+            extra={},
         )
     )
 
     series_payloads.append(
         _build_series_payload(
             key="SIFMA_INDEX",
-            label="SIFMA Municipal Swap Index",
+            label="SIFMA Rate Stability",
             source="SIFMA historical XLSX",
             unit="percent",
-            dates=[p["date"] for p in sifma_clean],
-            metric_values=[float(p["value"]) for p in sifma_clean],
+            dates=sifma_dates,
+            metric_values=sifma_metric,
             direction=1,
             cutoff=cutoff,
-            notes="Weekly tax-exempt swap index (VRDO proxy).",
+            notes="Weekly tax-exempt swap index (VRDO proxy). Stability penalizes volatility and sharp increases.",
             is_proxy=False,
             is_live=True,
             trend_window_days=sifma_trend_window,
             trend_threshold=0.02,
+            display_values=sifma_levels,
             extra={
                 "stress_cues": {
-                    "percentile": (
-                        (sum(1 for v in [float(p["value"]) for p in sifma_clean] if v <= float(sifma_clean[-1]["value"])) / len(sifma_clean)) * 100
-                        if sifma_clean
-                        else None
-                    ),
+                    "vol_z_score": sifma_vol_z[-1] if sifma_vol_z else None,
                     "stress_level": _stress_level(
                         stress=(
-                            sifma_clean
-                            and (sum(1 for v in [float(p["value"]) for p in sifma_clean] if v <= float(sifma_clean[-1]["value"])) / len(sifma_clean)) * 100
-                            >= MUNI_PUBLIC_SECTOR_STRESS_CUES["SIFMA_INDEX"]["stress_percentile"]
+                            sifma_vol_z
+                            and sifma_vol_z[-1] >= MUNI_PUBLIC_SECTOR_STRESS_CUES["SIFMA_INDEX"]["stress_vol_z"]
                         ),
                         severe=(
-                            sifma_clean
-                            and (sum(1 for v in [float(p["value"]) for p in sifma_clean] if v <= float(sifma_clean[-1]["value"])) / len(sifma_clean)) * 100
-                            >= MUNI_PUBLIC_SECTOR_STRESS_CUES["SIFMA_INDEX"]["severe_percentile"]
+                            sifma_vol_z
+                            and sifma_vol_z[-1] >= MUNI_PUBLIC_SECTOR_STRESS_CUES["SIFMA_INDEX"]["severe_vol_z"]
                         ),
                     ),
                 }
@@ -805,8 +804,8 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
                         "z_score": _compute_z_scores(muni_spread_values, _infer_series_lookback(muni_spread_dates))[-1]
                         if muni_spread_values
                         else None,
-                        "change_30d": muni_spread_values[-1] - muni_spread_values[-31]
-                        if len(muni_spread_values) > 31
+                        "change_60d": muni_spread_values[-1] - muni_spread_values[-61]
+                        if len(muni_spread_values) > 61
                         else None,
                         "stress_level": _stress_level(
                             stress=(
@@ -815,9 +814,9 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
                                 >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_z"]
                             )
                             or (
-                                len(muni_spread_values) > 31
-                                and muni_spread_values[-1] - muni_spread_values[-31]
-                                >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_change_30d"]
+                                len(muni_spread_values) > 61
+                                and muni_spread_values[-1] - muni_spread_values[-61]
+                                >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_change_60d"]
                             ),
                             severe=(
                                 muni_spread_values

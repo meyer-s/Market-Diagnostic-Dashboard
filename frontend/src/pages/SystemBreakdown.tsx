@@ -54,6 +54,7 @@ export default function SystemBreakdown() {
   const [heatmapData, setHeatmapData] = useState<HeatmapDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [breadthTrend, setBreadthTrend] = useState<"broadening" | "narrowing" | "steady">("steady");
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => {
@@ -73,11 +74,10 @@ export default function SystemBreakdown() {
         // Fetch indicator metadata from backend
         const indicatorData = await apiFetch<IndicatorStatus[]>("/indicators");
         
-        // Use hardcoded weights (TODO: fetch from backend)
         const metaWithWeights: IndicatorMetadata[] = indicatorData.map((ind: IndicatorStatus) => ({
           code: ind.code,
           name: getIndicatorDisplayName(ind.code, ind.name),
-          weight: getIndicatorWeight(ind.code),
+          weight: ind.weight ?? getIndicatorWeight(ind.code),
         }));
         
         setMetadata(metaWithWeights);
@@ -168,6 +168,28 @@ export default function SystemBreakdown() {
             green_count: greenCount,
           });
         });
+
+        const breadthScores: number[] = [];
+        sortedDates.forEach(date => {
+          const indicatorMap = dateIndicatorMap.get(date);
+          const breadthEntry = indicatorMap?.get("BREADTH_HEALTH");
+          if (breadthEntry && Number.isFinite(breadthEntry.score)) {
+            breadthScores.push(breadthEntry.score);
+          }
+        });
+        if (breadthScores.length > 10) {
+          const lookback = Math.min(30, breadthScores.length - 1);
+          const delta = breadthScores[breadthScores.length - 1] - breadthScores[breadthScores.length - 1 - lookback];
+          if (delta >= 3) {
+            setBreadthTrend("broadening");
+          } else if (delta <= -3) {
+            setBreadthTrend("narrowing");
+          } else {
+            setBreadthTrend("steady");
+          }
+        } else {
+          setBreadthTrend("steady");
+        }
         
         console.log(`Loaded ${historyPoints.length} days with ${heatmapPoints.length} total data points`);
         console.log('Sample history:', historyPoints[historyPoints.length - 1]);
@@ -197,6 +219,7 @@ export default function SystemBreakdown() {
       LIQUIDITY_PROXY: 1.6,
       ANALYST_ANXIETY: 1.7,
       SENTIMENT_COMPOSITE: 1.6,
+      BREADTH_HEALTH: 1.0,
     };
     return weights[code] || 1.0;
   };
@@ -260,8 +283,8 @@ export default function SystemBreakdown() {
         </div>
         <p className="text-xs sm:text-sm text-stealth-300 leading-relaxed mb-3 md:mb-4">
           This Market Diagnostic Dashboard provides a comprehensive, real-time assessment of market stability by monitoring 
-          and analyzing <strong>eleven critical indicators</strong> across seven domains: <strong>volatility</strong> (VIX), 
-          <strong>equities</strong> (SPY), <strong>interest rates</strong> (DFF, T10Y2Y), <strong>employment</strong> (UNRATE), 
+          and analyzing <strong>twelve critical indicators</strong> across seven domains: <strong>volatility</strong> (VIX), 
+          <strong>equities</strong> (SPY, Breadth Health), <strong>interest rates</strong> (DFF, T10Y2Y), <strong>employment</strong> (UNRATE), 
           <strong>bonds</strong> (Bond Market Stability), <strong>liquidity</strong> (Liquidity Proxy), <strong>consumers</strong> (Consumer Health), 
           <strong>sentiment</strong> (Analyst Confidence, Consumer & Corporate Sentiment), and <strong>sector positioning</strong> (Sector Regime Alignment).
           Each indicator is independently scored on a 0-100 scale using statistical normalization techniques, then combined into 
@@ -271,6 +294,10 @@ export default function SystemBreakdown() {
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 text-center">
             <div className="text-xs font-semibold text-stealth-200">VIX + SPY</div>
             <div className="text-xs text-stealth-400">Volatility & Equity</div>
+          </div>
+          <div className="bg-stealth-900 border border-stealth-600 rounded p-3 text-center">
+            <div className="text-xs font-semibold text-stealth-200">Breadth Health</div>
+            <div className="text-xs text-stealth-400">RSP/SPY Participation</div>
           </div>
           <div className="bg-stealth-900 border border-stealth-600 rounded p-3 text-center">
             <div className="text-xs font-semibold text-stealth-200">DFF + T10Y2Y</div>
@@ -523,6 +550,7 @@ export default function SystemBreakdown() {
                 <div className="text-xs font-mono text-stealth-300 space-y-1">
                   <div>VIX Score: 70 x Weight: 1.5 = 105.0</div>
                   <div>SPY Score: 48 x Weight: 1.4 = 67.2</div>
+                  <div>Breadth Health Score: 64 x Weight: 1.0 = 64.0</div>
                   <div>DFF Score: 53 x Weight: 1.3 = 68.9</div>
                   <div>T10Y2Y Score: 94 x Weight: 1.6 = 150.4</div>
                   <div>UNRATE Score: 85 x Weight: 1.2 = 102.0</div>
@@ -531,7 +559,7 @@ export default function SystemBreakdown() {
                   <div>LIQUIDITY Score: 71 x Weight: 1.6 = 113.6</div>
                   <div>Analyst Confidence Score: 78 x Weight: 1.7 = 132.6</div>
                   <div>SENTIMENT Score: 82 x Weight: 1.6 = 131.2</div>
-                  <div className="pt-2 border-t border-stealth-700 mt-2">Total Weighted: 1062.1 / Total Weight: 14.6 = <strong className="text-green-400">72.7 (GREEN)</strong></div>
+                  <div className="pt-2 border-t border-stealth-700 mt-2">Total Weighted: 1126.1 / Total Weight: 16.1 = <strong className="text-green-400">69.9 (GREEN)</strong></div>
                   <div className="text-stealth-400 text-xs mt-2">Note: Score {">="}70 indicates stable market conditions.</div>
                 </div>
               </div>
@@ -584,7 +612,7 @@ export default function SystemBreakdown() {
                 const weightPercentage = ((meta.weight / totalWeight) * 100).toFixed(1);
                 
                 // Composite indicators with expandable details
-                const compositeIndicators = ['BOND_MARKET_STABILITY', 'LIQUIDITY_PROXY', 'CONSUMER_HEALTH', 'ANALYST_ANXIETY', 'SENTIMENT_COMPOSITE'];
+                const compositeIndicators = ['BOND_MARKET_STABILITY', 'LIQUIDITY_PROXY', 'CONSUMER_HEALTH', 'ANALYST_ANXIETY', 'SENTIMENT_COMPOSITE', 'BREADTH_HEALTH'];
                 const isComposite = compositeIndicators.includes(meta.code);
                 const isExpanded = expandedSections.has(`indicator_${meta.code}`);
                 
@@ -596,6 +624,7 @@ export default function SystemBreakdown() {
                   T10Y2Y: "10Y-2Y Treasury Spread - Yield curve indicator. Inversions (negative spread) historically precede recessions by 12-18 months. Key recession predictor.",
                   UNRATE: "Unemployment Rate - 6-month unemployment change tracks labor market momentum. Rising unemployment (positive change) signals deteriorating conditions and stress; falling unemployment indicates economic strength.",
                   CONSUMER_HEALTH: "Derived indicator combining Personal Consumption Expenditures, Personal Income, and CPI to assess real consumer purchasing power and spending capacity.",
+                  BREADTH_HEALTH: `Measures market participation to reduce reliance on index-level price moves. Participation is ${breadthTrend} (trend over recent weeks).`,
                   BOND_MARKET_STABILITY: "Composite of credit spreads (HY, IG), yield curve stress, rate momentum, and Treasury volatility. Captures systemic stress in fixed income markets.",
                   LIQUIDITY_PROXY: "Combines M2 money supply growth, Fed balance sheet changes, and overnight reverse repo usage. Measures systemic liquidity availability and tightness.",
                   ANALYST_ANXIETY: "Composite sentiment indicator aggregating VIX (equity vol), MOVE (rates vol), high-yield credit spreads, and equity risk premium. Captures institutional confidence.",
@@ -658,10 +687,48 @@ export default function SystemBreakdown() {
                           liquidity crises. This composite captures bond market health where higher scores indicate stable fixed income conditions.
                         </div>
                         <div className="text-stealth-400 text-xs">
+                          Bond Market Stability: Evaluates Treasury behavior and corporate credit risk to assess whether
+                          broad bond markets are functioning normally.
+                        </div>
+                        <div className="text-stealth-400 text-xs">
+                          Public-Sector Credit &amp; Funding Stress: Isolates tax-exempt and public-finance funding conditions, which often move
+                          before stress appears in corporate credit or equities.
+                        </div>
+                        <div className="text-stealth-400 text-xs">
+                          These systems usually move together. When public-sector funding tightens
+                          while corporate credit remains calm, the divergence itself is the signal.
+                        </div>
+                        <div className="text-stealth-400 text-xs">
                           <strong className="text-stealth-300">Typical Ranges (Stability Score):</strong> 
                           <span className="ml-2 text-emerald-400">HIGH: 70-100</span> (stable credit, normal curves, low vol) - 
                           <span className="ml-2 text-yellow-400">MODERATE: 40-69</span> (widening spreads, curve flattening) - 
                           <span className="ml-2 text-red-400">LOW: 0-39</span> (credit stress, inversions, volatility spikes)
+                        </div>
+                      </div>
+                    )}
+
+                    {isComposite && isExpanded && meta.code === 'BREADTH_HEALTH' && (
+                      <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
+                        <div className="bg-stealth-950 border border-stealth-600 rounded p-3 space-y-2">
+                          <div className="font-mono text-xs text-stealth-300">
+                            <div className="mb-2"><strong className="text-stealth-200">What it measures:</strong></div>
+                            <div className="ml-3 space-y-1">
+                              <div>- <span className="text-blue-400">RSP/SPY ratio</span>: equal-weight vs cap-weight participation proxy</div>
+                              <div>- <span className="text-blue-400">Trend component</span>: 30-day change in the ratio (participation momentum)</div>
+                            </div>
+                          </div>
+                          <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
+                            breadth_z = z_score(RSP/SPY)
+                            <br />
+                            trend_z = z_score(30d_change)
+                            <br />
+                            stability_score = normalize(0.65 x breadth_z + 0.35 x trend_z)
+                            <br />
+                            <span className="text-stealth-500">// Proxy-based breadth signal; higher = broader participation</span>
+                          </div>
+                        </div>
+                        <div className="text-stealth-400 text-xs">
+                          <strong className="text-stealth-300">Limitation:</strong> This is a proxy (RSP/SPY) rather than full constituent data.
                         </div>
                       </div>
                     )}
@@ -817,8 +884,8 @@ export default function SystemBreakdown() {
                 Sentiment indicators (Analyst Confidence 1.7, Sentiment Composite 1.6) capture forward-looking confidence shifts.
                 All indicators output stability scores where higher values indicate better market conditions.
                 <br /><br />
-                <strong className="text-stealth-400">Tip:</strong> Click on any composite indicator (Bond Market Stability, Liquidity Proxy, Consumer Health, 
-                Analyst Confidence, or Consumer & Corporate Sentiment) to view detailed component breakdowns, calculation formulas, and historical context.
+                <strong className="text-stealth-400">Tip:</strong> Click on any expandable indicator (Bond Market Stability, Liquidity Proxy, Consumer Health, 
+                Analyst Confidence, Consumer & Corporate Sentiment, or Breadth Health) to view calculation notes and context.
               </div>
             </div>
           </div>

@@ -1,12 +1,13 @@
 """
 Seed Indicators Script
 ----------------------
-Creates all 11 indicator metadata entries in the database.
+Creates all 12 indicator metadata entries in the database.
 This script is automatically run on container startup via startup.sh.
 
 Indicators:
 - VIX: Volatility stress indicator (high = stress)
 - SPY: S&P 500 ETF momentum (stores EMA gap %, below EMA = stress)
+- BREADTH_HEALTH: Breadth proxy from equal-weight vs cap-weight (RSP/SPY ratio)
 - DFF: Federal Funds Rate (stores absolute rate, scores based on rate-of-change)
 - T10Y2Y: Treasury yield curve (inverted = stress)
 - UNRATE: Unemployment rate (high = stress)
@@ -28,7 +29,7 @@ Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()
 
-# Define all 8 indicators
+# Define all indicators
 INDICATORS = [
     {
         "code": "VIX",
@@ -53,6 +54,18 @@ INDICATORS = [
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
         "weight": 1.4,
+    },
+    {
+        "code": "BREADTH_HEALTH",
+        "name": "Breadth Health",
+        "source": "DERIVED",
+        "source_symbol": "RSP_SPY_RATIO",
+        "category": "equity",
+        "direction": -1,  # higher participation = healthier = higher stability score
+        "lookback_days_for_z": 252,
+        "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
+        "threshold_yellow_max": 70,
+        "weight": 1.0,
     },
     {
         "code": "DFF",
@@ -174,7 +187,7 @@ for ind_data in INDICATORS:
         new_indicators.append(ind_data)
 
 if not new_indicators:
-    print("✅ All 11 indicators already exist")
+    print("✅ All 12 indicators already exist")
     db.close()
     exit(0)
 

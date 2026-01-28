@@ -15,6 +15,7 @@ interface Props {
 const DATA_FREQUENCY: Record<string, { frequency: string; description: string; expectedLag: number }> = {
   VIX: { frequency: "Real-time", description: "Updates continuously during trading hours and weekends (futures)", expectedLag: 0 },
   SPY: { frequency: "Daily", description: "Updates on market trading days (Mon-Fri)", expectedLag: 0 },
+  BREADTH_HEALTH: { frequency: "Daily", description: "Derived from RSP/SPY ratio, updates on trading days", expectedLag: 0 },
   DFF: { frequency: "Daily", description: "Federal Reserve publishes with 1-2 day lag", expectedLag: 2 },
   T10Y2Y: { frequency: "Daily", description: "Updates on trading days, may have weekend gaps", expectedLag: 0 },
   UNRATE: { frequency: "Monthly", description: "Bureau of Labor Statistics publishes monthly (typically first Friday)", expectedLag: 30 },

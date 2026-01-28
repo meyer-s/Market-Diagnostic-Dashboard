@@ -72,6 +72,7 @@ export const statePalette = {
 export const metricFamilyByKey: Record<string, MetricFamily> = {
   VIX: "volatility",
   SPY: "equity",
+  BREADTH_HEALTH: "equity",
   DFF: "rates",
   T10Y2Y: "rates",
   UNRATE: "growth",

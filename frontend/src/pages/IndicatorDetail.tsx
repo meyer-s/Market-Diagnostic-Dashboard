@@ -206,6 +206,8 @@ interface MuniSeries {
   is_proxy?: boolean;
   is_live?: boolean;
   as_of?: string | null;
+  value?: number | null;
+  stability_score?: number | null;
   notes?: string;
   latest?: MuniSeriesPoint | null;
   trend?: string;
@@ -247,6 +249,16 @@ interface MuniSubsystemResponse {
     missing_keys: string[];
     weights_used: Record<string, number>;
     near_threshold?: "GREEN" | "RED" | null;
+  };
+  relationship_signal?: {
+    name: string;
+    state: "GREEN" | "YELLOW" | "RED";
+    message?: string | null;
+    inputs?: {
+      public_sector_score?: number | null;
+      bond_market_score?: number | null;
+      muni_spread_z_60d?: number | null;
+    };
   };
   curve?: MuniCurve | null;
 }
@@ -1757,6 +1769,7 @@ function MuniStressPanel({
     switch (trend) {
       case "improving":
         return "text-green-400";
+      case "worsening":
       case "deteriorating":
         return "text-red-400";
       case "stable":
@@ -1774,7 +1787,7 @@ function MuniStressPanel({
         return getFamilyColor("liquidity");
       case "MUNI_CURVE_SLOPE_STABILITY":
         return getFamilyColor("rates");
-      case "MUNI_LEVEL_STRESS":
+      case "MUNI_REVENUE_PROXY":
         return getFamilyColor("system");
       default:
         return getFamilyColor("system");
@@ -1841,11 +1854,11 @@ function MuniStressPanel({
       <div className="flex items-start justify-between flex-col gap-2 md:flex-row md:items-center mb-4">
         <div>
           <h3 className="text-lg md:text-xl font-semibold text-stealth-100">
-            Public-sector credit &amp; funding stability
+            Public-sector credit &amp; funding stress
           </h3>
           <p className="text-xs md:text-sm text-stealth-400 mt-1 max-w-3xl">
-            This layer answers a simple question: <em>Is stability holding in the parts of the system that are supposed to be boring?</em>
-            If equities wobble while muni stability holds → noise. If muni stability erodes before equities react → signal.
+            Isolates tax-exempt and public-finance funding conditions, which often move
+            before stress appears in corporate credit or equities.
           </p>
         </div>
         <div className="text-xs text-stealth-500">
@@ -1860,6 +1873,39 @@ function MuniStressPanel({
           )}
         </div>
       </div>
+
+      {data.relationship_signal && data.relationship_signal.state !== "GREEN" && (
+        <div className="bg-stealth-900 border border-stealth-600 rounded p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-stealth-400">{data.relationship_signal.name}</div>
+            <div
+              className={`text-xs font-semibold ${
+                data.relationship_signal.state === "RED"
+                  ? "text-red-400"
+                  : "text-yellow-400"
+              }`}
+            >
+              {data.relationship_signal.state}
+            </div>
+          </div>
+          {data.relationship_signal.message && (
+            <div className="text-xs text-stealth-300 mt-2">
+              {data.relationship_signal.message}
+            </div>
+          )}
+        </div>
+      )}
+
+      {apiCode === "BREADTH_HEALTH" && (
+        <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+          <h3 className="text-lg font-semibold text-stealth-100 mb-3">Methodology</h3>
+          <ul className="text-xs md:text-sm text-stealth-400 space-y-2">
+            <li>- Uses the RSP/SPY ratio (equal-weight vs cap-weight) as a participation proxy.</li>
+            <li>- Combines level stability (z-score) and 30-day change stability, weighted 65%/35%.</li>
+            <li>- Proxy-based breadth signal; higher scores reflect broader participation.</li>
+          </ul>
+        </div>
+      )}
 
       {data.composite && (
         <div className="bg-stealth-900 border border-stealth-600 rounded p-4 mb-4">
@@ -1948,7 +1994,7 @@ function MuniStressPanel({
         <div>
           Components &amp; default weights: Spread {(muniPublicSectorWeights.MUNI_LONG_SPREAD * 100).toFixed(0)}% ·
           SIFMA {(muniPublicSectorWeights.SIFMA_INDEX * 100).toFixed(0)}% · Slope Stability {(muniPublicSectorWeights.MUNI_CURVE_SLOPE_STABILITY * 100).toFixed(0)}% ·
-          Level Stress {(muniPublicSectorWeights.MUNI_LEVEL_STRESS * 100).toFixed(0)}%.
+          Revenue Proxy {(muniPublicSectorWeights.MUNI_REVENUE_PROXY * 100).toFixed(0)}%.
           Missing live inputs are dropped and remaining weights re-normalized.
         </div>
         <div className="mt-2">
@@ -1986,8 +2032,8 @@ function MuniStressPanel({
                 : []),
             ]}
             referenceLines={[
-              { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
-              { y: 40, stroke: statePalette.red, label: "RED", labelFill: statePalette.red },
+              { y: muniPublicSectorThresholds.green, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
+              { y: muniPublicSectorThresholds.yellow, stroke: statePalette.red, label: "RED", labelFill: statePalette.red },
             ]}
             yAxisLabel="Stability Score (0-100)"
             yAxisDomain={[0, 100]}

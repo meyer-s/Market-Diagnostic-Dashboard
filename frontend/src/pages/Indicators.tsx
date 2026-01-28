@@ -9,6 +9,7 @@ import MarketLoading from "../components/ui/MarketLoading";
 const DATA_FREQUENCY: Record<string, { frequency: string }> = {
   VIX: { frequency: "Real-time" },
   SPY: { frequency: "Daily" },
+  BREADTH_HEALTH: { frequency: "Daily" },
   DFF: { frequency: "Daily" },
   T10Y2Y: { frequency: "Daily" },
   UNRATE: { frequency: "Monthly" },

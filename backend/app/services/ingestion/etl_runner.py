@@ -20,6 +20,8 @@ from app.models.system_status import SystemStatus
 
 from app.services.ingestion.fred_client import FredClient
 from app.services.ingestion.yahoo_client import YahooClient
+from app.services.ingestion.breadth_utils import compute_breadth_composite_z
+from app.utils.system_scoring import compute_weighted_composite
 
 # Agent C — clean stubs (will be replaced in Ticket C1)
 from app.services.analytics_stub import (
@@ -120,6 +122,10 @@ class ETLRunner:
                 # Just create placeholder series for now
                 series = [{"date": start_date, "value": 0.0}]
             elif code == "SENTIMENT_COMPOSITE":
+                # This indicator fetches its data in the processing section below
+                # Just create placeholder series for now
+                series = [{"date": start_date, "value": 0.0}]
+            elif code == "BREADTH_HEALTH":
                 # This indicator fetches its data in the processing section below
                 # Just create placeholder series for now
                 series = [{"date": start_date, "value": 0.0}]
@@ -857,6 +863,54 @@ class ETLRunner:
                 direction=ind.direction,
                 lookback=ind.lookback_days_for_z,
             )
+        elif code == "BREADTH_HEALTH":
+            # Breadth proxy: equal-weight vs cap-weight relative strength (RSP/SPY)
+            rsp_series = self.yahoo.fetch_series("RSP", start_date=start_date)
+            spy_series = self.yahoo.fetch_series("SPY", start_date=start_date)
+
+            def series_to_dict(s):
+                return {x["date"]: x["value"] for x in s if x["value"] is not None}
+
+            rsp_dict = series_to_dict(rsp_series)
+            spy_dict = series_to_dict(spy_series)
+            common_dates = sorted(set(rsp_dict.keys()) & set(spy_dict.keys()))
+
+            if len(common_dates) < 30:
+                db.close()
+                raise ValueError(f"Insufficient overlapping data for {code}: only {len(common_dates)} common dates")
+
+            ratio_vals = []
+            for date in common_dates:
+                spy_val = spy_dict.get(date)
+                rsp_val = rsp_dict.get(date)
+                if spy_val in (None, 0) or rsp_val is None:
+                    ratio_vals.append(None)
+                else:
+                    ratio_vals.append(rsp_val / spy_val)
+
+            series = []
+            clean_ratio_vals = []
+            for date, ratio in zip(common_dates, ratio_vals):
+                if ratio is None:
+                    continue
+                series.append({"date": date, "value": ratio})
+                clean_ratio_vals.append(ratio)
+
+            if len(clean_ratio_vals) < 30:
+                db.close()
+                raise ValueError(f"Insufficient clean ratio data for {code}: only {len(clean_ratio_vals)} points")
+
+            clean_values = series
+            raw_series = clean_ratio_vals
+
+            normalized_series = compute_breadth_composite_z(
+                clean_ratio_vals,
+                lookback=ind.lookback_days_for_z,
+                trend_window=30,
+                level_weight=0.65,
+                trend_weight=0.35,
+                direction=ind.direction,
+            )
         elif code == "DFF":
             # CRITICAL: For DFF, we store the ABSOLUTE RATE but score based on 6-MONTH RATE CHANGE
             # This captures the policy cycle (tightening vs easing) rather than day-to-day noise
@@ -1090,6 +1144,8 @@ class ETLRunner:
         """
 
         db = SessionLocal()
+        indicators = db.query(Indicator).all()
+        indicator_map = {ind.id: ind for ind in indicators}
         latest_values = (
             db.query(IndicatorValue)
             .order_by(IndicatorValue.timestamp.desc())
@@ -1107,8 +1163,17 @@ class ETLRunner:
         red_count = sum(1 for x in latest if x.state == "RED")
         yellow_count = sum(1 for x in latest if x.state == "YELLOW")
 
-        # naive scoring — replaced by Agent C in Sprint 2
-        composite = sum(x.score for x in latest) / len(latest) if latest else 50
+        scores_by_code = {}
+        weights_by_code = {}
+        for value in latest:
+            indicator = indicator_map.get(value.indicator_id)
+            if not indicator:
+                continue
+            scores_by_code[indicator.code] = value.score
+            weights_by_code[indicator.code] = indicator.weight or 0.0
+
+        composite, _ = compute_weighted_composite(scores_by_code, weights_by_code)
+        composite = composite if composite is not None else 50
         if red_count >= 2:
             system_state = "RED"
         elif yellow_count >= 3:

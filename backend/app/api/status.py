@@ -5,6 +5,7 @@ from app.models.indicator import Indicator
 from app.models.indicator_value import IndicatorValue
 from app.utils.db_helpers import get_db_session
 from app.utils.response_helpers import format_system_status, format_indicator_status
+from app.utils.system_scoring import compute_weighted_composite
 
 router = APIRouter()
 
@@ -86,22 +87,17 @@ def get_system_history(days: int = 365):
                 continue
 
             # Calculate weighted composite score using carried-forward values
-            total_weighted_score = 0
-            total_weight = 0
-            weighted_scores_by_code = {code: 0.0 for code in indicator_codes}
             red_count = 0
             yellow_count = 0
+            scores_by_code = {}
+            weights_by_code = {}
 
             for indicator_id, val in last_seen.items():
                 indicator = indicator_map.get(indicator_id)
                 if not indicator:
                     continue
-                weight = indicator.weight or 0
-                score = val.score if val.score is not None else 0
-                weighted_score = score * weight
-                total_weighted_score += weighted_score
-                total_weight += weight
-                weighted_scores_by_code[indicator.code] = weighted_score
+                scores_by_code[indicator.code] = val.score
+                weights_by_code[indicator.code] = indicator.weight or 0
 
                 if val.state == "RED":
                     red_count += 1
@@ -111,8 +107,8 @@ def get_system_history(days: int = 365):
             total_count = len(last_seen)
             green_count = max(0, total_count - red_count - yellow_count)
 
-            if total_weight > 0:
-                composite_score = total_weighted_score / total_weight
+            composite_score, weights_used = compute_weighted_composite(scores_by_code, weights_by_code)
+            if composite_score is not None:
 
                 # Determine system state based on composite score
                 if composite_score >= 70:
@@ -126,7 +122,7 @@ def get_system_history(days: int = 365):
                 timestamp = datetime.combine(current_date, datetime.max.time())
 
                 contributions = {
-                    code: round(weighted_scores_by_code[code] / total_weight, 2)
+                    code: round((scores_by_code.get(code) or 0.0) * weights_used.get(code, 0.0), 2)
                     for code in indicator_codes
                 }
 

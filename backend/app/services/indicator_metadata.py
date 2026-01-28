@@ -53,6 +53,22 @@ INDICATOR_METADATA = {
         "typical_range": "Healthy bull: +2% to +8% above 50 EMA. Neutral: -2% to +2%. Bearish: -2% to -10%. Crisis: -10%+.",
         "impact": "Very high impact. Distance from 50 EMA captures market structure better than raw price. Sustained negative gaps (RED) signal broken trends and increased correction risk. Reduces noise from absolute price levels."
     },
+
+    "BREADTH_HEALTH": {
+        "name": "Breadth Health",
+        "description": "Measures market participation using the equal-weight vs cap-weight proxy (RSP/SPY ratio). This reduces reliance on index-level price moves and highlights whether gains are broad-based.",
+        "relevance": "Broad participation signals healthier market internals, while narrowing participation suggests leadership concentration and weaker internal support. This is a diagnostic breadth check, not a forecast.",
+        "scoring": "Uses a 252-day z-score of the RSP/SPY ratio (level) and a 30-day change z-score (trend). The final stability score blends 65% level + 35% trend. Direction: -1 (higher ratio and improving trend = higher stability score).",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "Rising RSP/SPY ratio = broader participation (GOOD). Falling ratio = narrowing participation (BAD).",
+        "thresholds": {
+            "green_below": 40,
+            "yellow_below": 70
+        },
+        "typical_range": "RSP/SPY typically clusters near 1.0. Sustained declines indicate narrowing participation; sustained rises indicate broadening participation.",
+        "impact": "Moderate to high impact. Breadth Health adds an internal participation check so the system is not overly dependent on cap-weighted price moves."
+    },
     
     "DXY": {
         "name": "U.S. Dollar Index (DXY)",

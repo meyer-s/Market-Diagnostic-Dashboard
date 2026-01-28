@@ -385,10 +385,64 @@ async def get_bond_composite_components(days: int = 365):
 async def get_bond_muni_subsystem(days: int = 365):
     """
     Return municipal credit & funding stress subsystem data.
-    Includes Revdex drawdown stress, Muni–Treasury long spread,
+    Includes Revdex revenue proxy, Muni–Treasury long spread,
     SIFMA swap index, and curve slope stability (with EMMA curve if available).
     """
-    return await get_muni_subsystem(days=days)
+    data = await get_muni_subsystem(days=days)
+
+    # Relationship signal: Muni–Corporate Divergence
+    muni_score = (data.get("composite") or {}).get("score")
+    bond_score = None
+    with get_db_session() as db:
+        ind = db.query(Indicator).filter(Indicator.code == "BOND_MARKET_STABILITY").first()
+        if ind:
+            latest = (
+                db.query(IndicatorValue)
+                .filter(IndicatorValue.indicator_id == ind.id)
+                .order_by(IndicatorValue.timestamp.desc())
+                .first()
+            )
+            bond_score = latest.score if latest else None
+
+    spread_series = None
+    for series in data.get("series", []):
+        if series.get("key") == "MUNI_LONG_SPREAD":
+            spread_series = series
+            break
+
+    spread_z_60d = None
+    if spread_series and spread_series.get("history"):
+        values = [p.get("value") for p in spread_series["history"] if p.get("value") is not None]
+        if len(values) > 61:
+            changes_60d = [values[i] - values[i - 60] for i in range(60, len(values))]
+            lookback = min(60, len(changes_60d))
+            from app.services.analytics_stub import compute_z_scores
+            z_scores = compute_z_scores(changes_60d, lookback=lookback)
+            spread_z_60d = z_scores[-1] if z_scores else None
+
+    cond_muni = muni_score is not None and muni_score <= 45
+    cond_bond = bond_score is not None and bond_score >= 65
+    cond_spread = spread_z_60d is not None and spread_z_60d >= 1.0
+
+    if cond_muni and cond_bond and cond_spread:
+        divergence_state = "RED"
+    elif cond_muni and cond_bond and spread_z_60d is not None:
+        divergence_state = "YELLOW"
+    else:
+        divergence_state = "GREEN"
+
+    data["relationship_signal"] = {
+        "name": "Muni–Corporate Divergence",
+        "state": divergence_state,
+        "message": "Public-sector funding stress diverging from corporate credit." if divergence_state != "GREEN" else None,
+        "inputs": {
+            "public_sector_score": muni_score,
+            "bond_market_score": bond_score,
+            "muni_spread_z_60d": spread_z_60d,
+        },
+    }
+
+    return data
 
 
 @router.get("/indicators/LIQUIDITY_PROXY/components")

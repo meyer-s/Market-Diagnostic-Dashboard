@@ -1,6 +1,7 @@
 export interface IndicatorStatus {
   code: string;
   name: string;
+  weight?: number;
   raw_value: number;
   score: number;
   state: "GREEN" | "YELLOW" | "RED";
