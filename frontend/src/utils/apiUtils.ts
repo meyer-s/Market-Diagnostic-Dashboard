@@ -9,10 +9,19 @@
  */
 export function getApiUrl(): string {
   if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+    const configured = import.meta.env.VITE_API_URL;
+    if (configured !== "/api") {
+      return configured;
+    }
   }
-  // Use relative /api path which Vite will proxy to backend
-  return '/api';
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host && host !== "localhost" && host !== "127.0.0.1") {
+      return `http://${host}:8000`;
+    }
+  }
+  // Use relative /api path which Vite will proxy to backend (dev)
+  return "/api";
 }
 
 /**
