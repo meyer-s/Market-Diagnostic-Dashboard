@@ -168,13 +168,13 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
       ? `${trendWindows.label} is ${primaryWord}.`
       : `${trendWindows.label} is ${primaryWord}, but the recent move is ${secondaryWord}.`;
   const toneClause = trendTone === "mixed" ? "" : ` It feels ${trendTone}.`;
-  let actionSentence = "Stay balanced while the signal firms up.";
+  let actionSentence = "Context remains mixed.";
   if (primarySignal.direction === "up" && trendTone !== "noisy") {
-    actionSentence = "Measured exposure can make sense while this holds.";
+    actionSentence = "Participation is improving within alternative assets.";
   } else if (primarySignal.direction === "down") {
-    actionSentence = "Keep size light and lean on hedges until it steadies.";
+    actionSentence = "Participation is softening within alternative assets.";
   }
-  const aasSummary = `Alternative assets often move early when stress builds. ${trendClause}${toneClause} ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
+  const aasSummary = `Alternative assets reflect shifts in risk appetite and liquidity. ${trendClause}${toneClause} ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
   const summaryShort = `${trendWindows.shortLabel} ${primarySignal.direction}${
     secondarySignal.direction === primarySignal.direction
       ? ""

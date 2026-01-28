@@ -90,6 +90,6 @@ export const STATE_DESCRIPTIONS = {
     label: "RED",
     range: `Stability Score: < ${STABILITY_THRESHOLDS.RED_MAX}`,
     description:
-      "Market under stress. High volatility, recession signals, significant systemic concerns.",
+      "Market under stress. High volatility, tighter financial conditions, and elevated systemic concerns.",
   },
 } as const;

@@ -33,7 +33,7 @@ INDICATOR_METADATA = {
             "yellow_below": 70
         },
         "typical_range": "Near-zero during easing (0-0.25%). Neutral: 2-3%. Restrictive: 4%+. Crisis response involves rapid cuts.",
-        "impact": "Very high impact. Rate changes affect mortgage rates, corporate borrowing, stock valuations, and economic activity. Aggressive hiking cycles (RED) increase recession risk."
+        "impact": "Very high impact. Rate changes affect borrowing costs, financing conditions, and economic activity. Sharp hiking cycles typically coincide with tighter financial conditions."
     },
     
     "SPY": {
@@ -51,7 +51,7 @@ INDICATOR_METADATA = {
             "yellow_below": 70
         },
         "typical_range": "Healthy bull: +2% to +8% above 50 EMA. Neutral: -2% to +2%. Bearish: -2% to -10%. Crisis: -10%+.",
-        "impact": "Very high impact. Distance from 50 EMA captures market structure better than raw price. Sustained negative gaps (RED) signal broken trends and increased correction risk. Reduces noise from absolute price levels."
+        "impact": "Very high impact. Distance from 50 EMA captures market structure better than raw price. Sustained negative gaps (RED) indicate weakened trend structure. Reduces noise from absolute price levels."
     },
 
     "BREADTH_HEALTH": {
@@ -89,7 +89,7 @@ INDICATOR_METADATA = {
     "UNRATE": {
         "name": "U.S. Unemployment Rate",
         "description": "The unemployment rate measures the percentage of the labor force that is jobless and actively seeking employment. Published monthly by the Bureau of Labor Statistics.",
-        "relevance": "Rising unemployment signals economic deterioration and reduced consumer spending power. Sharp increases often accompany or precede recessions.",
+        "relevance": "Rising unemployment signals economic deterioration and reduced consumer spending power. Persistent increases are associated with weaker demand cycles.",
         "scoring": "Direction: +1 (high = stress). Elevated unemployment indicates economic weakness. Scores normalize based on historical ranges.",
         "direction": 1,
         "positive_is_good": False,
@@ -99,13 +99,13 @@ INDICATOR_METADATA = {
             "yellow_below": 70
         },
         "typical_range": "Healthy economy: 3.5-5%. Elevated stress: 5-7%. Crisis levels: 7%+",
-        "impact": "High impact on consumer confidence and spending. Rising unemployment is a key recession indicator that affects market sentiment and Fed policy."
+        "impact": "High impact on consumer confidence and spending. Rising unemployment reflects weakening labor demand and can weigh on financial conditions."
     },
     
     "T10Y2Y": {
         "name": "10-Year minus 2-Year Treasury Spread",
-        "description": "The yield curve spread between 10-year and 2-year U.S. Treasury notes. A key predictor of economic conditions and recessions.",
-        "relevance": "An inverted yield curve (negative spread) has preceded every U.S. recession since 1950. It signals expectations of economic slowdown and Fed rate cuts.",
+        "description": "The yield curve spread between 10-year and 2-year U.S. Treasury notes. A key signal of macro regime and rate expectations.",
+        "relevance": "Sustained inversions have historically coincided with weaker growth regimes. The spread reflects expectations for policy and the growth outlook.",
         "scoring": "Direction: -1 (negative/inverted spread = stress). Normal positive spread = HIGH score = GREEN. Inverted negative spread = LOW score = RED. Z-score normalization with direction inversion.",
         "direction": -1,
         "positive_is_good": True,
@@ -115,7 +115,7 @@ INDICATOR_METADATA = {
             "yellow_below": 70
         },
         "typical_range": "Healthy: +0.5% to +2%. Warning: 0% to -0.5%. Crisis: -0.5% or lower",
-        "impact": "Very high impact. The most reliable recession predictor. Sustained inversion (RED state) signals elevated recession probability within 12-24 months."
+        "impact": "Very high impact. Sustained inversion (RED state) reflects tight policy expectations and weaker growth regimes."
     },
     
     "TEDRATE": {
@@ -165,16 +165,16 @@ INDICATOR_METADATA = {
             "yellow_below": 70
         },
         "typical_range": "Healthy: +1% to +3% spread. Neutral: -0.5% to +1%. Warning: -1% to -3%. Crisis: -3%+ (severe squeeze).",
-        "impact": "Very high impact. This composite metric reveals whether consumer fundamentals align with market indicators. Negative spreads (RED state) signal consumers losing purchasing power despite nominal growth, indicating recession risk and reduced corporate revenue expectations. Captures the real-world impact of inflation on consumer capacity."
+        "impact": "Very high impact. This composite metric reveals whether consumer fundamentals align with market indicators. Negative spreads (RED state) signal consumers losing purchasing power despite nominal growth, indicating tighter demand conditions."
     },
     
     "BOND_MARKET_STABILITY": {
         "name": "Bond Market Stability Composite",
         "description": "Comprehensive bond market health index aggregating five critical fixed-income signals: credit spreads, yield curve shape, rate momentum, Treasury volatility, and term premium. Provides a holistic 0-100 stability score for bond market conditions.",
-        "relevance": "The bond market often signals economic stress before equities. This composite captures multiple dimensions of fixed-income market health, from credit risk to rate volatility, offering early warnings of systemic instability. Bond markets are larger and more sensitive to macroeconomic shifts than equities.",
+        "relevance": "The bond market often reflects shifts in financial conditions before equities. This composite captures multiple dimensions of fixed-income market health, from credit risk to rate volatility.",
         "scoring": "Final output is a stability score (0-100) where HIGHER = MORE STABLE. Backend computes weighted composite stress from sub-indicators, then inverts to stability score. Thresholds: ≥70 = GREEN (stable), 40-69 = YELLOW (caution), <40 = RED (stress).",
-        "direction": -1,
-        "positive_is_good": True,
+        "direction": 1,
+        "positive_is_good": False,
         "interpretation": "High score (70+) = Healthy bond markets, normal credit conditions, manageable volatility (GREEN). Mid score (40-69) = Elevated concerns, some stress signals (YELLOW). Low score (<40) = Severe bond market stress, credit crunch, high volatility (RED).",
         "derived_from": ["BAMLH0A0HYM2", "BAMLC0A0CM", "DGS10", "DGS2", "DGS3MO", "DGS30", "DGS5"],
         "components": {
@@ -194,7 +194,7 @@ INDICATOR_METADATA = {
                 "description": "Yield Curve Health (23%)",
                 "sources": ["10Y-2Y Spread (DGS10-DGS2)", "10Y-3M Spread (DGS10-DGS3MO)", "Optional: 30Y-5Y (DGS30-DGS5)"],
                 "formula": "Average z-scores of yield curve slopes, inverted. Steeper curve = healthier = lower stress score.",
-                "interpretation": "Inverted curves (negative spreads) have preceded every U.S. recession since 1955. Flat/inverted = recession warning. Steep = growth expectations.",
+                "interpretation": "Inverted curves (negative spreads) have historically coincided with weaker growth regimes. Flat/inverted = tighter growth expectations. Steep = stronger growth expectations.",
                 "typical_ranges": {
                     "10y2y": "Healthy: +0.5% to +2%, Warning: 0% to -0.5%, Crisis: -0.5% or lower",
                     "10y3m": "Healthy: +1% to +2.5%, Warning: 0% to +0.5%, Crisis: negative"
@@ -205,7 +205,7 @@ INDICATOR_METADATA = {
                 "description": "Rates Momentum (17%)",
                 "sources": ["2Y Yield ROC (DGS2)", "10Y Yield ROC (DGS10)"],
                 "formula": "3-month rate of change for 2Y and 10Y yields. Large upward spikes indicate aggressive Fed tightening = stress.",
-                "interpretation": "Rapid rate increases signal restrictive monetary policy and increased recession risk. Historical Fed hiking cycles correlate with market corrections.",
+                "interpretation": "Rapid rate increases signal restrictive monetary policy and tighter financial conditions. Historical hiking cycles correlate with broader market stress.",
                 "typical_ranges": "Gradual: ±25 bps/quarter, Aggressive: ±50-100 bps/quarter, Crisis tightening: 100+ bps/quarter"
             },
             "treasury_volatility": {
@@ -217,18 +217,17 @@ INDICATOR_METADATA = {
                 "typical_ranges": "Low volatility: <0.03% daily std dev, Moderate: 0.03-0.06%, High: 0.06-0.10%, Crisis: >0.10%"
             }
         },
-        "calculation": "Composite Stress Score = (Credit Spread Stress * 0.44) + (Yield Curve Stress * 0.23) + (Rates Momentum Stress * 0.17) + (Treasury Volatility Stress * 0.16). Stored as raw stress score (0-100, higher = more stress). The direction=-1 indicator setting inverts this during normalization for final scoring.",
+        "calculation": "Composite Stress Score = (Credit Spread Stress * 0.44) + (Yield Curve Stress * 0.23) + (Rates Momentum Stress * 0.17) + (Treasury Volatility Stress * 0.16). Stored as raw stress score (0-100, higher = more stress). The direction=1 indicator setting inverts this during normalization for final scoring.",
         "thresholds": {
             "green_below": 40,
             "yellow_below": 70
         },
         "typical_range": "GREEN (Score 65-100): Normal bond market conditions with healthy credit, normal curve, low volatility. YELLOW (Score 35-65): Some stress signals emerging, elevated caution. RED (Score 0-35): Severe bond market dysfunction, credit crunch, high volatility.",
-        "impact": "Very high impact. Bond markets are leading indicators of economic conditions. This composite captures systemic stress before it manifests in equities. RED states (score <35) historically coincide with recessions, credit crises, or major policy shifts. The weighted approach prioritizes credit conditions (44%) as the most sensitive early warning system.",
+        "impact": "Very high impact. Bond markets are sensitive to funding conditions and credit risk. RED states (score <35) reflect broad fixed-income stress and tighter financing conditions.",
         "historical_context": "Major crises (2008, 2020) showed severe bond market stress months before equity peaks. Credit spreads widened dramatically, curves inverted, and MOVE spiked. This composite would have provided early RED warnings during: 2008 Financial Crisis, 2011 European Debt Crisis, 2018 Q4 selloff, 2020 COVID shock.",
         "use_cases": [
-            "Early warning system for systemic financial stress",
-            "Credit cycle assessment and recession forecasting",
-            "Portfolio risk management and defensive positioning",
+            "System-wide stress monitoring across fixed income",
+            "Credit cycle assessment and funding condition monitoring",
             "Central bank policy impact monitoring",
             "Fixed-income market health diagnostic"
         ]
@@ -237,11 +236,11 @@ INDICATOR_METADATA = {
     "SENTIMENT_COMPOSITE": {
         "name": "Consumer & Corporate Sentiment Composite",
         "description": "Composite measure of consumer and corporate confidence levels combining University of Michigan Consumer Sentiment, NFIB Small Business Optimism, ISM New Orders, and Capital Expenditure indicators. Captures the psychological willingness to spend, invest, and expand.",
-        "relevance": "Economic activity is driven by confidence and expectations, not just fundamentals. When consumers and businesses are optimistic, they spend and invest freely, driving growth. When pessimism takes hold, discretionary spending and business investment freeze, creating self-fulfilling contractions. This indicator provides early warning of shifts in economic psychology.",
+        "relevance": "Economic activity is influenced by confidence and expectations. Shifts in sentiment often coincide with changes in spending and investment behavior.",
         "scoring": "Final output is a stability score (0-100) where HIGHER = MORE CONFIDENCE = MORE STABLE. Components (Michigan, NFIB, ISM, CapEx) z-score normalized and mapped to 0-100 confidence scale, then weighted and combined. Thresholds: ≥70 = GREEN (broad optimism), 40-69 = YELLOW (mixed sentiment), <40 = RED (pessimism).",
         "direction": -1,
         "positive_is_good": True,
-        "interpretation": "GREEN (Score 70-100): Broad-based optimism across consumers and businesses, supportive of growth. YELLOW (Score 40-69): Mixed or neutral sentiment, cautious expansion. RED (Score <40): Pervasive pessimism, contraction risk, spending/investment freeze.",
+        "interpretation": "GREEN (Score 70-100): Broad-based optimism across consumers and businesses. YELLOW (Score 40-69): Mixed or neutral sentiment. RED (Score <40): Pervasive pessimism and muted demand.",
         "derived_from": ["UMCSENT", "BOPTEXP", "NEWORDER", "ACOGNO"],
         "components": {
             "michigan_consumer_sentiment": {
@@ -282,12 +281,12 @@ INDICATOR_METADATA = {
             "green_above": 70,
             "yellow_above": 40
         },
-        "typical_range": "GREEN (Score 65-100): Broad optimism across consumer and business surveys, supportive of economic expansion. YELLOW (Score 35-65): Mixed sentiment, economy muddling through. RED (Score 0-35): Widespread pessimism, high recession risk, spending/investment paralysis.",
-        "impact": "High impact. Sentiment drives the real economy with a lead time. Consumers and businesses pull back spending and hiring when pessimistic, creating actual economic weakness. This composite captures psychology shifts months before they appear in hard economic data. RED states (score <35) historically precede recessions.",
+        "typical_range": "GREEN (Score 65-100): Broad optimism across consumer and business surveys. YELLOW (Score 35-65): Mixed sentiment. RED (Score 0-35): Widespread pessimism and weaker demand conditions.",
+        "impact": "High impact. Sentiment shapes spending and hiring decisions. This composite captures shifts in confidence that align with changing demand conditions.",
         "historical_context": "Sentiment indicators collapsed during: 2008 Financial Crisis (all components plunged), 2011 Debt Ceiling Crisis (brief shock), 2015-2016 Manufacturing Recession (CapEx and ISM weak), 2020 COVID Shock (historic collapse then recovery), 2022 Inflation Shock (Michigan hit 50-year low). Each major sentiment collapse preceded or coincided with GDP contractions or market corrections.",
         "use_cases": [
-            "Early warning system for demand-driven recessions",
-            "Consumer discretionary sector positioning",
+            "Monitoring demand sentiment shifts",
+            "Consumer confidence context for discretionary activity",
             "Business cycle stage identification",
             "Complement to hard economic data (employment, production)",
             "Forward-looking confidence assessment"
@@ -297,11 +296,11 @@ INDICATOR_METADATA = {
     "LIQUIDITY_PROXY": {
         "name": "Liquidity Proxy Indicator",
         "description": "Composite measure of systemic liquidity conditions combining M2 money supply growth, Federal Reserve balance sheet changes, and overnight reverse repo facility usage. Captures the availability of money and credit in the financial system.",
-        "relevance": "Liquidity is the lifeblood of financial markets. When liquidity is abundant, asset prices rise and volatility falls. When liquidity drains, markets become vulnerable to shocks and corrections. This indicator provides early warning of liquidity regime shifts.",
+        "relevance": "Liquidity is a cross-asset driver. When liquidity expands, financial conditions ease; when it contracts, conditions tighten. This indicator tracks liquidity regime shifts.",
         "scoring": "Final output is a stability score (0-100) where HIGHER = MORE LIQUIDITY = MORE STABLE. Backend combines z-scores of M2 growth, Fed balance sheet changes, and inverted RRP usage into liquidity metric, then maps to stability score. Thresholds: ≥70 = GREEN (abundant liquidity), 40-69 = YELLOW (neutral/mixed), <40 = RED (liquidity drought).",
         "direction": -1,
         "positive_is_good": True,
-        "interpretation": "GREEN (Score 70-100): Abundant liquidity, supportive tailwinds for risk assets. YELLOW (Score 40-69): Neutral/mixed liquidity, market vulnerable to shocks. RED (Score <40): Liquidity drought, high fragility, increased crash risk.",
+        "interpretation": "GREEN (Score 70-100): Abundant liquidity. YELLOW (Score 40-69): Neutral/mixed liquidity. RED (Score <40): Liquidity tightness and elevated funding stress.",
         "derived_from": ["M2SL", "WALCL", "RRPONTSYD"],
         "components": {
             "m2_money_supply": {
@@ -329,15 +328,14 @@ INDICATOR_METADATA = {
             "yellow_below": 70
         },
         "typical_range": "GREEN (Score 60-100): 2020-2021 QE era, abundant liquidity supporting asset prices. YELLOW (Score 30-60): 2019 normal conditions, 2023-2024 partial recovery. RED (Score 0-30): 2022 aggressive QT and M2 contraction.",
-        "impact": "Very high impact. Liquidity drives ALL asset classes. The saying 'don't fight the Fed' refers primarily to liquidity conditions. Major market regimes correlate with liquidity: 2008-2014 QE = bull market, 2018 QT = correction, 2020-2021 massive QE = bubble, 2022 aggressive QT = bear market. This indicator provides systematic edge for timing risk-on/risk-off positioning.",
+        "impact": "Very high impact. Liquidity conditions align with broad market regimes and funding availability. This indicator contextualizes shifts in financial conditions.",
         "historical_context": "Liquidity explains much of market behavior that fundamentals cannot. 2020-2021: GREEN (M2 growth 25%+, Fed balance sheet +$4T, RRP near zero) = everything rallied. 2022: RED (M2 declining, QT -$95B/month, RRP peaked $2.5T) = worst year since 2008. 2023-2024: YELLOW (M2 stabilizing, QT slowing, RRP declining) = choppy recovery.",
         "use_cases": [
-            "Market regime identification (risk-on vs risk-off)",
-            "Asset allocation decisions and beta management",
-            "Timing entry/exit for risk assets",
+            "Market regime identification",
+            "System-wide liquidity context",
             "Fed policy impact assessment (QE/QT effects)",
-            "Crash risk monitoring (liquidity droughts precede crashes)",
-            "Cryptocurrency and speculative asset timing (most liquidity-sensitive)"
+            "Liquidity stress monitoring (droughts coincide with tighter regimes)",
+            "Cross-asset liquidity sensitivity checks"
         ],
         "correlation_note": "Strong inverse correlation with VIX. When liquidity is abundant (GREEN), volatility tends to be low. When liquidity drains (RED), volatility spikes. Also correlates with credit spreads and risk appetite metrics."
     },
@@ -345,11 +343,11 @@ INDICATOR_METADATA = {
     "ANALYST_ANXIETY": {
         "name": "Analyst Confidence",
         "description": "Composite sentiment indicator measuring institutional and professional market confidence through volatility calm and credit risk proxies. Combines equity volatility (VIX), rates volatility (MOVE), high-yield credit stress (HY OAS), and equity risk premium dynamics to gauge market confidence and stability.",
-        "relevance": "Analyst confidence captures the professional investment community's collective assessment of market stability. Unlike retail sentiment which can be contrarian, institutional confidence directly impacts capital allocation, hedging activity, and systemic stability. High confidence precedes risk-taking, capital deployment, and market rallies.",
+        "relevance": "Analyst confidence captures the professional investment community's collective assessment of market stability. Institutional confidence influences hedging activity and overall market stability.",
         "scoring": "Final output is a stability score (0-100) where HIGHER = LOWER ANXIETY = MORE STABLE. Each component (VIX, MOVE, HY OAS, ERP) normalized via z-score with momentum blending, mapped to stress, then inverted to stability. Thresholds: ≥70 = GREEN (calm markets), 40-69 = YELLOW (elevated caution), <40 = RED (high anxiety).",
         "direction": -1,
         "positive_is_good": True,
-        "interpretation": "GREEN (Score 70-100): Low institutional anxiety, supportive risk environment, stable credit conditions. YELLOW (Score 40-69): Elevated caution, mixed signals, monitoring required. RED (Score <40): High institutional fear, defensive positioning, elevated crash risk.",
+        "interpretation": "GREEN (Score 70-100): Low institutional anxiety and stable credit conditions. YELLOW (Score 40-69): Elevated caution and mixed signals. RED (Score <40): High institutional anxiety and stress.",
         "derived_from": ["^VIX", "^MOVE", "BAMLH0A0HYM2", "DGS10", "BAMLC0A4CBBB"],
         "components": {
             "vix": {
@@ -390,11 +388,11 @@ INDICATOR_METADATA = {
         "weight_reallocation": "If MOVE unavailable: VIX=0.44, HY_OAS=0.28, ERP=0.10. If ERP unavailable: VIX=0.55, HY_OAS=0.35. If both unavailable: VIX=0.60, HY_OAS=0.40 (minimum viable configuration).",
         "calculation": "1) Fetch component data (520+ day history). 2) For each component: compute z-score (520-day mean/std), compute 10-day ROC z-score, blend (75% value + 25% momentum). 3) Clamp z to [-3, +3]. 4) Map to stress: ((z + 3) / 6) * 100. 5) Compute weighted composite stress. 6) Invert to stability: 100 - stress. 7) Apply direction=-1 normalization for final scoring.",
         "thresholds": {
-            "green_below": 35,
-            "yellow_below": 65
+            "green_below": 40,
+            "yellow_below": 70
         },
         "typical_range": "GREEN (Score 65-100): 2017-2019 'Goldilocks' period, 2021 post-COVID recovery. VIX <20, MOVE <100, tight credit spreads. Institutional confidence high. YELLOW (Score 35-65): 2023-2024 mixed regime, 2015-2016 volatility episodes. Some anxiety but not systemic. RED (Score 0-35): 2008 Financial Crisis, March 2020 COVID crash, Q4 2018. VIX >30, MOVE >150, HY spreads >800 bps.",
-        "impact": "High impact for regime identification. Analyst Confidence is a leading indicator of institutional risk appetite. Transitions from GREEN to YELLOW provide early warning for defensive positioning. RED states typically coincide with significant drawdowns and require maximum caution. Unlike retail sentiment (contrarian), institutional confidence is directional - when analysts are confident, markets tend to rise.",
+        "impact": "High impact for regime identification. Analyst Confidence reflects institutional anxiety levels and credit conditions. Shifts in confidence provide context for evolving market regimes.",
         "historical_context": "Major market dislocations show extreme anxiety: 2008 Crisis (RED for months, VIX peaked 89, HY spreads 2000+ bps), 2020 COVID (RED spike, VIX 82, MOVE 265, rapid recovery), 2018 Q4 (YELLOW/RED, VIX spiked to 36, -20% equity drawdown). GREEN regimes (2017-2019, 2021) marked by low volatility, tight spreads, and strong returns.",
         "use_cases": [
             "Early warning system for institutional risk-off behavior",
@@ -404,8 +402,8 @@ INDICATOR_METADATA = {
             "Options strategy selection (sell premium in GREEN, buy protection in YELLOW/RED)",
             "Correlation with systematic risk events and market dislocations"
         ],
-        "directional_interpretation": "7-day delta provides actionable signals: Improving (+3 or more) = Anxiety declining, risk appetite returning. Deteriorating (-3 or less) = Anxiety rising, defensive positioning warranted. Stable (within ±3) = Monitor but no immediate action required.",
-        "correlation_note": "High correlation with overall market stress. Inverse correlation with risk assets (when anxiety rises, stocks/crypto decline). Positive correlation with safe havens (Treasuries, USD). Leads equity drawdowns by days/weeks during transitions from GREEN to RED."
+        "directional_interpretation": "7-day delta provides context: Improving (+3 or more) = Anxiety declining. Deteriorating (-3 or less) = Anxiety rising. Stable (within ±3) = No material change.",
+        "correlation_note": "High correlation with overall market stress. Inverse correlation with risk assets and positive correlation with safe-haven demand."
     }
 }
 

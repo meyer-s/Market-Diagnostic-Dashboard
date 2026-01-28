@@ -1,7 +1,7 @@
 /**
  * Price Analysis Chart Component
  * 
- * Displays stock price with take profit and stop loss targets
+ * Displays stock price with volatility-based reference bands
  * Visual representation of upside/downside potential and risk levels
  */
 

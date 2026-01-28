@@ -270,11 +270,11 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
     if (isRed && spread > 5) {
       return { text: "Flight to Safety", color: "text-blue-400", desc: "Investors seeking defensive positioning amid stress" };
     } else if (isRed && spread < -5) {
-      return { text: "Risk Appetite Emerging", color: "text-green-400", desc: "Cyclicals gaining despite red regime - potential reversal signal" };
+      return { text: "Cyclicals Leading in Stress", color: "text-green-400", desc: "Cyclicals gaining despite red regime - atypical leadership mix" };
     } else if (isGreen && spread < -5) {
       return { text: "Risk-On Mode", color: "text-orange-400", desc: "Growth sectors leading as expected in healthy market" };
     } else if (isGreen && spread > 5) {
-      return { text: "Caution Creeping In", color: "text-yellow-400", desc: "Defensives outperforming in green market - early warning sign" };
+      return { text: "Defensive Lead in Green Regime", color: "text-yellow-400", desc: "Defensives outperforming despite green market conditions" };
     } else {
       return { text: "Balanced Rotation", color: "text-gray-400", desc: "No clear defensive or cyclical bias" };
     }
@@ -294,10 +294,10 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       : `Recent move is ${secondarySpreadPhrase}.`;
   const sectorSummary =
     leadSide === "balanced"
-      ? `Compares defensive vs growth sectors. ${trendWindows.label} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios feel it first, so stay balanced.`
+      ? `Compares defensive vs growth sectors. ${trendWindows.label} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Balanced leadership suggests mixed positioning.`
       : leadSide === "defense"
-      ? `Compares defensive vs growth sectors. Defense is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios feel it first, so keep a defensive tilt.`
-      : `Compares defensive vs growth sectors. Growth is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth-linked jobs and portfolios benefit first, so lean into growth.`;
+      ? `Compares defensive vs growth sectors. Defense is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Defensive leadership indicates a cautious tone in sector positioning.`
+      : `Compares defensive vs growth sectors. Growth is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth leadership indicates stronger cyclicality in sector positioning.`;
 
   return (
     <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">

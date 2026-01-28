@@ -644,7 +644,7 @@ function CBContextPanel({ cb_holdings, indicators }: any) {
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Government Gold Buying Pressure</h3>
-      <p className="text-xs text-stealth-400 mb-4">Shows whether central banks are aggressively accumulating gold, signaling inflation fears or de-dollarization</p>
+      <p className="text-xs text-stealth-400 mb-4">Shows whether central banks are aggressively accumulating gold, consistent with inflation concerns or de-dollarization themes</p>
 
       <div className="space-y-6">
         {/* CB Gold % of Reserves */}
@@ -893,7 +893,7 @@ function RelativeValuePanel({ indicators }: any) {
             <div className="flex justify-between text-xs text-stealth-400">
               <span>Z-Score: {isNumber(ptAuZ) ? `${ptAuZ.toFixed(2)} sigma` : "n/a"}</span>
               <span className={isNumber(ptAuZ) ? (ptAuZ < -1 ? "text-red-400" : "text-green-400") : "text-stealth-400"}>
-                {isNumber(ptAuZ) ? (ptAuZ < -1 ? "Recession signal" : "Growth neutral") : "Unknown"}
+                {isNumber(ptAuZ) ? (ptAuZ < -1 ? "Industrial stress marker" : "Growth neutral") : "Unknown"}
               </span>
             </div>
           </div>
@@ -1424,7 +1424,7 @@ function CorrelationPanel({ correlations }: any) {
                 <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} TLT
               </td>
                 <td className="text-right font-semibold">{formatCorr(correlations.au_tlt)}</td>
-              <td className="text-right">Bond substitute signal</td>
+              <td className="text-right">Bond substitute marker</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
@@ -1445,8 +1445,8 @@ function CorrelationPanel({ correlations }: any) {
       </div>
 
       <div className="mt-4 p-3 bg-stealth-700 rounded text-xs text-stealth-400 border-l-2 border-blue-500">
-        <strong>Note:</strong> Correlations change with market regime. Breakdowns {'>'} +/-2sigma signal regime shifts. Use as
-        regime confirmation, not reversion signal.
+        <strong>Note:</strong> Correlations change with market regime. Breakdowns {'>'} +/-2sigma can indicate regime shifts. Use as
+        regime confirmation, not a mean-reversion cue.
       </div>
     </div>
   );
@@ -1590,14 +1590,14 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
               </div>
             </div>
 
-            {/* Price Targets */}
+            {/* Reference Levels */}
             <div className="grid grid-cols-2 gap-2 text-xs pt-3 border-t border-stealth-600">
               <div>
-                <span className="text-stealth-400">Target:</span>
+                <span className="text-stealth-400">Upper:</span>
                 <span className="ml-2 text-green-400 font-semibold">${proj.levels.take_profit.toFixed(2)}</span>
               </div>
               <div>
-                <span className="text-stealth-400">Stop:</span>
+                <span className="text-stealth-400">Lower:</span>
                 <span className="ml-2 text-red-400 font-semibold">${proj.levels.stop_loss.toFixed(2)}</span>
               </div>
             </div>

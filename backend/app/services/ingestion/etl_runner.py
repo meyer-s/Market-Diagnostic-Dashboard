@@ -29,7 +29,8 @@ from app.services.analytics_stub import (
     normalize_series,
     compute_score,
     compute_state,
-    score_series
+    score_series,
+    direction_adjusted
 )
 
 
@@ -379,13 +380,13 @@ class ETLRunner:
             series = [{"date": common_dates[i], "value": composite_stress[i]} for i in range(len(common_dates))]
             clean_values = series  # All values are valid
             raw_series = composite_stress.tolist()
-            
-            # Since we've already computed 0-100 scores, use them directly
-            # but still normalize for consistency with system
-            normalized_series = normalize_series(
-                raw_series,
-                direction=ind.direction,
-                lookback=ind.lookback_days_for_z,
+
+            # Composite stress is already on a 0-100 scale. Convert to z-space
+            # (inverse of map_z_to_score) to avoid double-normalization.
+            score_to_z = lambda score: (score / 100.0) * 4 - 2
+            normalized_series = direction_adjusted(
+                [score_to_z(val) for val in raw_series],
+                ind.direction,
             )
         elif code == "LIQUIDITY_PROXY":
             import numpy as np
@@ -445,13 +446,17 @@ class ETLRunner:
             fed_bs_vals = np.array([fed_bs_filled[d] for d in common_dates])
             rrp_vals = np.array([rrp_filled[d] for d in common_dates])
             
-            # Calculate M2 YoY% change
+            # Calculate M2 YoY% change using calendar lookback (handles daily forward-fill).
+            from datetime import datetime, timedelta
+            import bisect
+
+            common_date_objs = [datetime.strptime(d, "%Y-%m-%d") for d in common_dates]
             m2_yoy = np.zeros_like(m2_vals)
-            # Need at least 252 data points (roughly 1 year of daily data, but these are often weekly/monthly)
-            # For monthly data, use 12 months back
-            periods_per_year = 12  # Assume monthly data
-            for i in range(periods_per_year, len(m2_vals)):
-                m2_yoy[i] = ((m2_vals[i] - m2_vals[i - periods_per_year]) / m2_vals[i - periods_per_year]) * 100
+            for i, current_date in enumerate(common_date_objs):
+                target_date = current_date - timedelta(days=365)
+                j = bisect.bisect_left(common_date_objs, target_date)
+                if j < i and m2_vals[j] != 0:
+                    m2_yoy[i] = ((m2_vals[i] - m2_vals[j]) / m2_vals[j]) * 100
             
             # Calculate Fed Balance Sheet change (delta)
             fed_bs_delta = np.zeros_like(fed_bs_vals)
@@ -490,12 +495,8 @@ class ETLRunner:
             clean_values = series  # All values are valid
             raw_series = smoothed_liquidity.tolist()
             
-            # Normalize for consistency - direction=-1 means high liquidity → high score
-            normalized_series = normalize_series(
-                raw_series,
-                direction=ind.direction,
-                lookback=ind.lookback_days_for_z,
-            )
+            # smoothed_liquidity already lives in z-space; avoid double-normalizing.
+            normalized_series = direction_adjusted(raw_series, ind.direction)
         elif code == "ANALYST_ANXIETY":
             import numpy as np
             
@@ -697,12 +698,12 @@ class ETLRunner:
             series = [{"date": common_dates[i], "value": composite_stability[i]} for i in range(len(common_dates))]
             clean_values = series
             raw_series = composite_stability.tolist()
-            
-            # Normalize for consistency with system
-            normalized_series = normalize_series(
-                raw_series,
-                direction=ind.direction,
-                lookback=ind.lookback_days_for_z,
+
+            # Composite stability already on 0-100 scale; convert to z-space to avoid re-normalizing.
+            score_to_z = lambda score: (score / 100.0) * 4 - 2
+            normalized_series = direction_adjusted(
+                [score_to_z(val) for val in raw_series],
+                ind.direction,
             )
         elif code == "SENTIMENT_COMPOSITE":
             import numpy as np
@@ -860,12 +861,12 @@ class ETLRunner:
             series = [{"date": common_dates[i], "value": composite_conf[i]} for i in range(len(common_dates))]
             clean_values = series
             raw_series = composite_conf.tolist()
-            
-            # Normalize for consistency with system
-            normalized_series = normalize_series(
-                raw_series,
-                direction=ind.direction,
-                lookback=ind.lookback_days_for_z,
+
+            # Composite confidence already on 0-100 scale; convert to z-space to avoid re-normalizing.
+            score_to_z = lambda score: (score / 100.0) * 4 - 2
+            normalized_series = direction_adjusted(
+                [score_to_z(val) for val in raw_series],
+                ind.direction,
             )
         elif code == "BREADTH_HEALTH":
             # Breadth proxy: equal-weight vs cap-weight relative strength (RSP/SPY)
@@ -1229,12 +1230,12 @@ class ETLRunner:
 
         composite, _ = compute_weighted_composite(scores_by_code, weights_by_code)
         composite = composite if composite is not None else 50
-        if red_count >= 2:
-            system_state = "RED"
-        elif yellow_count >= 3:
+        if composite >= 70:
+            system_state = "GREEN"
+        elif composite >= 40:
             system_state = "YELLOW"
         else:
-            system_state = "GREEN"
+            system_state = "RED"
 
         entry = SystemStatus(
             timestamp=datetime.utcnow(),

@@ -77,7 +77,7 @@ export default function SystemBreakdown() {
         const metaWithWeights: IndicatorMetadata[] = indicatorData.map((ind: IndicatorStatus) => ({
           code: ind.code,
           name: getIndicatorDisplayName(ind.code, ind.name),
-          weight: ind.weight ?? getIndicatorWeight(ind.code),
+          weight: ind.weight ?? 1.0,
         }));
         
         setMetadata(metaWithWeights);
@@ -108,7 +108,7 @@ export default function SystemBreakdown() {
                     dateIndicatorMap.set(dateKey, new Map());
                   }
                   const indicatorMap = dateIndicatorMap.get(dateKey)!;
-                  const state = getStateFromScore(point.score);
+                  const state = point.state || getStateFromScore(point.score);
                   indicatorMap.set(code, { state, score: point.score });
                 });
               }
@@ -205,24 +205,6 @@ export default function SystemBreakdown() {
 
     fetchData();
   }, []);
-
-  // Helper functions for weights and directions (should come from backend)
-  const getIndicatorWeight = (code: string): number => {
-    const weights: Record<string, number> = {
-      VIX: 1.5,
-      SPY: 1.4,
-      DFF: 1.3,
-      T10Y2Y: 1.6,
-      UNRATE: 1.2,
-      CONSUMER_HEALTH: 1.4,
-      BOND_MARKET_STABILITY: 1.8,
-      LIQUIDITY_PROXY: 1.6,
-      ANALYST_ANXIETY: 1.7,
-      SENTIMENT_COMPOSITE: 1.6,
-      BREADTH_HEALTH: 1.0,
-    };
-    return weights[code] || 1.0;
-  };
 
   // Direction field removed - all scores are stability scores (higher = better)
   // Backend handles normalization; frontend only displays final scores
@@ -603,7 +585,7 @@ export default function SystemBreakdown() {
         {expandedSections.has('weights') && (
           <div className="collapsible-content">
             <p className="text-xs sm:text-sm text-stealth-300 mb-3 md:mb-4">
-              Each indicator is assigned a weight based on its historical significance in predicting market instability. 
+              Each indicator is assigned a weight based on its historical association with market stability shifts. 
               Weights reflect how strongly each metric influences the composite score and overall system state.
             </p>
             <div className="space-y-3">
@@ -621,7 +603,7 @@ export default function SystemBreakdown() {
                   VIX: "CBOE Volatility Index - Market fear gauge. Higher values indicate increased expected volatility and investor anxiety. Real-time measure of equity market stress.",
                   SPY: "S&P 500 ETF - 50-day EMA gap analysis. Measures momentum and trend strength of broad equity market. Negative gap (price below EMA) signals distribution and weakness.",
                   DFF: "Federal Funds Rate - 6-month cumulative rate change tracks Fed monetary policy stance. Rising rates (tightening) signal restrictive policy and stress; falling rates (easing) indicate stability.",
-                  T10Y2Y: "10Y-2Y Treasury Spread - Yield curve indicator. Inversions (negative spread) historically precede recessions by 12-18 months. Key recession predictor.",
+                  T10Y2Y: "10Y-2Y Treasury Spread - Yield curve indicator. Inversions (negative spread) have historically coincided with weaker growth regimes and tighter policy expectations.",
                   UNRATE: "Unemployment Rate - 6-month unemployment change tracks labor market momentum. Rising unemployment (positive change) signals deteriorating conditions and stress; falling unemployment indicates economic strength.",
                   CONSUMER_HEALTH: "Derived indicator combining Personal Consumption Expenditures, Personal Income, and CPI to assess real consumer purchasing power and spending capacity.",
                   BREADTH_HEALTH: `Measures market participation to reduce reliance on index-level price moves. Participation is ${breadthTrend} (trend over recent weeks).`,
@@ -683,7 +665,7 @@ export default function SystemBreakdown() {
                         </div>
                         <div className="text-stealth-400 text-xs">
                           <strong className="text-stealth-300">Rationale:</strong> Bond markets are leading indicators of systemic stress. 
-                          Credit spreads widen before equity crashes, yield curves invert before recessions, and Treasury volatility spikes during 
+                          Credit spreads often widen ahead of equity stress, yield curves invert during tighter cycles, and Treasury volatility spikes during 
                           liquidity crises. This composite captures bond market health where higher scores indicate stable fixed income conditions.
                         </div>
                         <div className="text-stealth-400 text-xs">
@@ -880,7 +862,7 @@ export default function SystemBreakdown() {
               </div>
               <div className="text-xs text-stealth-500">
                 Note: Weights are calibrated based on historical correlation with market downturns and systemic crises. 
-                Bond Market Stability receives highest weight (1.8) as fixed income dysfunction typically precedes equity crashes. 
+                Bond Market Stability receives highest weight (1.8) as fixed income stress often emerges ahead of broader market instability. 
                 Sentiment indicators (Analyst Confidence 1.7, Sentiment Composite 1.6) capture forward-looking confidence shifts.
                 All indicators output stability scores where higher values indicate better market conditions.
                 <br /><br />

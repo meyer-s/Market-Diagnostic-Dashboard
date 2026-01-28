@@ -9,7 +9,7 @@
  * - Multi-horizon analysis: 3-month, 6-month, and 12-month outlooks
  * - Interactive chart with uncertainty cones
  * - Detailed scoring breakdown with conviction metrics
- * - Price analysis with take profit and stop loss targets
+ * - Price analysis with volatility-based reference bands
  * - Comparison against SPY benchmark
  */
 
@@ -534,11 +534,11 @@ export default function StockAnalysis() {
                   <p className="font-semibold text-purple-300">{Math.round(projections["T"].conviction)}%</p>
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1" title="Projected upside target (take profit)">Take Profit</p>
+                  <p className="text-gray-400 mb-1" title="Upper reference band derived from volatility">Upper Reference</p>
                   <p className="font-semibold text-green-400">${projections["T"].take_profit.toFixed(2)}</p>
                 </div>
                 <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1" title="Volatility-adjusted stop loss">Stop Loss</p>
+                  <p className="text-gray-400 mb-1" title="Lower reference band derived from volatility">Lower Reference</p>
                   <p className="font-semibold text-red-400">
                     ${Math.max(0, projections["T"].stop_loss).toFixed(2)}
                   </p>
@@ -1193,7 +1193,7 @@ export default function StockAnalysis() {
               <p><strong>Score Change:</strong> Shows whether the outlook is improving (+) or deteriorating (-) over time.</p>
               <p><strong>Uncertainty Cone:</strong> Tighter cones = higher confidence. Wider cones = greater uncertainty.</p>
               <p><strong>Conviction:</strong> Confidence level in the analysis (0-100). Based on signal alignment, volatility, and score strength.</p>
-              <p><strong>Price Targets:</strong> Take Profit and Stop Loss levels calculated from volatility-adjusted returns and risk metrics.</p>
+              <p><strong>Reference Bands:</strong> Upper and lower bands derived from volatility-adjusted returns and risk metrics.</p>
             </div>
           </div>
 
@@ -1248,18 +1248,18 @@ export default function StockAnalysis() {
                   </ul>
                 </div>
                 <div className="bg-gray-900 rounded p-4">
-                  <h4 className="font-semibold mb-2">Price Targets</h4>
+                  <h4 className="font-semibold mb-2">Reference Bands</h4>
                   <ul className="space-y-2 text-xs">
                     <li><strong>Take Profit:</strong> Calculated from projected return with volatility and horizon adjustments. Represents upside potential.</li>
-                    <li><strong>Stop Loss:</strong> Based on volatility (ATR), risk score, and time horizon. Defines acceptable downside risk.</li>
-                    <li><strong>Risk/Reward Ratio:</strong> Take Profit upside divided by Stop Loss downside. Higher is better.</li>
+                    <li><strong>Lower Reference:</strong> Based on volatility (ATR), risk score, and time horizon. Serves as a downside context band.</li>
+                    <li><strong>Range Ratio:</strong> Upper band distance divided by lower band distance. Higher values indicate wider asymmetry.</li>
                   </ul>
                 </div>
                 <div className="bg-gray-900 rounded p-4">
                   <h4 className="font-semibold mb-2">Uncertainty Cones</h4>
                   <p className="text-xs">
-                    The expanding cone represents confidence intervals. Width increases with forecast horizon, 
-                    reflecting growing uncertainty. Narrower cones indicate more predictable price behavior.
+                    The expanding cone represents uncertainty bands. Width increases with horizon, 
+                    reflecting greater dispersion. Narrower cones indicate more stable behavior.
                   </p>
                 </div>
               </div>

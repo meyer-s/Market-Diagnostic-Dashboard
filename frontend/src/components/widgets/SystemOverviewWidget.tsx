@@ -235,18 +235,18 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   if (data.state === "GREEN") {
     actionSentence =
       primarySignal.direction === "down"
-        ? "Households and businesses should still see stability, but keep risk measured until the slide stops."
-        : "Households and businesses usually feel stability first, so longer-term plans can make sense while this holds.";
+        ? "Stability is easing from recent highs; conditions warrant monitoring."
+        : "Households and businesses often feel stability first while conditions hold.";
   } else if (data.state === "YELLOW") {
     actionSentence =
       primarySignal.direction === "up"
-        ? "Unevenness may ease, but stay diversified until the signal firms up."
-        : "Uneven costs or demand can show up for households and employers, so keep exposure balanced.";
+        ? "Unevenness may be easing, but conditions remain mixed."
+        : "Uneven costs or demand can show up for households and employers during mixed conditions.";
   } else {
     actionSentence =
       primarySignal.direction === "up"
-        ? "Stress may be easing, but borrowers and employers feel it first; protect cash needs until it stabilizes."
-        : "Borrowers and employers feel this first; protect cash needs and keep risk small.";
+        ? "Stress may be easing, but conditions remain tight."
+        : "Stress remains elevated and typically shows up first in borrowing conditions.";
   }
   const systemSummary = `System health blends many signals. ${nuanceSentence} ${actionSentence}`;
 

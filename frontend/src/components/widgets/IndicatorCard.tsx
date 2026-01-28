@@ -49,15 +49,15 @@ export default function IndicatorCard({ indicator }: Props) {
       .catch(() => setHistory([]));
   }, [indicator.code]);
 
-  const lastUpdated = new Date(indicator.timestamp);
-  const businessDaysAgo = getBusinessDaysAgo(lastUpdated);
-  const timeDisplay = formatRelativeDate(lastUpdated);
+  const lastUpdated = indicator.timestamp ? new Date(indicator.timestamp) : null;
+  const businessDaysAgo = lastUpdated ? getBusinessDaysAgo(lastUpdated) : Number.POSITIVE_INFINITY;
+  const timeDisplay = lastUpdated ? formatRelativeDate(lastUpdated) : "No data";
 
   const metadata = DATA_FREQUENCY[indicator.code] || { frequency: "Daily", description: "Updates on business days", expectedLag: 1 };
   
   // Calculate data freshness with intelligent staleness detection
   // Accounts for publishing delays, weekends, and data source schedules
-  const isStale = businessDaysAgo > (metadata.expectedLag + 1); // Use business-day lag to avoid weekend false positives
+  const isStale = !lastUpdated || businessDaysAgo > (metadata.expectedLag + 1); // Use business-day lag to avoid weekend false positives
   
   // Visual indicators for data freshness status
   const freshnessIcon = isStale ? (

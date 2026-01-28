@@ -97,7 +97,7 @@ SECTOR_REGIME_ALIGNMENT = VirtualIndicator(
 )
 
 
-@router.get("/indicators")
+@router.get("/indicators/metadata")
 def list_indicators():
     """Return basic metadata for all indicators (including virtual ones)."""
     with get_db_session() as db:
@@ -516,15 +516,20 @@ async def get_liquidity_proxy_components(days: int = 365):
     rrp_vals = np.array([rrp_dict.get(d, 0.0) for d in all_dates])
     common_dates = all_dates
     
-    # Calculate M2 YoY% (252 trading days ≈ 1 year)
+    # Calculate M2 YoY% using calendar lookback to align with forward-filled daily series
+    from datetime import datetime, timedelta
+    import bisect
+
+    date_objs = [datetime.strptime(d, "%Y-%m-%d") for d in common_dates]
     m2_yoy = []
-    lookback = 252
-    for i in range(len(m2_vals)):
-        if i < lookback:
-            m2_yoy.append(0.0)
-        else:
-            yoy_pct = ((m2_vals[i] - m2_vals[i - lookback]) / m2_vals[i - lookback]) * 100
+    for i, current_date in enumerate(date_objs):
+        target_date = current_date - timedelta(days=365)
+        j = bisect.bisect_left(date_objs, target_date)
+        if j < i and m2_vals[j] != 0:
+            yoy_pct = ((m2_vals[i] - m2_vals[j]) / m2_vals[j]) * 100
             m2_yoy.append(yoy_pct)
+        else:
+            m2_yoy.append(0.0)
     
     # Calculate Fed balance sheet delta (month-over-month ≈ 21 trading days)
     fed_bs_delta = []

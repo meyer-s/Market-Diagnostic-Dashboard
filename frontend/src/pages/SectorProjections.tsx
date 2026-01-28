@@ -844,7 +844,7 @@ export default function SectorProjections() {
                 <p><strong>What they represent:</strong> Cone boundary shows range of possible scores based on score volatility across projection horizons (3M, 6M, 12M).</p>
                 <p><strong>How they expand:</strong> Cone starts narrow at current date (high confidence) and widens toward longer horizons (lower confidence).</p>
                 <p><strong>Calculating width:</strong> Width scales with absolute score changes between 3M, 6M, and 12M projections.</p>
-                <p><strong>Interpreting:</strong> Wide cone = high forecast uncertainty; narrow cone = stable, predictable positioning.</p>
+                <p><strong>Interpreting:</strong> Wide cone = higher projection uncertainty; narrow cone = more stable positioning.</p>
                 <p><strong>Interactive selection:</strong> Click sector line or legend item to isolate that sector and highlight its uncertainty cone.</p>
               </div>
             </div>

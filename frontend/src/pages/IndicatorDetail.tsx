@@ -766,6 +766,17 @@ export default function IndicatorDetail() {
         />
       )}
 
+      {apiCode === "BREADTH_HEALTH" && (
+        <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+          <h3 className="text-lg font-semibold text-stealth-100 mb-3">Methodology</h3>
+          <ul className="text-xs md:text-sm text-stealth-400 space-y-2">
+            <li>- Uses the RSP/SPY ratio (equal-weight vs cap-weight) as a participation proxy.</li>
+            <li>- Combines level stability (z-score) and 30-day change stability, weighted 65%/35%.</li>
+            <li>- Proxy-based breadth signal; higher scores reflect broader participation.</li>
+          </ul>
+        </div>
+      )}
+
       {/* Component Breakdown for Liquidity Proxy */}
       {apiCode === "LIQUIDITY_PROXY" && liquidityComponents && liquidityComponents.length > 0 && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
@@ -1893,17 +1904,6 @@ function MuniStressPanel({
               {data.relationship_signal.message}
             </div>
           )}
-        </div>
-      )}
-
-      {apiCode === "BREADTH_HEALTH" && (
-        <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
-          <h3 className="text-lg font-semibold text-stealth-100 mb-3">Methodology</h3>
-          <ul className="text-xs md:text-sm text-stealth-400 space-y-2">
-            <li>- Uses the RSP/SPY ratio (equal-weight vs cap-weight) as a participation proxy.</li>
-            <li>- Combines level stability (z-score) and 30-day change stability, weighted 65%/35%.</li>
-            <li>- Proxy-based breadth signal; higher scores reflect broader participation.</li>
-          </ul>
         </div>
       )}
 

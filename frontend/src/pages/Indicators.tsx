@@ -1,30 +1,8 @@
 import { useApi } from "../hooks/useApi";
-import { IndicatorStatus, IndicatorHistoryPoint } from "../types";
+import { IndicatorStatus } from "../types";
 import { Link } from "react-router-dom";
-import StateSparkline from "../components/widgets/StateSparkline";
 import { getStateBadgeClass } from "../utils/styleUtils";
 import MarketLoading from "../components/ui/MarketLoading";
-
-// Data frequency metadata to determine appropriate history fetch period
-const DATA_FREQUENCY: Record<string, { frequency: string }> = {
-  VIX: { frequency: "Real-time" },
-  SPY: { frequency: "Daily" },
-  BREADTH_HEALTH: { frequency: "Daily" },
-  DFF: { frequency: "Daily" },
-  T10Y2Y: { frequency: "Daily" },
-  UNRATE: { frequency: "Monthly" },
-  CONSUMER_HEALTH: { frequency: "Monthly" },
-  BOND_MARKET_STABILITY: { frequency: "Daily" },
-  LIQUIDITY_PROXY: { frequency: "Weekly" },
-  ANALYST_ANXIETY: { frequency: "Daily" },
-  SENTIMENT_COMPOSITE: { frequency: "Monthly" },
-};
-
-// Helper to get appropriate history days based on indicator frequency
-const getHistoryDays = (indicatorCode: string): number => {
-  const metadata = DATA_FREQUENCY[indicatorCode];
-  return metadata?.frequency === "Monthly" ? 365 : 60;
-};
 
 export default function Indicators() {
   const { data, loading, error } = useApi<IndicatorStatus[]>("/indicators");
@@ -102,10 +80,6 @@ export default function Indicators() {
 }
 
 function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
-  const days = getHistoryDays(indicator.code);
-  const { data: history } = useApi<IndicatorHistoryPoint[]>(
-    `/indicators/${indicator.code}/history?days=${days}`
-  );
   const displayName =
     indicator.code === "ANALYST_ANXIETY" ? "Analyst Confidence" : indicator.name;
   const routeCode =
@@ -127,17 +101,13 @@ function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
       <td className="px-4 py-3">{indicator.score}</td>
       <td className="px-4 py-3">{indicator.state}</td>
       <td className="px-4 py-3">
-        <StateSparkline history={history || []} width={200} height={24} />
+        <span className="text-stealth-400 text-xs">View detail</span>
       </td>
     </tr>
   );
 }
 
 function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
-  const days = getHistoryDays(indicator.code);
-  const { data: history } = useApi<IndicatorHistoryPoint[]>(
-    `/indicators/${indicator.code}/history?days=${days}`
-  );
   const displayName =
     indicator.code === "ANALYST_ANXIETY" ? "Analyst Confidence" : indicator.name;
   const routeCode =
@@ -160,11 +130,7 @@ function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
         <div className="flex items-end justify-between">
           <div className="text-lg font-bold text-stealth-100">Score: {indicator.score}</div>
         </div>
-        {history && history.length > 0 && (
-          <div className="mt-2">
-            <StateSparkline history={history} width={280} height={24} />
-          </div>
-        )}
+        <div className="mt-2 text-xs text-stealth-400">Trend history in detail view</div>
       </div>
     </Link>
   );

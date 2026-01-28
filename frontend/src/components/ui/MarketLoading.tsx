@@ -88,7 +88,7 @@ export default function MarketLoading({
   if (normalizedLabel.includes("projection")) {
     contextualMessages.push(
       "Running projection checks.",
-      "Pressure-testing the forecast."
+      "Validating projection context."
     );
   }
 

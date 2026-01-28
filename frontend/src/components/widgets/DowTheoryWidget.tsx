@@ -323,12 +323,12 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
       : `Gap is ${spreadTrendPhrase}, but the recent move is ${recentSpreadPhrase}.`;
   const dowSummary =
     data.theory_alignment_state === "ALIGNED"
-      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} The trend is easier to trust, so borrowers, businesses, and investors can add risk with more confidence.`
+      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} The trend is more coherent across signals.`
       : data.theory_alignment_state === "MIXED"
-      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} The trend is less reliable, so borrowers, businesses, and investors should keep risk smaller.`
+      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} The trend is less coherent across signals.`
       : data.theory_alignment_state === "DIVERGENT"
-      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} Choppy moves are more likely, so borrowers, businesses, and investors should protect downside.`
-      : `Checks whether classic and modern signals agree. Alignment is unclear, so keep positions balanced until the signals settle.`;
+      ? `Checks whether classic and modern signals agree. ${primaryClause} ${gapClause}${toneClause} ${secondaryClause} Signals are divergent and conditions look choppy.`
+      : `Checks whether classic and modern signals agree. Alignment is unclear, so interpret with caution.`;
 
   const renderTrendTooltip = ({
     active,

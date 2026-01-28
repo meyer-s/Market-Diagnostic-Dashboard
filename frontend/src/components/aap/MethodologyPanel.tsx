@@ -152,7 +152,7 @@ export function MethodologyPanel() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-400 mt-0.5">2.</span>
-                  <span>Components are weighted based on historical predictive power and signal clarity</span>
+                  <span>Components are weighted based on historical diagnostic relevance and signal clarity</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-400 mt-0.5">3.</span>
@@ -227,7 +227,7 @@ export function MethodologyPanel() {
               <h4 className="text-blue-400 font-semibold mb-2">AAS is a Strategic Filter, Not a Timing Tool</h4>
               <p className="text-xs text-stealth-300">
                 AAS changes slowly and identifies <em>regimes</em>, not tactical entry/exit points. 
-                Use it to adjust portfolio allocation and risk positioning over weeks/months, not days.
+                Interpret it as regime context over weeks/months rather than short-term moves.
               </p>
             </div>
 
@@ -237,23 +237,23 @@ export function MethodologyPanel() {
                 <ul className="space-y-1.5 text-xs text-stealth-300">
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-400">✓</span>
-                    <span>Increase allocation to gold, silver, Bitcoin</span>
+                    <span>Gold, silver, and Bitcoin often dominate the contribution mix</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-400">✓</span>
-                    <span>Reduce exposure to duration risk (long bonds)</span>
+                    <span>Duration sensitivity can rise when stress builds</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-400">✓</span>
-                    <span>Consider physical precious metals over paper ETFs</span>
+                    <span>Physical vs paper premiums can diverge</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-400">✓</span>
-                    <span>Monitor for policy responses (rate cuts, QE)</span>
+                    <span>Policy responses may shift alongside stress readings</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-400">✓</span>
-                    <span>Expect alternatives to outperform equities</span>
+                    <span>Alternatives can decouple from broad equity performance</span>
                   </li>
                 </ul>
               </div>
@@ -263,23 +263,23 @@ export function MethodologyPanel() {
                 <ul className="space-y-1.5 text-xs text-stealth-300">
                   <li className="flex items-start gap-2">
                     <span className="text-red-400">✗</span>
-                    <span>Reduce alternative asset allocation</span>
+                    <span>Alternative assets may contribute less to stability changes</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-red-400">✗</span>
-                    <span>Favor equities, especially growth/tech</span>
+                    <span>Equity leadership often dominates the broader risk mix</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-red-400">✗</span>
-                    <span>Traditional assets likely to outperform</span>
+                    <span>Traditional assets may show steadier performance</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-red-400">✗</span>
-                    <span>Gold/crypto may act as risk-on assets</span>
+                    <span>Gold/crypto can behave more like pro-risk assets</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-red-400">✗</span>
-                    <span>Monitor for turning points (decreasing stability)</span>
+                    <span>Turning points show up as sustained stability shifts</span>
                   </li>
                 </ul>
               </div>
@@ -290,7 +290,7 @@ export function MethodologyPanel() {
               <ul className="space-y-1.5 text-xs text-stealth-300">
                 <li className="flex items-start gap-2">
                   <span className="text-amber-400">⚠</span>
-                  <span><strong>Not Predictive of Crashes:</strong> Low AAS doesn't predict imminent stock market crashes</span>
+                  <span><strong>Not Predictive:</strong> Low AAS does not predict specific market events</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-amber-400">⚠</span>
@@ -302,7 +302,7 @@ export function MethodologyPanel() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-amber-400">⚠</span>
-                  <span><strong>Regime Tool:</strong> Best combined with other indicators for tactical timing</span>
+                  <span><strong>Regime Tool:</strong> Best interpreted alongside other diagnostics</span>
                 </li>
               </ul>
             </div>
@@ -332,14 +332,14 @@ export function MethodologyPanel() {
                   <span className="text-amber-400 font-mono">3.</span>
                   <div>
                     <strong className="text-stealth-200">Silver Outperformance:</strong>
-                    <span className="text-stealth-400"> Silver vs gold ratio. High readings = risk-on; low = monetary hedge dominance.</span>
+                    <span className="text-stealth-400"> Silver vs gold ratio. Higher readings indicate pro-cyclical tilt; lower readings indicate hedge demand.</span>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <span className="text-amber-400 font-mono">4.</span>
                   <div>
                     <strong className="text-stealth-200">PGM Weakness:</strong>
-                    <span className="text-stealth-400"> Platinum/palladium underperformance vs gold = recession/industrial weakness.</span>
+                    <span className="text-stealth-400"> Platinum/palladium underperformance vs gold = weaker industrial tone.</span>
                   </div>
                 </div>
                 <div className="flex gap-2">
