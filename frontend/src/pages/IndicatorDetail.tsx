@@ -772,26 +772,15 @@ export default function IndicatorDetail() {
               <h4 className="text-sm font-semibold mb-2 text-stealth-200">Composite Stability Score</h4>
               <p className="text-xs text-stealth-400 mb-2">
                 Note: Composite stability aggregates the component stability readings over time.
-                Public-sector stability overlay is informational only.
               </p>
               {(() => {
                 const { data, dateRange } = processComponentData(bondComponents, chartRange.days);
-                const publicSectorMap = new Map(
-                  (muniSubsystem?.composite_history || [])
-                    .filter((point) => point.stability_score !== null && point.stability_score !== undefined)
-                    .map((point) => [point.date, point.stability_score as number])
-                );
-                const augmentedData = data.map((row) => ({
-                  ...row,
-                  public_sector_stability_score: publicSectorMap.get(row.date),
-                }));
                 
                 return (
                   <ComponentChart
-                    data={augmentedData}
+                    data={data}
                     lines={[
-                      { dataKey: "composite.stability_score", name: "Composite Stability", stroke: getFamilyColor("system"), strokeWidth: 3 },
-                      { dataKey: "public_sector_stability_score", name: "Public-sector Stability (proxy)", stroke: getFamilyColor("liquidity"), strokeWidth: 2 }
+                      { dataKey: "composite.stability_score", name: "Composite Stability", stroke: getFamilyColor("system"), strokeWidth: 3 }
                     ]}
                     referenceLines={[
                       { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
@@ -1640,6 +1629,11 @@ export default function IndicatorDetail() {
           <h3 className="text-xl font-semibold mb-4 text-stealth-100">
             Stability Score History ({chartRange.label})
           </h3>
+          {apiCode === "BOND_MARKET_STABILITY" && (
+            <p className="text-xs text-stealth-400 mb-3">
+              Public-sector stability overlay is informational only.
+            </p>
+          )}
           <div className="h-80">
             {history && history.length > 0 ? (() => {
               const today = new Date();
@@ -1676,13 +1670,27 @@ export default function IndicatorDetail() {
                 });
               }
               
-              const chartData = [
+              const baseData = [
                 ...history.map(item => ({
                   ...item,
                   timestampNum: new Date(item.timestamp).getTime()
                 })),
                 ...intermediatePoints
               ].filter(item => item.timestampNum >= daysBack.getTime());
+
+              const publicSectorMap = new Map(
+                (muniSubsystem?.composite_history || [])
+                  .filter((point) => point.stability_score !== null && point.stability_score !== undefined)
+                  .map((point) => [point.date, point.stability_score as number])
+              );
+
+              const chartData = baseData.map((item) => {
+                const dateKey = new Date(item.timestamp).toISOString().slice(0, 10);
+                return {
+                  ...item,
+                  public_sector_stability_score: publicSectorMap.get(dateKey),
+                };
+              });
               
               return (
                 <ResponsiveContainer width="100%" height="100%">
@@ -1743,6 +1751,16 @@ export default function IndicatorDetail() {
                     animationEasing={CHART_ANIMATION.easing}
                     connectNulls
                   />
+                  {apiCode === "BOND_MARKET_STABILITY" && (
+                    <Line
+                      type="monotone"
+                      dataKey="public_sector_stability_score"
+                      stroke={getFamilyColor("liquidity")}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
               );
