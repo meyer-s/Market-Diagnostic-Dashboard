@@ -22,6 +22,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   ReferenceLine,
+  Legend,
 } from "recharts";
 
 interface IndicatorMetadata {
@@ -1630,9 +1631,19 @@ export default function IndicatorDetail() {
             Stability Score History ({chartRange.label})
           </h3>
           {apiCode === "BOND_MARKET_STABILITY" && (
-            <p className="text-xs text-stealth-400 mb-3">
-              Public-sector stability overlay is informational only.
-            </p>
+            <div className="text-xs text-stealth-400 mb-3">
+              <p>Public-sector stability overlay is informational only.</p>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <span className="flex items-center gap-2">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: getFamilyColor("system") }} />
+                  Bond Market Stability
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: getFamilyColor("liquidity") }} />
+                  Public-Sector Stability (proxy)
+                </span>
+              </div>
+            </div>
           )}
           <div className="h-80">
             {history && history.length > 0 ? (() => {
@@ -1718,7 +1729,7 @@ export default function IndicatorDetail() {
                       tickMargin={8}
                       label={{ value: 'Score (0-100)', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
-                  <Tooltip
+                    <Tooltip
                     contentStyle={{
                       backgroundColor: CHART_NEUTRAL.tooltipBg,
                       borderColor: CHART_NEUTRAL.tooltipBorder,
@@ -1727,26 +1738,31 @@ export default function IndicatorDetail() {
                     }}
                     labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
                     itemStyle={{ color: CHART_NEUTRAL.text }}
-                    formatter={(value: number) => {
-                      const score = Number(value);
-                      const state = score < 30 ? "RED" : score < 60 ? "YELLOW" : "GREEN";
-                      return [
-                        <span key="value">
-                          {score.toFixed(0)} <span className="text-stealth-400">({state})</span>
-                        </span>,
-                        "Score"
-                      ];
-                    }}
-                    labelFormatter={(label: string | number) =>
-                      new Date(label).toLocaleDateString()
-                    }
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="score"
-                    stroke={getFamilyColor("system")}
-                    strokeWidth={2}
-                    dot={false}
+                      formatter={(value: number, name?: string) => {
+                        const score = Number(value);
+                        const state = score < 30 ? "RED" : score < 60 ? "YELLOW" : "GREEN";
+                        return [
+                          <span key="value">
+                            {score.toFixed(0)} <span className="text-stealth-400">({state})</span>
+                          </span>,
+                          name || "Score"
+                        ];
+                      }}
+                      labelFormatter={(label: string | number) =>
+                        new Date(label).toLocaleDateString()
+                      }
+                    />
+                    <Legend
+                      wrapperStyle={{ color: CHART_NEUTRAL.text, fontSize: "12px" }}
+                      iconType="circle"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="score"
+                      name="Bond Market Stability"
+                      stroke={getFamilyColor("system")}
+                      strokeWidth={2}
+                      dot={false}
                     animationDuration={CHART_ANIMATION.duration}
                     animationEasing={CHART_ANIMATION.easing}
                     connectNulls
@@ -1755,6 +1771,7 @@ export default function IndicatorDetail() {
                     <Line
                       type="monotone"
                       dataKey="public_sector_stability_score"
+                      name="Public-Sector Stability (proxy)"
                       stroke={getFamilyColor("liquidity")}
                       strokeWidth={2}
                       dot={false}
