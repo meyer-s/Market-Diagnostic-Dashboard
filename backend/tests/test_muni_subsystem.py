@@ -1,4 +1,4 @@
-from app.services.muni_data import compute_muni_long_spread, compute_composite_score, normalize_component_weights
+from app.services.muni_data import compute_composite_score, normalize_component_weights
 
 
 def test_dynamic_reweighting_missing_component():
@@ -30,11 +30,10 @@ def test_dynamic_reweighting_missing_component():
     assert composite is not None
 
 
-def test_muni_long_spread_requires_both_operands():
-    muni_dates, muni_values = compute_muni_long_spread({}, {"2024-01-01": 4.0})
-    assert muni_dates == []
-    assert muni_values == []
-
-    muni_dates, muni_values = compute_muni_long_spread({"2024-01-01": 3.0}, {})
-    assert muni_dates == []
-    assert muni_values == []
+def test_dynamic_reweighting_handles_empty_available():
+    base_weights = {
+        "SIFMA_INDEX": 0.30,
+        "MUNI_LONG_SPREAD": 0.30,
+    }
+    weights_used = normalize_component_weights(base_weights, [])
+    assert weights_used == {}

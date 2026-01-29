@@ -170,7 +170,7 @@ INDICATOR_METADATA = {
     
     "BOND_MARKET_STABILITY": {
         "name": "Bond Market Stability Composite",
-        "description": "Comprehensive bond market health index aggregating five critical fixed-income signals: credit spreads, yield curve shape, rate momentum, Treasury volatility, and term premium. Provides a holistic 0-100 stability score for bond market conditions.",
+        "description": "Comprehensive bond market health index aggregating five critical fixed-income signals: credit spreads, yield curve shape, rate momentum, Treasury volatility, and term premium. Provides a holistic 0-100 stability score for bond market conditions. Public-sector stress subpanel uses public, derived proxies rather than proprietary municipal curve feeds.",
         "relevance": "The bond market often reflects shifts in financial conditions before equities. This composite captures multiple dimensions of fixed-income market health, from credit risk to rate volatility.",
         "scoring": "Final output is a stability score (0-100) where HIGHER = MORE STABLE. Backend computes weighted composite stress from sub-indicators, then inverts to stability score. Thresholds: ≥70 = GREEN (stable), 40-69 = YELLOW (caution), <40 = RED (stress).",
         "direction": 1,

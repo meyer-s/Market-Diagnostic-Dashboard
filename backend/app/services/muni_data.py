@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from io import BytesIO, StringIO
-from typing import Any, Dict, List, Optional, Tuple
-import csv
-import json
-import os
-import re
+from io import BytesIO
+from typing import Any, Dict, List, Optional
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -278,21 +274,6 @@ def _build_series_payload(
     }
 
 
-def _normalize_maturity_label(label: str) -> Optional[str]:
-    cleaned = label.strip().lower()
-    if "mo" in cleaned or "month" in cleaned:
-        return None
-    cleaned = cleaned.replace("years", "y").replace("year", "y").replace("yr", "y")
-    cleaned = cleaned.replace(" ", "")
-    match = re.search(r"(\\d{1,2})", cleaned)
-    if not match:
-        return None
-    value = match.group(1)
-    if value in {"1", "2", "5", "10", "20", "30"}:
-        return value
-    return None
-
-
 async def _build_fred_curve_points(start_date: str) -> List[Dict[str, Any]]:
     fred = FredClient()
     series_map = {
@@ -312,90 +293,6 @@ async def _build_fred_curve_points(start_date: str) -> List[Dict[str, Any]]:
         yields = {maturity: series_dicts[maturity].get(date) for maturity in series_dicts}
         points.append({"date": date, "yields": yields})
     return points
-
-
-def _parse_emma_curve_csv(text: str) -> List[Dict[str, Any]]:
-    reader = csv.DictReader(StringIO(text))
-    rows: List[Dict[str, Any]] = []
-    for row in reader:
-        date = row.get("date") or row.get("Date") or row.get("As Of") or row.get("as_of")
-        if not date:
-            continue
-        yields: Dict[str, Optional[float]] = {}
-        for key, value in row.items():
-            if key is None or value is None:
-                continue
-            maturity = _normalize_maturity_label(key)
-            if not maturity:
-                continue
-            try:
-                yields[maturity] = float(str(value).strip())
-            except ValueError:
-                yields[maturity] = None
-        rows.append({"date": date, "yields": yields})
-    return rows
-
-
-def _parse_emma_curve_json(payload: Any) -> List[Dict[str, Any]]:
-    if isinstance(payload, dict) and "data" in payload:
-        payload = payload["data"]
-    if not isinstance(payload, list):
-        return []
-
-    rows: List[Dict[str, Any]] = []
-    for row in payload:
-        if not isinstance(row, dict):
-            continue
-        date = row.get("date") or row.get("Date") or row.get("as_of") or row.get("asOf")
-        if not date:
-            continue
-        yields: Dict[str, Optional[float]] = {}
-        raw_yields = row.get("yields")
-        if isinstance(raw_yields, dict):
-            for key, value in raw_yields.items():
-                maturity = _normalize_maturity_label(str(key))
-                if not maturity:
-                    continue
-                try:
-                    yields[maturity] = float(value)
-                except (TypeError, ValueError):
-                    yields[maturity] = None
-        else:
-            for key, value in row.items():
-                if key in {"date", "Date", "as_of", "asOf"}:
-                    continue
-                maturity = _normalize_maturity_label(str(key))
-                if not maturity:
-                    continue
-                try:
-                    yields[maturity] = float(value)
-                except (TypeError, ValueError):
-                    yields[maturity] = None
-        rows.append({"date": date, "yields": yields})
-    return rows
-
-
-async def _load_emma_curve_payload() -> Optional[str]:
-    if settings.EMMA_YIELD_CURVE_URL and settings.EMMA_YIELD_CURVE_URL.startswith("file://"):
-        file_path = settings.EMMA_YIELD_CURVE_URL.replace("file://", "", 1)
-        if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8") as handle:
-                return handle.read()
-
-    if settings.EMMA_YIELD_CURVE_PATH and os.path.exists(settings.EMMA_YIELD_CURVE_PATH):
-        with open(settings.EMMA_YIELD_CURVE_PATH, "r", encoding="utf-8") as handle:
-            return handle.read()
-
-    if settings.EMMA_YIELD_CURVE_URL:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                settings.EMMA_YIELD_CURVE_URL,
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
-            response.raise_for_status()
-            return response.text
-
-    return None
 
 
 def _build_curve_payload(
@@ -517,23 +414,42 @@ def compute_composite_score(
     return total
 
 
-def compute_muni_long_spread(
-    muni_levels: Dict[str, float],
-    ust_levels: Dict[str, float],
-) -> Tuple[List[str], List[float]]:
-    if not muni_levels or not ust_levels:
-        return [], []
-    common_dates = sorted(set(muni_levels.keys()) & set(ust_levels.keys()))
-    spread_dates: List[str] = []
-    spread_values: List[float] = []
-    for date in common_dates:
-        muni_val = muni_levels.get(date)
-        ust_val = ust_levels.get(date)
-        if muni_val is None or ust_val is None:
-            continue
-        spread_dates.append(date)
-        spread_values.append(float(muni_val) - float(ust_val))
-    return spread_dates, spread_values
+def _compute_drawdown_series(values: List[float]) -> List[float]:
+    drawdowns: List[float] = []
+    peak = None
+    for value in values:
+        if peak is None or value > peak:
+            peak = value
+        if peak and peak > 0:
+            drawdown = (peak - value) / peak * 100
+        else:
+            drawdown = 0.0
+        drawdowns.append(drawdown)
+    return drawdowns
+
+
+def _compute_return_volatility(values: List[float], window: int) -> List[float]:
+    if not values:
+        return []
+    returns: List[float] = [0.0]
+    for i in range(1, len(values)):
+        prev = values[i - 1]
+        curr = values[i]
+        if prev == 0:
+            returns.append(0.0)
+        else:
+            returns.append(((curr / prev) - 1) * 100)
+    vol: List[float] = []
+    for i in range(len(returns)):
+        start_idx = max(0, i - window + 1)
+        window_vals = returns[start_idx : i + 1]
+        if len(window_vals) < 2:
+            vol.append(0.0)
+        else:
+            mean = sum(window_vals) / len(window_vals)
+            var = sum((v - mean) ** 2 for v in window_vals) / len(window_vals)
+            vol.append(var ** 0.5)
+    return vol
 
 
 async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
@@ -556,42 +472,20 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
     except Exception:
         sifma_series = []
 
-    try:
-        emma_payload = await _load_emma_curve_payload()
-    except Exception:
-        emma_payload = None
     curve_payload: Optional[Dict[str, Any]] = None
-    if emma_payload:
-        emma_payload_stripped = emma_payload.strip()
-        if emma_payload_stripped.startswith("{") or emma_payload_stripped.startswith("["):
-            curve_points = _parse_emma_curve_json(json.loads(emma_payload_stripped))
-        else:
-            curve_points = _parse_emma_curve_csv(emma_payload_stripped)
-
-        if curve_points:
+    try:
+        fred_curve_points = await _build_fred_curve_points(start_date)
+        if fred_curve_points:
             curve_payload = _build_curve_payload(
-                curve_points,
+                fred_curve_points,
                 cutoff,
-                label="Municipal Yield Curve (EMMA export)",
-                source="EMMA export",
-                notes="Curve stability uses slope volatility (10y-2y) with level/slope readouts.",
-                is_muni=True,
+                label="Treasury Curve Proxy (FRED)",
+                source="FRED DGS1/DGS2/DGS5/DGS10/DGS20/DGS30",
+                notes="Treasury curve proxy used for slope volatility; not a municipal curve feed.",
+                is_muni=False,
             )
-
-    if curve_payload is None:
-        try:
-            fred_curve_points = await _build_fred_curve_points(start_date)
-            if fred_curve_points:
-                curve_payload = _build_curve_payload(
-                    fred_curve_points,
-                    cutoff,
-                    label="Municipal Curve Proxy (Treasury/FRED)",
-                    source="FRED DGS1/DGS2/DGS5/DGS10/DGS20/DGS30",
-                    notes="Proxy curve when EMMA data is unavailable. Uses Treasury curve level + slope volatility.",
-                    is_muni=False,
-                )
-        except Exception:
-            curve_payload = None
+    except Exception:
+        curve_payload = None
 
     # Normalize series ordering
     def _sorted_series(raw_series: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -625,31 +519,16 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
             slope_vol_dates.append(point["date"])
             slope_vol_values.append(float(point["slope_vol"]))
 
-    # MUNI_LONG_SPREAD: muni long-end yield minus UST long-end yield (only if EMMA curve)
-    muni_spread_dates: List[str] = []
-    muni_spread_values: List[float] = []
-    if curve_payload and curve_payload.get("is_muni"):
-        muni_level_series = {
-            p["date"]: p.get("level")
-            for p in (curve_payload.get("history") or [])
-            if p.get("level") is not None
-        }
-        try:
-            ust_long = await fred.fetch_series("DGS20", start_date=start_date)
-            ust_source = "FRED DGS20"
-        except Exception:
-            ust_long = []
-            ust_source = "FRED DGS30"
-        if not [p for p in ust_long if p.get("value") is not None]:
-            ust_long = await fred.fetch_series("DGS30", start_date=start_date)
-            ust_source = "FRED DGS30"
-        ust_dict = {p["date"]: p["value"] for p in ust_long if p.get("value") is not None}
-        muni_spread_dates, muni_spread_values = compute_muni_long_spread(
-            muni_level_series,
-            ust_dict,
-        )
-    else:
-        ust_source = None
+    # MUNI_LONG_SPREAD: derived long-end municipal stress proxy (price-based)
+    muni_proxy_dates: List[str] = []
+    muni_proxy_values: List[float] = []
+    if omrx_dates and omrx_values:
+        muni_proxy_dates = omrx_dates
+        drawdowns = _compute_drawdown_series(omrx_values)
+        proxy_lookback = _infer_series_lookback(omrx_dates)
+        vol_window = 13 if proxy_lookback == 104 else 21
+        vol = _compute_return_volatility(omrx_values, vol_window)
+        muni_proxy_values = [d + v for d, v in zip(drawdowns, vol)]
 
     # SIFMA data cadence settings
     sifma_dates = [p["date"] for p in sifma_clean]
@@ -783,44 +662,44 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
         )
     )
 
-    if muni_spread_dates and muni_spread_values:
+    if muni_proxy_dates and muni_proxy_values:
         series_payloads.append(
             _build_series_payload(
                 key="MUNI_LONG_SPREAD",
-                label="Muni–Treasury Long Spread",
-                source=f"EMMA long-end vs {ust_source}",
+                label="Long-end municipal stress (proxy)",
+                source="FRED NASDAQOMRXMUNI",
                 unit="percent",
-                dates=muni_spread_dates,
-                metric_values=muni_spread_values,
+                dates=muni_proxy_dates,
+                metric_values=muni_proxy_values,
                 direction=1,
                 cutoff=cutoff,
-                notes="Long-end muni yield minus long-end Treasury yield.",
-                is_proxy=False,
+                notes="Derived from Revdex price drawdowns and volatility. Public proxy (not a yield).",
+                is_proxy=True,
                 is_live=True,
                 trend_window_days=30,
                 trend_threshold=0.05,
                 extra={
                     "stress_cues": {
-                        "z_score": _compute_z_scores(muni_spread_values, _infer_series_lookback(muni_spread_dates))[-1]
-                        if muni_spread_values
+                        "z_score": _compute_z_scores(muni_proxy_values, _infer_series_lookback(muni_proxy_dates))[-1]
+                        if muni_proxy_values
                         else None,
-                        "change_60d": muni_spread_values[-1] - muni_spread_values[-61]
-                        if len(muni_spread_values) > 61
+                        "change_60d": muni_proxy_values[-1] - muni_proxy_values[-61]
+                        if len(muni_proxy_values) > 61
                         else None,
                         "stress_level": _stress_level(
                             stress=(
-                                muni_spread_values
-                                and _compute_z_scores(muni_spread_values, _infer_series_lookback(muni_spread_dates))[-1]
+                                muni_proxy_values
+                                and _compute_z_scores(muni_proxy_values, _infer_series_lookback(muni_proxy_dates))[-1]
                                 >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_z"]
                             )
                             or (
-                                len(muni_spread_values) > 61
-                                and muni_spread_values[-1] - muni_spread_values[-61]
+                                len(muni_proxy_values) > 61
+                                and muni_proxy_values[-1] - muni_proxy_values[-61]
                                 >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_change_60d"]
                             ),
                             severe=(
-                                muni_spread_values
-                                and _compute_z_scores(muni_spread_values, _infer_series_lookback(muni_spread_dates))[-1]
+                                muni_proxy_values
+                                and _compute_z_scores(muni_proxy_values, _infer_series_lookback(muni_proxy_dates))[-1]
                                 >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["severe_z"]
                             ),
                         ),
@@ -832,15 +711,15 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
         series_payloads.append(
             _build_series_payload(
                 key="MUNI_LONG_SPREAD",
-                label="Muni–Treasury Long Spread",
-                source="Unavailable (requires EMMA curve + Treasury long-end)",
+                label="Long-end municipal stress (proxy)",
+                source="Unavailable (requires public Revdex proxy from FRED)",
                 unit="percent",
                 dates=[],
                 metric_values=[],
                 direction=1,
                 cutoff=cutoff,
-                notes="Requires EMMA muni curve to compute long-end spread.",
-                is_proxy=False,
+                notes="Uses public price-based proxy (drawdown + volatility). No proprietary muni curve ingested.",
+                is_proxy=True,
                 is_live=True,
                 extra={},
             )
@@ -907,6 +786,6 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
         },
         "curve": curve_payload or {
             "status": "unavailable",
-            "reason": "EMMA_YIELD_CURVE_URL or EMMA_YIELD_CURVE_PATH not configured",
+            "reason": "Treasury curve proxy unavailable (FRED fetch failed).",
         },
     }

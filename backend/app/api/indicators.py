@@ -385,8 +385,8 @@ async def get_bond_composite_components(days: int = 365):
 async def get_bond_muni_subsystem(days: int = 365):
     """
     Return municipal credit & funding stress subsystem data.
-    Includes Revdex revenue proxy, Muni–Treasury long spread,
-    SIFMA swap index, and curve slope stability (with EMMA curve if available).
+    Includes Revdex revenue proxy, long-end municipal stress proxy,
+    SIFMA swap index, and Treasury curve slope stability proxy.
     """
     data = await get_muni_subsystem(days=days)
 
@@ -410,7 +410,7 @@ async def get_bond_muni_subsystem(days: int = 365):
             spread_series = series
             break
 
-    spread_z_60d = None
+    proxy_z_60d = None
     if spread_series and spread_series.get("history"):
         values = [p.get("value") for p in spread_series["history"] if p.get("value") is not None]
         if len(values) > 61:
@@ -418,15 +418,15 @@ async def get_bond_muni_subsystem(days: int = 365):
             lookback = min(60, len(changes_60d))
             from app.services.analytics_stub import compute_z_scores
             z_scores = compute_z_scores(changes_60d, lookback=lookback)
-            spread_z_60d = z_scores[-1] if z_scores else None
+            proxy_z_60d = z_scores[-1] if z_scores else None
 
     cond_muni = muni_score is not None and muni_score <= 45
     cond_bond = bond_score is not None and bond_score >= 65
-    cond_spread = spread_z_60d is not None and spread_z_60d >= 1.0
+    cond_spread = proxy_z_60d is not None and proxy_z_60d >= 1.0
 
     if cond_muni and cond_bond and cond_spread:
         divergence_state = "RED"
-    elif cond_muni and cond_bond and spread_z_60d is not None:
+    elif cond_muni and cond_bond and proxy_z_60d is not None:
         divergence_state = "YELLOW"
     else:
         divergence_state = "GREEN"
@@ -438,7 +438,7 @@ async def get_bond_muni_subsystem(days: int = 365):
         "inputs": {
             "public_sector_score": muni_score,
             "bond_market_score": bond_score,
-            "muni_spread_z_60d": spread_z_60d,
+            "muni_proxy_z_60d": proxy_z_60d,
         },
     }
 

@@ -1868,8 +1868,8 @@ function MuniStressPanel({
             Public-sector credit &amp; funding stress
           </h3>
           <p className="text-xs md:text-sm text-stealth-400 mt-1 max-w-3xl">
-            Isolates tax-exempt and public-finance funding conditions, which often move
-            before stress appears in corporate credit or equities.
+            Isolates tax-exempt and public-finance funding conditions using public,
+            derived proxies rather than proprietary municipal curve feeds.
           </p>
         </div>
         <div className="text-xs text-stealth-500">
@@ -1992,12 +1992,13 @@ function MuniStressPanel({
       <div className="bg-stealth-900 border border-stealth-700 rounded p-4 mb-6 text-xs text-stealth-400">
         <div className="text-stealth-200 font-semibold mb-2">Methodology (summary)</div>
         <div>
-          Components &amp; default weights: Spread {(muniPublicSectorWeights.MUNI_LONG_SPREAD * 100).toFixed(0)}% ·
+          Components &amp; default weights: Long-end stress proxy {(muniPublicSectorWeights.MUNI_LONG_SPREAD * 100).toFixed(0)}% ·
           SIFMA {(muniPublicSectorWeights.SIFMA_INDEX * 100).toFixed(0)}% · Slope Stability {(muniPublicSectorWeights.MUNI_CURVE_SLOPE_STABILITY * 100).toFixed(0)}% ·
           Revenue Proxy {(muniPublicSectorWeights.MUNI_REVENUE_PROXY * 100).toFixed(0)}%.
           Missing live inputs are dropped and remaining weights re-normalized.
         </div>
         <div className="mt-2">
+          Long-end stress proxy uses Revdex drawdowns and volatility; curve stability uses a Treasury proxy curve.
           Stability scoring uses rolling z-scores with direction adjustment, mapped to 0–100.
           Composite states: Green ≥ {muniPublicSectorThresholds.green}, Yellow ≥ {muniPublicSectorThresholds.yellow}, Red &lt; {muniPublicSectorThresholds.yellow}.
         </div>

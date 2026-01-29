@@ -8,7 +8,7 @@ MUNI_PUBLIC_SECTOR_COMPONENTS = {
     },
     "MUNI_LONG_SPREAD": {
         "weight": 0.30,
-        "label": "Muni–Treasury Long Spread",
+        "label": "Long-end municipal stress (proxy)",
         "unit": "percent",
     },
     "MUNI_REVENUE_PROXY": {
