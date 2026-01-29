@@ -13,6 +13,7 @@ import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricCol
 import { muniPublicSectorThresholds, muniPublicSectorWeights } from "../theme/metricRegistry";
 import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
+import InfoTooltip from "../components/ui/InfoTooltip";
 import {
   LineChart,
   Line,
@@ -1627,12 +1628,19 @@ export default function IndicatorDetail() {
         */}
         
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
-          <h3 className="text-xl font-semibold mb-4 text-stealth-100">
-            Stability Score History ({chartRange.label})
-          </h3>
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="text-xl font-semibold text-stealth-100">
+              Stability Score History ({chartRange.label})
+            </h3>
+            {apiCode === "BOND_MARKET_STABILITY" && (
+              <InfoTooltip
+                id="bond-stability-public-sector-overlay"
+                text="This public-sector view is a critical companion to the core bond composite, and in a richer dataset the two would be expected to move together. Because proxy inputs are limited and can be brittle, we do not compute a divergence metric today. If higher-quality data were available, the spread between these lines would be a more direct read on relative health."
+              />
+            )}
+          </div>
           {apiCode === "BOND_MARKET_STABILITY" && (
             <div className="text-xs text-stealth-400 mb-3">
-              <p>Public-sector stability overlay is informational only.</p>
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 <span className="flex items-center gap-2">
                   <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: getFamilyColor("system") }} />
