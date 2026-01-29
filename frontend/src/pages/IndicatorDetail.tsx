@@ -250,6 +250,10 @@ interface MuniSubsystemResponse {
     weights_used: Record<string, number>;
     near_threshold?: "GREEN" | "RED" | null;
   };
+  composite_history?: Array<{
+    date: string;
+    stability_score: number | null;
+  }>;
   relationship_signal?: {
     name: string;
     state: "GREEN" | "YELLOW" | "RED";
@@ -646,59 +650,93 @@ export default function IndicatorDetail() {
           </p>
           
           {/* Latest Component Values */}
-          <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
+          {(() => {
+            const latest = bondComponents[bondComponents.length - 1];
+            const trendLabel = (values: number[]) => {
+              if (values.length < 5) return "insufficient";
+              const delta = values[values.length - 1] - values[values.length - 5];
+              if (delta > 2) return "improving";
+              if (delta < -2) return "deteriorating";
+              return "stable";
+            };
+            const trendTone = (label: string) => {
+              if (label === "improving") return "text-green-400";
+              if (label === "deteriorating") return "text-red-400";
+              if (label === "stable") return "text-stealth-300";
+              return "text-stealth-500";
+            };
+            const creditTrend = trendLabel(bondComponents.map((p) => p.credit_spread_stress.stability_score));
+            const curveTrend = trendLabel(bondComponents.map((p) => p.yield_curve_stress.stability_score));
+            const momentumTrend = trendLabel(bondComponents.map((p) => p.rates_momentum_stress.stability_score));
+            const volTrend = trendLabel(bondComponents.map((p) => p.treasury_volatility_stress.stability_score));
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Credit Spreads</div>
               <div className="text-lg font-bold text-red-400">
-                {bondComponents[bondComponents.length - 1].credit_spread_stress.stability_score.toFixed(1)}
+                {latest.credit_spread_stress.stability_score.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
-                Weight: {(bondComponents[bondComponents.length - 1].credit_spread_stress.weight * 100).toFixed(0)}%
+                HY {latest.credit_spread_stress.hy_oas.toFixed(0)} bps · IG {latest.credit_spread_stress.ig_oas.toFixed(0)} bps
               </div>
               <div className="text-xs text-stealth-500">
-                Contrib: {bondComponents[bondComponents.length - 1].credit_spread_stress.contribution.toFixed(1)}
+                Weight {(latest.credit_spread_stress.weight * 100).toFixed(0)}% · Contrib {latest.credit_spread_stress.contribution.toFixed(1)}
               </div>
+              <div className={`text-xs mt-1 ${trendTone(creditTrend)}`}>Trend: {creditTrend}</div>
+              <div className="text-[11px] text-stealth-500 mt-2">Widening spreads reduce stability.</div>
             </div>
             
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Yield Curves</div>
               <div className="text-lg font-bold text-yellow-400">
-                {bondComponents[bondComponents.length - 1].yield_curve_stress.stability_score.toFixed(1)}
+                {latest.yield_curve_stress.stability_score.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
-                Weight: {(bondComponents[bondComponents.length - 1].yield_curve_stress.weight * 100).toFixed(0)}%
+                10y-2y {latest.yield_curve_stress.spread_10y2y.toFixed(2)} · 10y-3m {latest.yield_curve_stress.spread_10y3m.toFixed(2)}
               </div>
               <div className="text-xs text-stealth-500">
-                Contrib: {bondComponents[bondComponents.length - 1].yield_curve_stress.contribution.toFixed(1)}
+                30y-5y {latest.yield_curve_stress.spread_30y5y.toFixed(2)}
               </div>
+              <div className="text-xs text-stealth-500">
+                Weight {(latest.yield_curve_stress.weight * 100).toFixed(0)}% · Contrib {latest.yield_curve_stress.contribution.toFixed(1)}
+              </div>
+              <div className={`text-xs mt-1 ${trendTone(curveTrend)}`}>Trend: {curveTrend}</div>
+              <div className="text-[11px] text-stealth-500 mt-2">Flatter/inverted curves signal stress.</div>
             </div>
             
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Rates Momentum</div>
               <div className="text-lg font-bold text-orange-400">
-                {bondComponents[bondComponents.length - 1].rates_momentum_stress.stability_score.toFixed(1)}
+                {latest.rates_momentum_stress.stability_score.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
-                Weight: {(bondComponents[bondComponents.length - 1].rates_momentum_stress.weight * 100).toFixed(0)}%
+                2y ROC {latest.rates_momentum_stress.roc_2y.toFixed(2)} · 10y ROC {latest.rates_momentum_stress.roc_10y.toFixed(2)}
               </div>
               <div className="text-xs text-stealth-500">
-                Contrib: {bondComponents[bondComponents.length - 1].rates_momentum_stress.contribution.toFixed(1)}
+                Weight {(latest.rates_momentum_stress.weight * 100).toFixed(0)}% · Contrib {latest.rates_momentum_stress.contribution.toFixed(1)}
               </div>
+              <div className={`text-xs mt-1 ${trendTone(momentumTrend)}`}>Trend: {momentumTrend}</div>
+              <div className="text-[11px] text-stealth-500 mt-2">Sharp rate spikes reduce stability.</div>
             </div>
             
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Treasury Vol</div>
               <div className="text-lg font-bold text-purple-400">
-                {bondComponents[bondComponents.length - 1].treasury_volatility_stress.stability_score.toFixed(1)}
+                {latest.treasury_volatility_stress.stability_score.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
-                Weight: {(bondComponents[bondComponents.length - 1].treasury_volatility_stress.weight * 100).toFixed(0)}%
+                Vol {latest.treasury_volatility_stress.calculated_volatility.toFixed(3)}
               </div>
               <div className="text-xs text-stealth-500">
-                Contrib: {bondComponents[bondComponents.length - 1].treasury_volatility_stress.contribution.toFixed(1)}
+                Weight {(latest.treasury_volatility_stress.weight * 100).toFixed(0)}% · Contrib {latest.treasury_volatility_stress.contribution.toFixed(1)}
               </div>
+              <div className={`text-xs mt-1 ${trendTone(volTrend)}`}>Trend: {volTrend}</div>
+              <div className="text-[11px] text-stealth-500 mt-2">Higher volatility signals stress.</div>
             </div>
-          </div>
+              </div>
+            );
+          })()}
 
           {/* Component Stability Levels Chart */}
           <div className="h-80 mb-6">
@@ -730,19 +768,30 @@ export default function IndicatorDetail() {
           </div>
 
             {/* Composite Stability Calculation */}
-            <div className="h-80">
+          <div className="h-80">
               <h4 className="text-sm font-semibold mb-2 text-stealth-200">Composite Stability Score</h4>
               <p className="text-xs text-stealth-400 mb-2">
                 Note: Composite stability aggregates the component stability readings over time.
+                Public-sector stability overlay is informational only.
               </p>
               {(() => {
                 const { data, dateRange } = processComponentData(bondComponents, chartRange.days);
+                const publicSectorMap = new Map(
+                  (muniSubsystem?.composite_history || [])
+                    .filter((point) => point.stability_score !== null && point.stability_score !== undefined)
+                    .map((point) => [point.date, point.stability_score as number])
+                );
+                const augmentedData = data.map((row) => ({
+                  ...row,
+                  public_sector_stability_score: publicSectorMap.get(row.date),
+                }));
                 
                 return (
                   <ComponentChart
-                    data={data}
+                    data={augmentedData}
                     lines={[
-                      { dataKey: "composite.stability_score", name: "Composite Stability", stroke: getFamilyColor("system"), strokeWidth: 3 }
+                      { dataKey: "composite.stability_score", name: "Composite Stability", stroke: getFamilyColor("system"), strokeWidth: 3 },
+                      { dataKey: "public_sector_stability_score", name: "Public-sector Stability (proxy)", stroke: getFamilyColor("liquidity"), strokeWidth: 2 }
                     ]}
                     referenceLines={[
                       { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
@@ -1871,6 +1920,12 @@ function MuniStressPanel({
             Isolates tax-exempt and public-finance funding conditions using public,
             derived proxies rather than proprietary municipal curve feeds.
           </p>
+          <p className="text-[11px] text-stealth-500 mt-2 max-w-3xl">
+            This public-sector view is a critical companion to the core bond composite, and in a richer
+            dataset the two would be expected to move together. Because proxy inputs are limited and
+            can be brittle, we do not compute a divergence metric today. If higher-quality data were
+            available, the spread between these lines would be a more direct read on relative health.
+          </p>
         </div>
         <div className="text-xs text-stealth-500">
           {data.as_of && <div>As of {data.as_of}</div>}
@@ -1944,7 +1999,7 @@ function MuniStressPanel({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-6">
         {orderedSeries.map((series) => (
           <div key={series.key} className="bg-stealth-900 border border-stealth-600 rounded p-4">
             <div className="flex items-center justify-between">

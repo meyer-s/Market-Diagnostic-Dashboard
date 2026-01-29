@@ -747,6 +747,38 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
     composite_score = compute_composite_score(latest_scores, raw_weights)
     composite_score = round(composite_score, 2) if composite_score is not None else None
 
+    composite_history: List[Dict[str, Any]] = []
+    if live_series:
+        history_dates = sorted({
+            point["date"]
+            for series in live_series.values()
+            for point in (series.get("history") or [])
+            if point.get("stability_score") is not None
+        })
+        history_lookup = {
+            series_key: {point["date"]: point.get("stability_score") for point in (series.get("history") or [])}
+            for series_key, series in live_series.items()
+        }
+        for date in history_dates:
+            available_for_date = []
+            scores_for_date: Dict[str, Optional[float]] = {}
+            for series_key in live_series.keys():
+                score = history_lookup.get(series_key, {}).get(date)
+                if score is None:
+                    continue
+                available_for_date.append(series_key)
+                scores_for_date[series_key] = score
+            if not available_for_date:
+                continue
+            weights_for_date = normalize_component_weights(base_weights, available_for_date)
+            composite = compute_composite_score(scores_for_date, weights_for_date)
+            if composite is None:
+                continue
+            composite_history.append({
+                "date": date,
+                "stability_score": round(composite, 2),
+            })
+
     if composite_score is None:
         state = "UNKNOWN"
     elif composite_score >= MUNI_PUBLIC_SECTOR_THRESHOLDS["GREEN"]:
@@ -784,6 +816,7 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
             "weights_used": weights_used,
             "near_threshold": near_threshold,
         },
+        "composite_history": composite_history,
         "curve": curve_payload or {
             "status": "unavailable",
             "reason": "Treasury curve proxy unavailable (FRED fetch failed).",
