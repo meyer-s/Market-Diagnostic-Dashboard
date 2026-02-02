@@ -32,15 +32,24 @@ export default function AlternativeAssetStability() {
     
     return historyData.data
       .filter((d: any) => new Date(d.date) >= cutoffDate)
-      .map((d: any) => ({
-        date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        score: d.stability_score || 0,
-        regime: d.regime || '',
-        sma20: d.sma_20 || 0,
-        sma200: d.sma_200 || 0,
-        metals_contribution: (d.metals_contribution || 0) * 100,
-        crypto_contribution: (d.crypto_contribution || 0) * 100
-      }));
+      .map((d: any) => {
+        const score = d.stability_score || 0;
+        const metalsInstability = d.metals_contribution || 0;
+        const cryptoInstability = d.crypto_contribution || 0;
+        const totalInstability = metalsInstability + cryptoInstability;
+        const metalsShare = totalInstability > 0 ? (metalsInstability / totalInstability) : 0.5;
+        const cryptoShare = totalInstability > 0 ? (cryptoInstability / totalInstability) : 0.5;
+
+        return {
+          date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          score,
+          regime: d.regime || '',
+          sma20: d.sma_20 || 0,
+          sma200: d.sma_200 || 0,
+          metals_stability_share: score * metalsShare,
+          crypto_stability_share: score * cryptoShare
+        };
+      });
   }, [historyData, timeframe]);
 
   if (loading || !aapData) {

@@ -12,8 +12,8 @@ interface HistoricalData {
   regime: string;
   sma20?: number;
   sma200?: number;
-  metals_contribution?: number;
-  crypto_contribution?: number;
+  metals_stability_share?: number;
+  crypto_stability_share?: number;
 }
 
 interface OverviewTabProps {
@@ -251,23 +251,23 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
               />
               <Area
                 type="monotone"
-                dataKey="metals_contribution"
-                stackId="instability"
+                dataKey="metals_stability_share"
+                stackId="stability"
                 fill={metalsColor}
                 stroke={metalsColor}
                 strokeWidth={1.5}
                 fillOpacity={0.22}
-                name="Metals Instability Share"
+                name="Metals Stability Share"
               />
               <Area
                 type="monotone"
-                dataKey="crypto_contribution"
-                stackId="instability"
+                dataKey="crypto_stability_share"
+                stackId="stability"
                 fill={cryptoColor}
                 stroke={cryptoColor}
                 strokeWidth={1.5}
                 fillOpacity={0.22}
-                name="Crypto Instability Share"
+                name="Crypto Stability Share"
               />
               <Line 
                 type="monotone" 
