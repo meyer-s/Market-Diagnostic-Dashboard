@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AreaChart, Area, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { MetalsSubsystemPanel } from './MetalsSubsystemPanel';
 import { CryptoSubsystemPanel } from './CryptoSubsystemPanel';
 import { MethodologyPanel } from './MethodologyPanel';
@@ -118,9 +118,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
   const metalsPercent = totalContribution > 0 ? (aapData.metals_contribution / totalContribution) * 100 : 50;
   const cryptoPercent = totalContribution > 0 ? (aapData.crypto_contribution / totalContribution) * 100 : 50;
   const metalsColor = getFamilyColor("metals");
-  const metalsFill = getFamilyColor("metals");
   const cryptoColor = getFamilyColor("crypto");
-  const cryptoFill = getFamilyColor("crypto");
   const benchmarkColor = getFamilyColor("benchmark");
 
   return (
@@ -229,7 +227,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
 
         <div className="h-64 md:h-96">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={history}>
+            <LineChart data={history}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
               <XAxis 
                 dataKey="date" 
@@ -249,37 +247,39 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
                   color: CHART_NEUTRAL.text
                 }}
               />
-              <Area 
+              <Line 
                 type="monotone" 
-                dataKey="metals_contribution" 
-                stackId="1" 
-                fill={metalsFill} 
-                stroke={metalsColor}
-                strokeWidth={2}
-                fillOpacity={0.3}
-                name="Metals"
+                dataKey="score"
+                stroke={statePalette.green}
+                strokeWidth={3}
+                dot={false}
+                name="Current Score"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
-              <Area 
+              <Line 
                 type="monotone" 
-                dataKey="crypto_contribution" 
-                stackId="1" 
-                fill={cryptoFill} 
-                stroke={cryptoColor}
+                dataKey="sma200"
+                stroke={statePalette.red}
                 strokeWidth={2}
-                fillOpacity={0.3}
-                name="Crypto"
+                dot={false}
+                name="200-Day SMA"
+                strokeDasharray="4 4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
               <Line 
                 type="monotone" 
                 dataKey="sma20" 
                 stroke={benchmarkColor} 
-                strokeWidth={3}
+                strokeWidth={2}
                 dot={false}
                 name="20-Day SMA"
+                strokeDasharray="4 4"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
-            </AreaChart>
+            </LineChart>
           </ResponsiveContainer>
         </div>
 
