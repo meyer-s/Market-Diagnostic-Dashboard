@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AreaChart, Area, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { MetalsSubsystemPanel } from './MetalsSubsystemPanel';
 import { CryptoSubsystemPanel } from './CryptoSubsystemPanel';
 import { MethodologyPanel } from './MethodologyPanel';
@@ -12,8 +12,6 @@ interface HistoricalData {
   regime: string;
   sma20?: number;
   sma200?: number;
-  metals_contribution?: number;
-  crypto_contribution?: number;
 }
 
 interface OverviewTabProps {
@@ -229,7 +227,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
 
         <div className="h-64 md:h-96">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={history}>
+            <LineChart data={history}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
               <XAxis 
                 dataKey="date" 
@@ -249,26 +247,6 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
                   color: CHART_NEUTRAL.text
                 }}
               />
-              <Area
-                type="monotone"
-                dataKey="metals_contribution"
-                stackId="instability"
-                fill={metalsColor}
-                stroke={metalsColor}
-                strokeWidth={1.5}
-                fillOpacity={0.22}
-                name="Metals Instability Share"
-              />
-              <Area
-                type="monotone"
-                dataKey="crypto_contribution"
-                stackId="instability"
-                fill={cryptoColor}
-                stroke={cryptoColor}
-                strokeWidth={1.5}
-                fillOpacity={0.22}
-                name="Crypto Instability Share"
-              />
               <Line 
                 type="monotone" 
                 dataKey="score"
@@ -282,7 +260,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
               <Line 
                 type="monotone" 
                 dataKey="sma200"
-                stroke={benchmarkColor}
+                stroke={statePalette.red}
                 strokeWidth={2}
                 dot={false}
                 name="200-Day SMA"
@@ -293,7 +271,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
               <Line 
                 type="monotone" 
                 dataKey="sma20" 
-                stroke={statePalette.red}
+                stroke={benchmarkColor} 
                 strokeWidth={2}
                 dot={false}
                 name="20-Day SMA"
@@ -301,7 +279,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
-            </AreaChart>
+            </LineChart>
           </ResponsiveContainer>
         </div>
 
@@ -329,13 +307,13 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
             </div>
             <div className="flex items-center gap-2">
               <svg className="w-6 h-1" viewBox="0 0 24 4" preserveAspectRatio="none">
-                <line x1="0" y1="2" x2="24" y2="2" stroke={statePalette.red} strokeWidth="1.5" strokeDasharray="2 2"/>
+                <line x1="0" y1="2" x2="24" y2="2" stroke={benchmarkColor} strokeWidth="1.5" strokeDasharray="2 2"/>
               </svg>
               <span className="text-stealth-300 text-xs">20-Day SMA</span>
             </div>
             <div className="flex items-center gap-2">
               <svg className="w-6 h-1" viewBox="0 0 24 4" preserveAspectRatio="none">
-                <line x1="0" y1="2" x2="24" y2="2" stroke={benchmarkColor} strokeWidth="1.5" strokeDasharray="2 2"/>
+                <line x1="0" y1="2" x2="24" y2="2" stroke={statePalette.red} strokeWidth="1.5" strokeDasharray="2 2"/>
               </svg>
               <span className="text-stealth-300 text-xs">200-Day SMA</span>
             </div>
