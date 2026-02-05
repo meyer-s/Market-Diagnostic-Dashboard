@@ -130,28 +130,28 @@ const buildGreeksSummary = (
   const absVega = Math.abs(vega);
 
   const directionalLabel =
-    absDelta >= 0.4 ? "highly directional" : absDelta >= 0.15 ? "directional" : "low directional";
+    absDelta >= 0.4 ? "moves a lot with the stock" : absDelta >= 0.15 ? "moves some with the stock" : "moves only a little with the stock";
   const convexityLabel =
-    absGamma >= 0.05 ? "high convexity" : absGamma >= 0.02 ? "moderate convexity" : "low convexity";
+    absGamma >= 0.05 ? "reacts quickly when the stock moves" : absGamma >= 0.02 ? "reacts more as the stock moves" : "reacts slowly to stock moves";
   const vegaLabel =
-    absVega >= 10 ? "high vol sensitivity" : absVega >= 5 ? "moderate vol sensitivity" : "low vol sensitivity";
+    absVega >= 10 ? "very sensitive to volatility" : absVega >= 5 ? "somewhat sensitive to volatility" : "not very sensitive to volatility";
   const thetaLabel =
-    absTheta >= 10 ? "strong time impact" : absTheta >= 4 ? "moderate time impact" : "light time impact";
+    absTheta >= 10 ? "time matters a lot" : absTheta >= 4 ? "time matters" : "time matters less";
 
   return [
-    `Overall: ${directionalLabel}, ${convexityLabel}, ${vegaLabel}, with ${thetaLabel} and net ${thetaDirection}.`,
-    `Directional exposure is ${deltaDirection} (delta ${formatSigned(delta, 3)}). ~${formatSigned(
+    `Overall: this option ${directionalLabel}, ${convexityLabel}, is ${vegaLabel}, and ${thetaLabel} (net ${thetaDirection}).`,
+    `Direction: ${deltaDirection} (delta ${formatSigned(delta, 3)}). ~${formatSigned(
       delta,
       3
     )} per $1 move per share (${formatSigned(delta * 100, 1)} per contract).`,
-    `Gamma ${formatSigned(gamma, 4)} means delta changes by ~${formatSigned(
+    `Speed of change (gamma) ${formatSigned(gamma, 4)} means delta shifts by ~${formatSigned(
       gamma,
       4
     )} for each $1 move.`,
-    `Theta ${formatSigned(theta, 4)} implies about $${Math.abs(theta).toFixed(
+    `Time decay (theta) ${formatSigned(theta, 4)} implies about $${Math.abs(theta).toFixed(
       2
     )} per day per contract of time ${thetaDirection}.`,
-    `Vega ${formatSigned(vega, 4)} means about $${Math.abs(vega).toFixed(
+    `Volatility sensitivity (vega) ${formatSigned(vega, 4)} means about $${Math.abs(vega).toFixed(
       2
     )} per 1 vol point (1%) per contract.`,
   ];
