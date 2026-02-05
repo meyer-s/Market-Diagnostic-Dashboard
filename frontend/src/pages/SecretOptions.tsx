@@ -124,8 +124,22 @@ const buildGreeksSummary = (
   const deltaDirection =
     Math.abs(delta) < 0.1 ? "neutral" : delta > 0 ? "bullish" : "bearish";
   const thetaDirection = theta < 0 ? "decay" : "carry";
+  const absDelta = Math.abs(delta);
+  const absGamma = Math.abs(gamma);
+  const absTheta = Math.abs(theta);
+  const absVega = Math.abs(vega);
+
+  const directionalLabel =
+    absDelta >= 0.4 ? "highly directional" : absDelta >= 0.15 ? "directional" : "low directional";
+  const convexityLabel =
+    absGamma >= 0.05 ? "high convexity" : absGamma >= 0.02 ? "moderate convexity" : "low convexity";
+  const vegaLabel =
+    absVega >= 10 ? "high vol sensitivity" : absVega >= 5 ? "moderate vol sensitivity" : "low vol sensitivity";
+  const thetaLabel =
+    absTheta >= 10 ? "strong time impact" : absTheta >= 4 ? "moderate time impact" : "light time impact";
 
   return [
+    `Overall: ${directionalLabel}, ${convexityLabel}, ${vegaLabel}, with ${thetaLabel} and net ${thetaDirection}.`,
     `Directional exposure is ${deltaDirection} (delta ${formatSigned(delta, 3)}). ~${formatSigned(
       delta,
       3
