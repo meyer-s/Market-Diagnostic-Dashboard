@@ -112,6 +112,37 @@ const formatSigned = (value: number | null | undefined, digits = 2) => {
   return `${sign}${value.toFixed(digits)}`;
 };
 
+const buildGreeksSummary = (
+  greeks: PositionMetrics["greeks"] | GreeksPayload["current_greeks"] | null
+) => {
+  if (!greeks) return null;
+  const delta = greeks.delta ?? 0;
+  const gamma = greeks.gamma ?? 0;
+  const theta = greeks.theta ?? 0;
+  const vega = greeks.vega ?? 0;
+
+  const deltaDirection =
+    Math.abs(delta) < 0.1 ? "neutral" : delta > 0 ? "bullish" : "bearish";
+  const thetaDirection = theta < 0 ? "decay" : "carry";
+
+  return [
+    `Directional exposure is ${deltaDirection} (delta ${formatSigned(delta, 3)}). ~${formatSigned(
+      delta,
+      3
+    )} per $1 move per share (${formatSigned(delta * 100, 1)} per contract).`,
+    `Gamma ${formatSigned(gamma, 4)} means delta changes by ~${formatSigned(
+      gamma,
+      4
+    )} for each $1 move.`,
+    `Theta ${formatSigned(theta, 4)} implies about $${Math.abs(theta).toFixed(
+      2
+    )} per day per contract of time ${thetaDirection}.`,
+    `Vega ${formatSigned(vega, 4)} means about $${Math.abs(vega).toFixed(
+      2
+    )} per 1 vol point (1%) per contract.`,
+  ];
+};
+
 const initialFormState = {
   trade_date: "",
   account: "",
@@ -298,6 +329,11 @@ export default function SecretOptions() {
     () => positions.find((item) => item.position.id === selectedId) || null,
     [positions, selectedId]
   );
+
+  const greekSummary = useMemo(() => {
+    const greeks = greeksData?.current_greeks ?? selected?.metrics.greeks ?? null;
+    return buildGreeksSummary(greeks);
+  }, [greeksData, selected]);
 
   const totals = useMemo(() => {
     let totalCost = 0;
@@ -521,6 +557,19 @@ export default function SecretOptions() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {greekSummary && (
+          <div className="mb-4 p-3 bg-gray-900/60 rounded-lg border border-gray-700">
+            <div className="text-[10px] uppercase text-gray-500 tracking-wide mb-2">
+              Deterministic Summary
+            </div>
+            <ul className="text-sm text-gray-200 space-y-1">
+              {greekSummary.map((line, index) => (
+                <li key={`${line}-${index}`}>{line}</li>
+              ))}
+            </ul>
           </div>
         )}
 
