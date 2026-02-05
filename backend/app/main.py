@@ -20,8 +20,6 @@ from app.api.precious_metals import router as precious_metals_router
 from app.api.aap import router as aap_router
 from app.api.discord import router as discord_router
 from app.api.update_posts import router as update_posts_router
-from app.services.update_posts import seed_default_update_posts
-from app.utils.db_helpers import get_db_session
 
 # Set up logging
 logging.basicConfig(
@@ -77,8 +75,6 @@ app.add_middleware(
 
 # Create tables
 Base.metadata.create_all(bind=engine)
-with get_db_session() as db:
-    seed_default_update_posts(db)
 
 # Routers
 app.include_router(health_router, prefix="/health", tags=["Health"])
