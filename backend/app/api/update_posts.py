@@ -50,6 +50,7 @@ def list_updates(
             query = query.filter(
                 or_(
                     func.lower(UpdatePost.title).like(query_text),
+                    func.lower(UpdatePost.slug).like(query_text),
                     func.lower(cast(UpdatePost.tags, String)).like(query_text),
                 )
             )
