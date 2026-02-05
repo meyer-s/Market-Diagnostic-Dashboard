@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.db import Base, engine
 from app.models import options_alerts  # noqa: F401
 from app.models import option_positions  # noqa: F401
+from app.models import update_post  # noqa: F401
 from app.api.health import router as health_router
 from app.api.status import router as status_router
 from app.api.indicators import router as indicators_router
@@ -18,6 +19,9 @@ from app.api.secret_options import router as secret_options_router
 from app.api.precious_metals import router as precious_metals_router
 from app.api.aap import router as aap_router
 from app.api.discord import router as discord_router
+from app.api.update_posts import router as update_posts_router
+from app.services.update_posts import seed_default_update_posts
+from app.utils.db_helpers import get_db_session
 
 # Set up logging
 logging.basicConfig(
@@ -73,6 +77,8 @@ app.add_middleware(
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+with get_db_session() as db:
+    seed_default_update_posts(db)
 
 # Routers
 app.include_router(health_router, prefix="/health", tags=["Health"])
@@ -85,6 +91,7 @@ app.include_router(dow_theory_router, tags=["DowTheory"])
 app.include_router(market_map_router, tags=["MarketMap"])
 app.include_router(options_alerts_router, tags=["OptionsAlerts"])
 app.include_router(secret_options_router, tags=["SecretOptions"])
+app.include_router(update_posts_router, tags=["Updates"])
 
 # Sector Projections
 from app.api.sector_projection import router as sector_projection_router

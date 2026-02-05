@@ -1,5 +1,6 @@
 
 from .sector_projection import SectorProjectionRun, SectorProjectionValue
+from .update_post import UpdatePost, UpdateStatus
 from .alternative_assets import (
     CryptoPrice, 
     BitcoinNetworkMetric,
