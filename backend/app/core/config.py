@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     COMEX_SOURCE: Optional[str] = None
     COMEX_ALLOW_ESTIMATES: Optional[str] = None
     SIFMA_SWAP_URL: Optional[str] = None
+    UPDATES_BASE_URL: Optional[str] = None
     UPDATES_PUBLISH_KEY: Optional[str] = None
 
     class Config:

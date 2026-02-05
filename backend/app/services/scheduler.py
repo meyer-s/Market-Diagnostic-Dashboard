@@ -12,6 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.services.ingestion.etl_runner import ETLRunner
 from app.services.options_alerts import run_options_alert_scan
+from app.services.market_diagnostic_publisher import publish_market_diagnostic_for_today
 from app.services.sector_projection import (
     compute_sector_projections,
     detect_duplicate_series,
@@ -180,6 +181,23 @@ async def scheduled_etl_job():
         logger.error(f"❌ ETL job failed: {str(e)}")
 
 
+def scheduled_market_diagnostic_publish_job():
+    """Scheduled publisher for Monday/Thursday Market Diagnostic updates."""
+    try:
+        result = publish_market_diagnostic_for_today()
+        logger.info(
+            "Market Diagnostic publisher completed: title=%s status=%s slug=%s id=%s source=%s published_timestamp_utc=%s",
+            result.title,
+            result.status,
+            result.slug,
+            result.response_id,
+            result.source,
+            result.published_timestamp_utc,
+        )
+    except Exception as exc:
+        logger.error("Market Diagnostic publisher failed: %s", exc, exc_info=True)
+
+
 def start_scheduler():
     """
     Initialize and start the background scheduler.
@@ -209,6 +227,20 @@ def start_scheduler():
             name="Options Alert Scan",
             replace_existing=True,
         )
+
+    # Runs on Monday and Thursday, aligned with correction-risk publishing cadence.
+    scheduler.add_job(
+        scheduled_market_diagnostic_publish_job,
+        CronTrigger(
+            day_of_week="mon,thu",
+            hour=8,
+            minute=15,
+            timezone="America/New_York",
+        ),
+        id="market_diagnostic_publisher",
+        name="Market Diagnostic Publisher",
+        replace_existing=True,
+    )
     
     scheduler.start()
     logger.info("📅 Scheduler started - ETL will run every 4 hours during market hours")
