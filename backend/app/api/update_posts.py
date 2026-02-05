@@ -1,5 +1,6 @@
 """API endpoints for internal Market Diagnostic update posts."""
 from datetime import datetime
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query
@@ -20,9 +21,11 @@ from app.services.update_posts import (
     slugify,
     slugify_with_utc_date,
 )
+from app.services.market_diagnostic_publisher import publish_market_diagnostic_for_date
 from app.utils.db_helpers import get_db_session
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def require_updates_publish_key(x_updates_key: Optional[str]) -> None:
@@ -37,8 +40,16 @@ def list_updates(
     offset: int = Query(0, ge=0),
     status: Optional[UpdateStatus] = None,
     q: Optional[str] = None,
+    skip_refresh: bool = Query(False, description="Internal flag to bypass auto-refresh"),
 ):
     """List published update posts for the Tools -> Updates feed."""
+    if not skip_refresh:
+        try:
+            # Keep today's diagnostic current whenever the list endpoint is hit.
+            publish_market_diagnostic_for_date(run_dt=datetime.utcnow(), timeout_seconds=8)
+        except Exception as exc:
+            logger.warning("Updates auto-refresh skipped: %s", exc)
+
     with get_db_session() as db:
         query = db.query(UpdatePost).filter(UpdatePost.published.is_(True))
 

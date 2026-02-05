@@ -171,7 +171,7 @@ def _markdown_for_snapshot(run_dt: datetime, snapshot: dict[str, Any], summary: 
 
 
 def _lookup_existing_post(base_url: str, slug: str, timeout_seconds: int = 30) -> dict[str, Any]:
-    lookup_url = f"{base_url}/api/updates?limit=50&offset=0&q={quote_plus(slug)}"
+    lookup_url = f"{base_url}/api/updates?limit=50&offset=0&q={quote_plus(slug)}&skip_refresh=1"
     response = requests.get(lookup_url, timeout=timeout_seconds)
 
     if not response.ok:
