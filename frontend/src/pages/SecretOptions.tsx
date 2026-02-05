@@ -138,23 +138,27 @@ const buildGreeksSummary = (
   const thetaLabel =
     absTheta >= 10 ? "time matters a lot" : absTheta >= 4 ? "time matters" : "time matters less";
 
-  return [
-    `Overall: this option ${directionalLabel}, ${convexityLabel}, is ${vegaLabel}, and ${thetaLabel} (net ${thetaDirection}).`,
-    `Direction: ${deltaDirection} (delta ${formatSigned(delta, 3)}). ~${formatSigned(
-      delta,
-      3
-    )} per $1 move per share (${formatSigned(delta * 100, 1)} per contract).`,
-    `Speed of change (gamma) ${formatSigned(gamma, 4)} means delta shifts by ~${formatSigned(
-      gamma,
-      4
-    )} for each $1 move.`,
-    `Time decay (theta) ${formatSigned(theta, 4)} implies about $${Math.abs(theta).toFixed(
-      2
-    )} per day per contract of time ${thetaDirection}.`,
-    `Volatility sensitivity (vega) ${formatSigned(vega, 4)} means about $${Math.abs(vega).toFixed(
-      2
-    )} per 1 vol point (1%) per contract.`,
-  ];
+  return {
+    tone: deltaDirection,
+    thetaDirection,
+    overall: `Overall: this option ${directionalLabel}, ${convexityLabel}, is ${vegaLabel}, and ${thetaLabel} (net ${thetaDirection}).`,
+    details: [
+      `Direction: ${deltaDirection} (delta ${formatSigned(delta, 3)}). ~${formatSigned(
+        delta,
+        3
+      )} per $1 move per share (${formatSigned(delta * 100, 1)} per contract).`,
+      `Speed of change (gamma) ${formatSigned(gamma, 4)} means delta shifts by ~${formatSigned(
+        gamma,
+        4
+      )} for each $1 move.`,
+      `Time decay (theta) ${formatSigned(theta, 4)} implies about $${Math.abs(theta).toFixed(
+        2
+      )} per day per contract of time ${thetaDirection}.`,
+      `Volatility sensitivity (vega) ${formatSigned(vega, 4)} means about $${Math.abs(vega).toFixed(
+        2
+      )} per 1 vol point (1%) per contract.`,
+    ],
+  };
 };
 
 const initialFormState = {
@@ -579,8 +583,41 @@ export default function SecretOptions() {
             <div className="text-[10px] uppercase text-gray-500 tracking-wide mb-2">
               Deterministic Summary
             </div>
-            <ul className="text-sm text-gray-200 space-y-1">
-              {greekSummary.map((line, index) => (
+            <div
+              className={`text-sm font-semibold ${
+                greekSummary.tone === "bullish"
+                  ? "text-emerald-300"
+                  : greekSummary.tone === "bearish"
+                    ? "text-rose-300"
+                    : "text-gray-200"
+              }`}
+            >
+              {greekSummary.overall}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+              <span
+                className={`px-2 py-0.5 rounded-full border ${
+                  greekSummary.tone === "bullish"
+                    ? "border-emerald-700/60 bg-emerald-900/30 text-emerald-200"
+                    : greekSummary.tone === "bearish"
+                      ? "border-rose-700/60 bg-rose-900/30 text-rose-200"
+                      : "border-gray-700 bg-gray-800 text-gray-300"
+                }`}
+              >
+                Direction: {greekSummary.tone}
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-full border ${
+                  greekSummary.thetaDirection === "decay"
+                    ? "border-amber-700/60 bg-amber-900/30 text-amber-200"
+                    : "border-emerald-700/60 bg-emerald-900/30 text-emerald-200"
+                }`}
+              >
+                Time: {greekSummary.thetaDirection}
+              </span>
+            </div>
+            <ul className="mt-2 text-sm text-gray-200 space-y-1">
+              {greekSummary.details.map((line, index) => (
                 <li key={`${line}-${index}`}>{line}</li>
               ))}
             </ul>
