@@ -211,7 +211,7 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_in
             "schema": {
                 "title": "Market Diagnostic — MMM D",
                 "summary": "one sentence",
-                "status": ["GREEN", "YELLOW", "RED"],
+                "status": "GREEN",
                 "tags": ["market-diagnostic", "macro"],
                 "slug": f"market-diagnostic-{run_date_utc}",
                 "content_markdown": (
@@ -226,6 +226,7 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_in
             "rules": [
                 "Output JSON only (no markdown fences, no commentary).",
                 f"slug MUST equal market-diagnostic-{run_date_utc}.",
+                "status MUST be exactly one of: GREEN, YELLOW, RED (a single string, not an array).",
                 "tags MUST include market-diagnostic and macro.",
                 "chart_urls MUST be an empty array unless you have real http(s) URLs in cached_inputs (otherwise keep []).",
                 "content_markdown MUST include the required headings in order and exactly once each.",
