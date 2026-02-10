@@ -4,8 +4,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.update_post import UpdateStatus
 from app.services.market_diagnostic_validation import (
+    validate_allowed_emojis,
     validate_chart_urls,
-    validate_h2_headings_exactly_once_and_in_order,
+    validate_market_diagnostic_structure,
     validate_required_tags,
     validate_slug,
 )
@@ -45,7 +46,8 @@ class GPTActionPublishUpdatePayload(BaseModel):
     @field_validator("content_markdown")
     @classmethod
     def validate_content_markdown(cls, value: str) -> str:
-        validate_h2_headings_exactly_once_and_in_order(value or "")
+        validate_market_diagnostic_structure(value or "")
+        validate_allowed_emojis(value or "")
         return value
 
 

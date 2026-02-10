@@ -48,6 +48,18 @@ body {
   @apply px-4 md:px-6 pb-4 md:pb-6;
 }
 
+.md-source-tag {
+  @apply ml-2 inline-flex items-center rounded-full border border-stealth-700 bg-stealth-850 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stealth-300;
+}
+
+.md-source-link {
+  @apply text-stealth-200 no-underline;
+}
+
+.md-source-link:hover {
+  @apply text-stealth-100;
+}
+
 @keyframes updatesIndeterminate {
   0% {
     transform: translateX(-60%);

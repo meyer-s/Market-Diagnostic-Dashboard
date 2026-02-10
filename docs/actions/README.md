@@ -69,3 +69,12 @@ If OpenAI generation fails and `dry_run=false`, the server will publish a determ
 - The post will include tags: `fallback`, `openai-unavailable`.
 - The `## Policy/Geo` section will include a clear marker line: `Generation fallback used (OpenAI unavailable).`
 - Logs include `generation_mode=model|fallback` and `openai_error_code` when available.
+
+## Market Diagnostic Authoring Contract
+
+Market Diagnostic posts are validated server-side to enforce the Risk Regime structure. The contract is:
+
+- Slug must be `market-diagnostic-YYYY-MM-DD`.
+- Content must follow the required headings and section rules.
+
+Template: `docs/market_diagnostic_template.md`.

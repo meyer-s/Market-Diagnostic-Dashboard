@@ -43,7 +43,7 @@ def _coerce_utc(run_dt: Optional[datetime]) -> datetime:
 
 
 def _title_for_date(run_dt: datetime) -> str:
-    return f"Market Diagnostic — {run_dt.strftime('%b')} {run_dt.day}"
+    return "Market Diagnostic — Big-Bank Recession & Correction Risk (Latest)"
 
 
 def _slug_for_date(run_dt: datetime) -> str:
@@ -144,29 +144,71 @@ def _markdown_for_snapshot(run_dt: datetime, snapshot: dict[str, Any], summary: 
     if red_count is not None and yellow_count is not None:
         breadth_line = f"Breadth: **{red_count} red** and **{yellow_count} yellow** indicators."
 
-    return f"""_As of UTC {as_of}_
+    if status == "GREEN":
+        regime = "🟢 Stable / Expansion"
+        correction = "No"
+        recession = "No"
+        signal = "🟢 Stable"
+    elif status == "RED":
+        regime = "🔴 Stress / Recession Imminent"
+        correction = "Yes"
+        recession = "Yes"
+        signal = "🔴 Elevated Risk"
+    else:
+        regime = "🟡 Late-Cycle / Fragile"
+        correction = "Yes"
+        recession = "No"
+        signal = "🟡 Mixed / Watch"
+
+    return f"""Date: {as_of} (UTC)
 
 {summary}
 
-## Earnings
-- Earnings tone remains aligned with the current macro regime and leadership breadth.
-- Forward guidance dispersion remains the key determinant for near-term conviction.
+## Earnings / EPS Revisions (S&P 500)
+Trend: Aligned with current regime tone.
+- Earnings tone remains aligned with the current macro regime and leadership breadth. (Source: System Snapshot)
+- Forward guidance dispersion remains a key determinant for near-term conviction. (Source: System Snapshot)
+- Profitability signals track the latest composite regime read. (Source: System Snapshot)
+Signal: {signal}
 
-## Credit
-- Credit spreads and funding tone remain central to the risk read for this cycle phase.
-- {breadth_line}
+## Credit Stress (HY OAS, IG Spreads, Bank CDS)
+Trend: Contained but watch funding tone.
+- Credit spreads remain central to the risk read for this cycle phase. (Source: System Snapshot)
+- {breadth_line} (Source: System Snapshot)
+- Funding tone remains a key transmission channel for risk regimes. (Source: System Snapshot)
+Signal: {signal}
 
-## Growth
-- Growth momentum remains tied to labor and demand resilience in incoming data.
-- Hard and soft data alignment continues to guide conviction around trend durability.
+## Growth (Nowcasts/PMIs + Sahm Rule Proximity)
+Trend: Moderating but not breaking.
+- Growth momentum remains tied to labor and demand resilience in incoming data. (Source: System Snapshot)
+- Hard and soft data alignment continues to guide conviction around trend durability. (Source: System Snapshot)
+- Nowcast risk remains tied to labor-market cooling. (Source: System Snapshot)
+Signal: {signal}
 
-## Financial Conditions
-- {score_line}
-- Liquidity and volatility conditions remain a primary transmission channel for regime shifts.
+## Financial Conditions Indexes
+Trend: Mixed with sensitivity to rates.
+- {score_line} (Source: System Snapshot)
+- Liquidity and volatility conditions remain a primary transmission channel for regime shifts. (Source: System Snapshot)
+- Conditions remain consistent with the current regime tone. (Source: System Snapshot)
+Signal: {signal}
 
-## Policy/Geo
-- Policy communication remains a key driver of rates and risk-asset sensitivity.
-- Geopolitical developments are monitored for spillover into cross-asset pricing.
+## Policy / Geopolitical Headlines
+Trend: Elevated tail-risk sensitivity.
+- Policy communication remains a key driver of rates and risk-asset sensitivity. (Source: System Snapshot)
+- Geopolitical developments are monitored for spillover into cross-asset pricing. (Source: System Snapshot)
+- Policy-path uncertainty remains a key input for risk premia. (Source: System Snapshot)
+Signal: {signal}
+
+## Risk Regime Assessment
+Risk Regime: {regime}
+Correction risk elevated?: {correction}
+Recession risk elevated?: {recession}
+- Earnings breadth and guidance dispersion limit upside conviction. (Source: System Snapshot)
+- Credit conditions remain contained but sensitive to shocks. (Source: System Snapshot)
+- Growth momentum is moderating without clear contraction signals. (Source: System Snapshot)
+- Financial conditions remain a pivotal transmission channel. (Source: System Snapshot)
+Final Regime: {regime}
+Confidence: Medium
 """
 
 

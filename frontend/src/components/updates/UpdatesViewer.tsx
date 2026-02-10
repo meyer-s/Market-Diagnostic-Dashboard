@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { EmptyState, ErrorState, LoadingState } from "../../utils/componentUtils";
@@ -13,6 +13,61 @@ interface UpdatesViewerProps {
   overlayLoading?: boolean;
   pendingTitle?: string | null;
 }
+
+const SOURCE_PATTERN = /\s*\(Source:\s*([^)]+)\)\s*$/;
+const isHttpUrl = (value: string) => /^https?:\/\//i.test(value.trim());
+
+const stripSourceFromNode = (
+  node: React.ReactNode,
+): { node: React.ReactNode; source?: string } => {
+  if (typeof node === "string") {
+    const match = node.match(SOURCE_PATTERN);
+    if (!match) {
+      return { node };
+    }
+    const cleaned = node.replace(SOURCE_PATTERN, "").trimEnd();
+    return { node: cleaned, source: match[1]?.trim() };
+  }
+
+  if (Array.isArray(node)) {
+    const items = [...node];
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+      const result = stripSourceFromNode(items[i]);
+      if (result.source) {
+        items[i] = result.node;
+        return { node: items, source: result.source };
+      }
+    }
+    return { node: items };
+  }
+
+  if (React.isValidElement(node)) {
+    const result = stripSourceFromNode(node.props.children);
+    if (result.source) {
+      return {
+        node: React.cloneElement(node, { ...node.props }, result.node),
+        source: result.source,
+      };
+    }
+    return { node };
+  }
+
+  return { node };
+};
+
+const renderSourceTag = (source?: string) => {
+  const label = (source || "").trim() || "missing";
+  if (isHttpUrl(label)) {
+    return (
+      <span className="md-source-tag">
+        <a className="md-source-link" href={label} target="_blank" rel="noreferrer noopener">
+          {label}
+        </a>
+      </span>
+    );
+  }
+  return <span className="md-source-tag">{label}</span>;
+};
 
 export default function UpdatesViewer({
   post,
@@ -129,6 +184,15 @@ export default function UpdatesViewer({
               components={{
                 a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
                 img: ({ node: _node, ...props }) => <img {...props} loading="lazy" alt={props.alt || "Chart"} />,
+                li: ({ node: _node, children, ...props }) => {
+                  const { node: cleaned, source } = stripSourceFromNode(children);
+                  return (
+                    <li {...props}>
+                      {cleaned}
+                      {renderSourceTag(source)}
+                    </li>
+                  );
+                },
               }}
             >
               {post.content_markdown}
