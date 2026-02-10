@@ -10,7 +10,6 @@ from typing import Any, Literal
 import httpx
 
 from app.core.config import settings
-from app.models.system_status import SystemStatus
 from app.models.update_post import UpdatePost
 from app.schemas.market_diagnostic_payload import (
     MarketDiagnosticPublishPayload,
@@ -43,33 +42,6 @@ class OpenAIRequestError(RuntimeError):
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _load_cached_inputs(run_date_utc: str) -> dict[str, Any]:
-    with get_db_session() as db:
-        status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
-
-    if not status:
-        system_snapshot = {
-            "status": "YELLOW",
-            "score": None,
-            "red_count": None,
-            "yellow_count": None,
-            "timestamp": None,
-        }
-    else:
-        system_snapshot = {
-            "status": (status.state or "YELLOW").strip().upper(),
-            "score": status.composite_score,
-            "red_count": status.red_count,
-            "yellow_count": status.yellow_count,
-            "timestamp": status.timestamp.isoformat() if status.timestamp else None,
-        }
-
-    return {
-        "run_date_utc": run_date_utc,
-        "system_snapshot": system_snapshot,
-    }
 
 
 def _openai_chat_completion_json(
@@ -211,10 +183,10 @@ def _openai_chat_completion_json(
         raise RuntimeError(f"OpenAI did not return valid JSON: {exc}; content={content[:400]}")
 
 
-def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_inputs: dict[str, Any]) -> tuple[str, str]:
+def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[str, str]:
     system_prompt = (
         "You are an expert macro strategist writing a concise Market Diagnostic for a private dashboard.\n"
-        "You may use web search for sources when needed.\n"
+        "Use web search to gather sources for every datapoint.\n"
         "You MUST output exactly one JSON object and nothing else.\n"
         "The JSON MUST contain exactly these top-level keys: "
         "title, summary, status, tags, slug, content_markdown, chart_urls, published, pinned.\n"
@@ -255,16 +227,16 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_in
                 "published": True,
                 "pinned": False,
             },
-            "cached_inputs": cached_inputs,
             "rules": [
                 "Output JSON only (no markdown fences, no commentary).",
                 f"slug MUST equal market-diagnostic-{run_date_utc}.",
                 "status MUST be exactly one of: GREEN, YELLOW, RED (a single string, not an array).",
                 "tags MUST include market-diagnostic and macro.",
-                "chart_urls MUST be an empty array unless you have real http(s) URLs in cached_inputs (otherwise keep []).",
+                "chart_urls MUST be an empty array unless you have real http(s) URLs from sources (otherwise keep []).",
                 "content_markdown MUST include the required headings in order and exactly once each.",
                 "Include a date/time stamp line at the top (e.g., 'Date: YYYY-MM-DD (UTC)').",
                 "Each bullet must end with a citation in the format '(Source: https://...)' using a real http(s) URL.",
+                "Do not invent citations; only cite URLs you actually found via web search.",
                 "Use only 🟢🟡🔴 for Signal/Risk Regime lines. No other emojis.",
             ],
         },
@@ -272,97 +244,6 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_in
         sort_keys=True,
     )
     return system_prompt, user_prompt
-
-
-def _fallback_payload(*, run_date_utc: str, cached_inputs: dict[str, Any]) -> dict[str, Any]:
-    # Deterministic fallback when OpenAI is unavailable (quota/network/etc).
-    dt = datetime.strptime(run_date_utc, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    title = "Market Diagnostic — Big-Bank Recession & Correction Risk (Latest)"
-    slug = f"market-diagnostic-{run_date_utc}"
-
-    snapshot = (cached_inputs or {}).get("system_snapshot") or {}
-    status_raw = (snapshot.get("status") or "YELLOW").strip().upper()
-    status = status_raw if status_raw in {"GREEN", "YELLOW", "RED"} else "YELLOW"
-    score = snapshot.get("score")
-    red_count = snapshot.get("red_count")
-    yellow_count = snapshot.get("yellow_count")
-
-    score_part = "System composite score unavailable."
-    if isinstance(score, (int, float)):
-        score_part = f"System conditions are {status.lower()} with composite score near {float(score):.1f}."
-
-    breadth_part = ""
-    if isinstance(red_count, int) and isinstance(yellow_count, int):
-        breadth_part = f" Breadth: {red_count} red, {yellow_count} yellow."
-
-    summary = f"{score_part}{breadth_part}".strip()
-
-    content_markdown = (
-        f"Date: {run_date_utc} (UTC)\n\n"
-        f"{summary}\n\n"
-        "## Earnings / EPS Revisions (S&P 500)\n"
-        "Trend: Stable but watch breadth.\n"
-        "- Earnings tone remains aligned with the current macro regime and leadership breadth. (Source: https://insight.factset.com/earnings-insight)\n"
-        "- Guidance dispersion remains a key determinant for near-term conviction. (Source: https://insight.factset.com/earnings-insight)\n"
-        "- Profitability signals track the latest composite regime read. (Source: https://insight.factset.com/earnings-insight)\n"
-        "Signal: 🟡 Neutral / Mixed\n\n"
-        "## Credit Stress (HY OAS, IG Spreads, Bank CDS)\n"
-        "Trend: Contained with selective watchpoints.\n"
-        "- Credit spreads remain central to the risk read for this phase. (Source: https://fred.stlouisfed.org/series/BAMLH0A0HYM2)\n"
-        "- Funding tone remains a key transmission channel for risk regimes. (Source: https://fred.stlouisfed.org/series/BAMLC0A0CM)\n"
-        "- Risk appetite remains sensitive to spread momentum. (Source: https://www.spglobal.com/marketintelligence/en/solutions/credit-default-swaps)\n"
-        "Signal: 🟡 Mixed / Watch\n\n"
-        "## Growth (Nowcasts/PMIs + Sahm Rule Proximity)\n"
-        "Trend: Moderating but not breaking.\n"
-        "- Growth momentum remains tied to labor and demand resilience. (Source: https://www.atlantafed.org/cqer/research/gdpnow)\n"
-        "- Soft data alignment continues to guide conviction around trend durability. (Source: https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/pmi/)\n"
-        "- Nowcast risk remains tied to labor-market cooling. (Source: https://fred.stlouisfed.org/series/SAHMREALTIME)\n"
-        "Signal: 🟡 Slowing / Watch\n\n"
-        "## Financial Conditions Indexes\n"
-        "Trend: Mixed with sensitivity to rate expectations.\n"
-        "- Financial conditions remain a primary transmission channel for regime shifts. (Source: https://fred.stlouisfed.org/series/NFCI)\n"
-        "- Liquidity and volatility conditions remain key risk inputs. (Source: https://fred.stlouisfed.org/series/STLFSI4)\n"
-        "- Conditions remain consistent with the current regime tone. (Source: https://fred.stlouisfed.org/series/NFCI)\n"
-        "Signal: 🟡 Mixed / Monitor\n\n"
-        "## Policy / Geopolitical Headlines\n"
-        "Trend: Elevated tail-risk sensitivity.\n"
-        "- Generation fallback used (OpenAI unavailable). (Source: https://marketdiagnostictool.com)\n"
-        "- Policy communication remains a key driver of rates and risk-asset sensitivity. (Source: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm)\n"
-        "- Geopolitical developments are monitored for spillover into pricing. (Source: https://www.reuters.com/world/)\n"
-        "Signal: 🟡 Policy Risk Watch\n\n"
-        "## Risk Regime Assessment\n"
-        "Risk Regime: 🟡 Late-Cycle / Fragile\n"
-        "Correction risk elevated?: No\n"
-        "Recession risk elevated?: No\n"
-        "- Earnings breadth remains mixed, limiting upside conviction. (Source: https://insight.factset.com/earnings-insight)\n"
-        "- Credit conditions remain contained but sensitive to shocks. (Source: https://fred.stlouisfed.org/series/BAMLH0A0HYM2)\n"
-        "- Growth momentum is moderating without clear contraction signals. (Source: https://www.atlantafed.org/cqer/research/gdpnow)\n"
-        "- Financial conditions remain a pivotal transmission channel. (Source: https://fred.stlouisfed.org/series/NFCI)\n"
-        "Final Regime: 🟡 Late-Cycle / Fragile\n"
-        "Confidence: Medium\n"
-    )
-
-    tags = ["market-diagnostic", "macro"]
-    if status == "GREEN":
-        tags += ["risk-on", "stability"]
-    elif status == "RED":
-        tags += ["risk-off", "stress"]
-    else:
-        tags += ["caution", "transitional"]
-
-    tags += ["fallback", "openai-unavailable"]
-
-    return {
-        "title": title,
-        "summary": summary,
-        "status": status,
-        "tags": tags,
-        "slug": slug,
-        "content_markdown": content_markdown,
-        "chart_urls": [],
-        "published": True,
-        "pinned": False,
-    }
 
 
 def run_market_diagnostic(
@@ -378,7 +259,7 @@ def run_market_diagnostic(
     started = time.perf_counter()
     slug = f"market-diagnostic-{run_date_utc}"
     request_id = f"md-{run_date_utc}-{int(time.time())}"
-    generation_mode: Literal["model", "fallback"] | None = None
+    generation_mode: Literal["model"] | None = None
     openai_error_code: str | None = None
     openai_status_code: int | None = None
 
@@ -453,15 +334,12 @@ def run_market_diagnostic(
             )
             return MarketDiagnosticRunResult(ok=True, slug=slug, action="skipped", id=existing.id)
 
-    cached_inputs = _load_cached_inputs(run_date_utc)
     system_prompt, user_prompt = _build_prompts(
         run_date_utc=run_date_utc,
         day_of_week=day_of_week,
         mode=mode,
-        cached_inputs=cached_inputs,
     )
 
-    used_fallback = False
     try:
         model_json = _openai_chat_completion_json(system_prompt=system_prompt, user_prompt=user_prompt)
         payload = MarketDiagnosticPublishPayload.model_validate(model_json)
@@ -481,66 +359,31 @@ def run_market_diagnostic(
             openai_error_code = None
             openai_status_code = None
 
-        if dry_run:
-            logger.error(
-                "market_diagnostic_run %s",
-                json.dumps(
-                    {
-                        "timestamp_utc": _now_utc_iso(),
-                        "request_id": request_id,
-                        "run_date_utc": run_date_utc,
-                        "slug": slug,
-                        "status": None,
-                        "action": "skipped",
-                        "id": None,
-                        "mode": mode,
-                        "dry_run": True,
-                        "duration_ms": int((time.perf_counter() - started) * 1000),
-                        "validation": "failed",
-                        "error": str(exc),
-                        "generation_mode": "model",
-                        "openai_error_code": openai_error_code,
-                        "openai_status_code": openai_status_code,
-                    },
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ),
-            )
-            return MarketDiagnosticRunResult(ok=False, slug=slug, action="skipped", id=None, error=str(exc))
-
-        try:
-            fallback_json = _fallback_payload(run_date_utc=run_date_utc, cached_inputs=cached_inputs)
-            payload = MarketDiagnosticPublishPayload.model_validate(fallback_json)
-            validate_slug(payload.slug, run_date_utc=run_date_utc)
-            used_fallback = True
-            generation_mode = "fallback"
-        except Exception as fallback_exc:
-            logger.error(
-                "market_diagnostic_run %s",
-                json.dumps(
-                    {
-                        "timestamp_utc": _now_utc_iso(),
-                        "request_id": request_id,
-                        "run_date_utc": run_date_utc,
-                        "slug": slug,
-                        "status": None,
-                        "action": "skipped",
-                        "id": None,
-                        "mode": mode,
-                        "dry_run": False,
-                        "duration_ms": int((time.perf_counter() - started) * 1000),
-                        "validation": "failed_fallback",
-                        "error": str(exc),
-                        "fallback_error": str(fallback_exc),
-                        "generation_mode": "fallback",
-                        "openai_error_code": openai_error_code,
-                        "openai_status_code": openai_status_code,
-                    },
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ),
-            )
-            return MarketDiagnosticRunResult(ok=False, slug=slug, action="skipped", id=None, error=str(exc))
+        logger.error(
+            "market_diagnostic_run %s",
+            json.dumps(
+                {
+                    "timestamp_utc": _now_utc_iso(),
+                    "request_id": request_id,
+                    "run_date_utc": run_date_utc,
+                    "slug": slug,
+                    "status": None,
+                    "action": "skipped",
+                    "id": None,
+                    "mode": mode,
+                    "dry_run": dry_run,
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                    "validation": "failed",
+                    "error": str(exc),
+                    "generation_mode": "model",
+                    "openai_error_code": openai_error_code,
+                    "openai_status_code": openai_status_code,
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
+        return MarketDiagnosticRunResult(ok=False, slug=slug, action="skipped", id=None, error=str(exc))
 
     if dry_run:
         logger.info(
@@ -596,7 +439,7 @@ def run_market_diagnostic(
                 "mode": mode,
                 "dry_run": False,
                 "duration_ms": int((time.perf_counter() - started) * 1000),
-                "validation": "passed_fallback" if used_fallback else "passed",
+                "validation": "passed",
                 "generation_mode": generation_mode,
                 "openai_error_code": openai_error_code,
                 "openai_status_code": openai_status_code,

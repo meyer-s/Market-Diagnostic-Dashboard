@@ -62,13 +62,9 @@ curl -sS -X POST "https://<YOUR_DOMAIN>/api/actions/run_market_diagnostic" \
 - Keep `GPT_ACTION_RUN_KEY` scoped to triggering runs and rotate it independently.
 - `OPENAI_API_KEY` must live only on the server (never in GPT Builder secrets that could be exfiltrated).
 
-## Fallback Behavior (Traceable)
+## Failure Behavior
 
-If OpenAI generation fails and `dry_run=false`, the server will publish a deterministic fallback post instead of failing the run.
-
-- The post will include tags: `fallback`, `openai-unavailable`.
-- The `## Policy/Geo` section will include a clear marker line: `Generation fallback used (OpenAI unavailable).`
-- Logs include `generation_mode=model|fallback` and `openai_error_code` when available.
+If OpenAI generation fails, the run returns `ok=false` with `action="skipped"` and logs the OpenAI error code. No post is published.
 
 ## Market Diagnostic Authoring Contract
 
@@ -82,4 +78,4 @@ Template: `docs/market_diagnostic_template.md`.
 
 ## Web Search Sources
 
-The Market Diagnostic runner now uses OpenAI web search to attach real URL sources to each datapoint. If web search fails, the fallback still emits URL sources so every datapoint has a clickable tag.
+The Market Diagnostic runner uses OpenAI web search to attach real URL sources to each datapoint so every tag is clickable.

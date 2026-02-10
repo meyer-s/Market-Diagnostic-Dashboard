@@ -13,8 +13,6 @@ from sqlalchemy.pool import StaticPool
 from app.api.actions import router as actions_router
 from app.core.config import settings
 from app.core.db import Base
-from app.models.update_post import UpdatePost
-
 
 def _valid_generated_payload(*, run_date_utc: str) -> dict:
     return {
@@ -145,13 +143,12 @@ def test_future_run_date_returns_error(client: TestClient):
     assert payload["error"] == "run_date_utc cannot be in the future"
 
 
-def test_openai_failure_uses_loud_fallback_and_logs_error_code(
+def test_openai_failure_returns_error_and_logs_error_code(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ):
     import app.services.market_diagnostic_runner as runner
-    import app.utils.db_helpers as db_helpers
 
     def fake_openai_fail(*, system_prompt: str, user_prompt: str, timeout_seconds: int = 25, **kwargs):
         raise runner.OpenAIRequestError(
@@ -172,17 +169,9 @@ def test_openai_failure_uses_loud_fallback_and_logs_error_code(
     resp = client.post("/api/actions/run_market_diagnostic", json=body, headers=headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["ok"] is True
+    assert data["ok"] is False
     assert data["slug"] == f"market-diagnostic-{safe_date}"
-    assert data["action"] == "posted"
-
-    # Verify fallback was "loud" in the stored post.
-    with db_helpers.SessionLocal() as db:
-        post = db.query(UpdatePost).filter(UpdatePost.slug == f"market-diagnostic-{safe_date}").first()
-        assert post is not None
-        assert "fallback" in (post.tags or [])
-        assert "openai-unavailable" in (post.tags or [])
-        assert "Generation fallback used (OpenAI unavailable)." in (post.content_markdown or "")
+    assert data["action"] == "skipped"
 
     # Verify structured log line includes generation_mode and OpenAI error code.
     log_json = None
@@ -198,5 +187,5 @@ def test_openai_failure_uses_loud_fallback_and_logs_error_code(
 
     assert log_json is not None
     assert log_json["slug"] == f"market-diagnostic-{safe_date}"
-    assert log_json["generation_mode"] == "fallback"
+    assert log_json["generation_mode"] == "model"
     assert log_json["openai_error_code"] == "insufficient_quota"
