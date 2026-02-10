@@ -15,9 +15,6 @@ services:
   frontend:
     build: 
       context: ./frontend
-      platforms:
-        - linux/amd64
-        - linux/arm64
     container_name: market_frontend
     env_file:
       - ./devops/env/frontend.env
