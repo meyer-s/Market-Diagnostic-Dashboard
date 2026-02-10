@@ -269,6 +269,8 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
                 "Include a date/time stamp line at the top (e.g., 'Date: YYYY-MM-DD (UTC)').",
                 "Every section must include exactly one line starting with 'Trend:' and one line starting with 'Signal:'.",
                 "Each bullet must end with a citation in the format '(Source: https://...)' using a real http(s) URL.",
+                "Do not put citations on separate lines; the citation must be at the end of the bullet line.",
+                "If you cannot find a source URL for a bullet, do not include that bullet.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
                 "Use only 🟢🟡🔴 for Signal/Risk Regime lines. No other emojis.",
             ],
@@ -277,27 +279,40 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
                 "## Earnings / EPS Revisions (S&P 500)\n"
                 "Trend: ...\n"
                 "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
                 "Signal: 🟢 ...\n\n"
                 "## Credit Stress (HY OAS, IG Spreads, Bank CDS)\n"
                 "Trend: ...\n"
+                "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
                 "- ... (Source: https://...)\n"
                 "Signal: 🟡 ...\n\n"
                 "## Growth (Nowcasts/PMIs + Sahm Rule Proximity)\n"
                 "Trend: ...\n"
                 "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
                 "Signal: 🟡 ...\n\n"
                 "## Financial Conditions Indexes\n"
                 "Trend: ...\n"
                 "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
                 "Signal: 🟡 ...\n\n"
                 "## Policy / Geopolitical Headlines\n"
                 "Trend: ...\n"
+                "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
                 "- ... (Source: https://...)\n"
                 "Signal: 🟡 ...\n\n"
                 "## Risk Regime Assessment\n"
                 "Risk Regime: 🟡 ...\n"
                 "Correction risk elevated?: Yes/No\n"
                 "Recession risk elevated?: Yes/No\n"
+                "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
+                "- ... (Source: https://...)\n"
                 "- ... (Source: https://...)\n"
                 "Final Regime: 🟡 ...\n"
                 "Confidence: Medium"
