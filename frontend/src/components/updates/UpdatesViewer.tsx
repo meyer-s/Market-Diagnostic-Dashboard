@@ -14,8 +14,9 @@ interface UpdatesViewerProps {
   pendingTitle?: string | null;
 }
 
-// We normalize `(Source: https://...)` into a stable token so ReactMarkdown doesn't split it into <a> nodes.
-const SOURCE_TOKEN_PATTERN = /\s*\[\[SOURCE:\s*([^\]]+)\]\]\s*$/;
+// We normalize `(Source: https://...)` into a stable token that does NOT contain `http`
+// so ReactMarkdown/remark-gfm won't auto-link it and break extraction.
+const SOURCE_TOKEN_PATTERN = /\s*\[\[SOURCE:u=([^\]]+)\]\]\s*$/;
 const SOURCE_PAREN_PATTERN = /\s*\(Source:\s*([^)]+)\)\s*$/;
 const isHttpUrl = (value: string) => /^https?:\/\//i.test(value.trim());
 
@@ -25,6 +26,7 @@ const HOST_LABEL_OVERRIDES: Record<string, string> = {
   "www.ismworld.org": "ISM",
   "www.reuters.com": "Reuters",
   "insight.factset.com": "FactSet",
+  "www.investing.com": "Investing.com",
   "www.conference-board.org": "Conference Board",
   "tradingeconomics.com": "TradingEconomics",
   "www.tradingeconomics.com": "TradingEconomics",
@@ -58,7 +60,9 @@ const normalizeMarkdownSources = (markdown: string) => {
       }
       const cleaned = line.replace(SOURCE_PAREN_PATTERN, "").trimEnd();
       const source = (match[1] || "").trim();
-      return `${cleaned} [[SOURCE:${source}]]`;
+      // Encode so it doesn't contain `http` and doesn't get auto-linkified by markdown parsing.
+      const encoded = encodeURIComponent(source);
+      return `${cleaned} [[SOURCE:u=${encoded}]]`;
     })
     .join("\n");
 };
@@ -72,7 +76,15 @@ const stripSourceFromNode = (
       return { node };
     }
     const cleaned = node.replace(SOURCE_TOKEN_PATTERN, "").trimEnd();
-    return { node: cleaned, source: match[1]?.trim() };
+    const encoded = match[1]?.trim() || "";
+    let decoded = encoded;
+    try {
+      decoded = decodeURIComponent(encoded);
+    } catch {
+      // If decode fails, fall back to raw.
+      decoded = encoded;
+    }
+    return { node: cleaned, source: decoded };
   }
 
   if (Array.isArray(node)) {
