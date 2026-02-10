@@ -137,6 +137,11 @@ export default function UpdatesViewer({
     return () => window.cancelAnimationFrame(raf);
   }, [postKey]);
 
+  const normalizedMarkdown = useMemo(
+    () => normalizeMarkdownSources(post?.content_markdown ?? ""),
+    [post?.content_markdown],
+  );
+
   const headerLabel = useMemo(() => {
     if (!overlayLoading) {
       return null;
@@ -166,8 +171,6 @@ export default function UpdatesViewer({
       </div>
     );
   }
-
-  const normalizedMarkdown = useMemo(() => normalizeMarkdownSources(post.content_markdown), [post.content_markdown]);
 
   return (
     <article className="relative rounded-2xl border border-stealth-700 bg-stealth-800/90 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)] min-h-[68vh] overflow-hidden">
