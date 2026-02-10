@@ -267,10 +267,41 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
                 "chart_urls MUST be an empty array unless you have real http(s) URLs from sources (otherwise keep []).",
                 "content_markdown MUST include the required headings in order and exactly once each.",
                 "Include a date/time stamp line at the top (e.g., 'Date: YYYY-MM-DD (UTC)').",
+                "Every section must include exactly one line starting with 'Trend:' and one line starting with 'Signal:'.",
                 "Each bullet must end with a citation in the format '(Source: https://...)' using a real http(s) URL.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
                 "Use only 🟢🟡🔴 for Signal/Risk Regime lines. No other emojis.",
             ],
+            "format_template": (
+                "Date: YYYY-MM-DD (UTC)\n\n"
+                "## Earnings / EPS Revisions (S&P 500)\n"
+                "Trend: ...\n"
+                "- ... (Source: https://...)\n"
+                "Signal: 🟢 ...\n\n"
+                "## Credit Stress (HY OAS, IG Spreads, Bank CDS)\n"
+                "Trend: ...\n"
+                "- ... (Source: https://...)\n"
+                "Signal: 🟡 ...\n\n"
+                "## Growth (Nowcasts/PMIs + Sahm Rule Proximity)\n"
+                "Trend: ...\n"
+                "- ... (Source: https://...)\n"
+                "Signal: 🟡 ...\n\n"
+                "## Financial Conditions Indexes\n"
+                "Trend: ...\n"
+                "- ... (Source: https://...)\n"
+                "Signal: 🟡 ...\n\n"
+                "## Policy / Geopolitical Headlines\n"
+                "Trend: ...\n"
+                "- ... (Source: https://...)\n"
+                "Signal: 🟡 ...\n\n"
+                "## Risk Regime Assessment\n"
+                "Risk Regime: 🟡 ...\n"
+                "Correction risk elevated?: Yes/No\n"
+                "Recession risk elevated?: Yes/No\n"
+                "- ... (Source: https://...)\n"
+                "Final Regime: 🟡 ...\n"
+                "Confidence: Medium"
+            ),
         },
         separators=(",", ":"),
         sort_keys=True,
