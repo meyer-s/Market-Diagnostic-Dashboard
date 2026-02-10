@@ -141,6 +141,65 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_in
     return system_prompt, user_prompt
 
 
+def _fallback_payload(*, run_date_utc: str, cached_inputs: dict[str, Any]) -> dict[str, Any]:
+    # Deterministic fallback when OpenAI is unavailable (quota/network/etc).
+    dt = datetime.strptime(run_date_utc, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    title = f"Market Diagnostic — {dt.strftime('%b')} {dt.day}"
+    slug = f"market-diagnostic-{run_date_utc}"
+
+    snapshot = (cached_inputs or {}).get("system_snapshot") or {}
+    status_raw = (snapshot.get("status") or "YELLOW").strip().upper()
+    status = status_raw if status_raw in {"GREEN", "YELLOW", "RED"} else "YELLOW"
+    score = snapshot.get("score")
+    red_count = snapshot.get("red_count")
+    yellow_count = snapshot.get("yellow_count")
+
+    score_part = "System composite score unavailable."
+    if isinstance(score, (int, float)):
+        score_part = f"System conditions are {status.lower()} with composite score near {float(score):.1f}."
+
+    breadth_part = ""
+    if isinstance(red_count, int) and isinstance(yellow_count, int):
+        breadth_part = f" Breadth: {red_count} red, {yellow_count} yellow."
+
+    summary = f"{score_part}{breadth_part}".strip()
+
+    content_markdown = (
+        f"_As of UTC {run_date_utc}_\n\n"
+        f"{summary}\n\n"
+        "## Earnings\n"
+        "- Earnings tone remains aligned with the current macro regime and leadership breadth.\n\n"
+        "## Credit\n"
+        "- Credit spreads and funding conditions remain central to the risk read.\n\n"
+        "## Growth\n"
+        "- Growth momentum remains tied to labor and demand resilience in incoming data.\n\n"
+        "## Financial Conditions\n"
+        "- Financial conditions remain a primary transmission channel for regime shifts.\n\n"
+        "## Policy/Geo\n"
+        "- Policy communication and geopolitical developments remain key tail-risk inputs.\n"
+    )
+
+    tags = ["market-diagnostic", "macro"]
+    if status == "GREEN":
+        tags += ["risk-on", "stability"]
+    elif status == "RED":
+        tags += ["risk-off", "stress"]
+    else:
+        tags += ["caution", "transitional"]
+
+    return {
+        "title": title,
+        "summary": summary,
+        "status": status,
+        "tags": tags,
+        "slug": slug,
+        "content_markdown": content_markdown,
+        "chart_urls": [],
+        "published": True,
+        "pinned": False,
+    }
+
+
 def run_market_diagnostic(
     *,
     run_date_utc: str,
@@ -189,6 +248,7 @@ def run_market_diagnostic(
         cached_inputs=cached_inputs,
     )
 
+    used_fallback = False
     try:
         model_json = _openai_chat_completion_json(system_prompt=system_prompt, user_prompt=user_prompt)
         payload = MarketDiagnosticPublishPayload.model_validate(model_json)
@@ -200,28 +260,59 @@ def run_market_diagnostic(
         if payload.pinned is not False:
             raise ValueError("pinned must be false")
     except Exception as exc:
-        logger.error(
-            "market_diagnostic_run %s",
-            json.dumps(
-                {
-                    "timestamp_utc": _now_utc_iso(),
-                    "request_id": request_id,
-                    "run_date_utc": run_date_utc,
-                    "slug": slug,
-                    "status": None,
-                    "action": "skipped",
-                    "id": None,
-                    "mode": mode,
-                    "dry_run": dry_run,
-                    "duration_ms": int((time.perf_counter() - started) * 1000),
-                    "validation": "failed",
-                    "error": str(exc),
-                },
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-        )
-        return MarketDiagnosticRunResult(ok=False, slug=slug, action="skipped", id=None, error=str(exc))
+        if dry_run:
+            logger.error(
+                "market_diagnostic_run %s",
+                json.dumps(
+                    {
+                        "timestamp_utc": _now_utc_iso(),
+                        "request_id": request_id,
+                        "run_date_utc": run_date_utc,
+                        "slug": slug,
+                        "status": None,
+                        "action": "skipped",
+                        "id": None,
+                        "mode": mode,
+                        "dry_run": True,
+                        "duration_ms": int((time.perf_counter() - started) * 1000),
+                        "validation": "failed",
+                        "error": str(exc),
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            )
+            return MarketDiagnosticRunResult(ok=False, slug=slug, action="skipped", id=None, error=str(exc))
+
+        try:
+            fallback_json = _fallback_payload(run_date_utc=run_date_utc, cached_inputs=cached_inputs)
+            payload = MarketDiagnosticPublishPayload.model_validate(fallback_json)
+            validate_slug(payload.slug, run_date_utc=run_date_utc)
+            used_fallback = True
+        except Exception as fallback_exc:
+            logger.error(
+                "market_diagnostic_run %s",
+                json.dumps(
+                    {
+                        "timestamp_utc": _now_utc_iso(),
+                        "request_id": request_id,
+                        "run_date_utc": run_date_utc,
+                        "slug": slug,
+                        "status": None,
+                        "action": "skipped",
+                        "id": None,
+                        "mode": mode,
+                        "dry_run": False,
+                        "duration_ms": int((time.perf_counter() - started) * 1000),
+                        "validation": "failed_fallback",
+                        "error": str(exc),
+                        "fallback_error": str(fallback_exc),
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            )
+            return MarketDiagnosticRunResult(ok=False, slug=slug, action="skipped", id=None, error=str(exc))
 
     if dry_run:
         logger.info(
@@ -275,11 +366,10 @@ def run_market_diagnostic(
                 "mode": mode,
                 "dry_run": False,
                 "duration_ms": int((time.perf_counter() - started) * 1000),
-                "validation": "passed",
+                "validation": "passed_fallback" if used_fallback else "passed",
             },
             separators=(",", ":"),
             sort_keys=True,
         ),
     )
     return MarketDiagnosticRunResult(ok=True, slug=slug, action=action, id=post.id)
-
