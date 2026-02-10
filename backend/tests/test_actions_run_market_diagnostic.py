@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import logging
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -10,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.actions import router as actions_router
 from app.core.config import settings
 from app.core.db import Base
+from app.models.update_post import UpdatePost
 
 
 def _valid_generated_payload(*, run_date_utc: str) -> dict:
@@ -91,3 +93,58 @@ def test_successful_run_returns_posted_then_skipped(client: TestClient):
     assert second_body["action"] == "skipped"
     assert second_body.get("id") == first_body.get("id")
 
+
+def test_openai_failure_uses_loud_fallback_and_logs_error_code(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    import app.services.market_diagnostic_runner as runner
+    import app.utils.db_helpers as db_helpers
+
+    def fake_openai_fail(*, system_prompt: str, user_prompt: str, timeout_seconds: int = 25, **kwargs):
+        raise runner.OpenAIRequestError(
+            "OpenAI error: status=429 message=insufficient quota",
+            status_code=429,
+            error_code="insufficient_quota",
+            error_type="insufficient_quota",
+        )
+
+    monkeypatch.setattr(runner, "_openai_chat_completion_json", fake_openai_fail, raising=True)
+
+    caplog.set_level(logging.INFO, logger="app.services.market_diagnostic_runner")
+
+    headers = {"Authorization": f"Bearer {settings.GPT_ACTION_RUN_KEY}"}
+    body = {"run_date_utc": "2026-02-11", "dry_run": False, "mode": "manual"}
+
+    resp = client.post("/api/actions/run_market_diagnostic", json=body, headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert data["slug"] == "market-diagnostic-2026-02-11"
+    assert data["action"] == "posted"
+
+    # Verify fallback was "loud" in the stored post.
+    with db_helpers.SessionLocal() as db:
+        post = db.query(UpdatePost).filter(UpdatePost.slug == "market-diagnostic-2026-02-11").first()
+        assert post is not None
+        assert "fallback" in (post.tags or [])
+        assert "openai-unavailable" in (post.tags or [])
+        assert "Generation fallback used (OpenAI unavailable)." in (post.content_markdown or "")
+
+    # Verify structured log line includes generation_mode and OpenAI error code.
+    log_json = None
+    for rec in caplog.records:
+        msg = rec.getMessage()
+        if msg.startswith("market_diagnostic_run "):
+            try:
+                import json as _json
+
+                log_json = _json.loads(msg[len("market_diagnostic_run ") :])
+            except Exception:
+                continue
+
+    assert log_json is not None
+    assert log_json["slug"] == "market-diagnostic-2026-02-11"
+    assert log_json["generation_mode"] == "fallback"
+    assert log_json["openai_error_code"] == "insufficient_quota"

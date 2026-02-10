@@ -61,3 +61,11 @@ curl -sS -X POST "https://<YOUR_DOMAIN>/api/actions/run_market_diagnostic" \
 - Do not expose the internal `X-Updates-Key` / `UPDATES_PUBLISH_KEY` to Custom GPT Actions.
 - Keep `GPT_ACTION_RUN_KEY` scoped to triggering runs and rotate it independently.
 - `OPENAI_API_KEY` must live only on the server (never in GPT Builder secrets that could be exfiltrated).
+
+## Fallback Behavior (Traceable)
+
+If OpenAI generation fails and `dry_run=false`, the server will publish a deterministic fallback post instead of failing the run.
+
+- The post will include tags: `fallback`, `openai-unavailable`.
+- The `## Policy/Geo` section will include a clear marker line: `Generation fallback used (OpenAI unavailable).`
+- Logs include `generation_mode=model|fallback` and `openai_error_code` when available.

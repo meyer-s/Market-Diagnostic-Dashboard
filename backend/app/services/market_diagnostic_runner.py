@@ -26,6 +26,21 @@ logger = logging.getLogger(__name__)
 Mode = Literal["scheduled", "manual", "backfill"]
 
 
+class OpenAIRequestError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_code = error_code
+        self.error_type = error_type
+
+
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -57,7 +72,14 @@ def _load_cached_inputs(run_date_utc: str) -> dict[str, Any]:
     }
 
 
-def _openai_chat_completion_json(*, system_prompt: str, user_prompt: str, timeout_seconds: int = 60) -> dict[str, Any]:
+def _openai_chat_completion_json(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    timeout_seconds: int = 25,
+    max_retries: int = 1,
+    overall_deadline_seconds: int = 30,
+) -> dict[str, Any]:
     api_key = (settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
@@ -79,11 +101,86 @@ def _openai_chat_completion_json(*, system_prompt: str, user_prompt: str, timeou
         "Content-Type": "application/json",
     }
 
-    with httpx.Client(timeout=timeout_seconds) as client:
-        resp = client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-        if resp.status_code >= 400:
-            raise RuntimeError(f"OpenAI error: status={resp.status_code} body={resp.text[:400]}")
-        data = resp.json()
+    deadline = time.monotonic() + max(1, overall_deadline_seconds)
+    last_exc: Exception | None = None
+
+    for attempt in range(max_retries + 1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise OpenAIRequestError(
+                "OpenAI request deadline exceeded.",
+                status_code=None,
+                error_code="deadline_exceeded",
+                error_type="timeout",
+            )
+
+        attempt_timeout = min(timeout_seconds, int(remaining))
+        if attempt_timeout <= 0:
+            attempt_timeout = 1
+
+        try:
+            with httpx.Client(timeout=attempt_timeout) as client:
+                resp = client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+
+            if resp.status_code >= 400:
+                error_code = None
+                error_type = None
+                message = resp.text[:400]
+                try:
+                    err = (resp.json() or {}).get("error") or {}
+                    error_code = err.get("code") or None
+                    error_type = err.get("type") or None
+                    message = (err.get("message") or message)[:400]
+                except Exception:
+                    pass
+
+                # Only retry for 5xx. Do not retry 4xx/429 to avoid amplifying quota/auth problems.
+                if resp.status_code >= 500 and attempt < max_retries:
+                    last_exc = OpenAIRequestError(
+                        f"OpenAI error: status={resp.status_code} message={message}",
+                        status_code=resp.status_code,
+                        error_code=error_code,
+                        error_type=error_type,
+                    )
+                    continue
+
+                raise OpenAIRequestError(
+                    f"OpenAI error: status={resp.status_code} message={message}",
+                    status_code=resp.status_code,
+                    error_code=error_code,
+                    error_type=error_type,
+                )
+
+            data = resp.json()
+            last_exc = None
+            break
+        except httpx.TimeoutException as exc:
+            last_exc = OpenAIRequestError(
+                f"OpenAI request timeout: {exc}",
+                status_code=None,
+                error_code="timeout",
+                error_type="timeout",
+            )
+            if attempt < max_retries:
+                continue
+            raise last_exc
+        except httpx.RequestError as exc:
+            last_exc = OpenAIRequestError(
+                f"OpenAI request error: {exc}",
+                status_code=None,
+                error_code="request_error",
+                error_type="network",
+            )
+            if attempt < max_retries:
+                continue
+            raise last_exc
+
+    if last_exc is not None:
+        raise last_exc
 
     try:
         content = data["choices"][0]["message"]["content"]
@@ -176,6 +273,7 @@ def _fallback_payload(*, run_date_utc: str, cached_inputs: dict[str, Any]) -> di
         "## Financial Conditions\n"
         "- Financial conditions remain a primary transmission channel for regime shifts.\n\n"
         "## Policy/Geo\n"
+        "- Generation fallback used (OpenAI unavailable).\n"
         "- Policy communication and geopolitical developments remain key tail-risk inputs.\n"
     )
 
@@ -186,6 +284,8 @@ def _fallback_payload(*, run_date_utc: str, cached_inputs: dict[str, Any]) -> di
         tags += ["risk-off", "stress"]
     else:
         tags += ["caution", "transitional"]
+
+    tags += ["fallback", "openai-unavailable"]
 
     return {
         "title": title,
@@ -213,6 +313,9 @@ def run_market_diagnostic(
     started = time.perf_counter()
     slug = f"market-diagnostic-{run_date_utc}"
     request_id = f"md-{run_date_utc}-{int(time.time())}"
+    generation_mode: Literal["model", "fallback"] | None = None
+    openai_error_code: str | None = None
+    openai_status_code: int | None = None
 
     # Idempotency short-circuit: if slug already exists, never call OpenAI.
     with get_db_session() as db:
@@ -233,6 +336,8 @@ def run_market_diagnostic(
                         "dry_run": dry_run,
                         "duration_ms": int((time.perf_counter() - started) * 1000),
                         "validation": "skipped_existing",
+                        "generation_mode": None,
+                        "openai_error_code": None,
                     },
                     separators=(",", ":"),
                     sort_keys=True,
@@ -259,7 +364,15 @@ def run_market_diagnostic(
             raise ValueError("published must be true")
         if payload.pinned is not False:
             raise ValueError("pinned must be false")
+        generation_mode = "model"
     except Exception as exc:
+        if isinstance(exc, OpenAIRequestError):
+            openai_error_code = exc.error_code
+            openai_status_code = exc.status_code
+        else:
+            openai_error_code = None
+            openai_status_code = None
+
         if dry_run:
             logger.error(
                 "market_diagnostic_run %s",
@@ -277,6 +390,9 @@ def run_market_diagnostic(
                         "duration_ms": int((time.perf_counter() - started) * 1000),
                         "validation": "failed",
                         "error": str(exc),
+                        "generation_mode": "model",
+                        "openai_error_code": openai_error_code,
+                        "openai_status_code": openai_status_code,
                     },
                     separators=(",", ":"),
                     sort_keys=True,
@@ -289,6 +405,7 @@ def run_market_diagnostic(
             payload = MarketDiagnosticPublishPayload.model_validate(fallback_json)
             validate_slug(payload.slug, run_date_utc=run_date_utc)
             used_fallback = True
+            generation_mode = "fallback"
         except Exception as fallback_exc:
             logger.error(
                 "market_diagnostic_run %s",
@@ -307,6 +424,9 @@ def run_market_diagnostic(
                         "validation": "failed_fallback",
                         "error": str(exc),
                         "fallback_error": str(fallback_exc),
+                        "generation_mode": "fallback",
+                        "openai_error_code": openai_error_code,
+                        "openai_status_code": openai_status_code,
                     },
                     separators=(",", ":"),
                     sort_keys=True,
@@ -330,6 +450,8 @@ def run_market_diagnostic(
                     "dry_run": True,
                     "duration_ms": int((time.perf_counter() - started) * 1000),
                     "validation": "passed_dry_run",
+                    "generation_mode": generation_mode,
+                    "openai_error_code": None,
                 },
                 separators=(",", ":"),
                 sort_keys=True,
@@ -367,6 +489,9 @@ def run_market_diagnostic(
                 "dry_run": False,
                 "duration_ms": int((time.perf_counter() - started) * 1000),
                 "validation": "passed_fallback" if used_fallback else "passed",
+                "generation_mode": generation_mode,
+                "openai_error_code": openai_error_code,
+                "openai_status_code": openai_status_code,
             },
             separators=(",", ":"),
             sort_keys=True,
