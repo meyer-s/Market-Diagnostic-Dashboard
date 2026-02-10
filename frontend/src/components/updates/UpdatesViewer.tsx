@@ -56,6 +56,7 @@ const normalizeMarkdownSources = (markdown: string) => {
   // 4) Prevent `Final Regime:` / `Confidence:` lines from being "lazy continuation" text inside the last bullet.
   //    (CommonMark allows unindented lines after a list item to still belong to that list item.)
   //    We lift those lines into the Risk Regime section subheader.
+  // 5) Hide `Trend:` lines in the UI (they often duplicate the Signal line).
 
   const lines = markdown.split("\n").flatMap((rawLine) => {
     let line = rawLine;
@@ -100,9 +101,8 @@ const normalizeMarkdownSources = (markdown: string) => {
     const signalLine = signalIndex >= 0 ? currentBlock.splice(signalIndex, 1)[0] : null;
 
     if (signalLine) {
-      const trendIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("Trend:"));
-      const insertAt = trendIndex >= 0 ? trendIndex + 1 : 0;
-      currentBlock.splice(insertAt, 0, signalLine);
+      // With `Trend:` lines hidden, keep Signal at the top of the section body.
+      currentBlock.unshift(signalLine);
     }
 
     // For the Risk Regime section, lift `Final Regime:` and `Confidence:` into the subheader
@@ -133,6 +133,9 @@ const normalizeMarkdownSources = (markdown: string) => {
       flushBlock();
       normalized.push(line);
       currentHeading = line;
+      continue;
+    }
+    if (line.trimStart().startsWith("Trend:")) {
       continue;
     }
     currentBlock.push(line);
