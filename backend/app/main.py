@@ -20,6 +20,7 @@ from app.api.precious_metals import router as precious_metals_router
 from app.api.aap import router as aap_router
 from app.api.discord import router as discord_router
 from app.api.update_posts import router as update_posts_router
+from app.api.actions import router as actions_router
 
 # Set up logging
 logging.basicConfig(
@@ -88,6 +89,7 @@ app.include_router(market_map_router, tags=["MarketMap"])
 app.include_router(options_alerts_router, tags=["OptionsAlerts"])
 app.include_router(secret_options_router, tags=["SecretOptions"])
 app.include_router(update_posts_router, tags=["Updates"])
+app.include_router(actions_router, tags=["Actions"])
 
 # Sector Projections
 from app.api.sector_projection import router as sector_projection_router

@@ -1,0 +1,285 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+import time
+from datetime import datetime, timezone
+from typing import Any, Literal
+
+import httpx
+
+from app.core.config import settings
+from app.models.system_status import SystemStatus
+from app.models.update_post import UpdatePost
+from app.schemas.market_diagnostic_payload import (
+    MarketDiagnosticPublishPayload,
+    MarketDiagnosticRunResult,
+)
+from app.services.market_diagnostic_validation import validate_slug
+from app.services.update_posts import create_update_post_if_absent
+from app.utils.db_helpers import get_db_session
+
+logger = logging.getLogger(__name__)
+
+
+Mode = Literal["scheduled", "manual", "backfill"]
+
+
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _load_cached_inputs(run_date_utc: str) -> dict[str, Any]:
+    with get_db_session() as db:
+        status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
+
+    if not status:
+        system_snapshot = {
+            "status": "YELLOW",
+            "score": None,
+            "red_count": None,
+            "yellow_count": None,
+            "timestamp": None,
+        }
+    else:
+        system_snapshot = {
+            "status": (status.state or "YELLOW").strip().upper(),
+            "score": status.composite_score,
+            "red_count": status.red_count,
+            "yellow_count": status.yellow_count,
+            "timestamp": status.timestamp.isoformat() if status.timestamp else None,
+        }
+
+    return {
+        "run_date_utc": run_date_utc,
+        "system_snapshot": system_snapshot,
+    }
+
+
+def _openai_chat_completion_json(*, system_prompt: str, user_prompt: str, timeout_seconds: int = 60) -> dict[str, Any]:
+    api_key = (settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+
+    model = (getattr(settings, "MARKET_DIAGNOSTIC_MODEL", None) or "").strip() or "gpt-4o-mini"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    with httpx.Client(timeout=timeout_seconds) as client:
+        resp = client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"OpenAI error: status={resp.status_code} body={resp.text[:400]}")
+        data = resp.json()
+
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except Exception as exc:
+        raise RuntimeError(f"OpenAI response parse error: {exc}")
+
+    try:
+        return json.loads(content)
+    except Exception as exc:
+        raise RuntimeError(f"OpenAI did not return valid JSON: {exc}; content={content[:400]}")
+
+
+def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_inputs: dict[str, Any]) -> tuple[str, str]:
+    system_prompt = (
+        "You are an expert macro strategist writing a concise Market Diagnostic for a private dashboard.\n"
+        "You must ONLY use the cached_inputs provided by the server.\n"
+        "You MUST NOT browse, fetch, or call any external URLs.\n"
+        "You MUST output exactly one JSON object and nothing else.\n"
+        "Do not include emojis.\n"
+    )
+
+    user_prompt = json.dumps(
+        {
+            "task": "Generate one Market Diagnostic publish payload JSON that matches the schema exactly.",
+            "run_date_utc": run_date_utc,
+            "day_of_week": day_of_week,
+            "mode": mode,
+            "schema": {
+                "title": "Market Diagnostic — MMM D",
+                "summary": "one sentence",
+                "status": ["GREEN", "YELLOW", "RED"],
+                "tags": ["market-diagnostic", "macro"],
+                "slug": f"market-diagnostic-{run_date_utc}",
+                "content_markdown": (
+                    "Must contain these Markdown H2 headings exactly once each and in this exact order: "
+                    "## Earnings, ## Credit, ## Growth, ## Financial Conditions, ## Policy/Geo"
+                ),
+                "chart_urls": [],
+                "published": True,
+                "pinned": False,
+            },
+            "cached_inputs": cached_inputs,
+            "rules": [
+                "Output JSON only (no markdown fences, no commentary).",
+                f"slug MUST equal market-diagnostic-{run_date_utc}.",
+                "tags MUST include market-diagnostic and macro.",
+                "chart_urls MUST be an empty array unless you have real http(s) URLs in cached_inputs (otherwise keep []).",
+                "content_markdown MUST include the required headings in order and exactly once each.",
+                "No emojis anywhere.",
+            ],
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return system_prompt, user_prompt
+
+
+def run_market_diagnostic(
+    *,
+    run_date_utc: str,
+    day_of_week: str,
+    mode: Mode = "scheduled",
+    dry_run: bool = False,
+) -> MarketDiagnosticRunResult:
+    """
+    Server-side job runner: fetch cached inputs, call OpenAI, validate, idempotently publish by slug.
+    """
+    started = time.perf_counter()
+    slug = f"market-diagnostic-{run_date_utc}"
+    request_id = f"md-{run_date_utc}-{int(time.time())}"
+
+    # Idempotency short-circuit: if slug already exists, never call OpenAI.
+    with get_db_session() as db:
+        existing = db.query(UpdatePost).filter(UpdatePost.slug == slug).first()
+        if existing:
+            logger.info(
+                "market_diagnostic_run %s",
+                json.dumps(
+                    {
+                        "timestamp_utc": _now_utc_iso(),
+                        "request_id": request_id,
+                        "run_date_utc": run_date_utc,
+                        "slug": slug,
+                        "status": str(existing.status),
+                        "action": "skipped",
+                        "id": existing.id,
+                        "mode": mode,
+                        "dry_run": dry_run,
+                        "duration_ms": int((time.perf_counter() - started) * 1000),
+                        "validation": "skipped_existing",
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            )
+            return MarketDiagnosticRunResult(ok=True, slug=slug, action="skipped", id=existing.id)
+
+    cached_inputs = _load_cached_inputs(run_date_utc)
+    system_prompt, user_prompt = _build_prompts(
+        run_date_utc=run_date_utc,
+        day_of_week=day_of_week,
+        mode=mode,
+        cached_inputs=cached_inputs,
+    )
+
+    try:
+        model_json = _openai_chat_completion_json(system_prompt=system_prompt, user_prompt=user_prompt)
+        payload = MarketDiagnosticPublishPayload.model_validate(model_json)
+        validate_slug(payload.slug, run_date_utc=run_date_utc)
+        if payload.slug != slug:
+            raise ValueError(f"slug mismatch: expected={slug} got={payload.slug}")
+        if payload.published is not True:
+            raise ValueError("published must be true")
+        if payload.pinned is not False:
+            raise ValueError("pinned must be false")
+    except Exception as exc:
+        logger.error(
+            "market_diagnostic_run %s",
+            json.dumps(
+                {
+                    "timestamp_utc": _now_utc_iso(),
+                    "request_id": request_id,
+                    "run_date_utc": run_date_utc,
+                    "slug": slug,
+                    "status": None,
+                    "action": "skipped",
+                    "id": None,
+                    "mode": mode,
+                    "dry_run": dry_run,
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                    "validation": "failed",
+                    "error": str(exc),
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
+        return MarketDiagnosticRunResult(ok=False, slug=slug, action="skipped", id=None, error=str(exc))
+
+    if dry_run:
+        logger.info(
+            "market_diagnostic_run %s",
+            json.dumps(
+                {
+                    "timestamp_utc": _now_utc_iso(),
+                    "request_id": request_id,
+                    "run_date_utc": run_date_utc,
+                    "slug": slug,
+                    "status": str(payload.status),
+                    "action": "skipped",
+                    "id": None,
+                    "mode": mode,
+                    "dry_run": True,
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                    "validation": "passed_dry_run",
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
+        return MarketDiagnosticRunResult(ok=True, slug=slug, action="skipped", id=None)
+
+    with get_db_session() as db:
+        post, created = create_update_post_if_absent(
+            db,
+            title=payload.title,
+            summary=payload.summary,
+            status=payload.status,
+            tags=payload.tags,
+            slug=payload.slug,
+            content_markdown=payload.content_markdown,
+            chart_urls=payload.chart_urls,
+            published=payload.published,
+            pinned=payload.pinned,
+        )
+
+    action = "posted" if created else "skipped"
+    logger.info(
+        "market_diagnostic_run %s",
+        json.dumps(
+            {
+                "timestamp_utc": _now_utc_iso(),
+                "request_id": request_id,
+                "run_date_utc": run_date_utc,
+                "slug": slug,
+                "status": str(payload.status),
+                "action": action,
+                "id": post.id,
+                "mode": mode,
+                "dry_run": False,
+                "duration_ms": int((time.perf_counter() - started) * 1000),
+                "validation": "passed",
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+    )
+    return MarketDiagnosticRunResult(ok=True, slug=slug, action=action, id=post.id)
+

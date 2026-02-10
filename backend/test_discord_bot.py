@@ -3,8 +3,18 @@
 Test Discord bot endpoint locally
 Simulates a Discord interaction without needing Discord setup
 """
+import os
 import requests
 import json
+import pytest
+
+# This is an integration script that expects a running backend at BASE_URL.
+# Skip under pytest unless explicitly enabled.
+if not os.getenv("RUN_DISCORD_INTEGRATION_TESTS"):
+    pytest.skip(
+        "Discord bot integration tests require a running backend; set RUN_DISCORD_INTEGRATION_TESTS=1 to enable.",
+        allow_module_level=True,
+    )
 
 # Your server URL
 BASE_URL = "http://localhost:8000"  # Change to http://100.49.90.221:8000 for remote testing

@@ -47,3 +47,15 @@ body {
 .collapsible-content {
   @apply px-4 md:px-6 pb-4 md:pb-6;
 }
+
+@keyframes updatesIndeterminate {
+  0% {
+    transform: translateX(-60%);
+  }
+  50% {
+    transform: translateX(60%);
+  }
+  100% {
+    transform: translateX(160%);
+  }
+}

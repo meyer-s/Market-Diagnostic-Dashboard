@@ -16,12 +16,8 @@ from app.schemas.update_post import (
     UpdatePostPatch,
 )
 from app.services.update_posts import (
-    ensure_unique_slug,
-    normalize_string_list,
-    slugify,
-    slugify_with_utc_date,
+    create_update_post_if_absent,
 )
-from app.services.market_diagnostic_publisher import publish_market_diagnostic_for_date
 from app.utils.db_helpers import get_db_session
 
 router = APIRouter()
@@ -43,12 +39,7 @@ def list_updates(
     skip_refresh: bool = Query(False, description="Internal flag to bypass auto-refresh"),
 ):
     """List published update posts for the Tools -> Updates feed."""
-    if not skip_refresh:
-        try:
-            # Keep today's diagnostic current whenever the list endpoint is hit.
-            publish_market_diagnostic_for_date(run_dt=datetime.utcnow(), timeout_seconds=8)
-        except Exception as exc:
-            logger.warning("Updates auto-refresh skipped: %s", exc)
+    # Market Diagnostic publishing is handled by the server scheduler / operator-triggered runs.
 
     with get_db_session() as db:
         query = db.query(UpdatePost).filter(UpdatePost.published.is_(True))
@@ -89,39 +80,22 @@ def create_update(
     require_updates_publish_key(x_updates_key)
 
     with get_db_session() as db:
-        if payload.slug:
-            requested_slug = slugify(payload.slug)
-            existing = db.query(UpdatePost).filter(UpdatePost.slug == requested_slug).first()
-            if existing:
-                return existing
-            resolved_slug = requested_slug
-        else:
-            resolved_slug = ensure_unique_slug(
-                db,
-                slugify_with_utc_date(payload.title, datetime.utcnow()),
-            )
-
-        post = UpdatePost(
-            title=payload.title.strip(),
-            slug=resolved_slug,
-            summary=payload.summary.strip(),
-            status=payload.status,
-            tags=normalize_string_list(payload.tags),
-            content_markdown=payload.content_markdown,
-            chart_urls=normalize_string_list(payload.chart_urls),
-            published=payload.published,
-            pinned=payload.pinned,
-        )
         try:
-            db.add(post)
-            db.commit()
-            db.refresh(post)
+            post, _created = create_update_post_if_absent(
+                db,
+                title=payload.title,
+                summary=payload.summary,
+                status=payload.status,
+                tags=payload.tags,
+                slug=payload.slug,
+                content_markdown=payload.content_markdown,
+                chart_urls=payload.chart_urls,
+                published=payload.published,
+                pinned=payload.pinned,
+            )
             return post
         except IntegrityError:
             db.rollback()
-            existing = db.query(UpdatePost).filter(UpdatePost.slug == resolved_slug).first()
-            if existing:
-                return existing
             raise HTTPException(status_code=409, detail="Update post with this slug already exists.")
 
 

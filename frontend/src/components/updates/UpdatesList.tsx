@@ -5,12 +5,14 @@ interface UpdatesListProps {
   posts: UpdatePostListItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onPrefetch?: (id: string) => void;
 }
 
 export default function UpdatesList({
   posts,
   selectedId,
   onSelect,
+  onPrefetch,
 }: UpdatesListProps) {
   return (
     <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)]">
@@ -25,6 +27,8 @@ export default function UpdatesList({
               key={post.id}
               type="button"
               onClick={() => onSelect(post.id)}
+              onMouseEnter={() => onPrefetch?.(post.id)}
+              onFocus={() => onPrefetch?.(post.id)}
               className={`mb-2 w-full rounded-2xl border px-3 py-3 text-left transition ${
                 isActive
                   ? "border-stealth-500 bg-stealth-700/70"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ChartGallery from "../../components/updates/ChartGallery";
 import SearchInput from "../../components/updates/SearchInput";
 import StatusFilterChips from "../../components/updates/StatusFilterChips";
@@ -16,11 +16,13 @@ export default function Updates() {
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [displayId, setDisplayId] = useState<string | null>(null);
   const [detailCache, setDetailCache] = useState<Record<string, UpdatePostDetail>>({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [activeChartIndex, setActiveChartIndex] = useState(0);
+  const prefetchInFlight = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -61,6 +63,7 @@ export default function Updates() {
   useEffect(() => {
     if (posts.length === 0) {
       setSelectedId(null);
+      setDisplayId(null);
       return;
     }
     if (selectedId && posts.some((post) => post.id === selectedId)) {
@@ -70,7 +73,24 @@ export default function Updates() {
   }, [posts, selectedId]);
 
   useEffect(() => {
-    if (!selectedId || detailCache[selectedId]) {
+    if (!selectedId) {
+      return;
+    }
+
+    // If we already have the details, swap immediately for a smoother feel.
+    if (detailCache[selectedId]) {
+      if (displayId !== selectedId) {
+        setDisplayId(selectedId);
+      }
+      return;
+    }
+
+    // Keep rendering the previous post while we fetch the new one.
+    if (!displayId) {
+      setDisplayId(selectedId);
+    }
+
+    if (detailCache[selectedId]) {
       return;
     }
 
@@ -84,6 +104,10 @@ export default function Updates() {
           return;
         }
         setDetailCache((prev) => ({ ...prev, [post.id]: post }));
+        // If this is still the selected post, swap the viewer now.
+        if (selectedId === post.id) {
+          setDisplayId(post.id);
+        }
       })
       .catch((err: Error) => {
         if (cancelled) {
@@ -100,16 +124,41 @@ export default function Updates() {
     return () => {
       cancelled = true;
     };
-  }, [detailCache, selectedId]);
+  }, [detailCache, displayId, selectedId]);
 
   const selectedPost = selectedId ? detailCache[selectedId] || null : null;
+  const displayedPost = displayId ? detailCache[displayId] || null : null;
 
   const openChart = (index: number) => {
     setActiveChartIndex(index);
     setGalleryOpen(true);
   };
 
-  const viewerLoading = Boolean(selectedId) && !selectedPost && detailLoading;
+  const viewerLoading = Boolean(selectedId) && !displayedPost && detailLoading;
+  const viewerOverlayLoading =
+    Boolean(selectedId) &&
+    Boolean(displayedPost) &&
+    displayId !== selectedId &&
+    !selectedPost &&
+    detailLoading;
+  const pendingTitle = selectedId ? posts.find((p) => p.id === selectedId)?.title ?? null : null;
+
+  const prefetchPost = (id: string) => {
+    if (!id || detailCache[id] || prefetchInFlight.current.has(id)) {
+      return;
+    }
+    prefetchInFlight.current.add(id);
+    apiFetch<UpdatePostDetail>(`/updates/${id}`)
+      .then((post) => {
+        setDetailCache((prev) => ({ ...prev, [post.id]: post }));
+      })
+      .catch(() => {
+        // Prefetch is best-effort; ignore errors.
+      })
+      .finally(() => {
+        prefetchInFlight.current.delete(id);
+      });
+  };
 
   return (
     <div className="space-y-4 p-4 text-stealth-100 md:space-y-6 md:p-6">
@@ -141,21 +190,23 @@ export default function Updates() {
               No posts match the current filters.
             </div>
           ) : (
-            <UpdatesList posts={posts} selectedId={selectedId} onSelect={setSelectedId} />
+            <UpdatesList posts={posts} selectedId={selectedId} onSelect={setSelectedId} onPrefetch={prefetchPost} />
           )}
         </div>
 
         <UpdatesViewer
-          post={selectedPost}
+          post={displayedPost}
           loading={viewerLoading}
           error={detailError}
           onOpenChart={openChart}
+          overlayLoading={viewerOverlayLoading}
+          pendingTitle={pendingTitle}
         />
       </div>
 
       <ChartGallery
         isOpen={galleryOpen}
-        urls={selectedPost?.chart_urls ?? []}
+        urls={displayedPost?.chart_urls ?? []}
         initialIndex={activeChartIndex}
         onClose={() => setGalleryOpen(false)}
       />

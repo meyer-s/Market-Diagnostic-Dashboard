@@ -36,6 +36,7 @@ env/
 .env
 .env.local
 .env.*.local
+devops/env/backend.env
 
 # IDE
 .vscode/

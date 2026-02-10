@@ -12,7 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.services.ingestion.etl_runner import ETLRunner
 from app.services.options_alerts import run_options_alert_scan
-from app.services.market_diagnostic_publisher import publish_market_diagnostic_for_today
+from app.services.market_diagnostic_runner import run_market_diagnostic
 from app.services.sector_projection import (
     compute_sector_projections,
     detect_duplicate_series,
@@ -24,7 +24,8 @@ from app.services.sector_projection import (
 from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 from app.models.system_status import SystemStatus
 from app.utils.db_helpers import get_db_session
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -182,20 +183,19 @@ async def scheduled_etl_job():
 
 
 def scheduled_market_diagnostic_publish_job():
-    """Scheduled publisher for Monday/Thursday Market Diagnostic updates."""
+    """Scheduled runner for Market Diagnostic updates."""
     try:
-        result = publish_market_diagnostic_for_today()
-        logger.info(
-            "Market Diagnostic publisher completed: title=%s status=%s slug=%s id=%s source=%s published_timestamp_utc=%s",
-            result.title,
-            result.status,
-            result.slug,
-            result.response_id,
-            result.source,
-            result.published_timestamp_utc,
+        run_date_utc = datetime.now(timezone.utc).date().isoformat()
+        day_of_week = datetime.now(ZoneInfo("America/New_York")).strftime("%a").upper()
+        result = run_market_diagnostic(
+            run_date_utc=run_date_utc,
+            day_of_week=day_of_week,
+            mode="scheduled",
+            dry_run=False,
         )
+        logger.info("Market Diagnostic runner completed: ok=%s slug=%s action=%s id=%s", result.ok, result.slug, result.action, result.id)
     except Exception as exc:
-        logger.error("Market Diagnostic publisher failed: %s", exc, exc_info=True)
+        logger.error("Market Diagnostic runner failed: %s", exc, exc_info=True)
 
 
 def start_scheduler():
@@ -228,17 +228,17 @@ def start_scheduler():
             replace_existing=True,
         )
 
-    # Runs on Monday and Thursday, aligned with correction-risk publishing cadence.
+    # Runs on Mon/Wed/Fri at 9:00 AM America/New_York.
     scheduler.add_job(
         scheduled_market_diagnostic_publish_job,
         CronTrigger(
-            day_of_week="mon,thu",
-            hour=8,
-            minute=15,
+            day_of_week="mon,wed,fri",
+            hour=9,
+            minute=0,
             timezone="America/New_York",
         ),
-        id="market_diagnostic_publisher",
-        name="Market Diagnostic Publisher",
+        id="market_diagnostic_runner",
+        name="Market Diagnostic Runner",
         replace_existing=True,
     )
     

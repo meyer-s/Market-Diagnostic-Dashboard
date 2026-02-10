@@ -16,7 +16,7 @@ if __package__ and __package__.startswith("backend.app"):
     if backend_root_str not in sys.path:
         sys.path.insert(0, backend_root_str)
 
-from app.services.market_diagnostic_publisher import publish_market_diagnostic_for_date
+from app.services.market_diagnostic_runner import run_market_diagnostic
 
 
 def _parse_args() -> argparse.Namespace:
@@ -39,8 +39,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
     args = _parse_args()
     run_date = _resolve_run_date(args.date)
-    result = publish_market_diagnostic_for_date(run_dt=run_date)
-    print(json.dumps(result.to_dict(), indent=2))
+    run_date_utc = run_date.date().isoformat()
+    day_of_week = run_date.strftime("%a").upper()
+    result = run_market_diagnostic(run_date_utc=run_date_utc, day_of_week=day_of_week, mode="manual", dry_run=False)
+    print(json.dumps(result.model_dump(), indent=2))
 
 
 if __name__ == "__main__":

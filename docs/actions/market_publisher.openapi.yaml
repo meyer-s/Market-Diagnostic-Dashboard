@@ -1,0 +1,149 @@
+openapi: 3.0.3
+info:
+  title: Market Diagnostic Runner (GPT Action)
+  version: "1.0.0"
+servers:
+  - url: https://<YOUR_DOMAIN>
+paths:
+  /api/actions/run_market_diagnostic:
+    post:
+      operationId: run_market_diagnostic
+      summary: Trigger a server-side Market Diagnostic run (generate + validate + publish).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunMarketDiagnosticRequest"
+      responses:
+        "200":
+          description: Posted or skipped (idempotent by slug).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunMarketDiagnosticResponse"
+        "400":
+          description: Invalid request.
+        "401":
+          description: Missing or invalid bearer token.
+  /api/actions/publish_update:
+    post:
+      deprecated: true
+      operationId: publish_market_diagnostic_update
+      summary: (Deprecated) Publish (or skip) a Market Diagnostic update by slug.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishUpdateRequest"
+      responses:
+        "200":
+          description: Posted or skipped (idempotent).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishUpdateResponse"
+        "400":
+          description: Validation error.
+        "401":
+          description: Missing or invalid bearer token.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API_KEY
+  schemas:
+    RunMarketDiagnosticRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        run_date_utc:
+          type: string
+          description: Optional UTC date in YYYY-MM-DD. Defaults to current UTC date.
+        dry_run:
+          type: boolean
+          default: false
+        mode:
+          type: string
+          enum: [manual, backfill]
+          default: manual
+    RunMarketDiagnosticResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, slug, action]
+      properties:
+        ok:
+          type: boolean
+        id:
+          type: string
+          nullable: true
+        slug:
+          type: string
+        action:
+          type: string
+          enum: [posted, skipped]
+        error:
+          type: string
+          nullable: true
+    PublishUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - summary
+        - status
+        - tags
+        - slug
+        - content_markdown
+        - chart_urls
+        - published
+        - pinned
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+          enum: [GREEN, YELLOW, RED]
+        tags:
+          type: array
+          items:
+            type: string
+        slug:
+          type: string
+          description: Must match ^market-diagnostic-\\d{4}-\\d{2}-\\d{2}$
+        content_markdown:
+          type: string
+          description: Must include required H2 headings exactly once each.
+        chart_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Must be empty or http(s) URLs.
+        published:
+          type: boolean
+        pinned:
+          type: boolean
+    PublishUpdateResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, slug, action]
+      properties:
+        ok:
+          type: boolean
+        id:
+          type: string
+          nullable: true
+        slug:
+          type: string
+        action:
+          type: string
+          enum: [posted, skipped]

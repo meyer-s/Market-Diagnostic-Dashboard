@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Market Stability Dashboard API"
     DATABASE_URL: str = "sqlite:///./market.db"
     FRED_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+    MARKET_DIAGNOSTIC_MODEL: Optional[str] = None
     CORS_ORIGINS: str = "*"  # Comma-separated origins or * for all
     COMEX_INVENTORY_URL: Optional[str] = None
     COMEX_INVENTORY_PATH: Optional[str] = None
@@ -27,6 +29,8 @@ class Settings(BaseSettings):
     SIFMA_SWAP_URL: Optional[str] = None
     UPDATES_BASE_URL: Optional[str] = None
     UPDATES_PUBLISH_KEY: Optional[str] = None
+    GPT_ACTION_PUBLISH_KEY: Optional[str] = None
+    GPT_ACTION_RUN_KEY: Optional[str] = None
 
     class Config:
         env_file = ".env"
