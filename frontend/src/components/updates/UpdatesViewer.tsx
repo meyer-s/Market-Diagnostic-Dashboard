@@ -14,18 +14,64 @@ interface UpdatesViewerProps {
   pendingTitle?: string | null;
 }
 
-const SOURCE_PATTERN = /\s*\(Source:\s*([^)]+)\)\s*$/;
+// We normalize `(Source: https://...)` into a stable token so ReactMarkdown doesn't split it into <a> nodes.
+const SOURCE_TOKEN_PATTERN = /\s*\[\[SOURCE:\s*([^\]]+)\]\]\s*$/;
+const SOURCE_PAREN_PATTERN = /\s*\(Source:\s*([^)]+)\)\s*$/;
 const isHttpUrl = (value: string) => /^https?:\/\//i.test(value.trim());
+
+const HOST_LABEL_OVERRIDES: Record<string, string> = {
+  "fred.stlouisfed.org": "FRED",
+  "www.atlantafed.org": "Atlanta Fed",
+  "www.ismworld.org": "ISM",
+  "www.reuters.com": "Reuters",
+  "insight.factset.com": "FactSet",
+  "www.conference-board.org": "Conference Board",
+  "tradingeconomics.com": "TradingEconomics",
+  "www.tradingeconomics.com": "TradingEconomics",
+  "www.newyorkfed.org": "NY Fed",
+  "www.federalreserve.gov": "Fed",
+};
+
+const labelFromUrl = (url: string) => {
+  const raw = url.trim();
+  try {
+    const parsed = new URL(raw);
+    const hostname = parsed.hostname.toLowerCase();
+    const hostLabel = HOST_LABEL_OVERRIDES[hostname];
+    if (hostLabel) {
+      return hostLabel;
+    }
+    return hostname.replace(/^www\./, "");
+  } catch {
+    return raw;
+  }
+};
+
+const normalizeMarkdownSources = (markdown: string) => {
+  // Replace only when it appears as a trailing citation (typically at end-of-bullet).
+  return markdown
+    .split("\n")
+    .map((line) => {
+      const match = line.match(SOURCE_PAREN_PATTERN);
+      if (!match) {
+        return line;
+      }
+      const cleaned = line.replace(SOURCE_PAREN_PATTERN, "").trimEnd();
+      const source = (match[1] || "").trim();
+      return `${cleaned} [[SOURCE:${source}]]`;
+    })
+    .join("\n");
+};
 
 const stripSourceFromNode = (
   node: React.ReactNode,
 ): { node: React.ReactNode; source?: string } => {
   if (typeof node === "string") {
-    const match = node.match(SOURCE_PATTERN);
+    const match = node.match(SOURCE_TOKEN_PATTERN);
     if (!match) {
       return { node };
     }
-    const cleaned = node.replace(SOURCE_PATTERN, "").trimEnd();
+    const cleaned = node.replace(SOURCE_TOKEN_PATTERN, "").trimEnd();
     return { node: cleaned, source: match[1]?.trim() };
   }
 
@@ -56,17 +102,21 @@ const stripSourceFromNode = (
 };
 
 const renderSourceTag = (source?: string) => {
-  const label = (source || "").trim() || "missing";
-  if (isHttpUrl(label)) {
+  const url = (source || "").trim();
+  if (!url) {
+    return <span className="md-source-tag">missing</span>;
+  }
+  if (isHttpUrl(url)) {
+    const label = labelFromUrl(url);
     return (
       <span className="md-source-tag">
-        <a className="md-source-link" href={label} target="_blank" rel="noreferrer noopener">
+        <a className="md-source-link" href={url} target="_blank" rel="noreferrer noopener" title={url}>
           {label}
         </a>
       </span>
     );
   }
-  return <span className="md-source-tag">{label}</span>;
+  return <span className="md-source-tag">{url}</span>;
 };
 
 export default function UpdatesViewer({
@@ -116,6 +166,8 @@ export default function UpdatesViewer({
       </div>
     );
   }
+
+  const normalizedMarkdown = useMemo(() => normalizeMarkdownSources(post.content_markdown), [post.content_markdown]);
 
   return (
     <article className="relative rounded-2xl border border-stealth-700 bg-stealth-800/90 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)] min-h-[68vh] overflow-hidden">
@@ -195,7 +247,7 @@ export default function UpdatesViewer({
                 },
               }}
             >
-              {post.content_markdown}
+              {normalizedMarkdown}
             </ReactMarkdown>
           </div>
         </section>
