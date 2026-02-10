@@ -49,15 +49,18 @@ body {
 }
 
 .md-source-tag {
-  @apply ml-2 inline-flex items-center rounded-full border border-stealth-700 bg-stealth-850 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stealth-300;
+  @apply ml-2 inline-flex items-center rounded-full border bg-stealth-850 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+  border-color: #2d3748;
+  color: #a0aec0;
 }
 
 .md-source-link {
-  @apply text-stealth-200 no-underline;
+  color: #cbd5e0;
+  text-decoration: none;
 }
 
 .md-source-link:hover {
-  @apply text-stealth-100;
+  color: #edf2f7;
 }
 
 @keyframes updatesIndeterminate {
