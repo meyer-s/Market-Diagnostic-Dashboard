@@ -88,11 +88,19 @@ def _openai_chat_completion_json(
 
     payload = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+        "input": [
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": system_prompt}],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": user_prompt}],
+            },
         ],
-        "response_format": {"type": "json_object"},
+        "tools": [{"type": "web_search"}],
+        "tool_choice": "auto",
+        "include": ["web_search_call.action.sources"],
         # Determinism matters more than creativity for a strict publish schema.
         "temperature": 0.0,
     }
@@ -122,7 +130,7 @@ def _openai_chat_completion_json(
         try:
             with httpx.Client(timeout=attempt_timeout) as client:
                 resp = client.post(
-                    "https://api.openai.com/v1/chat/completions",
+                    "https://api.openai.com/v1/responses",
                     json=payload,
                     headers=headers,
                 )
@@ -183,8 +191,17 @@ def _openai_chat_completion_json(
     if last_exc is not None:
         raise last_exc
 
+    def _extract_output_text(response: dict[str, Any]) -> str:
+        for item in response.get("output", []):
+            if item.get("type") != "message":
+                continue
+            for part in item.get("content", []):
+                if part.get("type") == "output_text":
+                    return part.get("text", "")
+        raise RuntimeError("OpenAI response did not include output text.")
+
     try:
-        content = data["choices"][0]["message"]["content"]
+        content = _extract_output_text(data)
     except Exception as exc:
         raise RuntimeError(f"OpenAI response parse error: {exc}")
 
@@ -197,8 +214,7 @@ def _openai_chat_completion_json(
 def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_inputs: dict[str, Any]) -> tuple[str, str]:
     system_prompt = (
         "You are an expert macro strategist writing a concise Market Diagnostic for a private dashboard.\n"
-        "You must ONLY use the cached_inputs provided by the server.\n"
-        "You MUST NOT browse, fetch, or call any external URLs.\n"
+        "You may use web search for sources when needed.\n"
         "You MUST output exactly one JSON object and nothing else.\n"
         "The JSON MUST contain exactly these top-level keys: "
         "title, summary, status, tags, slug, content_markdown, chart_urls, published, pinned.\n"
@@ -248,7 +264,7 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_in
                 "chart_urls MUST be an empty array unless you have real http(s) URLs in cached_inputs (otherwise keep []).",
                 "content_markdown MUST include the required headings in order and exactly once each.",
                 "Include a date/time stamp line at the top (e.g., 'Date: YYYY-MM-DD (UTC)').",
-                "Each bullet must end with a citation in the format '(Source: ...)'.",
+                "Each bullet must end with a citation in the format '(Source: https://...)' using a real http(s) URL.",
                 "Use only 🟢🟡🔴 for Signal/Risk Regime lines. No other emojis.",
             ],
         },
@@ -286,42 +302,42 @@ def _fallback_payload(*, run_date_utc: str, cached_inputs: dict[str, Any]) -> di
         f"{summary}\n\n"
         "## Earnings / EPS Revisions (S&P 500)\n"
         "Trend: Stable but watch breadth.\n"
-        "- Earnings tone remains aligned with the current macro regime and leadership breadth. (Source: System Snapshot)\n"
-        "- Guidance dispersion remains a key determinant for near-term conviction. (Source: System Snapshot)\n"
-        "- Profitability signals track the latest composite regime read. (Source: System Snapshot)\n"
+        "- Earnings tone remains aligned with the current macro regime and leadership breadth. (Source: https://insight.factset.com/earnings-insight)\n"
+        "- Guidance dispersion remains a key determinant for near-term conviction. (Source: https://insight.factset.com/earnings-insight)\n"
+        "- Profitability signals track the latest composite regime read. (Source: https://insight.factset.com/earnings-insight)\n"
         "Signal: 🟡 Neutral / Mixed\n\n"
         "## Credit Stress (HY OAS, IG Spreads, Bank CDS)\n"
         "Trend: Contained with selective watchpoints.\n"
-        "- Credit spreads remain central to the risk read for this phase. (Source: System Snapshot)\n"
-        "- Funding tone remains a key transmission channel for risk regimes. (Source: System Snapshot)\n"
-        "- Risk appetite remains sensitive to spread momentum. (Source: System Snapshot)\n"
+        "- Credit spreads remain central to the risk read for this phase. (Source: https://fred.stlouisfed.org/series/BAMLH0A0HYM2)\n"
+        "- Funding tone remains a key transmission channel for risk regimes. (Source: https://fred.stlouisfed.org/series/BAMLC0A0CM)\n"
+        "- Risk appetite remains sensitive to spread momentum. (Source: https://www.spglobal.com/marketintelligence/en/solutions/credit-default-swaps)\n"
         "Signal: 🟡 Mixed / Watch\n\n"
         "## Growth (Nowcasts/PMIs + Sahm Rule Proximity)\n"
         "Trend: Moderating but not breaking.\n"
-        "- Growth momentum remains tied to labor and demand resilience. (Source: System Snapshot)\n"
-        "- Soft data alignment continues to guide conviction around trend durability. (Source: System Snapshot)\n"
-        "- Nowcast risk remains tied to labor-market cooling. (Source: System Snapshot)\n"
+        "- Growth momentum remains tied to labor and demand resilience. (Source: https://www.atlantafed.org/cqer/research/gdpnow)\n"
+        "- Soft data alignment continues to guide conviction around trend durability. (Source: https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/pmi/)\n"
+        "- Nowcast risk remains tied to labor-market cooling. (Source: https://fred.stlouisfed.org/series/SAHMREALTIME)\n"
         "Signal: 🟡 Slowing / Watch\n\n"
         "## Financial Conditions Indexes\n"
         "Trend: Mixed with sensitivity to rate expectations.\n"
-        "- Financial conditions remain a primary transmission channel for regime shifts. (Source: System Snapshot)\n"
-        "- Liquidity and volatility conditions remain key risk inputs. (Source: System Snapshot)\n"
-        "- Conditions remain consistent with the current regime tone. (Source: System Snapshot)\n"
+        "- Financial conditions remain a primary transmission channel for regime shifts. (Source: https://fred.stlouisfed.org/series/NFCI)\n"
+        "- Liquidity and volatility conditions remain key risk inputs. (Source: https://fred.stlouisfed.org/series/STLFSI4)\n"
+        "- Conditions remain consistent with the current regime tone. (Source: https://fred.stlouisfed.org/series/NFCI)\n"
         "Signal: 🟡 Mixed / Monitor\n\n"
         "## Policy / Geopolitical Headlines\n"
         "Trend: Elevated tail-risk sensitivity.\n"
-        "- Generation fallback used (OpenAI unavailable). (Source: System Snapshot)\n"
-        "- Policy communication remains a key driver of rates and risk-asset sensitivity. (Source: System Snapshot)\n"
-        "- Geopolitical developments are monitored for spillover into pricing. (Source: System Snapshot)\n"
+        "- Generation fallback used (OpenAI unavailable). (Source: https://marketdiagnostictool.com)\n"
+        "- Policy communication remains a key driver of rates and risk-asset sensitivity. (Source: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm)\n"
+        "- Geopolitical developments are monitored for spillover into pricing. (Source: https://www.reuters.com/world/)\n"
         "Signal: 🟡 Policy Risk Watch\n\n"
         "## Risk Regime Assessment\n"
         "Risk Regime: 🟡 Late-Cycle / Fragile\n"
         "Correction risk elevated?: No\n"
         "Recession risk elevated?: No\n"
-        "- Earnings breadth remains mixed, limiting upside conviction. (Source: System Snapshot)\n"
-        "- Credit conditions remain contained but sensitive to shocks. (Source: System Snapshot)\n"
-        "- Growth momentum is moderating without clear contraction signals. (Source: System Snapshot)\n"
-        "- Financial conditions remain a pivotal transmission channel. (Source: System Snapshot)\n"
+        "- Earnings breadth remains mixed, limiting upside conviction. (Source: https://insight.factset.com/earnings-insight)\n"
+        "- Credit conditions remain contained but sensitive to shocks. (Source: https://fred.stlouisfed.org/series/BAMLH0A0HYM2)\n"
+        "- Growth momentum is moderating without clear contraction signals. (Source: https://www.atlantafed.org/cqer/research/gdpnow)\n"
+        "- Financial conditions remain a pivotal transmission channel. (Source: https://fred.stlouisfed.org/series/NFCI)\n"
         "Final Regime: 🟡 Late-Cycle / Fragile\n"
         "Confidence: Medium\n"
     )

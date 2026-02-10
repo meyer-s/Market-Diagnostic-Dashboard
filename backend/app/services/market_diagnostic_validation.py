@@ -140,8 +140,12 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
             raise ValueError(f"{heading} must include 3-6 bullet points")
 
         for bullet in bullets:
-            if re.search(r"\(Source:[^)]+\)\s*$", bullet) is None:
+            match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)
+            if match is None:
                 raise ValueError(f"{heading} bullets must end with a citation '(Source: ...)'")
+            source_value = (match.group(1) or "").strip()
+            if not _is_valid_http_url(source_value):
+                raise ValueError(f"{heading} citations must be valid http(s) URLs")
 
     # Risk Regime Assessment section checks.
     _, regime_section = sections[5]
@@ -171,8 +175,12 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
         raise ValueError("Risk Regime Assessment must include 4-6 bullet points")
 
     for bullet in regime_bullets:
-        if re.search(r"\(Source:[^)]+\)\s*$", bullet) is None:
+        match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)
+        if match is None:
             raise ValueError("Risk Regime Assessment bullets must end with a citation '(Source: ...)'")
+        source_value = (match.group(1) or "").strip()
+        if not _is_valid_http_url(source_value):
+            raise ValueError("Risk Regime Assessment citations must be valid http(s) URLs")
 
 
 def validate_allowed_emojis(text: str) -> None:

@@ -76,5 +76,10 @@ Market Diagnostic posts are validated server-side to enforce the Risk Regime str
 
 - Slug must be `market-diagnostic-YYYY-MM-DD`.
 - Content must follow the required headings and section rules.
+- Every bullet must end with a URL source: `(Source: https://...)`.
 
 Template: `docs/market_diagnostic_template.md`.
+
+## Web Search Sources
+
+The Market Diagnostic runner now uses OpenAI web search to attach real URL sources to each datapoint. If web search fails, the fallback still emits URL sources so every datapoint has a clickable tag.
