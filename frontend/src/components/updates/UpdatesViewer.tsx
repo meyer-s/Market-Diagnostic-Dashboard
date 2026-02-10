@@ -50,21 +50,65 @@ const labelFromUrl = (url: string) => {
 };
 
 const normalizeMarkdownSources = (markdown: string) => {
-  // Replace only when it appears as a trailing citation (typically at end-of-bullet).
-  return markdown
-    .split("\n")
-    .map((line) => {
-      const match = line.match(SOURCE_PAREN_PATTERN);
-      if (!match) {
-        return line;
-      }
+  // 1) Replace only when it appears as a trailing citation (typically at end-of-bullet).
+  // 2) If the model accidentally appended `Signal:` onto the tail of the last bullet, split it onto its own line.
+  // 3) Move `Signal:` lines up into the section subheader (right after `Trend:`) for consistency.
+
+  const lines = markdown.split("\n").flatMap((rawLine) => {
+    let line = rawLine;
+
+    const match = line.match(SOURCE_PAREN_PATTERN);
+    if (match) {
       const cleaned = line.replace(SOURCE_PAREN_PATTERN, "").trimEnd();
       const source = (match[1] || "").trim();
       // Encode so it doesn't contain `http` and doesn't get auto-linkified by markdown parsing.
       const encoded = encodeURIComponent(source);
-      return `${cleaned} [[SOURCE:u=${encoded}]]`;
-    })
-    .join("\n");
+      line = `${cleaned} [[SOURCE:u=${encoded}]]`;
+    }
+
+    const signalIdx = line.indexOf("Signal:");
+    if (signalIdx > 0 && !line.trimStart().startsWith("Signal:")) {
+      const before = line.slice(0, signalIdx).trimEnd();
+      const after = line.slice(signalIdx).trimStart();
+      return [before, after].filter(Boolean);
+    }
+
+    return [line];
+  });
+
+  const normalized: string[] = [];
+  let currentBlock: string[] = [];
+
+  const flushBlock = () => {
+    if (currentBlock.length === 0) {
+      return;
+    }
+
+    // Find and remove the first `Signal:` line in this block.
+    const signalIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("Signal:"));
+    const signalLine = signalIndex >= 0 ? currentBlock.splice(signalIndex, 1)[0] : null;
+
+    if (signalLine) {
+      const trendIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("Trend:"));
+      const insertAt = trendIndex >= 0 ? trendIndex + 1 : 0;
+      currentBlock.splice(insertAt, 0, signalLine);
+    }
+
+    normalized.push(...currentBlock);
+    currentBlock = [];
+  };
+
+  for (const line of lines) {
+    if (line.startsWith("## ")) {
+      flushBlock();
+      normalized.push(line);
+      continue;
+    }
+    currentBlock.push(line);
+  }
+  flushBlock();
+
+  return normalized.join("\n");
 };
 
 const stripSourceFromNode = (
