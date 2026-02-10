@@ -76,33 +76,31 @@ def _openai_chat_completion_json(
         "text": {
             "format": {
                 "type": "json_schema",
-                "json_schema": {
-                    "name": "market_diagnostic_payload",
-                    "schema": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": [
-                            "title",
-                            "summary",
-                            "status",
-                            "tags",
-                            "slug",
-                            "content_markdown",
-                            "chart_urls",
-                            "published",
-                            "pinned",
-                        ],
-                        "properties": {
-                            "title": {"type": "string"},
-                            "summary": {"type": "string"},
-                            "status": {"type": "string", "enum": ["GREEN", "YELLOW", "RED"]},
-                            "tags": {"type": "array", "items": {"type": "string"}},
-                            "slug": {"type": "string"},
-                            "content_markdown": {"type": "string"},
-                            "chart_urls": {"type": "array", "items": {"type": "string"}},
-                            "published": {"type": "boolean"},
-                            "pinned": {"type": "boolean"},
-                        },
+                "name": "market_diagnostic_payload",
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "title",
+                        "summary",
+                        "status",
+                        "tags",
+                        "slug",
+                        "content_markdown",
+                        "chart_urls",
+                        "published",
+                        "pinned",
+                    ],
+                    "properties": {
+                        "title": {"type": "string"},
+                        "summary": {"type": "string"},
+                        "status": {"type": "string", "enum": ["GREEN", "YELLOW", "RED"]},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "slug": {"type": "string"},
+                        "content_markdown": {"type": "string"},
+                        "chart_urls": {"type": "array", "items": {"type": "string"}},
+                        "published": {"type": "boolean"},
+                        "pinned": {"type": "boolean"},
                     },
                 },
             }
