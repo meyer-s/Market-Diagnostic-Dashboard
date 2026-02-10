@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import logging
@@ -94,6 +96,19 @@ def test_successful_run_returns_posted_then_skipped(client: TestClient):
     assert second_body.get("id") == first_body.get("id")
 
 
+def test_future_run_date_returns_error(client: TestClient):
+    headers = {"Authorization": f"Bearer {settings.GPT_ACTION_RUN_KEY}"}
+    future_date = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+    body = {"run_date_utc": future_date, "dry_run": False, "mode": "manual"}
+
+    resp = client.post("/api/actions/run_market_diagnostic", json=body, headers=headers)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is False
+    assert payload["action"] == "skipped"
+    assert payload["error"] == "run_date_utc cannot be in the future"
+
+
 def test_openai_failure_uses_loud_fallback_and_logs_error_code(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -115,18 +130,19 @@ def test_openai_failure_uses_loud_fallback_and_logs_error_code(
     caplog.set_level(logging.INFO, logger="app.services.market_diagnostic_runner")
 
     headers = {"Authorization": f"Bearer {settings.GPT_ACTION_RUN_KEY}"}
-    body = {"run_date_utc": "2026-02-11", "dry_run": False, "mode": "manual"}
+    safe_date = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+    body = {"run_date_utc": safe_date, "dry_run": False, "mode": "manual"}
 
     resp = client.post("/api/actions/run_market_diagnostic", json=body, headers=headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is True
-    assert data["slug"] == "market-diagnostic-2026-02-11"
+    assert data["slug"] == f"market-diagnostic-{safe_date}"
     assert data["action"] == "posted"
 
     # Verify fallback was "loud" in the stored post.
     with db_helpers.SessionLocal() as db:
-        post = db.query(UpdatePost).filter(UpdatePost.slug == "market-diagnostic-2026-02-11").first()
+        post = db.query(UpdatePost).filter(UpdatePost.slug == f"market-diagnostic-{safe_date}").first()
         assert post is not None
         assert "fallback" in (post.tags or [])
         assert "openai-unavailable" in (post.tags or [])
@@ -145,6 +161,6 @@ def test_openai_failure_uses_loud_fallback_and_logs_error_code(
                 continue
 
     assert log_json is not None
-    assert log_json["slug"] == "market-diagnostic-2026-02-11"
+    assert log_json["slug"] == f"market-diagnostic-{safe_date}"
     assert log_json["generation_mode"] == "fallback"
     assert log_json["openai_error_code"] == "insufficient_quota"

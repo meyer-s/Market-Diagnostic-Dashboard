@@ -321,6 +321,49 @@ def run_market_diagnostic(
     openai_error_code: str | None = None
     openai_status_code: int | None = None
 
+    # Reject future dates before any DB or OpenAI work.
+    try:
+        run_date = datetime.strptime(run_date_utc, "%Y-%m-%d").date()
+    except ValueError:
+        return MarketDiagnosticRunResult(
+            ok=False,
+            slug=slug,
+            action="skipped",
+            id=None,
+            error="run_date_utc must be YYYY-MM-DD",
+        )
+    today_utc = datetime.now(timezone.utc).date()
+    if run_date > today_utc:
+        logger.info(
+            "market_diagnostic_run %s",
+            json.dumps(
+                {
+                    "timestamp_utc": _now_utc_iso(),
+                    "request_id": request_id,
+                    "run_date_utc": run_date_utc,
+                    "slug": slug,
+                    "status": None,
+                    "action": "skipped",
+                    "id": None,
+                    "mode": mode,
+                    "dry_run": dry_run,
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                    "validation": "rejected_future_date",
+                    "generation_mode": None,
+                    "openai_error_code": None,
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
+        return MarketDiagnosticRunResult(
+            ok=False,
+            slug=slug,
+            action="skipped",
+            id=None,
+            error="run_date_utc cannot be in the future",
+        )
+
     # Idempotency short-circuit: if slug already exists, never call OpenAI.
     with get_db_session() as db:
         existing = db.query(UpdatePost).filter(UpdatePost.slug == slug).first()

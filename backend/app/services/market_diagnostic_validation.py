@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 
@@ -27,6 +28,14 @@ def validate_slug(slug: str, *, run_date_utc: str | None = None) -> None:
     candidate = (slug or "").strip()
     if not SLUG_RE.match(candidate):
         raise ValueError("slug must match ^market-diagnostic-\\d{4}-\\d{2}-\\d{2}$")
+    try:
+        slug_date = datetime.strptime(candidate[-10:], "%Y-%m-%d").date()
+    except ValueError:
+        slug_date = None
+    if slug_date is not None:
+        today_utc = datetime.now(timezone.utc).date()
+        if slug_date > today_utc:
+            raise ValueError("slug date must not be in the future")
     if run_date_utc is not None:
         expected = f"market-diagnostic-{run_date_utc}"
         if candidate != expected:
@@ -96,4 +105,3 @@ def validate_no_emojis(text: str) -> None:
         return
     if _EMOJI_RE.search(text):
         raise ValueError("content_markdown must not contain emojis")
-

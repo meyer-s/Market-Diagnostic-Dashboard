@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
@@ -98,6 +100,19 @@ def test_missing_required_tags_returns_400(client: TestClient):
 
 def test_invalid_slug_returns_400(client: TestClient):
     payload = _valid_payload(slug="market-diagnostic-2026-2-10")
+    resp = client.post(
+        "/api/actions/publish_update",
+        json=payload,
+        headers={"Authorization": f"Bearer {settings.GPT_ACTION_PUBLISH_KEY}"},
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"]["message"] == "Invalid payload."
+
+
+def test_future_slug_returns_400(client: TestClient):
+    future_date = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+    payload = _valid_payload(slug=f"market-diagnostic-{future_date}")
     resp = client.post(
         "/api/actions/publish_update",
         json=payload,
