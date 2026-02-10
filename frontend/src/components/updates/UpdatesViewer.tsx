@@ -53,6 +53,9 @@ const normalizeMarkdownSources = (markdown: string) => {
   // 1) Replace only when it appears as a trailing citation (typically at end-of-bullet).
   // 2) If the model accidentally appended `Signal:` onto the tail of the last bullet, split it onto its own line.
   // 3) Move `Signal:` lines up into the section subheader (right after `Trend:`) for consistency.
+  // 4) Prevent `Final Regime:` / `Confidence:` lines from being "lazy continuation" text inside the last bullet.
+  //    (CommonMark allows unindented lines after a list item to still belong to that list item.)
+  //    We lift those lines into the Risk Regime section subheader.
 
   const lines = markdown.split("\n").flatMap((rawLine) => {
     let line = rawLine;
@@ -73,11 +76,19 @@ const normalizeMarkdownSources = (markdown: string) => {
       return [before, after].filter(Boolean);
     }
 
+    const finalIdx = line.indexOf("Final Regime:");
+    if (finalIdx > 0 && !line.trimStart().startsWith("Final Regime:")) {
+      const before = line.slice(0, finalIdx).trimEnd();
+      const after = line.slice(finalIdx).trimStart();
+      return [before, after].filter(Boolean);
+    }
+
     return [line];
   });
 
   const normalized: string[] = [];
   let currentBlock: string[] = [];
+  let currentHeading: string | null = null;
 
   const flushBlock = () => {
     if (currentBlock.length === 0) {
@@ -94,14 +105,34 @@ const normalizeMarkdownSources = (markdown: string) => {
       currentBlock.splice(insertAt, 0, signalLine);
     }
 
+    // For the Risk Regime section, lift `Final Regime:` and `Confidence:` into the subheader
+    // (before the first bullet list) to avoid being treated as lazy-continuation list text.
+    if (currentHeading?.trim() === "## Risk Regime Assessment") {
+      const finalRegimeIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("Final Regime:"));
+      const finalRegimeLine = finalRegimeIndex >= 0 ? currentBlock.splice(finalRegimeIndex, 1)[0] : null;
+
+      const confidenceIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("Confidence:"));
+      const confidenceLine = confidenceIndex >= 0 ? currentBlock.splice(confidenceIndex, 1)[0] : null;
+
+      if (finalRegimeLine || confidenceLine) {
+        const firstBulletIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("- "));
+        const insertAt = firstBulletIndex >= 0 ? firstBulletIndex : currentBlock.length;
+
+        const toInsert = [finalRegimeLine, confidenceLine].filter(Boolean) as string[];
+        currentBlock.splice(insertAt, 0, ...toInsert);
+      }
+    }
+
     normalized.push(...currentBlock);
     currentBlock = [];
+    currentHeading = null;
   };
 
   for (const line of lines) {
     if (line.startsWith("## ")) {
       flushBlock();
       normalized.push(line);
+      currentHeading = line;
       continue;
     }
     currentBlock.push(line);
