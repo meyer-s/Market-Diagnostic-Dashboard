@@ -60,6 +60,7 @@ def _request_id_from_request(request: Request) -> str:
 
 
 @router.post("/api/actions/run_market_diagnostic", response_model=MarketDiagnosticRunResult)
+@router.post("/actions/run_market_diagnostic", response_model=MarketDiagnosticRunResult, include_in_schema=False)
 def run_market_diagnostic_from_action(
     request: Request,
     body: GPTActionRunMarketDiagnosticRequest,
