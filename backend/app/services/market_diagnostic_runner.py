@@ -93,7 +93,8 @@ def _openai_chat_completion_json(
             {"role": "user", "content": user_prompt},
         ],
         "response_format": {"type": "json_object"},
-        "temperature": 0.2,
+        # Determinism matters more than creativity for a strict publish schema.
+        "temperature": 0.0,
     }
 
     headers = {
@@ -199,6 +200,8 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode, cached_in
         "You must ONLY use the cached_inputs provided by the server.\n"
         "You MUST NOT browse, fetch, or call any external URLs.\n"
         "You MUST output exactly one JSON object and nothing else.\n"
+        "The JSON MUST contain exactly these top-level keys: "
+        "title, summary, status, tags, slug, content_markdown, chart_urls, published, pinned.\n"
         "Do not include emojis.\n"
     )
 
