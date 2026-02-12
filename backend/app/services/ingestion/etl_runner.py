@@ -447,7 +447,6 @@ class ETLRunner:
             rrp_vals = np.array([rrp_filled[d] for d in common_dates])
             
             # Calculate M2 YoY% change using calendar lookback (handles daily forward-fill).
-            from datetime import datetime, timedelta
             import bisect
 
             common_date_objs = [datetime.strptime(d, "%Y-%m-%d") for d in common_dates]
