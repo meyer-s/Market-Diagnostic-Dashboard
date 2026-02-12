@@ -324,6 +324,52 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
     return system_prompt, user_prompt
 
 
+def _build_repair_prompts(
+    *,
+    run_date_utc: str,
+    day_of_week: str,
+    mode: Mode,
+    validation_error: str,
+    previous_output: dict[str, Any] | None,
+) -> tuple[str, str]:
+    system_prompt = (
+        "You are an expert macro strategist. You are repairing a previously-generated Market Diagnostic payload.\n"
+        "Use web search to gather sources for every datapoint.\n"
+        "You MUST output exactly one JSON object and nothing else.\n"
+        "The JSON MUST contain exactly these top-level keys: "
+        "title, summary, status, tags, slug, content_markdown, chart_urls, published, pinned.\n"
+        "Only use the emojis 🟢🟡🔴 in Signal/Risk Regime lines.\n"
+        "Fix validation issues by adjusting content_markdown (and other fields if necessary) so it passes strict validation.\n"
+    )
+
+    # Keep context small: include only the prior JSON and a truncated error message.
+    error_snippet = (validation_error or "")[:1200]
+
+    user_prompt = json.dumps(
+        {
+            "task": "Repair the Market Diagnostic JSON to satisfy all schema + validation constraints exactly.",
+            "run_date_utc": run_date_utc,
+            "day_of_week": day_of_week,
+            "mode": mode,
+            "validation_error": error_snippet,
+            "previous_output": previous_output,
+            "rules": [
+                "Output JSON only (no markdown fences, no commentary).",
+                f"slug MUST equal market-diagnostic-{run_date_utc}.",
+                "tags MUST include market-diagnostic and macro.",
+                "content_markdown MUST include required headings in order and exactly once each.",
+                "Each of the first 5 sections must include a Trend line, 3-6 bullets, and a Signal line.",
+                "Each bullet must end with '(Source: https://...)' using a real http(s) URL. No citations on separate lines.",
+                "Do not invent citations; only cite URLs you actually found via web search.",
+                "Ensure the Earnings section has 3-6 bullets (this commonly causes validation failure).",
+            ],
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return system_prompt, user_prompt
+
+
 def run_market_diagnostic(
     *,
     run_date_utc: str,
@@ -340,6 +386,7 @@ def run_market_diagnostic(
     generation_mode: Literal["model"] | None = None
     openai_error_code: str | None = None
     openai_status_code: int | None = None
+    validation_attempts = 0
 
     # Reject future dates before any DB or OpenAI work.
     try:
@@ -419,16 +466,44 @@ def run_market_diagnostic(
     )
 
     try:
-        model_json = _openai_chat_completion_json(system_prompt=system_prompt, user_prompt=user_prompt)
-        payload = MarketDiagnosticPublishPayload.model_validate(model_json)
-        validate_slug(payload.slug, run_date_utc=run_date_utc)
-        if payload.slug != slug:
-            raise ValueError(f"slug mismatch: expected={slug} got={payload.slug}")
-        if payload.published is not True:
-            raise ValueError("published must be true")
-        if payload.pinned is not False:
-            raise ValueError("pinned must be false")
-        generation_mode = "model"
+        # Bounded retry: if the model returns JSON that fails strict validation, ask it to repair once.
+        previous_output: dict[str, Any] | None = None
+        last_validation_error: str | None = None
+
+        for attempt in range(2):
+            validation_attempts = attempt + 1
+            if attempt == 0:
+                model_json = _openai_chat_completion_json(system_prompt=system_prompt, user_prompt=user_prompt)
+            else:
+                repair_system, repair_user = _build_repair_prompts(
+                    run_date_utc=run_date_utc,
+                    day_of_week=day_of_week,
+                    mode=mode,
+                    validation_error=last_validation_error or "unknown validation error",
+                    previous_output=previous_output,
+                )
+                model_json = _openai_chat_completion_json(system_prompt=repair_system, user_prompt=repair_user)
+
+            previous_output = model_json
+
+            try:
+                payload = MarketDiagnosticPublishPayload.model_validate(model_json)
+                validate_slug(payload.slug, run_date_utc=run_date_utc)
+                if payload.slug != slug:
+                    raise ValueError(f"slug mismatch: expected={slug} got={payload.slug}")
+                if payload.published is not True:
+                    raise ValueError("published must be true")
+                if payload.pinned is not False:
+                    raise ValueError("pinned must be false")
+                generation_mode = "model"
+                last_validation_error = None
+                break
+            except Exception as ve:
+                last_validation_error = str(ve)
+                if attempt == 0:
+                    # Attempt repair once.
+                    continue
+                raise
     except Exception as exc:
         if isinstance(exc, OpenAIRequestError):
             openai_error_code = exc.error_code
@@ -454,6 +529,7 @@ def run_market_diagnostic(
                     "validation": "failed",
                     "error": str(exc),
                     "generation_mode": "model",
+                    "validation_attempts": validation_attempts,
                     "openai_error_code": openai_error_code,
                     "openai_status_code": openai_status_code,
                 },
@@ -477,13 +553,14 @@ def run_market_diagnostic(
                     "id": None,
                     "mode": mode,
                     "dry_run": True,
-                    "duration_ms": int((time.perf_counter() - started) * 1000),
-                    "validation": "passed_dry_run",
-                    "generation_mode": generation_mode,
-                    "openai_error_code": None,
-                },
-                separators=(",", ":"),
-                sort_keys=True,
+                "duration_ms": int((time.perf_counter() - started) * 1000),
+                "validation": "passed_dry_run",
+                "generation_mode": generation_mode,
+                "validation_attempts": validation_attempts,
+                "openai_error_code": None,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
             ),
         )
         return MarketDiagnosticRunResult(ok=True, slug=slug, action="skipped", id=None)
@@ -519,6 +596,7 @@ def run_market_diagnostic(
                 "duration_ms": int((time.perf_counter() - started) * 1000),
                 "validation": "passed",
                 "generation_mode": generation_mode,
+                "validation_attempts": validation_attempts,
                 "openai_error_code": openai_error_code,
                 "openai_status_code": openai_status_code,
             },
