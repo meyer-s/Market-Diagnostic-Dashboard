@@ -408,6 +408,34 @@ def create_position(payload: OptionPositionCreate):
         return {"position": _serialize_position(position)}
 
 
+@router.put("/positions/{position_id}")
+def update_position(position_id: int, payload: OptionPositionCreate):
+    with get_db_session() as db:
+        position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Position not found")
+
+        position.trade_date = _parse_date(payload.trade_date)
+        position.account = payload.account
+        position.action = payload.action
+        position.contracts = payload.contracts
+        position.symbol = payload.symbol.upper()
+        position.expiration = _parse_date(payload.expiration)
+        position.strike = payload.strike
+        position.option_type = payload.option_type.lower()
+        position.fill_price = payload.fill_price
+        position.total_cost = payload.total_cost
+        position.underlying_at_entry = payload.underlying_at_entry
+        position.estimated_delta = payload.estimated_delta
+        position.shares_equivalent = payload.shares_equivalent
+        position.dte_at_entry = payload.dte_at_entry
+        position.underlying_reference = payload.underlying_reference
+
+        db.commit()
+        db.refresh(position)
+        return {"position": _serialize_position(position)}
+
+
 @router.get("/greeks/{position_id}")
 def get_position_greeks(
     position_id: int,

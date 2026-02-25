@@ -235,6 +235,7 @@ export default function SecretOptions() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState(initialFormState);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingPositionId, setEditingPositionId] = useState<number | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
   const [exitPrice, setExitPrice] = useState("");
@@ -278,6 +279,92 @@ export default function SecretOptions() {
     setFormData(initialFormState);
   };
 
+  const closeTradeModal = () => {
+    setShowAddModal(false);
+    setEditingPositionId(null);
+    resetForm();
+    setFormError(null);
+  };
+
+  const optionalNumber = (value: string) => {
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const buildPositionPayloadFromForm = () => {
+    if (!formData.trade_date || !formData.symbol || !formData.expiration) {
+      setFormError("Trade date, symbol, and expiration are required.");
+      return null;
+    }
+
+    const contracts = Number(formData.contracts);
+    const strike = Number(formData.strike);
+    const fillPrice = Number(formData.fill_price);
+    const totalCost = Number(formData.total_cost);
+
+    if (!contracts || !strike || !fillPrice || !totalCost) {
+      setFormError("Contracts, strike, fill price, and total cost are required.");
+      return null;
+    }
+
+    return {
+      trade_date: formData.trade_date,
+      account: formData.account || null,
+      action: formData.action || null,
+      contracts,
+      symbol: formData.symbol.toUpperCase(),
+      expiration: formData.expiration,
+      strike,
+      option_type: formData.option_type,
+      fill_price: fillPrice,
+      total_cost: totalCost,
+      underlying_at_entry: optionalNumber(formData.underlying_at_entry),
+      estimated_delta: optionalNumber(formData.estimated_delta),
+      shares_equivalent: optionalNumber(formData.shares_equivalent),
+      dte_at_entry: optionalNumber(formData.dte_at_entry),
+      underlying_reference: optionalNumber(formData.underlying_reference),
+    };
+  };
+
+  const openEditModal = (position: OptionPosition) => {
+    setEditingPositionId(position.id);
+    setFormError(null);
+    setFormData({
+      trade_date: position.trade_date || "",
+      account: position.account || "",
+      action: position.action || "Buy to Open",
+      contracts: String(position.contracts ?? ""),
+      symbol: position.symbol || "",
+      expiration: position.expiration || "",
+      strike: position.strike !== null && position.strike !== undefined ? String(position.strike) : "",
+      option_type: position.option_type || "call",
+      fill_price: position.fill_price !== null && position.fill_price !== undefined ? String(position.fill_price) : "",
+      total_cost: position.total_cost !== null && position.total_cost !== undefined ? String(position.total_cost) : "",
+      underlying_at_entry:
+        position.underlying_at_entry !== null && position.underlying_at_entry !== undefined
+          ? String(position.underlying_at_entry)
+          : "",
+      estimated_delta:
+        position.estimated_delta !== null && position.estimated_delta !== undefined
+          ? String(position.estimated_delta)
+          : "",
+      shares_equivalent:
+        position.shares_equivalent !== null && position.shares_equivalent !== undefined
+          ? String(position.shares_equivalent)
+          : "",
+      dte_at_entry:
+        position.dte_at_entry !== null && position.dte_at_entry !== undefined
+          ? String(position.dte_at_entry)
+          : "",
+      underlying_reference:
+        position.underlying_reference !== null && position.underlying_reference !== undefined
+          ? String(position.underlying_reference)
+          : "",
+    });
+    setShowAddModal(true);
+  };
+
   const handleFieldChange =
     (field: keyof typeof initialFormState) =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -287,54 +374,47 @@ export default function SecretOptions() {
   const handleCreatePosition = async (event: React.FormEvent) => {
     event.preventDefault();
     setFormError(null);
-
-    if (!formData.trade_date || !formData.symbol || !formData.expiration) {
-      setFormError("Trade date, symbol, and expiration are required.");
-      return;
-    }
-    const contracts = Number(formData.contracts);
-    const strike = Number(formData.strike);
-    const fillPrice = Number(formData.fill_price);
-    const totalCost = Number(formData.total_cost);
-    if (!contracts || !strike || !fillPrice || !totalCost) {
-      setFormError("Contracts, strike, fill price, and total cost are required.");
-      return;
-    }
-
-    const optionalNumber = (value: string) => {
-      if (!value) return null;
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : null;
-    };
+    const payload = buildPositionPayloadFromForm();
+    if (!payload) return;
 
     setSubmitting(true);
     try {
       await apiFetch("/secret/options/positions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          trade_date: formData.trade_date,
-          account: formData.account || null,
-          action: formData.action || null,
-          contracts,
-          symbol: formData.symbol.toUpperCase(),
-          expiration: formData.expiration,
-          strike,
-          option_type: formData.option_type,
-          fill_price: fillPrice,
-          total_cost: totalCost,
-          underlying_at_entry: optionalNumber(formData.underlying_at_entry),
-          estimated_delta: optionalNumber(formData.estimated_delta),
-          shares_equivalent: optionalNumber(formData.shares_equivalent),
-          dte_at_entry: optionalNumber(formData.dte_at_entry),
-          underlying_reference: optionalNumber(formData.underlying_reference),
-        }),
+        body: JSON.stringify(payload),
       });
-      resetForm();
-      setShowAddModal(false);
+      closeTradeModal();
       await loadPositions();
     } catch (err: any) {
       setFormError(err.message || "Failed to add position.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdatePosition = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingPositionId) {
+      setFormError("No position selected for edit.");
+      return;
+    }
+
+    setFormError(null);
+    const payload = buildPositionPayloadFromForm();
+    if (!payload) return;
+
+    setSubmitting(true);
+    try {
+      await apiFetch(`/secret/options/positions/${editingPositionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      closeTradeModal();
+      await loadPositions();
+    } catch (err: any) {
+      setFormError(err.message || "Failed to update position.");
     } finally {
       setSubmitting(false);
     }
@@ -466,7 +546,12 @@ export default function SecretOptions() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setEditingPositionId(null);
+                resetForm();
+                setFormError(null);
+                setShowAddModal(true);
+              }}
               className="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5"
             >
               <span className="text-lg leading-none">+</span> Add Trade
@@ -502,7 +587,7 @@ export default function SecretOptions() {
                   <th className="px-3 py-2 text-left">P&amp;L</th>
                   <th className="px-3 py-2 text-left">Delta</th>
                   <th className="px-3 py-2 text-left">Theta</th>
-                  <th className="px-3 py-2 text-center">Action</th>
+                  <th className="px-3 py-2 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
@@ -549,6 +634,16 @@ export default function SecretOptions() {
                         {metrics.greeks ? metrics.greeks.theta.toFixed(3) : "—"}
                       </td>
                       <td className="px-3 py-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditModal(position);
+                            }}
+                            className="bg-sky-700 hover:bg-sky-600 text-white px-2 py-1 rounded text-xs font-medium"
+                          >
+                            Edit
+                          </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -558,6 +653,7 @@ export default function SecretOptions() {
                         >
                           −
                         </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -799,18 +895,16 @@ export default function SecretOptions() {
         )}
       </div>
 
-      {/* Add Trade Modal */}
+      {/* Trade Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">Add New Trade</h2>
+              <h2 className="text-xl font-semibold">
+                {editingPositionId ? "Edit Trade" : "Add New Trade"}
+              </h2>
               <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  resetForm();
-                  setFormError(null);
-                }}
+                onClick={closeTradeModal}
                 className="text-gray-400 hover:text-gray-200"
               >
                 ✕
@@ -823,7 +917,10 @@ export default function SecretOptions() {
               </div>
             )}
 
-            <form onSubmit={handleCreatePosition} className="space-y-4">
+            <form
+              onSubmit={editingPositionId ? handleUpdatePosition : handleCreatePosition}
+              className="space-y-4"
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="text-xs text-gray-400">
                   Trade Date *
@@ -949,11 +1046,7 @@ export default function SecretOptions() {
               <div className="flex justify-end gap-2 pt-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowAddModal(false);
-                    resetForm();
-                    setFormError(null);
-                  }}
+                  onClick={closeTradeModal}
                   className="px-4 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
                 >
                   Cancel
@@ -963,7 +1056,13 @@ export default function SecretOptions() {
                   disabled={submitting}
                   className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
                 >
-                  {submitting ? "Adding..." : "Add Trade"}
+                  {submitting
+                    ? editingPositionId
+                      ? "Saving..."
+                      : "Adding..."
+                    : editingPositionId
+                      ? "Save Changes"
+                      : "Add Trade"}
                 </button>
               </div>
             </form>
