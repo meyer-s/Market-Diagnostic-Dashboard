@@ -63,6 +63,11 @@ interface PositionPayload {
   metrics: PositionMetrics;
 }
 
+interface RawPositionPayload {
+  position: OptionPosition;
+  metrics?: Partial<PositionMetrics> | null;
+}
+
 interface GreeksPayload {
   price_curve: { price: number; delta: number; gamma: number }[];
   theta_curve: { days: number; theta: number }[];
@@ -179,6 +184,46 @@ const initialFormState = {
   underlying_reference: "",
 };
 
+const normalizePositionMetrics = (
+  metrics: RawPositionPayload["metrics"]
+): PositionMetrics => {
+  const safeGreeks =
+    metrics?.greeks &&
+    metrics.greeks.delta !== undefined &&
+    metrics.greeks.gamma !== undefined &&
+    metrics.greeks.theta !== undefined &&
+    metrics.greeks.vega !== undefined
+      ? {
+          delta: metrics.greeks.delta,
+          gamma: metrics.greeks.gamma,
+          theta: metrics.greeks.theta,
+          vega: metrics.greeks.vega,
+        }
+      : null;
+
+  return {
+    market: {
+      current_price: metrics?.market?.current_price ?? null,
+      previous_close: metrics?.market?.previous_close ?? null,
+      change: metrics?.market?.change ?? null,
+      change_percent: metrics?.market?.change_percent ?? null,
+      implied_volatility: metrics?.market?.implied_volatility ?? null,
+      last_updated: metrics?.market?.last_updated ?? "",
+    },
+    option_price: metrics?.option_price ?? null,
+    option_price_source: metrics?.option_price_source ?? null,
+    volatility: metrics?.volatility ?? null,
+    volatility_source: metrics?.volatility_source ?? null,
+    dte: metrics?.dte ?? null,
+    greeks: safeGreeks,
+    pnl: {
+      dollar: metrics?.pnl?.dollar ?? null,
+      percent: metrics?.pnl?.percent ?? null,
+      source: metrics?.pnl?.source ?? null,
+    },
+  };
+};
+
 export default function SecretOptions() {
   const [positions, setPositions] = useState<PositionPayload[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -201,10 +246,14 @@ export default function SecretOptions() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch<{ positions: PositionPayload[] }>("/secret/options/positions");
-      setPositions(data.positions);
-      if (data.positions.length > 0 && selectedId === null) {
-        setSelectedId(data.positions[0].position.id);
+      const data = await apiFetch<{ positions: RawPositionPayload[] }>("/secret/options/positions");
+      const normalizedPositions: PositionPayload[] = (data.positions || []).map((item) => ({
+        position: item.position,
+        metrics: normalizePositionMetrics(item.metrics),
+      }));
+      setPositions(normalizedPositions);
+      if (normalizedPositions.length > 0 && selectedId === null) {
+        setSelectedId(normalizedPositions[0].position.id);
       }
     } catch (err: any) {
       setError(err.message || "Failed to load positions");
@@ -359,8 +408,9 @@ export default function SecretOptions() {
     let count = 0;
     positions.forEach((item) => {
       totalCost += item.position.total_cost;
-      if (item.metrics.pnl.dollar !== null && item.metrics.pnl.dollar !== undefined) {
-        totalPnl += item.metrics.pnl.dollar;
+      const pnlDollar = item.metrics?.pnl?.dollar;
+      if (pnlDollar !== null && pnlDollar !== undefined) {
+        totalPnl += pnlDollar;
       }
       count += 1;
     });
@@ -458,7 +508,7 @@ export default function SecretOptions() {
               <tbody className="divide-y divide-gray-800">
                 {positions.map((item) => {
                   const { position, metrics } = item;
-                  const pnl = metrics.pnl.dollar ?? 0;
+                  const pnl = metrics.pnl?.dollar ?? 0;
                   const rowActive = position.id === selectedId;
                   return (
                     <tr
@@ -488,7 +538,9 @@ export default function SecretOptions() {
                           pnl >= 0 ? "text-emerald-300" : "text-rose-300"
                         }`}
                       >
-                        {metrics.pnl.dollar !== null ? formatCurrency(metrics.pnl.dollar, 0) : "—"}
+                        {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
+                          ? formatCurrency(metrics.pnl.dollar, 0)
+                          : "—"}
                       </td>
                       <td className="px-3 py-2">
                         {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}

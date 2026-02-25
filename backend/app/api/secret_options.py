@@ -186,6 +186,33 @@ def _market_data_for_symbol(symbol: str) -> Dict[str, Optional[float]]:
     }
 
 
+def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
+    payload: Dict[str, object] = {
+        "market": {
+            "current_price": None,
+            "previous_close": None,
+            "change": None,
+            "change_percent": None,
+            "implied_volatility": None,
+            "last_updated": datetime.utcnow().isoformat(),
+        },
+        "option_price": None,
+        "option_price_source": None,
+        "volatility": None,
+        "volatility_source": None,
+        "dte": None,
+        "greeks": None,
+        "pnl": {
+            "dollar": None,
+            "percent": None,
+            "source": None,
+        },
+    }
+    if error:
+        payload["error"] = error
+    return payload
+
+
 def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
     stock = yf.Ticker(position.symbol)
     market = _market_data_for_symbol(position.symbol)
@@ -340,7 +367,7 @@ def get_positions():
                 except Exception as perr:
                     # Log per-position errors but continue returning other positions
                     traceback.print_exc()
-                    metrics = {"error": str(perr)}
+                    metrics = _empty_position_metrics(str(perr))
                 payload.append(
                     {
                         "position": _serialize_position(position),
