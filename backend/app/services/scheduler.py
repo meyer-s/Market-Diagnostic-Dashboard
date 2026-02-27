@@ -228,11 +228,11 @@ def start_scheduler():
             replace_existing=True,
         )
 
-    # Runs on Mon/Wed/Fri at 9:00 AM America/New_York.
+    # Runs weekly on Friday at 9:00 AM America/New_York.
     scheduler.add_job(
         scheduled_market_diagnostic_publish_job,
         CronTrigger(
-            day_of_week="mon,wed,fri",
+            day_of_week="fri",
             hour=9,
             minute=0,
             timezone="America/New_York",

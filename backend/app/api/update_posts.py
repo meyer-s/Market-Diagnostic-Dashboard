@@ -38,7 +38,7 @@ def list_updates(
     q: Optional[str] = None,
     skip_refresh: bool = Query(False, description="Internal flag to bypass auto-refresh"),
 ):
-    """List published update posts for the Tools -> Updates feed."""
+    """List published update posts for the Tools -> Recap feed."""
     # Market Diagnostic publishing is handled by the server scheduler / operator-triggered runs.
 
     with get_db_session() as db:
@@ -76,7 +76,7 @@ def create_update(
     payload: UpdatePostCreate,
     x_updates_key: Optional[str] = Header(default=None, alias="X-Updates-Key"),
 ):
-    """Create a new update post for the internal updates feed."""
+    """Create a new update post for the internal recap feed."""
     require_updates_publish_key(x_updates_key)
 
     with get_db_session() as db:

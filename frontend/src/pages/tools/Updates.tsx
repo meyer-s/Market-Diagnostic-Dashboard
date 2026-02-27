@@ -164,9 +164,9 @@ export default function Updates() {
     <div className="space-y-4 p-4 text-stealth-100 md:space-y-6 md:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-stealth-100">Updates</h1>
+          <h1 className="text-2xl font-semibold text-stealth-100">Recap</h1>
           <p className="mt-1 text-sm text-stealth-400">
-            Internal market diagnostics feed with markdown write-ups and chart snapshots.
+            Weekly market recap with markdown write-ups and chart snapshots.
           </p>
         </div>
         <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto">
@@ -181,13 +181,13 @@ export default function Updates() {
         <div className="xl:sticky xl:top-20 xl:self-start">
           {postsLoading ? (
             <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6 text-sm text-stealth-400">
-              Loading updates...
+              Loading recap posts...
             </div>
           ) : postsError ? (
             <ErrorState message={postsError} />
           ) : posts.length === 0 ? (
             <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6 text-sm text-stealth-400">
-              No posts match the current filters.
+              No recap posts match the current filters.
             </div>
           ) : (
             <UpdatesList posts={posts} selectedId={selectedId} onSelect={setSelectedId} onPrefetch={prefetchPost} />

@@ -105,8 +105,8 @@ def _openai_chat_completion_json(
                 },
             }
         },
-        # Determinism matters more than creativity for a strict publish schema.
-        "temperature": 0.0,
+        # Allow slight variation so headlines/subtitles/tags remain fresh.
+        "temperature": 0.2,
     }
 
     headers = {
@@ -217,7 +217,7 @@ def _openai_chat_completion_json(
 
 def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[str, str]:
     system_prompt = (
-        "You are an expert macro strategist writing a concise Market Diagnostic for a private dashboard.\n"
+        "You are an expert macro strategist writing a concise weekly market recap for a private dashboard.\n"
         "Use web search to gather sources for every datapoint.\n"
         "You MUST output exactly one JSON object and nothing else.\n"
         "The JSON MUST contain exactly these top-level keys: "
@@ -232,10 +232,10 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
             "day_of_week": day_of_week,
             "mode": mode,
             "schema": {
-                "title": "Market Diagnostic — Big-Bank Recession & Correction Risk (Latest)",
-                "summary": "one sentence",
+                "title": "news-driven weekly recap headline",
+                "summary": "single-sentence subtitle",
                 "status": "GREEN",
-                "tags": ["market-diagnostic", "macro"],
+                "tags": ["market-diagnostic", "macro", "example-topic"],
                 "slug": f"market-diagnostic-{run_date_utc}",
                 "content_markdown": (
                     "Must contain these Markdown H2 headings exactly once each and in this exact order: "
@@ -246,7 +246,9 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
                     "## Policy / Geopolitical Headlines, "
                     "## Risk Regime Assessment. "
                     "Each of the first 5 sections must include: "
-                    "a 'Trend:' line, 3-6 bullets ending with '(Source: ...)', and a 'Signal:' line with 🟢🟡🔴. "
+                    "a 'Trend:' line, a 'Signal:' line with 🟢🟡🔴, and either "
+                    "(A) 3-6 bullets ending with '(Source: ...)' OR "
+                    "(B) a single 'No Change:' line stating no material change since last recap. "
                     "The Risk Regime Assessment must include: "
                     "'Risk Regime:' (with 🟢🟡🔴), "
                     "'Correction risk elevated?: Yes/No', "
@@ -263,7 +265,10 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
                 "Output JSON only (no markdown fences, no commentary).",
                 f"slug MUST equal market-diagnostic-{run_date_utc}.",
                 "status MUST be exactly one of: GREEN, YELLOW, RED (a single string, not an array).",
-                "tags MUST include market-diagnostic and macro.",
+                "Generate title + summary + tags; do not use boilerplate strings.",
+                "title MUST be specific and must NOT be a generic 'Market Diagnostic' placeholder or a raw date string.",
+                "summary MUST be 12-28 words and read like a subtitle.",
+                "tags MUST include market-diagnostic and macro, plus 1-4 additional lowercase hyphenated topical tags.",
                 "chart_urls MUST be an empty array unless you have real http(s) URLs from sources (otherwise keep []).",
                 "content_markdown MUST include the required headings in order and exactly once each.",
                 "Include a date/time stamp line at the top (e.g., 'Date: YYYY-MM-DD (UTC)').",
@@ -272,6 +277,8 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
                 "Do not put citations on separate lines; the citation must be at the end of the bullet line.",
                 "If you cannot find a source URL for a bullet, do not include that bullet.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
+                "Prioritize sources published within the last 7 days relative to run_date_utc; avoid stale sources whenever fresher sources exist.",
+                "If a section has no material change versus last recap, do not add fresh bullets there; use 'No Change: No material change since the prior weekly recap.' instead.",
                 "Use only 🟢🟡🔴 for Signal/Risk Regime lines. No other emojis.",
             ],
             "format_template": (
@@ -290,9 +297,7 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
                 "Signal: 🟡 ...\n\n"
                 "## Growth (Nowcasts/PMIs + Sahm Rule Proximity)\n"
                 "Trend: ...\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
+                "No Change: No material change since the prior weekly recap.\n"
                 "Signal: 🟡 ...\n\n"
                 "## Financial Conditions Indexes\n"
                 "Trend: ...\n"
@@ -356,12 +361,15 @@ def _build_repair_prompts(
             "rules": [
                 "Output JSON only (no markdown fences, no commentary).",
                 f"slug MUST equal market-diagnostic-{run_date_utc}.",
-                "tags MUST include market-diagnostic and macro.",
+                "title and summary must be specific and non-boilerplate.",
+                "tags MUST include market-diagnostic and macro, plus additional topical tags.",
                 "content_markdown MUST include required headings in order and exactly once each.",
-                "Each of the first 5 sections must include a Trend line, 3-6 bullets, and a Signal line.",
+                "Each of the first 5 sections must include a Trend line and a Signal line.",
+                "For each of the first 5 sections, use either 3-6 sourced bullets OR a single 'No Change:' line.",
                 "Each bullet must end with '(Source: https://...)' using a real http(s) URL. No citations on separate lines.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
-                "Ensure the Earnings section has 3-6 bullets (this commonly causes validation failure).",
+                "Prefer citations from the last 7 days whenever possible.",
+                "If there is no material update in a section, use: 'No Change: No material change since the prior weekly recap.'",
             ],
         },
         separators=(",", ":"),

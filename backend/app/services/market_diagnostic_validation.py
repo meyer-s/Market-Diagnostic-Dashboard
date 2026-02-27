@@ -123,7 +123,7 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
     if len(sections) < len(REQUIRED_H2_HEADINGS):
         raise ValueError("content_markdown must include all required Market Diagnostic sections")
 
-    # First 5 sections require Trend, 3-6 bullets, and Signal line with allowed emoji.
+    # First 5 sections require Trend + Signal lines and either 3-6 bullets or an explicit No Change line.
     for heading, section in sections[:5]:
         trend_ok = re.search(r"(?m)^Trend:\s+.+", section) is not None
         if not trend_ok:
@@ -135,9 +135,22 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
         if not any(emoji in signal_match.group(1) for emoji in _ALLOWED_EMOJIS):
             raise ValueError(f"{heading} Signal line must include 🟢🟡🔴")
 
+        no_change_match = re.search(r"(?m)^No Change:\s+.+", section)
         bullets = re.findall(r"(?m)^- .+$", section)
+        if no_change_match:
+            # Allow explicit no-change sections without fresh bullet points.
+            if len(bullets) > 0:
+                for bullet in bullets:
+                    match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)
+                    if match is None:
+                        raise ValueError(f"{heading} bullets must end with a citation '(Source: ...)'")
+                    source_value = (match.group(1) or "").strip()
+                    if not _is_valid_http_url(source_value):
+                        raise ValueError(f"{heading} citations must be valid http(s) URLs")
+            continue
+
         if not (3 <= len(bullets) <= 6):
-            raise ValueError(f"{heading} must include 3-6 bullet points")
+            raise ValueError(f"{heading} must include 3-6 bullet points or an explicit No Change line")
 
         for bullet in bullets:
             match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)

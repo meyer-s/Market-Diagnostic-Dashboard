@@ -33,7 +33,7 @@ function AppWithAnalytics() {
                      location.pathname.includes('/secret/options') ? 'Secret Options' :
                      location.pathname.includes('/precious-metals') ? 'Precious Metals' :
                      location.pathname.includes('/alternative-assets') ? 'Alternative Assets' :
-                     location.pathname.includes('/tools/updates') ? 'Updates' :
+                     location.pathname.includes('/tools/recap') || location.pathname.includes('/tools/updates') ? 'Recap' :
                      location.pathname.includes('/aap-breakdown') ? 'AAS Breakdown' :
                      'Unknown';
     
@@ -57,7 +57,8 @@ function AppWithAnalytics() {
           <Route path="/sector-projections" element={<SectorProjections />} />
           <Route path="/stock-analysis" element={<StockAnalysis />} />
           <Route path="/secret/options" element={<SecretOptions />} />
-          <Route path="/tools/updates" element={<Updates />} />
+          <Route path="/tools/recap" element={<Updates />} />
+          <Route path="/tools/updates" element={<Navigate to="/tools/recap" replace />} />
           {/* Redirect old precious-metals route to alternative-assets */}
           <Route path="/precious-metals" element={<Navigate to="/alternative-assets?tab=metals" replace />} />
           <Route path="/alternative-assets" element={<AlternativeAssetStability />} />

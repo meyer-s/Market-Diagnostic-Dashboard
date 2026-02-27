@@ -6,7 +6,7 @@ interface SearchInputProps {
 export default function SearchInput({ value, onChange }: SearchInputProps) {
   return (
     <label className="block w-full">
-      <span className="sr-only">Search updates</span>
+      <span className="sr-only">Search recap posts</span>
       <input
         type="search"
         value={value}
