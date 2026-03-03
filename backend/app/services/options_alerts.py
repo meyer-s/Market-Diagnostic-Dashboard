@@ -276,22 +276,22 @@ def _sparkline(values: list[float]) -> str:
     return "".join(out)
 
 
-def _compute_weekly_macd_series_norm(
+def _compute_weekly_macd_bundle_norm(
     history: Optional[pd.DataFrame],
     points: int = 24,
-) -> list[float]:
+) -> dict[str, list[float]]:
     if history is None or history.empty:
-        return []
+        return {}
     close = history.get("Close")
     if close is None:
-        return []
+        return {}
     close = close.dropna()
     if close.empty:
-        return []
+        return {}
 
     weekly = close.resample("W-FRI").last().dropna()
     if len(weekly) < 30:
-        return []
+        return {}
 
     ema_fast = weekly.ewm(span=12, adjust=False).mean()
     ema_slow = weekly.ewm(span=26, adjust=False).mean()
@@ -302,11 +302,24 @@ def _compute_weekly_macd_series_norm(
     range_window = weekly.tail(52)
     prange = float(range_window.max() - range_window.min()) if not range_window.empty else 0.0
     if prange <= 0:
-        return []
+        return {}
 
-    histo_norm = (histo / prange) * 100
-    values = [float(value) for value in histo_norm.tail(points).tolist()]
-    return values
+    scale = 100.0 / prange
+    macd_norm = (macd * scale).tail(points)
+    signal_norm = (signal * scale).tail(points)
+    histo_norm = (histo * scale).tail(points)
+    return {
+        "macd": [float(value) for value in macd_norm.tolist()],
+        "signal": [float(value) for value in signal_norm.tolist()],
+        "hist": [float(value) for value in histo_norm.tolist()],
+    }
+
+
+def _compute_weekly_macd_series_norm(
+    history: Optional[pd.DataFrame],
+    points: int = 24,
+) -> list[float]:
+    return _compute_weekly_macd_bundle_norm(history, points=points).get("hist", [])
 
 
 def _compute_weekly_macd_oscillator(history: Optional[pd.DataFrame]) -> tuple[Optional[float], str]:
@@ -319,39 +332,84 @@ def _compute_weekly_macd_oscillator(history: Optional[pd.DataFrame]) -> tuple[Op
 
 
 def _build_macd_chart_image_url(history: Optional[pd.DataFrame], symbol: str) -> Optional[str]:
-    series = _compute_weekly_macd_series_norm(history, points=24)
-    if len(series) < 8:
+    bundle = _compute_weekly_macd_bundle_norm(history, points=24)
+    macd_series = bundle.get("macd", [])
+    signal_series = bundle.get("signal", [])
+    hist_series = bundle.get("hist", [])
+    if len(hist_series) < 8 or len(macd_series) != len(signal_series) or len(signal_series) != len(hist_series):
         return None
 
-    last = series[-1]
-    line_color = "#22c55e" if last > 0 else "#ef4444" if last < 0 else "#f59e0b"
-    labels = [str(i - len(series) + 1) for i in range(len(series))]
+    last = hist_series[-1]
+    title_suffix = "Bullish" if last > 0 else "Bearish" if last < 0 else "Neutral"
+    labels = [str(i - len(hist_series) + 1) for i in range(len(hist_series))]
+    hist_colors = ["rgba(16,185,129,0.62)" if value >= 0 else "rgba(239,68,68,0.62)" for value in hist_series]
     chart_config = {
-        "type": "line",
+        "type": "bar",
         "data": {
             "labels": labels,
             "datasets": [
                 {
-                    "label": "MACD 1W / 52W range (%)",
-                    "data": series,
-                    "borderColor": line_color,
+                    "type": "bar",
+                    "label": "Histogram",
+                    "data": hist_series,
+                    "backgroundColor": hist_colors,
+                    "borderWidth": 0,
+                    "barPercentage": 0.9,
+                    "categoryPercentage": 0.95,
+                    "order": 3,
+                },
+                {
+                    "type": "line",
+                    "label": "MACD",
+                    "data": macd_series,
+                    "borderColor": "#38bdf8",
                     "borderWidth": 2,
                     "pointRadius": 0,
                     "tension": 0.25,
-                }
+                    "fill": False,
+                    "order": 1,
+                },
+                {
+                    "type": "line",
+                    "label": "Signal",
+                    "data": signal_series,
+                    "borderColor": "#94a3b8",
+                    "borderWidth": 2,
+                    "pointRadius": 0,
+                    "tension": 0.25,
+                    "borderDash": [6, 4],
+                    "fill": False,
+                    "order": 2,
+                },
             ],
         },
         "options": {
+            "layout": {"padding": {"top": 8, "right": 12, "bottom": 8, "left": 12}},
             "plugins": {
-                "legend": {"display": False},
-                "title": {"display": True, "text": f"{symbol} MACD (1W normalized by 52W range)"},
+                "legend": {
+                    "display": True,
+                    "position": "top",
+                    "align": "end",
+                    "labels": {"color": "#cbd5e1"},
+                },
+                "title": {
+                    "display": True,
+                    "text": f"{symbol} MACD 1W / 52W ({title_suffix})",
+                    "color": "#cbd5e1",
+                    "font": {"size": 14, "weight": "bold"},
+                    "padding": {"bottom": 12},
+                },
             },
             "scales": {
-                "x": {"display": False},
+                "x": {
+                    "display": False,
+                    "grid": {"display": False},
+                    "ticks": {"display": False},
+                },
                 "y": {
-                    "grid": {"color": "rgba(180,180,180,0.15)"},
-                    "ticks": {"color": "#D1D5DB"},
-                    "title": {"display": True, "text": "% of 52W range", "color": "#D1D5DB"},
+                    "grid": {"color": "rgba(148,163,184,0.18)", "borderDash": [4, 4]},
+                    "ticks": {"color": "#94a3b8", "maxTicksLimit": 5},
+                    "title": {"display": True, "text": "% of 52W range", "color": "#cbd5e1"},
                 },
             },
         },
@@ -359,7 +417,7 @@ def _build_macd_chart_image_url(history: Optional[pd.DataFrame], symbol: str) ->
     encoded = quote(json.dumps(chart_config, separators=(",", ":")), safe="")
     return (
         "https://quickchart.io/chart"
-        "?width=760&height=280&devicePixelRatio=2&backgroundColor=%23111417"
+        "?width=900&height=420&devicePixelRatio=2&backgroundColor=%230b1220"
         f"&c={encoded}"
     )
 
