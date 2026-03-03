@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Literal, Sequence
@@ -62,8 +63,20 @@ def _recent_published_titles(*, limit: int = 8) -> list[str]:
 
 
 def _ensure_non_reused_title(title: str, recent_titles: Sequence[str], run_date_utc: str) -> str:
-    candidate = (title or "").strip()
-    if not candidate:
+    candidate = re.sub(r"\s+", " ", "".join(ch for ch in (title or "") if ch.isprintable())).strip()
+    lower = candidate.lower()
+    generic = (
+        not candidate
+        or (
+            lower.startswith("market diagnostic")
+            and (
+                "latest" in lower
+                or bool(re.search(r"\b\d{4}-\d{2}-\d{2}\b", lower))
+                or len(lower.split()) <= 6
+            )
+        )
+    )
+    if generic:
         return f"Macro Regime Shift Checkpoint ({run_date_utc})"
     lowered_recent = {item.strip().lower() for item in recent_titles if item}
     if candidate.lower() not in lowered_recent:
