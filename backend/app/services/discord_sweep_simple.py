@@ -54,34 +54,63 @@ async def execute_sweep(
 
     # Run the existing scan function (scans all tickers, sends webhooks).
     print(f"[Discord Sweep] Starting scan of {len(tickers)} {label} tickers...")
-    hits = _scan_tickers(tickers, label, threshold, None, pause_seconds=0.2)
+    hits_result = _scan_tickers(
+        tickers,
+        label,
+        threshold,
+        None,
+        pause_seconds=0.2,
+        capture_hit_symbols=True,
+    )
+    if isinstance(hits_result, tuple):
+        hits, hit_symbols = hits_result
+    else:
+        hits, hit_symbols = hits_result, []
     print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
 
     total = len(tickers)
     details = f"\nUniverse key: {universe.key}"
     if universe.notes:
         details += "\nNotes: " + " | ".join(universe.notes[:2])
+    if hit_symbols:
+        preview = ", ".join(hit_symbols[:12])
+        suffix = "" if len(hit_symbols) <= 12 else f" (+{len(hit_symbols) - 12} more)"
+        details += f"\nHit symbols: {preview}{suffix}"
 
-    await _send_followup_message(
+    content = f"Options sweep finished. {label} Scanned tickers {total} Hits: {hits}{details}"
+    sent = await _send_followup_message(
         application_id=application_id,
         interaction_token=interaction_token,
-        content=(
-            f"Options sweep finished. {label} Scanned tickers {total} Hits: {hits}{details}"
-        ),
+        content=content,
     )
+    if not sent:
+        await _edit_original_response(
+            application_id,
+            interaction_token,
+            {"content": content},
+            bot_token,
+        )
 
 
-async def _send_followup_message(application_id: str, interaction_token: str, content: str):
+async def _send_followup_message(application_id: str, interaction_token: str, content: str) -> bool:
     """Send a follow-up message to the interaction (creates a new message)."""
     url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}"
 
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, json={"content": content})
-            response.raise_for_status()
+            if response.status_code >= 400:
+                snippet = response.text[:300].replace("\n", " ")
+                print(
+                    f"✗ Follow-up status={response.status_code} "
+                    f"url={url} body={snippet}"
+                )
+                return False
             print(f"✓ Sent follow-up message: {content[:50]}...")
+            return True
         except Exception as e:
             print(f"✗ Failed to send follow-up message: {e}")
+            return False
 
 
 async def _edit_original_response(
@@ -92,14 +121,20 @@ async def _edit_original_response(
 ):
     """Edit the original interaction response (kept for error handling)."""
     url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}/messages/@original"
-    headers = {
-        "Authorization": f"Bot {bot_token}",
-        "Content-Type": "application/json"
-    }
 
     try:
-        response = requests.patch(url, json=data, headers=headers, timeout=10)
+        # Interaction webhook edits usually work without bot auth.
+        response = requests.patch(url, json=data, timeout=10)
+        if response.status_code >= 400 and bot_token:
+            headers = {
+                "Authorization": f"Bot {bot_token}",
+                "Content-Type": "application/json",
+            }
+            response = requests.patch(url, json=data, headers=headers, timeout=10)
         response.raise_for_status()
         print("✓ Edited original response on Discord")
     except Exception as e:
-        print(f"✗ Failed to edit original response: {e}")
+        detail = ""
+        if "response" in locals():
+            detail = f" status={response.status_code} body={response.text[:300]}"
+        print(f"✗ Failed to edit original response: {e}{detail}")

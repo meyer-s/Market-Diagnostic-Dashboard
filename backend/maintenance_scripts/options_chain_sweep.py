@@ -59,9 +59,11 @@ def _scan_tickers(
     threshold: float,
     max_count: Optional[int],
     pause_seconds: float,
-) -> int:
+    capture_hit_symbols: bool = False,
+) -> int | tuple[int, list[str]]:
     hits = 0
     total = 0
+    hit_symbols: list[str] = []
 
     for symbol in tickers:
         if max_count and total >= max_count:
@@ -118,6 +120,11 @@ def _scan_tickers(
                 image_url=chart_url,
                 embed_title=f"{symbol} MACD Snapshot",
             )
+            if not delivered:
+                print(
+                    f"[Sweep Delivery] {symbol} failed delivery: "
+                    f"channel={channel or 'n/a'} error={error or 'unknown'}"
+                )
             with get_db_session() as db:
                 db.add(
                     OptionAlertEvent(
@@ -134,6 +141,7 @@ def _scan_tickers(
                 )
                 db.commit()
             hits += 1
+            hit_symbols.append(symbol)
         except Exception:
             continue
         finally:
@@ -141,6 +149,8 @@ def _scan_tickers(
                 time.sleep(pause_seconds)
 
     print(f"{label} scan finished: {hits} hits over {total} symbols.")
+    if capture_hit_symbols:
+        return hits, hit_symbols
     return hits
 
 
