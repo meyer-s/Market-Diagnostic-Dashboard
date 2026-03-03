@@ -5,8 +5,16 @@ Run this once to register the /sweep command with Discord.
 """
 import os
 import sys
+from pathlib import Path
 
 import requests
+
+# Ensure local app package is importable when this script is run directly.
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from app.services.discord_sweep_universe import SUPPORTED_SWEEP_UNIVERSES, UNIVERSE_ALIASES
 
 # Discord credentials
 APPLICATION_ID = "1432808300780458006"
@@ -27,18 +35,17 @@ headers = {
 }
 
 universe_choices = [
-    {"name": "SP500 (S&P 500)", "value": "SP500"},
-    {"name": "NASDAQ100 (Nasdaq 100)", "value": "NASDAQ100"},
-    {"name": "RUSSELL2000 (Russell 2000)", "value": "RUSSELL2000"},
-    {"name": "SECTOR_ETFS (Major Sector ETFs)", "value": "SECTOR_ETFS"},
-    {"name": "TOP_OPT_VOL_200 (Top Options Volume)", "value": "TOP_OPT_VOL_200"},
-    {"name": "UPCOMING_EARNINGS_21D (Earnings Window)", "value": "UPCOMING_EARNINGS_21D"},
-    {"name": "TOP_SHORT_INTEREST_100 (Short Interest)", "value": "TOP_SHORT_INTEREST_100"},
-    {"name": "MAJOR_NEWS_21D (Headline News)", "value": "MAJOR_NEWS_21D"},
-    # Backward-compatible aliases
-    {"name": "SPY (Alias -> SP500)", "value": "SPY"},
-    {"name": "IWM (Alias -> RUSSELL2000)", "value": "IWM"},
+    {"name": f"{key} ({label})", "value": key}
+    for key, label in SUPPORTED_SWEEP_UNIVERSES.items()
 ]
+
+# Keep common backward-compatible aliases visible in the menu.
+alias_choices = [
+    {"name": f"{alias} (Alias -> {target})", "value": alias}
+    for alias, target in UNIVERSE_ALIASES.items()
+    if alias != target and alias in {"SPY", "IWM"}
+]
+universe_choices.extend(alias_choices)
 
 # Define the /sweep command
 command = {
