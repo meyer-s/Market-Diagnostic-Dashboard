@@ -42,8 +42,42 @@ def _coerce_utc(run_dt: Optional[datetime]) -> datetime:
     return run_dt.astimezone(timezone.utc)
 
 
-def _title_for_date(run_dt: datetime) -> str:
-    return "Market Diagnostic — Big-Bank Recession & Correction Risk (Latest)"
+def _display_date(run_dt: datetime) -> str:
+    return run_dt.strftime("%b %d, %Y").replace(" 0", " ")
+
+
+def _title_for_snapshot(run_dt: datetime, snapshot: dict[str, Any]) -> str:
+    status = _normalize_status(snapshot.get("status"))
+    score = snapshot.get("score")
+    red_count = snapshot.get("red_count")
+    yellow_count = snapshot.get("yellow_count")
+
+    if status == "GREEN":
+        if isinstance(red_count, int) and red_count > 2:
+            lead = "Stability Holds While Isolated Stress Persists"
+        else:
+            lead = "Risk Appetite Holds as Stress Stays Contained"
+    elif status == "RED":
+        if isinstance(red_count, int) and red_count >= 8:
+            lead = "Risk-Off Regime Intensifies as Stress Broadens"
+        else:
+            lead = "Stress Regime Holds with Elevated Drawdown Risk"
+    else:
+        # YELLOW regime
+        if isinstance(red_count, int) and red_count >= 5:
+            lead = "Caution Deepens as Stress Breadth Expands"
+        elif isinstance(score, (int, float)) and score >= 52:
+            lead = "Risk Tone Improves but Caution Still Dominates"
+        else:
+            lead = "Mixed Tape Keeps Markets in Caution Mode"
+
+    detail = ""
+    if isinstance(score, (int, float)):
+        detail = f" | Score {score:.1f}"
+    elif isinstance(red_count, int) and isinstance(yellow_count, int):
+        detail = f" | {red_count} red / {yellow_count} yellow"
+
+    return f"{lead} - {_display_date(run_dt)}{detail}"
 
 
 def _slug_for_date(run_dt: datetime) -> str:
@@ -247,11 +281,11 @@ def publish_market_diagnostic_for_date(
     Slug is deterministic per date to guarantee idempotency.
     """
     publish_dt = _coerce_utc(run_dt)
-    title = _title_for_date(publish_dt)
     slug = _slug_for_date(publish_dt)
     base_url, publish_key = _publish_config()
 
     snapshot = _latest_system_snapshot()
+    title = _title_for_snapshot(publish_dt, snapshot)
     summary = _summary_for_snapshot(snapshot)
     status = snapshot["status"]
     tags = _tags_for_status(status)
