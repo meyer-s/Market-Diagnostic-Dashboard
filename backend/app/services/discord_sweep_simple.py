@@ -1,58 +1,17 @@
 """
 Discord sweep - reuses existing sweep scripts
 """
-import asyncio
 import os
-import io
-from typing import List
 
-import pandas as pd
 import requests
 import httpx
 
 # Import existing sweep logic
 from maintenance_scripts.options_chain_sweep import _scan_tickers
+from app.services.discord_sweep_universe import resolve_sweep_universe
 
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
-
-SP500_IVV_URL = (
-    "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/"
-    "1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund"
-)
-R2K_IWM_URL = (
-    "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
-    "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund"
-)
-
-
-def _fetch_ishares_tickers(url: str) -> List[str]:
-    """Fetch tickers from iShares ETF holdings CSV"""
-    try:
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
-        
-        lines = response.text.splitlines()
-        header_idx = None
-        for i, line in enumerate(lines):
-            if line.startswith("Ticker,"):
-                header_idx = i
-                break
-        if header_idx is None:
-            return []
-
-        frame = pd.read_csv(io.StringIO("\n".join(lines[header_idx:])))
-        tickers = frame.get("Ticker")
-        if tickers is None:
-            return []
-        return [
-            value.strip()
-            for value in tickers.dropna().astype(str).tolist()
-            if value.strip() and value.strip().upper() != "NAN"
-        ]
-    except Exception as e:
-        print(f"Error fetching tickers: {e}")
-        return []
 
 
 async def execute_sweep(
@@ -62,59 +21,60 @@ async def execute_sweep(
     application_id: str
 ):
     """
-    Execute sweep using existing script logic
+    Execute sweep using existing script logic.
     """
     bot_token = os.getenv("DISCORD_BOT_TOKEN")
     if not bot_token:
         print("ERROR: DISCORD_BOT_TOKEN not set")
         return
-    
-    # Determine which tickers to scan
-    if symbol == "SPY":
-        url = SP500_IVV_URL
-        label = "S&P 500 (SPY/IVV)"
-    elif symbol == "IWM":
-        url = R2K_IWM_URL
-        label = "Russell 2000 (IWM)"
-    else:
+
+    try:
+        universe = resolve_sweep_universe(symbol)
+    except ValueError:
         await _edit_original_response(
             application_id,
             interaction_token,
             {"content": f"❌ Unsupported symbol: {symbol}"},
-            bot_token
+            bot_token,
         )
         return
-    
-    tickers = _fetch_ishares_tickers(url)
+
+    tickers = universe.tickers
+    label = universe.label
     if not tickers:
+        notes = "\n".join(f"- {note}" for note in universe.notes[:3])
+        extra = f"\nDetails:\n{notes}" if notes else ""
         await _edit_original_response(
             application_id,
             interaction_token,
-            {"content": f"❌ Failed to fetch {label} holdings"},
-            bot_token
+            {"content": f"❌ Failed to fetch tickers for {label}.{extra}"},
+            bot_token,
         )
         return
-    
-    # Run the existing scan function (scans all tickers, sends webhooks)
+
+    # Run the existing scan function (scans all tickers, sends webhooks).
     print(f"[Discord Sweep] Starting scan of {len(tickers)} {label} tickers...")
     hits = _scan_tickers(tickers, label, threshold, None, pause_seconds=0.2)
     print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
 
     total = len(tickers)
-    # Send a follow-up message summarizing results
+    details = f"\nUniverse key: {universe.key}"
+    if universe.notes:
+        details += "\nNotes: " + " | ".join(universe.notes[:2])
+
     await _send_followup_message(
         application_id=application_id,
         interaction_token=interaction_token,
         content=(
-            f"Options sweep finished. {label} Scanned tickers {total} Hits: {hits}"
+            f"Options sweep finished. {label} Scanned tickers {total} Hits: {hits}{details}"
         ),
     )
 
 
 async def _send_followup_message(application_id: str, interaction_token: str, content: str):
-    """Send a follow-up message to the interaction (creates a new message)"""
+    """Send a follow-up message to the interaction (creates a new message)."""
     url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}"
-    
+
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, json={"content": content})
@@ -130,16 +90,16 @@ async def _edit_original_response(
     data: dict,
     bot_token: str
 ):
-    """Edit the original interaction response (kept for error handling)"""
+    """Edit the original interaction response (kept for error handling)."""
     url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}/messages/@original"
     headers = {
         "Authorization": f"Bot {bot_token}",
         "Content-Type": "application/json"
     }
-    
+
     try:
         response = requests.patch(url, json=data, headers=headers, timeout=10)
         response.raise_for_status()
-        print(f"✓ Edited original response on Discord")
+        print("✓ Edited original response on Discord")
     except Exception as e:
         print(f"✗ Failed to edit original response: {e}")

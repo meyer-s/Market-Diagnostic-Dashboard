@@ -109,6 +109,7 @@ def _scan_tickers(
                 threshold,
                 horizon_labels,
                 horizon_returns,
+                history,
             )
             delivered, channel, error = _send_webhook(message)
             with get_db_session() as db:

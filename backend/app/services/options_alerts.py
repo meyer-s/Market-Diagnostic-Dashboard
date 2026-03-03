@@ -1,5 +1,4 @@
 import os
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -10,6 +9,15 @@ import requests
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.models.options_alerts import OptionAlertWatch, OptionAlertEvent
 from app.utils.db_helpers import get_db_session
+
+ESC = "\u001b"
+ANSI_RESET = f"{ESC}[0m"
+HORIZON_WINDOWS = {
+    "1m": 21,
+    "3m": 63,
+    "6m": 126,
+    "1y+": 252,
+}
 
 
 def _get_current_price(stock: yf.Ticker) -> Optional[float]:
@@ -212,6 +220,99 @@ def _format_value(value: Optional[float], digits: int = 1) -> str:
     return f"{value:.{digits}f}" if value is not None else "n/a"
 
 
+def _ansi(text: str, color: int, fmt: int = 1) -> str:
+    return f"{ESC}[{fmt};{color}m{text}{ANSI_RESET}"
+
+
+def _bias_color(bias: str) -> int:
+    code = (bias or "").upper()
+    if code == "CHEAP":
+        return 32
+    if code == "EXPENSIVE":
+        return 31
+    if code == "FAIR":
+        return 33
+    return 30
+
+
+def _direction_color(direction: str) -> int:
+    code = (direction or "").lower()
+    if code == "calls":
+        return 32
+    if code == "puts":
+        return 31
+    return 33
+
+
+def _percentile_gauge(value: Optional[float], width: int = 12) -> str:
+    if value is None:
+        return "[" + ("." * width) + "]"
+    clipped = max(0.0, min(100.0, float(value)))
+    filled = int(round((clipped / 100.0) * width))
+    return "[" + ("#" * filled) + ("." * (width - filled)) + "]"
+
+
+def _compute_weekly_macd_oscillator(history: Optional[pd.DataFrame]) -> tuple[Optional[float], str]:
+    if history is None or history.empty:
+        return None, "[........|........]"
+    close = history.get("Close")
+    if close is None:
+        return None, "[........|........]"
+    close = close.dropna()
+    if close.empty:
+        return None, "[........|........]"
+
+    weekly = close.resample("W-FRI").last().dropna()
+    if len(weekly) < 30:
+        return None, "[........|........]"
+
+    ema_fast = weekly.ewm(span=12, adjust=False).mean()
+    ema_slow = weekly.ewm(span=26, adjust=False).mean()
+    macd = ema_fast - ema_slow
+    signal = macd.ewm(span=9, adjust=False).mean()
+    histo = macd - signal
+    current_histo = float(histo.iloc[-1])
+
+    range_window = weekly.tail(52)
+    prange = float(range_window.max() - range_window.min()) if not range_window.empty else 0.0
+    if prange <= 0:
+        return None, "[........|........]"
+
+    osc_pct = (current_histo / prange) * 100
+    bar = _macd_bar(osc_pct)
+    return osc_pct, bar
+
+
+def _macd_bar(osc_pct: Optional[float], span_pct: float = 3.0) -> str:
+    width = 8
+    if osc_pct is None:
+        return "[........|........]"
+    clipped = max(-span_pct, min(span_pct, float(osc_pct)))
+    steps = int(round((abs(clipped) / span_pct) * width))
+    left = ["."] * width
+    right = ["."] * width
+    if clipped >= 0:
+        for i in range(steps):
+            right[i] = ">"
+    else:
+        for i in range(steps):
+            left[width - 1 - i] = "<"
+    return "[" + "".join(left) + "|" + "".join(right) + "]"
+
+
+def _horizon_compact_text(returns: Optional[dict[str, Optional[float]]]) -> str:
+    if not returns:
+        return "1m n/a  3m n/a  6m n/a  1y+ n/a"
+    parts: list[str] = []
+    for horizon in HORIZON_WINDOWS.keys():
+        value = returns.get(horizon)
+        if value is None:
+            parts.append(f"{horizon} n/a")
+        else:
+            parts.append(f"{horizon} {value:+.1f}%")
+    return "  ".join(parts)
+
+
 def _format_alert_message(
     label: str,
     symbol: str,
@@ -227,32 +328,46 @@ def _format_alert_message(
     threshold: Optional[float],
     horizon_labels: Optional[dict[str, str]] = None,
     horizon_returns: Optional[dict[str, Optional[float]]] = None,
+    history: Optional[pd.DataFrame] = None,
 ) -> str:
     threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
-    direction_label = "Neutral"
+    direction_label = "NEUTRAL"
     if direction.lower() == "calls":
-        direction_label = "Short-term Bullish"
+        direction_label = "BULLISH"
     elif direction.lower() == "puts":
-        direction_label = "Short-term Bearish"
+        direction_label = "BEARISH"
+
     votes_text = ", ".join(votes) if votes else "n/a"
-    horizon_lines = _format_horizon_lines(horizon_labels, horizon_returns)
+    gauge = _percentile_gauge(iv_percentile)
+    macd_osc_pct, macd_bar = _compute_weekly_macd_oscillator(history)
+    macd_text = f"{macd_osc_pct:+.2f}%" if macd_osc_pct is not None else "n/a"
+
+    bias_colored = _ansi(bias, _bias_color(bias))
+    direction_colored = _ansi(direction_label, _direction_color(direction))
+    macd_color = _direction_color("calls" if (macd_osc_pct or 0) > 0 else "puts" if (macd_osc_pct or 0) < 0 else "neutral")
+    macd_colored = _ansi(macd_text, macd_color)
+
+    header = f"SCAN HIT {symbol} - {label}"
+    detail_line = (
+        f"IV30 { _format_value(iv30, 2) }  HV30 { _format_value(hv30, 2) }  EDR { _format_value(avg_edr, 2) }"
+    )
+    horizons_line = _horizon_compact_text(horizon_returns)
+
+    ansi_lines = [
+        _ansi(header, 36),
+        f"MISPRICING   {bias_colored}   IV% {_format_value(iv_percentile, 1)} <= {threshold_text} {gauge}",
+        f"VOL SNAP     {detail_line}",
+        f"DIRECTION    {direction_colored}   {direction_reason}",
+        f"MACD 1W/52W  {macd_colored}  {macd_bar}",
+        f"HORIZONS     {horizons_line}",
+    ]
+
     lines = [
-        "---",
-        f"**{symbol}** — {label}",
-        "",
-        "**Volatility Snapshot**",
-        f"- **IV percentile**: {_format_value(iv_percentile, 1)}% (≤ {threshold_text}%)",
-        f"- **IV30 / HV30 / EDR**: {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}%",
-        "",
-        "**Mispricing**",
-        f"- **Consensus**: {bias}",
-        f"- **Votes**: {votes_text}",
-        f"- **Details**: {reason}",
-        "",
-        "**Directional Bias**",
-        f"- **{direction_label}** — {direction_reason}",
-        *horizon_lines,
-        "---",
+        "```ansi",
+        *ansi_lines,
+        "```",
+        f"Reason: {reason}",
+        f"Votes: {votes_text}",
     ]
     return "\n".join(lines)
 
@@ -325,6 +440,7 @@ def run_options_alert_scan() -> dict:
                     watch.iv_percentile_max,
                     horizon_labels,
                     horizon_returns,
+                    hist,
                 )
 
                 delivered, channel, error = _send_webhook(message)
@@ -348,9 +464,3 @@ def run_options_alert_scan() -> dict:
                 results["errors"] += 1
                 db.rollback()
     return results
-HORIZON_WINDOWS = {
-    "1m": 21,
-    "3m": 63,
-    "6m": 126,
-    "1y+": 252,
-}
