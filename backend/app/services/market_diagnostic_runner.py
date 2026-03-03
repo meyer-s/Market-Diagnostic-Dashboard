@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 import httpx
 
@@ -42,6 +42,33 @@ class OpenAIRequestError(RuntimeError):
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _recent_published_titles(*, limit: int = 8) -> list[str]:
+    with get_db_session() as db:
+        rows = (
+            db.query(UpdatePost.title)
+            .filter(UpdatePost.published.is_(True))
+            .order_by(UpdatePost.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+    titles: list[str] = []
+    for row in rows:
+        value = (row[0] or "").strip()
+        if value:
+            titles.append(value)
+    return titles
+
+
+def _ensure_non_reused_title(title: str, recent_titles: Sequence[str], run_date_utc: str) -> str:
+    candidate = (title or "").strip()
+    if not candidate:
+        return f"Macro Regime Shift Checkpoint ({run_date_utc})"
+    lowered_recent = {item.strip().lower() for item in recent_titles if item}
+    if candidate.lower() not in lowered_recent:
+        return candidate
+    return f"{candidate} ({run_date_utc})"
 
 
 def _openai_chat_completion_json(
@@ -215,7 +242,13 @@ def _openai_chat_completion_json(
         raise RuntimeError(f"OpenAI did not return valid JSON: {exc}; content={content[:400]}")
 
 
-def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[str, str]:
+def _build_prompts(
+    *,
+    run_date_utc: str,
+    day_of_week: str,
+    mode: Mode,
+    recent_titles: Sequence[str],
+) -> tuple[str, str]:
     system_prompt = (
         "You are an expert macro strategist writing a concise weekly market recap for a private dashboard.\n"
         "Use web search to gather sources for every datapoint.\n"
@@ -231,6 +264,7 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
             "run_date_utc": run_date_utc,
             "day_of_week": day_of_week,
             "mode": mode,
+            "recent_titles_to_avoid_repeating_verbatim": list(recent_titles),
             "schema": {
                 "title": "news-driven weekly recap headline",
                 "summary": "single-sentence subtitle",
@@ -267,6 +301,7 @@ def _build_prompts(*, run_date_utc: str, day_of_week: str, mode: Mode) -> tuple[
                 "status MUST be exactly one of: GREEN, YELLOW, RED (a single string, not an array).",
                 "Generate title + summary + tags; do not use boilerplate strings.",
                 "title MUST be specific and must NOT be a generic 'Market Diagnostic' placeholder or a raw date string.",
+                "Do not reuse any recent title verbatim. Use a different opening phrase and framing.",
                 "summary MUST be 12-28 words and read like a subtitle.",
                 "tags MUST include market-diagnostic and macro, plus 1-4 additional lowercase hyphenated topical tags.",
                 "chart_urls MUST be an empty array unless you have real http(s) URLs from sources (otherwise keep []).",
@@ -336,6 +371,7 @@ def _build_repair_prompts(
     mode: Mode,
     validation_error: str,
     previous_output: dict[str, Any] | None,
+    recent_titles: Sequence[str],
 ) -> tuple[str, str]:
     system_prompt = (
         "You are an expert macro strategist. You are repairing a previously-generated Market Diagnostic payload.\n"
@@ -356,12 +392,14 @@ def _build_repair_prompts(
             "run_date_utc": run_date_utc,
             "day_of_week": day_of_week,
             "mode": mode,
+            "recent_titles_to_avoid_repeating_verbatim": list(recent_titles),
             "validation_error": error_snippet,
             "previous_output": previous_output,
             "rules": [
                 "Output JSON only (no markdown fences, no commentary).",
                 f"slug MUST equal market-diagnostic-{run_date_utc}.",
                 "title and summary must be specific and non-boilerplate.",
+                "Do not reuse any recent title verbatim; pick a new headline framing.",
                 "tags MUST include market-diagnostic and macro, plus additional topical tags.",
                 "content_markdown MUST include required headings in order and exactly once each.",
                 "Each of the first 5 sections must include a Trend line and a Signal line.",
@@ -467,10 +505,13 @@ def run_market_diagnostic(
             )
             return MarketDiagnosticRunResult(ok=True, slug=slug, action="skipped", id=existing.id)
 
+    recent_titles = _recent_published_titles(limit=8)
+
     system_prompt, user_prompt = _build_prompts(
         run_date_utc=run_date_utc,
         day_of_week=day_of_week,
         mode=mode,
+        recent_titles=recent_titles,
     )
 
     try:
@@ -489,6 +530,7 @@ def run_market_diagnostic(
                     mode=mode,
                     validation_error=last_validation_error or "unknown validation error",
                     previous_output=previous_output,
+                    recent_titles=recent_titles,
                 )
                 model_json = _openai_chat_completion_json(system_prompt=repair_system, user_prompt=repair_user)
 
@@ -503,6 +545,7 @@ def run_market_diagnostic(
                     raise ValueError("published must be true")
                 if payload.pinned is not False:
                     raise ValueError("pinned must be false")
+                payload.title = _ensure_non_reused_title(payload.title, recent_titles, run_date_utc)
                 generation_mode = "model"
                 last_validation_error = None
                 break

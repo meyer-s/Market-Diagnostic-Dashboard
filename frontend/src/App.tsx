@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate, useParams } from "react-router-dom";
 import { useEffect } from "react";
 import Topbar from "./components/layout/Topbar";
 import Footer from "./components/layout/Footer";
@@ -14,8 +14,17 @@ import StockAnalysis from "./pages/StockAnalysis";
 import SecretOptions from "./pages/SecretOptions";
 import AlternativeAssetStability from "./pages/AlternativeAssetStability";
 import AAPComponentBreakdown from "./pages/AAPComponentBreakdown";
-import Updates from "./pages/tools/Updates";
+import RecapIndex from "./pages/tools/RecapIndex";
+import RecapPost from "./pages/tools/RecapPost";
 import { trackPageView } from "./utils/analytics";
+
+function LegacyRecapSlugRedirect() {
+  const { slug } = useParams<{ slug: string }>();
+  if (!slug) {
+    return <Navigate to="/tools/recap" replace />;
+  }
+  return <Navigate to={`/tools/recap/${slug}`} replace />;
+}
 
 function AppWithAnalytics() {
   const location = useLocation();
@@ -57,8 +66,10 @@ function AppWithAnalytics() {
           <Route path="/sector-projections" element={<SectorProjections />} />
           <Route path="/stock-analysis" element={<StockAnalysis />} />
           <Route path="/secret/options" element={<SecretOptions />} />
-          <Route path="/tools/recap" element={<Updates />} />
+          <Route path="/tools/recap" element={<RecapIndex />} />
+          <Route path="/tools/recap/:slug" element={<RecapPost />} />
           <Route path="/tools/updates" element={<Navigate to="/tools/recap" replace />} />
+          <Route path="/tools/updates/:slug" element={<LegacyRecapSlugRedirect />} />
           {/* Redirect old precious-metals route to alternative-assets */}
           <Route path="/precious-metals" element={<Navigate to="/alternative-assets?tab=metals" replace />} />
           <Route path="/alternative-assets" element={<AlternativeAssetStability />} />

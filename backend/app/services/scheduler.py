@@ -185,13 +185,25 @@ async def scheduled_etl_job():
 def scheduled_market_diagnostic_publish_job():
     """Scheduled runner for Market Diagnostic updates."""
     try:
+        now_et = datetime.now(ZoneInfo("America/New_York"))
         run_date_utc = datetime.now(timezone.utc).date().isoformat()
-        day_of_week = datetime.now(ZoneInfo("America/New_York")).strftime("%a").upper()
+        day_of_week = now_et.strftime("%a").upper()
+        should_post = day_of_week in {"MON", "THU"}
+        dry_run = not should_post
+
+        logger.info(
+            "Market Diagnostic schedule check at %s ET: day=%s should_post=%s dry_run=%s",
+            now_et.isoformat(),
+            day_of_week,
+            should_post,
+            dry_run,
+        )
+
         result = run_market_diagnostic(
             run_date_utc=run_date_utc,
             day_of_week=day_of_week,
             mode="scheduled",
-            dry_run=False,
+            dry_run=dry_run,
         )
         logger.info("Market Diagnostic runner completed: ok=%s slug=%s action=%s id=%s", result.ok, result.slug, result.action, result.id)
     except Exception as exc:
@@ -228,12 +240,13 @@ def start_scheduler():
             replace_existing=True,
         )
 
-    # Runs weekly on Friday at 9:00 AM America/New_York.
+    # Runs daily at 10:00 AM America/New_York.
+    # Posting is gated inside the job to Mon/Thu; non-post days run dry-run checks.
     scheduler.add_job(
         scheduled_market_diagnostic_publish_job,
         CronTrigger(
-            day_of_week="fri",
-            hour=9,
+            day_of_week="mon-sun",
+            hour=10,
             minute=0,
             timezone="America/New_York",
         ),

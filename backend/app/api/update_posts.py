@@ -71,6 +71,20 @@ def get_update(post_id: str):
         return post
 
 
+@router.get("/updates/by-slug/{slug}", response_model=UpdatePostDetail)
+def get_update_by_slug(slug: str):
+    """Return a published update post by slug for direct recap permalinks."""
+    with get_db_session() as db:
+        post = (
+            db.query(UpdatePost)
+            .filter(UpdatePost.slug == slug, UpdatePost.published.is_(True))
+            .first()
+        )
+        if not post:
+            raise HTTPException(status_code=404, detail="Update post not found.")
+        return post
+
+
 @router.post("/updates", response_model=UpdatePostDetail)
 def create_update(
     payload: UpdatePostCreate,
