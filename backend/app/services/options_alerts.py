@@ -244,27 +244,36 @@ def _direction_color(direction: str) -> int:
     return 33
 
 
-def _percentile_gauge(value: Optional[float], width: int = 12) -> str:
-    if value is None:
-        return "[" + ("." * width) + "]"
-    clipped = max(0.0, min(100.0, float(value)))
-    filled = int(round((clipped / 100.0) * width))
-    return "[" + ("#" * filled) + ("." * (width - filled)) + "]"
+def _sparkline(values: list[float]) -> str:
+    blocks = "▁▂▃▄▅▆▇█"
+    if not values:
+        return "n/a"
+    lo = min(values)
+    hi = max(values)
+    if hi - lo < 1e-9:
+        return blocks[len(blocks) // 2] * len(values)
+    out: list[str] = []
+    for value in values:
+        pct = (value - lo) / (hi - lo)
+        idx = int(round(pct * (len(blocks) - 1)))
+        idx = max(0, min(len(blocks) - 1, idx))
+        out.append(blocks[idx])
+    return "".join(out)
 
 
 def _compute_weekly_macd_oscillator(history: Optional[pd.DataFrame]) -> tuple[Optional[float], str]:
     if history is None or history.empty:
-        return None, "[........|........]"
+        return None, "n/a"
     close = history.get("Close")
     if close is None:
-        return None, "[........|........]"
+        return None, "n/a"
     close = close.dropna()
     if close.empty:
-        return None, "[........|........]"
+        return None, "n/a"
 
     weekly = close.resample("W-FRI").last().dropna()
     if len(weekly) < 30:
-        return None, "[........|........]"
+        return None, "n/a"
 
     ema_fast = weekly.ewm(span=12, adjust=False).mean()
     ema_slow = weekly.ewm(span=26, adjust=False).mean()
@@ -276,28 +285,12 @@ def _compute_weekly_macd_oscillator(history: Optional[pd.DataFrame]) -> tuple[Op
     range_window = weekly.tail(52)
     prange = float(range_window.max() - range_window.min()) if not range_window.empty else 0.0
     if prange <= 0:
-        return None, "[........|........]"
+        return None, "n/a"
 
     osc_pct = (current_histo / prange) * 100
-    bar = _macd_bar(osc_pct)
-    return osc_pct, bar
-
-
-def _macd_bar(osc_pct: Optional[float], span_pct: float = 3.0) -> str:
-    width = 8
-    if osc_pct is None:
-        return "[........|........]"
-    clipped = max(-span_pct, min(span_pct, float(osc_pct)))
-    steps = int(round((abs(clipped) / span_pct) * width))
-    left = ["."] * width
-    right = ["."] * width
-    if clipped >= 0:
-        for i in range(steps):
-            right[i] = ">"
-    else:
-        for i in range(steps):
-            left[width - 1 - i] = "<"
-    return "[" + "".join(left) + "|" + "".join(right) + "]"
+    histo_norm = (histo / prange) * 100
+    spark_values = [float(value) for value in histo_norm.tail(16).tolist()]
+    return osc_pct, _sparkline(spark_values)
 
 
 def _horizon_compact_text(returns: Optional[dict[str, Optional[float]]]) -> str:
@@ -311,6 +304,40 @@ def _horizon_compact_text(returns: Optional[dict[str, Optional[float]]]) -> str:
         else:
             parts.append(f"{horizon} {value:+.1f}%")
     return "  ".join(parts)
+
+
+def _wrap_text(text: str, width: int = 64, indent: str = "  ") -> list[str]:
+    if not text:
+        return [f"{indent}n/a"]
+    words = text.split()
+    lines: list[str] = []
+    current = indent
+    for word in words:
+        candidate = f"{current} {word}" if current.strip() else f"{indent}{word}"
+        if len(candidate) > width and current != indent:
+            lines.append(current)
+            current = f"{indent}{word}"
+        else:
+            current = candidate
+    lines.append(current)
+    return lines
+
+
+def _compact_votes(votes: list[str]) -> str:
+    if not votes:
+        return "n/a"
+    mapping = {
+        "CHEAP:IV_SPREAD": "IV<HV",
+        "EXPENSIVE:IV_SPREAD": "IV>HV",
+        "FAIR:IV_SPREAD": "IV~HV",
+        "CHEAP:IV_PCTL": "Low IV pct",
+        "EXPENSIVE:IV_PCTL": "High IV pct",
+        "FAIR:IV_PCTL": "Mid IV pct",
+        "CHEAP:EDR": "Low EDR",
+        "EXPENSIVE:EDR": "High EDR",
+        "FAIR:EDR": "Mid EDR",
+    }
+    return " | ".join(mapping.get(vote, vote) for vote in votes)
 
 
 def _format_alert_message(
@@ -337,37 +364,52 @@ def _format_alert_message(
     elif direction.lower() == "puts":
         direction_label = "BEARISH"
 
-    votes_text = ", ".join(votes) if votes else "n/a"
-    gauge = _percentile_gauge(iv_percentile)
-    macd_osc_pct, macd_bar = _compute_weekly_macd_oscillator(history)
+    macd_osc_pct, macd_spark = _compute_weekly_macd_oscillator(history)
     macd_text = f"{macd_osc_pct:+.2f}%" if macd_osc_pct is not None else "n/a"
+    votes_text = _compact_votes(votes)
 
     bias_colored = _ansi(bias, _bias_color(bias))
     direction_colored = _ansi(direction_label, _direction_color(direction))
-    macd_color = _direction_color("calls" if (macd_osc_pct or 0) > 0 else "puts" if (macd_osc_pct or 0) < 0 else "neutral")
+    macd_color = _direction_color(
+        "calls" if (macd_osc_pct or 0) > 0 else "puts" if (macd_osc_pct or 0) < 0 else "neutral"
+    )
     macd_colored = _ansi(macd_text, macd_color)
 
     header = f"SCAN HIT {symbol} - {label}"
-    detail_line = (
-        f"IV30 { _format_value(iv30, 2) }  HV30 { _format_value(hv30, 2) }  EDR { _format_value(avg_edr, 2) }"
-    )
-    horizons_line = _horizon_compact_text(horizon_returns)
+    horizons = _horizon_compact_text(horizon_returns)
+    direction_lines = _wrap_text(direction_reason, width=66, indent="    ")
 
     ansi_lines = [
         _ansi(header, 36),
-        f"MISPRICING   {bias_colored}   IV% {_format_value(iv_percentile, 1)} <= {threshold_text} {gauge}",
-        f"VOL SNAP     {detail_line}",
-        f"DIRECTION    {direction_colored}   {direction_reason}",
-        f"MACD 1W/52W  {macd_colored}  {macd_bar}",
-        f"HORIZONS     {horizons_line}",
+        "────────────────────────────────────────────────────────",
+        "",
+        _ansi("MISPRICING", 37),
+        f"  Consensus : {bias_colored}",
+        f"  IV Pctl   : {_format_value(iv_percentile, 1)}% (<= {threshold_text}%)",
+        f"  IV/HV/EDR : {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}",
+        "",
+        _ansi("DIRECTION", 37),
+        f"  Bias      : {direction_colored}",
+        *direction_lines,
+        "",
+        _ansi("MACD 1W (Normalized by 52W Range)", 37),
+        f"  Oscillator: {macd_colored}",
+        f"  Sparkline : {macd_spark}",
+        "",
+        _ansi("HORIZONS", 37),
+        f"  {horizons}",
     ]
 
     lines = [
         "```ansi",
         *ansi_lines,
         "```",
-        f"Reason: {reason}",
-        f"Votes: {votes_text}",
+        "",
+        "Reason",
+        f"- {reason}",
+        "",
+        "Votes",
+        f"- {votes_text}",
     ]
     return "\n".join(lines)
 
