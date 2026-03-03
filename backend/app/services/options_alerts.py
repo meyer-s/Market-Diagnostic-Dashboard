@@ -275,16 +275,21 @@ def _sparkline(values: list[float]) -> str:
     blocks = "▁▂▃▄▅▆▇█"
     if not values:
         return "n/a"
-    lo = min(values)
-    hi = max(values)
-    if hi - lo < 1e-9:
-        return blocks[len(blocks) // 2] * len(values)
+    max_abs = max(abs(value) for value in values)
+    if max_abs < 1e-9:
+        mid = blocks[len(blocks) // 2]
+        return "".join(_ansi(mid, 33, fmt=1) for _ in values)
+
     out: list[str] = []
     for value in values:
-        pct = (value - lo) / (hi - lo)
+        # Zero-centered scaling: 0.0 maps to 50% height.
+        pct = (value + max_abs) / (2 * max_abs)
+        pct = max(0.0, min(1.0, pct))
         idx = int(round(pct * (len(blocks) - 1)))
         idx = max(0, min(len(blocks) - 1, idx))
-        out.append(blocks[idx])
+        bar = blocks[idx]
+        color = 31 if pct < 0.5 else 32 if pct > 0.5 else 33
+        out.append(_ansi(bar, color, fmt=1))
     return "".join(out)
 
 
@@ -507,8 +512,6 @@ def _format_alert_message(
 
     macd_osc_pct, macd_spark = _compute_weekly_macd_oscillator(history)
     macd_text = f"{macd_osc_pct:+.2f}%" if macd_osc_pct is not None else "n/a"
-    votes_text = _compact_votes(votes)
-
     bias_colored = _ansi(bias, _bias_color(bias))
     direction_colored = _ansi(direction_label, _direction_color(direction))
     macd_color = _direction_color(
@@ -545,12 +548,6 @@ def _format_alert_message(
         "```ansi",
         *ansi_lines,
         "```",
-        "",
-        "Reason",
-        f"- {reason}",
-        "",
-        "Votes",
-        f"- {votes_text}",
     ]
     return "\n".join(lines)
 
