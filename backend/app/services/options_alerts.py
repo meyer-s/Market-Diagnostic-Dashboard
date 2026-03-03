@@ -1,6 +1,8 @@
 import os
+import json
 from datetime import datetime, timedelta
 from typing import Optional
+from urllib.parse import quote
 
 import yfinance as yf
 import pandas as pd
@@ -30,19 +32,32 @@ def _get_current_price(stock: yf.Ticker) -> Optional[float]:
     return float(close.iloc[-1])
 
 
-def _send_webhook(message: str) -> tuple[bool, Optional[str], Optional[str]]:
+def _send_webhook(
+    message: str,
+    image_url: Optional[str] = None,
+    embed_title: Optional[str] = None,
+) -> tuple[bool, Optional[str], Optional[str]]:
     webhook_url = os.getenv("OPTIONS_ALERT_WEBHOOK_URL")
     discord_url = os.getenv("OPTIONS_ALERT_DISCORD_WEBHOOK")
 
     if not webhook_url and not discord_url:
         return False, None, "No webhook configured"
 
-    payload = {"content": message}
     try:
         if discord_url:
+            payload: dict = {"content": message}
+            if image_url:
+                payload["embeds"] = [
+                    {
+                        "title": embed_title or "MACD Snapshot",
+                        "image": {"url": image_url},
+                        "color": 0x2F80ED,
+                    }
+                ]
             response = requests.post(discord_url, json=payload, timeout=10)
             response.raise_for_status()
             return True, "discord", None
+        payload = {"content": message}
         response = requests.post(webhook_url, json=payload, timeout=10)
         response.raise_for_status()
         return True, "webhook", None
@@ -261,36 +276,92 @@ def _sparkline(values: list[float]) -> str:
     return "".join(out)
 
 
-def _compute_weekly_macd_oscillator(history: Optional[pd.DataFrame]) -> tuple[Optional[float], str]:
+def _compute_weekly_macd_series_norm(
+    history: Optional[pd.DataFrame],
+    points: int = 24,
+) -> list[float]:
     if history is None or history.empty:
-        return None, "n/a"
+        return []
     close = history.get("Close")
     if close is None:
-        return None, "n/a"
+        return []
     close = close.dropna()
     if close.empty:
-        return None, "n/a"
+        return []
 
     weekly = close.resample("W-FRI").last().dropna()
     if len(weekly) < 30:
-        return None, "n/a"
+        return []
 
     ema_fast = weekly.ewm(span=12, adjust=False).mean()
     ema_slow = weekly.ewm(span=26, adjust=False).mean()
     macd = ema_fast - ema_slow
     signal = macd.ewm(span=9, adjust=False).mean()
     histo = macd - signal
-    current_histo = float(histo.iloc[-1])
 
     range_window = weekly.tail(52)
     prange = float(range_window.max() - range_window.min()) if not range_window.empty else 0.0
     if prange <= 0:
-        return None, "n/a"
+        return []
 
-    osc_pct = (current_histo / prange) * 100
     histo_norm = (histo / prange) * 100
-    spark_values = [float(value) for value in histo_norm.tail(16).tolist()]
-    return osc_pct, _sparkline(spark_values)
+    values = [float(value) for value in histo_norm.tail(points).tolist()]
+    return values
+
+
+def _compute_weekly_macd_oscillator(history: Optional[pd.DataFrame]) -> tuple[Optional[float], str]:
+    series = _compute_weekly_macd_series_norm(history, points=24)
+    if not series:
+        return None, "n/a"
+    latest = float(series[-1])
+    spark_values = series[-16:] if len(series) >= 16 else series
+    return latest, _sparkline(spark_values)
+
+
+def _build_macd_chart_image_url(history: Optional[pd.DataFrame], symbol: str) -> Optional[str]:
+    series = _compute_weekly_macd_series_norm(history, points=24)
+    if len(series) < 8:
+        return None
+
+    last = series[-1]
+    line_color = "#22c55e" if last > 0 else "#ef4444" if last < 0 else "#f59e0b"
+    labels = [str(i - len(series) + 1) for i in range(len(series))]
+    chart_config = {
+        "type": "line",
+        "data": {
+            "labels": labels,
+            "datasets": [
+                {
+                    "label": "MACD 1W / 52W range (%)",
+                    "data": series,
+                    "borderColor": line_color,
+                    "borderWidth": 2,
+                    "pointRadius": 0,
+                    "tension": 0.25,
+                }
+            ],
+        },
+        "options": {
+            "plugins": {
+                "legend": {"display": False},
+                "title": {"display": True, "text": f"{symbol} MACD (1W normalized by 52W range)"},
+            },
+            "scales": {
+                "x": {"display": False},
+                "y": {
+                    "grid": {"color": "rgba(180,180,180,0.15)"},
+                    "ticks": {"color": "#D1D5DB"},
+                    "title": {"display": True, "text": "% of 52W range", "color": "#D1D5DB"},
+                },
+            },
+        },
+    }
+    encoded = quote(json.dumps(chart_config, separators=(",", ":")), safe="")
+    return (
+        "https://quickchart.io/chart"
+        "?width=760&height=280&devicePixelRatio=2&backgroundColor=%23111417"
+        f"&c={encoded}"
+    )
 
 
 def _horizon_compact_text(returns: Optional[dict[str, Optional[float]]]) -> str:
@@ -484,8 +555,13 @@ def run_options_alert_scan() -> dict:
                     horizon_returns,
                     hist,
                 )
+                chart_url = _build_macd_chart_image_url(hist, symbol)
 
-                delivered, channel, error = _send_webhook(message)
+                delivered, channel, error = _send_webhook(
+                    message,
+                    image_url=chart_url,
+                    embed_title=f"{symbol} MACD Snapshot",
+                )
                 event = OptionAlertEvent(
                     symbol=symbol,
                     iv30=iv30,
