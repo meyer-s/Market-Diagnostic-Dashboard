@@ -55,11 +55,23 @@ def _send_webhook(
                     }
                 ]
             response = requests.post(discord_url, json=payload, timeout=10)
-            response.raise_for_status()
+            if response.status_code >= 400 and image_url:
+                # Discord may reject oversized/invalid embed payloads.
+                # Retry once without image so the alert text still posts.
+                fallback = requests.post(discord_url, json={"content": message}, timeout=10)
+                if fallback.status_code < 400:
+                    return True, "discord", None
+                detail = f"status={fallback.status_code} body={fallback.text[:240]}"
+                return False, None, detail
+            if response.status_code >= 400:
+                detail = f"status={response.status_code} body={response.text[:240]}"
+                return False, None, detail
             return True, "discord", None
         payload = {"content": message}
         response = requests.post(webhook_url, json=payload, timeout=10)
-        response.raise_for_status()
+        if response.status_code >= 400:
+            detail = f"status={response.status_code} body={response.text[:240]}"
+            return False, None, detail
         return True, "webhook", None
     except Exception as exc:
         return False, None, str(exc)
