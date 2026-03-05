@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -114,7 +114,9 @@ interface FundamentalsPayload {
 }
 
 export default function StockAnalysis() {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { symbol: symbolFromPath } = useParams<{ symbol?: string }>();
   const autoLoadedSymbolRef = useRef<string | null>(null);
   const [ticker, setTicker] = useState("");
   const [searchTicker, setSearchTicker] = useState("");
@@ -211,9 +213,26 @@ export default function StockAnalysis() {
   };
 
   useEffect(() => {
+    const symbolFromHash = (() => {
+      const rawHash = (location.hash || "").replace(/^#/, "");
+      if (!rawHash) return "";
+
+      const hashQuery = rawHash.includes("?")
+        ? rawHash.split("?").slice(1).join("?")
+        : rawHash.includes("=")
+          ? rawHash
+          : "";
+      if (!hashQuery) return "";
+
+      const hashParams = new URLSearchParams(hashQuery);
+      return hashParams.get("symbol") || hashParams.get("ticker") || "";
+    })();
+
     const symbolFromQuery = (
       searchParams.get("symbol") ||
       searchParams.get("ticker") ||
+      symbolFromPath ||
+      symbolFromHash ||
       ""
     )
       .trim()
@@ -224,7 +243,7 @@ export default function StockAnalysis() {
 
     autoLoadedSymbolRef.current = symbolFromQuery;
     void runSearch(symbolFromQuery);
-  }, [searchParams, runSearch]);
+  }, [location.hash, searchParams, symbolFromPath, runSearch]);
 
   // Prepare data for line chart
   const getChartData = () => {

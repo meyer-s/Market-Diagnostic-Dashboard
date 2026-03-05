@@ -64,6 +64,7 @@ function AppWithAnalytics() {
           <Route path="/system-breakdown" element={<SystemBreakdown />} />
           <Route path="/market-map" element={<MarketMap />} />
           <Route path="/sector-projections" element={<SectorProjections />} />
+          <Route path="/stock-analysis/:symbol" element={<StockAnalysis />} />
           <Route path="/stock-analysis" element={<StockAnalysis />} />
           <Route path="/secret/options" element={<SecretOptions />} />
           <Route path="/tools/recap" element={<RecapIndex />} />

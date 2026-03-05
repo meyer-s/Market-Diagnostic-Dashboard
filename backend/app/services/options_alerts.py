@@ -568,7 +568,7 @@ def _build_stock_analyzer_url(symbol: str) -> str:
     ).strip()
     base = base.rstrip("/")
     normalized = quote((symbol or "").strip().upper(), safe="")
-    return f"{base}/stock-analysis?symbol={normalized}"
+    return f"{base}/stock-analysis/{normalized}?symbol={normalized}"
 
 
 def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float], bias: str) -> bool:
