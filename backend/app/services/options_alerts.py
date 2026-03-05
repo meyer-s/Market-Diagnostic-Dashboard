@@ -86,7 +86,11 @@ def _send_webhook(
 
             last_response = None
             for candidate in variants:
-                response = requests.post(discord_url, json=candidate, timeout=10)
+                target_url = discord_url
+                if candidate.get("components"):
+                    sep = "&" if "?" in discord_url else "?"
+                    target_url = f"{discord_url}{sep}with_components=true"
+                response = requests.post(target_url, json=candidate, timeout=10)
                 last_response = response
                 if response.status_code < 400:
                     return True, "discord", None
