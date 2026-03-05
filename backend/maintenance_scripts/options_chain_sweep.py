@@ -8,7 +8,6 @@ import yfinance as yf
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.services.options_alerts import (
     _build_alert_reason,
-    _build_macd_chart_image_url,
     _build_stock_analyzer_url,
     _compute_option_bias,
     _compute_horizon_bias,
@@ -117,10 +116,8 @@ def _scan_tickers(
                 history,
                 analyzer_url=analyzer_url,
             )
-            chart_url = _build_macd_chart_image_url(history, symbol)
             delivered, channel, error = _send_webhook(
                 message,
-                image_url=chart_url,
                 embed_title=f"{symbol} MACD Snapshot",
                 embed_url=analyzer_url,
                 button_label=symbol,

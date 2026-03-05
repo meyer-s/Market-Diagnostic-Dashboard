@@ -76,8 +76,12 @@ def _send_webhook(
                     }
                 ]
 
-            # Try full payload first, then gracefully degrade if Discord rejects components/embeds.
+            # Try full payload first, then gracefully degrade if Discord rejects embeds/components.
             variants: list[dict] = [payload]
+            if payload.get("embeds"):
+                no_embeds = dict(payload)
+                no_embeds.pop("embeds", None)
+                variants.append(no_embeds)
             if payload.get("components"):
                 no_components = dict(payload)
                 no_components.pop("components", None)
@@ -666,11 +670,8 @@ def run_options_alert_scan() -> dict:
                     hist,
                     analyzer_url=analyzer_url,
                 )
-                chart_url = _build_macd_chart_image_url(hist, symbol)
-
                 delivered, channel, error = _send_webhook(
                     message,
-                    image_url=chart_url,
                     embed_title=f"{symbol} MACD Snapshot",
                     embed_url=analyzer_url,
                     button_label=symbol,
