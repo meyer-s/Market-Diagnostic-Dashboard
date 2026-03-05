@@ -59,19 +59,42 @@ def _send_webhook(
                 payload["embeds"] = [
                     embed
                 ]
-            response = requests.post(discord_url, json=payload, timeout=10)
-            if response.status_code >= 400 and image_url:
-                # Discord may reject oversized/invalid embed payloads.
-                # Retry once without image so the alert text still posts.
-                fallback = requests.post(discord_url, json={"content": message}, timeout=10)
-                if fallback.status_code < 400:
+            if embed_url:
+                payload["components"] = [
+                    {
+                        "type": 1,
+                        "components": [
+                            {
+                                "type": 2,
+                                "style": 5,
+                                "label": "Open in Stock Analyzer",
+                                "url": embed_url,
+                            }
+                        ],
+                    }
+                ]
+
+            # Try full payload first, then gracefully degrade if Discord rejects components/embeds.
+            variants: list[dict] = [payload]
+            if payload.get("components"):
+                no_components = dict(payload)
+                no_components.pop("components", None)
+                variants.append(no_components)
+            variants.append({"content": message})
+
+            last_response = None
+            for candidate in variants:
+                response = requests.post(discord_url, json=candidate, timeout=10)
+                last_response = response
+                if response.status_code < 400:
                     return True, "discord", None
-                detail = f"status={fallback.status_code} body={fallback.text[:240]}"
-                return False, None, detail
-            if response.status_code >= 400:
-                detail = f"status={response.status_code} body={response.text[:240]}"
-                return False, None, detail
-            return True, "discord", None
+
+            detail = (
+                f"status={last_response.status_code} body={last_response.text[:240]}"
+                if last_response is not None
+                else "unknown discord webhook failure"
+            )
+            return False, None, detail
         payload = {"content": message}
         response = requests.post(webhook_url, json=payload, timeout=10)
         if response.status_code >= 400:
@@ -525,7 +548,7 @@ def _format_alert_message(
     )
     macd_colored = _ansi(macd_text, macd_color)
 
-    headline = f"SCAN HIT {symbol} - {label}"
+    headline = f"{symbol} - {label}"
     horizons = _horizon_compact_text(horizon_returns)
     direction_lines = _wrap_text(direction_reason, width=66, indent="    ")
 
