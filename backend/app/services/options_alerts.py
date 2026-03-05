@@ -37,6 +37,7 @@ def _send_webhook(
     image_url: Optional[str] = None,
     embed_title: Optional[str] = None,
     embed_url: Optional[str] = None,
+    button_label: Optional[str] = None,
 ) -> tuple[bool, Optional[str], Optional[str]]:
     webhook_url = os.getenv("OPTIONS_ALERT_WEBHOOK_URL")
     discord_url = os.getenv("OPTIONS_ALERT_DISCORD_WEBHOOK")
@@ -60,6 +61,7 @@ def _send_webhook(
                     embed
                 ]
             if embed_url:
+                label = (button_label or "Open in Stock Analyzer").strip()[:80] or "Open in Stock Analyzer"
                 payload["components"] = [
                     {
                         "type": 1,
@@ -67,7 +69,7 @@ def _send_webhook(
                             {
                                 "type": 2,
                                 "style": 5,
-                                "label": "Open in Stock Analyzer",
+                                "label": label,
                                 "url": embed_url,
                             }
                         ],
@@ -667,6 +669,7 @@ def run_options_alert_scan() -> dict:
                     image_url=chart_url,
                     embed_title=f"{symbol} MACD Snapshot",
                     embed_url=analyzer_url,
+                    button_label=symbol,
                 )
                 event = OptionAlertEvent(
                     symbol=symbol,

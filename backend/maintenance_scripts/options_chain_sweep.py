@@ -123,6 +123,7 @@ def _scan_tickers(
                 image_url=chart_url,
                 embed_title=f"{symbol} MACD Snapshot",
                 embed_url=analyzer_url,
+                button_label=symbol,
             )
             if not delivered:
                 print(
