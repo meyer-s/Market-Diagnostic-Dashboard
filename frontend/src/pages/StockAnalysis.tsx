@@ -13,7 +13,8 @@
  * - Comparison against SPY benchmark
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -113,6 +114,8 @@ interface FundamentalsPayload {
 }
 
 export default function StockAnalysis() {
+  const [searchParams] = useSearchParams();
+  const autoLoadedSymbolRef = useRef<string | null>(null);
   const [ticker, setTicker] = useState("");
   const [searchTicker, setSearchTicker] = useState("");
   const [projections, setProjections] = useState<Record<string, StockProjection>>({});
@@ -134,11 +137,11 @@ export default function StockAnalysis() {
   const [dataAsOf, setDataAsOf] = useState<string | null>(null);
   const [showSummaryDebug, setShowSummaryDebug] = useState(false);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ticker.trim()) return;
+  const runSearch = useCallback(async (rawTicker: string) => {
+    const normalizedTicker = rawTicker.trim().toUpperCase();
+    if (!normalizedTicker) return;
 
-    const normalizedTicker = ticker.toUpperCase();
+    setTicker(normalizedTicker);
     setSearchTicker(normalizedTicker);
     setLoading(true);
     setError(null);
@@ -200,7 +203,28 @@ export default function StockAnalysis() {
     }
 
     setLoading(false);
+  }, []);
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runSearch(ticker);
   };
+
+  useEffect(() => {
+    const symbolFromQuery = (
+      searchParams.get("symbol") ||
+      searchParams.get("ticker") ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+
+    if (!symbolFromQuery) return;
+    if (autoLoadedSymbolRef.current === symbolFromQuery) return;
+
+    autoLoadedSymbolRef.current = symbolFromQuery;
+    void runSearch(symbolFromQuery);
+  }, [searchParams, runSearch]);
 
   // Prepare data for line chart
   const getChartData = () => {
