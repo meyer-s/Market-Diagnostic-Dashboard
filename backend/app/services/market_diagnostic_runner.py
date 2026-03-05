@@ -16,6 +16,7 @@ from app.schemas.market_diagnostic_payload import (
     MarketDiagnosticPublishPayload,
     MarketDiagnosticRunResult,
 )
+from app.services.market_diagnostic_publisher import publish_market_diagnostic_for_date
 from app.services.market_diagnostic_validation import validate_slug
 from app.services.update_posts import create_update_post_if_absent
 from app.utils.db_helpers import get_db_session
@@ -601,6 +602,68 @@ def run_market_diagnostic(
                 sort_keys=True,
             ),
         )
+        if not dry_run:
+            try:
+                fallback_dt = datetime.combine(run_date, datetime.min.time(), tzinfo=timezone.utc)
+                fallback = publish_market_diagnostic_for_date(run_dt=fallback_dt)
+                fallback_action: Literal["posted", "skipped"] = (
+                    "posted" if fallback.source == "post" else "skipped"
+                )
+                logger.warning(
+                    "market_diagnostic_run %s",
+                    json.dumps(
+                        {
+                            "timestamp_utc": _now_utc_iso(),
+                            "request_id": request_id,
+                            "run_date_utc": run_date_utc,
+                            "slug": fallback.slug,
+                            "status": fallback.status,
+                            "action": fallback_action,
+                            "id": fallback.response_id,
+                            "mode": mode,
+                            "dry_run": dry_run,
+                            "duration_ms": int((time.perf_counter() - started) * 1000),
+                            "validation": "fallback_posted",
+                            "generation_mode": "fallback_template",
+                            "primary_error": str(exc)[:500],
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                )
+                return MarketDiagnosticRunResult(
+                    ok=True,
+                    slug=fallback.slug,
+                    action=fallback_action,
+                    id=fallback.response_id,
+                    error=f"Primary generation failed; used fallback template. {str(exc)[:220]}",
+                )
+            except Exception as fallback_exc:
+                logger.error(
+                    "market_diagnostic_run_fallback_failed %s",
+                    json.dumps(
+                        {
+                            "timestamp_utc": _now_utc_iso(),
+                            "request_id": request_id,
+                            "run_date_utc": run_date_utc,
+                            "slug": slug,
+                            "mode": mode,
+                            "duration_ms": int((time.perf_counter() - started) * 1000),
+                            "primary_error": str(exc)[:500],
+                            "fallback_error": str(fallback_exc)[:500],
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                )
+                return MarketDiagnosticRunResult(
+                    ok=False,
+                    slug=slug,
+                    action="skipped",
+                    id=None,
+                    error=f"Primary + fallback publish failed. primary={str(exc)[:220]} fallback={str(fallback_exc)[:220]}",
+                )
+
         return MarketDiagnosticRunResult(ok=False, slug=slug, action="skipped", id=None, error=str(exc))
 
     if dry_run:
