@@ -525,12 +525,12 @@ def _format_alert_message(
     )
     macd_colored = _ansi(macd_text, macd_color)
 
-    linked_ticker = f"[__{symbol}__]({analyzer_url})" if analyzer_url else symbol
-    headline = f"SCAN HIT {linked_ticker} - {label}"
+    headline = f"SCAN HIT {symbol} - {label}"
     horizons = _horizon_compact_text(horizon_returns)
     direction_lines = _wrap_text(direction_reason, width=66, indent="    ")
 
     ansi_lines = [
+        _ansi(headline, 36),
         "────────────────────────────────────────────────────────",
         "",
         _ansi("MISPRICING", 37),
@@ -550,13 +550,7 @@ def _format_alert_message(
         f"  {horizons}",
     ]
 
-    lines = [
-        headline,
-        "",
-        "```ansi",
-        *ansi_lines,
-        "```",
-    ]
+    lines = ["```ansi", *ansi_lines, "```"]
     return "\n".join(lines)
 
 
