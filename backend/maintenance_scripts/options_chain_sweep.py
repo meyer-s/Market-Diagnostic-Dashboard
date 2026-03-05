@@ -9,6 +9,7 @@ from app.api.stock_projection import compute_historical_volatility, compute_opti
 from app.services.options_alerts import (
     _build_alert_reason,
     _build_macd_chart_image_url,
+    _build_stock_analyzer_url,
     _compute_option_bias,
     _compute_horizon_bias,
     _direction_hint,
@@ -97,6 +98,7 @@ def _scan_tickers(
             reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold, bias, votes)
             direction, direction_reason = _direction_hint(history)
             horizon_labels, horizon_returns = _compute_horizon_bias(history)
+            analyzer_url = _build_stock_analyzer_url(symbol)
             message = _format_alert_message(
                 label,
                 symbol,
@@ -113,12 +115,14 @@ def _scan_tickers(
                 horizon_labels,
                 horizon_returns,
                 history,
+                analyzer_url=analyzer_url,
             )
             chart_url = _build_macd_chart_image_url(history, symbol)
             delivered, channel, error = _send_webhook(
                 message,
                 image_url=chart_url,
                 embed_title=f"{symbol} MACD Snapshot",
+                embed_url=analyzer_url,
             )
             if not delivered:
                 print(

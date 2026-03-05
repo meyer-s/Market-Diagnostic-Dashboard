@@ -36,6 +36,7 @@ def _send_webhook(
     message: str,
     image_url: Optional[str] = None,
     embed_title: Optional[str] = None,
+    embed_url: Optional[str] = None,
 ) -> tuple[bool, Optional[str], Optional[str]]:
     webhook_url = os.getenv("OPTIONS_ALERT_WEBHOOK_URL")
     discord_url = os.getenv("OPTIONS_ALERT_DISCORD_WEBHOOK")
@@ -47,12 +48,16 @@ def _send_webhook(
         if discord_url:
             payload: dict = {"content": message}
             if image_url:
+                embed = {
+                    "title": embed_title or "MACD Snapshot",
+                    "image": {"url": image_url},
+                    "color": 0x2F80ED,
+                }
+                if embed_url:
+                    embed["url"] = embed_url
+                    embed["description"] = f"[Open in Stock Analyzer]({embed_url})"
                 payload["embeds"] = [
-                    {
-                        "title": embed_title or "MACD Snapshot",
-                        "image": {"url": image_url},
-                        "color": 0x2F80ED,
-                    }
+                    embed
                 ]
             response = requests.post(discord_url, json=payload, timeout=10)
             if response.status_code >= 400 and image_url:
@@ -502,6 +507,7 @@ def _format_alert_message(
     horizon_labels: Optional[dict[str, str]] = None,
     horizon_returns: Optional[dict[str, Optional[float]]] = None,
     history: Optional[pd.DataFrame] = None,
+    analyzer_url: Optional[str] = None,
 ) -> str:
     threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
     direction_label = "NEUTRAL"
@@ -549,7 +555,25 @@ def _format_alert_message(
         *ansi_lines,
         "```",
     ]
+    if analyzer_url:
+        lines.extend(
+            [
+                "",
+                f"Analyzer: {analyzer_url}",
+            ]
+        )
     return "\n".join(lines)
+
+
+def _build_stock_analyzer_url(symbol: str) -> str:
+    base = (
+        os.getenv("STOCK_ANALYZER_BASE_URL")
+        or os.getenv("FRONTEND_BASE_URL")
+        or "https://marketdiagnostictool.com"
+    ).strip()
+    base = base.rstrip("/")
+    normalized = quote((symbol or "").strip().upper(), safe="")
+    return f"{base}/stock-analysis?symbol={normalized}"
 
 
 def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float], bias: str) -> bool:
@@ -604,6 +628,7 @@ def run_options_alert_scan() -> dict:
                     cooldown = timedelta(minutes=watch.cooldown_minutes or 0)
                     if datetime.utcnow() - watch.last_triggered_at < cooldown:
                         continue
+                analyzer_url = _build_stock_analyzer_url(symbol)
 
                 message = _format_alert_message(
                     "Watchlist",
@@ -621,6 +646,7 @@ def run_options_alert_scan() -> dict:
                     horizon_labels,
                     horizon_returns,
                     hist,
+                    analyzer_url=analyzer_url,
                 )
                 chart_url = _build_macd_chart_image_url(hist, symbol)
 
@@ -628,6 +654,7 @@ def run_options_alert_scan() -> dict:
                     message,
                     image_url=chart_url,
                     embed_title=f"{symbol} MACD Snapshot",
+                    embed_url=analyzer_url,
                 )
                 event = OptionAlertEvent(
                     symbol=symbol,
