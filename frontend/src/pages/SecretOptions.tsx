@@ -31,6 +31,11 @@ interface OptionPosition {
   shares_equivalent: number | null;
   dte_at_entry: number | null;
   underlying_reference: number | null;
+  source_event_id: number | null;
+  source_triggered_at: string | null;
+  source_match_method: string | null;
+  source_match_confidence: number | null;
+  source_match_notes: string | null;
 }
 
 interface PositionMetrics {
@@ -84,6 +89,11 @@ interface ClosedPositionRow {
   underlying_at_exit: number | null;
   account: string | null;
   notes: string | null;
+  source_event_id: number | null;
+  source_triggered_at: string | null;
+  source_match_method: string | null;
+  source_match_confidence: number | null;
+  source_match_notes: string | null;
 }
 
 interface RawPositionPayload {
@@ -758,9 +768,83 @@ export default function SecretOptions() {
     };
   }, [sortedClosedRows]);
 
+  const openAttribution = useMemo(() => {
+    const linked = positions.filter(
+      (item) => item.position.source_event_id !== null && item.position.source_event_id !== undefined
+    );
+    const avgConfidence = linked.length
+      ? linked.reduce((sum, item) => sum + (item.position.source_match_confidence ?? 0), 0) / linked.length
+      : null;
+    return {
+      linked: linked.length,
+      total: positions.length,
+      coverage: positions.length ? (linked.length / positions.length) * 100 : 0,
+      avgConfidence,
+    };
+  }, [positions]);
+
+  const closedAttribution = useMemo(() => {
+    const linked = sortedClosedRows.filter(
+      (row) => row.source_event_id !== null && row.source_event_id !== undefined
+    );
+    const linkedWins = linked.filter((row) => row.dollar_pnl > 0).length;
+    return {
+      linked: linked.length,
+      linkedWinRate: linked.length ? (linkedWins / linked.length) * 100 : 0,
+    };
+  }, [sortedClosedRows]);
+
   const sortArrow = (active: boolean, direction: SortDirection) => {
     if (!active) return "↕";
     return direction === "asc" ? "↑" : "↓";
+  };
+
+  const buildAttributionTooltip = (
+    sourceEventId: number | null | undefined,
+    sourceTriggeredAt: string | null | undefined,
+    sourceMatchMethod: string | null | undefined,
+    sourceMatchConfidence: number | null | undefined,
+    sourceMatchNotes: string | null | undefined
+  ): string => {
+    if (!sourceEventId) {
+      return "No linked sweep signal for this trade.";
+    }
+    const lines = [
+      `Linked sweep event #${sourceEventId}`,
+      sourceTriggeredAt ? `Triggered: ${sourceTriggeredAt}` : "Triggered: n/a",
+      sourceMatchMethod ? `Method: ${sourceMatchMethod}` : "Method: n/a",
+      sourceMatchConfidence !== null && sourceMatchConfidence !== undefined
+        ? `Confidence: ${Math.round(sourceMatchConfidence * 100)}%`
+        : "Confidence: n/a",
+    ];
+    if (sourceMatchNotes) {
+      lines.push(`Notes: ${sourceMatchNotes}`);
+    }
+    return lines.join("\n");
+  };
+
+  const attributionHeat = (
+    sourceEventId: number | null | undefined,
+    confidence: number | null | undefined
+  ): { marker: string; rowTint: string; quality: string } => {
+    if (!sourceEventId) {
+      return {
+        marker: "bg-gray-600",
+        rowTint: "",
+        quality: "unlinked",
+      };
+    }
+    const c = confidence ?? 0;
+    if (c >= 0.9) {
+      return { marker: "bg-emerald-400", rowTint: "bg-emerald-950/20", quality: "high" };
+    }
+    if (c >= 0.75) {
+      return { marker: "bg-lime-400", rowTint: "bg-lime-950/15", quality: "good" };
+    }
+    if (c >= 0.6) {
+      return { marker: "bg-amber-400", rowTint: "bg-amber-950/10", quality: "medium" };
+    }
+    return { marker: "bg-rose-400", rowTint: "bg-rose-950/10", quality: "low" };
   };
 
   return (
@@ -779,7 +863,7 @@ export default function SecretOptions() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
           <div className="text-xs text-gray-500">Total Cost</div>
           <div className="text-lg font-semibold">{formatCurrency(totals.totalCost)}</div>
@@ -800,6 +884,18 @@ export default function SecretOptions() {
         <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
           <div className="text-xs text-gray-500">Active Positions</div>
           <div className="text-lg font-semibold">{totals.count}</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+          <div className="text-xs text-gray-500">Sweep Linked</div>
+          <div className="text-lg font-semibold">
+            {openAttribution.linked}/{openAttribution.total}
+          </div>
+          <div className="text-xs text-gray-400">
+            {formatPercent(openAttribution.coverage, 1)} coverage
+            {openAttribution.avgConfidence !== null
+              ? ` • ${formatPercent(openAttribution.avgConfidence * 100, 0)} avg conf`
+              : ""}
+          </div>
         </div>
       </div>
 
@@ -1004,14 +1100,33 @@ export default function SecretOptions() {
               <tbody className="divide-y divide-gray-800">
                 {sortedPositions.map((item) => {
                   const { position, metrics } = item;
+                  const linked = position.source_event_id !== null && position.source_event_id !== undefined;
+                  const heat = attributionHeat(position.source_event_id, position.source_match_confidence);
+                  const tooltip = buildAttributionTooltip(
+                    position.source_event_id,
+                    position.source_triggered_at,
+                    position.source_match_method,
+                    position.source_match_confidence,
+                    position.source_match_notes
+                  );
                   const rowActive = position.id === selectedId;
                   return (
                     <tr
                       key={position.id}
-                      className={`cursor-pointer ${rowActive ? "bg-gray-900/60" : "hover:bg-gray-900/40"}`}
+                      className={`cursor-pointer ${
+                        rowActive ? "bg-gray-900/60" : `${heat.rowTint} hover:bg-gray-900/40`
+                      }`}
                       onClick={() => setSelectedId(position.id)}
                     >
-                      <td className="px-3 py-2 font-semibold text-gray-100">{position.symbol}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            title={`${tooltip}\nQuality: ${heat.quality}`}
+                            className={`inline-block h-5 w-1.5 rounded-full ${heat.marker}`}
+                          />
+                          <span className="font-semibold text-gray-100">{position.symbol}</span>
+                        </div>
+                      </td>
                       <td className="px-3 py-2">${formatNumber(position.strike, 2)}</td>
                       <td className="px-3 py-2">{formatDate(position.expiration)}</td>
                       <td className="px-3 py-2 uppercase">{position.option_type}</td>
@@ -1846,9 +1961,26 @@ export default function SecretOptions() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
-                    {sortedClosedRows.map((pos) => (
-                      <tr key={pos.id} className="hover:bg-gray-900/40">
-                        <td className="px-3 py-2 font-semibold">{pos.symbol}</td>
+                    {sortedClosedRows.map((pos) => {
+                      const heat = attributionHeat(pos.source_event_id, pos.source_match_confidence);
+                      const tooltip = buildAttributionTooltip(
+                        pos.source_event_id,
+                        pos.source_triggered_at,
+                        pos.source_match_method,
+                        pos.source_match_confidence,
+                        pos.source_match_notes
+                      );
+                      return (
+                      <tr key={pos.id} className={`${heat.rowTint} hover:bg-gray-900/40`}>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              title={`${tooltip}\nQuality: ${heat.quality}`}
+                              className={`inline-block h-5 w-1.5 rounded-full ${heat.marker}`}
+                            />
+                            <span className="font-semibold">{pos.symbol}</span>
+                          </div>
+                        </td>
                         <td className="px-3 py-2">${formatNumber(pos.strike, 2)}</td>
                         <td className="px-3 py-2 uppercase">{pos.option_type}</td>
                         <td className="px-3 py-2">${formatNumber(pos.fill_price, 2)}</td>
@@ -1870,7 +2002,7 @@ export default function SecretOptions() {
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-400">{pos.notes || "—"}</td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
