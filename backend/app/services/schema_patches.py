@@ -17,14 +17,14 @@ def ensure_signal_attribution_columns(engine: Engine) -> None:
     patches: Dict[str, List[Tuple[str, str]]] = {
         "option_position": [
             ("source_event_id", "INTEGER"),
-            ("source_triggered_at", "DATETIME"),
+            ("source_triggered_at", "TIMESTAMP"),
             ("source_match_method", "VARCHAR"),
             ("source_match_confidence", "FLOAT"),
             ("source_match_notes", "VARCHAR"),
         ],
         "closed_position": [
             ("source_event_id", "INTEGER"),
-            ("source_triggered_at", "DATETIME"),
+            ("source_triggered_at", "TIMESTAMP"),
             ("source_match_method", "VARCHAR"),
             ("source_match_confidence", "FLOAT"),
             ("source_match_notes", "VARCHAR"),
