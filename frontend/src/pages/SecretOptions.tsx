@@ -8,7 +8,7 @@ import {
   Tooltip,
   ReferenceArea,
   ReferenceLine,
-  Label,
+  usePlotArea,
 } from "recharts";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -305,64 +305,77 @@ const getProjectionColor = (strength: number) => {
   return "#64748b";
 };
 
-const buildProjectionBezierLabel = (
-  technicalStrength: number | null | undefined,
-  fundamentalStrength: number | null | undefined
-) => {
-  return (props: any) => {
-    const viewBox = props?.viewBox;
-    if (!viewBox) return null;
-    const spotX = Number(viewBox.x);
-    const top = Number(viewBox.y);
-    const width = Number(viewBox.width);
-    const height = Number(viewBox.height);
-    if (!Number.isFinite(spotX) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) {
-      return null;
-    }
-    const left = Number(viewBox.x);
-    const right = left + width;
-    const clampedSpotX = Math.max(left + 4, Math.min(right - 4, spotX));
+const ProjectionBezierOverlay = ({
+  selectedSpotPrice,
+  chartPriceDomain,
+  technicalStrength,
+  fundamentalStrength,
+}: {
+  selectedSpotPrice: number | null;
+  chartPriceDomain: { min: number; max: number } | null;
+  technicalStrength: number | null | undefined;
+  fundamentalStrength: number | null | undefined;
+}) => {
+  const plotArea = usePlotArea();
+  if (!plotArea || selectedSpotPrice === null || !chartPriceDomain) return null;
 
-    const makeHalfPath = (strength: number, half: "top" | "bottom") => {
-      const s = clampUnit(strength);
-      const dir = s >= 0 ? 1 : -1;
-      const mag = Math.abs(s);
-      const span = width * (0.08 + mag * 0.34);
-      const endX = Math.max(left + 4, Math.min(right - 4, clampedSpotX + dir * span));
-      const yJoin = top + height * 0.52;
-      const yEdge = half === "top" ? top + 6 : top + height - 6;
-      const c1x = clampedSpotX + dir * (span * 0.14);
-      const c2x = clampedSpotX + dir * (span * 0.72);
-      const c1y = half === "top" ? yJoin - height * 0.18 : yJoin + height * 0.18;
-      const c2y = half === "top" ? yEdge + height * 0.07 : yEdge - height * 0.07;
-      return {
-        path: `M ${clampedSpotX} ${yJoin}
-          C ${c1x} ${c1y} ${c2x} ${c2y} ${endX} ${yEdge}
-          L ${clampedSpotX} ${yEdge}
-          Z`,
-        labelX: clampedSpotX + dir * Math.max(10, span * 0.58),
-        labelY: half === "top" ? top + 14 : top + height - 14,
-      };
+  const left = Number(plotArea.x);
+  const top = Number(plotArea.y);
+  const width = Number(plotArea.width);
+  const height = Number(plotArea.height);
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  const domainMin = Number(chartPriceDomain.min);
+  const domainMax = Number(chartPriceDomain.max);
+  if (!Number.isFinite(domainMin) || !Number.isFinite(domainMax) || domainMax <= domainMin) return null;
+
+  const ratio = (selectedSpotPrice - domainMin) / (domainMax - domainMin);
+  const clampedRatio = Math.max(0, Math.min(1, ratio));
+  const right = left + width;
+  const spotX = left + clampedRatio * width;
+  const clampedSpotX = Math.max(left + 4, Math.min(right - 4, spotX));
+
+  const makeHalfPath = (strength: number, half: "top" | "bottom") => {
+    const s = clampUnit(strength);
+    const dir = s >= 0 ? 1 : -1;
+    const mag = Math.abs(s);
+    const span = width * (0.14 + mag * 0.34);
+    const endX = Math.max(left + 4, Math.min(right - 4, clampedSpotX + dir * span));
+    const yJoin = top + height * 0.52;
+    const yEdge = half === "top" ? top + 6 : top + height - 6;
+    const c1x = clampedSpotX + dir * (span * 0.14);
+    const c2x = clampedSpotX + dir * (span * 0.72);
+    const c1y = half === "top" ? yJoin - height * 0.18 : yJoin + height * 0.18;
+    const c2y = half === "top" ? yEdge + height * 0.07 : yEdge - height * 0.07;
+    return {
+      path: `M ${clampedSpotX} ${yJoin}
+        C ${c1x} ${c1y} ${c2x} ${c2y} ${endX} ${yEdge}
+        L ${clampedSpotX} ${yEdge}
+        Z`,
+      labelX: clampedSpotX + dir * Math.max(12, span * 0.58),
+      labelY: half === "top" ? top + 14 : top + height - 14,
     };
-
-    const tech = makeHalfPath(technicalStrength ?? 0, "top");
-    const fund = makeHalfPath(fundamentalStrength ?? 0, "bottom");
-    const techColor = getProjectionColor(technicalStrength ?? 0);
-    const fundColor = getProjectionColor(fundamentalStrength ?? 0);
-
-    return (
-      <g pointerEvents="none">
-        <path d={tech.path} fill={techColor} fillOpacity={0.34} stroke={techColor} strokeOpacity={0.9} strokeWidth={1.2} />
-        <path d={fund.path} fill={fundColor} fillOpacity={0.3} stroke={fundColor} strokeOpacity={0.85} strokeWidth={1.2} />
-        <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
-          TA
-        </text>
-        <text x={fund.labelX} y={fund.labelY} fill={fundColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
-          FA
-        </text>
-      </g>
-    );
   };
+
+  const tech = makeHalfPath(technicalStrength ?? 0, "top");
+  const fund = makeHalfPath(fundamentalStrength ?? 0, "bottom");
+  const techColor = getProjectionColor(technicalStrength ?? 0);
+  const fundColor = getProjectionColor(fundamentalStrength ?? 0);
+
+  return (
+    <g pointerEvents="none">
+      <path d={tech.path} fill={techColor} fillOpacity={0.34} stroke={techColor} strokeOpacity={0.9} strokeWidth={1.2} />
+      <path d={fund.path} fill={fundColor} fillOpacity={0.3} stroke={fundColor} strokeOpacity={0.85} strokeWidth={1.2} />
+      <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+        TA
+      </text>
+      <text x={fund.labelX} y={fund.labelY} fill={fundColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+        FA
+      </text>
+    </g>
+  );
 };
 
 const buildGreeksSummary = (
@@ -1723,14 +1736,12 @@ export default function SecretOptions() {
                         fillOpacity={0.12}
                       />
                     )}
-                    {selectedSpotPrice !== null && (
-                      <ReferenceLine
-                        x={selectedSpotPrice}
-                        stroke="transparent"
-                      >
-                        <Label content={buildProjectionBezierLabel(technicalGap, fundamentalGap)} />
-                      </ReferenceLine>
-                    )}
+                    <ProjectionBezierOverlay
+                      selectedSpotPrice={selectedSpotPrice}
+                      chartPriceDomain={chartPriceDomain}
+                      technicalStrength={technicalGap}
+                      fundamentalStrength={fundamentalGap}
+                    />
                     {selectedSpotPrice !== null && (
                       <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
                     )}
@@ -1802,14 +1813,12 @@ export default function SecretOptions() {
                         fillOpacity={0.12}
                       />
                     )}
-                    {selectedSpotPrice !== null && (
-                      <ReferenceLine
-                        x={selectedSpotPrice}
-                        stroke="transparent"
-                      >
-                        <Label content={buildProjectionBezierLabel(technicalGap, fundamentalGap)} />
-                      </ReferenceLine>
-                    )}
+                    <ProjectionBezierOverlay
+                      selectedSpotPrice={selectedSpotPrice}
+                      chartPriceDomain={chartPriceDomain}
+                      technicalStrength={technicalGap}
+                      fundamentalStrength={fundamentalGap}
+                    />
                     {selectedSpotPrice !== null && (
                       <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
                     )}
