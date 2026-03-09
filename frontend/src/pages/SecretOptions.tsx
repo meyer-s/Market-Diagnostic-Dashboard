@@ -1320,16 +1320,16 @@ export default function SecretOptions() {
               Price zones: ITM starts at strike, profit-taking defaults to strike + premium, and loss-cut is editable.
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <label className="text-xs text-gray-400">
+              <label className="text-xs text-amber-300">
                 Strike (ITM line)
                 <input
                   type="number"
                   value={selected.position.strike}
                   readOnly
-                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-300"
+                  className="mt-1 w-full bg-gray-900 border border-amber-700/70 rounded px-2 py-1.5 text-xs text-amber-100"
                 />
               </label>
-              <label className="text-xs text-gray-400">
+              <label className="text-xs text-emerald-300">
                 Profit-take price
                 <input
                   type="number"
@@ -1344,10 +1344,10 @@ export default function SecretOptions() {
                       },
                     }))
                   }
-                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200"
+                  className="mt-1 w-full bg-gray-900 border border-emerald-700/70 rounded px-2 py-1.5 text-xs text-emerald-100"
                 />
               </label>
-              <label className="text-xs text-gray-400">
+              <label className="text-xs text-rose-300">
                 Loss-cut price
                 <input
                   type="number"
@@ -1362,7 +1362,7 @@ export default function SecretOptions() {
                       },
                     }))
                   }
-                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200"
+                  className="mt-1 w-full bg-gray-900 border border-rose-700/70 rounded px-2 py-1.5 text-xs text-rose-100"
                 />
               </label>
             </div>
@@ -1433,7 +1433,24 @@ export default function SecretOptions() {
                       />
                     )}
                     {selectedSpotPrice !== null && (
-                      <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
+                      <ReferenceLine
+                        x={selectedSpotPrice}
+                        stroke="#7dd3fc"
+                        strokeDasharray="4 4"
+                        label={{ value: "spot", position: "top", fill: "#7dd3fc", fontSize: 10 }}
+                      />
+                    )}
+                    {selectedSpotPrice !== null && (
+                      <ReferenceLine
+                        x={selectedSpotPrice}
+                        stroke="transparent"
+                        label={{
+                          value: `$${selectedSpotPrice.toFixed(2)}`,
+                          position: "bottom",
+                          fill: "#7dd3fc",
+                          fontSize: 10,
+                        }}
+                      />
                     )}
                     {selectedStrike !== null && (
                       <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
@@ -1504,7 +1521,24 @@ export default function SecretOptions() {
                       />
                     )}
                     {selectedSpotPrice !== null && (
-                      <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
+                      <ReferenceLine
+                        x={selectedSpotPrice}
+                        stroke="#7dd3fc"
+                        strokeDasharray="4 4"
+                        label={{ value: "spot", position: "top", fill: "#7dd3fc", fontSize: 10 }}
+                      />
+                    )}
+                    {selectedSpotPrice !== null && (
+                      <ReferenceLine
+                        x={selectedSpotPrice}
+                        stroke="transparent"
+                        label={{
+                          value: `$${selectedSpotPrice.toFixed(2)}`,
+                          position: "bottom",
+                          fill: "#7dd3fc",
+                          fontSize: 10,
+                        }}
+                      />
                     )}
                     {selectedStrike !== null && (
                       <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
