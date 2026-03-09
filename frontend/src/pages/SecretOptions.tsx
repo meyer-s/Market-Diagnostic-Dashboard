@@ -8,6 +8,7 @@ import {
   Tooltip,
   ReferenceArea,
   ReferenceLine,
+  Customized,
 } from "recharts";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -166,16 +167,9 @@ interface SpotWeighting {
   direction: "left" | "right" | "neutral";
 }
 
-interface PriceDomain {
-  min: number;
-  max: number;
-}
-
-interface ProjectionZone {
-  x1: number;
-  x2: number;
-  color: string;
-  labelX: number;
+interface RechartsOverlayProps {
+  xAxisMap?: Record<string, { scale?: (value: number) => number }>;
+  offset?: { left?: number; top?: number; width?: number; height?: number };
 }
 
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
@@ -316,26 +310,71 @@ const getProjectionColor = (strength: number) => {
   return "#64748b";
 };
 
-const buildProjectionZone = (
+const renderProjectionBezierOverlay = (
+  props: RechartsOverlayProps,
   spot: number | null,
-  domain: PriceDomain | null,
-  strength: number | null | undefined
-): ProjectionZone | null => {
-  if (spot === null || !domain) return null;
-  const s = clampUnit(strength ?? 0);
-  const range = Math.max(domain.max - domain.min, 1e-6);
-  const span = range * (0.05 + Math.abs(s) * 0.25);
-  const rawX1 = s >= 0 ? spot : spot - span;
-  const rawX2 = s >= 0 ? spot + span : spot;
-  const x1 = Math.max(domain.min, Math.min(domain.max, rawX1));
-  const x2 = Math.max(domain.min, Math.min(domain.max, rawX2));
-  const finalX2 = Math.abs(x2 - x1) < range * 0.01 ? Math.min(domain.max, x1 + range * 0.01) : x2;
-  return {
-    x1: Math.min(x1, finalX2),
-    x2: Math.max(x1, finalX2),
-    color: getProjectionColor(s),
-    labelX: s >= 0 ? Math.max(x1, finalX2) : Math.min(x1, finalX2),
+  technicalStrength: number | null | undefined,
+  fundamentalStrength: number | null | undefined
+) => {
+  if (spot === null) return null;
+  const axis = props.xAxisMap ? (Object.values(props.xAxisMap)[0] as { scale?: (value: number) => number }) : null;
+  const scale = axis?.scale;
+  const offset = props.offset;
+  if (!scale || !offset) return null;
+
+  const left = Number(offset.left ?? 0);
+  const top = Number(offset.top ?? 0);
+  const width = Number(offset.width ?? 0);
+  const height = Number(offset.height ?? 0);
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) {
+    return null;
+  }
+  if (width <= 0 || height <= 0) return null;
+
+  const spotX = Number(scale(spot));
+  if (!Number.isFinite(spotX)) return null;
+  const right = left + width;
+  const clampedSpotX = Math.max(left + 4, Math.min(right - 4, spotX));
+
+  const makeHalfPath = (strength: number, half: "top" | "bottom") => {
+    const s = clampUnit(strength);
+    const dir = s >= 0 ? 1 : -1;
+    const mag = Math.abs(s);
+    const span = width * (0.06 + mag * 0.28);
+    const endX = Math.max(left + 4, Math.min(right - 4, clampedSpotX + dir * span));
+    const yJoin = top + height * 0.52;
+    const yEdge = half === "top" ? top + 8 : top + height - 8;
+    const c1x = clampedSpotX + dir * (span * 0.14);
+    const c2x = clampedSpotX + dir * (span * 0.72);
+    const c1y = half === "top" ? yJoin - height * 0.16 : yJoin + height * 0.16;
+    const c2y = half === "top" ? yEdge + height * 0.06 : yEdge - height * 0.06;
+    return {
+      path: `M ${clampedSpotX} ${yJoin}
+        C ${c1x} ${c1y} ${c2x} ${c2y} ${endX} ${yEdge}
+        L ${clampedSpotX} ${yEdge}
+        Z`,
+      labelX: clampedSpotX + dir * Math.max(10, span * 0.55),
+      labelY: half === "top" ? top + 14 : top + height - 14,
+    };
   };
+
+  const tech = makeHalfPath(technicalStrength ?? 0, "top");
+  const fund = makeHalfPath(fundamentalStrength ?? 0, "bottom");
+  const techColor = getProjectionColor(technicalStrength ?? 0);
+  const fundColor = getProjectionColor(fundamentalStrength ?? 0);
+
+  return (
+    <g pointerEvents="none">
+      <path d={tech.path} fill={techColor} fillOpacity={0.22} stroke={techColor} strokeOpacity={0.65} strokeWidth={0.9} />
+      <path d={fund.path} fill={fundColor} fillOpacity={0.18} stroke={fundColor} strokeOpacity={0.6} strokeWidth={0.9} />
+      <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+        TA
+      </text>
+      <text x={fund.labelX} y={fund.labelY} fill={fundColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+        FA
+      </text>
+    </g>
+  );
 };
 
 const buildGreeksSummary = (
@@ -927,15 +966,6 @@ export default function SecretOptions() {
       max: Math.max(...prices),
     };
   }, [greeksData]);
-
-  const technicalProjectionZone = useMemo(
-    () => buildProjectionZone(selectedSpotPrice, chartPriceDomain, technicalGap),
-    [selectedSpotPrice, chartPriceDomain, technicalGap]
-  );
-  const fundamentalProjectionZone = useMemo(
-    () => buildProjectionZone(selectedSpotPrice, chartPriceDomain, fundamentalGap),
-    [selectedSpotPrice, chartPriceDomain, fundamentalGap]
-  );
 
   const sortedClosedRows = useMemo(() => {
     const sorted = [...closedPositions];
@@ -1705,46 +1735,16 @@ export default function SecretOptions() {
                         fillOpacity={0.12}
                       />
                     )}
-                    {technicalProjectionZone && (
-                      <ReferenceArea
-                        x1={technicalProjectionZone.x1}
-                        x2={technicalProjectionZone.x2}
-                        fill={technicalProjectionZone.color}
-                        fillOpacity={0.12}
-                      />
-                    )}
-                    {fundamentalProjectionZone && (
-                      <ReferenceArea
-                        x1={fundamentalProjectionZone.x1}
-                        x2={fundamentalProjectionZone.x2}
-                        fill={fundamentalProjectionZone.color}
-                        fillOpacity={0.08}
-                      />
-                    )}
-                    {technicalProjectionZone && (
-                      <ReferenceLine
-                        x={technicalProjectionZone.labelX}
-                        stroke="transparent"
-                        label={{
-                          value: "TA",
-                          position: "insideTop",
-                          fill: technicalProjectionZone.color,
-                          fontSize: 9,
-                        }}
-                      />
-                    )}
-                    {fundamentalProjectionZone && (
-                      <ReferenceLine
-                        x={fundamentalProjectionZone.labelX}
-                        stroke="transparent"
-                        label={{
-                          value: "FA",
-                          position: "insideBottom",
-                          fill: fundamentalProjectionZone.color,
-                          fontSize: 9,
-                        }}
-                      />
-                    )}
+                    <Customized
+                      component={(props: RechartsOverlayProps) =>
+                        renderProjectionBezierOverlay(
+                          props,
+                          selectedSpotPrice,
+                          technicalGap,
+                          fundamentalGap
+                        )
+                      }
+                    />
                     {selectedSpotPrice !== null && (
                       <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
                     )}
@@ -1816,46 +1816,16 @@ export default function SecretOptions() {
                         fillOpacity={0.12}
                       />
                     )}
-                    {technicalProjectionZone && (
-                      <ReferenceArea
-                        x1={technicalProjectionZone.x1}
-                        x2={technicalProjectionZone.x2}
-                        fill={technicalProjectionZone.color}
-                        fillOpacity={0.12}
-                      />
-                    )}
-                    {fundamentalProjectionZone && (
-                      <ReferenceArea
-                        x1={fundamentalProjectionZone.x1}
-                        x2={fundamentalProjectionZone.x2}
-                        fill={fundamentalProjectionZone.color}
-                        fillOpacity={0.08}
-                      />
-                    )}
-                    {technicalProjectionZone && (
-                      <ReferenceLine
-                        x={technicalProjectionZone.labelX}
-                        stroke="transparent"
-                        label={{
-                          value: "TA",
-                          position: "insideTop",
-                          fill: technicalProjectionZone.color,
-                          fontSize: 9,
-                        }}
-                      />
-                    )}
-                    {fundamentalProjectionZone && (
-                      <ReferenceLine
-                        x={fundamentalProjectionZone.labelX}
-                        stroke="transparent"
-                        label={{
-                          value: "FA",
-                          position: "insideBottom",
-                          fill: fundamentalProjectionZone.color,
-                          fontSize: 9,
-                        }}
-                      />
-                    )}
+                    <Customized
+                      component={(props: RechartsOverlayProps) =>
+                        renderProjectionBezierOverlay(
+                          props,
+                          selectedSpotPrice,
+                          technicalGap,
+                          fundamentalGap
+                        )
+                      }
+                    />
                     {selectedSpotPrice !== null && (
                       <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
                     )}
