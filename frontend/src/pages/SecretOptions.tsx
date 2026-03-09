@@ -302,7 +302,6 @@ export default function SecretOptions() {
   const [closeNotes, setCloseNotes] = useState("");
   const [closedPositions, setClosedPositions] = useState<ClosedPositionRow[]>([]);
   const [showClosedLog, setShowClosedLog] = useState(false);
-  const [scenarioOptionPrices, setScenarioOptionPrices] = useState<Record<number, string>>({});
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: SortDirection }>({
     key: "symbol",
     direction: "asc",
@@ -311,7 +310,6 @@ export default function SecretOptions() {
     key: "close_date",
     direction: "desc",
   });
-  const [closedExitOverrides, setClosedExitOverrides] = useState<Record<number, string>>({});
   const [zoneInputsByPosition, setZoneInputsByPosition] = useState<Record<number, ZoneInputs>>({});
 
   const loadPositions = async () => {
@@ -497,7 +495,6 @@ export default function SecretOptions() {
         "/secret/options/closed-positions"
       );
       setClosedPositions(data.closed_positions || []);
-      setClosedExitOverrides({});
     } catch (err: any) {
       console.error("Failed to load closed positions:", err);
     }
@@ -580,22 +577,6 @@ export default function SecretOptions() {
     });
   }, [selected]);
 
-  const getEffectiveOptionPrice = (item: PositionPayload): number | null => {
-    const override = asNumber(scenarioOptionPrices[item.position.id]);
-    if (override !== null) {
-      return override;
-    }
-    return item.metrics.option_price;
-  };
-
-  const getEffectivePnl = (item: PositionPayload): number | null => {
-    const optionPrice = getEffectiveOptionPrice(item);
-    if (optionPrice !== null) {
-      return (optionPrice - item.position.fill_price) * item.position.contracts * 100;
-    }
-    return item.metrics?.pnl?.dollar ?? null;
-  };
-
   const sortedPositions = useMemo(() => {
     const sorted = [...positions];
     sorted.sort((left, right) => {
@@ -615,13 +596,13 @@ export default function SecretOptions() {
           case "fill_price":
             return left.position.fill_price;
           case "option_price":
-            return getEffectiveOptionPrice(left);
+            return left.metrics.option_price;
           case "underlying":
             return left.metrics.market.current_price;
           case "dte":
             return left.metrics.dte;
           case "pnl":
-            return getEffectivePnl(left);
+            return left.metrics?.pnl?.dollar ?? null;
           case "delta":
             return left.metrics.greeks?.delta ?? null;
           case "theta":
@@ -645,13 +626,13 @@ export default function SecretOptions() {
           case "fill_price":
             return right.position.fill_price;
           case "option_price":
-            return getEffectiveOptionPrice(right);
+            return right.metrics.option_price;
           case "underlying":
             return right.metrics.market.current_price;
           case "dte":
             return right.metrics.dte;
           case "pnl":
-            return getEffectivePnl(right);
+            return right.metrics?.pnl?.dollar ?? null;
           case "delta":
             return right.metrics.greeks?.delta ?? null;
           case "theta":
@@ -669,7 +650,7 @@ export default function SecretOptions() {
       return ((Number(lv) || 0) - (Number(rv) || 0)) * direction;
     });
     return sorted;
-  }, [positions, positionSort, scenarioOptionPrices]);
+  }, [positions, positionSort]);
 
   const totals = useMemo(() => {
     let totalCost = 0;
@@ -677,7 +658,7 @@ export default function SecretOptions() {
     let count = 0;
     positions.forEach((item) => {
       totalCost += item.position.total_cost;
-      const pnlDollar = getEffectivePnl(item);
+      const pnlDollar = item.metrics?.pnl?.dollar;
       if (pnlDollar !== null && pnlDollar !== undefined) {
         totalPnl += pnlDollar;
       }
@@ -685,7 +666,7 @@ export default function SecretOptions() {
     });
     const percent = totalCost ? (totalPnl / totalCost) * 100 : null;
     return { totalCost, totalPnl, percent, count };
-  }, [positions, scenarioOptionPrices]);
+  }, [positions]);
 
   const selectedZoneInputs = selected ? zoneInputsByPosition[selected.position.id] : null;
   const selectedSpotPrice =
@@ -705,23 +686,8 @@ export default function SecretOptions() {
     };
   }, [greeksData]);
 
-  const closedRows = useMemo(() => {
-    return closedPositions.map((pos) => {
-      const overrideExit = asNumber(closedExitOverrides[pos.id]);
-      const effectiveExit = overrideExit ?? pos.exit_price;
-      const effectiveDollarPnl = (effectiveExit - pos.fill_price) * pos.contracts * 100;
-      const effectivePercentPnl = pos.total_cost ? (effectiveDollarPnl / pos.total_cost) * 100 : 0;
-      return {
-        ...pos,
-        effective_exit: effectiveExit,
-        effective_dollar_pnl: effectiveDollarPnl,
-        effective_percent_pnl: effectivePercentPnl,
-      };
-    });
-  }, [closedPositions, closedExitOverrides]);
-
   const sortedClosedRows = useMemo(() => {
-    const sorted = [...closedRows];
+    const sorted = [...closedPositions];
     sorted.sort((left, right) => {
       const direction = closedSort.direction === "asc" ? 1 : -1;
       const lv = (() => {
@@ -735,13 +701,13 @@ export default function SecretOptions() {
           case "fill_price":
             return left.fill_price;
           case "exit_price":
-            return left.effective_exit;
+            return left.exit_price;
           case "close_date":
             return left.close_date;
           case "dollar_pnl":
-            return left.effective_dollar_pnl;
+            return left.dollar_pnl;
           case "percent_pnl":
-            return left.effective_percent_pnl;
+            return left.percent_pnl;
           default:
             return null;
         }
@@ -757,13 +723,13 @@ export default function SecretOptions() {
           case "fill_price":
             return right.fill_price;
           case "exit_price":
-            return right.effective_exit;
+            return right.exit_price;
           case "close_date":
             return right.close_date;
           case "dollar_pnl":
-            return right.effective_dollar_pnl;
+            return right.dollar_pnl;
           case "percent_pnl":
-            return right.effective_percent_pnl;
+            return right.percent_pnl;
           default:
             return null;
         }
@@ -776,12 +742,12 @@ export default function SecretOptions() {
       return ((Number(lv) || 0) - (Number(rv) || 0)) * direction;
     });
     return sorted;
-  }, [closedRows, closedSort]);
+  }, [closedPositions, closedSort]);
 
   const closedTotals = useMemo(() => {
-    const totalPnl = sortedClosedRows.reduce((sum, row) => sum + row.effective_dollar_pnl, 0);
+    const totalPnl = sortedClosedRows.reduce((sum, row) => sum + row.dollar_pnl, 0);
     const totalCost = sortedClosedRows.reduce((sum, row) => sum + row.total_cost, 0);
-    const winners = sortedClosedRows.filter((row) => row.effective_dollar_pnl > 0).length;
+    const winners = sortedClosedRows.filter((row) => row.dollar_pnl > 0).length;
     const totalTrades = sortedClosedRows.length;
     return {
       totalPnl,
@@ -842,16 +808,10 @@ export default function SecretOptions() {
           <div>
             <h2 className="text-base font-semibold">Position Summary</h2>
             <p className="text-xs text-gray-500">
-              Click a row to inspect Greeks. Click column headers to sort. Use What-if Option cells for quick P/L scenarios.
+              Click a row to inspect Greeks. Click column headers to sort.
             </p>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={() => setScenarioOptionPrices({})}
-              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
-            >
-              Reset Scenarios
-            </button>
             <button
               onClick={() => {
                 setEditingPositionId(null);
@@ -970,7 +930,7 @@ export default function SecretOptions() {
                         }))
                       }
                     >
-                      Option / What-if {sortArrow(positionSort.key === "option_price", positionSort.direction)}
+                      Option {sortArrow(positionSort.key === "option_price", positionSort.direction)}
                     </button>
                   </th>
                   <th className="px-3 py-2 text-left">
@@ -1044,8 +1004,6 @@ export default function SecretOptions() {
               <tbody className="divide-y divide-gray-800">
                 {sortedPositions.map((item) => {
                   const { position, metrics } = item;
-                  const effectiveOptionPrice = getEffectiveOptionPrice(item);
-                  const pnl = getEffectivePnl(item);
                   const rowActive = position.id === selectedId;
                   return (
                     <tr
@@ -1060,27 +1018,9 @@ export default function SecretOptions() {
                       <td className="px-3 py-2">{position.contracts}</td>
                       <td className="px-3 py-2">{formatCurrency(position.fill_price, 2)}</td>
                       <td className="px-3 py-2">
-                        <div className="space-y-1">
-                          <div>
-                            {metrics.option_price !== null
-                              ? formatCurrency(metrics.option_price, 2)
-                              : "—"}
-                          </div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={scenarioOptionPrices[position.id] ?? ""}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(event) =>
-                              setScenarioOptionPrices((prev) => ({
-                                ...prev,
-                                [position.id]: event.target.value,
-                              }))
-                            }
-                            placeholder="What-if"
-                            className="w-24 bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-[11px] text-gray-200"
-                          />
-                        </div>
+                        {metrics.option_price !== null
+                          ? formatCurrency(metrics.option_price, 2)
+                          : "—"}
                       </td>
                       <td className="px-3 py-2">
                         {metrics.market.current_price !== null
@@ -1090,15 +1030,12 @@ export default function SecretOptions() {
                       <td className="px-3 py-2">{metrics.dte ?? "—"}</td>
                       <td
                         className={`px-3 py-2 font-semibold ${
-                          (pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
+                          (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
                         }`}
                       >
-                        {pnl !== null && pnl !== undefined
-                          ? formatCurrency(pnl, 0)
+                        {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
+                          ? formatCurrency(metrics.pnl.dollar, 0)
                           : "—"}
-                        {effectiveOptionPrice !== metrics.option_price && (
-                          <div className="text-[10px] text-amber-300">scenario</div>
-                        )}
                       </td>
                       <td className="px-3 py-2">
                         {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}
@@ -1135,7 +1072,7 @@ export default function SecretOptions() {
               <tfoot className="border-t border-gray-700 text-xs">
                 <tr>
                   <td className="px-3 py-2 font-semibold text-gray-400" colSpan={9}>
-                    Table Total P&amp;L (with scenarios)
+                    Table Total P&amp;L
                   </td>
                   <td
                     className={`px-3 py-2 font-semibold ${
@@ -1761,20 +1698,12 @@ export default function SecretOptions() {
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Closed Positions History</h2>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setClosedExitOverrides({})}
-                  className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs"
-                >
-                  Reset What-if
-                </button>
-                <button
-                  onClick={() => setShowClosedLog(false)}
-                  className="text-gray-400 hover:text-gray-200"
-                >
-                  ✕
-                </button>
-              </div>
+              <button
+                onClick={() => setShowClosedLog(false)}
+                className="text-gray-400 hover:text-gray-200"
+              >
+                ✕
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
@@ -1791,7 +1720,7 @@ export default function SecretOptions() {
                 <div className="text-base font-semibold text-gray-100">{formatCurrency(closedTotals.totalCost, 0)}</div>
               </div>
               <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Total P&amp;L (with what-if)</div>
+                <div className="text-[11px] text-gray-500">Total P&amp;L</div>
                 <div
                   className={`text-base font-semibold ${
                     closedTotals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"
@@ -1871,7 +1800,7 @@ export default function SecretOptions() {
                             }))
                           }
                         >
-                          Exit / What-if {sortArrow(closedSort.key === "exit_price", closedSort.direction)}
+                          Exit {sortArrow(closedSort.key === "exit_price", closedSort.direction)}
                         </button>
                       </th>
                       <th className="px-3 py-2 text-left">
@@ -1923,38 +1852,21 @@ export default function SecretOptions() {
                         <td className="px-3 py-2">${formatNumber(pos.strike, 2)}</td>
                         <td className="px-3 py-2 uppercase">{pos.option_type}</td>
                         <td className="px-3 py-2">${formatNumber(pos.fill_price, 2)}</td>
-                        <td className="px-3 py-2">
-                          <div className="space-y-1">
-                            <div>${formatNumber(pos.exit_price, 2)}</div>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={closedExitOverrides[pos.id] ?? ""}
-                              onChange={(event) =>
-                                setClosedExitOverrides((prev) => ({
-                                  ...prev,
-                                  [pos.id]: event.target.value,
-                                }))
-                              }
-                              placeholder="What-if"
-                              className="w-24 bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-[11px] text-gray-200"
-                            />
-                          </div>
-                        </td>
+                        <td className="px-3 py-2">${formatNumber(pos.exit_price, 2)}</td>
                         <td className="px-3 py-2">{formatDate(pos.close_date)}</td>
                         <td
                           className={`px-3 py-2 font-semibold ${
-                            pos.effective_dollar_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                            pos.dollar_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
                           }`}
                         >
-                          {formatCurrency(pos.effective_dollar_pnl, 0)}
+                          {formatCurrency(pos.dollar_pnl, 0)}
                         </td>
                         <td
                           className={`px-3 py-2 ${
-                            pos.effective_percent_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                            pos.percent_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
                           }`}
                         >
-                          {formatSigned(pos.effective_percent_pnl, 1)}%
+                          {formatSigned(pos.percent_pnl, 1)}%
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-400">{pos.notes || "—"}</td>
                       </tr>
