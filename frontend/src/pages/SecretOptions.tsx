@@ -826,27 +826,25 @@ export default function SecretOptions() {
   const attributionHeat = (
     sourceEventId: number | null | undefined,
     confidence: number | null | undefined
-  ): {
-    markerColor: string;
-    rowStyle?: { backgroundColor: string };
-    confidenceLabel: string;
-  } => {
+  ): { marker: string; rowTint: string; quality: string } => {
     if (!sourceEventId) {
       return {
-        markerColor: "#4b5563",
-        confidenceLabel: "unlinked",
+        marker: "bg-gray-600",
+        rowTint: "",
+        quality: "unlinked",
       };
     }
-    const c = Math.max(0, Math.min(1, confidence ?? 0));
-    const hue = Math.round(c * 120); // 0=red, 120=green
-    const markerColor = `hsl(${hue} 85% 52%)`;
-    const tintAlpha = 0.04 + c * 0.12;
-    const rowStyle = { backgroundColor: `hsla(${hue}, 90%, 45%, ${tintAlpha.toFixed(3)})` };
-    return {
-      markerColor,
-      rowStyle,
-      confidenceLabel: `${Math.round(c * 100)}%`,
-    };
+    const c = confidence ?? 0;
+    if (c >= 0.9) {
+      return { marker: "bg-emerald-400", rowTint: "bg-emerald-950/20", quality: "high" };
+    }
+    if (c >= 0.75) {
+      return { marker: "bg-lime-400", rowTint: "bg-lime-950/15", quality: "good" };
+    }
+    if (c >= 0.6) {
+      return { marker: "bg-amber-400", rowTint: "bg-amber-950/10", quality: "medium" };
+    }
+    return { marker: "bg-rose-400", rowTint: "bg-rose-950/10", quality: "low" };
   };
 
   return (
@@ -1115,16 +1113,16 @@ export default function SecretOptions() {
                   return (
                     <tr
                       key={position.id}
-                      className={`cursor-pointer ${rowActive ? "bg-gray-900/60" : "hover:bg-gray-900/40"}`}
-                      style={rowActive ? undefined : heat.rowStyle}
+                      className={`cursor-pointer ${
+                        rowActive ? "bg-gray-900/60" : `${heat.rowTint} hover:bg-gray-900/40`
+                      }`}
                       onClick={() => setSelectedId(position.id)}
                     >
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
                           <span
-                            title={`${tooltip}\nConfidence: ${heat.confidenceLabel}`}
-                            className="inline-block h-5 w-1.5 rounded-full"
-                            style={{ backgroundColor: heat.markerColor }}
+                            title={`${tooltip}\nQuality: ${heat.quality}`}
+                            className={`inline-block h-5 w-1.5 rounded-full ${heat.marker}`}
                           />
                           <span className="font-semibold text-gray-100">{position.symbol}</span>
                         </div>
@@ -1973,13 +1971,12 @@ export default function SecretOptions() {
                         pos.source_match_notes
                       );
                       return (
-                      <tr key={pos.id} className="hover:bg-gray-900/40" style={heat.rowStyle}>
+                      <tr key={pos.id} className={`${heat.rowTint} hover:bg-gray-900/40`}>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <span
-                              title={`${tooltip}\nConfidence: ${heat.confidenceLabel}`}
-                              className="inline-block h-5 w-1.5 rounded-full"
-                              style={{ backgroundColor: heat.markerColor }}
+                              title={`${tooltip}\nQuality: ${heat.quality}`}
+                              className={`inline-block h-5 w-1.5 rounded-full ${heat.marker}`}
                             />
                             <span className="font-semibold">{pos.symbol}</span>
                           </div>
