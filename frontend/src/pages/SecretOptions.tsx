@@ -168,6 +168,8 @@ interface SpotWeighting {
 }
 
 interface RechartsOverlayProps {
+  width?: number;
+  height?: number;
   xAxisMap?: Record<string, { scale?: (value: number) => number }>;
   offset?: { left?: number; top?: number; width?: number; height?: number };
 }
@@ -313,25 +315,32 @@ const getProjectionColor = (strength: number) => {
 const renderProjectionBezierOverlay = (
   props: RechartsOverlayProps,
   spot: number | null,
+  domain: { min: number; max: number } | null,
   technicalStrength: number | null | undefined,
   fundamentalStrength: number | null | undefined
 ) => {
-  if (spot === null) return null;
-  const axis = props.xAxisMap ? (Object.values(props.xAxisMap)[0] as { scale?: (value: number) => number }) : null;
+  if (spot === null || !domain) return null;
+  const axis = props.xAxisMap
+    ? (Object.values(props.xAxisMap)[0] as { scale?: (value: number) => number })
+    : null;
   const scale = axis?.scale;
   const offset = props.offset;
-  if (!scale || !offset) return null;
 
-  const left = Number(offset.left ?? 0);
-  const top = Number(offset.top ?? 0);
-  const width = Number(offset.width ?? 0);
-  const height = Number(offset.height ?? 0);
+  const left = Number(offset?.left ?? 0);
+  const top = Number(offset?.top ?? 0);
+  const width = Number(offset?.width ?? props.width ?? 0);
+  const height = Number(offset?.height ?? props.height ?? 0);
   if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) {
     return null;
   }
   if (width <= 0 || height <= 0) return null;
 
-  const spotX = Number(scale(spot));
+  const domainSpan = Math.max(domain.max - domain.min, 1e-6);
+  const scaledX =
+    scale && Number.isFinite(Number(scale(spot)))
+      ? Number(scale(spot))
+      : left + ((spot - domain.min) / domainSpan) * width;
+  const spotX = scaledX;
   if (!Number.isFinite(spotX)) return null;
   const right = left + width;
   const clampedSpotX = Math.max(left + 4, Math.min(right - 4, spotX));
@@ -365,8 +374,8 @@ const renderProjectionBezierOverlay = (
 
   return (
     <g pointerEvents="none">
-      <path d={tech.path} fill={techColor} fillOpacity={0.22} stroke={techColor} strokeOpacity={0.65} strokeWidth={0.9} />
-      <path d={fund.path} fill={fundColor} fillOpacity={0.18} stroke={fundColor} strokeOpacity={0.6} strokeWidth={0.9} />
+      <path d={tech.path} fill={techColor} fillOpacity={0.3} stroke={techColor} strokeOpacity={0.85} strokeWidth={1.1} />
+      <path d={fund.path} fill={fundColor} fillOpacity={0.26} stroke={fundColor} strokeOpacity={0.8} strokeWidth={1.1} />
       <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
         TA
       </text>
@@ -1740,6 +1749,7 @@ export default function SecretOptions() {
                         renderProjectionBezierOverlay(
                           props,
                           selectedSpotPrice,
+                          chartPriceDomain,
                           technicalGap,
                           fundamentalGap
                         )
@@ -1821,6 +1831,7 @@ export default function SecretOptions() {
                         renderProjectionBezierOverlay(
                           props,
                           selectedSpotPrice,
+                          chartPriceDomain,
                           technicalGap,
                           fundamentalGap
                         )
