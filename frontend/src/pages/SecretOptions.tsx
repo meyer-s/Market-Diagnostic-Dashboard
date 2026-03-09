@@ -164,6 +164,15 @@ interface SpotLineLabelViewBox {
   width?: number;
 }
 
+interface SpotWeighting {
+  technical: number | null;
+  fundamental: number | null;
+  composite: number;
+  confidence: number;
+  signalCount: number;
+  direction: "left" | "right" | "neutral";
+}
+
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";
@@ -191,8 +200,117 @@ const capitalizeWord = (value: string) => {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 };
 
+const clampUnit = (value: number) => Math.max(-1, Math.min(1, value));
+
+const getLatestSeriesValue = (series: Array<{ date: string; value: number }> | undefined): number | null => {
+  if (!series || series.length === 0) return null;
+  const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
+  const latest = sorted[sorted.length - 1]?.value;
+  return Number.isFinite(latest) ? Number(latest) : null;
+};
+
+const getRecentSeriesChange = (
+  series: Array<{ date: string; value: number }> | undefined
+): number | null => {
+  if (!series || series.length < 2) return null;
+  const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
+  const prev = sorted[sorted.length - 2]?.value;
+  const last = sorted[sorted.length - 1]?.value;
+  if (!Number.isFinite(prev) || !Number.isFinite(last)) return null;
+  const base = Math.max(Math.abs(Number(prev)), 1e-6);
+  return (Number(last) - Number(prev)) / base;
+};
+
+const computeSpotWeighting = (payload: any): SpotWeighting => {
+  const technicalSignals: number[] = [];
+  const fundamentalSignals: number[] = [];
+
+  const scoreT = Number(payload?.projections?.T?.score_total);
+  const score3m = Number(payload?.projections?.["3m"]?.score_total);
+  const projectionScore = Number.isFinite(scoreT) ? scoreT : Number.isFinite(score3m) ? score3m : null;
+  if (projectionScore !== null) {
+    technicalSignals.push(clampUnit((projectionScore - 50) / 50));
+  }
+
+  const technical = payload?.technical;
+  if (technical?.trend === "uptrend") technicalSignals.push(0.35);
+  if (technical?.trend === "downtrend") technicalSignals.push(-0.35);
+
+  const currentPrice = Number(technical?.current_price);
+  const sma50 = Number(technical?.sma_50);
+  if (Number.isFinite(currentPrice) && Number.isFinite(sma50) && sma50 > 0) {
+    technicalSignals.push(currentPrice >= sma50 ? 0.2 : -0.2);
+  }
+
+  if (technical?.macd?.status === "bullish") technicalSignals.push(0.25);
+  if (technical?.macd?.status === "bearish") technicalSignals.push(-0.25);
+
+  const rsi = Number(technical?.rsi?.current);
+  if (Number.isFinite(rsi)) {
+    if (rsi < 35) technicalSignals.push(0.15);
+    if (rsi > 65) technicalSignals.push(-0.15);
+  }
+
+  const fundamentals = payload?.fundamentals;
+  const revenueYoY = getLatestSeriesValue(fundamentals?.revenue_yoy?.series);
+  if (revenueYoY !== null) {
+    fundamentalSignals.push(clampUnit(revenueYoY / 30));
+  }
+
+  const epsChange = getRecentSeriesChange(fundamentals?.eps?.series);
+  if (epsChange !== null) {
+    fundamentalSignals.push(clampUnit(epsChange / 0.5));
+  }
+
+  const fcfChange = getRecentSeriesChange(fundamentals?.free_cash_flow?.series);
+  if (fcfChange !== null) {
+    fundamentalSignals.push(clampUnit(fcfChange / 0.6));
+  }
+
+  const roe = getLatestSeriesValue(fundamentals?.roe?.series);
+  if (roe !== null) {
+    fundamentalSignals.push(clampUnit((roe - 12) / 20));
+  }
+
+  const pe = getLatestSeriesValue(fundamentals?.pe_ratio?.series);
+  if (pe !== null) {
+    if (pe < 18) fundamentalSignals.push(0.15);
+    else if (pe > 35) fundamentalSignals.push(-0.15);
+  }
+
+  const technicalScore =
+    technicalSignals.length > 0
+      ? technicalSignals.reduce((sum, val) => sum + val, 0) / technicalSignals.length
+      : null;
+  const fundamentalScore =
+    fundamentalSignals.length > 0
+      ? fundamentalSignals.reduce((sum, val) => sum + val, 0) / fundamentalSignals.length
+      : null;
+
+  const technicalUsed = technicalScore ?? 0;
+  const fundamentalUsed = fundamentalScore ?? 0;
+  const rawComposite = technicalUsed * 0.6 + fundamentalUsed * 0.4;
+  const signalCount = technicalSignals.length + fundamentalSignals.length;
+  const confidence = Math.min(1, signalCount / 8);
+  const composite = clampUnit(rawComposite * confidence);
+  const direction = composite > 0.08 ? "right" : composite < -0.08 ? "left" : "neutral";
+
+  return {
+    technical: technicalScore,
+    fundamental: fundamentalScore,
+    composite,
+    confidence,
+    signalCount,
+    direction,
+  };
+};
+
 const buildSpotLineLabel =
-  (value: string, side: "left" | "right") =>
+  (
+    value: string,
+    side: "left" | "right",
+    pressure?: { technical?: number | null; fundamental?: number | null; divergence?: number | null }
+  ) =>
   (props: { viewBox?: SpotLineLabelViewBox }) => {
     const viewBox = props.viewBox;
     if (!viewBox) return null;
@@ -206,6 +324,11 @@ const buildSpotLineLabel =
     const leftBound = Number(viewBox.x) + 4;
     const rightBound = Number(viewBox.x) + width - 4;
     const labelY = topY + height * 0.68;
+    const technicalPressure = clampUnit(pressure?.technical ?? 0);
+    const fundamentalPressure = clampUnit(pressure?.fundamental ?? 0);
+    const divergence = clampUnit(
+      pressure?.divergence ?? (technicalPressure * 0.6 + fundamentalPressure * 0.4)
+    );
 
     if (side === "left") {
       const flagText = value;
@@ -215,6 +338,34 @@ const buildSpotLineLabel =
       const flagX = Math.max(leftBound, lineX - flagWidth - 12);
       const midY = flagY + flagHeight / 2;
       const flagRight = flagX + flagWidth;
+
+      const buildZonePath = (strength: number, centerY: number, bend: number) => {
+        const dir = strength >= 0 ? 1 : -1;
+        const magnitude = Math.abs(strength);
+        const len = 8 + magnitude * 24;
+        const x1 = lineX;
+        const x2 = lineX + dir * len;
+        const t = 2.2;
+        const c1x = lineX + dir * (len * 0.35);
+        const c2x = lineX + dir * (len * 0.7);
+        return `M ${x1} ${centerY - t}
+          C ${c1x} ${centerY + bend} ${c2x} ${centerY + bend} ${x2} ${centerY - t}
+          L ${x2} ${centerY + t}
+          C ${c2x} ${centerY + bend + 2} ${c1x} ${centerY + bend + 2} ${x1} ${centerY + t}
+          Z`;
+      };
+
+      const techColor =
+        technicalPressure > 0.08 ? "#22c55e" : technicalPressure < -0.08 ? "#f43f5e" : "#64748b";
+      const fundColor =
+        fundamentalPressure > 0.08
+          ? "#22c55e"
+          : fundamentalPressure < -0.08
+            ? "#f43f5e"
+            : "#64748b";
+      const topZoneY = midY - 8;
+      const bottomZoneY = midY + 8;
+
       return (
         <g>
           <rect
@@ -234,6 +385,42 @@ const buildSpotLineLabel =
             strokeLinecap="round"
             fill="none"
           />
+          <path
+            d={buildZonePath(technicalPressure, topZoneY, -5)}
+            fill={techColor}
+            fillOpacity={0.24}
+            stroke={techColor}
+            strokeWidth={0.8}
+            strokeOpacity={0.7}
+          />
+          <path
+            d={buildZonePath(fundamentalPressure, bottomZoneY, 5)}
+            fill={fundColor}
+            fillOpacity={0.24}
+            stroke={fundColor}
+            strokeWidth={0.8}
+            strokeOpacity={0.7}
+          />
+          <text
+            x={lineX - 2}
+            y={topZoneY - 4}
+            fill={techColor}
+            fontSize={8}
+            textAnchor="end"
+            dominantBaseline="middle"
+          >
+            TA
+          </text>
+          <text
+            x={lineX - 2}
+            y={bottomZoneY + 4}
+            fill={fundColor}
+            fontSize={8}
+            textAnchor="end"
+            dominantBaseline="middle"
+          >
+            FA
+          </text>
           <text
             x={flagX + flagWidth / 2}
             y={midY}
@@ -253,7 +440,7 @@ const buildSpotLineLabel =
     const padX = 6;
     const chipHeight = 16;
     const chipWidth = Math.max(52, priceText.length * 7 + padX * 2);
-    const chipX = Math.min(lineX + 10, rightBound - chipWidth);
+    const chipX = Math.min(Math.max(lineX + 10 + divergence * 10, lineX + 4), rightBound - chipWidth);
     const chipY = labelY - chipHeight / 2;
     const textY = chipY + chipHeight / 2;
     return (
@@ -449,6 +636,8 @@ export default function SecretOptions() {
     direction: "desc",
   });
   const [zoneInputsByPosition, setZoneInputsByPosition] = useState<Record<number, ZoneInputs>>({});
+  const [spotWeightBySymbol, setSpotWeightBySymbol] = useState<Record<string, SpotWeighting>>({});
+  const [loadingSpotWeightSymbol, setLoadingSpotWeightSymbol] = useState<string | null>(null);
 
   const loadPositions = async () => {
     setLoading(true);
@@ -685,11 +874,51 @@ export default function SecretOptions() {
     () => positions.find((item) => item.position.id === selectedId) || null,
     [positions, selectedId]
   );
+  const selectedSymbol = selected?.position.symbol?.trim().toUpperCase() ?? null;
 
   const greekSummary = useMemo(() => {
     const greeks = greeksData?.current_greeks ?? selected?.metrics.greeks ?? null;
     return buildGreeksSummary(greeks);
   }, [greeksData, selected]);
+
+  useEffect(() => {
+    if (!selectedSymbol || spotWeightBySymbol[selectedSymbol]) {
+      return;
+    }
+    let cancelled = false;
+    setLoadingSpotWeightSymbol(selectedSymbol);
+    apiFetch<any>(`/stocks/${selectedSymbol}/projections`)
+      .then((payload) => {
+        if (cancelled) return;
+        setSpotWeightBySymbol((prev) => ({
+          ...prev,
+          [selectedSymbol]: computeSpotWeighting(payload),
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSpotWeightBySymbol((prev) => ({
+          ...prev,
+          [selectedSymbol]: {
+            technical: null,
+            fundamental: null,
+            composite: 0,
+            confidence: 0,
+            signalCount: 0,
+            direction: "neutral",
+          },
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingSpotWeightSymbol((current) => (current === selectedSymbol ? null : current));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSymbol, spotWeightBySymbol]);
 
   useEffect(() => {
     if (!selected) {
@@ -812,6 +1041,22 @@ export default function SecretOptions() {
   const selectedStrike = selected?.position.strike ?? null;
   const selectedProfitTake = asNumber(selectedZoneInputs?.profitTake);
   const selectedLossCut = asNumber(selectedZoneInputs?.lossCut);
+  const selectedSpotWeight = selectedSymbol ? spotWeightBySymbol[selectedSymbol] ?? null : null;
+  const currentSpotLean = useMemo(() => {
+    if (!selected) return 0;
+    const dayMove = Number(selected.metrics.market.change_percent ?? 0);
+    if (!Number.isFinite(dayMove)) return 0;
+    return clampUnit(dayMove / 2.5);
+  }, [selected]);
+  const projectedSpotGap = clampUnit((selectedSpotWeight?.composite ?? 0) - currentSpotLean);
+  const technicalGap =
+    selectedSpotWeight?.technical !== null && selectedSpotWeight?.technical !== undefined
+      ? clampUnit(selectedSpotWeight.technical - currentSpotLean)
+      : projectedSpotGap;
+  const fundamentalGap =
+    selectedSpotWeight?.fundamental !== null && selectedSpotWeight?.fundamental !== undefined
+      ? clampUnit(selectedSpotWeight.fundamental - currentSpotLean)
+      : projectedSpotGap;
 
   const chartPriceDomain = useMemo(() => {
     if (!greeksData?.price_curve?.length) {
@@ -1597,14 +1842,20 @@ export default function SecretOptions() {
                         x={selectedSpotPrice}
                         stroke="#7dd3fc"
                         strokeDasharray="4 4"
-                        label={buildSpotLineLabel("SPOT", "left")}
+                        label={buildSpotLineLabel("SPOT", "left", {
+                          technical: technicalGap,
+                          fundamental: fundamentalGap,
+                          divergence: projectedSpotGap,
+                        })}
                       />
                     )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine
                         x={selectedSpotPrice}
                         stroke="transparent"
-                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "right")}
+                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "right", {
+                          divergence: projectedSpotGap,
+                        })}
                       />
                     )}
                     {selectedStrike !== null && (
@@ -1680,14 +1931,20 @@ export default function SecretOptions() {
                         x={selectedSpotPrice}
                         stroke="#7dd3fc"
                         strokeDasharray="4 4"
-                        label={buildSpotLineLabel("SPOT", "left")}
+                        label={buildSpotLineLabel("SPOT", "left", {
+                          technical: technicalGap,
+                          fundamental: fundamentalGap,
+                          divergence: projectedSpotGap,
+                        })}
                       />
                     )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine
                         x={selectedSpotPrice}
                         stroke="transparent"
-                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "right")}
+                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "right", {
+                          divergence: projectedSpotGap,
+                        })}
                       />
                     )}
                     {selectedStrike !== null && (
