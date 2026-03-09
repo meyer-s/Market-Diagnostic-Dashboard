@@ -8,7 +8,6 @@ import {
   Tooltip,
   ReferenceArea,
   ReferenceLine,
-  Customized,
 } from "recharts";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -167,11 +166,11 @@ interface SpotWeighting {
   direction: "left" | "right" | "neutral";
 }
 
-interface RechartsOverlayProps {
+interface ProjectionLabelViewBox {
+  x?: number;
+  y?: number;
   width?: number;
   height?: number;
-  xAxisMap?: Record<string, { scale?: (value: number) => number }>;
-  offset?: { left?: number; top?: number; width?: number; height?: number };
 }
 
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
@@ -312,78 +311,64 @@ const getProjectionColor = (strength: number) => {
   return "#64748b";
 };
 
-const renderProjectionBezierOverlay = (
-  props: RechartsOverlayProps,
-  spot: number | null,
-  domain: { min: number; max: number } | null,
+const buildProjectionBezierLabel = (
   technicalStrength: number | null | undefined,
   fundamentalStrength: number | null | undefined
 ) => {
-  if (spot === null || !domain) return null;
-  const axis = props.xAxisMap
-    ? (Object.values(props.xAxisMap)[0] as { scale?: (value: number) => number })
-    : null;
-  const scale = axis?.scale;
-  const offset = props.offset;
+  return (props: { viewBox?: ProjectionLabelViewBox }) => {
+    const viewBox = props.viewBox;
+    if (!viewBox) return null;
+    const spotX = Number(viewBox.x);
+    const top = Number(viewBox.y);
+    const width = Number(viewBox.width);
+    const height = Number(viewBox.height);
+    if (!Number.isFinite(spotX) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) {
+      return null;
+    }
+    const left = Number(viewBox.x);
+    const right = left + width;
+    const clampedSpotX = Math.max(left + 4, Math.min(right - 4, spotX));
 
-  const left = Number(offset?.left ?? 0);
-  const top = Number(offset?.top ?? 0);
-  const width = Number(offset?.width ?? props.width ?? 0);
-  const height = Number(offset?.height ?? props.height ?? 0);
-  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) {
-    return null;
-  }
-  if (width <= 0 || height <= 0) return null;
-
-  const domainSpan = Math.max(domain.max - domain.min, 1e-6);
-  const scaledX =
-    scale && Number.isFinite(Number(scale(spot)))
-      ? Number(scale(spot))
-      : left + ((spot - domain.min) / domainSpan) * width;
-  const spotX = scaledX;
-  if (!Number.isFinite(spotX)) return null;
-  const right = left + width;
-  const clampedSpotX = Math.max(left + 4, Math.min(right - 4, spotX));
-
-  const makeHalfPath = (strength: number, half: "top" | "bottom") => {
-    const s = clampUnit(strength);
-    const dir = s >= 0 ? 1 : -1;
-    const mag = Math.abs(s);
-    const span = width * (0.06 + mag * 0.28);
-    const endX = Math.max(left + 4, Math.min(right - 4, clampedSpotX + dir * span));
-    const yJoin = top + height * 0.52;
-    const yEdge = half === "top" ? top + 8 : top + height - 8;
-    const c1x = clampedSpotX + dir * (span * 0.14);
-    const c2x = clampedSpotX + dir * (span * 0.72);
-    const c1y = half === "top" ? yJoin - height * 0.16 : yJoin + height * 0.16;
-    const c2y = half === "top" ? yEdge + height * 0.06 : yEdge - height * 0.06;
-    return {
-      path: `M ${clampedSpotX} ${yJoin}
-        C ${c1x} ${c1y} ${c2x} ${c2y} ${endX} ${yEdge}
-        L ${clampedSpotX} ${yEdge}
-        Z`,
-      labelX: clampedSpotX + dir * Math.max(10, span * 0.55),
-      labelY: half === "top" ? top + 14 : top + height - 14,
+    const makeHalfPath = (strength: number, half: "top" | "bottom") => {
+      const s = clampUnit(strength);
+      const dir = s >= 0 ? 1 : -1;
+      const mag = Math.abs(s);
+      const span = width * (0.08 + mag * 0.34);
+      const endX = Math.max(left + 4, Math.min(right - 4, clampedSpotX + dir * span));
+      const yJoin = top + height * 0.52;
+      const yEdge = half === "top" ? top + 6 : top + height - 6;
+      const c1x = clampedSpotX + dir * (span * 0.14);
+      const c2x = clampedSpotX + dir * (span * 0.72);
+      const c1y = half === "top" ? yJoin - height * 0.18 : yJoin + height * 0.18;
+      const c2y = half === "top" ? yEdge + height * 0.07 : yEdge - height * 0.07;
+      return {
+        path: `M ${clampedSpotX} ${yJoin}
+          C ${c1x} ${c1y} ${c2x} ${c2y} ${endX} ${yEdge}
+          L ${clampedSpotX} ${yEdge}
+          Z`,
+        labelX: clampedSpotX + dir * Math.max(10, span * 0.58),
+        labelY: half === "top" ? top + 14 : top + height - 14,
+      };
     };
+
+    const tech = makeHalfPath(technicalStrength ?? 0, "top");
+    const fund = makeHalfPath(fundamentalStrength ?? 0, "bottom");
+    const techColor = getProjectionColor(technicalStrength ?? 0);
+    const fundColor = getProjectionColor(fundamentalStrength ?? 0);
+
+    return (
+      <g pointerEvents="none">
+        <path d={tech.path} fill={techColor} fillOpacity={0.34} stroke={techColor} strokeOpacity={0.9} strokeWidth={1.2} />
+        <path d={fund.path} fill={fundColor} fillOpacity={0.3} stroke={fundColor} strokeOpacity={0.85} strokeWidth={1.2} />
+        <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+          TA
+        </text>
+        <text x={fund.labelX} y={fund.labelY} fill={fundColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+          FA
+        </text>
+      </g>
+    );
   };
-
-  const tech = makeHalfPath(technicalStrength ?? 0, "top");
-  const fund = makeHalfPath(fundamentalStrength ?? 0, "bottom");
-  const techColor = getProjectionColor(technicalStrength ?? 0);
-  const fundColor = getProjectionColor(fundamentalStrength ?? 0);
-
-  return (
-    <g pointerEvents="none">
-      <path d={tech.path} fill={techColor} fillOpacity={0.3} stroke={techColor} strokeOpacity={0.85} strokeWidth={1.1} />
-      <path d={fund.path} fill={fundColor} fillOpacity={0.26} stroke={fundColor} strokeOpacity={0.8} strokeWidth={1.1} />
-      <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
-        TA
-      </text>
-      <text x={fund.labelX} y={fund.labelY} fill={fundColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
-        FA
-      </text>
-    </g>
-  );
 };
 
 const buildGreeksSummary = (
@@ -1744,17 +1729,13 @@ export default function SecretOptions() {
                         fillOpacity={0.12}
                       />
                     )}
-                    <Customized
-                      component={(props: RechartsOverlayProps) =>
-                        renderProjectionBezierOverlay(
-                          props,
-                          selectedSpotPrice,
-                          chartPriceDomain,
-                          technicalGap,
-                          fundamentalGap
-                        )
-                      }
-                    />
+                    {selectedSpotPrice !== null && (
+                      <ReferenceLine
+                        x={selectedSpotPrice}
+                        stroke="transparent"
+                        label={buildProjectionBezierLabel(technicalGap, fundamentalGap)}
+                      />
+                    )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
                     )}
@@ -1826,17 +1807,13 @@ export default function SecretOptions() {
                         fillOpacity={0.12}
                       />
                     )}
-                    <Customized
-                      component={(props: RechartsOverlayProps) =>
-                        renderProjectionBezierOverlay(
-                          props,
-                          selectedSpotPrice,
-                          chartPriceDomain,
-                          technicalGap,
-                          fundamentalGap
-                        )
-                      }
-                    />
+                    {selectedSpotPrice !== null && (
+                      <ReferenceLine
+                        x={selectedSpotPrice}
+                        stroke="transparent"
+                        label={buildProjectionBezierLabel(technicalGap, fundamentalGap)}
+                      />
+                    )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
                     )}
