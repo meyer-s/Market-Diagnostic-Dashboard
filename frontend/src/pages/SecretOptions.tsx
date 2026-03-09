@@ -157,13 +157,6 @@ interface ZoneInputs {
   lossCut: string;
 }
 
-interface SpotLineLabelViewBox {
-  x?: number;
-  y?: number;
-  height?: number;
-  width?: number;
-}
-
 interface SpotWeighting {
   technical: number | null;
   fundamental: number | null;
@@ -171,6 +164,18 @@ interface SpotWeighting {
   confidence: number;
   signalCount: number;
   direction: "left" | "right" | "neutral";
+}
+
+interface PriceDomain {
+  min: number;
+  max: number;
+}
+
+interface ProjectionZone {
+  x1: number;
+  x2: number;
+  color: string;
+  labelX: number;
 }
 
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
@@ -305,172 +310,33 @@ const computeSpotWeighting = (payload: any): SpotWeighting => {
   };
 };
 
-const buildSpotLineLabel =
-  (
-    value: string,
-    side: "left" | "right",
-    pressure?: { technical?: number | null; fundamental?: number | null; divergence?: number | null }
-  ) =>
-  (props: { viewBox?: SpotLineLabelViewBox }) => {
-    const viewBox = props.viewBox;
-    if (!viewBox) return null;
-    const lineX = Number(viewBox.x);
-    const topY = Number(viewBox.y);
-    const height = Number(viewBox.height);
-    const width = Number(viewBox.width);
-    if (!Number.isFinite(lineX) || !Number.isFinite(topY) || !Number.isFinite(height) || !Number.isFinite(width)) {
-      return null;
-    }
-    const leftBound = Number(viewBox.x) + 4;
-    const rightBound = Number(viewBox.x) + width - 4;
-    const labelY = topY + height * 0.68;
-    const technicalPressure = clampUnit(pressure?.technical ?? 0);
-    const fundamentalPressure = clampUnit(pressure?.fundamental ?? 0);
-    const divergence = clampUnit(
-      pressure?.divergence ?? (technicalPressure * 0.6 + fundamentalPressure * 0.4)
-    );
+const getProjectionColor = (strength: number) => {
+  if (strength > 0.08) return "#22c55e";
+  if (strength < -0.08) return "#f43f5e";
+  return "#64748b";
+};
 
-    if (side === "left") {
-      const flagText = value;
-      const flagWidth = 16;
-      const flagHeight = Math.max(40, flagText.length * 7 + 10);
-      const flagY = labelY - flagHeight / 2;
-      const flagX = Math.max(leftBound, lineX - flagWidth - 12);
-      const midY = flagY + flagHeight / 2;
-      const flagRight = flagX + flagWidth;
-
-      const buildZonePath = (strength: number, centerY: number, bend: number) => {
-        const dir = strength >= 0 ? 1 : -1;
-        const magnitude = Math.abs(strength);
-        const len = 8 + magnitude * 24;
-        const x1 = lineX;
-        const x2 = lineX + dir * len;
-        const t = 2.2;
-        const c1x = lineX + dir * (len * 0.35);
-        const c2x = lineX + dir * (len * 0.7);
-        return `M ${x1} ${centerY - t}
-          C ${c1x} ${centerY + bend} ${c2x} ${centerY + bend} ${x2} ${centerY - t}
-          L ${x2} ${centerY + t}
-          C ${c2x} ${centerY + bend + 2} ${c1x} ${centerY + bend + 2} ${x1} ${centerY + t}
-          Z`;
-      };
-
-      const techColor =
-        technicalPressure > 0.08 ? "#22c55e" : technicalPressure < -0.08 ? "#f43f5e" : "#64748b";
-      const fundColor =
-        fundamentalPressure > 0.08
-          ? "#22c55e"
-          : fundamentalPressure < -0.08
-            ? "#f43f5e"
-            : "#64748b";
-      const topZoneY = midY - 8;
-      const bottomZoneY = midY + 8;
-
-      return (
-        <g>
-          <rect
-            x={flagX}
-            y={flagY}
-            width={flagWidth}
-            height={flagHeight}
-            rx={4}
-            ry={4}
-            fill="#38bdf8"
-            fillOpacity={0.95}
-          />
-          <path
-            d={`M ${flagRight} ${midY} C ${flagRight + 3} ${midY} ${lineX - 3} ${midY} ${lineX} ${midY}`}
-            stroke="#38bdf8"
-            strokeWidth={2}
-            strokeLinecap="round"
-            fill="none"
-          />
-          <path
-            d={buildZonePath(technicalPressure, topZoneY, -5)}
-            fill={techColor}
-            fillOpacity={0.24}
-            stroke={techColor}
-            strokeWidth={0.8}
-            strokeOpacity={0.7}
-          />
-          <path
-            d={buildZonePath(fundamentalPressure, bottomZoneY, 5)}
-            fill={fundColor}
-            fillOpacity={0.24}
-            stroke={fundColor}
-            strokeWidth={0.8}
-            strokeOpacity={0.7}
-          />
-          <text
-            x={lineX - 2}
-            y={topZoneY - 4}
-            fill={techColor}
-            fontSize={8}
-            textAnchor="end"
-            dominantBaseline="middle"
-          >
-            TA
-          </text>
-          <text
-            x={lineX - 2}
-            y={bottomZoneY + 4}
-            fill={fundColor}
-            fontSize={8}
-            textAnchor="end"
-            dominantBaseline="middle"
-          >
-            FA
-          </text>
-          <text
-            x={flagX + flagWidth / 2}
-            y={midY}
-            fill="#0f172a"
-            fontSize={10}
-            fontWeight={700}
-            dominantBaseline="middle"
-            textAnchor="middle"
-            transform={`rotate(-90 ${flagX + flagWidth / 2} ${midY})`}
-          >
-            {flagText}
-          </text>
-        </g>
-      );
-    }
-    const priceText = value;
-    const padX = 6;
-    const chipHeight = 16;
-    const chipWidth = Math.max(52, priceText.length * 7 + padX * 2);
-    const chipX = Math.min(Math.max(lineX + 10 + divergence * 10, lineX + 4), rightBound - chipWidth);
-    const chipY = labelY - chipHeight / 2;
-    const textY = chipY + chipHeight / 2;
-    return (
-      <g>
-        <rect
-          x={chipX}
-          y={chipY}
-          width={chipWidth}
-          height={chipHeight}
-          rx={4}
-          ry={4}
-          fill="#0f172a"
-          fillOpacity={0.9}
-          stroke="#38bdf8"
-          strokeOpacity={0.7}
-          strokeWidth={1}
-        />
-        <text
-          x={chipX + chipWidth / 2}
-          y={textY}
-          fill="#7dd3fc"
-          fontSize={10}
-          dominantBaseline="middle"
-          textAnchor="middle"
-        >
-          {priceText}
-        </text>
-      </g>
-    );
+const buildProjectionZone = (
+  spot: number | null,
+  domain: PriceDomain | null,
+  strength: number | null | undefined
+): ProjectionZone | null => {
+  if (spot === null || !domain) return null;
+  const s = clampUnit(strength ?? 0);
+  const range = Math.max(domain.max - domain.min, 1e-6);
+  const span = range * (0.05 + Math.abs(s) * 0.25);
+  const rawX1 = s >= 0 ? spot : spot - span;
+  const rawX2 = s >= 0 ? spot + span : spot;
+  const x1 = Math.max(domain.min, Math.min(domain.max, rawX1));
+  const x2 = Math.max(domain.min, Math.min(domain.max, rawX2));
+  const finalX2 = Math.abs(x2 - x1) < range * 0.01 ? Math.min(domain.max, x1 + range * 0.01) : x2;
+  return {
+    x1: Math.min(x1, finalX2),
+    x2: Math.max(x1, finalX2),
+    color: getProjectionColor(s),
+    labelX: s >= 0 ? Math.max(x1, finalX2) : Math.min(x1, finalX2),
   };
+};
 
 const buildGreeksSummary = (
   greeks: PositionMetrics["greeks"] | GreeksPayload["current_greeks"] | null
@@ -637,7 +503,6 @@ export default function SecretOptions() {
   });
   const [zoneInputsByPosition, setZoneInputsByPosition] = useState<Record<number, ZoneInputs>>({});
   const [spotWeightBySymbol, setSpotWeightBySymbol] = useState<Record<string, SpotWeighting>>({});
-  const [loadingSpotWeightSymbol, setLoadingSpotWeightSymbol] = useState<string | null>(null);
 
   const loadPositions = async () => {
     setLoading(true);
@@ -886,7 +751,6 @@ export default function SecretOptions() {
       return;
     }
     let cancelled = false;
-    setLoadingSpotWeightSymbol(selectedSymbol);
     apiFetch<any>(`/stocks/${selectedSymbol}/projections`)
       .then((payload) => {
         if (cancelled) return;
@@ -908,11 +772,6 @@ export default function SecretOptions() {
             direction: "neutral",
           },
         }));
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingSpotWeightSymbol((current) => (current === selectedSymbol ? null : current));
-        }
       });
 
     return () => {
@@ -1068,6 +927,15 @@ export default function SecretOptions() {
       max: Math.max(...prices),
     };
   }, [greeksData]);
+
+  const technicalProjectionZone = useMemo(
+    () => buildProjectionZone(selectedSpotPrice, chartPriceDomain, technicalGap),
+    [selectedSpotPrice, chartPriceDomain, technicalGap]
+  );
+  const fundamentalProjectionZone = useMemo(
+    () => buildProjectionZone(selectedSpotPrice, chartPriceDomain, fundamentalGap),
+    [selectedSpotPrice, chartPriceDomain, fundamentalGap]
+  );
 
   const sortedClosedRows = useMemo(() => {
     const sorted = [...closedPositions];
@@ -1837,26 +1705,48 @@ export default function SecretOptions() {
                         fillOpacity={0.12}
                       />
                     )}
-                    {selectedSpotPrice !== null && (
+                    {technicalProjectionZone && (
+                      <ReferenceArea
+                        x1={technicalProjectionZone.x1}
+                        x2={technicalProjectionZone.x2}
+                        fill={technicalProjectionZone.color}
+                        fillOpacity={0.12}
+                      />
+                    )}
+                    {fundamentalProjectionZone && (
+                      <ReferenceArea
+                        x1={fundamentalProjectionZone.x1}
+                        x2={fundamentalProjectionZone.x2}
+                        fill={fundamentalProjectionZone.color}
+                        fillOpacity={0.08}
+                      />
+                    )}
+                    {technicalProjectionZone && (
                       <ReferenceLine
-                        x={selectedSpotPrice}
-                        stroke="#7dd3fc"
-                        strokeDasharray="4 4"
-                        label={buildSpotLineLabel("SPOT", "left", {
-                          technical: technicalGap,
-                          fundamental: fundamentalGap,
-                          divergence: projectedSpotGap,
-                        })}
+                        x={technicalProjectionZone.labelX}
+                        stroke="transparent"
+                        label={{
+                          value: "TA",
+                          position: "insideTop",
+                          fill: technicalProjectionZone.color,
+                          fontSize: 9,
+                        }}
+                      />
+                    )}
+                    {fundamentalProjectionZone && (
+                      <ReferenceLine
+                        x={fundamentalProjectionZone.labelX}
+                        stroke="transparent"
+                        label={{
+                          value: "FA",
+                          position: "insideBottom",
+                          fill: fundamentalProjectionZone.color,
+                          fontSize: 9,
+                        }}
                       />
                     )}
                     {selectedSpotPrice !== null && (
-                      <ReferenceLine
-                        x={selectedSpotPrice}
-                        stroke="transparent"
-                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "right", {
-                          divergence: projectedSpotGap,
-                        })}
-                      />
+                      <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
                     )}
                     {selectedStrike !== null && (
                       <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
@@ -1926,26 +1816,48 @@ export default function SecretOptions() {
                         fillOpacity={0.12}
                       />
                     )}
-                    {selectedSpotPrice !== null && (
+                    {technicalProjectionZone && (
+                      <ReferenceArea
+                        x1={technicalProjectionZone.x1}
+                        x2={technicalProjectionZone.x2}
+                        fill={technicalProjectionZone.color}
+                        fillOpacity={0.12}
+                      />
+                    )}
+                    {fundamentalProjectionZone && (
+                      <ReferenceArea
+                        x1={fundamentalProjectionZone.x1}
+                        x2={fundamentalProjectionZone.x2}
+                        fill={fundamentalProjectionZone.color}
+                        fillOpacity={0.08}
+                      />
+                    )}
+                    {technicalProjectionZone && (
                       <ReferenceLine
-                        x={selectedSpotPrice}
-                        stroke="#7dd3fc"
-                        strokeDasharray="4 4"
-                        label={buildSpotLineLabel("SPOT", "left", {
-                          technical: technicalGap,
-                          fundamental: fundamentalGap,
-                          divergence: projectedSpotGap,
-                        })}
+                        x={technicalProjectionZone.labelX}
+                        stroke="transparent"
+                        label={{
+                          value: "TA",
+                          position: "insideTop",
+                          fill: technicalProjectionZone.color,
+                          fontSize: 9,
+                        }}
+                      />
+                    )}
+                    {fundamentalProjectionZone && (
+                      <ReferenceLine
+                        x={fundamentalProjectionZone.labelX}
+                        stroke="transparent"
+                        label={{
+                          value: "FA",
+                          position: "insideBottom",
+                          fill: fundamentalProjectionZone.color,
+                          fontSize: 9,
+                        }}
                       />
                     )}
                     {selectedSpotPrice !== null && (
-                      <ReferenceLine
-                        x={selectedSpotPrice}
-                        stroke="transparent"
-                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "right", {
-                          divergence: projectedSpotGap,
-                        })}
-                      />
+                      <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
                     )}
                     {selectedStrike !== null && (
                       <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
