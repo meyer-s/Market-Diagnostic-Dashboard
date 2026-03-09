@@ -185,6 +185,11 @@ const formatSigned = (value: number | null | undefined, digits = 2) => {
   return `${sign}${value.toFixed(digits)}`;
 };
 
+const capitalizeWord = (value: string) => {
+  if (!value) return value;
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+};
+
 const buildSpotLineLabel =
   (value: string, anchor: "top" | "bottom") =>
   (props: { viewBox?: SpotLineLabelViewBox }) => {
@@ -196,16 +201,58 @@ const buildSpotLineLabel =
     if (!Number.isFinite(lineX) || !Number.isFinite(topY) || !Number.isFinite(height)) {
       return null;
     }
-    const baselineY = anchor === "top" ? topY + 16 : topY + height - 8;
+    if (anchor === "top") {
+      const flagText = value.toUpperCase();
+      const flagHeight = 16;
+      const flagWidth = Math.max(36, flagText.length * 7 + 10);
+      const flagY = topY + 6;
+      const flagX = lineX - flagWidth - 10;
+      const midY = flagY + flagHeight / 2;
+      const flagRight = flagX + flagWidth;
+      return (
+        <g>
+          <rect
+            x={flagX}
+            y={flagY}
+            width={flagWidth}
+            height={flagHeight}
+            rx={4}
+            ry={4}
+            fill="#38bdf8"
+            fillOpacity={0.95}
+          />
+          <path
+            d={`M ${flagRight} ${midY} C ${flagRight + 3} ${midY} ${lineX - 3} ${midY} ${lineX} ${midY}`}
+            stroke="#38bdf8"
+            strokeWidth={2}
+            strokeLinecap="round"
+            fill="none"
+          />
+          <text
+            x={flagX + flagWidth / 2}
+            y={midY}
+            fill="#0f172a"
+            fontSize={10}
+            fontWeight={700}
+            dominantBaseline="middle"
+            textAnchor="middle"
+          >
+            {flagText}
+          </text>
+        </g>
+      );
+    }
+    const baselineY = topY + height - 8;
+    const labelX = lineX + 6;
     return (
       <text
-        x={lineX}
+        x={labelX}
         y={baselineY}
         fill="#7dd3fc"
         fontSize={10}
         dominantBaseline="alphabetic"
-        textAnchor={anchor === "top" ? "end" : "start"}
-        transform={`rotate(-90 ${lineX} ${baselineY})`}
+        textAnchor="start"
+        transform={`rotate(-90 ${labelX} ${baselineY})`}
       >
         {value}
       </text>
@@ -241,14 +288,16 @@ const buildGreeksSummary = (
   return {
     tone: deltaDirection,
     thetaDirection,
-    overall: `${deltaDirection.toUpperCase()} setup with ${
+    overall: `${capitalizeWord(deltaDirection)} setup with ${
       thetaDirection === "decay" ? "negative time carry" : "positive time carry"
     }.`,
     details: [
       {
         label: "Delta",
         value: formatSigned(delta, 3),
-        note: `~${formatSigned(delta * 100, 1)} per $1 move per contract (${deltaDirection})`,
+        note: `~${formatSigned(delta * 100, 1)} per $1 move per contract (${capitalizeWord(
+          deltaDirection
+        )})`,
       },
       {
         label: "Gamma",
@@ -258,7 +307,9 @@ const buildGreeksSummary = (
       {
         label: "Theta",
         value: formatSigned(theta, 4),
-        note: `~$${Math.abs(theta).toFixed(2)} per day per contract (${thetaDirection})`,
+        note: `~$${Math.abs(theta).toFixed(2)} per day per contract (${capitalizeWord(
+          thetaDirection
+        )})`,
       },
       {
         label: "Vega",
@@ -1520,7 +1571,7 @@ export default function SecretOptions() {
                         x={selectedSpotPrice}
                         stroke="#7dd3fc"
                         strokeDasharray="4 4"
-                        label={buildSpotLineLabel("spot", "top")}
+                        label={buildSpotLineLabel("Spot", "top")}
                       />
                     )}
                     {selectedSpotPrice !== null && (
@@ -1603,7 +1654,7 @@ export default function SecretOptions() {
                         x={selectedSpotPrice}
                         stroke="#7dd3fc"
                         strokeDasharray="4 4"
-                        label={buildSpotLineLabel("spot", "top")}
+                        label={buildSpotLineLabel("Spot", "top")}
                       />
                     )}
                     {selectedSpotPrice !== null && (
