@@ -8,6 +8,7 @@ import {
   Tooltip,
   ReferenceArea,
   ReferenceLine,
+  Label,
 } from "recharts";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -166,13 +167,6 @@ interface SpotWeighting {
   direction: "left" | "right" | "neutral";
 }
 
-interface ProjectionLabelViewBox {
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-}
-
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";
@@ -315,8 +309,8 @@ const buildProjectionBezierLabel = (
   technicalStrength: number | null | undefined,
   fundamentalStrength: number | null | undefined
 ) => {
-  return (props: { viewBox?: ProjectionLabelViewBox }) => {
-    const viewBox = props.viewBox;
+  return (props: any) => {
+    const viewBox = props?.viewBox;
     if (!viewBox) return null;
     const spotX = Number(viewBox.x);
     const top = Number(viewBox.y);
@@ -1733,8 +1727,9 @@ export default function SecretOptions() {
                       <ReferenceLine
                         x={selectedSpotPrice}
                         stroke="transparent"
-                        label={buildProjectionBezierLabel(technicalGap, fundamentalGap)}
-                      />
+                      >
+                        <Label content={buildProjectionBezierLabel(technicalGap, fundamentalGap)} />
+                      </ReferenceLine>
                     )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
@@ -1811,8 +1806,9 @@ export default function SecretOptions() {
                       <ReferenceLine
                         x={selectedSpotPrice}
                         stroke="transparent"
-                        label={buildProjectionBezierLabel(technicalGap, fundamentalGap)}
-                      />
+                      >
+                        <Label content={buildProjectionBezierLabel(technicalGap, fundamentalGap)} />
+                      </ReferenceLine>
                     )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
