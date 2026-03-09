@@ -161,6 +161,7 @@ interface SpotLineLabelViewBox {
   x?: number;
   y?: number;
   height?: number;
+  width?: number;
 }
 
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
@@ -191,22 +192,27 @@ const capitalizeWord = (value: string) => {
 };
 
 const buildSpotLineLabel =
-  (value: string, anchor: "top" | "bottom") =>
+  (value: string, side: "left" | "right") =>
   (props: { viewBox?: SpotLineLabelViewBox }) => {
     const viewBox = props.viewBox;
     if (!viewBox) return null;
     const lineX = Number(viewBox.x);
     const topY = Number(viewBox.y);
     const height = Number(viewBox.height);
-    if (!Number.isFinite(lineX) || !Number.isFinite(topY) || !Number.isFinite(height)) {
+    const width = Number(viewBox.width);
+    if (!Number.isFinite(lineX) || !Number.isFinite(topY) || !Number.isFinite(height) || !Number.isFinite(width)) {
       return null;
     }
-    if (anchor === "top") {
-      const flagText = value.toUpperCase();
-      const flagHeight = 16;
-      const flagWidth = Math.max(36, flagText.length * 7 + 10);
-      const flagY = topY + 6;
-      const flagX = lineX - flagWidth - 10;
+    const leftBound = Number(viewBox.x) + 4;
+    const rightBound = Number(viewBox.x) + width - 4;
+    const labelY = topY + height * 0.68;
+
+    if (side === "left") {
+      const flagText = value;
+      const flagWidth = 16;
+      const flagHeight = Math.max(40, flagText.length * 7 + 10);
+      const flagY = labelY - flagHeight / 2;
+      const flagX = Math.max(leftBound, lineX - flagWidth - 12);
       const midY = flagY + flagHeight / 2;
       const flagRight = flagX + flagWidth;
       return (
@@ -236,26 +242,46 @@ const buildSpotLineLabel =
             fontWeight={700}
             dominantBaseline="middle"
             textAnchor="middle"
+            transform={`rotate(-90 ${flagX + flagWidth / 2} ${midY})`}
           >
             {flagText}
           </text>
         </g>
       );
     }
-    const baselineY = topY + height - 8;
-    const labelX = lineX + 6;
+    const priceText = value;
+    const padX = 6;
+    const chipHeight = 16;
+    const chipWidth = Math.max(52, priceText.length * 7 + padX * 2);
+    const chipX = Math.min(lineX + 10, rightBound - chipWidth);
+    const chipY = labelY - chipHeight / 2;
+    const textY = chipY + chipHeight / 2;
     return (
-      <text
-        x={labelX}
-        y={baselineY}
-        fill="#7dd3fc"
-        fontSize={10}
-        dominantBaseline="alphabetic"
-        textAnchor="start"
-        transform={`rotate(-90 ${labelX} ${baselineY})`}
-      >
-        {value}
-      </text>
+      <g>
+        <rect
+          x={chipX}
+          y={chipY}
+          width={chipWidth}
+          height={chipHeight}
+          rx={4}
+          ry={4}
+          fill="#0f172a"
+          fillOpacity={0.9}
+          stroke="#38bdf8"
+          strokeOpacity={0.7}
+          strokeWidth={1}
+        />
+        <text
+          x={chipX + chipWidth / 2}
+          y={textY}
+          fill="#7dd3fc"
+          fontSize={10}
+          dominantBaseline="middle"
+          textAnchor="middle"
+        >
+          {priceText}
+        </text>
+      </g>
     );
   };
 
@@ -1571,14 +1597,14 @@ export default function SecretOptions() {
                         x={selectedSpotPrice}
                         stroke="#7dd3fc"
                         strokeDasharray="4 4"
-                        label={buildSpotLineLabel("Spot", "top")}
+                        label={buildSpotLineLabel("SPOT", "left")}
                       />
                     )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine
                         x={selectedSpotPrice}
                         stroke="transparent"
-                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "bottom")}
+                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "right")}
                       />
                     )}
                     {selectedStrike !== null && (
@@ -1654,14 +1680,14 @@ export default function SecretOptions() {
                         x={selectedSpotPrice}
                         stroke="#7dd3fc"
                         strokeDasharray="4 4"
-                        label={buildSpotLineLabel("Spot", "top")}
+                        label={buildSpotLineLabel("SPOT", "left")}
                       />
                     )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine
                         x={selectedSpotPrice}
                         stroke="transparent"
-                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "bottom")}
+                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "right")}
                       />
                     )}
                     {selectedStrike !== null && (
