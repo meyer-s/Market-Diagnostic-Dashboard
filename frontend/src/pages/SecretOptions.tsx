@@ -157,6 +157,12 @@ interface ZoneInputs {
   lossCut: string;
 }
 
+interface SpotLineLabelViewBox {
+  x?: number;
+  y?: number;
+  height?: number;
+}
+
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";
@@ -178,6 +184,33 @@ const formatSigned = (value: number | null | undefined, digits = 2) => {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(digits)}`;
 };
+
+const buildSpotLineLabel =
+  (value: string, anchor: "top" | "bottom") =>
+  (props: { viewBox?: SpotLineLabelViewBox }) => {
+    const viewBox = props.viewBox;
+    if (!viewBox) return null;
+    const lineX = Number(viewBox.x);
+    const topY = Number(viewBox.y);
+    const height = Number(viewBox.height);
+    if (!Number.isFinite(lineX) || !Number.isFinite(topY) || !Number.isFinite(height)) {
+      return null;
+    }
+    const baselineY = anchor === "top" ? topY + 16 : topY + height - 8;
+    return (
+      <text
+        x={lineX}
+        y={baselineY}
+        fill="#7dd3fc"
+        fontSize={10}
+        dominantBaseline="alphabetic"
+        textAnchor={anchor === "top" ? "end" : "start"}
+        transform={`rotate(-90 ${lineX} ${baselineY})`}
+      >
+        {value}
+      </text>
+    );
+  };
 
 const buildGreeksSummary = (
   greeks: PositionMetrics["greeks"] | GreeksPayload["current_greeks"] | null
@@ -208,22 +241,40 @@ const buildGreeksSummary = (
   return {
     tone: deltaDirection,
     thetaDirection,
-    overall: `Overall: this option ${directionalLabel}, ${convexityLabel}, is ${vegaLabel}, and ${thetaLabel} (net ${thetaDirection}).`,
+    overall: `${deltaDirection.toUpperCase()} setup with ${
+      thetaDirection === "decay" ? "negative time carry" : "positive time carry"
+    }.`,
     details: [
-      `Direction: ${deltaDirection} (delta ${formatSigned(delta, 3)}). ~${formatSigned(
-        delta,
-        3
-      )} per $1 move per share (${formatSigned(delta * 100, 1)} per contract).`,
-      `Speed of change (gamma) ${formatSigned(gamma, 4)} means delta shifts by ~${formatSigned(
-        gamma,
-        4
-      )} for each $1 move.`,
-      `Time decay (theta) ${formatSigned(theta, 4)} implies about $${Math.abs(theta).toFixed(
-        2
-      )} per day per contract of time ${thetaDirection}.`,
-      `Volatility sensitivity (vega) ${formatSigned(vega, 4)} means about $${Math.abs(vega).toFixed(
-        2
-      )} per 1 vol point (1%) per contract.`,
+      {
+        label: "Delta",
+        value: formatSigned(delta, 3),
+        note: `~${formatSigned(delta * 100, 1)} per $1 move per contract (${deltaDirection})`,
+      },
+      {
+        label: "Gamma",
+        value: formatSigned(gamma, 4),
+        note: `Delta changes by ~${formatSigned(gamma, 4)} for each $1 move`,
+      },
+      {
+        label: "Theta",
+        value: formatSigned(theta, 4),
+        note: `~$${Math.abs(theta).toFixed(2)} per day per contract (${thetaDirection})`,
+      },
+      {
+        label: "Vega",
+        value: formatSigned(vega, 4),
+        note: `~$${Math.abs(vega).toFixed(2)} per +1 vol point (1%) per contract`,
+      },
+      {
+        label: "Directional response",
+        value: directionalLabel,
+        note: convexityLabel,
+      },
+      {
+        label: "Volatility + time",
+        value: vegaLabel,
+        note: thetaLabel,
+      },
     ],
   };
 };
@@ -772,14 +823,14 @@ export default function SecretOptions() {
     const linked = positions.filter(
       (item) => item.position.source_event_id !== null && item.position.source_event_id !== undefined
     );
-    const avgConfidence = linked.length
+    const avgLinkConfidence = linked.length
       ? linked.reduce((sum, item) => sum + (item.position.source_match_confidence ?? 0), 0) / linked.length
       : null;
     return {
       linked: linked.length,
       total: positions.length,
       coverage: positions.length ? (linked.length / positions.length) * 100 : 0,
-      avgConfidence,
+      avgLinkConfidence,
     };
   }, [positions]);
 
@@ -788,9 +839,16 @@ export default function SecretOptions() {
       (row) => row.source_event_id !== null && row.source_event_id !== undefined
     );
     const linkedWins = linked.filter((row) => row.dollar_pnl > 0).length;
+    const linkedNetPnl = linked.reduce((sum, row) => sum + row.dollar_pnl, 0);
+    const linkedAvgPercent = linked.length
+      ? linked.reduce((sum, row) => sum + row.percent_pnl, 0) / linked.length
+      : null;
+    const linkedExpectancyDollar = linked.length ? linkedNetPnl / linked.length : null;
     return {
       linked: linked.length,
       linkedWinRate: linked.length ? (linkedWins / linked.length) * 100 : 0,
+      linkedAvgPercent,
+      linkedExpectancyDollar,
     };
   }, [sortedClosedRows]);
 
@@ -814,8 +872,8 @@ export default function SecretOptions() {
       sourceTriggeredAt ? `Triggered: ${sourceTriggeredAt}` : "Triggered: n/a",
       sourceMatchMethod ? `Method: ${sourceMatchMethod}` : "Method: n/a",
       sourceMatchConfidence !== null && sourceMatchConfidence !== undefined
-        ? `Confidence: ${Math.round(sourceMatchConfidence * 100)}%`
-        : "Confidence: n/a",
+        ? `Link confidence: ${Math.round(sourceMatchConfidence * 100)}%`
+        : "Link confidence: n/a",
     ];
     if (sourceMatchNotes) {
       lines.push(`Notes: ${sourceMatchNotes}`);
@@ -863,7 +921,7 @@ export default function SecretOptions() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
           <div className="text-xs text-gray-500">Total Cost</div>
           <div className="text-lg font-semibold">{formatCurrency(totals.totalCost)}</div>
@@ -892,9 +950,36 @@ export default function SecretOptions() {
           </div>
           <div className="text-xs text-gray-400">
             {formatPercent(openAttribution.coverage, 1)} coverage
-            {openAttribution.avgConfidence !== null
-              ? ` • ${formatPercent(openAttribution.avgConfidence * 100, 0)} avg conf`
+            {openAttribution.avgLinkConfidence !== null
+              ? ` • ${formatPercent(openAttribution.avgLinkConfidence * 100, 0)} avg link conf`
               : ""}
+          </div>
+        </div>
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+          <div className="text-xs text-gray-500">Signal Quality (Linked)</div>
+          <div
+            className={`text-lg font-semibold ${
+              closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
+                ? "text-rose-300"
+                : "text-emerald-300"
+            }`}
+          >
+            {closedAttribution.linked > 0
+              ? `${formatPercent(closedAttribution.linkedWinRate, 1)} win`
+              : "n/a"}
+          </div>
+          <div className="text-xs text-gray-400">
+            {closedAttribution.linked > 0
+              ? `n=${closedAttribution.linked} • ${
+                  closedAttribution.linkedAvgPercent !== null
+                    ? `${formatSigned(closedAttribution.linkedAvgPercent, 1)}% avg`
+                    : "avg n/a"
+                }${
+                  closedAttribution.linkedExpectancyDollar !== null
+                    ? ` • ${formatCurrency(closedAttribution.linkedExpectancyDollar, 0)} expectancy`
+                    : ""
+                }`
+              : "No closed linked trades yet"}
           </div>
         </div>
       </div>
@@ -1121,7 +1206,7 @@ export default function SecretOptions() {
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
                           <span
-                            title={`${tooltip}\nQuality: ${heat.quality}`}
+                            title={`${tooltip}\nLink quality: ${heat.quality}`}
                             className={`inline-block h-5 w-1.5 rounded-full ${heat.marker}`}
                           />
                           <span className="font-semibold text-gray-100">{position.symbol}</span>
@@ -1271,10 +1356,10 @@ export default function SecretOptions() {
         {greekSummary && (
           <div className="mb-4 p-3 bg-gray-900/60 rounded-lg border border-gray-700">
             <div className="text-[10px] uppercase text-gray-500 tracking-wide mb-2">
-              Deterministic Summary
+              Deterministic Snapshot
             </div>
             <div
-              className={`text-sm font-semibold ${
+              className={`text-sm font-semibold leading-relaxed ${
                 greekSummary.tone === "bullish"
                   ? "text-emerald-300"
                   : greekSummary.tone === "bearish"
@@ -1306,19 +1391,23 @@ export default function SecretOptions() {
                 Time: {greekSummary.thetaDirection}
               </span>
             </div>
-            <ul className="mt-2 text-sm text-gray-200 space-y-1">
-              {greekSummary.details.map((line, index) => (
-                <li key={`${line}-${index}`}>{line}</li>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+              {greekSummary.details.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-md border border-gray-700/70 bg-gray-900/40 px-2.5 py-2"
+                >
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">{item.label}</div>
+                  <div className="text-sm font-medium text-gray-100">{item.value}</div>
+                  <div className="text-[11px] leading-snug text-gray-400 mt-0.5">{item.note}</div>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         )}
 
         {selected && (
           <div className="mb-4 p-3 bg-gray-900/40 rounded-lg border border-gray-700/60">
-            <div className="text-xs text-gray-400 mb-2">
-              Price zones: ITM starts at strike, profit-taking defaults to strike + premium, and loss-cut is editable.
-            </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <label className="text-xs text-amber-300">
                 Strike (ITM line)
@@ -1365,12 +1454,6 @@ export default function SecretOptions() {
                   className="mt-1 w-full bg-gray-900 border border-rose-700/70 rounded px-2 py-1.5 text-xs text-rose-100"
                 />
               </label>
-            </div>
-            <div className="mt-2 text-[11px] text-gray-500">
-              Legend: <span className="text-sky-300">dotted</span> = spot,{" "}
-              <span className="text-amber-300">amber</span> = strike/ITM threshold,{" "}
-              <span className="text-emerald-300">green zone</span> = profit-taking,{" "}
-              <span className="text-rose-300">red zone</span> = loss-cut.
             </div>
           </div>
         )}
@@ -1437,19 +1520,14 @@ export default function SecretOptions() {
                         x={selectedSpotPrice}
                         stroke="#7dd3fc"
                         strokeDasharray="4 4"
-                        label={{ value: "spot", position: "top", fill: "#7dd3fc", fontSize: 10 }}
+                        label={buildSpotLineLabel("spot", "top")}
                       />
                     )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine
                         x={selectedSpotPrice}
                         stroke="transparent"
-                        label={{
-                          value: `$${selectedSpotPrice.toFixed(2)}`,
-                          position: "bottom",
-                          fill: "#7dd3fc",
-                          fontSize: 10,
-                        }}
+                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "bottom")}
                       />
                     )}
                     {selectedStrike !== null && (
@@ -1525,19 +1603,14 @@ export default function SecretOptions() {
                         x={selectedSpotPrice}
                         stroke="#7dd3fc"
                         strokeDasharray="4 4"
-                        label={{ value: "spot", position: "top", fill: "#7dd3fc", fontSize: 10 }}
+                        label={buildSpotLineLabel("spot", "top")}
                       />
                     )}
                     {selectedSpotPrice !== null && (
                       <ReferenceLine
                         x={selectedSpotPrice}
                         stroke="transparent"
-                        label={{
-                          value: `$${selectedSpotPrice.toFixed(2)}`,
-                          position: "bottom",
-                          fill: "#7dd3fc",
-                          fontSize: 10,
-                        }}
+                        label={buildSpotLineLabel(`$${selectedSpotPrice.toFixed(2)}`, "bottom")}
                       />
                     )}
                     {selectedStrike !== null && (
@@ -2009,7 +2082,7 @@ export default function SecretOptions() {
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <span
-                              title={`${tooltip}\nQuality: ${heat.quality}`}
+                              title={`${tooltip}\nLink quality: ${heat.quality}`}
                               className={`inline-block h-5 w-1.5 rounded-full ${heat.marker}`}
                             />
                             <span className="font-semibold">{pos.symbol}</span>
