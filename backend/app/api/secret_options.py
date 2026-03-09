@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Dict, Optional
 
 import pandas as pd
@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.api.stock_projection import compute_historical_volatility
 from app.models.option_positions import OptionPosition
 from app.models.closed_positions import ClosedPosition
+from app.models.options_alerts import OptionAlertEvent
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
     calculate_greeks,
@@ -42,6 +43,7 @@ class OptionPositionCreate(BaseModel):
     shares_equivalent: Optional[int] = None
     dte_at_entry: Optional[int] = None
     underlying_reference: Optional[float] = None
+    source_event_id: Optional[int] = None
 
 
 class ClosePositionRequest(BaseModel):
@@ -57,6 +59,94 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
     if not value:
         return None
     return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def _event_confidence_for_trade(trade_date: date, triggered_at: datetime) -> float:
+    day_delta = (trade_date - triggered_at.date()).days
+    if day_delta == 0:
+        return 1.0
+    if day_delta == 1:
+        return 0.92
+    if day_delta == 2:
+        return 0.84
+    if 3 <= day_delta <= 7:
+        return max(0.55, 0.82 - 0.06 * (day_delta - 2))
+    if -1 <= day_delta < 0:
+        return 0.6
+    return 0.35
+
+
+def _resolve_signal_attribution(
+    db,
+    symbol: str,
+    trade_date: date,
+    explicit_event_id: Optional[int] = None,
+) -> Dict[str, object]:
+    if explicit_event_id is not None:
+        event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == explicit_event_id).first()
+        if event and event.symbol.upper() == symbol.upper() and event.triggered_at:
+            confidence = _event_confidence_for_trade(trade_date, event.triggered_at)
+            return {
+                "source_event_id": event.id,
+                "source_triggered_at": event.triggered_at,
+                "source_match_method": "manual_event_id",
+                "source_match_confidence": confidence,
+                "source_match_notes": "Manually linked by event id.",
+            }
+
+    symbol_upper = symbol.upper()
+    window_start = datetime.combine(trade_date - timedelta(days=2), time.min)
+    window_end = datetime.combine(trade_date + timedelta(days=1), time.max)
+    candidates = (
+        db.query(OptionAlertEvent)
+        .filter(
+            OptionAlertEvent.symbol == symbol_upper,
+            OptionAlertEvent.triggered_at.isnot(None),
+            OptionAlertEvent.triggered_at >= window_start,
+            OptionAlertEvent.triggered_at <= window_end,
+        )
+        .order_by(OptionAlertEvent.triggered_at.desc())
+        .all()
+    )
+
+    method = "symbol+trade_date_window"
+    if not candidates:
+        fallback_start = datetime.combine(trade_date - timedelta(days=21), time.min)
+        candidates = (
+            db.query(OptionAlertEvent)
+            .filter(
+                OptionAlertEvent.symbol == symbol_upper,
+                OptionAlertEvent.triggered_at.isnot(None),
+                OptionAlertEvent.triggered_at >= fallback_start,
+                OptionAlertEvent.triggered_at <= datetime.combine(trade_date, time.max),
+            )
+            .order_by(OptionAlertEvent.triggered_at.desc())
+            .all()
+        )
+        method = "symbol+fallback_21d"
+    if not candidates:
+        return {
+            "source_event_id": None,
+            "source_triggered_at": None,
+            "source_match_method": "no_match",
+            "source_match_confidence": 0.0,
+            "source_match_notes": "No matching sweep event found for symbol/date.",
+        }
+
+    best = max(
+        candidates,
+        key=lambda event: _event_confidence_for_trade(trade_date, event.triggered_at),
+    )
+    confidence = _event_confidence_for_trade(trade_date, best.triggered_at)
+    day_delta = (trade_date - best.triggered_at.date()).days
+
+    return {
+        "source_event_id": best.id,
+        "source_triggered_at": best.triggered_at,
+        "source_match_method": method,
+        "source_match_confidence": confidence,
+        "source_match_notes": f"Matched by symbol and proximity ({day_delta} day delta).",
+    }
 
 
 def _seed_positions(db) -> None:
@@ -351,6 +441,13 @@ def _serialize_position(position: OptionPosition) -> Dict[str, object]:
         "shares_equivalent": position.shares_equivalent,
         "dte_at_entry": position.dte_at_entry,
         "underlying_reference": position.underlying_reference,
+        "source_event_id": position.source_event_id,
+        "source_triggered_at": (
+            position.source_triggered_at.isoformat() if position.source_triggered_at else None
+        ),
+        "source_match_method": position.source_match_method,
+        "source_match_confidence": position.source_match_confidence,
+        "source_match_notes": position.source_match_notes,
     }
 
 
@@ -385,8 +482,15 @@ def get_positions():
 @router.post("/positions")
 def create_position(payload: OptionPositionCreate):
     with get_db_session() as db:
+        trade_date = _parse_date(payload.trade_date)
+        attribution = _resolve_signal_attribution(
+            db,
+            payload.symbol.upper(),
+            trade_date,
+            explicit_event_id=payload.source_event_id,
+        )
         position = OptionPosition(
-            trade_date=_parse_date(payload.trade_date),
+            trade_date=trade_date,
             account=payload.account,
             action=payload.action,
             contracts=payload.contracts,
@@ -401,6 +505,11 @@ def create_position(payload: OptionPositionCreate):
             shares_equivalent=payload.shares_equivalent,
             dte_at_entry=payload.dte_at_entry,
             underlying_reference=payload.underlying_reference,
+            source_event_id=attribution["source_event_id"],
+            source_triggered_at=attribution["source_triggered_at"],
+            source_match_method=attribution["source_match_method"],
+            source_match_confidence=attribution["source_match_confidence"],
+            source_match_notes=attribution["source_match_notes"],
         )
         db.add(position)
         db.commit()
@@ -415,7 +524,15 @@ def update_position(position_id: int, payload: OptionPositionCreate):
         if not position:
             raise HTTPException(status_code=404, detail="Position not found")
 
-        position.trade_date = _parse_date(payload.trade_date)
+        trade_date = _parse_date(payload.trade_date)
+        attribution = _resolve_signal_attribution(
+            db,
+            payload.symbol.upper(),
+            trade_date,
+            explicit_event_id=payload.source_event_id,
+        )
+
+        position.trade_date = trade_date
         position.account = payload.account
         position.action = payload.action
         position.contracts = payload.contracts
@@ -430,6 +547,11 @@ def update_position(position_id: int, payload: OptionPositionCreate):
         position.shares_equivalent = payload.shares_equivalent
         position.dte_at_entry = payload.dte_at_entry
         position.underlying_reference = payload.underlying_reference
+        position.source_event_id = attribution["source_event_id"]
+        position.source_triggered_at = attribution["source_triggered_at"]
+        position.source_match_method = attribution["source_match_method"]
+        position.source_match_confidence = attribution["source_match_confidence"]
+        position.source_match_notes = attribution["source_match_notes"]
 
         db.commit()
         db.refresh(position)
@@ -559,7 +681,12 @@ def close_position(position_id: int, request: ClosePositionRequest):
             dollar_pnl=dollar_pnl,
             percent_pnl=percent_pnl,
             account=position.account,
-            notes=request.notes
+            notes=request.notes,
+            source_event_id=position.source_event_id,
+            source_triggered_at=position.source_triggered_at,
+            source_match_method=position.source_match_method,
+            source_match_confidence=position.source_match_confidence,
+            source_match_notes=position.source_match_notes,
         )
         db.add(closed)
         
@@ -613,7 +740,14 @@ def get_closed_positions(
                 "underlying_at_entry": pos.underlying_at_entry,
                 "underlying_at_exit": pos.underlying_at_exit,
                 "account": pos.account,
-                "notes": pos.notes
+                "notes": pos.notes,
+                "source_event_id": pos.source_event_id,
+                "source_triggered_at": (
+                    pos.source_triggered_at.isoformat() if pos.source_triggered_at else None
+                ),
+                "source_match_method": pos.source_match_method,
+                "source_match_confidence": pos.source_match_confidence,
+                "source_match_notes": pos.source_match_notes,
             })
         
         # Calculate summary stats
@@ -621,6 +755,11 @@ def get_closed_positions(
         winning_trades = sum(1 for pos in closed_positions if pos.dollar_pnl > 0)
         total_trades = len(closed_positions)
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        attributed = [pos for pos in closed_positions if pos.source_event_id is not None]
+        attributed_total = len(attributed)
+        attributed_winners = sum(1 for pos in attributed if pos.dollar_pnl > 0)
+        attributed_pnl = sum(pos.dollar_pnl for pos in attributed)
+        attributed_win_rate = (attributed_winners / attributed_total * 100) if attributed_total else 0
         
         return {
             "closed_positions": results,
@@ -629,6 +768,64 @@ def get_closed_positions(
                 "total_trades": total_trades,
                 "winning_trades": winning_trades,
                 "losing_trades": total_trades - winning_trades,
-                "win_rate": win_rate
+                "win_rate": win_rate,
+                "attributed_trades": attributed_total,
+                "attributed_winning_trades": attributed_winners,
+                "attributed_total_pnl": attributed_pnl,
+                "attributed_win_rate": attributed_win_rate,
             }
+        }
+
+
+@router.post("/attribution/backfill")
+def backfill_signal_attribution(limit: int = Query(1000, ge=1, le=10000)):
+    """
+    Backfill signal attribution for existing open/closed positions that do not
+    yet have a linked sweep event.
+    """
+    with get_db_session() as db:
+        open_positions = (
+            db.query(OptionPosition)
+            .filter(OptionPosition.source_event_id.is_(None))
+            .order_by(OptionPosition.trade_date.desc())
+            .limit(limit)
+            .all()
+        )
+        closed_positions = (
+            db.query(ClosedPosition)
+            .filter(ClosedPosition.source_event_id.is_(None))
+            .order_by(ClosedPosition.trade_date.desc())
+            .limit(limit)
+            .all()
+        )
+
+        open_linked = 0
+        closed_linked = 0
+
+        for position in open_positions:
+            attribution = _resolve_signal_attribution(db, position.symbol, position.trade_date)
+            position.source_event_id = attribution["source_event_id"]
+            position.source_triggered_at = attribution["source_triggered_at"]
+            position.source_match_method = attribution["source_match_method"]
+            position.source_match_confidence = attribution["source_match_confidence"]
+            position.source_match_notes = attribution["source_match_notes"]
+            if position.source_event_id is not None:
+                open_linked += 1
+
+        for position in closed_positions:
+            attribution = _resolve_signal_attribution(db, position.symbol, position.trade_date)
+            position.source_event_id = attribution["source_event_id"]
+            position.source_triggered_at = attribution["source_triggered_at"]
+            position.source_match_method = attribution["source_match_method"]
+            position.source_match_confidence = attribution["source_match_confidence"]
+            position.source_match_notes = attribution["source_match_notes"]
+            if position.source_event_id is not None:
+                closed_linked += 1
+
+        db.commit()
+        return {
+            "open_positions_checked": len(open_positions),
+            "open_positions_linked": open_linked,
+            "closed_positions_checked": len(closed_positions),
+            "closed_positions_linked": closed_linked,
         }

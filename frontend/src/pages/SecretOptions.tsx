@@ -6,6 +6,8 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  ReferenceArea,
+  ReferenceLine,
 } from "recharts";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -63,6 +65,27 @@ interface PositionPayload {
   metrics: PositionMetrics;
 }
 
+interface ClosedPositionRow {
+  id: number;
+  symbol: string;
+  option_type: string;
+  strike: number;
+  expiration: string;
+  contracts: number;
+  trade_date: string;
+  close_date: string;
+  fill_price: number;
+  exit_price: number;
+  total_cost: number;
+  total_proceeds: number;
+  dollar_pnl: number;
+  percent_pnl: number;
+  underlying_at_entry: number | null;
+  underlying_at_exit: number | null;
+  account: string | null;
+  notes: string | null;
+}
+
 interface RawPositionPayload {
   position: OptionPosition;
   metrics?: Partial<PositionMetrics> | null;
@@ -93,6 +116,35 @@ interface GreeksPayload {
     };
     error?: string;
   };
+}
+
+type SortDirection = "asc" | "desc";
+type PositionSortKey =
+  | "symbol"
+  | "strike"
+  | "expiration"
+  | "option_type"
+  | "contracts"
+  | "fill_price"
+  | "option_price"
+  | "underlying"
+  | "dte"
+  | "pnl"
+  | "delta"
+  | "theta";
+type ClosedSortKey =
+  | "symbol"
+  | "strike"
+  | "option_type"
+  | "fill_price"
+  | "exit_price"
+  | "close_date"
+  | "dollar_pnl"
+  | "percent_pnl";
+
+interface ZoneInputs {
+  profitTake: string;
+  lossCut: string;
 }
 
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
@@ -184,6 +236,14 @@ const initialFormState = {
   underlying_reference: "",
 };
 
+const asNumber = (value: string | number | null | undefined): number | null => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const normalizePositionMetrics = (
   metrics: RawPositionPayload["metrics"]
 ): PositionMetrics => {
@@ -240,8 +300,19 @@ export default function SecretOptions() {
   const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
   const [exitPrice, setExitPrice] = useState("");
   const [closeNotes, setCloseNotes] = useState("");
-  const [closedPositions, setClosedPositions] = useState<any[]>([]);
+  const [closedPositions, setClosedPositions] = useState<ClosedPositionRow[]>([]);
   const [showClosedLog, setShowClosedLog] = useState(false);
+  const [scenarioOptionPrices, setScenarioOptionPrices] = useState<Record<number, string>>({});
+  const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: SortDirection }>({
+    key: "symbol",
+    direction: "asc",
+  });
+  const [closedSort, setClosedSort] = useState<{ key: ClosedSortKey; direction: SortDirection }>({
+    key: "close_date",
+    direction: "desc",
+  });
+  const [closedExitOverrides, setClosedExitOverrides] = useState<Record<number, string>>({});
+  const [zoneInputsByPosition, setZoneInputsByPosition] = useState<Record<number, ZoneInputs>>({});
 
   const loadPositions = async () => {
     setLoading(true);
@@ -422,8 +493,11 @@ export default function SecretOptions() {
 
   const loadClosedPositions = async () => {
     try {
-      const data = await apiFetch<any>("/secret/options/closed-positions");
-      setClosedPositions(data.closed_positions);
+      const data = await apiFetch<{ closed_positions: ClosedPositionRow[] }>(
+        "/secret/options/closed-positions"
+      );
+      setClosedPositions(data.closed_positions || []);
+      setClosedExitOverrides({});
     } catch (err: any) {
       console.error("Failed to load closed positions:", err);
     }
@@ -482,13 +556,128 @@ export default function SecretOptions() {
     return buildGreeksSummary(greeks);
   }, [greeksData, selected]);
 
+  useEffect(() => {
+    if (!selected) {
+      return;
+    }
+    const id = selected.position.id;
+    setZoneInputsByPosition((prev) => {
+      if (prev[id]) {
+        return prev;
+      }
+      const strike = selected.position.strike;
+      const fill = selected.position.fill_price || 0;
+      const spot = selected.metrics.market.current_price ?? strike;
+      const defaultProfitTake = strike + fill;
+      const defaultLossCut = Math.max(0, Math.min(strike, spot - fill));
+      return {
+        ...prev,
+        [id]: {
+          profitTake: defaultProfitTake.toFixed(2),
+          lossCut: defaultLossCut.toFixed(2),
+        },
+      };
+    });
+  }, [selected]);
+
+  const getEffectiveOptionPrice = (item: PositionPayload): number | null => {
+    const override = asNumber(scenarioOptionPrices[item.position.id]);
+    if (override !== null) {
+      return override;
+    }
+    return item.metrics.option_price;
+  };
+
+  const getEffectivePnl = (item: PositionPayload): number | null => {
+    const optionPrice = getEffectiveOptionPrice(item);
+    if (optionPrice !== null) {
+      return (optionPrice - item.position.fill_price) * item.position.contracts * 100;
+    }
+    return item.metrics?.pnl?.dollar ?? null;
+  };
+
+  const sortedPositions = useMemo(() => {
+    const sorted = [...positions];
+    sorted.sort((left, right) => {
+      const direction = positionSort.direction === "asc" ? 1 : -1;
+      const lv = (() => {
+        switch (positionSort.key) {
+          case "symbol":
+            return left.position.symbol;
+          case "strike":
+            return left.position.strike;
+          case "expiration":
+            return left.position.expiration;
+          case "option_type":
+            return left.position.option_type;
+          case "contracts":
+            return left.position.contracts;
+          case "fill_price":
+            return left.position.fill_price;
+          case "option_price":
+            return getEffectiveOptionPrice(left);
+          case "underlying":
+            return left.metrics.market.current_price;
+          case "dte":
+            return left.metrics.dte;
+          case "pnl":
+            return getEffectivePnl(left);
+          case "delta":
+            return left.metrics.greeks?.delta ?? null;
+          case "theta":
+            return left.metrics.greeks?.theta ?? null;
+          default:
+            return null;
+        }
+      })();
+      const rv = (() => {
+        switch (positionSort.key) {
+          case "symbol":
+            return right.position.symbol;
+          case "strike":
+            return right.position.strike;
+          case "expiration":
+            return right.position.expiration;
+          case "option_type":
+            return right.position.option_type;
+          case "contracts":
+            return right.position.contracts;
+          case "fill_price":
+            return right.position.fill_price;
+          case "option_price":
+            return getEffectiveOptionPrice(right);
+          case "underlying":
+            return right.metrics.market.current_price;
+          case "dte":
+            return right.metrics.dte;
+          case "pnl":
+            return getEffectivePnl(right);
+          case "delta":
+            return right.metrics.greeks?.delta ?? null;
+          case "theta":
+            return right.metrics.greeks?.theta ?? null;
+          default:
+            return null;
+        }
+      })();
+
+      if (lv === null || lv === undefined) return 1;
+      if (rv === null || rv === undefined) return -1;
+      if (typeof lv === "string" && typeof rv === "string") {
+        return lv.localeCompare(rv) * direction;
+      }
+      return ((Number(lv) || 0) - (Number(rv) || 0)) * direction;
+    });
+    return sorted;
+  }, [positions, positionSort, scenarioOptionPrices]);
+
   const totals = useMemo(() => {
     let totalCost = 0;
     let totalPnl = 0;
     let count = 0;
     positions.forEach((item) => {
       totalCost += item.position.total_cost;
-      const pnlDollar = item.metrics?.pnl?.dollar;
+      const pnlDollar = getEffectivePnl(item);
       if (pnlDollar !== null && pnlDollar !== undefined) {
         totalPnl += pnlDollar;
       }
@@ -496,7 +685,117 @@ export default function SecretOptions() {
     });
     const percent = totalCost ? (totalPnl / totalCost) * 100 : null;
     return { totalCost, totalPnl, percent, count };
-  }, [positions]);
+  }, [positions, scenarioOptionPrices]);
+
+  const selectedZoneInputs = selected ? zoneInputsByPosition[selected.position.id] : null;
+  const selectedSpotPrice =
+    greeksData?.model_info?.spot_price ?? selected?.metrics.market.current_price ?? null;
+  const selectedStrike = selected?.position.strike ?? null;
+  const selectedProfitTake = asNumber(selectedZoneInputs?.profitTake);
+  const selectedLossCut = asNumber(selectedZoneInputs?.lossCut);
+
+  const chartPriceDomain = useMemo(() => {
+    if (!greeksData?.price_curve?.length) {
+      return null;
+    }
+    const prices = greeksData.price_curve.map((point) => point.price);
+    return {
+      min: Math.min(...prices),
+      max: Math.max(...prices),
+    };
+  }, [greeksData]);
+
+  const closedRows = useMemo(() => {
+    return closedPositions.map((pos) => {
+      const overrideExit = asNumber(closedExitOverrides[pos.id]);
+      const effectiveExit = overrideExit ?? pos.exit_price;
+      const effectiveDollarPnl = (effectiveExit - pos.fill_price) * pos.contracts * 100;
+      const effectivePercentPnl = pos.total_cost ? (effectiveDollarPnl / pos.total_cost) * 100 : 0;
+      return {
+        ...pos,
+        effective_exit: effectiveExit,
+        effective_dollar_pnl: effectiveDollarPnl,
+        effective_percent_pnl: effectivePercentPnl,
+      };
+    });
+  }, [closedPositions, closedExitOverrides]);
+
+  const sortedClosedRows = useMemo(() => {
+    const sorted = [...closedRows];
+    sorted.sort((left, right) => {
+      const direction = closedSort.direction === "asc" ? 1 : -1;
+      const lv = (() => {
+        switch (closedSort.key) {
+          case "symbol":
+            return left.symbol;
+          case "strike":
+            return left.strike;
+          case "option_type":
+            return left.option_type;
+          case "fill_price":
+            return left.fill_price;
+          case "exit_price":
+            return left.effective_exit;
+          case "close_date":
+            return left.close_date;
+          case "dollar_pnl":
+            return left.effective_dollar_pnl;
+          case "percent_pnl":
+            return left.effective_percent_pnl;
+          default:
+            return null;
+        }
+      })();
+      const rv = (() => {
+        switch (closedSort.key) {
+          case "symbol":
+            return right.symbol;
+          case "strike":
+            return right.strike;
+          case "option_type":
+            return right.option_type;
+          case "fill_price":
+            return right.fill_price;
+          case "exit_price":
+            return right.effective_exit;
+          case "close_date":
+            return right.close_date;
+          case "dollar_pnl":
+            return right.effective_dollar_pnl;
+          case "percent_pnl":
+            return right.effective_percent_pnl;
+          default:
+            return null;
+        }
+      })();
+      if (lv === null || lv === undefined) return 1;
+      if (rv === null || rv === undefined) return -1;
+      if (typeof lv === "string" && typeof rv === "string") {
+        return lv.localeCompare(rv) * direction;
+      }
+      return ((Number(lv) || 0) - (Number(rv) || 0)) * direction;
+    });
+    return sorted;
+  }, [closedRows, closedSort]);
+
+  const closedTotals = useMemo(() => {
+    const totalPnl = sortedClosedRows.reduce((sum, row) => sum + row.effective_dollar_pnl, 0);
+    const totalCost = sortedClosedRows.reduce((sum, row) => sum + row.total_cost, 0);
+    const winners = sortedClosedRows.filter((row) => row.effective_dollar_pnl > 0).length;
+    const totalTrades = sortedClosedRows.length;
+    return {
+      totalPnl,
+      totalCost,
+      totalTrades,
+      winners,
+      winRate: totalTrades ? (winners / totalTrades) * 100 : 0,
+    };
+  }, [sortedClosedRows]);
+
+  const sortArrow = (active: boolean, direction: SortDirection) => {
+    if (!active) return "↕";
+    return direction === "asc" ? "↑" : "↓";
+  };
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto text-gray-100">
@@ -542,9 +841,17 @@ export default function SecretOptions() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
             <h2 className="text-base font-semibold">Position Summary</h2>
-            <p className="text-xs text-gray-500">Click a row to inspect Greeks and curves.</p>
+            <p className="text-xs text-gray-500">
+              Click a row to inspect Greeks. Click column headers to sort. Use What-if Option cells for quick P/L scenarios.
+            </p>
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={() => setScenarioOptionPrices({})}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+            >
+              Reset Scenarios
+            </button>
             <button
               onClick={() => {
                 setEditingPositionId(null);
@@ -575,25 +882,170 @@ export default function SecretOptions() {
             <table className="min-w-full text-sm text-gray-300">
               <thead className="text-xs uppercase text-gray-500 border-b border-gray-700">
                 <tr>
-                  <th className="px-3 py-2 text-left">Symbol</th>
-                  <th className="px-3 py-2 text-left">Strike</th>
-                  <th className="px-3 py-2 text-left">Expiration</th>
-                  <th className="px-3 py-2 text-left">Type</th>
-                  <th className="px-3 py-2 text-left">Contracts</th>
-                  <th className="px-3 py-2 text-left">Fill</th>
-                  <th className="px-3 py-2 text-left">Option</th>
-                  <th className="px-3 py-2 text-left">Underlying</th>
-                  <th className="px-3 py-2 text-left">DTE</th>
-                  <th className="px-3 py-2 text-left">P&amp;L</th>
-                  <th className="px-3 py-2 text-left">Delta</th>
-                  <th className="px-3 py-2 text-left">Theta</th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "symbol",
+                          direction: prev.key === "symbol" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Symbol {sortArrow(positionSort.key === "symbol", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "strike",
+                          direction: prev.key === "strike" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Strike {sortArrow(positionSort.key === "strike", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "expiration",
+                          direction: prev.key === "expiration" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Expiration {sortArrow(positionSort.key === "expiration", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "option_type",
+                          direction: prev.key === "option_type" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Type {sortArrow(positionSort.key === "option_type", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "contracts",
+                          direction: prev.key === "contracts" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Contracts {sortArrow(positionSort.key === "contracts", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "fill_price",
+                          direction: prev.key === "fill_price" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Fill {sortArrow(positionSort.key === "fill_price", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "option_price",
+                          direction: prev.key === "option_price" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Option / What-if {sortArrow(positionSort.key === "option_price", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "underlying",
+                          direction: prev.key === "underlying" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Underlying {sortArrow(positionSort.key === "underlying", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "dte",
+                          direction: prev.key === "dte" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      DTE {sortArrow(positionSort.key === "dte", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "pnl",
+                          direction: prev.key === "pnl" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      P&amp;L {sortArrow(positionSort.key === "pnl", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "delta",
+                          direction: prev.key === "delta" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Delta {sortArrow(positionSort.key === "delta", positionSort.direction)}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPositionSort((prev) => ({
+                          key: "theta",
+                          direction: prev.key === "theta" && prev.direction === "asc" ? "desc" : "asc",
+                        }))
+                      }
+                    >
+                      Theta {sortArrow(positionSort.key === "theta", positionSort.direction)}
+                    </button>
+                  </th>
                   <th className="px-3 py-2 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {positions.map((item) => {
+                {sortedPositions.map((item) => {
                   const { position, metrics } = item;
-                  const pnl = metrics.pnl?.dollar ?? 0;
+                  const effectiveOptionPrice = getEffectiveOptionPrice(item);
+                  const pnl = getEffectivePnl(item);
                   const rowActive = position.id === selectedId;
                   return (
                     <tr
@@ -608,9 +1060,27 @@ export default function SecretOptions() {
                       <td className="px-3 py-2">{position.contracts}</td>
                       <td className="px-3 py-2">{formatCurrency(position.fill_price, 2)}</td>
                       <td className="px-3 py-2">
-                        {metrics.option_price !== null
-                          ? formatCurrency(metrics.option_price, 2)
-                          : "—"}
+                        <div className="space-y-1">
+                          <div>
+                            {metrics.option_price !== null
+                              ? formatCurrency(metrics.option_price, 2)
+                              : "—"}
+                          </div>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={scenarioOptionPrices[position.id] ?? ""}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(event) =>
+                              setScenarioOptionPrices((prev) => ({
+                                ...prev,
+                                [position.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="What-if"
+                            className="w-24 bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-[11px] text-gray-200"
+                          />
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         {metrics.market.current_price !== null
@@ -620,12 +1090,15 @@ export default function SecretOptions() {
                       <td className="px-3 py-2">{metrics.dte ?? "—"}</td>
                       <td
                         className={`px-3 py-2 font-semibold ${
-                          pnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                          (pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
                         }`}
                       >
-                        {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
-                          ? formatCurrency(metrics.pnl.dollar, 0)
+                        {pnl !== null && pnl !== undefined
+                          ? formatCurrency(pnl, 0)
                           : "—"}
+                        {effectiveOptionPrice !== metrics.option_price && (
+                          <div className="text-[10px] text-amber-300">scenario</div>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}
@@ -659,6 +1132,23 @@ export default function SecretOptions() {
                   );
                 })}
               </tbody>
+              <tfoot className="border-t border-gray-700 text-xs">
+                <tr>
+                  <td className="px-3 py-2 font-semibold text-gray-400" colSpan={9}>
+                    Table Total P&amp;L (with scenarios)
+                  </td>
+                  <td
+                    className={`px-3 py-2 font-semibold ${
+                      totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                    }`}
+                  >
+                    {formatCurrency(totals.totalPnl, 0)}
+                  </td>
+                  <td className="px-3 py-2 text-gray-500" colSpan={3}>
+                    {totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -772,6 +1262,67 @@ export default function SecretOptions() {
           </div>
         )}
 
+        {selected && (
+          <div className="mb-4 p-3 bg-gray-900/40 rounded-lg border border-gray-700/60">
+            <div className="text-xs text-gray-400 mb-2">
+              Price zones: ITM starts at strike, profit-taking defaults to strike + premium, and loss-cut is editable.
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <label className="text-xs text-gray-400">
+                Strike (ITM line)
+                <input
+                  type="number"
+                  value={selected.position.strike}
+                  readOnly
+                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-300"
+                />
+              </label>
+              <label className="text-xs text-gray-400">
+                Profit-take price
+                <input
+                  type="number"
+                  step="0.01"
+                  value={selectedZoneInputs?.profitTake ?? ""}
+                  onChange={(event) =>
+                    setZoneInputsByPosition((prev) => ({
+                      ...prev,
+                      [selected.position.id]: {
+                        profitTake: event.target.value,
+                        lossCut: prev[selected.position.id]?.lossCut ?? "",
+                      },
+                    }))
+                  }
+                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200"
+                />
+              </label>
+              <label className="text-xs text-gray-400">
+                Loss-cut price
+                <input
+                  type="number"
+                  step="0.01"
+                  value={selectedZoneInputs?.lossCut ?? ""}
+                  onChange={(event) =>
+                    setZoneInputsByPosition((prev) => ({
+                      ...prev,
+                      [selected.position.id]: {
+                        profitTake: prev[selected.position.id]?.profitTake ?? "",
+                        lossCut: event.target.value,
+                      },
+                    }))
+                  }
+                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200"
+                />
+              </label>
+            </div>
+            <div className="mt-2 text-[11px] text-gray-500">
+              Legend: <span className="text-sky-300">dotted</span> = spot,{" "}
+              <span className="text-amber-300">amber</span> = strike/ITM threshold,{" "}
+              <span className="text-emerald-300">green zone</span> = profit-taking,{" "}
+              <span className="text-rose-300">red zone</span> = loss-cut.
+            </div>
+          </div>
+        )}
+
         {loadingGreeks ? (
           <div className="text-sm text-gray-400">Loading Greeks...</div>
         ) : greeksData && greeksData.price_curve.length > 0 ? (
@@ -783,6 +1334,9 @@ export default function SecretOptions() {
                   <LineChart data={greeksData.price_curve}>
                     <XAxis
                       dataKey="price"
+                      type="number"
+                      domain={["dataMin", "dataMax"]}
+                      tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
                       tickLine={false}
                       axisLine={false}
@@ -802,6 +1356,36 @@ export default function SecretOptions() {
                         fontSize: "12px",
                       }}
                     />
+                    {chartPriceDomain && selectedLossCut !== null && (
+                      <ReferenceArea
+                        x1={chartPriceDomain.min}
+                        x2={selectedLossCut}
+                        fill="#ef4444"
+                        fillOpacity={0.1}
+                      />
+                    )}
+                    {chartPriceDomain && selectedStrike !== null && (
+                      <ReferenceArea
+                        x1={selectedStrike}
+                        x2={chartPriceDomain.max}
+                        fill="#f59e0b"
+                        fillOpacity={0.08}
+                      />
+                    )}
+                    {chartPriceDomain && selectedProfitTake !== null && (
+                      <ReferenceArea
+                        x1={selectedProfitTake}
+                        x2={chartPriceDomain.max}
+                        fill="#22c55e"
+                        fillOpacity={0.12}
+                      />
+                    )}
+                    {selectedSpotPrice !== null && (
+                      <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
+                    )}
+                    {selectedStrike !== null && (
+                      <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
+                    )}
                     <Line
                       type="monotone"
                       dataKey="delta"
@@ -821,6 +1405,9 @@ export default function SecretOptions() {
                   <LineChart data={greeksData.price_curve}>
                     <XAxis
                       dataKey="price"
+                      type="number"
+                      domain={["dataMin", "dataMax"]}
+                      tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
                       tickLine={false}
                       axisLine={false}
@@ -840,6 +1427,36 @@ export default function SecretOptions() {
                         fontSize: "12px",
                       }}
                     />
+                    {chartPriceDomain && selectedLossCut !== null && (
+                      <ReferenceArea
+                        x1={chartPriceDomain.min}
+                        x2={selectedLossCut}
+                        fill="#ef4444"
+                        fillOpacity={0.1}
+                      />
+                    )}
+                    {chartPriceDomain && selectedStrike !== null && (
+                      <ReferenceArea
+                        x1={selectedStrike}
+                        x2={chartPriceDomain.max}
+                        fill="#f59e0b"
+                        fillOpacity={0.08}
+                      />
+                    )}
+                    {chartPriceDomain && selectedProfitTake !== null && (
+                      <ReferenceArea
+                        x1={selectedProfitTake}
+                        x2={chartPriceDomain.max}
+                        fill="#22c55e"
+                        fillOpacity={0.12}
+                      />
+                    )}
+                    {selectedSpotPrice !== null && (
+                      <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
+                    )}
+                    {selectedStrike !== null && (
+                      <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
+                    )}
                     <Line
                       type="monotone"
                       dataKey="gamma"
@@ -1144,54 +1761,200 @@ export default function SecretOptions() {
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Closed Positions History</h2>
-              <button
-                onClick={() => setShowClosedLog(false)}
-                className="text-gray-400 hover:text-gray-200"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setClosedExitOverrides({})}
+                  className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs"
+                >
+                  Reset What-if
+                </button>
+                <button
+                  onClick={() => setShowClosedLog(false)}
+                  className="text-gray-400 hover:text-gray-200"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
-            {closedPositions.length === 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Tracked Closed Trades</div>
+                <div className="text-base font-semibold text-gray-100">{closedTotals.totalTrades}</div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Win Rate</div>
+                <div className="text-base font-semibold text-gray-100">{formatPercent(closedTotals.winRate, 1)}</div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Total Cost</div>
+                <div className="text-base font-semibold text-gray-100">{formatCurrency(closedTotals.totalCost, 0)}</div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Total P&amp;L (with what-if)</div>
+                <div
+                  className={`text-base font-semibold ${
+                    closedTotals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                  }`}
+                >
+                  {formatCurrency(closedTotals.totalPnl, 0)}
+                </div>
+              </div>
+            </div>
+
+            {sortedClosedRows.length === 0 ? (
               <div className="text-sm text-gray-400 text-center py-8">No closed positions yet</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm text-gray-300">
                   <thead className="text-xs uppercase text-gray-500 border-b border-gray-700">
                     <tr>
-                      <th className="px-3 py-2 text-left">Symbol</th>
-                      <th className="px-3 py-2 text-left">Strike</th>
-                      <th className="px-3 py-2 text-left">Type</th>
-                      <th className="px-3 py-2 text-left">Entry</th>
-                      <th className="px-3 py-2 text-left">Exit</th>
-                      <th className="px-3 py-2 text-left">Close Date</th>
-                      <th className="px-3 py-2 text-left">P&amp;L $</th>
-                      <th className="px-3 py-2 text-left">P&amp;L %</th>
+                      <th className="px-3 py-2 text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClosedSort((prev) => ({
+                              key: "symbol",
+                              direction: prev.key === "symbol" && prev.direction === "asc" ? "desc" : "asc",
+                            }))
+                          }
+                        >
+                          Symbol {sortArrow(closedSort.key === "symbol", closedSort.direction)}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2 text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClosedSort((prev) => ({
+                              key: "strike",
+                              direction: prev.key === "strike" && prev.direction === "asc" ? "desc" : "asc",
+                            }))
+                          }
+                        >
+                          Strike {sortArrow(closedSort.key === "strike", closedSort.direction)}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2 text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClosedSort((prev) => ({
+                              key: "option_type",
+                              direction: prev.key === "option_type" && prev.direction === "asc" ? "desc" : "asc",
+                            }))
+                          }
+                        >
+                          Type {sortArrow(closedSort.key === "option_type", closedSort.direction)}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2 text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClosedSort((prev) => ({
+                              key: "fill_price",
+                              direction: prev.key === "fill_price" && prev.direction === "asc" ? "desc" : "asc",
+                            }))
+                          }
+                        >
+                          Entry {sortArrow(closedSort.key === "fill_price", closedSort.direction)}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2 text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClosedSort((prev) => ({
+                              key: "exit_price",
+                              direction: prev.key === "exit_price" && prev.direction === "asc" ? "desc" : "asc",
+                            }))
+                          }
+                        >
+                          Exit / What-if {sortArrow(closedSort.key === "exit_price", closedSort.direction)}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2 text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClosedSort((prev) => ({
+                              key: "close_date",
+                              direction: prev.key === "close_date" && prev.direction === "asc" ? "desc" : "asc",
+                            }))
+                          }
+                        >
+                          Close Date {sortArrow(closedSort.key === "close_date", closedSort.direction)}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2 text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClosedSort((prev) => ({
+                              key: "dollar_pnl",
+                              direction: prev.key === "dollar_pnl" && prev.direction === "asc" ? "desc" : "asc",
+                            }))
+                          }
+                        >
+                          P&amp;L $ {sortArrow(closedSort.key === "dollar_pnl", closedSort.direction)}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2 text-left">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClosedSort((prev) => ({
+                              key: "percent_pnl",
+                              direction: prev.key === "percent_pnl" && prev.direction === "asc" ? "desc" : "asc",
+                            }))
+                          }
+                        >
+                          P&amp;L % {sortArrow(closedSort.key === "percent_pnl", closedSort.direction)}
+                        </button>
+                      </th>
                       <th className="px-3 py-2 text-left">Notes</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
-                    {closedPositions.map((pos) => (
+                    {sortedClosedRows.map((pos) => (
                       <tr key={pos.id} className="hover:bg-gray-900/40">
                         <td className="px-3 py-2 font-semibold">{pos.symbol}</td>
                         <td className="px-3 py-2">${formatNumber(pos.strike, 2)}</td>
                         <td className="px-3 py-2 uppercase">{pos.option_type}</td>
                         <td className="px-3 py-2">${formatNumber(pos.fill_price, 2)}</td>
-                        <td className="px-3 py-2">${formatNumber(pos.exit_price, 2)}</td>
+                        <td className="px-3 py-2">
+                          <div className="space-y-1">
+                            <div>${formatNumber(pos.exit_price, 2)}</div>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={closedExitOverrides[pos.id] ?? ""}
+                              onChange={(event) =>
+                                setClosedExitOverrides((prev) => ({
+                                  ...prev,
+                                  [pos.id]: event.target.value,
+                                }))
+                              }
+                              placeholder="What-if"
+                              className="w-24 bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-[11px] text-gray-200"
+                            />
+                          </div>
+                        </td>
                         <td className="px-3 py-2">{formatDate(pos.close_date)}</td>
                         <td
                           className={`px-3 py-2 font-semibold ${
-                            pos.dollar_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                            pos.effective_dollar_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
                           }`}
                         >
-                          {formatCurrency(pos.dollar_pnl, 0)}
+                          {formatCurrency(pos.effective_dollar_pnl, 0)}
                         </td>
                         <td
                           className={`px-3 py-2 ${
-                            pos.percent_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
+                            pos.effective_percent_pnl >= 0 ? "text-emerald-300" : "text-rose-300"
                           }`}
                         >
-                          {formatSigned(pos.percent_pnl, 1)}%
+                          {formatSigned(pos.effective_percent_pnl, 1)}%
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-400">{pos.notes || "—"}</td>
                       </tr>

@@ -86,6 +86,7 @@ try:
     print("\nYou can now use /sweep in your Discord server!")
     print("\nExample usage:")
     print("  /sweep symbol:SP500")
+    print("  /sweep symbol:ALL threshold:25")
     print("  /sweep symbol:TOP_OPT_VOL_200 threshold:25")
 
 except requests.exceptions.HTTPError as e:

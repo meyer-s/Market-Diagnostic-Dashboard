@@ -118,7 +118,6 @@ def _scan_tickers(
             )
             delivered, channel, error = _send_webhook(
                 message,
-                embed_title=f"{symbol} MACD Snapshot",
                 embed_url=analyzer_url,
                 button_label=symbol,
             )

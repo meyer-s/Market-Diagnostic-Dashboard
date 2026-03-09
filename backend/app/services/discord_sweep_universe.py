@@ -58,6 +58,7 @@ SUPPORTED_SWEEP_UNIVERSES: Dict[str, str] = {
     "NASDAQ100": "Nasdaq 100",
     "RUSSELL2000": "Russell 2000",
     "SECTOR_ETFS": "Major Sector ETFs",
+    "ALL": "All Optionable Equities",
     "TOP_OPT_VOL_200": "Top 200 Options Volume Stocks",
     "UPCOMING_EARNINGS_21D": "Upcoming Earnings (21-day window)",
     "TOP_SHORT_INTEREST_100": "Top 100 Short Interest",
@@ -71,6 +72,8 @@ UNIVERSE_ALIASES: Dict[str, str] = {
     "NASDAQ100": "NASDAQ100",
     "RUSSELL2000": "RUSSELL2000",
     "SECTOR_ETFS": "SECTOR_ETFS",
+    "ALL": "ALL",
+    "NYSE": "ALL",
     "TOP_OPT_VOL_200": "TOP_OPT_VOL_200",
     "UPCOMING_EARNINGS_21D": "UPCOMING_EARNINGS_21D",
     "TOP_SHORT_INTEREST_100": "TOP_SHORT_INTEREST_100",
@@ -157,6 +160,8 @@ def resolve_sweep_universe(selection: str) -> SweepUniverse:
         tickers, notes = _build_russell2000()
     elif key == "SECTOR_ETFS":
         tickers, notes = _build_sector_etfs()
+    elif key == "ALL":
+        tickers, notes = _build_all_optionable()
     elif key == "TOP_OPT_VOL_200":
         tickers, notes = _build_top_options_volume_200()
     elif key == "UPCOMING_EARNINGS_21D":
@@ -217,6 +222,42 @@ def _build_russell2000() -> Tuple[List[str], List[str]]:
 
 def _build_sector_etfs() -> Tuple[List[str], List[str]]:
     return MAJOR_SECTOR_ETFS[:], ["Loaded built-in major sector ETF basket."]
+
+
+def _build_all_optionable() -> Tuple[List[str], List[str]]:
+    merged: List[str] = []
+    notes: List[str] = []
+    scans = [
+        ("NYSE", "exch_nyse,sh_opt_option", 4000),
+        ("NASDAQ", "exch_nasd,sh_opt_option", 4000),
+        ("AMEX", "exch_amex,sh_opt_option", 1200),
+    ]
+
+    for exchange, filters, limit in scans:
+        symbols = _fetch_finviz_sorted_symbols(
+            sort_key="marketcap",
+            limit=limit,
+            filters=filters,
+        )
+        notes.append(f"{exchange}: loaded {len(symbols)} optionable symbols from Finviz screener.")
+        merged = _merge_symbol_lists(merged, symbols)
+
+    if merged:
+        notes.append(f"Merged optionable universe size: {len(merged)} symbols.")
+        return merged, notes
+
+    fallback = _fetch_finviz_sorted_symbols(
+        sort_key="marketcap",
+        limit=5000,
+        filters="sh_opt_option",
+    )
+    fallback_notes = [
+        "Primary exchange-filtered fetch returned 0 symbols.",
+        f"Fallback loaded {len(fallback)} optionable symbols from Finviz.",
+    ]
+    if fallback:
+        return fallback, notes + fallback_notes
+    return [], notes + fallback_notes + ["Failed to build ALL optionable universe."]
 
 
 def _build_top_options_volume_200() -> Tuple[List[str], List[str]]:

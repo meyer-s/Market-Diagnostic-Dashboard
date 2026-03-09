@@ -52,6 +52,13 @@ async def execute_sweep(
         )
         return
 
+    default_pause = 0.2
+    if len(tickers) > 2000:
+        default_pause = 0.02
+    elif len(tickers) > 1000:
+        default_pause = 0.05
+    pause_seconds = float(os.getenv("DISCORD_SWEEP_PAUSE_SECONDS", default_pause))
+
     # Run the existing scan function (scans all tickers, sends webhooks).
     print(f"[Discord Sweep] Starting scan of {len(tickers)} {label} tickers...")
     hits_result = _scan_tickers(
@@ -59,7 +66,7 @@ async def execute_sweep(
         label,
         threshold,
         None,
-        pause_seconds=0.2,
+        pause_seconds=pause_seconds,
         capture_hit_symbols=True,
     )
     if isinstance(hits_result, tuple):

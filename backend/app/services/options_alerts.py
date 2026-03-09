@@ -1,5 +1,4 @@
 import os
-import json
 from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import quote
@@ -34,8 +33,6 @@ def _get_current_price(stock: yf.Ticker) -> Optional[float]:
 
 def _send_webhook(
     message: str,
-    image_url: Optional[str] = None,
-    embed_title: Optional[str] = None,
     embed_url: Optional[str] = None,
     button_label: Optional[str] = None,
 ) -> tuple[bool, Optional[str], Optional[str]]:
@@ -48,18 +45,6 @@ def _send_webhook(
     try:
         if discord_url:
             payload: dict = {"content": message}
-            if image_url:
-                embed = {
-                    "title": embed_title or "MACD Snapshot",
-                    "image": {"url": image_url},
-                    "color": 0x2F80ED,
-                }
-                if embed_url:
-                    embed["url"] = embed_url
-                    embed["description"] = f"[Open in Stock Analyzer]({embed_url})"
-                payload["embeds"] = [
-                    embed
-                ]
             if embed_url:
                 label = (button_label or "Open in Stock Analyzer").strip()[:80] or "Open in Stock Analyzer"
                 payload["components"] = [
@@ -76,12 +61,8 @@ def _send_webhook(
                     }
                 ]
 
-            # Try full payload first, then gracefully degrade if Discord rejects embeds/components.
+            # Try full payload first, then gracefully degrade if Discord rejects components.
             variants: list[dict] = [payload]
-            if payload.get("embeds"):
-                no_embeds = dict(payload)
-                no_embeds.pop("embeds", None)
-                variants.append(no_embeds)
             if payload.get("components"):
                 no_components = dict(payload)
                 no_components.pop("components", None)
@@ -386,97 +367,6 @@ def _compute_weekly_macd_oscillator(history: Optional[pd.DataFrame]) -> tuple[Op
     return latest, _sparkline(spark_values)
 
 
-def _build_macd_chart_image_url(history: Optional[pd.DataFrame], symbol: str) -> Optional[str]:
-    bundle = _compute_weekly_macd_bundle_norm(history, points=24)
-    macd_series = bundle.get("macd", [])
-    signal_series = bundle.get("signal", [])
-    hist_series = bundle.get("hist", [])
-    if len(hist_series) < 8 or len(macd_series) != len(signal_series) or len(signal_series) != len(hist_series):
-        return None
-
-    last = hist_series[-1]
-    title_suffix = "Bullish" if last > 0 else "Bearish" if last < 0 else "Neutral"
-    labels = [str(i - len(hist_series) + 1) for i in range(len(hist_series))]
-    hist_colors = ["rgba(16,185,129,0.62)" if value >= 0 else "rgba(239,68,68,0.62)" for value in hist_series]
-    chart_config = {
-        "type": "bar",
-        "data": {
-            "labels": labels,
-            "datasets": [
-                {
-                    "type": "bar",
-                    "label": "Histogram",
-                    "data": hist_series,
-                    "backgroundColor": hist_colors,
-                    "borderWidth": 0,
-                    "barPercentage": 0.9,
-                    "categoryPercentage": 0.95,
-                    "order": 3,
-                },
-                {
-                    "type": "line",
-                    "label": "MACD",
-                    "data": macd_series,
-                    "borderColor": "#38bdf8",
-                    "borderWidth": 2,
-                    "pointRadius": 0,
-                    "tension": 0.25,
-                    "fill": False,
-                    "order": 1,
-                },
-                {
-                    "type": "line",
-                    "label": "Signal",
-                    "data": signal_series,
-                    "borderColor": "#94a3b8",
-                    "borderWidth": 2,
-                    "pointRadius": 0,
-                    "tension": 0.25,
-                    "borderDash": [6, 4],
-                    "fill": False,
-                    "order": 2,
-                },
-            ],
-        },
-        "options": {
-            "layout": {"padding": {"top": 8, "right": 12, "bottom": 8, "left": 12}},
-            "plugins": {
-                "legend": {
-                    "display": True,
-                    "position": "top",
-                    "align": "end",
-                    "labels": {"color": "#cbd5e1"},
-                },
-                "title": {
-                    "display": True,
-                    "text": f"{symbol} MACD 1W / 52W ({title_suffix})",
-                    "color": "#cbd5e1",
-                    "font": {"size": 14, "weight": "bold"},
-                    "padding": {"bottom": 12},
-                },
-            },
-            "scales": {
-                "x": {
-                    "display": False,
-                    "grid": {"display": False},
-                    "ticks": {"display": False},
-                },
-                "y": {
-                    "grid": {"color": "rgba(148,163,184,0.18)", "borderDash": [4, 4]},
-                    "ticks": {"color": "#94a3b8", "maxTicksLimit": 5},
-                    "title": {"display": True, "text": "% of 52W range", "color": "#cbd5e1"},
-                },
-            },
-        },
-    }
-    encoded = quote(json.dumps(chart_config, separators=(",", ":")), safe="")
-    return (
-        "https://quickchart.io/chart"
-        "?width=900&height=420&devicePixelRatio=2&backgroundColor=%230b1220"
-        f"&c={encoded}"
-    )
-
-
 def _horizon_compact_text(returns: Optional[dict[str, Optional[float]]]) -> str:
     if not returns:
         return "1m n/a  3m n/a  6m n/a  1y+ n/a"
@@ -672,7 +562,6 @@ def run_options_alert_scan() -> dict:
                 )
                 delivered, channel, error = _send_webhook(
                     message,
-                    embed_title=f"{symbol} MACD Snapshot",
                     embed_url=analyzer_url,
                     button_label=symbol,
                 )

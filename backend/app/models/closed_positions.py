@@ -35,4 +35,9 @@ class ClosedPosition(Base):
     # Metadata
     account = Column(String, nullable=True)
     notes = Column(String, nullable=True)
+    source_event_id = Column(Integer, nullable=True, index=True)
+    source_triggered_at = Column(DateTime, nullable=True)
+    source_match_method = Column(String, nullable=True)
+    source_match_confidence = Column(Float, nullable=True)
+    source_match_notes = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
