@@ -366,13 +366,13 @@ const ProjectionBezierOverlay = ({
 
   return (
     <g pointerEvents="none">
-      <path d={tech.path} fill={techColor} fillOpacity={0.34} stroke={techColor} strokeOpacity={0.9} strokeWidth={1.2} />
-      <path d={fund.path} fill={fundColor} fillOpacity={0.3} stroke={fundColor} strokeOpacity={0.85} strokeWidth={1.2} />
+      <path d={tech.path} fill={techColor} fillOpacity={0.14} />
+      <path d={fund.path} fill={fundColor} fillOpacity={0.12} />
       <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
-        TA
+        T
       </text>
       <text x={fund.labelX} y={fund.labelY} fill={fundColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
-        FA
+        F
       </text>
     </g>
   );
