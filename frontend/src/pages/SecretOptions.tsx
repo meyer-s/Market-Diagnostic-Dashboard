@@ -336,6 +336,7 @@ const ProjectionBezierOverlay = ({
   const right = left + width;
   const spotX = left + clampedRatio * width;
   const clampedSpotX = Math.max(left + 4, Math.min(right - 4, spotX));
+  const edgeOvershoot = Math.max(8, height * 0.08);
 
   const makeHalfPath = (strength: number, half: "top" | "bottom") => {
     const s = clampUnit(strength);
@@ -344,11 +345,11 @@ const ProjectionBezierOverlay = ({
     const span = width * (0.14 + mag * 0.34);
     const endX = Math.max(left + 4, Math.min(right - 4, clampedSpotX + dir * span));
     const yJoin = top + height * 0.52;
-    const yEdge = half === "top" ? top + 6 : top + height - 6;
+    const yEdge = half === "top" ? top - edgeOvershoot : top + height + edgeOvershoot;
     const c1x = clampedSpotX + dir * (span * 0.14);
     const c2x = clampedSpotX + dir * (span * 0.72);
     const c1y = half === "top" ? yJoin - height * 0.18 : yJoin + height * 0.18;
-    const c2y = half === "top" ? yEdge + height * 0.07 : yEdge - height * 0.07;
+    const c2y = half === "top" ? yEdge + edgeOvershoot * 0.5 : yEdge - edgeOvershoot * 0.5;
     return {
       path: `M ${clampedSpotX} ${yJoin}
         C ${c1x} ${c1y} ${c2x} ${c2y} ${endX} ${yEdge}
