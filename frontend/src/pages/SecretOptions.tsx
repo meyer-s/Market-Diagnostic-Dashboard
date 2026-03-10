@@ -14,6 +14,8 @@ import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
 import { getFamilyColor } from "../theme/metricColors";
+import { buildHolisticSummary } from "../utils/holisticSummary";
+import { buildSummaryInputFromSnapshot } from "../utils/summaryInput";
 
 interface OptionPosition {
   id: number;
@@ -167,6 +169,15 @@ interface SpotWeighting {
   direction: "left" | "right" | "neutral";
 }
 
+const EMPTY_SPOT_WEIGHTING: SpotWeighting = {
+  technical: null,
+  fundamental: null,
+  composite: 0,
+  confidence: 0,
+  signalCount: 0,
+  direction: "neutral",
+};
+
 const formatCurrency = (value: number | null | undefined, digits = 2) => {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";
@@ -195,105 +206,47 @@ const capitalizeWord = (value: string) => {
 };
 
 const clampUnit = (value: number) => Math.max(-1, Math.min(1, value));
-
-const getLatestSeriesValue = (series: Array<{ date: string; value: number }> | undefined): number | null => {
-  if (!series || series.length === 0) return null;
-  const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
-  const latest = sorted[sorted.length - 1]?.value;
-  return Number.isFinite(latest) ? Number(latest) : null;
+const countAxisRules = (axis: any): number => {
+  const rules = axis?.debug?.rules;
+  return Array.isArray(rules) ? rules.length : 0;
 };
 
-const getRecentSeriesChange = (
-  series: Array<{ date: string; value: number }> | undefined
-): number | null => {
-  if (!series || series.length < 2) return null;
-  const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
-  const prev = sorted[sorted.length - 2]?.value;
-  const last = sorted[sorted.length - 1]?.value;
-  if (!Number.isFinite(prev) || !Number.isFinite(last)) return null;
-  const base = Math.max(Math.abs(Number(prev)), 1e-6);
-  return (Number(last) - Number(prev)) / base;
-};
-
-const computeSpotWeighting = (payload: any): SpotWeighting => {
-  const technicalSignals: number[] = [];
-  const fundamentalSignals: number[] = [];
-
-  const scoreT = Number(payload?.projections?.T?.score_total);
-  const score3m = Number(payload?.projections?.["3m"]?.score_total);
-  const projectionScore = Number.isFinite(scoreT) ? scoreT : Number.isFinite(score3m) ? score3m : null;
-  if (projectionScore !== null) {
-    technicalSignals.push(clampUnit((projectionScore - 50) / 50));
+const computeSpotWeighting = (payload: any, symbol: string): SpotWeighting => {
+  const summaryInput = buildSummaryInputFromSnapshot({
+    symbol,
+    technicalData: payload?.technical,
+    fundamentals: payload?.fundamentals,
+    optionalityMetrics: payload?.optionality,
+    asOf: payload?.as_of_date || payload?.created_at || null,
+  });
+  if (!summaryInput) {
+    return EMPTY_SPOT_WEIGHTING;
   }
 
-  const technical = payload?.technical;
-  if (technical?.trend === "uptrend") technicalSignals.push(0.35);
-  if (technical?.trend === "downtrend") technicalSignals.push(-0.35);
-
-  const currentPrice = Number(technical?.current_price);
-  const sma50 = Number(technical?.sma_50);
-  if (Number.isFinite(currentPrice) && Number.isFinite(sma50) && sma50 > 0) {
-    technicalSignals.push(currentPrice >= sma50 ? 0.2 : -0.2);
+  const summary = buildHolisticSummary(summaryInput);
+  const technicalAxis = summary.debug?.technical;
+  const fundamentalAxis = summary.debug?.fundamental;
+  if (!technicalAxis && !fundamentalAxis) {
+    return EMPTY_SPOT_WEIGHTING;
   }
 
-  if (technical?.macd?.status === "bullish") technicalSignals.push(0.25);
-  if (technical?.macd?.status === "bearish") technicalSignals.push(-0.25);
-
-  const rsi = Number(technical?.rsi?.current);
-  if (Number.isFinite(rsi)) {
-    if (rsi < 35) technicalSignals.push(0.15);
-    if (rsi > 65) technicalSignals.push(-0.15);
-  }
-
-  const fundamentals = payload?.fundamentals;
-  const revenueYoY = getLatestSeriesValue(fundamentals?.revenue_yoy?.series);
-  if (revenueYoY !== null) {
-    fundamentalSignals.push(clampUnit(revenueYoY / 30));
-  }
-
-  const epsChange = getRecentSeriesChange(fundamentals?.eps?.series);
-  if (epsChange !== null) {
-    fundamentalSignals.push(clampUnit(epsChange / 0.5));
-  }
-
-  const fcfChange = getRecentSeriesChange(fundamentals?.free_cash_flow?.series);
-  if (fcfChange !== null) {
-    fundamentalSignals.push(clampUnit(fcfChange / 0.6));
-  }
-
-  const roe = getLatestSeriesValue(fundamentals?.roe?.series);
-  if (roe !== null) {
-    fundamentalSignals.push(clampUnit((roe - 12) / 20));
-  }
-
-  const pe = getLatestSeriesValue(fundamentals?.pe_ratio?.series);
-  if (pe !== null) {
-    if (pe < 18) fundamentalSignals.push(0.15);
-    else if (pe > 35) fundamentalSignals.push(-0.15);
-  }
-
-  const technicalScore =
-    technicalSignals.length > 0
-      ? technicalSignals.reduce((sum, val) => sum + val, 0) / technicalSignals.length
-      : null;
-  const fundamentalScore =
-    fundamentalSignals.length > 0
-      ? fundamentalSignals.reduce((sum, val) => sum + val, 0) / fundamentalSignals.length
-      : null;
-
-  const technicalUsed = technicalScore ?? 0;
-  const fundamentalUsed = fundamentalScore ?? 0;
+  const technical = technicalAxis ? clampUnit(technicalAxis.score / 100) : null;
+  const fundamental = fundamentalAxis ? clampUnit(fundamentalAxis.score / 100) : null;
+  const technicalUsed = technical ?? 0;
+  const fundamentalUsed = fundamental ?? 0;
   const rawComposite = technicalUsed * 0.6 + fundamentalUsed * 0.4;
-  const signalCount = technicalSignals.length + fundamentalSignals.length;
-  const confidence = Math.min(1, signalCount / 8);
-  const composite = clampUnit(rawComposite * confidence);
+  const confidence =
+    ((technicalAxis?.confidence ?? 0) * 0.6 + (fundamentalAxis?.confidence ?? 0) * 0.4) / 100;
+  const normalizedConfidence = Math.max(0, Math.min(1, confidence));
+  const composite = clampUnit(rawComposite * normalizedConfidence);
+  const signalCount = countAxisRules(technicalAxis) + countAxisRules(fundamentalAxis);
   const direction = composite > 0.08 ? "right" : composite < -0.08 ? "left" : "neutral";
 
   return {
-    technical: technicalScore,
-    fundamental: fundamentalScore,
+    technical,
+    fundamental,
     composite,
-    confidence,
+    confidence: normalizedConfidence,
     signalCount,
     direction,
   };
@@ -797,21 +750,14 @@ export default function SecretOptions() {
         if (cancelled) return;
         setSpotWeightBySymbol((prev) => ({
           ...prev,
-          [selectedSymbol]: computeSpotWeighting(payload),
+          [selectedSymbol]: computeSpotWeighting(payload, selectedSymbol),
         }));
       })
       .catch(() => {
         if (cancelled) return;
         setSpotWeightBySymbol((prev) => ({
           ...prev,
-          [selectedSymbol]: {
-            technical: null,
-            fundamental: null,
-            composite: 0,
-            confidence: 0,
-            signalCount: 0,
-            direction: "neutral",
-          },
+          [selectedSymbol]: EMPTY_SPOT_WEIGHTING,
         }));
       });
 
