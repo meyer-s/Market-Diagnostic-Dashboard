@@ -830,10 +830,10 @@ async def get_sentiment_composite_components(days: int = 365):
     import numpy as np
     
     client = FredClient()
-    # Match ETL-style normalization context so component confidence scores
-    # do not drift when users change chart range.
+    # Match ETL-style practical history depth so component confidence scores
+    # remain comparable to the stored headline score.
     lookback_days_for_z = 520
-    fetch_days = max(800, days + lookback_days_for_z)
+    fetch_days = max(800, days + 30)
     cutoff = datetime.utcnow() - timedelta(days=fetch_days)
     start_date = cutoff.strftime("%Y-%m-%d")
     
