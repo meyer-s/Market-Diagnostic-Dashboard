@@ -23,7 +23,7 @@ interface Props {
 export default function StateSparkline({ history, height = 24, width = 200 }: Props) {
   if (!history || history.length === 0) {
     return (
-      <div className="flex items-center gap-1" style={{ height, width }}>
+      <div className="flex items-center gap-1 w-full" style={{ height, maxWidth: width }}>
         <div className="text-xs text-stealth-400">No data</div>
       </div>
     );
@@ -35,7 +35,7 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
   
   if (displayData.length === 0) {
     return (
-      <div className="flex items-center gap-1" style={{ height, width }}>
+      <div className="flex items-center gap-1 w-full" style={{ height, maxWidth: width }}>
         <div className="text-xs text-stealth-400">No data</div>
       </div>
     );
@@ -82,10 +82,16 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
 
   const smoothedData = smoothData(displayData);
 
-  // Calculate chart dimensions and spacing
-  const padding = 4;
-  const chartWidth = width - (padding * 2);
-  const chartHeight = height - (padding * 2);
+  const chartWidthPx = Math.max(1, width);
+  const chartHeightPx = Math.max(1, height);
+
+  // Keep line/caps/points away from hard edges to prevent visible clipping.
+  const strokeWidth = 2;
+  const pointRadius = 1.5;
+  const xInset = 6;
+  const yInset = 5;
+  const chartWidth = Math.max(1, chartWidthPx - (xInset * 2));
+  const chartHeight = Math.max(1, chartHeightPx - (yInset * 2));
   const stepX = chartWidth / (smoothedData.length - 1 || 1);
 
   // Exaggerate small moves by tightening the visible range around the mean
@@ -99,14 +105,19 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
   const effectiveRange = Math.max(minVisibleRange, rawRange / exaggerationFactor);
   const rangeMin = Math.max(0, meanScore - (effectiveRange / 2));
   const rangeMax = Math.min(100, meanScore + (effectiveRange / 2));
-  const safeRange = Math.max(1, rangeMax - rangeMin);
+  // Add headroom/footroom so peaks/valleys don't press into chart bounds.
+  const baseRange = Math.max(1, rangeMax - rangeMin);
+  const rangePadding = Math.max(1, baseRange * 0.08);
+  const paddedMin = Math.max(0, rangeMin - rangePadding);
+  const paddedMax = Math.min(100, rangeMax + rangePadding);
+  const safeRange = Math.max(1, paddedMax - paddedMin);
 
   // Generate coordinate points for line chart
   const points = smoothedData.map((point, index) => {
-    const x = padding + (index * stepX);
+    const x = xInset + (index * stepX);
     const value = clampScore(point.score);
-    const normalized = (value - rangeMin) / safeRange;
-    const y = padding + chartHeight - (normalized * chartHeight);
+    const normalized = (value - paddedMin) / safeRange;
+    const y = yInset + chartHeight - (normalized * chartHeight);
     return { x, y, point };
   });
 
@@ -125,15 +136,21 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
   }
 
   return (
-    <div className="flex items-center gap-1" style={{ height, width }}>
-      <svg width={width} height={height}>
+    <div className="flex items-center gap-1 w-full" style={{ height, maxWidth: width }}>
+      <svg
+        width="100%"
+        height={height}
+        viewBox={`0 0 ${chartWidthPx} ${chartHeightPx}`}
+        preserveAspectRatio="none"
+        style={{ overflow: "visible" }}
+      >
         {/* Render line segments with state-based coloring */}
         {segments.map((segment, index) => (
           <path
             key={index}
             d={segment.path}
             stroke={segment.color}
-            strokeWidth={2}
+            strokeWidth={strokeWidth}
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -147,7 +164,7 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
             key={index}
             cx={p.x}
             cy={p.y}
-            r={2}
+            r={pointRadius}
             fill={getColor(p.point.state)}
             opacity={0.8}
           >
