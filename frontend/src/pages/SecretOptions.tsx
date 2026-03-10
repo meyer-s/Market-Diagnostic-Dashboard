@@ -302,14 +302,15 @@ const ProjectionBezierOverlay = ({
     const c2x = clampedSpotX + dir * (span * 0.72);
     const c1y = half === "top" ? yJoin - height * 0.18 : yJoin + height * 0.18;
     const c2y = half === "top" ? yEdge + height * 0.08 : yEdge - height * 0.08;
-    const axisNudge = Math.max(8, Math.min(18, span * 0.22));
+    const axisNudge = Math.max(4, Math.min(10, span * 0.1));
+    const edgeInset = Math.max(8, Math.min(12, height * 0.06));
     return {
       path: `M ${clampedSpotX} ${yJoin}
         C ${c1x} ${c1y} ${c2x} ${c2y} ${endX} ${yEdge}
         L ${clampedSpotX} ${yEdge}
         Z`,
       labelX: clampedSpotX + dir * axisNudge,
-      labelY: half === "top" ? top + height * 0.16 : top + height * 0.84,
+      labelY: half === "top" ? top + edgeInset : top + height - edgeInset,
     };
   };
 
