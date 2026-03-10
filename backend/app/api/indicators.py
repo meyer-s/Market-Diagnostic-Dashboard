@@ -1003,10 +1003,12 @@ async def get_sentiment_composite_components(days: int = 365):
 async def get_indicator_components(code: str, days: int = 365):
     """
     Return component breakdown for derived indicators.
-    Currently supports: CONSUMER_HEALTH (returns PCE, PI, CPI data)
+    Currently supports: CONSUMER_HEALTH (returns PCE/PI/CPI data plus
+    score-aligned composite stability metrics).
     """
     from datetime import datetime, timedelta
     from app.services.ingestion.fred_client import FredClient
+    from app.services.analytics_stub import normalize_series, score_series
     
     canonical_code = normalize_indicator_code(code)
     if canonical_code != "CONSUMER_HEALTH":
@@ -1015,9 +1017,21 @@ async def get_indicator_components(code: str, days: int = 365):
             detail=f"Component breakdown not available for {code}"
         )
     
-    # Fetch component data
+    # Match ETL normalization settings so component charts align with indicator score.
+    direction = -1
+    lookback_days_for_z = 252
+    with get_db_session() as db:
+        indicator_cfg = db.query(Indicator).filter(Indicator.code == "CONSUMER_HEALTH").first()
+        if indicator_cfg:
+            if indicator_cfg.direction is not None:
+                direction = int(indicator_cfg.direction)
+            if indicator_cfg.lookback_days_for_z:
+                lookback_days_for_z = int(indicator_cfg.lookback_days_for_z)
+
+    # Fetch enough history for z-score normalization window.
     client = FredClient()
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    fetch_days = max(800, days + lookback_days_for_z + 30)
+    cutoff = datetime.utcnow() - timedelta(days=fetch_days)
     start_date = cutoff.strftime("%Y-%m-%d")
     
     pce_series = await client.fetch_series("PCE", start_date=start_date)
@@ -1058,6 +1072,7 @@ async def get_indicator_components(code: str, days: int = 365):
     last_cpi = None
     
     result = []
+    consumer_health_series = []
     prev_pce_val = None
     prev_cpi_val = None
     prev_pi_val = None
@@ -1105,6 +1120,8 @@ async def get_indicator_components(code: str, days: int = 365):
         cpi_is_filled = date not in cpi_dict
         pi_is_filled = date not in pi_dict
 
+        consumer_health_series.append(consumer_health)
+
         result.append({
             "date": date,
             "pce": {
@@ -1129,7 +1146,7 @@ async def get_indicator_components(code: str, days: int = 365):
                 "pce_spread": pce_spread,
                 "pi_spread": pi_spread,
                 "consumer_health": consumer_health,
-            }
+            },
         })
         
         # Update previous values for next iteration
@@ -1140,4 +1157,25 @@ async def get_indicator_components(code: str, days: int = 365):
         if date in pi_dict:
             prev_pi_val = last_pi["value"]
     
+    if consumer_health_series:
+        normalized_series = normalize_series(
+            consumer_health_series,
+            direction=direction,
+            lookback=lookback_days_for_z,
+        )
+        stability_scores = score_series(normalized_series)
+
+        for i, entry in enumerate(result):
+            stability_score = float(stability_scores[i])
+            entry["composite"] = {
+                "raw_value": float(consumer_health_series[i]),
+                "normalized_value": float(normalized_series[i]),
+                "stress_score": float(100.0 - stability_score),
+                "stability_score": stability_score,
+            }
+
+    # Filter to requested days after normalization to preserve lookback context.
+    cutoff_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    result = [r for r in result if r["date"] >= cutoff_date]
+
     return result

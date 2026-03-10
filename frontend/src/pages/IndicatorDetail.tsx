@@ -59,6 +59,12 @@ interface ComponentData {
     pi_spread: number;
     consumer_health: number;
   };
+  composite?: {
+    raw_value?: number;
+    normalized_value?: number;
+    stress_score?: number;
+    stability_score?: number;
+  };
 }
 
 interface BondComponentData {
@@ -410,6 +416,14 @@ export default function IndicatorDetail() {
   };
   
   const chartRange = getChartRange();
+  const indicatorsWithDedicatedFinalHistory = new Set([
+    "CONSUMER_HEALTH",
+    "BOND_MARKET_STABILITY",
+    "LIQUIDITY_PROXY",
+    "ANALYST_ANXIETY",
+    "SENTIMENT_COMPOSITE",
+  ]);
+  const showGenericStabilityHistory = !indicatorsWithDedicatedFinalHistory.has(apiCode);
 
   const stateColor = {
     GREEN: "text-green-400 bg-green-500/10 border-green-500/30",
@@ -587,9 +601,9 @@ export default function IndicatorDetail() {
 
           {/* Consumer Health Index Chart */}
           <div className="h-80">
-            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Consumer Health Index</h4>
+            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Consumer Health Stability</h4>
             <p className="text-xs text-stealth-400 mb-2">
-              Positive = Spending/Income outpacing inflation (healthy). Negative = Inflation eroding consumer capacity (stress).
+              Composite stability score (0-100), normalized the same way as the headline indicator.
             </p>
             {(() => {
               const { data: extendedData, dateRange } = prepareExtendedComponentData({
@@ -602,16 +616,14 @@ export default function IndicatorDetail() {
                 <ComponentChart
                   data={extendedData}
                   lines={[
-                    { dataKey: "spreads.pce_spread", name: "PCE vs CPI", stroke: getMetricColor("PCE", "muted") },
-                    { dataKey: "spreads.pi_spread", name: "PI vs CPI", stroke: getMetricColor("PI", "faint") },
-                    { dataKey: "spreads.consumer_health", name: "Consumer Health", stroke: getMetricColor("CONSUMER_HEALTH"), strokeWidth: 3 }
+                    { dataKey: "composite.stability_score", name: "Consumer Health Stability", stroke: getMetricColor("CONSUMER_HEALTH"), strokeWidth: 3 }
                   ]}
                   referenceLines={[
-                    { y: 0, stroke: getFamilyColor("benchmark"), label: "Neutral", labelFill: getFamilyColor("benchmark") },
+                    { y: 50, stroke: getFamilyColor("benchmark"), label: "Neutral", labelFill: getFamilyColor("benchmark") },
                     { y: 65, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
                     { y: 35, stroke: statePalette.red, label: "RED", labelFill: statePalette.red }
                   ]}
-                  yAxisLabel="Spread vs Inflation (%)"
+                  yAxisLabel="Stability Score (0-100)"
                   dateRange={dateRange}
                 />
               );
@@ -1651,6 +1663,7 @@ export default function IndicatorDetail() {
         </div>
         */}
         
+        {showGenericStabilityHistory && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
           <div className="flex items-center gap-2 mb-4">
             <h3 className="text-xl font-semibold text-stealth-100">
@@ -1820,6 +1833,7 @@ export default function IndicatorDetail() {
             )}
           </div>
         </div>
+        )}
 
         {/* State Trend Sparkline */}
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
