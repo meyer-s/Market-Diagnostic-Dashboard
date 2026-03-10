@@ -591,6 +591,7 @@ async def get_liquidity_proxy_components(days: int = 365):
             "composite": {
                 "liquidity_proxy": safe_float(liquidity_proxy[i]),
                 "stress_score": safe_float(liquidity_stress[i]),
+                "stability_score": safe_float(100.0 - liquidity_stress[i]),
             }
         })
     

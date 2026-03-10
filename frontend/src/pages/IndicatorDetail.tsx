@@ -120,6 +120,7 @@ interface LiquidityComponentData {
   composite: {
     liquidity_proxy: number;
     stress_score: number;
+    stability_score?: number;
   };
 }
 
@@ -899,18 +900,34 @@ export default function IndicatorDetail() {
             </p>
             {(() => {
               const { data, dateRange } = processComponentData(liquidityComponents, chartRange.days);
+              const stabilityData = data.map((row: any) => {
+                const stressScore = Number(row?.composite?.stress_score);
+                const providedStability = Number(row?.composite?.stability_score);
+                const stabilityScore = Number.isFinite(providedStability)
+                  ? providedStability
+                  : Number.isFinite(stressScore)
+                    ? 100 - stressScore
+                    : null;
+                return {
+                  ...row,
+                  composite: {
+                    ...row.composite,
+                    stability_score: stabilityScore,
+                  },
+                };
+              });
               
               return (
                 <ComponentChart
-                  data={data}
+                  data={stabilityData}
                   lines={[
-                    { dataKey: "composite.stress_score", name: "Liquidity Stress", stroke: getFamilyColor("liquidity"), strokeWidth: 3 }
+                    { dataKey: "composite.stability_score", name: "Liquidity Stability", stroke: getFamilyColor("liquidity"), strokeWidth: 3 }
                   ]}
                   referenceLines={[
-                    { y: 60, stroke: statePalette.red, label: "HIGH STRESS", labelFill: statePalette.red },
-                    { y: 30, stroke: statePalette.green, label: "LOW STRESS", labelFill: statePalette.green }
+                    { y: 70, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
+                    { y: 40, stroke: statePalette.red, label: "RED", labelFill: statePalette.red }
                   ]}
-                  yAxisLabel="Stress Score (0-100)"
+                  yAxisLabel="Stability Score (0-100)"
                   dateRange={dateRange}
                 />
               );
