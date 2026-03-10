@@ -152,6 +152,7 @@ interface SentimentCompositeComponentData {
   };
   composite: {
     confidence_score: number;
+    stability_score?: number;
   };
 }
 
@@ -1366,9 +1367,9 @@ export default function IndicatorDetail() {
             })()}
           </div>
 
-          {/* Composite Confidence Score Chart */}
+          {/* Composite Stability Score Chart */}
           <div className="h-80">
-            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Composite Confidence Score (12-Month View)</h4>
+            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Composite Stability Score (12-Month View)</h4>
             {(() => {
               const today = new Date();
               const daysBack = new Date(today);
@@ -1377,6 +1378,12 @@ export default function IndicatorDetail() {
               const chartData = sentimentCompositeComponents
                 .map(item => ({
                   ...item,
+                  composite: {
+                    ...item.composite,
+                    stability_score:
+                      item.composite?.stability_score ??
+                      Math.floor(Math.max(0, Math.min(100, item.composite?.confidence_score ?? 0))),
+                  },
                   dateNum: new Date(item.date).getTime()
                 }))
                 .filter(item => item.dateNum >= daysBack.getTime());
@@ -1412,7 +1419,7 @@ export default function IndicatorDetail() {
                       stroke={CHART_NEUTRAL.axis}
                       width={72}
                       tickMargin={8}
-                      label={{ value: 'Confidence Score', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
+                      label={{ value: 'Stability Score', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
                     <Tooltip
                       contentStyle={{
@@ -1429,7 +1436,7 @@ export default function IndicatorDetail() {
                     />
                     <Line
                       type="monotone"
-                      dataKey="composite.confidence_score"
+                      dataKey="composite.stability_score"
                       name="Sentiment Composite"
                       stroke={getFamilyColor("sentiment")}
                       strokeWidth={3}

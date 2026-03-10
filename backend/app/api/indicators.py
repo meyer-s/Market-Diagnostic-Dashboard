@@ -960,6 +960,9 @@ async def get_sentiment_composite_components(days: int = 365):
             },
             "composite": {
                 "confidence_score": float(composite_conf[i]),
+                # Keep component view aligned with indicator detail headline score
+                # (ETL stores sentiment composite as 0-100 stability score).
+                "stability_score": float(int(np.clip(composite_conf[i], 0, 100))),
             }
         }
         
