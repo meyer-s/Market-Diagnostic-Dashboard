@@ -66,8 +66,6 @@ SUPPORTED_SWEEP_UNIVERSES: Dict[str, str] = {
 }
 
 UNIVERSE_ALIASES: Dict[str, str] = {
-    "SPY": "SP500",
-    "IWM": "RUSSELL2000",
     "SP500": "SP500",
     "NASDAQ100": "NASDAQ100",
     "RUSSELL2000": "RUSSELL2000",

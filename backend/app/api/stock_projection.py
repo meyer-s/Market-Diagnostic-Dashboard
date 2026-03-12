@@ -15,6 +15,7 @@ All projections include:
 from fastapi import APIRouter, HTTPException, Path
 from datetime import datetime, timedelta
 from typing import Optional
+import time
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -511,21 +512,84 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         "revenue_yoy": {"series": _limit(revenue_yoy_series, max_points), "derived": True},
     }
 
+def _is_yahoo_rate_limit_message(message: str) -> bool:
+    message = (message or "").lower()
+    return (
+        "too many requests" in message
+        or "rate limited" in message
+        or "429" in message
+    )
+
+
+def _is_yahoo_rate_limit_error(exc: Exception) -> bool:
+    return _is_yahoo_rate_limit_message(str(exc))
+
+
+def _normalize_yf_download_frame(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """Normalize yfinance download output to a single-ticker OHLCV frame."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    normalized = df.copy()
+    if isinstance(normalized.columns, pd.MultiIndex):
+        try:
+            # Typical shape: (PriceField, Ticker) for single-symbol downloads.
+            normalized = normalized.droplevel(-1, axis=1)
+        except Exception:
+            try:
+                # Fallback for other MultiIndex layouts.
+                normalized = normalized.xs(ticker, axis=1, level=-1)
+            except Exception:
+                return pd.DataFrame()
+    return normalized
+
+
 def fetch_stock_data(ticker: str, days: int = 2000) -> pd.DataFrame:
-    """Fetch historical price data for a stock"""
-    try:
-        stock = yf.Ticker(ticker)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
-        
-        df = stock.history(start=start_date, end=end_date)
-        if df.empty:
-            raise ValueError(f"No data available for ticker {ticker}")
-        
-        df['returns'] = df['Close'].pct_change()
-        return df
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Unable to fetch data for {ticker}: {str(e)}")
+    """Fetch historical price data for a stock with retries/fallback for transient upstream failures."""
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    errors: list[str] = []
+
+    attempts = [
+        lambda: yf.Ticker(ticker).history(start=start_date, end=end_date),
+        lambda: _normalize_yf_download_frame(
+            yf.download(
+                ticker,
+                start=start_date,
+                end=end_date,
+                progress=False,
+                threads=False,
+                auto_adjust=False,
+            ),
+            ticker,
+        ),
+    ]
+
+    for index, attempt in enumerate(attempts):
+        try:
+            df = attempt()
+            if df is None or df.empty:
+                errors.append("No data returned")
+                continue
+            if "Close" not in df.columns:
+                errors.append("Missing Close column in price data")
+                continue
+            df["returns"] = df["Close"].pct_change()
+            return df
+        except Exception as exc:
+            errors.append(str(exc))
+            if _is_yahoo_rate_limit_error(exc) and index < len(attempts) - 1:
+                time.sleep(1.0)
+            continue
+
+    if any(_is_yahoo_rate_limit_message(msg) for msg in errors if msg):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Unable to fetch data for {ticker}: Yahoo Finance rate limit. Try again shortly.",
+        )
+
+    detail = "; ".join(err for err in errors if err) or "Unknown upstream fetch error."
+    raise HTTPException(status_code=404, detail=f"Unable to fetch data for {ticker}: {detail}")
 
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:

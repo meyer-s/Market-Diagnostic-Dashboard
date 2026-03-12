@@ -14,7 +14,7 @@ BACKEND_DIR = Path(__file__).resolve().parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.services.discord_sweep_universe import SUPPORTED_SWEEP_UNIVERSES, UNIVERSE_ALIASES
+from app.services.discord_sweep_universe import SUPPORTED_SWEEP_UNIVERSES
 
 # Discord credentials
 APPLICATION_ID = "1432808300780458006"
@@ -38,14 +38,6 @@ universe_choices = [
     {"name": f"{key} ({label})", "value": key}
     for key, label in SUPPORTED_SWEEP_UNIVERSES.items()
 ]
-
-# Keep common backward-compatible aliases visible in the menu.
-alias_choices = [
-    {"name": f"{alias} (Alias -> {target})", "value": alias}
-    for alias, target in UNIVERSE_ALIASES.items()
-    if alias != target and alias in {"SPY", "IWM"}
-]
-universe_choices.extend(alias_choices)
 
 # Define the /sweep command
 command = {
