@@ -122,6 +122,7 @@ EQUITY_SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9]{0,4}(?:-[A-Z])?$")
 _CACHE: Dict[str, Tuple[datetime, List[str], List[str]]] = {}
 _STATIC_TTL = timedelta(hours=6)
 _DYNAMIC_TTL = timedelta(minutes=30)
+_ALL_OPTIONABLE_MIN_EXPECTED = 1200
 
 
 @dataclass
@@ -244,20 +245,65 @@ def _build_all_optionable() -> Tuple[List[str], List[str]]:
 
     if merged:
         notes.append(f"Merged optionable universe size: {len(merged)} symbols.")
-        return merged, notes
 
-    fallback = _fetch_finviz_sorted_symbols(
-        sort_key="marketcap",
-        limit=5000,
+    if len(merged) < _ALL_OPTIONABLE_MIN_EXPECTED:
+        fallback = _fetch_finviz_sorted_symbols(
+            sort_key="marketcap",
+            limit=5000,
+            filters="sh_opt_option",
+        )
+        if not merged:
+            notes.append("Primary exchange-filtered fetch returned 0 symbols.")
+        notes.append(f"Fallback loaded {len(fallback)} optionable symbols from Finviz.")
+        merged = _merge_symbol_lists(merged, fallback)
+
+    if len(merged) < _ALL_OPTIONABLE_MIN_EXPECTED:
+        fallback_union, fallback_notes = _build_non_all_universe_union()
+        notes.append(
+            f"Coverage guard triggered at {len(merged)} symbols (< {_ALL_OPTIONABLE_MIN_EXPECTED}); "
+            "merged all other configured universes."
+        )
+        notes.extend(fallback_notes)
+        merged = _merge_symbol_lists(merged, fallback_union)
+
+    if merged:
+        notes.append(f"Final ALL universe size: {len(merged)} symbols.")
+        return merged, notes
+    return [], notes + ["Failed to build ALL optionable universe."]
+
+
+def _build_non_all_universe_union() -> Tuple[List[str], List[str]]:
+    builders = [
+        ("SP500", _build_sp500),
+        ("NASDAQ100", _build_nasdaq100),
+        ("RUSSELL2000", _build_russell2000),
+        ("SECTOR_ETFS", _build_sector_etfs),
+        ("TOP_OPT_VOL_200", _build_top_options_volume_200_fallback_only),
+        ("UPCOMING_EARNINGS_21D", _build_upcoming_earnings_21d),
+        ("TOP_SHORT_INTEREST_100", _build_top_short_interest_100),
+        ("MAJOR_NEWS_21D", _build_major_news_21d),
+    ]
+
+    merged: List[str] = []
+    notes: List[str] = []
+
+    for key, builder in builders:
+        symbols, _ = builder()
+        merged = _merge_symbol_lists(merged, symbols)
+        notes.append(f"{key}: merged {len(symbols)} symbols.")
+
+    notes.append(f"Union size from non-ALL universes: {len(merged)} symbols.")
+    return merged, notes
+
+
+def _build_top_options_volume_200_fallback_only() -> Tuple[List[str], List[str]]:
+    symbols = _fetch_finviz_sorted_symbols(
+        sort_key="volume",
+        limit=200,
         filters="sh_opt_option",
     )
-    fallback_notes = [
-        "Primary exchange-filtered fetch returned 0 symbols.",
-        f"Fallback loaded {len(fallback)} optionable symbols from Finviz.",
-    ]
-    if fallback:
-        return fallback, notes + fallback_notes
-    return [], notes + fallback_notes + ["Failed to build ALL optionable universe."]
+    notes = ["Fallback-only TOP_OPT_VOL_200 source: Finviz optionable stocks sorted by stock volume."]
+    return symbols[:200], notes
 
 
 def _build_top_options_volume_200() -> Tuple[List[str], List[str]]:
