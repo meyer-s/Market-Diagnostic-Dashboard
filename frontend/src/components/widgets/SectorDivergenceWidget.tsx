@@ -308,9 +308,12 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
         <h3 className="text-lg font-semibold">Sector Divergence Analysis</h3>
         <Link 
           to="/sector-projections" 
-          className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+          className="text-stealth-400 hover:text-stealth-200 transition-colors"
+          aria-label="View sector projection details"
         >
-          View Details &gt;
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
         </Link>
       </div>
 
