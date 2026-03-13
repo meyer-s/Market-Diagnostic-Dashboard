@@ -946,6 +946,24 @@ async def get_sentiment_composite_components(days: int = 365):
     else:
         weights = {'umich': 1.00, 'nfib': 0.00, 'ism': 0.00, 'capex': 0.00}
         composite_conf = umich_conf
+
+    # Carry forward latest known monthly reading to today so this view
+    # stays aligned with the headline indicator freshness behavior.
+    today_key = datetime.utcnow().strftime("%Y-%m-%d")
+    if common_dates and common_dates[-1] < today_key:
+        common_dates.append(today_key)
+        umich_vals = np.append(umich_vals, umich_vals[-1])
+        umich_conf = np.append(umich_conf, umich_conf[-1])
+        composite_conf = np.append(composite_conf, composite_conf[-1])
+        if has_nfib:
+            nfib_vals = np.append(nfib_vals, nfib_vals[-1])
+            nfib_conf = np.append(nfib_conf, nfib_conf[-1])
+        if has_ism:
+            ism_vals = np.append(ism_vals, ism_vals[-1])
+            ism_conf = np.append(ism_conf, ism_conf[-1])
+        if has_capex:
+            capex_vals = np.append(capex_vals, capex_vals[-1])
+            capex_conf = np.append(capex_conf, capex_conf[-1])
     
     # Build result
     result = []
