@@ -414,6 +414,30 @@ def _compact_votes(votes: list[str]) -> str:
     return " | ".join(mapping.get(vote, vote) for vote in votes)
 
 
+def _is_exceptional_sweep_setup(
+    iv_percentile: Optional[float],
+    iv30: Optional[float],
+    hv30: Optional[float],
+    avg_edr: Optional[float],
+    threshold: Optional[float],
+    votes: Optional[list[str]],
+) -> bool:
+    """Identify very strong mispricing setups for visual emphasis in Discord formatting."""
+    if iv_percentile is None:
+        return False
+
+    effective_threshold = threshold if threshold is not None else 20.0
+    percentile_cutoff = min(12.0, max(5.0, effective_threshold * 0.5))
+
+    spread_ok = iv30 is not None and hv30 is not None and (iv30 - hv30) <= -4.0
+    edr_ok = avg_edr is not None and avg_edr <= 35.0
+    vote_ok = any(str(vote).startswith("CHEAP:") for vote in (votes or []))
+
+    ultra_cheap = iv_percentile <= 5.0
+    strong_cheap = iv_percentile <= percentile_cutoff and (spread_ok or edr_ok)
+    return vote_ok and (ultra_cheap or strong_cheap)
+
+
 def _format_alert_message(
     label: str,
     symbol: str,
@@ -433,6 +457,14 @@ def _format_alert_message(
     analyzer_url: Optional[str] = None,
 ) -> str:
     threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
+    exceptional = _is_exceptional_sweep_setup(
+        iv_percentile=iv_percentile,
+        iv30=iv30,
+        hv30=hv30,
+        avg_edr=avg_edr,
+        threshold=threshold,
+        votes=votes,
+    )
     direction_label = "NEUTRAL"
     if direction.lower() == "calls":
         direction_label = "BULLISH"
@@ -451,26 +483,38 @@ def _format_alert_message(
     headline = f"{symbol} - {label}"
     horizons = _horizon_compact_text(horizon_returns)
     direction_lines = _wrap_text(direction_reason, width=66, indent="    ")
+    section_title_color = 97 if exceptional else 37
+    separator_line = (
+        "════════════════════════════════════════════════════════"
+        if exceptional
+        else "────────────────────────────────────────────────────────"
+    )
+    accent_line = _ansi("▓" * len(separator_line), 93) if exceptional else None
+    iv_line = f"  IV Pctl   : {_format_value(iv_percentile, 1)}% (<= {threshold_text}%)"
+    if exceptional:
+        iv_line = _ansi(iv_line, 92)
 
     ansi_lines = [
-        _ansi(headline, 36),
-        "────────────────────────────────────────────────────────",
+        *([accent_line] if accent_line else []),
+        _ansi(headline, 93 if exceptional else 36),
+        separator_line,
         "",
-        _ansi("MISPRICING", 37),
+        _ansi("MISPRICING", section_title_color),
         f"  Consensus : {bias_colored}",
-        f"  IV Pctl   : {_format_value(iv_percentile, 1)}% (<= {threshold_text}%)",
+        iv_line,
         f"  IV/HV/EDR : {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}",
         "",
-        _ansi("DIRECTION", 37),
+        _ansi("DIRECTION", section_title_color),
         f"  Bias      : {direction_colored}",
         *direction_lines,
         "",
-        _ansi("MACD 1W (Normalized by 52W Range)", 37),
+        _ansi("MACD 1W (Normalized by 52W Range)", section_title_color),
         f"  Oscillator: {macd_colored}",
         f"  Sparkline : {macd_spark}",
         "",
-        _ansi("HORIZONS", 37),
+        _ansi("HORIZONS", section_title_color),
         f"  {horizons}",
+        *([accent_line] if accent_line else []),
     ]
 
     lines = ["```ansi", *ansi_lines, "```"]
