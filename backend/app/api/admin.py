@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from app.services.ingestion.etl_runner import ETLRunner
 from app.services.indicator_metadata import normalize_indicator_code, get_display_indicator_name
+from app.utils.db_helpers import get_db_session
 
 router = APIRouter()
 etl = ETLRunner()
@@ -76,38 +77,33 @@ async def backfill_historical_data(days: int = 365):
 @router.post("/clear-refetch/{code}")
 async def clear_and_refetch_indicator(code: str, days: int = 365):
     """Clear all data for an indicator and refetch it. Useful for fixing corrupt data."""
-    from app.core.db import SessionLocal
     from app.models.indicator_value import IndicatorValue
     from app.models.indicator import Indicator
-    
-    try:
-        db = SessionLocal()
-        
-        canonical_code = normalize_indicator_code(code)
-        display_label = get_display_indicator_name(canonical_code, canonical_code)
-        # Find the indicator
+
+    canonical_code = normalize_indicator_code(code)
+    display_label = get_display_indicator_name(canonical_code, canonical_code)
+
+    # Delete phase — session is closed before the long-running ETL starts
+    with get_db_session() as db:
         indicator = db.query(Indicator).filter(Indicator.code == canonical_code).first()
         if not indicator:
-            db.close()
             raise HTTPException(status_code=404, detail=f"Indicator {code} not found")
-        
-        # Delete all values for this indicator
+
         deleted_count = db.query(IndicatorValue).filter(
             IndicatorValue.indicator_id == indicator.id
         ).delete()
-        
         db.commit()
-        db.close()
-        
-        # Refetch the data
+
+    # Refetch phase — runs after session is fully closed
+    try:
         result = await etl.ingest_indicator(canonical_code, backfill_days=days)
         status = etl.update_system_status()
-        
-        return {
-            "message": f"Cleared {deleted_count} records and refetched {display_label}",
-            "deleted_records": deleted_count,
-            "result": result,
-            "system_status": status
-        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "message": f"Cleared {deleted_count} records and refetched {display_label}",
+        "deleted_records": deleted_count,
+        "result": result,
+        "system_status": status
+    }

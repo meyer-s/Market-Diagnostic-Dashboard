@@ -248,7 +248,7 @@ def implied_volatility(
         try:
             bs_price = black_scholes_price(S, K, T, r, sigma, option_type, q)
             return bs_price - market_price
-        except:
+        except Exception:
             return float('inf')
     
     # Try to find root in reasonable volatility range
@@ -256,7 +256,7 @@ def implied_volatility(
         # Typical IV range: 1% to 500% (0.01 to 5.0)
         iv = brentq(objective, 0.001, 5.0, maxiter=max_iterations, xtol=tolerance)
         return iv
-    except:
+    except Exception:
         # If Brent's method fails, return None
         return None
 
@@ -302,7 +302,7 @@ def generate_delta_gamma_curve(
                 "delta": greeks["delta"],
                 "gamma": greeks["gamma"]
             })
-        except:
+        except Exception:
             # If calculation fails, add zeros
             curve.append({
                 "price": round(S, 2),
@@ -351,7 +351,7 @@ def generate_theta_curve(
                 "days": days,
                 "theta": greeks["theta"]
             })
-        except:
+        except Exception:
             curve.append({
                 "days": days,
                 "theta": 0.0

@@ -221,7 +221,7 @@ class ETLRunner:
             term_premium_series = []
             try:
                 term_premium_series = await self.fred.fetch_series("ACMTP10", start_date=start_date)
-            except:
+            except Exception:
                 print("Warning: Term Premium (ACMTP10) not available, using 4-component model")
             
             # Align all series by date
@@ -507,7 +507,7 @@ class ETLRunner:
             move_series = []
             try:
                 move_series = self.yahoo.fetch_series("^MOVE", start_date=start_date)
-            except:
+            except Exception:
                 print("Warning: MOVE (^MOVE) not available from Yahoo, using reduced component model")
             
             # C. High Yield OAS from FRED - Weight 0.25
@@ -521,7 +521,7 @@ class ETLRunner:
             bbb_series = []
             try:
                 bbb_series = await self.fred.fetch_series("BAMLC0A4CBBB", start_date=start_date)
-            except:
+            except Exception:
                 print("Warning: BBB Corporate Yield not available, using reduced component model")
             
             # Convert to dicts for alignment
@@ -716,25 +716,25 @@ class ETLRunner:
             nfib_series = []
             try:
                 nfib_series = await self.fred.fetch_series("BOPTEXP", start_date=start_date)  # Expectations component
-            except:
+            except Exception:
                 print("Warning: NFIB (BOPTEXP) not available, trying alternative")
                 try:
                     nfib_series = await self.fred.fetch_series("BOPTTOTM", start_date=start_date)
-                except:
+                except Exception:
                     print("Warning: NFIB not available, using reduced component model")
             
             # C. ISM New Orders (Manufacturing) - Weight 0.25
             ism_mfg_series = []
             try:
                 ism_mfg_series = await self.fred.fetch_series("NEWORDER", start_date=start_date)
-            except:
+            except Exception:
                 print("Warning: ISM Manufacturing New Orders (NEWORDER) not available")
             
             # D. CapEx Proxy (Nondefense Capital Goods ex-Aircraft) - Weight 0.15
             capex_series = []
             try:
                 capex_series = await self.fred.fetch_series("ACOGNO", start_date=start_date)
-            except:
+            except Exception:
                 print("Warning: CapEx proxy (ACOGNO) not available")
             
             # Convert to dicts for alignment

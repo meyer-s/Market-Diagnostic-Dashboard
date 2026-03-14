@@ -91,7 +91,7 @@ def fetch_crypto_history(days=365):
         for date_str in all_dates:
             try:
                 date = datetime.strptime(date_str, "%Y-%m-%d")
-            except:
+            except ValueError:
                 continue
             
             btc_price = btc_data.get(date_str)

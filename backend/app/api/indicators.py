@@ -630,7 +630,7 @@ async def get_analyst_anxiety_components(days: int = Query(365, ge=1, le=1095)):
     move_raw = []
     try:
         move_raw = yahoo.fetch_series("^MOVE", start_date=start_date)
-    except:
+    except Exception:
         pass
     
     # Fetch HY OAS
@@ -643,7 +643,7 @@ async def get_analyst_anxiety_components(days: int = Query(365, ge=1, le=1095)):
     bbb_raw = []
     try:
         bbb_raw = await fred.fetch_series("BAMLC0A4CBBB", start_date=start_date)
-    except:
+    except Exception:
         pass
     
     # Convert to dicts
@@ -843,22 +843,22 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
     nfib_series = []
     try:
         nfib_series = await client.fetch_series("BOPTEXP", start_date=start_date)
-    except:
+    except Exception:
         try:
             nfib_series = await client.fetch_series("BOPTTOTM", start_date=start_date)
-        except:
+        except Exception:
             pass
     
     ism_series = []
     try:
         ism_series = await client.fetch_series("NEWORDER", start_date=start_date)
-    except:
+    except Exception:
         pass
     
     capex_series = []
     try:
         capex_series = await client.fetch_series("ACOGNO", start_date=start_date)
-    except:
+    except Exception:
         pass
     
     # Convert to dicts
