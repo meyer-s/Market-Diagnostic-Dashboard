@@ -7,8 +7,8 @@ class IndicatorValue(Base):
     __tablename__ = "indicator_value"
 
     id = Column(Integer, primary_key=True, index=True)
-    indicator_id = Column(Integer, ForeignKey("indicator.id"))
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    indicator_id = Column(Integer, ForeignKey("indicator.id"), index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
     raw_value = Column(Float)
     normalized_value = Column(Float)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import List
 
 from app.models.indicator import Indicator
@@ -161,7 +161,7 @@ def get_indicator_detail(code: str):
 
 
 @router.get("/indicators/{code}/history")
-def get_indicator_history(code: str, days: int = 365):
+def get_indicator_history(code: str, days: int = Query(365, ge=1, le=1095)):
     """Return time-series history for a single indicator (raw + score + state)."""
     # Virtual indicators don't have historical data yet
     if code == "SECTOR_REGIME_ALIGNMENT":
@@ -207,7 +207,7 @@ def get_indicator_history(code: str, days: int = 365):
 # so FastAPI matches them correctly
 
 @router.get("/indicators/BOND_MARKET_STABILITY/components")
-async def get_bond_composite_components(days: int = 365):
+async def get_bond_composite_components(days: int = Query(365, ge=1, le=1095)):
     """
     Return component breakdown for Bond Market Stability Composite.
     Shows the 4 sub-indicators and their weighted contributions.
@@ -382,7 +382,7 @@ async def get_bond_composite_components(days: int = 365):
 
 
 @router.get("/indicators/BOND_MARKET_STABILITY/muni")
-async def get_bond_muni_subsystem(days: int = 365):
+async def get_bond_muni_subsystem(days: int = Query(365, ge=1, le=1095)):
     """
     Return municipal credit & funding stress subsystem data.
     Includes Revdex revenue proxy, long-end municipal stress proxy,
@@ -446,7 +446,7 @@ async def get_bond_muni_subsystem(days: int = 365):
 
 
 @router.get("/indicators/LIQUIDITY_PROXY/components")
-async def get_liquidity_proxy_components(days: int = 365):
+async def get_liquidity_proxy_components(days: int = Query(365, ge=1, le=1095)):
     """
     Return component breakdown for Liquidity Proxy Indicator.
     
@@ -604,7 +604,7 @@ async def get_liquidity_proxy_components(days: int = 365):
 
 
 @router.get("/indicators/ANALYST_ANXIETY/components")
-async def get_analyst_anxiety_components(days: int = 365):
+async def get_analyst_anxiety_components(days: int = Query(365, ge=1, le=1095)):
     """
     Return component breakdown for Analyst Confidence composite indicator.
     Shows VIX, MOVE, HY OAS, and ERP proxy with weights and contributions.
@@ -814,13 +814,13 @@ async def get_analyst_anxiety_components(days: int = 365):
 
 
 @router.get("/indicators/ANALYST_CONFIDENCE/components")
-async def get_analyst_confidence_components(days: int = 365):
+async def get_analyst_confidence_components(days: int = Query(365, ge=1, le=1095)):
     """Alias route for Analyst Confidence composite components."""
     return await get_analyst_anxiety_components(days=days)
 
 
 @router.get("/indicators/SENTIMENT_COMPOSITE/components")
-async def get_sentiment_composite_components(days: int = 365):
+async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=1095)):
     """
     Get breakdown of Consumer & Corporate Sentiment Composite components.
     Returns Michigan Consumer Sentiment, NFIB, ISM New Orders, CapEx proxy.
@@ -1018,7 +1018,7 @@ async def get_sentiment_composite_components(days: int = 365):
 
 
 @router.get("/indicators/{code}/components")
-async def get_indicator_components(code: str, days: int = 365):
+async def get_indicator_components(code: str, days: int = Query(365, ge=1, le=1095)):
     """
     Return component breakdown for derived indicators.
     Currently supports: CONSUMER_HEALTH (returns PCE/PI/CPI data plus

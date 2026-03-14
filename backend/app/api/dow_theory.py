@@ -2,7 +2,7 @@
 Dow Theory API endpoints
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from app.services.dow_theory import get_dow_theory_data, get_dow_theory_history
 
 router = APIRouter(prefix="/dow-theory", tags=["dow-theory"])
@@ -30,7 +30,7 @@ async def get_dow_theory():
 
 
 @router.get("/history")
-async def get_dow_theory_hist(days: int = 90):
+async def get_dow_theory_hist(days: int = Query(90, ge=1, le=365)):
     """
     Get historical Dow Theory market direction for charting.
     

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from sqlalchemy import func, desc
@@ -827,7 +827,7 @@ def get_correlations():
 
 
 @router.get("/history/{metal}")
-def get_metal_price_history(metal: str, days: int = 365):
+def get_metal_price_history(metal: str, days: int = Query(365, ge=1, le=1095)):
     """
     Get historical price data for a metal
     """

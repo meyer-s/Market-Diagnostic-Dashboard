@@ -512,8 +512,8 @@ export default function SecretOptions() {
       if (normalizedPositions.length > 0 && selectedId === null) {
         setSelectedId(normalizedPositions[0].position.id);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to load positions");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load positions");
     } finally {
       setLoading(false);
     }
@@ -642,8 +642,8 @@ export default function SecretOptions() {
       });
       closeTradeModal();
       await loadPositions();
-    } catch (err: any) {
-      setFormError(err.message || "Failed to add position.");
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : "Failed to add position.");
     } finally {
       setSubmitting(false);
     }
@@ -669,8 +669,8 @@ export default function SecretOptions() {
       });
       closeTradeModal();
       await loadPositions();
-    } catch (err: any) {
-      setFormError(err.message || "Failed to update position.");
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : "Failed to update position.");
     } finally {
       setSubmitting(false);
     }
@@ -682,7 +682,7 @@ export default function SecretOptions() {
         "/secret/options/closed-positions"
       );
       setClosedPositions(data.closed_positions || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to load closed positions:", err);
     }
   };
@@ -710,8 +710,8 @@ export default function SecretOptions() {
       setClosingPositionId(null);
       await loadPositions();
       await loadClosedPositions();
-    } catch (err: any) {
-      alert(`Failed to close position: ${err.message}`);
+    } catch (err: unknown) {
+      alert(`Failed to close position: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 

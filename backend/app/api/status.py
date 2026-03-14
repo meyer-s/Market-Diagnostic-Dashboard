@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
+from sqlalchemy import func
 from datetime import datetime, timedelta
 from app.models.system_status import SystemStatus
 from app.models.indicator import Indicator
@@ -16,7 +17,7 @@ def get_system_status():
         return format_system_status(status)
 
 @router.get("/system/history")
-def get_system_history(days: int = 365):
+def get_system_history(days: int = Query(365, ge=1, le=1095)):
     """
     Return time-series history of composite system scores.
     
@@ -145,19 +146,27 @@ def get_system_history(days: int = 365):
 def get_indicator_status():
     with get_db_session() as db:
         indicators = db.query(Indicator).all()
+
+        # Subquery: latest timestamp per indicator_id
+        subq = (
+            db.query(
+                IndicatorValue.indicator_id,
+                func.max(IndicatorValue.timestamp).label("max_ts"),
+            )
+            .group_by(IndicatorValue.indicator_id)
+            .subquery()
+        )
         values = (
             db.query(IndicatorValue)
-            .order_by(IndicatorValue.timestamp.desc())
+            .join(
+                subq,
+                (IndicatorValue.indicator_id == subq.c.indicator_id)
+                & (IndicatorValue.timestamp == subq.c.max_ts),
+            )
             .all()
         )
 
-        # Build a map of latest values per indicator
-        latest = {}
-        for v in values:
-            if v.indicator_id not in latest:
-                latest[v.indicator_id] = v
-
-        # Format each indicator with its latest value
+        latest = {v.indicator_id: v for v in values}
         return [
             format_indicator_status(ind, latest.get(ind.id))
             for ind in indicators
