@@ -191,8 +191,6 @@ export default function SystemBreakdown() {
           setBreadthTrend("steady");
         }
         
-        console.log(`Loaded ${historyPoints.length} days with ${heatmapPoints.length} total data points`);
-        console.log('Sample history:', historyPoints[historyPoints.length - 1]);
         setHistory(historyPoints);
         setHeatmapData(heatmapPoints);
         

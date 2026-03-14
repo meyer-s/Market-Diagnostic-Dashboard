@@ -886,7 +886,6 @@ class AAPCalculator:
         Backwardation = physical premium = stress
         (Not implemented yet - requires futures curve data)
         """
-        # TODO: Implement when futures data available
         return None
     
     def _calc_etf_divergence(self, date: datetime) -> Optional[float]:
@@ -895,7 +894,6 @@ class AAPCalculator:
         Outflows + rising price = physical shortage = pressure
         (Not implemented yet - requires ETF flow data)
         """
-        # TODO: Implement when ETF data available
         return None
     
     # ===== CRYPTO COMPONENT CALCULATIONS =====
@@ -1572,7 +1570,6 @@ class AAPCalculator:
     
     def _get_vix_level(self, date: datetime) -> Optional[float]:
         """Get VIX level (placeholder - would need market data integration)"""
-        # TODO: Integrate with market data source
         return None
     
     def _get_liquidity_regime(self, date: datetime) -> str:

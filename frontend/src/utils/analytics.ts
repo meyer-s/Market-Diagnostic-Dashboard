@@ -14,8 +14,7 @@ export function initializeAnalytics(): void {
     return;
   }
 
-  // Google Analytics Measurement ID
-  const GA_ID = 'G-50NDCBKGYM';
+  const GA_ID = import.meta.env.VITE_GA_ID ?? 'G-50NDCBKGYM';
 
   // Load Google Analytics script
   const script = document.createElement('script');
@@ -35,7 +34,6 @@ export function initializeAnalytics(): void {
     page_title: document.title,
   });
 
-  console.log(`Google Analytics initialized with ID: ${GA_ID}`);
 }
 
 /**

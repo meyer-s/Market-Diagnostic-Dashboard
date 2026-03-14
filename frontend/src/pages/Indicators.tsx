@@ -4,6 +4,13 @@ import { Link } from "react-router-dom";
 import { getStateBadgeClass } from "../utils/styleUtils";
 import MarketLoading from "../components/ui/MarketLoading";
 
+function resolveIndicatorDisplay(code: string, name: string) {
+  if (code === "ANALYST_ANXIETY") {
+    return { displayName: "Analyst Confidence", displayCode: "ANALYST_CONFIDENCE", routeCode: "ANALYST_CONFIDENCE" };
+  }
+  return { displayName: name, displayCode: code, routeCode: code };
+}
+
 export default function Indicators() {
   const { data, loading, error } = useApi<IndicatorStatus[]>("/indicators");
 
@@ -80,12 +87,7 @@ export default function Indicators() {
 }
 
 function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
-  const displayName =
-    indicator.code === "ANALYST_ANXIETY" ? "Analyst Confidence" : indicator.name;
-  const routeCode =
-    indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
-  const displayCode =
-    indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
+  const { displayName, displayCode, routeCode } = resolveIndicatorDisplay(indicator.code, indicator.name);
 
   return (
     <tr className="border-t border-stealth-700">
@@ -108,12 +110,7 @@ function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
 }
 
 function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
-  const displayName =
-    indicator.code === "ANALYST_ANXIETY" ? "Analyst Confidence" : indicator.name;
-  const routeCode =
-    indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
-  const displayCode =
-    indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
+  const { displayName, displayCode, routeCode } = resolveIndicatorDisplay(indicator.code, indicator.name);
 
   return (
     <Link to={`/indicators/${routeCode}`}>

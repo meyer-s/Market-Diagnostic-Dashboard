@@ -69,10 +69,8 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        console.log('SystemOverview fetching data with trendPeriod:', trendPeriod);
         const apiUrl = getLegacyApiUrl();
         const historyUrl = `${apiUrl}/system/history?days=${trendPeriod}`;
-        console.log('SystemOverview history URL:', historyUrl);
         const [statusResponse, historyResponse, newsResponse] = await Promise.all([
           fetch(`${apiUrl}/system`),
           fetch(historyUrl),
@@ -420,8 +418,6 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         for (let i = 0; i < 5; i++) {
           tickPositions.push(minTime + (maxTime - minTime) * (i / 4));
         }
-        
-        console.log('SystemOverview chart data sample:', stabilityBandData.slice(0, 3), 'total:', stabilityBandData.length);
         
         return (
             <div className="pt-6 border-t border-stealth-700">
