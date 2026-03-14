@@ -17,7 +17,7 @@ interface Candle {
   volume: number;
 }
 
-interface TechnicalData {
+export interface TechnicalData {
   lookback_days: number;
   current_price: number;
   high_52w: number;

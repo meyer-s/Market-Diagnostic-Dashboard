@@ -124,6 +124,37 @@ interface PriceHistory {
   price: number;
 }
 
+interface MetalMarketCap {
+  market_cap_usd: number | null;
+  price_usd_per_oz: number | null;
+  stock_oz: number | null;
+}
+
+interface MarketCapsResponse {
+  metals: Record<string, MetalMarketCap>;
+  total_market_cap_usd: number | null;
+  metals_to_m2_pct: number | null;
+}
+
+interface MarketCapsHistoryPoint {
+  date: string;
+  metals_to_m2_pct: number | null;
+  gold_price?: number | null;
+  global_m2_trillions?: number | null;
+}
+
+interface MarketCapsHistoryResponse {
+  history: MarketCapsHistoryPoint[];
+}
+
+interface PriceHistoryDataPoint {
+  date: string;
+  AU?: number;
+  AG?: number;
+  PT?: number;
+  PD?: number;
+}
+
 const METAL_LABELS: Record<string, string> = {
   AU: "Gold",
   AG: "Silver",
@@ -196,8 +227,8 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   const { data: cb_holdings } = useApi<CBHolding[]>("/precious-metals/cb-holdings");
   const { data: supply_data } = useApi<SupplyData[]>("/precious-metals/supply");
   const { data: demand_data } = useApi<DemandData[]>("/precious-metals/demand");
-  const { data: market_caps } = useApi<any>("/precious-metals/market-caps");
-  const { data: market_caps_history } = useApi<any>("/precious-metals/market-caps/history?years=50");
+  const { data: market_caps } = useApi<MarketCapsResponse>("/precious-metals/market-caps");
+  const { data: market_caps_history } = useApi<MarketCapsHistoryResponse>("/precious-metals/market-caps/history?years=50");
   const { data: projectionsData } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
 
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
@@ -616,7 +647,7 @@ function MethodologyPanel() {
   );
 }
 
-function CBContextPanel({ cb_holdings, indicators }: any) {
+function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] | null; indicators: MetalIndicators }) {
   const cbContext = indicators.cb_context;
   const goldPct = cbContext.global_cb_gold_pct_reserves;
   const netPurchases = cbContext.net_purchases_yoy;
@@ -705,7 +736,7 @@ function CBContextPanel({ cb_holdings, indicators }: any) {
                 <DerivedLabel label="Top Accumulators (Recent Quarter)" />
               </span>
               <div className="space-y-1">
-                {cb_holdings.slice(0, 5).map((holding: any, idx: number) => (
+                {cb_holdings.slice(0, 5).map((holding, idx) => (
                   <div key={idx} className="flex justify-between text-xs text-stealth-300">
                     <span>{idx + 1}. {holding.country}</span>
                   </div>
@@ -719,7 +750,7 @@ function CBContextPanel({ cb_holdings, indicators }: any) {
     );
   }
 
-function PriceAnchorsPanel({ indicators, correlations }: any) {
+function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndicators; correlations: CorrelationMatrix | null }) {
   const anchors = indicators.price_anchors;
   const mhs = anchors.monetary_hedge_strength;
   const auDxy = anchors.au_dxy_ratio_zscore;
@@ -825,7 +856,7 @@ function PriceAnchorsPanel({ indicators, correlations }: any) {
   );
 }
 
-function RelativeValuePanel({ indicators }: any) {
+function RelativeValuePanel({ indicators }: { indicators: MetalIndicators }) {
   const rv = indicators.relative_value;
   const auAg = rv.au_ag_ratio;
   const auAgZ = rv.au_ag_ratio_zscore;
@@ -922,7 +953,7 @@ function RelativeValuePanel({ indicators }: any) {
   );
 }
 
-function PhysicalPaperPanel({ indicators }: any) {
+function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
   const pp = indicators.physical_paper;
   const pci = pp.paper_credibility_index;
   const holdingsZ = pp.etf_holdings_zscore;
@@ -1042,7 +1073,7 @@ function PhysicalPaperPanel({ indicators }: any) {
   );
 }
 
-function SupplyPanel({ supply_data }: any) {
+function SupplyPanel({ supply_data }: { supply_data: SupplyData[] | null }) {
   return (
     <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Are Miners Profitable or Squeezed?</h3>
@@ -1050,7 +1081,7 @@ function SupplyPanel({ supply_data }: any) {
 
         {supply_data && supply_data.length > 0 ? (
           <div className="space-y-4">
-            {supply_data.map((metal: any, idx: number) => (
+            {supply_data.map((metal, idx) => (
               <div key={idx} className="border-b border-stealth-600 pb-3 last:border-b-0">
                 {(() => {
                   const prod = metal.production_tonnes_yoy_pct;
@@ -1109,7 +1140,7 @@ function SupplyPanel({ supply_data }: any) {
   );
 }
 
-function DemandPanel({ demand_data }: any) {
+function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
   const categoryColors = {
     investment: getFamilyColor("market"),
     industrial: getFamilyColor("industrials"),
@@ -1124,7 +1155,7 @@ function DemandPanel({ demand_data }: any) {
 
         {demand_data && demand_data.length > 0 ? (
           <div className="space-y-4">
-            {demand_data.map((metal: any, idx: number) => {
+            {demand_data.map((metal, idx) => {
               const parts = [
                 metal.investment_tonnes,
                 metal.industrial_tonnes,
@@ -1139,7 +1170,7 @@ function DemandPanel({ demand_data }: any) {
                 { label: "Industrial", value: metal.industrial_tonnes, pct: hasTotal && isNumber(metal.industrial_tonnes) ? (metal.industrial_tonnes / total) * 100 : null, color: categoryColors.industrial },
                 { label: "Jewelry", value: metal.jewelry_tonnes, pct: hasTotal && isNumber(metal.jewelry_tonnes) ? (metal.jewelry_tonnes / total) * 100 : null, color: categoryColors.jewelry },
                 { label: "Other", value: metal.other_tonnes, pct: hasTotal && isNumber(metal.other_tonnes) ? (metal.other_tonnes / total) * 100 : null, color: categoryColors.other }
-              ].filter(cat => isNumber(cat.value) && cat.value > 0);
+              ].filter((cat): cat is typeof cat & { value: number } => isNumber(cat.value) && cat.value > 0);
 
             return (
               <div key={idx} className="border-b border-stealth-600 pb-3 last:border-b-0">
@@ -1196,7 +1227,7 @@ function DemandPanel({ demand_data }: any) {
   );
 }
 
-function MarketCapPanel({ market_caps, market_caps_history }: any) {
+function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: MarketCapsResponse | null; market_caps_history: MarketCapsHistoryResponse | null }) {
   if (!market_caps || !market_caps_history) {
     return (
       <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
@@ -1238,14 +1269,14 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
     : null;
   const history = market_caps_history?.history || [];
   const ratioHistory = history
-    .filter((entry: any) => isNumber(entry?.metals_to_m2_pct))
-    .map((entry: any) => ({
+    .filter((entry) => isNumber(entry?.metals_to_m2_pct))
+    .map((entry) => ({
       ...entry,
       year: Number(String(entry.date).slice(0, 4)),
-      metals_to_m2_bps: entry.metals_to_m2_pct * 100,
+      metals_to_m2_bps: (entry.metals_to_m2_pct as number) * 100,
     }));
   const yearlyRatioHistory = Object.values(
-    ratioHistory.reduce((acc: Record<number, { year: number; sum: number; count: number }>, entry: any) => {
+    ratioHistory.reduce((acc: Record<number, { year: number; sum: number; count: number }>, entry) => {
       if (!isNumber(entry.year) || !isNumber(entry.metals_to_m2_bps)) {
         return acc;
       }
@@ -1339,7 +1370,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: '4px' }}
-                      formatter={(value: any) => [`${formatBps(Number(value))} bps`, 'Metals/M2']}
+                      formatter={(value: number) => [`${formatBps(Number(value))} bps`, 'Metals/M2']}
                       labelFormatter={(year) => `Year: ${year}`}
                     />
                     <Line
@@ -1378,7 +1409,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: any) {
   );
 }
 
-function CorrelationPanel({ correlations }: any) {
+function CorrelationPanel({ correlations }: { correlations: CorrelationMatrix | null }) {
   if (!correlations) {
     return (
       <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
@@ -1626,7 +1657,7 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
 }
 
 function PriceHistoryChart() {
-  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [historyData, setHistoryData] = useState<PriceHistoryDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -1740,7 +1771,7 @@ function PriceHistoryChart() {
               borderRadius: '0.5rem',
               color: CHART_NEUTRAL.text
             }}
-            formatter={(value: any) => [`$${value.toFixed(2)}`, '']}
+            formatter={(value: number) => [`$${value.toFixed(2)}`, '']}
             labelFormatter={(label) => new Date(label).toLocaleDateString()}
           />
           <Legend 

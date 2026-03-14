@@ -15,7 +15,7 @@ import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
 import { getFamilyColor } from "../theme/metricColors";
 import { buildHolisticSummary } from "../utils/holisticSummary";
-import { buildSummaryInputFromSnapshot } from "../utils/summaryInput";
+import { buildSummaryInputFromSnapshot, type TechnicalDataLike, type FundamentalsLike, type OptionalityLike } from "../utils/summaryInput";
 
 interface OptionPosition {
   id: number;
@@ -206,18 +206,18 @@ const capitalizeWord = (value: string) => {
 };
 
 const clampUnit = (value: number) => Math.max(-1, Math.min(1, value));
-const countAxisRules = (axis: any): number => {
+const countAxisRules = (axis: { debug?: { rules?: unknown[] } } | null | undefined): number => {
   const rules = axis?.debug?.rules;
   return Array.isArray(rules) ? rules.length : 0;
 };
 
-const computeSpotWeighting = (payload: any, symbol: string): SpotWeighting => {
+const computeSpotWeighting = (payload: Record<string, unknown> | null, symbol: string): SpotWeighting => {
   const summaryInput = buildSummaryInputFromSnapshot({
     symbol,
-    technicalData: payload?.technical,
-    fundamentals: payload?.fundamentals,
-    optionalityMetrics: payload?.optionality,
-    asOf: payload?.as_of_date || payload?.created_at || null,
+    technicalData: payload?.technical as TechnicalDataLike,
+    fundamentals: payload?.fundamentals as FundamentalsLike | null,
+    optionalityMetrics: payload?.optionality as OptionalityLike | null,
+    asOf: (payload?.as_of_date || payload?.created_at || null) as string | null,
   });
   if (!summaryInput) {
     return EMPTY_SPOT_WEIGHTING;
@@ -746,7 +746,7 @@ export default function SecretOptions() {
       return;
     }
     let cancelled = false;
-    apiFetch<any>(`/stocks/${selectedSymbol}/projections`)
+    apiFetch<Record<string, unknown>>(`/stocks/${selectedSymbol}/projections`)
       .then((payload) => {
         if (cancelled) return;
         setSpotWeightBySymbol((prev) => ({

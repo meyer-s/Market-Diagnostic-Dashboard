@@ -14,10 +14,30 @@ interface HistoricalData {
   sma200?: number;
 }
 
+interface AAPComponent {
+  name: string;
+  category: string;
+  value: number;
+  weight: number;
+  contribution: number;
+  status: 'active' | 'missing';
+  description: string;
+}
+
+interface AAPData {
+  components: AAPComponent[];
+  metals_contribution: number;
+  crypto_contribution: number;
+  stability_score: number;
+  regime: string;
+  data_completeness?: number;
+  primary_driver?: string;
+}
+
 interface OverviewTabProps {
-  aapData: any;
+  aapData: AAPData;
   history: HistoricalData[];
-  componentHistory?: any;
+  componentHistory?: { data: Record<string, ComponentSeries> };
   timeframe: '30d' | '90d' | '180d' | '365d';
   setTimeframe: (tf: '30d' | '90d' | '180d' | '365d') => void;
 }
@@ -86,16 +106,16 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
     return labels[regime] || regime.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
-  const components = aapData.components || [];
-  const activeCount = components.filter((c: any) => c.status === 'active').length;
+  const components: AAPComponent[] = aapData.components || [];
+  const activeCount = components.filter((c) => c.status === 'active').length;
   const totalCount = components.length;
   const completenessPercent = totalCount > 0 ? (activeCount / totalCount) * 100 : 0;
 
-  const metalsComponents = components.filter((c: any) => c.category === 'metals');
-  const cryptoComponents = components.filter((c: any) => c.category === 'crypto');
+  const metalsComponents = components.filter((c) => c.category === 'metals');
+  const cryptoComponents = components.filter((c) => c.category === 'crypto');
 
   const rawComponentHistory = useMemo(() => {
-    return (componentHistory?.data ?? {}) as Record<string, ComponentSeries>;
+    return componentHistory?.data ?? {};
   }, [componentHistory]);
 
   const smoothedComponentHistory = useMemo(() => {

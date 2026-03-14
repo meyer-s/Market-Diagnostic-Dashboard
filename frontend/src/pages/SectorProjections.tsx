@@ -78,6 +78,29 @@ interface SectorHistoryPoint {
   spread: number;
 }
 
+interface SectorProjectionItem {
+  sector_symbol: string;
+  sector_name: string;
+  score_total: number;
+  score_trend: number;
+  score_rel: number;
+  score_risk: number;
+  score_regime: number;
+  rank: number;
+  classification: string;
+}
+
+interface DataWarning {
+  type: string;
+  details: unknown[];
+}
+
+interface ChartDataPoint {
+  name: string;
+  symbol: string;
+  scores: Record<string, number | null>;
+}
+
 /**
  * Visual score bar component for displaying normalized 0-100 scores
  */
@@ -97,9 +120,16 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
 }
 
 export default function SectorProjections() {
-  const { data, loading, error } = useApi("/sectors/projections/latest");
+  interface SectorProjectionsResponse {
+    projections: Record<string, SectorProjectionItem[]>;
+    historical: Record<string, number>;
+    as_of_date: string;
+    system_state: string;
+    data_warnings: DataWarning[];
+  }
+  const { data, loading, error } = useApi<SectorProjectionsResponse>("/sectors/projections/latest");
   const { data: historyData } = useApi("/sectors/projections/history?days=365");
-  const [projections, setProjections] = useState<any>({});
+  const [projections, setProjections] = useState<Record<string, SectorProjectionItem[]>>({});
   const [historicalScores, setHistoricalScores] = useState<Record<string, number>>({});
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -177,17 +207,17 @@ export default function SectorProjections() {
     // Get all unique sectors from 3m data (use 3m as reference since it should always exist)
     const sectors = projections["3m"] || [];
     
-    return sectors.map((sector: any) => {
-      const sectorData = {
+    return sectors.map((sector) => {
+      const sectorData: ChartDataPoint = {
         name: sector.sector_name,
         symbol: sector.sector_symbol,
-        scores: {} as any,
+        scores: {},
       };
-      
+
       // Collect scores for each horizon
       CHART_HORIZONS.forEach((h) => {
         const horizonData = projections[h] || [];
-        const match = horizonData.find((s: any) => s.sector_symbol === sector.sector_symbol);
+        const match = horizonData.find((s) => s.sector_symbol === sector.sector_symbol);
         if (match) {
           sectorData.scores[h] = match.score_total;
         } else {
@@ -201,7 +231,7 @@ export default function SectorProjections() {
   };
 
   const chartData = getChartData();
-  const tInterpolated = chartData.some((sector: any) =>
+  const tInterpolated = chartData.some((sector) =>
     sector.scores["T"] === null || sector.scores["T"] === undefined
   );
   
@@ -225,13 +255,13 @@ export default function SectorProjections() {
       
       {data && <p className="mb-6 text-xs text-gray-500">System State: <span className={data.system_state === "RED" ? "text-red-400 font-semibold" : data.system_state === "GREEN" ? "text-green-400 font-semibold" : "text-yellow-400 font-semibold"}>{data.system_state}</span> - As of: {data.as_of_date}</p>}
 
-      {data?.data_warnings?.length > 0 && (
+      {(data?.data_warnings?.length ?? 0) > 0 && (
         <div className="mb-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3 sm:p-4">
           <p className="text-xs sm:text-sm text-yellow-200/90 leading-relaxed">
             <strong>Data Warning:</strong> Recent projections contain data quality flags that may reduce accuracy.
           </p>
           <ul className="mt-2 text-xs text-yellow-200/80 space-y-0.5">
-            {data.data_warnings.map((warning: any, idx: number) => (
+            {data?.data_warnings?.map((warning, idx) => (
               <li key={`${warning.type}-${idx}`}>
                 {warning.type.replace(/_/g, " ")} - {Array.isArray(warning.details) ? warning.details.length : 0} issue(s)
               </li>
@@ -245,7 +275,7 @@ export default function SectorProjections() {
           <MarketLoading size={110} variant="scan" label="Loading sector projections..." />
         </div>
       )}
-      {error && <div className="text-red-400">Error: {error.message}</div>}
+      {error && <div className="text-red-400">Error: {error}</div>}
       
       {/* Defensive vs Cyclical Spread - Historical Trend */}
       {!loading && !error && (
@@ -329,7 +359,7 @@ export default function SectorProjections() {
               <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
                 {/* Gradient definitions for uncertainty cones */}
                 <defs>
-                  {chartData.map((sector: any, idx: number) => {
+                  {chartData.map((sector, idx) => {
                     const color = getSectorColor(sector.symbol, "muted");
                     const gradientId = `grad_${idx}`;
                     return (
@@ -341,7 +371,7 @@ export default function SectorProjections() {
                     );
                   })}
                   {/* Radial gradients for fading cone edges */}
-                  {chartData.map((sector: any, idx: number) => {
+                  {chartData.map((sector, idx) => {
                     const color = getSectorColor(sector.symbol, "muted");
                     const radialId = `radial_${idx}`;
                     return (
@@ -369,38 +399,41 @@ export default function SectorProjections() {
                 <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M</text>
                 
                 {/* Uncertainty cones and lines for each sector */}
-                {chartData.map((sector: any, idx: number) => {
+                {chartData.map((sector, idx) => {
                   const color = getSectorColor(sector.symbol);
                   const isSelected = selectedSector === sector.symbol;
                   const opacity = !selectedSector || isSelected ? 0.7 : 0.1;
                   
                   // Calculate points - 5 data points: -3M, T(now), 3M, 6M, 12M
                   // Use real historical score from backend, fallback to estimation if unavailable
+                  const score3m = sector.scores["3m"] ?? 0;
+                  const score6m = sector.scores["6m"] ?? 0;
+                  const score12m = sector.scores["12m"] ?? 0;
                   const histScore = historicalScores[sector.symbol] !== undefined
                     ? historicalScores[sector.symbol]
-                    : sector.scores["3m"] - 8; // Fallback estimation
-                  
+                    : score3m - 8; // Fallback estimation
+
                   // For T (current), use data if available, otherwise interpolate from historical and 3m
                   const scoreT = sector.scores["T"] !== null && sector.scores["T"] !== undefined
                     ? sector.scores["T"]
-                    : histScore + ((sector.scores["3m"] - histScore) / 2); // Interpolate midpoint
-                  
+                    : histScore + ((score3m - histScore) / 2); // Interpolate midpoint
+
                   const xHist = 150;   // -3M
                   const yHist = 260 - (histScore * 2.4);
                   const x0 = 350;      // T (Now)
                   const y0 = 260 - (scoreT * 2.4);
                   const x1 = 550;      // 3M
-                  const y1 = 260 - (sector.scores["3m"] * 2.4);
+                  const y1 = 260 - (score3m * 2.4);
                   const x2 = 725;      // 6M
-                  const y2 = 260 - (sector.scores["6m"] * 2.4);
+                  const y2 = 260 - (score6m * 2.4);
                   const x3 = 900;      // 12M
-                  const y3 = 260 - (sector.scores["12m"] * 2.4);
-                  
+                  const y3 = 260 - (score12m * 2.4);
+
                   // Calculate expanding uncertainty cone starting from now
                   // Uncertainty grows progressively and smoothly
                   const initialSigma = 2; // Small initial uncertainty at "now"
-                  const midSigma = Math.abs(sector.scores["6m"] - sector.scores["3m"]) * 0.3 + 5;
-                  const finalSigma = Math.abs(sector.scores["12m"] - sector.scores["6m"]) * 0.4 + 8;
+                  const midSigma = Math.abs(score6m - score3m) * 0.3 + 5;
+                  const finalSigma = Math.abs(score12m - score6m) * 0.4 + 8;
                   
                   // Create smooth cone envelope by calculating bounds at each point
                   const sigma0 = initialSigma;
@@ -534,7 +567,7 @@ export default function SectorProjections() {
           {/* Legend - Compact and scrollable */}
           <div className="mt-2 mb-4 overflow-x-auto">
             <div className="flex flex-wrap gap-1 sm:gap-2 pb-2 min-w-min">
-              {chartData.map((sector: any, idx: number) => {
+              {chartData.map((sector, idx) => {
                 const color = getSectorColor(sector.symbol);
                 const isSelected = selectedSector === sector.symbol;
                 return (
@@ -546,7 +579,7 @@ export default function SectorProjections() {
                         ? 'ring-2 bg-gray-700' 
                         : 'bg-transparent hover:bg-gray-800'
                     }`}
-                    style={isSelected ? { ringColor: color } : {}}
+                    style={isSelected ? { outline: `2px solid ${color}` } : {}}
                   >
                     <div style={{ width: "10px", height: "10px", backgroundColor: color, borderRadius: "2px", opacity: 0.9, flexShrink: 0 }}></div>
                     <span className={`${isSelected ? 'text-white font-semibold' : 'text-gray-400'}`}>{sector.symbol}</span>
@@ -562,12 +595,12 @@ export default function SectorProjections() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 sm:gap-2 text-xs">
               {HORIZONS.map((h) => {
                 const topSectors = (projections[h] || [])
-                  .sort((a: any, b: any) => a.rank - b.rank)
+                  .sort((a, b) => a.rank - b.rank)
                   .slice(0, 3);
                 return (
                   <div key={h} className="bg-gray-900 rounded p-1.5 sm:p-2">
                     <div className="text-gray-500 mb-1 font-semibold text-xs">{h.toUpperCase()}</div>
-                    {topSectors.map((s: any, i: number) => (
+                    {topSectors.map((s, i) => (
                       <div key={s.sector_symbol} className="flex items-center gap-1 mb-0.5">
                         <span className="text-green-400 font-bold text-xs">#{i + 1}</span>
                         <span className="text-gray-300 truncate text-xs">{s.sector_symbol}</span>
@@ -632,7 +665,7 @@ export default function SectorProjections() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(projections[selectedHorizon])?.sort((a:any,b:any)=>a.rank-b.rank).map((row:any) => (
+                  {(projections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
                     <tr key={row.sector_symbol} className={
                       row.classification === "Winner"
                         ? "bg-green-900/30"
@@ -666,7 +699,7 @@ export default function SectorProjections() {
               </table>
             </div>
             <div className="md:hidden space-y-2 sm:space-y-3">
-              {(selectedHorizon === "T" ? projections["T"] : projections[selectedHorizon])?.sort((a:any,b:any)=>a.rank-b.rank).map((row:any) => (
+              {(selectedHorizon === "T" ? projections["T"] : projections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
                 <div
                   key={row.sector_symbol}
                   className={`rounded-lg border border-gray-700 overflow-hidden ${

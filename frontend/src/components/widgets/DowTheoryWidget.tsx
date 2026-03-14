@@ -8,7 +8,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   ReferenceLine,
-  type TooltipProps,
+  type TooltipContentProps,
 } from "recharts";
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
@@ -334,7 +334,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
     active,
     label,
     payload,
-  }: TooltipProps<number, string>) => {
+  }: TooltipContentProps<number, string>) => {
     if (!active || !payload?.length) return null;
     const point = payload[0].payload as HistoryPoint;
     const modernValue = point.modern_direction;

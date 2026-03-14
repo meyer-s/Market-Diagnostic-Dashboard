@@ -13,13 +13,17 @@ interface AAPComponent {
 }
 
 interface DeepDiveTabProps {
-  aapData: any;
+  aapData: {
+    components: AAPComponent[];
+    metals_contribution: number;
+    crypto_contribution: number;
+  };
 }
 
 export function DeepDiveTab({ aapData }: DeepDiveTabProps) {
-  const components = aapData.components || [];
-  const metalsComponents = components.filter((c: any) => c.category === 'metals');
-  const cryptoComponents = components.filter((c: any) => c.category === 'crypto');
+  const components: AAPComponent[] = aapData.components || [];
+  const metalsComponents = components.filter((c) => c.category === 'metals');
+  const cryptoComponents = components.filter((c) => c.category === 'crypto');
 
   return (
     <div className="space-y-6">

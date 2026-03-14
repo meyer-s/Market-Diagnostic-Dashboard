@@ -20,6 +20,15 @@ interface AASData {
   pressure_index: number;
 }
 
+interface AASHistoryPoint {
+  date: string;
+  stability_score: number;
+  metals_contribution: number;
+  crypto_contribution: number;
+  sma_20?: number;
+  sma_200?: number;
+}
+
 interface HistoricalData {
   date: string;
   stability_score: number;
@@ -36,7 +45,7 @@ interface AASWidgetProps {
 
 export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetProps) {
   const { data: aasData, loading } = useApi<AASData>('/aap/current');
-  const { data: historyData } = useApi<any>(`/aap/history?days=${parseInt(timeframe)}`);
+  const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>(`/aap/history?days=${parseInt(timeframe)}`);
   const [metalsPercent, setMetalsPercent] = useState(50);
   const [cryptoPercent, setCryptoPercent] = useState(50);
   const [chartData, setChartData] = useState<HistoricalData[]>([]);
@@ -65,8 +74,8 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
       cutoffDate.setDate(cutoffDate.getDate() - days);
       
       const processed = historyData.data
-        .filter((d: any) => new Date(d.date) >= cutoffDate)
-        .map((d: any) => ({
+        .filter((d: AASHistoryPoint) => new Date(d.date) >= cutoffDate)
+        .map((d: AASHistoryPoint) => ({
           date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           stability_score: d.stability_score || 0,
           metals_contribution: (d.metals_contribution || 0) * 100,

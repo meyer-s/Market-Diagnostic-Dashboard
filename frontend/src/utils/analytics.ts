@@ -24,7 +24,7 @@ export function initializeAnalytics(): void {
 
   // Initialize gtag
   (window as any).dataLayer = (window as any).dataLayer || [];
-  function gtag(...args: any[]) {
+  function gtag(...args: unknown[]) {
     (window as any).dataLayer.push(arguments);
   }
   (window as any).gtag = gtag;

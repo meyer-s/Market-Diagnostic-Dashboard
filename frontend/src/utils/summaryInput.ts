@@ -16,7 +16,7 @@ type FundamentalSeriesLike = {
   series?: FundamentalPointLike[];
 };
 
-type FundamentalsLike = {
+export type FundamentalsLike = {
   eps?: FundamentalSeriesLike;
   roe?: FundamentalSeriesLike;
   free_cash_flow?: FundamentalSeriesLike;
@@ -26,16 +26,25 @@ type FundamentalsLike = {
   revenue_yoy?: FundamentalSeriesLike;
 };
 
-type OptionalityLike = {
+export type OptionalityLike = {
   iv30?: number | null;
   hv30?: number | null;
   iv_percentile?: number | null;
   avg_edr?: number | null;
 };
 
+export type TechnicalDataLike = {
+  candles?: Array<{ close: number | string; high: number | string; low: number | string; volume?: number | string }>;
+  current_price?: number | null;
+  sma_50?: number | null;
+  sma_200?: number | null;
+  rsi?: { series?: Array<number | null>; current?: number | null };
+  macd?: { histogram_series?: Array<number | null>; current?: number | null; signal?: number | null; histogram?: number | null };
+};
+
 type BuildSummaryInputParams = {
   symbol: string;
-  technicalData: any;
+  technicalData: TechnicalDataLike;
   fundamentals?: FundamentalsLike | null;
   optionalityMetrics?: OptionalityLike | null;
   asOf?: string | null;
@@ -103,7 +112,7 @@ export const buildSummaryInputFromSnapshot = ({
   const normalizedSymbol = symbol?.trim().toUpperCase();
   if (!normalizedSymbol || !technicalData) return null;
 
-  const candles: CandleLike[] = (technicalData.candles || []).map((c: any) => ({
+  const candles: CandleLike[] = (technicalData.candles || []).map((c) => ({
     close: Number(c.close),
     high: Number(c.high),
     low: Number(c.low),

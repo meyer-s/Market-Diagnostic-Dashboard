@@ -6,7 +6,7 @@ interface ChartLine {
   name: string;
   stroke: string;
   strokeWidth?: number;
-  conditional?: (data: any[]) => boolean; // Check if this line should render
+  conditional?: (data: object[]) => boolean; // Check if this line should render
   connectNulls?: boolean;
 }
 
@@ -20,7 +20,7 @@ interface ReferenceLineConfig {
 }
 
 interface ComponentChartProps {
-  data: any[];
+  data: object[];
   lines: ChartLine[];
   referenceLines?: ReferenceLineConfig[];
   yAxisLabel?: string;
@@ -42,13 +42,13 @@ export function ComponentChart({
   const yAxisLabelProps = yAxisLabel ? {
     value: yAxisLabel,
     angle: -90,
-    position: 'insideLeft',
+    position: 'insideLeft' as const,
     fill: CHART_NEUTRAL.label,
     offset: 12
   } : undefined;
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer width="100%" height={height as `${number}%` | number}>
       <LineChart data={data} margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
         <XAxis
@@ -81,7 +81,7 @@ export function ComponentChart({
             padding: "12px",
           }}
           labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
-          formatter={(value: number | string | null | undefined) => {
+          formatter={(value) => {
             const numeric = typeof value === "number" ? value : Number(value);
             return Number.isFinite(numeric) ? numeric.toFixed(2) : "n/a";
           }}

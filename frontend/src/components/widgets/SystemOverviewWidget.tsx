@@ -470,7 +470,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                     }}
                     labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
                     itemStyle={{ color: "#ffffff", fontSize: 11 }}
-                    formatter={(value: number, name: string, item: any) => {
+                    formatter={(value: number, name: string, item: { dataKey?: unknown; payload?: Record<string, unknown> }) => {
                       const dataKey = typeof item?.dataKey === "string" ? item.dataKey : "";
                       const payload = item?.payload ?? {};
                       if (dataKey === "total_pct") {

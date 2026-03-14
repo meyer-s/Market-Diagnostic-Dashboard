@@ -224,7 +224,7 @@ interface MuniSeries {
   history?: MuniSeriesPoint[];
   stress_cues?: {
     stress_level?: "normal" | "stress" | "severe";
-    [key: string]: any;
+    [key: string]: string | number | boolean | null | undefined;
   };
 }
 
@@ -363,7 +363,7 @@ export default function IndicatorDetail() {
     setRefetchMessage(null);
     
     try {
-      const result = await apiFetch<any>(`/admin/clear-refetch/${apiCode}?days=365`, {
+      const result = await apiFetch<{ deleted_records?: number; message?: string; result?: { backfilled?: number } }>(`/admin/clear-refetch/${apiCode}?days=365`, {
         method: 'POST'
       });
       const deletedCount = result.deleted_records || 0;
@@ -913,7 +913,7 @@ export default function IndicatorDetail() {
             </p>
             {(() => {
               const { data, dateRange } = processComponentData(liquidityComponents, chartRange.days);
-              const stabilityData = data.map((row: any) => {
+              const stabilityData = data.map((row) => {
                 const stressScore = Number(row?.composite?.stress_score);
                 const providedStability = Number(row?.composite?.stability_score);
                 const stabilityScore = Number.isFinite(providedStability)
@@ -1783,14 +1783,14 @@ export default function IndicatorDetail() {
                     }}
                     labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
                     itemStyle={{ color: CHART_NEUTRAL.text }}
-                      formatter={(value: number, name?: string) => {
+                      formatter={(value, name) => {
                         const score = Number(value);
                         const state = score < 30 ? "RED" : score < 60 ? "YELLOW" : "GREEN";
                         return [
                           <span key="value">
                             {score.toFixed(0)} <span className="text-stealth-400">({state})</span>
                           </span>,
-                          name || "Score"
+                          (name as string) || "Score"
                         ];
                       }}
                       labelFormatter={(label: string | number) =>
@@ -1935,10 +1935,10 @@ function MuniStressPanel({
     }
   };
 
-  const hasLineData = (rows: any[], dataKey: string, minPoints = 2) => {
+  const hasLineData = (rows: object[], dataKey: string, minPoints = 2) => {
     let count = 0;
     for (const row of rows) {
-      const value = row?.[dataKey];
+      const value = (row as Record<string, unknown>)?.[dataKey];
       if (Number.isFinite(value)) {
         count += 1;
         if (count >= minPoints) return true;
@@ -2154,7 +2154,7 @@ function MuniStressPanel({
                 dataKey: `${series.key}_score`,
                 name: series.label,
                 stroke: seriesColors(series.key),
-                conditional: (rows) => hasLineData(rows, `${series.key}_score`),
+                conditional: (rows: object[]) => hasLineData(rows, `${series.key}_score`),
                 connectNulls: true,
               })),
               ...(data.curve && data.curve.status !== "unavailable"

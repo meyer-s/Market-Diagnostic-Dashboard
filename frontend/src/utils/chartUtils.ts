@@ -82,7 +82,7 @@ export const commonTooltipStyle = {
 /**
  * Format value for tooltip display
  */
-export function formatTooltipValue(value: any, decimals: number = 2): string {
+export function formatTooltipValue(value: number | string | null | undefined, decimals: number = 2): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === 'number') {
     return value.toFixed(decimals);

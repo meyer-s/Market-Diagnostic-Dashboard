@@ -32,16 +32,16 @@ export function calculateDateRange(daysBack: number): DateRange {
  * @param dateField Name of the date field (default: 'date')
  * @returns Deduplicated and sorted array
  */
-export function deduplicateByDate<T extends Record<string, any>>(
+export function deduplicateByDate<T extends Record<string, unknown> & { dateNum?: number }>(
   data: T[],
   dateField: string = 'date'
 ): T[] {
   const dateMap = new Map<string, T>();
   data.forEach(item => {
-    dateMap.set(item[dateField], item);
+    dateMap.set(item[dateField] as string, item);
   });
-  
-  return Array.from(dateMap.values()).sort((a, b) => a.dateNum - b.dateNum);
+
+  return Array.from(dateMap.values()).sort((a, b) => (a.dateNum ?? 0) - (b.dateNum ?? 0));
 }
 
 /**
@@ -50,13 +50,13 @@ export function deduplicateByDate<T extends Record<string, any>>(
  * @param dateField Name of the date field (default: 'date')
  * @returns Array with dateNum field added
  */
-export function addTimestampNumber<T extends Record<string, any>>(
+export function addTimestampNumber<T extends Record<string, unknown>>(
   data: T[],
   dateField: string = 'date'
 ): (T & { dateNum: number })[] {
   return data.map(item => ({
     ...item,
-    dateNum: new Date(item[dateField]).getTime()
+    dateNum: new Date(item[dateField] as string).getTime()
   }));
 }
 

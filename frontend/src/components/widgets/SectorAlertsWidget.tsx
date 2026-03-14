@@ -21,12 +21,19 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../utils/apiUtils";
 
+interface SectorAlertDetails {
+  system_state?: string;
+  spread?: number | null;
+  defensive_avg?: number | null;
+  cyclical_avg?: number | null;
+}
+
 interface SectorAlert {
   type: string;
   severity: "INFO" | "WARNING";
   title: string;
   message: string;
-  details: any;
+  details: SectorAlertDetails;
   timestamp: string;
 }
 
@@ -117,7 +124,7 @@ export default function SectorAlertsWidget() {
               <div className="bg-stealth-800 rounded p-2">
                 <div className="text-gray-500">Spread</div>
                 <div className="font-bold text-stealth-200">
-                  {alert.details.spread > 0 ? "+" : ""}{alert.details.spread} pts
+                  {(alert.details.spread ?? 0) > 0 ? "+" : ""}{alert.details.spread ?? 0} pts
                 </div>
               </div>
               

@@ -11,10 +11,10 @@ interface ComponentBreakdownProps {
   charts: {
     title: string;
     subtitle?: string;
-    data: any[];
+    data: Record<string, unknown>[];
     daysBack: number;
-    lines: { dataKey: string; name: string; stroke: string; strokeWidth?: number; conditional?: (data: any[]) => boolean }[];
-    referenceLines?: { y: number; stroke: string; label: string; labelFill: string; labelPosition?: string; fontSize?: number }[];
+    lines: { dataKey: string; name: string; stroke: string; strokeWidth?: number; conditional?: (data: object[]) => boolean }[];
+    referenceLines?: { y: number; stroke: string; label: string; labelFill: string; labelPosition?: 'left' | 'right' | 'insideTopRight' | 'insideBottomRight'; fontSize?: number }[];
     yAxisLabel: string;
     yAxisDomain?: [number, number];
   }[];

@@ -100,6 +100,11 @@ interface IntradaySeriesPoint {
   RTY?: number;
 }
 
+interface SectorProjection {
+  sector_symbol: string;
+  score_total: number;
+}
+
 /**
  * Complete market map data structure
  */
@@ -148,7 +153,7 @@ const MarketMap = () => {
   // State management
   const [data, setData] = useState<MarketMapData | null>(null);
   const [intradayData, setIntradayData] = useState<IntradayData[]>([]);
-  const [sectorProjections, setSectorProjections] = useState<any>(null);
+  const [sectorProjections, setSectorProjections] = useState<Record<string, SectorProjection[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -173,10 +178,10 @@ const MarketMap = () => {
   const fetchData = async () => {
     try {
       const [mapResult, intradayResult] = await Promise.all([
-        apiFetch<any>("/market-map/data?days=5"),
-        apiFetch<any>("/market-map/spy-intraday"),
+        apiFetch<MarketMapData>("/market-map/data?days=5"),
+        apiFetch<{ data: IntradayData[] }>("/market-map/spy-intraday"),
       ]);
-      const projectionsResult = await apiFetch<any>("/sectors/projections/latest").catch(() => null);
+      const projectionsResult = await apiFetch<{ projections: Record<string, SectorProjection[]> }>("/sectors/projections/latest").catch(() => null);
 
       setData(mapResult);
       setIntradayData(intradayResult.data || []);
@@ -544,9 +549,9 @@ const MarketMap = () => {
                       const etfSymbol = sectorToEtf[sector.name];
                       if (!etfSymbol || !sectorProjections) return null;
                       
-                      const projection3m = sectorProjections["3m"]?.find((p: any) => p.sector_symbol === etfSymbol);
-                      const projection6m = sectorProjections["6m"]?.find((p: any) => p.sector_symbol === etfSymbol);
-                      const projection12m = sectorProjections["12m"]?.find((p: any) => p.sector_symbol === etfSymbol);
+                      const projection3m = sectorProjections["3m"]?.find((p: SectorProjection) => p.sector_symbol === etfSymbol);
+                      const projection6m = sectorProjections["6m"]?.find((p: SectorProjection) => p.sector_symbol === etfSymbol);
+                      const projection12m = sectorProjections["12m"]?.find((p: SectorProjection) => p.sector_symbol === etfSymbol);
                       
                       if (!projection3m) return null;
                       

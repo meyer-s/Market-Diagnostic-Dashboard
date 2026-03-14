@@ -25,7 +25,7 @@ import {
 } from "recharts";
 import { PriceAnalysisChart } from "../components/widgets/PriceAnalysisChart";
 import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
-import { TechnicalIndicators } from "../components/widgets/TechnicalIndicators.tsx";
+import { TechnicalIndicators, type TechnicalData } from "../components/widgets/TechnicalIndicators.tsx";
 import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -65,8 +65,10 @@ interface NewsArticle {
 
 interface DataWarning {
   type: string;
-  details?: any;
+  details?: Record<string, unknown>;
 }
+
+// TechnicalData is imported from TechnicalIndicators
 
 interface OptionsWall {
   strike: number;
@@ -121,7 +123,7 @@ export default function StockAnalysis() {
   const [ticker, setTicker] = useState("");
   const [searchTicker, setSearchTicker] = useState("");
   const [projections, setProjections] = useState<Record<string, StockProjection>>({});
-  const [technicalData, setTechnicalData] = useState<any>(null);
+  const [technicalData, setTechnicalData] = useState<TechnicalData | null>(null);
   const [optionsFlow, setOptionsFlow] = useState<OptionsFlowData | null>(null);
   const [optionalityMetrics, setOptionalityMetrics] = useState<OptionalityMetrics | null>(null);
   const [fundamentals, setFundamentals] = useState<FundamentalsPayload | null>(null);
@@ -150,7 +152,19 @@ export default function StockAnalysis() {
     setProjectionUnavailable(false);
 
     const fetchTimestamp = new Date().toISOString();
-    let projectionsPayload: any | null = null;
+    let projectionsPayload: {
+      projections?: Record<string, StockProjection>;
+      historical?: { score_3m_ago?: number };
+      technical?: TechnicalData;
+      options_flow?: OptionsFlowData;
+      optionality?: OptionalityMetrics;
+      fundamentals?: FundamentalsPayload;
+      analyst_target?: number;
+      analyst_count?: number;
+      data_warnings?: DataWarning[];
+      as_of_date?: string;
+      created_at?: string;
+    } | null = null;
 
     try {
       const response = await fetch(buildApiUrl(`/stocks/${normalizedTicker}/projections`));
@@ -161,8 +175,8 @@ export default function StockAnalysis() {
       } else {
         projectionsPayload = await response.json();
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch stock data");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to fetch stock data");
     }
 
     if (projectionsPayload) {
@@ -192,7 +206,7 @@ export default function StockAnalysis() {
     }
 
     // Fetch news filtered by ticker (server-side to avoid missing relevant articles)
-    const tickerNews = await apiFetch<any[]>(
+    const tickerNews = await apiFetch<NewsArticle[]>(
       `/news?hours=720&limit=50&symbol=${normalizedTicker}`
     ).catch(() => null); // Last 30 days
     if (tickerNews) {
@@ -311,13 +325,15 @@ export default function StockAnalysis() {
 
   const summaryInput = useMemo(
     () =>
-      buildSummaryInputFromSnapshot({
-        symbol: searchTicker,
-        technicalData,
-        fundamentals,
-        optionalityMetrics,
-        asOf: dataAsOf,
-      }),
+      technicalData
+        ? buildSummaryInputFromSnapshot({
+            symbol: searchTicker,
+            technicalData,
+            fundamentals,
+            optionalityMetrics,
+            asOf: dataAsOf,
+          })
+        : null,
     [searchTicker, technicalData, fundamentals, optionalityMetrics, dataAsOf]
   );
   const holisticSummary = useMemo(
@@ -478,7 +494,7 @@ export default function StockAnalysis() {
           {/* Technical Indicators */}
           {projections["T"] && (
             <TechnicalIndicators
-              technicalData={technicalData}
+              technicalData={technicalData ?? undefined}
               optionsFlow={optionsFlow}
               optionalityMetrics={optionalityMetrics}
             />

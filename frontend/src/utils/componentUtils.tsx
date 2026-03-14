@@ -103,7 +103,7 @@ export function isWeekend(date: Date = new Date()): boolean {
 /**
  * Calculate moving average for smoothing data
  */
-export function calculateMovingAverage<T extends { [key: string]: any }>(
+export function calculateMovingAverage<T extends { [key: string]: unknown }>(
   data: T[],
   valueKey: string,
   windowSize: number = 7
@@ -114,7 +114,7 @@ export function calculateMovingAverage<T extends { [key: string]: any }>(
     const start = Math.max(0, index - Math.floor(windowSize / 2));
     const end = Math.min(data.length, start + windowSize);
     const window = data.slice(start, end);
-    const avg = window.reduce((sum, p) => sum + (p[valueKey] || 0), 0) / window.length;
+    const avg = window.reduce((sum, p) => sum + ((p[valueKey] as number) || 0), 0) / window.length;
     
     return {
       ...point,
@@ -127,7 +127,7 @@ export function calculateMovingAverage<T extends { [key: string]: any }>(
 /**
  * Safe number formatting with fallback
  */
-export function formatValue(value: any, decimals: number = 2): string {
+export function formatValue(value: number | string | null | undefined, decimals: number = 2): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === 'number') {
     return value.toFixed(decimals);

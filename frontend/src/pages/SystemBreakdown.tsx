@@ -36,6 +36,12 @@ interface HeatmapDataPoint {
   score: number;
 }
 
+interface IndicatorHistoryPoint {
+  timestamp: string;
+  state: string;
+  score: number;
+}
+
 interface IndicatorMetadata {
   code: string;
   name: string;
@@ -89,15 +95,15 @@ export default function SystemBreakdown() {
         await Promise.all(
           indicatorCodes.map(async (code: string) => {
             try {
-              const data = await apiFetch<any[]>(`/indicators/${code}/history?days=365`);
-              
+              const data = await apiFetch<IndicatorHistoryPoint[]>(`/indicators/${code}/history?days=365`);
+
               if (Array.isArray(data)) {
                 // Aggregate by date, keeping only the latest timestamp per day
-                const dailyData = new Map<string, any>();
-                data.forEach((point: any) => {
+                const dailyData = new Map<string, IndicatorHistoryPoint>();
+                data.forEach((point) => {
                   const dateKey = point.timestamp.split('T')[0];
                   // Keep the latest timestamp for each date
-                  if (!dailyData.has(dateKey) || point.timestamp > dailyData.get(dateKey).timestamp) {
+                  if (!dailyData.has(dateKey) || point.timestamp > (dailyData.get(dateKey)?.timestamp ?? "")) {
                     dailyData.set(dateKey, point);
                   }
                 });
@@ -448,7 +454,7 @@ export default function SystemBreakdown() {
                           key={idx}
                           className="flex-1 h-8 transition-opacity hover:opacity-75 cursor-pointer"
                           style={{ 
-                            backgroundColor: getStateColor(point.state),
+                            backgroundColor: getStateColor(point.state as StabilityState),
                             minWidth: '2px',
                           }}
                           title={`${point.date}: ${point.state} (${point.score.toFixed(1)})`}

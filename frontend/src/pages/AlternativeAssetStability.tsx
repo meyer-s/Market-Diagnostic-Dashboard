@@ -1,5 +1,36 @@
 import { useState, useEffect } from "react";
 import * as React from "react";
+
+interface AAPHistoryPoint {
+  date: string;
+  stability_score: number;
+  regime: string;
+  sma_20?: number;
+  sma_200?: number;
+  metals_contribution: number;
+  crypto_contribution: number;
+}
+
+interface AAPComponent {
+  name: string;
+  category: string;
+  value: number;
+  weight: number;
+  contribution: number;
+  status: 'active' | 'missing';
+  description: string;
+}
+
+interface AAPBreakdownData {
+  components: AAPComponent[];
+  metals_contribution: number;
+  crypto_contribution: number;
+  stability_score: number;
+  regime: string;
+  data_completeness?: number;
+}
+
+type AAPComponentHistoryResponse = { data: Record<string, { date: string; value: number | null }[]> };
 import { useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { OverviewTab } from "../components/aap/OverviewTab";
@@ -8,9 +39,9 @@ import MarketLoading from "../components/ui/MarketLoading";
 
 export default function AlternativeAssetStability() {
   const [searchParams] = useSearchParams();
-  const { data: aapData, loading } = useApi<any>('/aap/components/breakdown');
-  const { data: historyData } = useApi<any>('/aap/history?days=365');
-  const { data: componentHistory } = useApi<any>('/aap/components/history?days=365');
+  const { data: aapData, loading } = useApi<AAPBreakdownData>('/aap/components/breakdown');
+  const { data: historyData } = useApi<{ data: AAPHistoryPoint[] }>('/aap/history?days=365');
+  const { data: componentHistory } = useApi<AAPComponentHistoryResponse>('/aap/components/history?days=365');
   const [timeframe, setTimeframe] = useState<'30d' | '90d' | '180d' | '365d'>('90d');
   const [selectedTab, setSelectedTab] = useState<'overview' | 'metals'>('overview');
 
@@ -31,8 +62,8 @@ export default function AlternativeAssetStability() {
     cutoffDate.setDate(cutoffDate.getDate() - days);
     
     return historyData.data
-      .filter((d: any) => new Date(d.date) >= cutoffDate)
-      .map((d: any) => ({
+      .filter((d: AAPHistoryPoint) => new Date(d.date) >= cutoffDate)
+      .map((d: AAPHistoryPoint) => ({
         date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         score: d.stability_score || 0,
         regime: d.regime || '',
@@ -98,7 +129,7 @@ export default function AlternativeAssetStability() {
           <OverviewTab 
             aapData={aapData}
             history={history}
-            componentHistory={componentHistory}
+            componentHistory={componentHistory ?? undefined}
             timeframe={timeframe}
             setTimeframe={setTimeframe}
           />
