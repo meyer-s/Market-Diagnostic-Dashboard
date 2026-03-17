@@ -1208,7 +1208,7 @@ export default function IndicatorDetail() {
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
           <p className="text-xs md:text-sm text-stealth-400 mb-3 md:mb-4 break-all">
             Consumer & Corporate Sentiment measures economic confidence through consumer and business surveys, 
-            forward-looking demand indicators (new orders), and capital expenditure commitments.
+            forward-looking demand indicators (regional new orders), and capital expenditure commitments.
           </p>
           
           {/* Latest Component Values */}
@@ -1228,7 +1228,7 @@ export default function IndicatorDetail() {
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism && (
               <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
-                <div className="text-xs text-stealth-400 mb-1">NFIB Small Biz</div>
+                <div className="text-xs text-stealth-400 mb-1">Business Confidence Proxy</div>
                 <div className="text-lg font-bold text-green-400">
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism!.value.toFixed(1)}
                 </div>
@@ -1243,7 +1243,7 @@ export default function IndicatorDetail() {
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders && (
               <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
-                <div className="text-xs text-stealth-400 mb-1">ISM New Orders</div>
+                <div className="text-xs text-stealth-400 mb-1">Regional New Orders Proxy</div>
                 <div className="text-lg font-bold text-yellow-400">
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders!.value.toFixed(1)}
                 </div>

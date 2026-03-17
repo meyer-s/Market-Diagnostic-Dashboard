@@ -14,6 +14,7 @@ from app.services.muni_data import get_muni_subsystem
 from app.models.virtual_indicator import VirtualIndicator
 from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 from app.models.system_status import SystemStatus
+from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 
 router = APIRouter()
 
@@ -837,29 +838,11 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
     cutoff = datetime.utcnow() - timedelta(days=fetch_days)
     start_date = cutoff.strftime("%Y-%m-%d")
     
-    # Fetch all components
-    umich_series = await client.fetch_series("UMCSENT", start_date=start_date)
-    
-    nfib_series = []
-    try:
-        nfib_series = await client.fetch_series("BOPTEXP", start_date=start_date)
-    except Exception:
-        try:
-            nfib_series = await client.fetch_series("BOPTTOTM", start_date=start_date)
-        except Exception:
-            pass
-    
-    ism_series = []
-    try:
-        ism_series = await client.fetch_series("NEWORDER", start_date=start_date)
-    except Exception:
-        pass
-    
-    capex_series = []
-    try:
-        capex_series = await client.fetch_series("ACOGNO", start_date=start_date)
-    except Exception:
-        pass
+    sentiment_sources = await fetch_sentiment_component_series(client, start_date)
+    umich_series = sentiment_sources["umich_series"]
+    nfib_series = sentiment_sources["business_confidence_series"]
+    ism_series = sentiment_sources["regional_new_orders_series"]
+    capex_series = sentiment_sources["capex_series"]
     
     # Convert to dicts
     def series_to_dict(s):

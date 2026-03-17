@@ -21,6 +21,7 @@ from app.models.system_status import SystemStatus
 from app.services.ingestion.fred_client import FredClient
 from app.services.ingestion.yahoo_client import YahooClient
 from app.services.ingestion.breadth_utils import compute_breadth_composite_z
+from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 from app.utils.system_scoring import compute_weighted_composite
 
 # Agent C — clean stubs (will be replaced in Ticket C1)
@@ -707,35 +708,11 @@ class ETLRunner:
         elif code == "SENTIMENT_COMPOSITE":
             import numpy as np
             
-            # Fetch components for Consumer & Corporate Sentiment
-            # A. University of Michigan Consumer Sentiment - Weight 0.30
-            umich_series = await self.fred.fetch_series("UMCSENT", start_date=start_date)
-            
-            # B. NFIB Small Business Optimism - Weight 0.30
-            # FRED symbol: BOPTTOTM (Total Index) or use proxy
-            nfib_series = []
-            try:
-                nfib_series = await self.fred.fetch_series("BOPTEXP", start_date=start_date)  # Expectations component
-            except Exception:
-                print("Warning: NFIB (BOPTEXP) not available, trying alternative")
-                try:
-                    nfib_series = await self.fred.fetch_series("BOPTTOTM", start_date=start_date)
-                except Exception:
-                    print("Warning: NFIB not available, using reduced component model")
-            
-            # C. ISM New Orders (Manufacturing) - Weight 0.25
-            ism_mfg_series = []
-            try:
-                ism_mfg_series = await self.fred.fetch_series("NEWORDER", start_date=start_date)
-            except Exception:
-                print("Warning: ISM Manufacturing New Orders (NEWORDER) not available")
-            
-            # D. CapEx Proxy (Nondefense Capital Goods ex-Aircraft) - Weight 0.15
-            capex_series = []
-            try:
-                capex_series = await self.fred.fetch_series("ACOGNO", start_date=start_date)
-            except Exception:
-                print("Warning: CapEx proxy (ACOGNO) not available")
+            sentiment_sources = await fetch_sentiment_component_series(self.fred, start_date)
+            umich_series = sentiment_sources["umich_series"]
+            nfib_series = sentiment_sources["business_confidence_series"]
+            ism_mfg_series = sentiment_sources["regional_new_orders_series"]
+            capex_series = sentiment_sources["capex_series"]
             
             # Convert to dicts for alignment
             def series_to_dict(s):
@@ -1103,17 +1080,33 @@ class ETLRunner:
             latest_score = scores[-1]
             latest_state = states[-1]
             latest_date = clean_values[-1]["date"]
-            
-            entry = IndicatorValue(
-                indicator_id=ind.id,
-                timestamp=datetime.strptime(latest_date, "%Y-%m-%d"),
-                raw_value=float(latest_raw),
-                normalized_value=float(latest_norm),
-                score=float(latest_score),
-                state=latest_state,
-            )
 
-            db.add(entry)
+            latest_timestamp = datetime.strptime(latest_date, "%Y-%m-%d")
+            entry = db.query(IndicatorValue).filter(
+                IndicatorValue.indicator_id == ind.id,
+                IndicatorValue.timestamp == latest_timestamp,
+            ).first()
+
+            if entry is None:
+                entry = IndicatorValue(
+                    indicator_id=ind.id,
+                    timestamp=latest_timestamp,
+                    raw_value=float(latest_raw),
+                    normalized_value=float(latest_norm),
+                    score=float(latest_score),
+                    state=latest_state,
+                )
+                db.add(entry)
+            else:
+                entry.raw_value = float(latest_raw)
+                entry.normalized_value = float(latest_norm)
+                entry.score = float(latest_score)
+                entry.state = latest_state
+
+            ind.last_raw_value = float(latest_raw)
+            ind.last_score = float(latest_score)
+            ind.last_state = latest_state
+            ind.last_updated = latest_timestamp
             db.commit()
             db.close()
             

@@ -23,7 +23,7 @@ const DATA_FREQUENCY: Record<string, { frequency: string; description: string; e
   BOND_MARKET_STABILITY: { frequency: "Daily", description: "Composite of multiple FRED series, updates on business days", expectedLag: 1 },
   LIQUIDITY_PROXY: { frequency: "Weekly", description: "Composite of M2, Fed Balance Sheet, and Reverse Repo data", expectedLag: 7 },
   ANALYST_ANXIETY: { frequency: "Daily", description: "Composite of VIX, MOVE, HY spreads, and ERP data", expectedLag: 1 },
-  SENTIMENT_COMPOSITE: { frequency: "Monthly", description: "Composite of Michigan Sentiment, NFIB, ISM New Orders, and CapEx data", expectedLag: 30 },
+  SENTIMENT_COMPOSITE: { frequency: "Monthly", description: "Composite of Michigan sentiment, business confidence, regional new orders, and CapEx data", expectedLag: 30 },
 };
 
 const colorMap = {

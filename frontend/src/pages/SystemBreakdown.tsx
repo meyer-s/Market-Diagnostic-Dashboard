@@ -614,7 +614,7 @@ export default function SystemBreakdown() {
                   BOND_MARKET_STABILITY: "Composite of credit spreads (HY, IG), yield curve stress, rate momentum, and Treasury volatility. Captures systemic stress in fixed income markets.",
                   LIQUIDITY_PROXY: "Combines M2 money supply growth, Fed balance sheet changes, and overnight reverse repo usage. Measures systemic liquidity availability and tightness.",
                   ANALYST_ANXIETY: "Composite sentiment indicator aggregating VIX (equity vol), MOVE (rates vol), high-yield credit spreads, and equity risk premium. Captures institutional confidence.",
-                  SENTIMENT_COMPOSITE: "Consumer & corporate confidence composite from Michigan Consumer Sentiment, NFIB Small Business Optimism, ISM New Orders, and CapEx commitments. Forward-looking demand indicator."
+                  SENTIMENT_COMPOSITE: "Consumer & corporate confidence composite from Michigan Consumer Sentiment, business confidence, regional new-orders momentum, and CapEx commitments. Forward-looking demand indicator."
                 };
                 
                 return (
@@ -831,7 +831,7 @@ export default function SystemBreakdown() {
                             <div className="ml-3 space-y-1">
                               <div>- <span className="text-yellow-400">Michigan Consumer Sentiment - 30%</span>: Consumer confidence (higher = more confident)</div>
                               <div>- <span className="text-yellow-400">NFIB Small Business Optimism - 30%</span>: Business owner confidence (higher = more optimistic)</div>
-                              <div>- <span className="text-yellow-400">ISM New Orders (Manufacturing) - 25%</span>: Forward demand indicator (higher = more orders)</div>
+                              <div>- <span className="text-yellow-400">Regional New Orders Proxy - 25%</span>: Forward demand indicator based on current regional factory surveys</div>
                               <div>- <span className="text-yellow-400">CapEx Proxy (Capital Goods Orders) - 15%</span>: Corporate investment (higher = more investment)</div>
                             </div>
                           </div>

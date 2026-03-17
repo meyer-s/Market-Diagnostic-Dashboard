@@ -235,13 +235,13 @@ INDICATOR_METADATA = {
     
     "SENTIMENT_COMPOSITE": {
         "name": "Consumer & Corporate Sentiment Composite",
-        "description": "Composite measure of consumer and corporate confidence levels combining University of Michigan Consumer Sentiment, NFIB Small Business Optimism, ISM New Orders, and Capital Expenditure indicators. Captures the psychological willingness to spend, invest, and expand.",
+        "description": "Composite measure of consumer and corporate confidence levels combining University of Michigan Consumer Sentiment, an OECD business-confidence proxy, a regional manufacturing new-orders proxy, and capital expenditure orders. Captures the psychological willingness to spend, invest, and expand.",
         "relevance": "Economic activity is influenced by confidence and expectations. Shifts in sentiment often coincide with changes in spending and investment behavior.",
-        "scoring": "Final output is a stability score (0-100) where HIGHER = MORE CONFIDENCE = MORE STABLE. Components (Michigan, NFIB, ISM, CapEx) z-score normalized and mapped to 0-100 confidence scale, then weighted and combined. Thresholds: ≥70 = GREEN (broad optimism), 40-69 = YELLOW (mixed sentiment), <40 = RED (pessimism).",
+        "scoring": "Final output is a stability score (0-100) where HIGHER = MORE CONFIDENCE = MORE STABLE. Components (Michigan, business confidence proxy, regional new-orders proxy, CapEx) are z-score normalized and mapped to 0-100 confidence scale, then weighted and combined. Thresholds: ≥70 = GREEN (broad optimism), 40-69 = YELLOW (mixed sentiment), <40 = RED (pessimism).",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "GREEN (Score 70-100): Broad-based optimism across consumers and businesses. YELLOW (Score 40-69): Mixed or neutral sentiment. RED (Score <40): Pervasive pessimism and muted demand.",
-        "derived_from": ["UMCSENT", "BOPTEXP", "NEWORDER", "ACOGNO"],
+        "derived_from": ["UMCSENT", "BSCICP02USM460S", "NOCDISA066MSFRBNY", "VNWOSAMFRBDAL", "NEWORDER"],
         "components": {
             "michigan_consumer_sentiment": {
                 "symbol": "UMCSENT",
@@ -252,23 +252,23 @@ INDICATOR_METADATA = {
                 "monthly": True
             },
             "nfib_small_business": {
-                "symbol": "BOPTEXP",
+                "symbol": "BSCICP02USM460S",
                 "weight": 0.30,
-                "description": "NFIB Small Business Optimism - Expectations Component (30%)",
-                "interpretation": "Small businesses employ ~50% of US workforce and are highly sensitive to economic conditions. Measures business owners' expectations for sales, hiring, and expansion. High readings signal confidence to hire and invest. Low readings indicate defensive posture and cost-cutting.",
-                "typical_ranges": "Very Optimistic: >105 (2018). Healthy: 100-105. Cautious: 95-100. Pessimistic: 90-95. Crisis: <90 (2008-2009, 2020).",
+                "description": "OECD Business Confidence Proxy (30%)",
+                "interpretation": "Monthly national business-confidence proxy used in place of NFIB when a long, clean public history is required. Higher readings indicate broader business optimism and willingness to hire, stock inventory, and expand.",
+                "typical_ranges": "Optimistic: >101. Neutral: 99-101. Cautious: 97-99. Weak: <97.",
                 "monthly": True
             },
             "ism_new_orders": {
-                "symbol": "NEWORDER",
+                "symbol": "NOCDISA066MSFRBNY + VNWOSAMFRBDAL",
                 "weight": 0.25,
-                "description": "ISM Manufacturing New Orders Index (25%)",
-                "interpretation": "Forward-looking indicator of manufacturing demand. New orders today become production and employment tomorrow. Above 50 = expansion, below 50 = contraction. Leading indicator for industrial production and GDP. Captures business-to-business confidence.",
-                "typical_ranges": "Strong growth: >55. Moderate expansion: 50-55. Stagnation: 45-50. Contraction: <45. Crisis: <40 (2008-2009, 2020).",
+                "description": "Regional Manufacturing New Orders Proxy (25%)",
+                "interpretation": "Average of New York and Texas manufacturing new-orders diffusion surveys. Higher readings indicate improving order flow and stronger forward demand; lower readings indicate softer industrial momentum.",
+                "typical_ranges": "Strong demand: >20. Balanced: 0-20. Weak demand: <0. Stress: <-10.",
                 "monthly": True
             },
             "capex_proxy": {
-                "symbol": "ACOGNO",
+                "symbol": "NEWORDER",
                 "weight": 0.15,
                 "description": "Nondefense Capital Goods Orders ex-Aircraft (15%)",
                 "interpretation": "Proxy for corporate capital expenditure - the ultimate vote of confidence in the future. When companies order machinery, equipment, and technology, they're committing to multi-year investments. High orders signal expansion plans. Declining orders indicate pessimism about future demand.",
@@ -276,7 +276,7 @@ INDICATOR_METADATA = {
                 "monthly": True
             }
         },
-        "calculation": "1) Fetch UMCSENT (required), BOPTEXP, NEWORDER, ACOGNO from FRED. 2) Align dates (forward-fill optional components). 3) Compute z-scores for each using 520-day lookback. 4) Map z-scores to 0-100 confidence scores: ((z + 3) / 6) * 100. 5) Weight and combine. 6) If optional components missing, redistribute weights (e.g., Michigan 50% + NFIB 50% if only those two available). 7) Store as composite confidence score 0-100.",
+        "calculation": "1) Fetch UMCSENT, OECD business confidence, a regional manufacturing new-orders proxy, and NEWORDER from FRED. 2) Align dates on the union of component release dates and forward-fill slower series. 3) Compute z-scores for each using 520-day lookback. 4) Map z-scores to 0-100 confidence scores: ((z + 3) / 6) * 100. 5) Weight and combine. 6) If optional components are missing, redistribute weights. 7) Store as composite confidence score 0-100.",
         "thresholds": {
             "green_above": 70,
             "yellow_above": 40
