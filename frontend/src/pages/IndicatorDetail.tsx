@@ -1214,8 +1214,8 @@ export default function IndicatorDetail() {
           {/* Latest Component Values */}
           <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
             <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
-              <div className="text-xs text-stealth-400 mb-1">Michigan Sentiment</div>
-              <div className="text-lg font-bold text-blue-400">
+              <div className="text-xs text-stealth-400 mb-1">Consumer Confidence</div>
+              <div className="text-lg font-bold" style={{ color: getFamilyColor("sentiment") }}>
                 {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].michigan_sentiment.value.toFixed(1)}
               </div>
               <div className="text-xs text-stealth-500 mt-1">
@@ -1228,8 +1228,8 @@ export default function IndicatorDetail() {
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism && (
               <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
-                <div className="text-xs text-stealth-400 mb-1">Business Confidence Proxy</div>
-                <div className="text-lg font-bold text-green-400">
+                <div className="text-xs text-stealth-400 mb-1">NFIB Business Confidence</div>
+                <div className="text-lg font-bold" style={{ color: getFamilyColor("sentiment", "muted") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism!.value.toFixed(1)}
                 </div>
                 <div className="text-xs text-stealth-500 mt-1">
@@ -1243,8 +1243,8 @@ export default function IndicatorDetail() {
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders && (
               <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
-                <div className="text-xs text-stealth-400 mb-1">Regional New Orders Proxy</div>
-                <div className="text-lg font-bold text-yellow-400">
+                <div className="text-xs text-stealth-400 mb-1">Regional New Orders (NY/TX/PHI)</div>
+                <div className="text-lg font-bold" style={{ color: getFamilyColor("growth") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders!.value.toFixed(1)}
                 </div>
                 <div className="text-xs text-stealth-500 mt-1">
@@ -1259,7 +1259,7 @@ export default function IndicatorDetail() {
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy && (
               <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
                 <div className="text-xs text-stealth-400 mb-1">CapEx Orders (Billions)</div>
-                <div className="text-lg font-bold text-purple-400">
+                <div className="text-lg font-bold" style={{ color: getFamilyColor("growth", "muted") }}>
                   ${(sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy!.value / 1000).toFixed(1)}B
                 </div>
                 <div className="text-xs text-stealth-500 mt-1">
@@ -1336,7 +1336,7 @@ export default function IndicatorDetail() {
                     <Line
                       type="monotone"
                       dataKey="michigan_sentiment.confidence_score"
-                      name="Michigan"
+                      name="Consumer Conf."
                       stroke={getFamilyColor("sentiment")}
                       strokeWidth={2}
                       dot={false}
@@ -1345,7 +1345,7 @@ export default function IndicatorDetail() {
                       <Line
                         type="monotone"
                         dataKey="nfib_optimism.confidence_score"
-                        name="NFIB"
+                        name="NFIB Biz Conf."
                         stroke={getFamilyColor("sentiment", "muted")}
                         strokeWidth={2}
                         dot={false}
@@ -1355,7 +1355,7 @@ export default function IndicatorDetail() {
                       <Line
                         type="monotone"
                         dataKey="ism_new_orders.confidence_score"
-                        name="ISM"
+                        name="New Orders (NY/TX/PHI)"
                         stroke={getFamilyColor("growth")}
                         strokeWidth={2}
                         dot={false}

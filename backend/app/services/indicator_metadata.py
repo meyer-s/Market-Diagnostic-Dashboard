@@ -241,7 +241,7 @@ INDICATOR_METADATA = {
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "GREEN (Score 70-100): Broad-based optimism across consumers and businesses. YELLOW (Score 40-69): Mixed or neutral sentiment. RED (Score <40): Pervasive pessimism and muted demand.",
-        "derived_from": ["USACSCICP02STSAM", "BSCICP02USM460S", "NOCDISA066MSFRBNY", "VNWOSAMFRBDAL", "NEWORDER"],
+        "derived_from": ["USACSCICP02STSAM", "NFIB (scraped)", "BSCICP02USM460S", "NOCDISA066MSFRBNY", "VNWOSAMFRBDAL", "NOCDFSA066MSFRBPHI", "NEWORDER"],
         "components": {
             "michigan_consumer_sentiment": {
                 "symbol": "USACSCICP02STSAM",
@@ -252,18 +252,18 @@ INDICATOR_METADATA = {
                 "monthly": True
             },
             "nfib_small_business": {
-                "symbol": "BSCICP02USM460S",
+                "symbol": "NFIB Optimism Index (direct scrape) / BSCICP02USM460S (history)",
                 "weight": 0.30,
-                "description": "OECD Business Confidence Proxy (30%)",
-                "interpretation": "Monthly national business-confidence proxy used in place of NFIB when a long, clean public history is required. Higher readings indicate broader business optimism and willingness to hire, stock inventory, and expand.",
-                "typical_ranges": "Optimistic: >101. Neutral: 99-101. Cautious: 97-99. Weak: <97.",
+                "description": "NFIB Small Business Optimism Index (30%)",
+                "interpretation": "The NFIB Optimism Index is scraped directly from nfib.com for the current month, providing the freshest available reading. Historical values use the OECD Business Tendency Survey (BSCICP02USM460S) translated to the NFIB index scale (mean=98, std=6.5) so that z-score normalization is consistent throughout. Higher values indicate stronger small-business optimism and willingness to hire and invest.",
+                "typical_ranges": "Very Optimistic: >105. Healthy: 101-105. Neutral: 98-101 (52-yr avg). Cautious: 94-98. Pessimistic: <94.",
                 "monthly": True
             },
             "ism_new_orders": {
-                "symbol": "NOCDISA066MSFRBNY + VNWOSAMFRBDAL",
+                "symbol": "NOCDISA066MSFRBNY + VNWOSAMFRBDAL + NOCDFSA066MSFRBPHI",
                 "weight": 0.25,
-                "description": "Regional Manufacturing New Orders Proxy (25%)",
-                "interpretation": "Average of New York and Texas manufacturing new-orders diffusion surveys. Higher readings indicate improving order flow and stronger forward demand; lower readings indicate softer industrial momentum.",
+                "description": "Regional Manufacturing New Orders Proxy — 3 Districts (25%)",
+                "interpretation": "Average of New York, Texas (Dallas), and Philadelphia Federal Reserve manufacturing new-orders diffusion surveys. Three-district coverage produces a more robust and geographically diverse signal than any single survey. Higher readings indicate improving order flow and stronger forward demand.",
                 "typical_ranges": "Strong demand: >20. Balanced: 0-20. Weak demand: <0. Stress: <-10.",
                 "monthly": True
             },
@@ -276,7 +276,7 @@ INDICATOR_METADATA = {
                 "monthly": True
             }
         },
-        "calculation": "1) Fetch USACSCICP02STSAM (OECD US consumer confidence), OECD business confidence, a regional manufacturing new-orders proxy, and NEWORDER from FRED. 2) Align dates on the union of component release dates and forward-fill slower series. 3) Compute z-scores for each using 520-day lookback. 4) Map z-scores to 0-100 confidence scores: ((z + 3) / 6) * 100. 5) Weight and combine. 6) If optional components are missing, redistribute weights. 7) Store as composite confidence score 0-100.",
+        "calculation": "1) Fetch USACSCICP02STSAM (OECD US consumer confidence) from FRED. 2) Fetch BSCICP02USM460S (OECD business confidence) and translate to NFIB Optimism Index scale; replace or append latest month with directly scraped NFIB value if available. 3) Average NY Fed, Dallas Fed, and Philadelphia Fed new-orders surveys into a 3-district regional proxy. 4) Fetch NEWORDER capex proxy. 5) Align dates on the union of component release dates and forward-fill slower series. 3) Compute z-scores for each using 520-day lookback. 4) Map z-scores to 0-100 confidence scores: ((z + 3) / 6) * 100. 5) Weight and combine. 6) If optional components are missing, redistribute weights. 7) Store as composite confidence score 0-100.",
         "thresholds": {
             "green_above": 70,
             "yellow_above": 40
