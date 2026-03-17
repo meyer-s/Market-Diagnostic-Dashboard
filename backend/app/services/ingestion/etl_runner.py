@@ -746,14 +746,19 @@ class ETLRunner:
             ism_dict = series_to_dict(ism_mfg_series) if ism_mfg_series else {}
             capex_dict = series_to_dict(capex_series) if capex_series else {}
             
-            # Find dates where Michigan sentiment exists (required component)
-            # Monthly data, so need at least 12 months (not 30 days)
+            # Require a solid Michigan history, but build the composite on the
+            # union of component release dates so delayed Michigan updates do not
+            # block fresher NFIB / orders releases.
             if len(umich_dict) < 12:
                 db.close()
                 raise ValueError(f"Insufficient Michigan Consumer Sentiment data for {code}")
-            
-            required_dates = set(umich_dict.keys())
-            common_dates = sorted(required_dates)
+
+            common_dates = sorted(
+                set(umich_dict.keys())
+                | set(nfib_dict.keys())
+                | set(ism_dict.keys())
+                | set(capex_dict.keys())
+            )
             
             # Forward fill optional components
             def forward_fill_to_dates(data_dict, target_dates):
@@ -766,12 +771,15 @@ class ETLRunner:
                         result[date] = last_value
                 return result
             
+            umich_filled = forward_fill_to_dates(umich_dict, common_dates)
             nfib_filled = forward_fill_to_dates(nfib_dict, common_dates) if nfib_dict else {}
             ism_filled = forward_fill_to_dates(ism_dict, common_dates) if ism_dict else {}
             capex_filled = forward_fill_to_dates(capex_dict, common_dates) if capex_dict else {}
+
+            common_dates = [date for date in common_dates if date in umich_filled]
             
             # Extract values
-            umich_vals = np.array([umich_dict[d] for d in common_dates])
+            umich_vals = np.array([umich_filled[d] for d in common_dates])
             
             # Check which optional components are available
             has_nfib = len(nfib_filled) == len(common_dates) and all(d in nfib_filled for d in common_dates)

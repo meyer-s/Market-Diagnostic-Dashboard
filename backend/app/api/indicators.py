@@ -872,8 +872,13 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
     
     if len(umich_dict) < 12:
         raise HTTPException(status_code=404, detail="Insufficient data for SENTIMENT_COMPOSITE")
-    
-    common_dates = sorted(set(umich_dict.keys()))
+
+    common_dates = sorted(
+        set(umich_dict.keys())
+        | set(nfib_dict.keys())
+        | set(ism_dict.keys())
+        | set(capex_dict.keys())
+    )
     
     # Forward fill
     def forward_fill_to_dates(data_dict, target_dates):
@@ -886,12 +891,15 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
                 result[date] = last_value
         return result
     
+    umich_filled = forward_fill_to_dates(umich_dict, common_dates)
     nfib_filled = forward_fill_to_dates(nfib_dict, common_dates) if nfib_dict else {}
     ism_filled = forward_fill_to_dates(ism_dict, common_dates) if ism_dict else {}
     capex_filled = forward_fill_to_dates(capex_dict, common_dates) if capex_dict else {}
+
+    common_dates = [date for date in common_dates if date in umich_filled]
     
     # Extract values
-    umich_vals = np.array([umich_dict[d] for d in common_dates])
+    umich_vals = np.array([umich_filled[d] for d in common_dates])
     
     has_nfib = len(nfib_filled) == len(common_dates)
     has_ism = len(ism_filled) == len(common_dates)
