@@ -241,14 +241,14 @@ INDICATOR_METADATA = {
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "GREEN (Score 70-100): Broad-based optimism across consumers and businesses. YELLOW (Score 40-69): Mixed or neutral sentiment. RED (Score <40): Pervasive pessimism and muted demand.",
-        "derived_from": ["UMCSENT", "BSCICP02USM460S", "NOCDISA066MSFRBNY", "VNWOSAMFRBDAL", "NEWORDER"],
+        "derived_from": ["USACSCICP02STSAM", "BSCICP02USM460S", "NOCDISA066MSFRBNY", "VNWOSAMFRBDAL", "NEWORDER"],
         "components": {
             "michigan_consumer_sentiment": {
-                "symbol": "UMCSENT",
+                "symbol": "USACSCICP02STSAM",
                 "weight": 0.30,
-                "description": "University of Michigan Consumer Sentiment Index (30%)",
-                "interpretation": "Leading indicator of consumer spending, which represents ~70% of US GDP. Measures how consumers feel about their finances and the economy. High readings indicate willingness to make big purchases (homes, cars, appliances). Low readings signal caution and spending pullback.",
-                "typical_ranges": "Very Optimistic: 95-110 (late 1990s). Healthy: 85-95. Cautious: 70-85. Pessimistic: 60-70. Crisis: <60 (2008, 2020, 2022 inflation shock).",
+                "description": "OECD US Consumer Confidence (30%)",
+                "interpretation": "OECD composite consumer confidence for the United States, updated monthly and typically 1 month more current than the University of Michigan survey on FRED. Values above 100 indicate above-average consumer confidence; below 100 indicates below-average confidence. Tracks consumer willingness to spend, borrow, and make major purchases.",
+                "typical_ranges": "Very Optimistic: >105. Healthy: 100-105. Cautious: 97-100. Pessimistic: 93-97. Crisis: <93 (2008, 2020, 2022).",
                 "monthly": True
             },
             "nfib_small_business": {
@@ -276,7 +276,7 @@ INDICATOR_METADATA = {
                 "monthly": True
             }
         },
-        "calculation": "1) Fetch UMCSENT, OECD business confidence, a regional manufacturing new-orders proxy, and NEWORDER from FRED. 2) Align dates on the union of component release dates and forward-fill slower series. 3) Compute z-scores for each using 520-day lookback. 4) Map z-scores to 0-100 confidence scores: ((z + 3) / 6) * 100. 5) Weight and combine. 6) If optional components are missing, redistribute weights. 7) Store as composite confidence score 0-100.",
+        "calculation": "1) Fetch USACSCICP02STSAM (OECD US consumer confidence), OECD business confidence, a regional manufacturing new-orders proxy, and NEWORDER from FRED. 2) Align dates on the union of component release dates and forward-fill slower series. 3) Compute z-scores for each using 520-day lookback. 4) Map z-scores to 0-100 confidence scores: ((z + 3) / 6) * 100. 5) Weight and combine. 6) If optional components are missing, redistribute weights. 7) Store as composite confidence score 0-100.",
         "thresholds": {
             "green_above": 70,
             "yellow_above": 40

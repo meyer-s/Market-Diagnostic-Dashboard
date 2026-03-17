@@ -29,7 +29,9 @@ def _average_forward_filled_series(*series_list: List[dict]) -> List[dict]:
 
 
 async def fetch_sentiment_component_series(client, start_date: str) -> Dict[str, List[dict]]:
-    umich_series = await client.fetch_series("UMCSENT", start_date=start_date)
+    # USACSCICP02STSAM (OECD US Consumer Confidence) is updated ~1 month sooner
+    # than UMCSENT on FRED and tracks it very closely in direction and scale.
+    umich_series = await client.fetch_series("USACSCICP02STSAM", start_date=start_date)
 
     business_confidence_series = []
     try:
