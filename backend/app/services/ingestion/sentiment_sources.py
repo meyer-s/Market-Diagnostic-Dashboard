@@ -57,7 +57,9 @@ def _calibrate_to_nfib_scale(series: List[dict]) -> List[dict]:
     oecd_std = float(np.std(values)) or 1.0
     calibrated = []
     for d in series:
-        z = (d["value"] - oecd_mean) / oecd_std
+        # Clamp z-scores to [-2.5, 2.5] so a recent OECD spike doesn't produce
+        # unrealistic synthetic NFIB values well outside the historical range.
+        z = float(np.clip((d["value"] - oecd_mean) / oecd_std, -2.5, 2.5))
         synthetic = _NFIB_MEAN + z * _NFIB_STD
         calibrated.append({"date": d["date"], "value": round(float(synthetic), 3)})
     return calibrated
@@ -81,15 +83,18 @@ async def _scrape_nfib_latest() -> Optional[dict]:
             return None
         text = r.text
         # Primary pattern: "... in February to 98.8 ..."
+        # The value text appears ~2400 chars *after* the first "Optimism" heading, so we
+        # search from the first occurrence of "Optimism" to the end of the page text.
+        search_text = text[text.find("Optimism"):] if "Optimism" in text else text
         m = re.search(
             r"in\s+(January|February|March|April|May|June|July|August|September|October|November|December)"
-            r"[^<]{0,60}?to\s+(\d{2,3}\.?\d?)",
-            text[text.find("Optimism") : text.find("Optimism") + 600] if "Optimism" in text else "",
+            r"[^<]{0,80}?to\s+(\d{2,3}\.?\d?)",
+            search_text,
         )
         if not m:
-            # Fallback: broader search
+            # Fallback: "rose/fell N points in Month to VALUE"
             m = re.search(
-                r"Optimism Index[^<]{5,400}?"
+                r"(?:rose|fell|increased|decreased|declined|gained)[^<]{0,60}"
                 r"(January|February|March|April|May|June|July|August|September|October|November|December)"
                 r"[^<]{0,60}?(\d{2,3}\.?\d?)",
                 text,
