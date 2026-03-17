@@ -115,9 +115,10 @@ async def _scrape_nfib_latest() -> Optional[dict]:
 
 async def fetch_sentiment_component_series(client, start_date: str) -> Dict[str, List[dict]]:
     # --- Consumer sentiment ---
-    # USACSCICP02STSAM (OECD US Consumer Confidence) is updated ~1 month sooner
-    # than UMCSENT on FRED and tracks it very closely in direction and scale.
-    umich_series = await client.fetch_series("USACSCICP02STSAM", start_date=start_date)
+    # UMCSENT (Michigan Consumer Sentiment) releases a preliminary reading mid-month,
+    # making it 2-3 months more current than the OECD CCI series (USACSCICP02STSAM)
+    # which has a long FRED publication lag. Z-score normalization handles the scale.
+    umich_series = await client.fetch_series("UMCSENT", start_date=start_date)
 
     # --- Business confidence ---
     # Fetch OECD proxy, translate it to NFIB Optimism Index scale, then try to
