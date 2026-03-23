@@ -264,6 +264,7 @@ interface YieldCurveDateEntry {
 
 interface YieldCurveResponse {
   month: string;
+  months_requested?: number;
   curves: YieldCurveDateEntry[];
 }
 
@@ -527,7 +528,7 @@ export default function IndicatorDetail() {
             Consumer Health = 85% × [(PCE−CPI) + (PI−CPI)] / 2 &nbsp;+&nbsp; 15% × XLY/XLP ratio
           </p>
           
-          <div className="bg-stealth-900 border border-stealth-600 rounded p-2 md:p-3 mb-4 md:mb-6">
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded p-2 md:p-3 mb-4 md:mb-6">
             <p className="text-xs text-stealth-300">
               <span className="text-green-400">Positive values</span> indicate spending and income are outpacing inflation (healthy consumer capacity). 
               <span className="text-red-400 ml-2">Negative values</span> indicate inflation is eroding real purchasing power (consumer stress).
@@ -560,7 +561,7 @@ export default function IndicatorDetail() {
 
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
-                <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                   <div className="text-xs text-stealth-400 mb-1">PCE (Spending)</div>
                   <div className="text-lg font-bold text-blue-400">
                     {latestPceEntry.pce.mom_pct.toFixed(3)}%
@@ -575,7 +576,7 @@ export default function IndicatorDetail() {
                   )}
                 </div>
 
-                <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                   <div className="text-xs text-stealth-400 mb-1">PI (Income)</div>
                   <div className="text-lg font-bold text-green-400">
                     {latestPiEntry.pi.mom_pct.toFixed(3)}%
@@ -590,7 +591,7 @@ export default function IndicatorDetail() {
                   )}
                 </div>
 
-                <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                   <div className="text-xs text-stealth-400 mb-1">CPI (Inflation)</div>
                   <div className="text-lg font-bold text-red-400">
                     {latestCpiEntry.cpi.mom_pct.toFixed(3)}%
@@ -605,7 +606,7 @@ export default function IndicatorDetail() {
                   )}
                 </div>
 
-                <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                   <div className="text-xs text-stealth-400 mb-1">XLY / XLP (Wants vs Needs)</div>
                   <div className={`text-lg font-bold ${ratio !== null && ratio > 1 ? "text-emerald-400" : "text-orange-400"}`}>
                     {ratio !== null ? ratio.toFixed(3) : "—"}
@@ -781,7 +782,7 @@ export default function IndicatorDetail() {
 
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Credit Spreads</div>
               <div className="text-lg font-bold text-red-400">
                 {latest.credit_spread_stress.stability_score.toFixed(1)}
@@ -796,7 +797,7 @@ export default function IndicatorDetail() {
               <div className="text-[11px] text-stealth-500 mt-2">Widening spreads reduce stability.</div>
             </div>
             
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Yield Curves</div>
               <div className="text-lg font-bold text-yellow-400">
                 {latest.yield_curve_stress.stability_score.toFixed(1)}
@@ -814,7 +815,7 @@ export default function IndicatorDetail() {
               <div className="text-[11px] text-stealth-500 mt-2">Flatter/inverted curves signal stress.</div>
             </div>
             
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Rates Momentum</div>
               <div className="text-lg font-bold text-orange-400">
                 {latest.rates_momentum_stress.stability_score.toFixed(1)}
@@ -829,7 +830,7 @@ export default function IndicatorDetail() {
               <div className="text-[11px] text-stealth-500 mt-2">Sharp rate spikes reduce stability.</div>
             </div>
             
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Treasury Vol</div>
               <div className="text-lg font-bold text-purple-400">
                 {latest.treasury_volatility_stress.stability_score.toFixed(1)}
@@ -942,7 +943,7 @@ export default function IndicatorDetail() {
           
           {/* Latest Component Values */}
           <div className="grid grid-cols-1 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">M2 Money Supply</div>
               <div className="text-lg font-bold text-blue-400">
                 {liquidityComponents[liquidityComponents.length - 1].m2_money_supply.yoy_pct.toFixed(2)}%
@@ -955,7 +956,7 @@ export default function IndicatorDetail() {
               </div>
             </div>
             
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Fed Balance Sheet</div>
               <div className="text-lg font-bold text-green-400">
                 ${(liquidityComponents[liquidityComponents.length - 1].fed_balance_sheet.delta / 1000).toFixed(1)}B
@@ -968,7 +969,7 @@ export default function IndicatorDetail() {
               </div>
             </div>
             
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Reverse Repo (RRP)</div>
               <div className="text-lg font-bold text-purple-400">
                 ${(liquidityComponents[liquidityComponents.length - 1].reverse_repo.value / 1000).toFixed(1)}B
@@ -1061,7 +1062,7 @@ export default function IndicatorDetail() {
           
           {/* Latest Component Values */}
           <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">VIX (Equity Vol)</div>
               <div className="text-lg font-bold text-blue-400">
                 {analystAnxietyComponents[analystAnxietyComponents.length - 1].vix.value.toFixed(2)}
@@ -1074,7 +1075,7 @@ export default function IndicatorDetail() {
               </div>
             </div>
             
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">HY OAS (Credit)</div>
               <div className="text-lg font-bold text-red-400">
                 {analystAnxietyComponents[analystAnxietyComponents.length - 1].hy_oas.value.toFixed(0)} bps
@@ -1088,7 +1089,7 @@ export default function IndicatorDetail() {
             </div>
             
             {analystAnxietyComponents[analystAnxietyComponents.length - 1].move && (
-              <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                 <div className="text-xs text-stealth-400 mb-1">MOVE (Rates Vol)</div>
                 <div className="text-lg font-bold text-yellow-400">
                   {analystAnxietyComponents[analystAnxietyComponents.length - 1].move!.value.toFixed(2)}
@@ -1103,7 +1104,7 @@ export default function IndicatorDetail() {
             )}
             
             {analystAnxietyComponents[analystAnxietyComponents.length - 1].erp_proxy && (
-              <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                 <div className="text-xs text-stealth-400 mb-1">ERP Proxy (BBB-10Y)</div>
                 <div className="text-lg font-bold text-purple-400">
                   {analystAnxietyComponents[analystAnxietyComponents.length - 1].erp_proxy!.spread.toFixed(2)}%
@@ -1314,7 +1315,7 @@ export default function IndicatorDetail() {
           
           {/* Latest Component Values */}
           <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
               <div className="text-xs text-stealth-400 mb-1">Consumer Confidence</div>
               <div className="text-lg font-bold" style={{ color: getFamilyColor("sentiment") }}>
                 {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].michigan_sentiment.value.toFixed(1)}
@@ -1328,7 +1329,7 @@ export default function IndicatorDetail() {
             </div>
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism && (
-              <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                 <div className="text-xs text-stealth-400 mb-1">NFIB Business Confidence</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("sentiment", "muted") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism!.value.toFixed(1)}
@@ -1343,7 +1344,7 @@ export default function IndicatorDetail() {
             )}
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders && (
-              <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                 <div className="text-xs text-stealth-400 mb-1">Regional New Orders (NY/TX/PHI)</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("growth") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders!.value.toFixed(1)}
@@ -1358,7 +1359,7 @@ export default function IndicatorDetail() {
             )}
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy && (
-              <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                 <div className="text-xs text-stealth-400 mb-1">CapEx Orders (Billions)</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("growth", "muted") }}>
                   ${(sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy!.value / 1000).toFixed(1)}B
@@ -1966,10 +1967,21 @@ export default function IndicatorDetail() {
 
 // Maturity labels in order for the x-axis
 const MATURITY_ORDER = ["1M","2M","3M","4M","6M","1Y","2Y","3Y","5Y","7Y","10Y","20Y","30Y"];
-
-// Onion skin opacities: newest = 100%, then 60, 40, 20, 15, 10
-const CURVE_OPACITIES = [1.0, 0.60, 0.40, 0.20, 0.15, 0.10];
-const CURVE_BASE_COLOR = "#22d3ee"; // cyan
+const DAILY_CURVE_STYLES = [
+  { color: "#67e8f9", opacity: 1.0, width: 3 },
+  { color: "#22d3ee", opacity: 0.88, width: 2.5 },
+  { color: "#06b6d4", opacity: 0.74, width: 2 },
+  { color: "#0891b2", opacity: 0.60, width: 2 },
+  { color: "#0e7490", opacity: 0.48, width: 1.8 },
+];
+const MONTHLY_CURVE_STYLES = [
+  { color: "#fde68a", opacity: 0.95, width: 2.2 },
+  { color: "#fbbf24", opacity: 0.85, width: 2 },
+  { color: "#fb923c", opacity: 0.76, width: 1.9 },
+  { color: "#f97316", opacity: 0.67, width: 1.8 },
+  { color: "#ea580c", opacity: 0.58, width: 1.7 },
+];
+const YIELD_CURVE_MA_COLOR = "#cbd5e1";
 
 function TreasuryYieldCurvePanel({
   data,
@@ -1983,22 +1995,63 @@ function TreasuryYieldCurvePanel({
   if (loading) return <MarketLoading />;
   if (error) return <div className="text-red-400 text-sm p-4">Failed to load yield curve: {error}</div>;
   if (!data || !data.curves || data.curves.length === 0)
-    return <div className="text-stealth-400 text-sm p-4">No yield curve data available for this month.</div>;
+    return <div className="text-stealth-400 text-sm p-4">No yield curve data available.</div>;
 
-  // Show up to 6 most recent dates with onion skin effect
-  const displayCurves = data.curves.slice(0, 6);
+  const recentDailyCurves = data.curves.slice(0, 5);
+  const latestMonthKey = recentDailyCurves[0]?.date.slice(0, 7);
+  const monthlySnapshots: YieldCurveDateEntry[] = [];
+  const seenMonths = new Set<string>(latestMonthKey ? [latestMonthKey] : []);
 
-  // Build chart data: one row per maturity, one column per date
-  const chartData = MATURITY_ORDER.map((mat) => {
-    const row: Record<string, string | number | null> = { maturity: mat };
-    displayCurves.forEach((entry) => {
-      const pt = entry.curve.find((p) => p.maturity === mat);
-      row[entry.date] = pt ? pt.yield : null;
+  for (const entry of data.curves) {
+    const monthKey = entry.date.slice(0, 7);
+    if (seenMonths.has(monthKey)) {
+      continue;
+    }
+    monthlySnapshots.push(entry);
+    seenMonths.add(monthKey);
+    if (monthlySnapshots.length === 5) {
+      break;
+    }
+  }
+
+  const movingAverageWindow = data.curves.slice(0, 200);
+  const movingAverageCurve = MATURITY_ORDER.map((maturity) => {
+    let total = 0;
+    let count = 0;
+
+    for (const entry of movingAverageWindow) {
+      const point = entry.curve.find((curvePoint) => curvePoint.maturity === maturity);
+      if (point && Number.isFinite(point.yield)) {
+        total += point.yield;
+        count += 1;
+      }
+    }
+
+    return {
+      maturity,
+      yield: count > 0 ? total / count : null,
+    };
+  });
+
+  const chartData = MATURITY_ORDER.map((maturity) => {
+    const row: Record<string, string | number | null> = { maturity };
+
+    recentDailyCurves.forEach((entry, index) => {
+      const point = entry.curve.find((curvePoint) => curvePoint.maturity === maturity);
+      row[`daily_${index}`] = point ? point.yield : null;
     });
+
+    monthlySnapshots.forEach((entry, index) => {
+      const point = entry.curve.find((curvePoint) => curvePoint.maturity === maturity);
+      row[`monthly_${index}`] = point ? point.yield : null;
+    });
+
+    row.moving_average_200d = movingAverageCurve.find((point) => point.maturity === maturity)?.yield ?? null;
+
     return row;
   });
 
-  const latestEntry = displayCurves[0];
+  const latestEntry = recentDailyCurves[0];
   const latestCurve = latestEntry.curve;
   const shortEnd = latestCurve.find((p) => p.maturity === "2Y")?.yield ?? null;
   const longEnd = latestCurve.find((p) => p.maturity === "10Y")?.yield ?? null;
@@ -2006,6 +2059,9 @@ function TreasuryYieldCurvePanel({
   const inverted = shortEnd !== null && longEnd !== null && longEnd < shortEnd;
 
   const monthLabel = `${data.month.slice(0, 4)}-${data.month.slice(4)}`;
+  const sourceRangeLabel = data.curves.length > 0
+    ? `${data.curves[data.curves.length - 1].date} to ${data.curves[0].date}`
+    : monthLabel;
 
   return (
     <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
@@ -2015,11 +2071,11 @@ function TreasuryYieldCurvePanel({
             Live Treasury Yield Curve
           </h3>
           <p className="text-xs text-stealth-400 mt-0.5">
-            Source: U.S. Treasury · {monthLabel} · Updated daily
+            Source: U.S. Treasury · {sourceRangeLabel} · Updated daily
           </p>
         </div>
         <div className="flex gap-4">
-          <div className="bg-stealth-900 border border-stealth-600 rounded px-3 py-2 text-center">
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded px-3 py-2 text-center">
             <div className="text-xs text-stealth-400">10Y-2Y Spread</div>
             <div className={`text-base font-bold ${inverted ? "text-red-400" : "text-green-400"}`}>
               {spread10y2y} %
@@ -2028,11 +2084,21 @@ function TreasuryYieldCurvePanel({
               {inverted ? "Inverted" : "Normal"}
             </div>
           </div>
-          <div className="bg-stealth-900 border border-stealth-600 rounded px-3 py-2 text-center">
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded px-3 py-2 text-center">
             <div className="text-xs text-stealth-400">Latest Date</div>
             <div className="text-sm font-semibold text-cyan-300">{latestEntry.date}</div>
           </div>
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded px-3 py-2 text-center">
+            <div className="text-xs text-stealth-400">Lookback</div>
+            <div className="text-sm font-semibold text-stealth-200">5D · 5M · 200D MA</div>
+          </div>
         </div>
+      </div>
+
+      <div className="text-xs text-stealth-400 mb-3 flex flex-wrap gap-x-4 gap-y-1">
+        <span className="text-cyan-300">Daily curves</span>
+        <span className="text-amber-300">Monthly snapshots</span>
+        <span className="text-slate-300">200-day moving average</span>
       </div>
 
       <div className="h-80">
@@ -2057,23 +2123,60 @@ function TreasuryYieldCurvePanel({
               formatter={(value: number, name: string) => [`${value?.toFixed(2)}%`, name]}
             />
             <Legend wrapperStyle={{ fontSize: 11, color: "#9ca3af" }} />
-            {displayCurves.map((entry, i) => {
-              const opacity = CURVE_OPACITIES[i] ?? 0.10;
+            {recentDailyCurves.map((entry, index) => {
+              const style = DAILY_CURVE_STYLES[index] ?? DAILY_CURVE_STYLES[DAILY_CURVE_STYLES.length - 1];
               return (
                 <Line
-                  key={entry.date}
+                  key={`daily_${entry.date}`}
                   type="monotone"
-                  dataKey={entry.date}
-                  name={entry.date}
-                  stroke={CURVE_BASE_COLOR}
-                  strokeOpacity={opacity}
-                  strokeWidth={i === 0 ? 2.5 : 1.5}
-                  dot={i === 0 ? { r: 3, fill: CURVE_BASE_COLOR, fillOpacity: opacity } : false}
+                  dataKey={`daily_${index}`}
+                  name={`Daily ${entry.date}`}
+                  stroke={style.color}
+                  strokeOpacity={style.opacity}
+                  strokeWidth={style.width}
+                  dot={
+                    index === 0
+                      ? { r: 3, fill: style.color, fillOpacity: style.opacity }
+                      : false
+                  }
                   connectNulls
                   {...CHART_ANIMATION}
                 />
               );
             })}
+            {monthlySnapshots.map((entry, index) => {
+              const style = MONTHLY_CURVE_STYLES[index] ?? MONTHLY_CURVE_STYLES[MONTHLY_CURVE_STYLES.length - 1];
+              const monthName = new Date(`${entry.date}T00:00:00`).toLocaleDateString(undefined, {
+                month: "short",
+                year: "2-digit",
+              });
+              return (
+                <Line
+                  key={`monthly_${entry.date}`}
+                  type="monotone"
+                  dataKey={`monthly_${index}`}
+                  name={`Monthly ${monthName}`}
+                  stroke={style.color}
+                  strokeOpacity={style.opacity}
+                  strokeWidth={style.width}
+                  strokeDasharray="5 4"
+                  dot={false}
+                  connectNulls
+                  {...CHART_ANIMATION}
+                />
+              );
+            })}
+            <Line
+              type="monotone"
+              dataKey="moving_average_200d"
+              name="200D Avg"
+              stroke={YIELD_CURVE_MA_COLOR}
+              strokeWidth={2.5}
+              strokeDasharray="2 6"
+              dot={false}
+              connectNulls
+              {...CHART_ANIMATION}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -2083,7 +2186,7 @@ function TreasuryYieldCurvePanel({
         <h4 className="text-sm font-semibold text-stealth-200 mb-2">Latest Rates ({latestEntry.date})</h4>
         <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
           {latestCurve.map((pt) => (
-            <div key={pt.maturity} className="bg-stealth-900 border border-stealth-700 rounded p-2 text-center">
+            <div key={pt.maturity} className="bg-stealth-900/60 border border-stealth-700 rounded p-2 text-center">
               <div className="text-[11px] text-stealth-400">{pt.maturity}</div>
               <div className="text-sm font-bold text-cyan-300">{pt.yield.toFixed(2)}%</div>
             </div>
@@ -2253,7 +2356,7 @@ function MuniStressPanel({
       </div>
 
       {data.relationship_signal && data.relationship_signal.state !== "GREEN" && (
-        <div className="bg-stealth-900 border border-stealth-600 rounded p-4 mb-4">
+        <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-4">
           <div className="flex items-center justify-between">
             <div className="text-xs text-stealth-400">{data.relationship_signal.name}</div>
             <div
@@ -2275,7 +2378,7 @@ function MuniStressPanel({
       )}
 
       {data.composite && (
-        <div className="bg-stealth-900 border border-stealth-600 rounded p-4 mb-4">
+        <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-4">
           <div className="flex items-center justify-between">
             <div className="text-xs text-stealth-400">Composite Stability</div>
             <div className="text-xs text-stealth-500">
@@ -2313,7 +2416,7 @@ function MuniStressPanel({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-6">
         {orderedSeries.map((series) => (
-          <div key={series.key} className="bg-stealth-900 border border-stealth-600 rounded p-4">
+          <div key={series.key} className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
             <div className="flex items-center justify-between">
               <div className="text-xs text-stealth-400 mb-1">{series.label}</div>
               <div className="flex items-center gap-2">
@@ -2356,7 +2459,7 @@ function MuniStressPanel({
         </div>
       )}
 
-      <div className="bg-stealth-900 border border-stealth-700 rounded p-4 mb-6 text-xs text-stealth-400">
+      <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-6 text-xs text-stealth-400">
         <div className="text-stealth-200 font-semibold mb-2">Methodology (summary)</div>
         <div>
           Components &amp; default weights: Long-end stress proxy {(muniPublicSectorWeights.MUNI_LONG_SPREAD * 100).toFixed(0)}% ·
@@ -2411,7 +2514,7 @@ function MuniStressPanel({
       </div>
 
       {data.curve?.status === "unavailable" ? (
-        <div className="bg-stealth-900 border border-stealth-600 rounded p-4 text-xs text-stealth-400">
+        <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 text-xs text-stealth-400">
           Yield curve data unavailable: {data.curve.reason}
         </div>
       ) : data.curve?.history && data.curve.history.length > 0 ? (

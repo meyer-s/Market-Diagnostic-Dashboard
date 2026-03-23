@@ -447,21 +447,32 @@ async def get_bond_muni_subsystem(days: int = Query(365, ge=1, le=1095)):
 
 
 @router.get("/indicators/BOND_MARKET_STABILITY/yield-curve")
-async def get_treasury_yield_curve():
+async def get_treasury_yield_curve(months: int = Query(12, ge=1, le=24)):
     """
-    Fetch the live Treasury yield curve from treasury.gov for the current month.
-    Returns all available dates for the month, newest first.
+    Fetch the live Treasury yield curve from treasury.gov across recent months.
+    Returns all available daily curves, newest first.
     """
+    import asyncio
     import httpx
     import xml.etree.ElementTree as ET
     from datetime import date
 
     today = date.today()
     month_str = today.strftime("%Y%m")
-    url = (
-        f"https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
-        f"pages/xmlview?data=daily_treasury_yield_curve&field_tdr_date_value_month={month_str}"
-    )
+
+    def build_month_strings(count: int) -> list[str]:
+        month_values: list[str] = []
+        current_year = today.year
+        current_month = today.month
+
+        for _ in range(count):
+            month_values.append(f"{current_year}{current_month:02d}")
+            current_month -= 1
+            if current_month == 0:
+                current_month = 12
+                current_year -= 1
+
+        return month_values
 
     maturities = [
         ("1M", "BC_1MONTH"),
@@ -479,11 +490,22 @@ async def get_treasury_yield_curve():
         ("30Y", "BC_30YEAR"),
     ]
 
+    month_values = build_month_strings(months)
+    urls = [
+        (
+            month_value,
+            "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
+            f"pages/xmlview?data=daily_treasury_yield_curve&field_tdr_date_value_month={month_value}"
+        )
+        for month_value in month_values
+    ]
+
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            xml_text = resp.text
+            responses = await asyncio.gather(
+                *(client.get(url) for _, url in urls),
+                return_exceptions=True,
+            )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to fetch Treasury data: {e}")
 
@@ -492,38 +514,53 @@ async def get_treasury_yield_curve():
     M_NS = "http://schemas.microsoft.com/ado/2007/08/dataservices/metadata"
 
     try:
-        root = ET.fromstring(xml_text)
-        entries = root.findall(f"{{{ATOM_NS}}}entry")
-        # Also try direct child if the feed root is not wrapped
-        if not entries:
-            entries = root.findall(f".//{{{ATOM_NS}}}entry")
+        curve_map: dict[str, dict[str, object]] = {}
 
-        curves = []
-        for entry in entries:
-            props = entry.find(f".//{{{M_NS}}}properties")
-            if props is None:
+        for index, response in enumerate(responses):
+            if isinstance(response, Exception):
                 continue
 
-            date_el = props.find(f"{{{D_NS}}}NEW_DATE")
-            if date_el is None or not date_el.text:
-                continue
-            date_val = date_el.text[:10]
+            response.raise_for_status()
+            root = ET.fromstring(response.text)
+            entries = root.findall(f"{{{ATOM_NS}}}entry")
+            if not entries:
+                entries = root.findall(f".//{{{ATOM_NS}}}entry")
 
-            curve_points = []
-            for label, field in maturities:
-                el = props.find(f"{{{D_NS}}}{field}")
-                if el is not None and el.text:
-                    try:
-                        curve_points.append({"maturity": label, "yield": float(el.text)})
-                    except ValueError:
-                        pass
+            for entry in entries:
+                props = entry.find(f".//{{{M_NS}}}properties")
+                if props is None:
+                    continue
 
-            if date_val and curve_points:
-                curves.append({"date": date_val, "curve": curve_points})
+                date_el = props.find(f"{{{D_NS}}}NEW_DATE")
+                if date_el is None or not date_el.text:
+                    continue
+                date_val = date_el.text[:10]
 
-        curves.sort(key=lambda x: x["date"], reverse=True)
-        return {"month": month_str, "curves": curves}
+                curve_points = []
+                for label, field in maturities:
+                    el = props.find(f"{{{D_NS}}}{field}")
+                    if el is not None and el.text:
+                        try:
+                            curve_points.append({"maturity": label, "yield": float(el.text)})
+                        except ValueError:
+                            pass
 
+                if date_val and curve_points and date_val not in curve_map:
+                    curve_map[date_val] = {
+                        "date": date_val,
+                        "curve": curve_points,
+                        "source_month": urls[index][0],
+                    }
+
+        curves = sorted(curve_map.values(), key=lambda item: item["date"], reverse=True)
+        return {
+            "month": month_str,
+            "months_requested": months,
+            "curves": curves,
+        }
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Treasury source returned an error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse Treasury XML: {e}")
 
