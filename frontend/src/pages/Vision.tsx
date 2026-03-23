@@ -441,82 +441,109 @@ export default function Vision() {
             <p className="mt-6 max-w-3xl text-lg sm:text-xl leading-8 text-stealth-200">
               A market framework should be readable by the people who live inside the system, not only by the people paid to interpret it.
             </p>
+            <p className="mt-4 max-w-3xl text-base sm:text-lg leading-8 text-stealth-300">
+              The aim is simple: reduce mental clutter, centralize context, and make the broader market backdrop easier to understand before you act inside it.
+            </p>
+          </div>
+        </div>
+      </section>
 
-            <div className="mt-8 max-w-5xl">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
-                Explore The Core Ideas
-              </div>
-              <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
-                <div className="space-y-3">
-                {heroHighlights.map((item) => {
-                  const isActive = activeHighlight === item.id;
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
+        <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
+              Explore The Core Ideas
+            </div>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
+              Three reasons this page exists.
+            </h2>
+            <p className="mt-4 max-w-xl text-base sm:text-lg leading-8 text-stealth-300">
+              Read the big picture in smaller parts. Hover or tap each idea to shift the callout and move through the argument one piece at a time.
+            </p>
+          </div>
 
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setActiveHighlight(item.id)}
-                      onMouseEnter={() => setActiveHighlight(item.id)}
-                      onFocus={() => setActiveHighlight(item.id)}
-                      className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors duration-200 ${
-                        isActive
-                          ? "border-emerald-300/40 bg-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
-                          : "border-stealth-700 bg-stealth-900/35 hover:border-stealth-500 hover:bg-white/[0.04]"
-                      }`}
-                    >
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stealth-400">
-                        {item.eyebrow}
-                      </div>
-                      <div className="mt-2 text-lg font-semibold text-white">
-                        {item.title}
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-stealth-300">
-                        {item.summary}
-                      </p>
-                    </button>
-                  );
-                })}
-                </div>
+          <div className="mt-2 lg:mt-0 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
+            <div className="space-y-3">
+              {heroHighlights.map((item) => {
+                const isActive = activeHighlight === item.id;
 
-                <div className="rounded-[28px] border border-emerald-300/20 bg-gradient-to-br from-white/[0.08] to-white/[0.03] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.18)]">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                    {activeHeroHighlight.eyebrow}
-                  </div>
-                  <h2 className="mt-3 text-2xl sm:text-3xl font-semibold text-white">
-                    {activeHeroHighlight.title}
-                  </h2>
-                  <p className="mt-3 text-base sm:text-lg leading-7 text-stealth-200">
-                    {activeHeroHighlight.summary}
-                  </p>
-                  <div className="mt-5 border-t border-white/8 pt-5">
-                    <p className="text-sm sm:text-base leading-7 text-stealth-300">
-                      {activeHeroHighlight.detail}
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveHighlight(item.id)}
+                    onMouseEnter={() => setActiveHighlight(item.id)}
+                    onFocus={() => setActiveHighlight(item.id)}
+                    className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors duration-200 ${
+                      isActive
+                        ? "border-emerald-300/40 bg-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
+                        : "border-stealth-700 bg-stealth-900/35 hover:border-stealth-500 hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stealth-400">
+                      {item.eyebrow}
+                    </div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {item.title}
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-stealth-300">
+                      {item.summary}
                     </p>
-                  </div>
-                </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="rounded-[28px] border border-emerald-300/20 bg-gradient-to-br from-white/[0.08] to-white/[0.03] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.18)]">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+                {activeHeroHighlight.eyebrow}
+              </div>
+              <h2 className="mt-3 text-2xl sm:text-3xl font-semibold text-white">
+                {activeHeroHighlight.title}
+              </h2>
+              <p className="mt-3 text-base sm:text-lg leading-7 text-stealth-200">
+                {activeHeroHighlight.summary}
+              </p>
+              <div className="mt-5 border-t border-white/8 pt-5">
+                <p className="text-sm sm:text-base leading-7 text-stealth-300">
+                  {activeHeroHighlight.detail}
+                </p>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
-        <div className="grid gap-6 lg:grid-cols-3">
-          {principles.map((item) => (
-            <div
-              key={item.title}
-              className="rounded-2xl border border-stealth-700 bg-stealth-800/80 p-6 shadow-[0_16px_50px_rgba(0,0,0,0.18)]"
-            >
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
-                Principle
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-14 sm:pb-16">
+        <div className="border-t border-stealth-700">
+          {principles.map((item, idx) => {
+            const isReversed = idx % 2 === 1;
+
+            return (
+              <div
+                key={item.title}
+                className={`grid gap-8 border-b border-stealth-700 py-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,360px)] lg:items-center ${
+                  isReversed ? "lg:[&>*:first-child]:order-2 lg:[&>*:last-child]:order-1" : ""
+                }`}
+              >
+                <div className={isReversed ? "lg:pl-8" : "lg:pr-8"}>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
+                    Principle {idx + 1}
+                  </div>
+                  <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
+                    {item.title}
+                  </h2>
+                  <p className="mt-5 max-w-2xl text-base sm:text-lg leading-8 text-stealth-200">
+                    {item.body}
+                  </p>
+                </div>
+
+                <div className={`mx-auto w-[68%] max-w-[220px] sm:w-[56%] lg:w-full lg:max-w-[340px] ${isReversed ? "lg:mr-auto lg:ml-0" : "lg:ml-auto lg:mr-0"}`}>
+                  <PrincipleMotifGraphic motif={item.motif} />
+                </div>
               </div>
-              <h2 className="mt-3 text-2xl font-semibold text-white">{item.title}</h2>
-              <div className="mt-4 mx-auto w-[72%] max-w-[220px] sm:w-full sm:max-w-none">
-                <PrincipleMotifGraphic motif={item.motif} />
-              </div>
-              <p className="mt-4 text-base leading-7 text-stealth-200">{item.body}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
