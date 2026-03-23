@@ -593,7 +593,7 @@ export default function CryptoDiagnostic({
                 </div>
                 <div className="h-80 min-w-0 w-full">
                   {hasLargeCapChartData ? (
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={240}>
                     <LineChart data={largeCapChartData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
@@ -644,7 +644,7 @@ export default function CryptoDiagnostic({
                 </div>
                 <div className="h-80 min-w-0 w-full">
                   {hasSecondaryChartData ? (
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={240}>
                     <LineChart data={secondaryChartData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
@@ -699,7 +699,7 @@ export default function CryptoDiagnostic({
                 </div>
                 <div className="h-72 min-w-0 w-full">
                   {hasMarketStructureData ? (
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={220}>
                     <LineChart data={marketStructureData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
@@ -750,7 +750,7 @@ export default function CryptoDiagnostic({
                 </div>
                 <div className="h-72 min-w-0 w-full">
                   {hasSignalPanelData ? (
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={220}>
                     <LineChart data={signalPanelData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />

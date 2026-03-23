@@ -30,13 +30,13 @@ def _safe_round(value: float | None, digits: int = 2) -> float | None:
     return round(float(value), digits)
 
 
-def _get_cached_market_overview(days: int) -> dict | None:
+def _get_cached_market_overview(days: int, allow_stale: bool = False) -> dict | None:
     cached = _market_overview_cache.get(days)
     if not cached:
         return None
 
     cached_at, payload = cached
-    if (datetime.utcnow().timestamp() - cached_at) > MARKET_OVERVIEW_CACHE_TTL_SECONDS:
+    if not allow_stale and (datetime.utcnow().timestamp() - cached_at) > MARKET_OVERVIEW_CACHE_TTL_SECONDS:
         return None
 
     return payload
@@ -44,6 +44,118 @@ def _get_cached_market_overview(days: int) -> dict | None:
 
 def _set_cached_market_overview(days: int, payload: dict) -> None:
     _market_overview_cache[days] = (datetime.utcnow().timestamp(), payload)
+
+
+def _build_db_fallback_market_overview(days: int, stale_payload: dict | None = None) -> dict | None:
+    symbol_to_field = {
+        "BTC": "btc_usd",
+        "ETH": "eth_usd",
+    }
+
+    with get_db_session() as db:
+        rows = (
+            db.query(CryptoPrice)
+            .order_by(CryptoPrice.date.desc())
+            .limit(days * 2)
+            .all()
+        )
+
+    ordered_rows = sorted(rows, key=lambda item: item.date)[-days:]
+    if not ordered_rows and not stale_payload:
+        return None
+
+    latest_row = ordered_rows[-1] if ordered_rows else None
+    previous_row = ordered_rows[-2] if len(ordered_rows) > 1 else None
+    stale_assets_by_symbol = {
+        asset.get("symbol"): asset for asset in (stale_payload or {}).get("assets", []) if asset.get("symbol")
+    }
+
+    assets = []
+    advancing_assets_24h = 0
+    available_asset_count = 0
+
+    for asset in CRYPTO_ASSETS:
+        field_name = symbol_to_field.get(asset["symbol"])
+        stale_asset = stale_assets_by_symbol.get(asset["symbol"])
+
+        history: list[dict[str, float | str | None]] = []
+        current_price = None
+        change_24h = None
+        change_30d = None
+
+        if field_name:
+            price_history = [
+                {
+                    "date": row.date.date().isoformat(),
+                    "price": _safe_round(getattr(row, field_name), 4),
+                }
+                for row in ordered_rows
+                if getattr(row, field_name) is not None
+            ]
+            history = price_history
+
+            if latest_row and getattr(latest_row, field_name) is not None:
+                current_price = _safe_round(getattr(latest_row, field_name), 4)
+                available_asset_count += 1
+
+            if previous_row and latest_row:
+                previous_price = getattr(previous_row, field_name)
+                latest_price = getattr(latest_row, field_name)
+                if previous_price not in (None, 0) and latest_price is not None:
+                    change_24h = ((float(latest_price) / float(previous_price)) - 1) * 100
+                    if change_24h > 0:
+                        advancing_assets_24h += 1
+
+            if len(price_history) >= 31:
+                prior_price = price_history[-31].get("price")
+                latest_price = price_history[-1].get("price")
+                if isinstance(prior_price, (int, float)) and prior_price != 0 and isinstance(latest_price, (int, float)):
+                    change_30d = ((float(latest_price) / float(prior_price)) - 1) * 100
+
+        market_cap = None
+        total_volume_24h = None
+        if asset["symbol"] == "BTC" and latest_row:
+            if latest_row.total_crypto_mcap is not None and latest_row.btc_dominance is not None:
+                market_cap = float(latest_row.total_crypto_mcap) * 1_000_000_000 * (float(latest_row.btc_dominance) / 100)
+            total_volume_24h = latest_row.btc_volume_24h
+
+        assets.append(
+            {
+                "symbol": asset["symbol"],
+                "name": asset["name"],
+                "coin_id": asset["coin_id"],
+                "color": asset["color"],
+                "current_price": _safe_round(current_price, 4) if current_price is not None else stale_asset.get("current_price") if stale_asset else None,
+                "change_24h": _safe_round(change_24h, 2) if change_24h is not None else stale_asset.get("change_24h") if stale_asset else None,
+                "change_30d": _safe_round(change_30d, 2) if change_30d is not None else stale_asset.get("change_30d") if stale_asset else None,
+                "market_cap": _safe_round(market_cap, 2) if market_cap is not None else stale_asset.get("market_cap") if stale_asset else None,
+                "total_volume_24h": _safe_round(total_volume_24h, 2) if total_volume_24h is not None else stale_asset.get("total_volume_24h") if stale_asset else None,
+                "history": history if history else (stale_asset.get("history") if stale_asset else []),
+            }
+        )
+
+    market_structure_history = _get_market_structure_history(days)
+    latest_market_structure = market_structure_history[-1] if market_structure_history else None
+
+    market_cap_change_24h = None
+    if latest_row and previous_row and latest_row.total_crypto_mcap not in (None, 0) and previous_row.total_crypto_mcap not in (None, 0):
+        market_cap_change_24h = ((float(latest_row.total_crypto_mcap) / float(previous_row.total_crypto_mcap)) - 1) * 100
+
+    if not available_asset_count and not latest_market_structure and stale_payload is None:
+        return None
+
+    return {
+        "as_of": datetime.utcnow().isoformat(),
+        "summary": {
+            "btc_dominance": _safe_round(latest_row.btc_dominance, 2) if latest_row and latest_row.btc_dominance is not None else (latest_market_structure.get("btc_dominance_pct") if latest_market_structure else (stale_payload or {}).get("summary", {}).get("btc_dominance")),
+            "total_market_cap": _safe_round(float(latest_row.total_crypto_mcap) * 1_000_000_000, 2) if latest_row and latest_row.total_crypto_mcap is not None else (latest_market_structure.get("total_market_cap") if latest_market_structure else (stale_payload or {}).get("summary", {}).get("total_market_cap")),
+            "market_cap_change_24h": _safe_round(market_cap_change_24h, 2) if market_cap_change_24h is not None else (stale_payload or {}).get("summary", {}).get("market_cap_change_24h"),
+            "advancing_assets_24h": advancing_assets_24h if available_asset_count else (stale_payload or {}).get("summary", {}).get("advancing_assets_24h", 0),
+            "monitored_assets": available_asset_count or (stale_payload or {}).get("summary", {}).get("monitored_assets", len(CRYPTO_ASSETS)),
+        },
+        "assets": assets,
+        "market_structure_history": market_structure_history or (stale_payload or {}).get("market_structure_history", []),
+    }
 
 
 def _get_market_structure_history(days: int) -> list[dict[str, float | str | None]]:
@@ -79,6 +191,8 @@ async def get_crypto_market_overview(
     cached_payload = _get_cached_market_overview(days)
     if cached_payload is not None:
         return cached_payload
+
+    stale_cached_payload = _get_cached_market_overview(days, allow_stale=True)
 
     asset_ids = ",".join(asset["coin_id"] for asset in CRYPTO_ASSETS)
     market_structure_history = _get_market_structure_history(days)
@@ -120,12 +234,24 @@ async def get_crypto_market_overview(
         for response in history_responses:
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        if cached_payload is not None:
-            return cached_payload
+        if stale_cached_payload is not None:
+            return stale_cached_payload
+
+        db_fallback_payload = _build_db_fallback_market_overview(days, stale_payload=stale_cached_payload)
+        if db_fallback_payload is not None:
+            _set_cached_market_overview(days, db_fallback_payload)
+            return db_fallback_payload
+
         raise HTTPException(status_code=502, detail=f"Crypto source returned an error: {exc}")
     except Exception as exc:
-        if cached_payload is not None:
-            return cached_payload
+        if stale_cached_payload is not None:
+            return stale_cached_payload
+
+        db_fallback_payload = _build_db_fallback_market_overview(days, stale_payload=stale_cached_payload)
+        if db_fallback_payload is not None:
+            _set_cached_market_overview(days, db_fallback_payload)
+            return db_fallback_payload
+
         raise HTTPException(status_code=502, detail=f"Failed to fetch crypto market data: {exc}")
 
     current_payload = current_response.json()
