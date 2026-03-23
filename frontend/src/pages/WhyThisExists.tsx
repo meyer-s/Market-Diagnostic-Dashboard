@@ -101,8 +101,8 @@ function HeroSignalIllustration() {
   const denseRowHeight = 18;
   const blockRowHeight = 24;
   const rowGap = 12;
-  const fadeStart = chartWidth * 0.54;
-  const fadeEnd = chartWidth * 0.72;
+  const fadeStart = chartWidth * 0.28;
+  const fadeEnd = chartWidth * 0.48;
 
   const getBarOpacity = (x: number, width: number) => {
     const center = x + width / 2;
