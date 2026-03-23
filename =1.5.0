@@ -1,8 +1,0 @@
-Collecting PyNaCl
-  Downloading pynacl-1.6.2-cp38-abi3-manylinux_2_34_x86_64.whl.metadata (10.0 kB)
-Requirement already satisfied: cffi>=2.0.0 in /usr/local/lib/python3.11/site-packages (from PyNaCl) (2.0.0)
-Requirement already satisfied: pycparser in /usr/local/lib/python3.11/site-packages (from cffi>=2.0.0->PyNaCl) (3.0)
-Downloading pynacl-1.6.2-cp38-abi3-manylinux_2_34_x86_64.whl (1.4 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.4/1.4 MB 39.7 MB/s  0:00:00
-Installing collected packages: PyNaCl
-Successfully installed PyNaCl-1.6.2

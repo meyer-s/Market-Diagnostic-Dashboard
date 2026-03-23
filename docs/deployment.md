@@ -14,7 +14,7 @@ git pull origin main
 docker compose up -d --build
 ```
 
-This is the current standard path. Legacy helper scripts such as `deploy_full_aas.sh` still exist for specific maintenance cases, but the default workflow is pull plus rebuild.
+This is the current standard path. The repository no longer relies on root-level deploy helper scripts; the default workflow is pull plus rebuild.
 
 ## Local Runtime
 
@@ -85,9 +85,9 @@ Use those when you need to force a refresh without changing application code.
 
 ### Alternative Assets and AAS
 
-The repository still includes a heavier helper at `deploy_full_aas.sh`. Keep it for recovery or backfill-heavy work, not as the primary deployment path.
-
 The active AAS and alternative-assets reference now lives in `docs/alternative-assets.md`.
+
+Use the standard git-pull plus `docker compose up -d --build` workflow for deploys, and use the admin refresh/backfill endpoints for recovery or data-heavy maintenance.
 
 ### Discord Bot
 
