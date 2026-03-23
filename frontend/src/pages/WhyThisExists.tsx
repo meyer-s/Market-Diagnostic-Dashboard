@@ -90,9 +90,8 @@ function HeroSignalIllustration() {
   ];
 
   const chartX = 782;
-  const chartY = 92;
   const chartWidth = 640;
-  const chartScale = 1.18;
+  const chartScaleX = 1.18;
   const denseCellWidth = 7;
   const denseCellGap = 2;
   const denseCellStep = denseCellWidth + denseCellGap;
@@ -125,9 +124,20 @@ function HeroSignalIllustration() {
     { kind: "block" as const, segments: blockRows[2] },
   ];
 
-  const renderChartRows = (x: number, y: number, scale: number, className?: string) => (
+  const chartContentHeight = chartRows.reduce(
+    (sum, row, idx) => sum + (row.kind === "dense" ? denseRowHeight : blockRowHeight) + (idx < chartRows.length - 1 ? rowGap : 0),
+    0,
+  );
+
+  const renderChartRows = (
+    x: number,
+    y: number,
+    scaleX: number,
+    scaleY: number,
+    className?: string,
+  ) => (
     <g className={className} transform={`translate(${x} ${y})`} opacity="0.98" shapeRendering="crispEdges">
-      <g transform={`scale(${scale})`}>
+      <g transform={`scale(${scaleX} ${scaleY})`}>
         {chartRows.map((row, rowIdx) => {
           const y =
             chartRows
@@ -263,8 +273,8 @@ function HeroSignalIllustration() {
         strokeLinecap="round"
         strokeDasharray="3 16"
       />
-      {renderChartRows(862, 62, 1.42, "md:hidden")}
-      {renderChartRows(chartX, chartY, chartScale, "hidden md:block")}
+      {renderChartRows(874, -54, 1.44, 680 / chartContentHeight, "md:hidden")}
+      {renderChartRows(chartX, -34, chartScaleX, 620 / chartContentHeight, "hidden md:block")}
     </svg>
   );
 }
