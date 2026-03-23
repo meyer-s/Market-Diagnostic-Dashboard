@@ -118,6 +118,14 @@ interface CryptoDiagnosticProps {
   componentHistory?: AAPComponentHistoryResponse;
 }
 
+type RelativeClassification = "Winner" | "Neutral" | "Loser";
+
+interface RelativeCryptoRanking extends CryptoAsset {
+  rank: number;
+  relativeScore: number;
+  relativeClassification: RelativeClassification;
+}
+
 const formatCurrency = (value: number | null, compact = false) => {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "n/a";
@@ -182,6 +190,17 @@ const getSignalTone = (value: number | null) => {
   if (value >= 0.67) return "text-red-300";
   if (value >= 0.4) return "text-amber-300";
   return "text-emerald-300";
+};
+
+const getRelativeClassColor = (relativeClass: RelativeClassification) => {
+  switch (relativeClass) {
+    case "Winner":
+      return "border-emerald-500 bg-emerald-500/10 text-emerald-300";
+    case "Loser":
+      return "border-red-500 bg-red-500/10 text-red-300";
+    default:
+      return "border-blue-500 bg-blue-500/10 text-blue-300";
+  }
 };
 
 export default function CryptoDiagnostic({
@@ -289,6 +308,37 @@ export default function CryptoDiagnostic({
         })),
     [diagnosticContext, cutoffDate]
   );
+
+  const relativeRankings = useMemo<RelativeCryptoRanking[]>(() => {
+    if (!marketData?.assets?.length) {
+      return [];
+    }
+
+    return [...marketData.assets]
+      .map((asset) => {
+        const change30d = asset.change_30d ?? 0;
+        const change24h = asset.change_24h ?? 0;
+        const relativeScore = (change30d * 0.7) + (change24h * 0.3);
+
+        return {
+          ...asset,
+          rank: 0,
+          relativeScore,
+          relativeClassification: "Neutral" as RelativeClassification,
+        };
+      })
+      .sort((left, right) => right.relativeScore - left.relativeScore)
+      .map((asset, index, assets) => ({
+        ...asset,
+        rank: index + 1,
+        relativeClassification:
+          index === 0
+            ? "Winner"
+            : index === assets.length - 1
+              ? "Loser"
+              : "Neutral",
+      }));
+  }, [marketData]);
 
   const hasLargeCapChartData = largeCapChartData.length > 1;
   const hasSecondaryChartData = secondaryChartData.length > 1;
@@ -418,6 +468,80 @@ export default function CryptoDiagnostic({
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="mb-6 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-stealth-100">Winners & Losers Right Now</h3>
+              <p className="text-xs text-stealth-400">
+                Relative crypto leadership across this four-asset basket, weighted toward 30-day trend with a smaller 24-hour momentum input.
+              </p>
+            </div>
+
+            <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+              {relativeRankings.map((asset) => (
+                <div key={asset.symbol} className={`rounded-lg border p-3 ${getRelativeClassColor(asset.relativeClassification)}`}>
+                  <div className="mb-1 text-xs font-semibold">
+                    #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
+                  </div>
+                  <div className="text-lg font-bold text-stealth-100">{formatCurrency(asset.current_price)}</div>
+                  <div className="mt-1 text-xs">Score: {asset.relativeScore.toFixed(1)}</div>
+                  <div className="mt-1 text-xs font-semibold">{asset.relativeClassification}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {relativeRankings.map((asset) => (
+                <div key={`${asset.symbol}-detail`} className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-base font-semibold text-stealth-100">
+                        <span style={{ color: asset.color }}>{asset.name}</span> ({asset.symbol})
+                      </h4>
+                      <div className="text-xs text-stealth-500">Relative rank #{asset.rank} in the current crypto basket</div>
+                    </div>
+                    <div className={`rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassColor(asset.relativeClassification)}`}>
+                      {asset.relativeClassification}
+                    </div>
+                  </div>
+
+                  <div className="mb-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <div className="text-xs text-stealth-500">Current Price</div>
+                      <div className="font-semibold text-stealth-100">{formatCurrency(asset.current_price)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-stealth-500">Relative Score</div>
+                      <div className="font-semibold text-stealth-100">{asset.relativeScore.toFixed(1)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-stealth-500">24H Move</div>
+                      <div className={`font-semibold ${getPercentColor(asset.change_24h)}`}>{formatPercent(asset.change_24h)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-stealth-500">30D Move</div>
+                      <div className={`font-semibold ${getPercentColor(asset.change_30d)}`}>{formatPercent(asset.change_30d)}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <div className="mb-1 text-stealth-500">Liquidity</div>
+                      <div className="font-semibold text-stealth-200">24H Vol: {formatCurrency(asset.total_volume_24h, true)}</div>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-stealth-500">Size</div>
+                      <div className="font-semibold text-stealth-200">MCAP: {formatCurrency(asset.market_cap, true)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded border-l-2 border-blue-500 bg-stealth-900/50 p-3 text-xs text-stealth-400">
+              Winner/loser labels are relative across BTC, ETH, SOL, and XRP only. This is a compact leadership read, not a full-crypto market ranking.
+            </div>
           </div>
 
           <div className="mb-6 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
