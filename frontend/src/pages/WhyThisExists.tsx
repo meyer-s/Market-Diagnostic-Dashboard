@@ -146,32 +146,49 @@ function HeroSignalIllustration() {
 function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   if (motif === "board") {
     return (
-      <svg viewBox="0 0 240 96" role="img" aria-label="Board zoom-out motif" className="w-full h-auto">
+      <svg viewBox="0 0 240 96" role="img" aria-label="Overlapping board correlation motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
         <rect x="18" y="16" width="204" height="64" rx="11" fill="#0d1526" stroke="#334155" />
-        <rect x="34" y="24" width="88" height="48" rx="8" fill="none" stroke="#93C5FD" strokeOpacity="0.72" strokeWidth="1.7" />
-        <rect x="136" y="30" width="56" height="36" rx="7" fill="none" stroke="#334155" strokeOpacity="0.7" strokeWidth="1.4" />
+        <rect x="28" y="24" width="76" height="44" rx="8" fill="none" stroke="#93C5FD" strokeOpacity="0.74" strokeWidth="1.6" />
+        <rect x="88" y="18" width="78" height="46" rx="8" fill="none" stroke="#64748b" strokeOpacity="0.78" strokeWidth="1.5" />
+        <rect x="150" y="28" width="56" height="32" rx="7" fill="none" stroke="#334155" strokeOpacity="0.74" strokeWidth="1.3" />
         <path
-          d="M18 58 C34 54, 48 52, 60 54 C72 56, 82 50, 92 44 C104 38, 116 40, 128 44 C142 48, 154 42, 168 40 C184 38, 202 40, 222 44"
-          stroke="#93C5FD"
-          strokeOpacity="0.22"
-          strokeWidth="1.8"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <path
-          d="M34 56 C48 52, 60 51, 70 54 C80 57, 90 51, 100 45 C108 40, 116 40, 122 42"
+          d="M28 54 C40 50, 48 49, 58 52 C68 55, 76 49, 84 43 C92 37, 100 36, 106 39"
           stroke="#6EE7B7"
-          strokeOpacity="0.95"
+          strokeOpacity="0.96"
           strokeWidth="2.2"
           fill="none"
           strokeLinecap="round"
         />
         <path
-          d="M122 42 C132 45, 144 46, 156 42 C168 38, 180 38, 192 40"
+          d="M106 39 C116 42, 126 42, 136 38 C146 34, 156 35, 166 38"
+          stroke="#93C5FD"
+          strokeOpacity="0.42"
+          strokeWidth="2"
+          fill="none"
+          strokeLinecap="round"
+        />
+        <path
+          d="M166 38 C176 41, 184 40, 192 37 C198 35, 202 35, 206 36"
           stroke="#6EE7B7"
-          strokeOpacity="0.26"
-          strokeWidth="1.9"
+          strokeOpacity="0.24"
+          strokeWidth="1.8"
+          fill="none"
+          strokeLinecap="round"
+        />
+        <path
+          d="M106 39 L118 33 M136 38 L146 33 M166 38 L174 34"
+          stroke="#94a3b8"
+          strokeOpacity="0.34"
+          strokeWidth="1.2"
+          fill="none"
+          strokeLinecap="round"
+        />
+        <path
+          d="M104 46 L122 46 M166 46 L182 46"
+          stroke="#64748b"
+          strokeOpacity="0.42"
+          strokeWidth="1.2"
           fill="none"
           strokeLinecap="round"
         />
