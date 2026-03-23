@@ -247,6 +247,21 @@ interface MuniCurve {
   reason?: string;
 }
 
+interface YieldCurvePoint {
+  maturity: string;
+  yield: number;
+}
+
+interface YieldCurveDateEntry {
+  date: string;
+  curve: YieldCurvePoint[];
+}
+
+interface YieldCurveResponse {
+  month: string;
+  curves: YieldCurveDateEntry[];
+}
+
 interface MuniSubsystemResponse {
   as_of?: string;
   series: MuniSeries[];
@@ -286,7 +301,7 @@ export default function IndicatorDetail() {
   const isAnalystConfidence = apiCode === "ANALYST_ANXIETY";
   const [isRefetching, setIsRefetching] = React.useState(false);
   const [refetchMessage, setRefetchMessage] = React.useState<string | null>(null);
-  const [bondTab, setBondTab] = React.useState<"core" | "public">("core");
+  const [bondTab, setBondTab] = React.useState<"core" | "public" | "yield">("core");
 
   React.useEffect(() => {
     if (normalizedCode === "ANALYST_ANXIETY") {
@@ -335,6 +350,11 @@ export default function IndicatorDetail() {
   const { data: muniSubsystem, loading: muniLoading, error: muniError } = useApi<MuniSubsystemResponse>(
     apiCode === "BOND_MARKET_STABILITY"
       ? `/indicators/${apiCode}/muni?days=${getHistoryDays()}`
+      : ""
+  );
+  const { data: yieldCurveData, loading: yieldCurveLoading, error: yieldCurveError } = useApi<YieldCurveResponse>(
+    apiCode === "BOND_MARKET_STABILITY"
+      ? `/indicators/BOND_MARKET_STABILITY/yield-curve`
       : ""
   );
 
@@ -654,6 +674,16 @@ export default function IndicatorDetail() {
           >
             Public-sector credit &amp; funding stress
           </button>
+          <button
+            onClick={() => setBondTab("yield")}
+            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+              bondTab === "yield"
+                ? "border-cyan-500 text-cyan-300"
+                : "border-transparent text-stealth-400 hover:text-gray-300"
+            }`}
+          >
+            Live Yield Curve
+          </button>
         </div>
       )}
 
@@ -817,6 +847,14 @@ export default function IndicatorDetail() {
           loading={muniLoading}
           error={muniError}
           chartRangeDays={chartRange.days}
+        />
+      )}
+
+      {apiCode === "BOND_MARKET_STABILITY" && bondTab === "yield" && (
+        <TreasuryYieldCurvePanel
+          data={yieldCurveData}
+          loading={yieldCurveLoading}
+          error={yieldCurveError}
         />
       )}
 
@@ -1857,6 +1895,136 @@ export default function IndicatorDetail() {
               <span>Red (Stress)</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Maturity labels in order for the x-axis
+const MATURITY_ORDER = ["1M","2M","3M","4M","6M","1Y","2Y","3Y","5Y","7Y","10Y","20Y","30Y"];
+
+// Onion skin opacities: newest = 100%, then 60, 40, 20, 15, 10
+const CURVE_OPACITIES = [1.0, 0.60, 0.40, 0.20, 0.15, 0.10];
+const CURVE_BASE_COLOR = "#22d3ee"; // cyan
+
+function TreasuryYieldCurvePanel({
+  data,
+  loading,
+  error,
+}: {
+  data: YieldCurveResponse | null | undefined;
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) return <MarketLoading />;
+  if (error) return <div className="text-red-400 text-sm p-4">Failed to load yield curve: {error}</div>;
+  if (!data || !data.curves || data.curves.length === 0)
+    return <div className="text-stealth-400 text-sm p-4">No yield curve data available for this month.</div>;
+
+  // Show up to 6 most recent dates with onion skin effect
+  const displayCurves = data.curves.slice(0, 6);
+
+  // Build chart data: one row per maturity, one column per date
+  const chartData = MATURITY_ORDER.map((mat) => {
+    const row: Record<string, string | number | null> = { maturity: mat };
+    displayCurves.forEach((entry) => {
+      const pt = entry.curve.find((p) => p.maturity === mat);
+      row[entry.date] = pt ? pt.yield : null;
+    });
+    return row;
+  });
+
+  const latestEntry = displayCurves[0];
+  const latestCurve = latestEntry.curve;
+  const shortEnd = latestCurve.find((p) => p.maturity === "2Y")?.yield ?? null;
+  const longEnd = latestCurve.find((p) => p.maturity === "10Y")?.yield ?? null;
+  const spread10y2y = shortEnd !== null && longEnd !== null ? (longEnd - shortEnd).toFixed(2) : "—";
+  const inverted = shortEnd !== null && longEnd !== null && longEnd < shortEnd;
+
+  const monthLabel = `${data.month.slice(0, 4)}-${data.month.slice(4)}`;
+
+  return (
+    <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div>
+          <h3 className="text-lg md:text-xl font-semibold text-stealth-100">
+            Live Treasury Yield Curve
+          </h3>
+          <p className="text-xs text-stealth-400 mt-0.5">
+            Source: U.S. Treasury · {monthLabel} · Updated daily
+          </p>
+        </div>
+        <div className="flex gap-4">
+          <div className="bg-stealth-900 border border-stealth-600 rounded px-3 py-2 text-center">
+            <div className="text-xs text-stealth-400">10Y-2Y Spread</div>
+            <div className={`text-base font-bold ${inverted ? "text-red-400" : "text-green-400"}`}>
+              {spread10y2y} %
+            </div>
+            <div className={`text-[11px] ${inverted ? "text-red-400" : "text-stealth-500"}`}>
+              {inverted ? "Inverted" : "Normal"}
+            </div>
+          </div>
+          <div className="bg-stealth-900 border border-stealth-600 rounded px-3 py-2 text-center">
+            <div className="text-xs text-stealth-400">Latest Date</div>
+            <div className="text-sm font-semibold text-cyan-300">{latestEntry.date}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={CHART_MARGIN}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <XAxis
+              dataKey="maturity"
+              tick={{ fontSize: 11, fill: "#9ca3af" }}
+              axisLine={{ stroke: "#4b5563" }}
+            />
+            <YAxis
+              domain={["auto", "auto"]}
+              tick={{ fontSize: 11, fill: "#9ca3af" }}
+              axisLine={{ stroke: "#4b5563" }}
+              tickFormatter={(v) => `${v}%`}
+              label={{ value: "Yield (%)", angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 11 }}
+            />
+            <Tooltip
+              contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: 6 }}
+              labelStyle={{ color: "#e5e7eb", fontWeight: 600 }}
+              formatter={(value: number, name: string) => [`${value?.toFixed(2)}%`, name]}
+            />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#9ca3af" }} />
+            {displayCurves.map((entry, i) => {
+              const opacity = CURVE_OPACITIES[i] ?? 0.10;
+              return (
+                <Line
+                  key={entry.date}
+                  type="monotone"
+                  dataKey={entry.date}
+                  name={entry.date}
+                  stroke={CURVE_BASE_COLOR}
+                  strokeOpacity={opacity}
+                  strokeWidth={i === 0 ? 2.5 : 1.5}
+                  dot={i === 0 ? { r: 3, fill: CURVE_BASE_COLOR, fillOpacity: opacity } : false}
+                  connectNulls
+                  {...CHART_ANIMATION}
+                />
+              );
+            })}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Latest values table */}
+      <div className="mt-4">
+        <h4 className="text-sm font-semibold text-stealth-200 mb-2">Latest Rates ({latestEntry.date})</h4>
+        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+          {latestCurve.map((pt) => (
+            <div key={pt.maturity} className="bg-stealth-900 border border-stealth-700 rounded p-2 text-center">
+              <div className="text-[11px] text-stealth-400">{pt.maturity}</div>
+              <div className="text-sm font-bold text-cyan-300">{pt.yield.toFixed(2)}%</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

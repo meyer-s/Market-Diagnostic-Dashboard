@@ -446,6 +446,88 @@ async def get_bond_muni_subsystem(days: int = Query(365, ge=1, le=1095)):
     return data
 
 
+@router.get("/indicators/BOND_MARKET_STABILITY/yield-curve")
+async def get_treasury_yield_curve():
+    """
+    Fetch the live Treasury yield curve from treasury.gov for the current month.
+    Returns all available dates for the month, newest first.
+    """
+    import httpx
+    import xml.etree.ElementTree as ET
+    from datetime import date
+
+    today = date.today()
+    month_str = today.strftime("%Y%m")
+    url = (
+        f"https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
+        f"pages/xmlview?data=daily_treasury_yield_curve&field_tdr_date_value_month={month_str}"
+    )
+
+    maturities = [
+        ("1M", "BC_1MONTH"),
+        ("2M", "BC_2MONTH"),
+        ("3M", "BC_3MONTH"),
+        ("4M", "BC_4MONTH"),
+        ("6M", "BC_6MONTH"),
+        ("1Y", "BC_1YEAR"),
+        ("2Y", "BC_2YEAR"),
+        ("3Y", "BC_3YEAR"),
+        ("5Y", "BC_5YEAR"),
+        ("7Y", "BC_7YEAR"),
+        ("10Y", "BC_10YEAR"),
+        ("20Y", "BC_20YEAR"),
+        ("30Y", "BC_30YEAR"),
+    ]
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            xml_text = resp.text
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch Treasury data: {e}")
+
+    ATOM_NS = "http://www.w3.org/2005/Atom"
+    D_NS = "http://schemas.microsoft.com/ado/2007/08/dataservices"
+    M_NS = "http://schemas.microsoft.com/ado/2007/08/dataservices/metadata"
+
+    try:
+        root = ET.fromstring(xml_text)
+        entries = root.findall(f"{{{ATOM_NS}}}entry")
+        # Also try direct child if the feed root is not wrapped
+        if not entries:
+            entries = root.findall(f".//{{{ATOM_NS}}}entry")
+
+        curves = []
+        for entry in entries:
+            props = entry.find(f".//{{{M_NS}}}properties")
+            if props is None:
+                continue
+
+            date_el = props.find(f"{{{D_NS}}}NEW_DATE")
+            if date_el is None or not date_el.text:
+                continue
+            date_val = date_el.text[:10]
+
+            curve_points = []
+            for label, field in maturities:
+                el = props.find(f"{{{D_NS}}}{field}")
+                if el is not None and el.text:
+                    try:
+                        curve_points.append({"maturity": label, "yield": float(el.text)})
+                    except ValueError:
+                        pass
+
+            if date_val and curve_points:
+                curves.append({"date": date_val, "curve": curve_points})
+
+        curves.sort(key=lambda x: x["date"], reverse=True)
+        return {"month": month_str, "curves": curves}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse Treasury XML: {e}")
+
+
 @router.get("/indicators/LIQUIDITY_PROXY/components")
 async def get_liquidity_proxy_components(days: int = Query(365, ge=1, le=1095)):
     """
