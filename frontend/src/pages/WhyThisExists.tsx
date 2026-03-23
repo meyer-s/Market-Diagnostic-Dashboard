@@ -252,7 +252,7 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
 
 function FrameworkHouseGraphic() {
   return (
-    <svg viewBox="0 0 220 220" role="img" aria-label="House scaffold framework motif" className="w-full max-w-[220px] h-auto">
+    <svg viewBox="0 0 220 220" role="img" aria-label="House scaffold framework motif" className="w-full h-auto">
       <defs>
         <linearGradient id="frameworkHouseStroke" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.9" />
@@ -363,9 +363,13 @@ export default function WhyThisExists() {
       </section>
 
       <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
-        <div className="rounded-3xl border border-stealth-700 bg-stealth-800/80 p-8 sm:p-10 lg:p-12">
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-center">
-            <div className="max-w-3xl">
+        <div className="relative overflow-hidden rounded-3xl border border-stealth-700 bg-stealth-800/80 p-8 sm:p-10 lg:min-h-[360px] lg:p-12">
+          <div className="absolute inset-y-0 right-0 hidden lg:block lg:w-[460px] xl:w-[520px] pointer-events-none">
+            <div className="absolute inset-y-0 left-0 right-0 bg-[radial-gradient(circle_at_center,_rgba(110,231,183,0.08),_transparent_62%)]" />
+          </div>
+
+          <div className="relative z-10 max-w-3xl lg:max-w-[60%]">
+            <div>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
                 What The Tool Actually Offers
               </div>
@@ -377,24 +381,27 @@ export default function WhyThisExists() {
               </p>
             </div>
 
-            <div className="flex justify-center lg:justify-end">
-              <FrameworkHouseGraphic />
+            <div className="mt-8 flex flex-col sm:flex-row gap-4">
+              <Link
+                to="/"
+                className="inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-stealth-900 transition-colors hover:bg-emerald-300"
+              >
+                Explore The Dashboard
+              </Link>
+              <Link
+                to="/system-breakdown"
+                className="inline-flex items-center justify-center rounded-xl border border-stealth-600 px-5 py-3 text-sm font-semibold text-stealth-100 transition-colors hover:border-stealth-400 hover:bg-white/[0.03]"
+              >
+                Review The Methodology
+              </Link>
             </div>
           </div>
 
-          <div className="mt-8 flex flex-col sm:flex-row gap-4">
-            <Link
-              to="/"
-              className="inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-stealth-900 transition-colors hover:bg-emerald-300"
-            >
-              Explore The Dashboard
-            </Link>
-            <Link
-              to="/system-breakdown"
-              className="inline-flex items-center justify-center rounded-xl border border-stealth-600 px-5 py-3 text-sm font-semibold text-stealth-100 transition-colors hover:border-stealth-400 hover:bg-white/[0.03]"
-            >
-              Review The Methodology
-            </Link>
+          <div className="relative mx-auto mt-10 w-full max-w-[320px] sm:max-w-[380px] lg:absolute lg:right-[-28px] lg:top-1/2 lg:z-0 lg:mt-0 lg:w-[440px] lg:max-w-none lg:-translate-y-1/2 xl:right-[-8px] xl:w-[500px] pointer-events-none">
+            <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,_rgba(96,165,250,0.10),_transparent_66%)] blur-2xl" />
+            <div className="relative">
+              <FrameworkHouseGraphic />
+            </div>
           </div>
         </div>
       </section>
