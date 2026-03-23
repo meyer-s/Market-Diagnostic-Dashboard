@@ -237,18 +237,16 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
       <circle cx="138" cy="70" r="3.8" fill="#6EE7B7" fillOpacity="0.2" />
       <circle cx="156" cy="20" r="3.4" fill="#e2e8f0" fillOpacity="0.14" />
 
-      <path d="M30 16 C74 14, 142 16, 204 34" stroke="#93C5FD" strokeOpacity="0.16" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-      <path d="M48 82 C96 64, 150 46, 204 34" stroke="#6EE7B7" strokeOpacity="0.18" strokeWidth="1.4" fill="none" strokeLinecap="round" />
       <path d="M118 18 C146 18, 174 22, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-      <path d="M138 70 C164 60, 184 48, 204 34" stroke="#6EE7B7" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      <path d="M138 70 C162 72, 184 70, 204 68" stroke="#6EE7B7" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
       <path d="M156 20 C176 22, 192 26, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
 
       <path d="M102 48 C132 42, 162 38, 196 34" stroke="#64748b" strokeOpacity="0.5" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       <path d="M102 48 C134 54, 164 62, 196 68" stroke="#64748b" strokeOpacity="0.46" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       <path d="M104 47 C134 41, 164 37, 196 34" stroke="#6EE7B7" strokeOpacity="0.96" strokeWidth="3.3" fill="none" strokeLinecap="round" />
 
-      <path d="M46 22 C82 22, 114 25, 146 30 C166 32, 182 32, 196 31" stroke="#93C5FD" strokeOpacity="0.2" strokeWidth="1.9" fill="none" strokeLinecap="round" />
-      <path d="M62 74 C92 64, 118 50, 148 38 C168 35, 184 36, 196 37" stroke="#6EE7B7" strokeOpacity="0.22" strokeWidth="1.9" fill="none" strokeLinecap="round" />
+      <path d="M30 16 C78 18, 118 24, 150 30 C170 32, 186 33, 204 34" stroke="#93C5FD" strokeOpacity="0.2" strokeWidth="1.9" fill="none" strokeLinecap="round" />
+      <path d="M48 82 C90 78, 124 74, 152 71 C172 69, 188 68, 204 68" stroke="#6EE7B7" strokeOpacity="0.22" strokeWidth="1.9" fill="none" strokeLinecap="round" />
 
       <circle cx="92" cy="48" r="3.4" fill="#111827" fillOpacity="0.2" />
     </svg>
