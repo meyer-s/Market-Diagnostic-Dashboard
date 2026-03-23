@@ -44,6 +44,7 @@ const heroHighlights = [
     id: "vision" as const,
     eyebrow: "Vision",
     title: "Market context should not be exclusive.",
+    summary: "Capital markets shape everyday life, not just corporate strategy.",
     detail:
       "Markets do not exist only to serve institutions and corporations. They shape the lives of everyone who works, saves, invests, borrows, or spends. A system this important should be more legible to the people living inside it.",
   },
@@ -51,6 +52,7 @@ const heroHighlights = [
     id: "goal" as const,
     eyebrow: "Goal",
     title: "Reduce mental clutter. Centralize context.",
+    summary: "Replace scattered signals with one readable backdrop.",
     detail:
       "The practical purpose of this platform is to lower the cognitive load of juggling macro indicators while trying to make a decision. Instead of holding every moving part in your head, you can read the broader backdrop in one place.",
   },
@@ -58,6 +60,7 @@ const heroHighlights = [
     id: "advantage" as const,
     eyebrow: "Why It Matters",
     title: "Narrow the knowledge gap.",
+    summary: "Turn hidden structure into clearer judgment for everyday participants.",
     detail:
       "People who understand the underlying mechanics of the market hold a real advantage over those who only feel its effects. By making that structure more reliable and human-readable, this tool helps more people act with context rather than confusion.",
   },
@@ -482,6 +485,9 @@ export default function Vision() {
             <h2 className="mt-3 text-2xl sm:text-3xl font-semibold text-white">
               {activeHeroHighlight.title}
             </h2>
+            <p className="mt-3 text-base sm:text-lg leading-7 text-stealth-200">
+              {activeHeroHighlight.summary}
+            </p>
             <div className="mt-5 border-t border-white/8 pt-5">
               <p className="text-sm sm:text-base leading-7 text-stealth-300">
                 {activeHeroHighlight.detail}
