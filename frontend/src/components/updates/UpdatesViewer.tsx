@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { EmptyState, ErrorState, LoadingState } from "../../utils/componentUtils";
 import type { UpdatePostDetail } from "../../types/updates";
 import { UPDATE_STATUS_STYLES, formatUpdateDate } from "./updateStyles";
+import { splitUpdateSummary } from "./updateSummaryUtils";
 
 interface UpdatesViewerProps {
   post: UpdatePostDetail | null;
@@ -241,13 +242,7 @@ export default function UpdatesViewer({
     [post?.content_markdown],
   );
 
-  const aiSummary = useMemo(() => {
-    const summary = post?.summary?.trim();
-    if (!summary) {
-      return null;
-    }
-    return summary.replace(/\s+/g, " ");
-  }, [post?.summary]);
+  const summaryParts = useMemo(() => splitUpdateSummary(post?.summary), [post?.summary]);
 
   const headerLabel = useMemo(() => {
     if (!overlayLoading) {
@@ -300,12 +295,15 @@ export default function UpdatesViewer({
             {post.pinned && <span className="ml-auto text-xs font-semibold text-stealth-300">PINNED</span>}
           </div>
           <h1 className="text-2xl font-semibold text-stealth-100">{post.title}</h1>
-          {aiSummary && (
+          {summaryParts.lead && (
             <div className="mt-4 rounded-2xl border border-pulse-500/20 bg-gradient-to-r from-pulse-500/10 via-stealth-850/90 to-stealth-850/90 px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-pulse-300/85">
                 AI Summary
               </div>
-              <p className="mt-2 text-sm leading-7 text-stealth-200">{aiSummary}</p>
+              <p className="mt-2 text-[15px] font-medium leading-7 text-stealth-100">{summaryParts.lead}</p>
+              {summaryParts.remainder && (
+                <p className="mt-2 text-sm leading-7 text-stealth-300">{summaryParts.remainder}</p>
+              )}
             </div>
           )}
           {post.tags.length > 0 && (
