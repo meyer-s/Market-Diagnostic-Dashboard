@@ -18,6 +18,7 @@ from app.api.market_map import router as market_map_router
 from app.api.options_alerts import router as options_alerts_router
 from app.api.secret_options import router as secret_options_router
 from app.api.precious_metals import router as precious_metals_router
+from app.api.crypto import router as crypto_router
 from app.api.aap import router as aap_router
 from app.api.discord import router as discord_router
 from app.api.update_posts import router as update_posts_router
@@ -114,6 +115,9 @@ app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 
 # Precious Metals Diagnostic
 app.include_router(precious_metals_router, tags=["PreciousMetals"])
+
+# Crypto Diagnostic
+app.include_router(crypto_router, tags=["Crypto"])
 
 # Metal Projections
 from app.api.metal_projections import router as metal_projections_router

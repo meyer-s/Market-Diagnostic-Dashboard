@@ -35,6 +35,7 @@ import { useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { OverviewTab } from "../components/aap/OverviewTab";
 import PreciousMetalsDiagnostic from "./PreciousMetalsDiagnostic";
+import CryptoDiagnostic from "./CryptoDiagnostic";
 import MarketLoading from "../components/ui/MarketLoading";
 
 export default function AlternativeAssetStability() {
@@ -43,12 +44,12 @@ export default function AlternativeAssetStability() {
   const { data: historyData } = useApi<{ data: AAPHistoryPoint[] }>('/aap/history?days=365');
   const { data: componentHistory } = useApi<AAPComponentHistoryResponse>('/aap/components/history?days=365');
   const [timeframe, setTimeframe] = useState<'30d' | '90d' | '180d' | '365d'>('90d');
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'metals'>('overview');
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'metals' | 'crypto'>('overview');
 
   // Handle tab query parameter
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam === 'metals' || tabParam === 'overview') {
+    if (tabParam === 'metals' || tabParam === 'overview' || tabParam === 'crypto') {
       setSelectedTab(tabParam);
     }
   }, [searchParams]);
@@ -122,6 +123,16 @@ export default function AlternativeAssetStability() {
           >
             Precious Metals
           </button>
+          <button
+            onClick={() => setSelectedTab("crypto")}
+            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+              selectedTab === "crypto"
+                ? "border-blue-500 text-blue-300"
+                : "border-transparent text-stealth-400 hover:text-gray-300"
+            }`}
+          >
+            Crypto
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -138,6 +149,16 @@ export default function AlternativeAssetStability() {
         {selectedTab === "metals" && (
           <div className="text-stealth-100">
             <PreciousMetalsDiagnostic embedded={true} />
+          </div>
+        )}
+
+        {selectedTab === "crypto" && (
+          <div className="text-stealth-100">
+            <CryptoDiagnostic
+              embedded={true}
+              aapData={aapData}
+              componentHistory={componentHistory ?? undefined}
+            />
           </div>
         )}
       </div>
