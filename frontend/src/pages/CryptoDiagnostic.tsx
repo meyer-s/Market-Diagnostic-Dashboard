@@ -208,28 +208,18 @@ const buildRelativeRankings = (assets: CryptoAsset[]): RelativeCryptoRanking[] =
   const scoredAssets = assets.map((asset) => {
     const change30d = asset.change_30d ?? 0;
     const change24h = asset.change_24h ?? 0;
+    const rawRelativeScore = (change30d * 0.7) + (change24h * 0.3);
 
     return {
       ...asset,
-      rawRelativeScore: (change30d * 0.7) + (change24h * 0.3),
-      relativeScore: 50,
+      rawRelativeScore,
+      relativeScore: rawRelativeScore * 10,
       rank: 0,
       relativeClassification: "Neutral" as RelativeClassification,
     };
   });
 
-  const rawScores = scoredAssets.map((asset) => asset.rawRelativeScore);
-  const minRawScore = rawScores.length ? Math.min(...rawScores) : 0;
-  const maxRawScore = rawScores.length ? Math.max(...rawScores) : 0;
-  const scoreRange = maxRawScore - minRawScore;
-
   return scoredAssets
-    .map((asset) => ({
-      ...asset,
-      relativeScore: scoreRange > 0
-        ? ((asset.rawRelativeScore - minRawScore) / scoreRange) * 100
-        : 50,
-    }))
     .sort((left, right) => right.relativeScore - left.relativeScore)
     .map((asset, index, rankedAssets) => ({
       ...asset,
