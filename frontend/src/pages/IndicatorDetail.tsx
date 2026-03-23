@@ -1975,13 +1975,141 @@ const DAILY_CURVE_STYLES = [
   { color: "#0e7490", opacity: 0.48, width: 1.8 },
 ];
 const MONTHLY_CURVE_STYLES = [
-  { color: "#fde68a", opacity: 0.95, width: 2.2 },
-  { color: "#fbbf24", opacity: 0.85, width: 2 },
-  { color: "#fb923c", opacity: 0.76, width: 1.9 },
-  { color: "#f97316", opacity: 0.67, width: 1.8 },
-  { color: "#ea580c", opacity: 0.58, width: 1.7 },
+  { color: "#fbbf24", opacity: 0.95, width: 2 },
+  { color: "#fbbf24", opacity: 0.78, width: 2 },
+  { color: "#fbbf24", opacity: 0.62, width: 2 },
+  { color: "#fbbf24", opacity: 0.46, width: 2 },
+  { color: "#fbbf24", opacity: 0.32, width: 2 },
 ];
 const YIELD_CURVE_MA_COLOR = "#cbd5e1";
+
+interface YieldCurveTooltipItem {
+  dataKey?: string | number;
+  name?: string;
+  value?: number | string | null;
+  color?: string;
+}
+
+interface YieldCurveTooltipProps {
+  active?: boolean;
+  payload?: YieldCurveTooltipItem[];
+  label?: string;
+}
+
+function getYieldCurveTooltipSection(dataKey?: string | number) {
+  if (typeof dataKey !== "string") {
+    return "other";
+  }
+
+  if (dataKey.startsWith("daily_")) {
+    return "daily";
+  }
+
+  if (dataKey.startsWith("monthly_")) {
+    return "monthly";
+  }
+
+  if (dataKey === "moving_average_200d") {
+    return "average";
+  }
+
+  return "other";
+}
+
+function getYieldCurveTooltipOrder(dataKey?: string | number) {
+  const section = getYieldCurveTooltipSection(dataKey);
+
+  if (section === "daily") {
+    return 0;
+  }
+
+  if (section === "monthly") {
+    return 1;
+  }
+
+  if (section === "average") {
+    return 2;
+  }
+
+  return 3;
+}
+
+function getYieldCurveTooltipLabel(name?: string) {
+  if (!name) {
+    return "Series";
+  }
+
+  if (name.startsWith("Daily ")) {
+    return `Daily · ${name.replace("Daily ", "")}`;
+  }
+
+  if (name.startsWith("Monthly ")) {
+    return `Monthly · ${name.replace("Monthly ", "")}`;
+  }
+
+  if (name === "200D Avg") {
+    return "200-day average";
+  }
+
+  return name;
+}
+
+function renderYieldCurveTooltip({ active, payload, label }: YieldCurveTooltipProps) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const visibleItems = payload
+    .filter((item) => typeof item.value === "number")
+    .sort((left, right) => getYieldCurveTooltipOrder(left.dataKey) - getYieldCurveTooltipOrder(right.dataKey));
+
+  if (visibleItems.length === 0) {
+    return null;
+  }
+
+  let currentSection = "";
+
+  return (
+    <div className="min-w-[220px] rounded-md border border-stealth-700 bg-stealth-900/95 px-3 py-2 shadow-lg">
+      <div className="mb-2 text-sm font-semibold text-stealth-100">{label} maturity</div>
+      <div className="space-y-1.5">
+        {visibleItems.map((item, index) => {
+          const section = getYieldCurveTooltipSection(item.dataKey);
+          const sectionTitle =
+            section === "daily"
+              ? "Daily curves"
+              : section === "monthly"
+                ? "Monthly snapshots"
+                : section === "average"
+                  ? "Reference"
+                  : "Other";
+          const showSectionHeader = section !== currentSection;
+          currentSection = section;
+
+          return (
+            <React.Fragment key={`${String(item.dataKey)}-${index}`}>
+              {showSectionHeader && (
+                <div className="pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-stealth-500">
+                  {sectionTitle}
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-stealth-200">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: item.color ?? "#9ca3af" }}
+                  />
+                  <span>{getYieldCurveTooltipLabel(item.name)}</span>
+                </div>
+                <span className="font-semibold text-stealth-100">{Number(item.value).toFixed(2)}%</span>
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function TreasuryYieldCurvePanel({
   data,
@@ -2118,9 +2246,7 @@ function TreasuryYieldCurvePanel({
               label={{ value: "Yield (%)", angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 11 }}
             />
             <Tooltip
-              contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: 6 }}
-              labelStyle={{ color: "#e5e7eb", fontWeight: 600 }}
-              formatter={(value: number, name: string) => [`${value?.toFixed(2)}%`, name]}
+              content={renderYieldCurveTooltip}
             />
             <Legend wrapperStyle={{ fontSize: 11, color: "#9ca3af" }} />
             {recentDailyCurves.map((entry, index) => {
@@ -2159,7 +2285,6 @@ function TreasuryYieldCurvePanel({
                   stroke={style.color}
                   strokeOpacity={style.opacity}
                   strokeWidth={style.width}
-                  strokeDasharray="5 4"
                   dot={false}
                   connectNulls
                   {...CHART_ANIMATION}
