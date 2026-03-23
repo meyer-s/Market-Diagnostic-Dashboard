@@ -49,14 +49,14 @@ async def scheduled_etl_job():
             f"{error_count} errors. System state: {status['system_state']}"
         )
         
-        # --- AAP Data Ingestion ---
-        logger.info("📊 Ingesting AAP data (crypto & macro)...")
+        # --- AAS Data Ingestion ---
+        logger.info("📊 Ingesting AAS data (crypto & macro)...")
         try:
-            from app.services.ingestion.aap_data_ingestion import run_daily_ingestion
+            from app.services.ingestion.aas_data_ingestion import run_daily_ingestion
             run_daily_ingestion()
-            logger.info("✅ AAP data ingestion completed")
+            logger.info("✅ AAS data ingestion completed")
         except Exception as e:
-            logger.error(f"❌ AAP data ingestion failed: {e}", exc_info=True)
+            logger.error(f"❌ AAS data ingestion failed: {e}", exc_info=True)
         
         # --- Precious Metals Ingestion ---
         logger.info("?? Ingesting precious metals data...")
@@ -78,23 +78,23 @@ async def scheduled_etl_job():
         except Exception as e:
             logger.error(f"? Precious metals ingestion failed: {e}", exc_info=True)
 
-        # --- AAP Calculation ---
-        logger.info("🎯 Calculating AAP indicator...")
+        # --- AAS Calculation ---
+        logger.info("🎯 Calculating AAS indicator...")
         try:
-            from app.services.aap_calculator import AAPCalculator
+            from app.services.aas_calculator import AASCalculator
             from app.core.db import SessionLocal
             db = SessionLocal()
             try:
-                calculator = AAPCalculator(db)
-                aap_result = calculator.calculate_for_date(datetime.utcnow())
-                if aap_result:
-                    logger.info(f"✅ AAP calculated: Score={aap_result.stability_score:.1f}, Regime={aap_result.regime}")
+                calculator = AASCalculator(db)
+                aas_result = calculator.calculate_for_date(datetime.utcnow())
+                if aas_result:
+                    logger.info(f"✅ AAS calculated: Score={aas_result.stability_score:.1f}, Regime={aas_result.regime}")
                 else:
-                    logger.warning("⚠️ AAP calculation skipped - insufficient data")
+                    logger.warning("⚠️ AAS calculation skipped - insufficient data")
             finally:
                 db.close()
         except Exception as e:
-            logger.error(f"❌ AAP calculation failed: {e}", exc_info=True)
+            logger.error(f"❌ AAS calculation failed: {e}", exc_info=True)
         
         # --- Sector Projections ---
         logger.info("🔮 Computing sector projections...")

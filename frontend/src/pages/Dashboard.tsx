@@ -144,7 +144,7 @@ export default function Dashboard() {
   }, [refreshKey]);
 
   const newsCount = news.length;
-  const visibleIndicators = useMemo(() => indicators?.filter((i) => i.code !== "AAP") ?? [], [indicators]);
+  const visibleIndicators = useMemo(() => indicators?.filter((i) => i.code !== "AAS") ?? [], [indicators]);
   const insightOrder: InsightSignal["id"][] = ["system", "dow", "sector", "aas"];
   const insightList = useMemo(
     () => insightOrder.map((id) => insights[id]).filter(Boolean) as InsightSignal[],

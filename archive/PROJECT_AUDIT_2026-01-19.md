@@ -13,7 +13,7 @@ Date: 2026-01-19
 
 ### Backend (FastAPI)
 - App entry: `backend/app/main.py`
-- API routers: `backend/app/api/*.py` (indicators, system status, market map, sector projections, metals, AAP)
+- API routers: `backend/app/api/*.py` (indicators, system status, market map, sector projections, metals, AAS)
 - Services:
   - Core calculations: `backend/app/services/*.py`
   - Ingestion/scheduler: `backend/app/services/ingestion/*`, `backend/app/services/scheduler.py`
@@ -26,7 +26,7 @@ Date: 2026-01-19
 - Routing: `frontend/src/App.tsx`
 - Pages: `frontend/src/pages/*.tsx`
 - Widgets/cards: `frontend/src/components/widgets/*`
-- AAP subsystem UI: `frontend/src/components/aap/*`
+- AAS subsystem UI: `frontend/src/components/aas/*`
 - Hooks: `frontend/src/hooks/*`
 - Shared utils + theme: `frontend/src/utils/*`, `frontend/src/theme/*`
 
@@ -46,7 +46,7 @@ Date: 2026-01-19
 - `/stock-analysis` -> `StockAnalysis`
 - `/precious-metals` -> redirect to `/alternative-assets?tab=metals`
 - `/alternative-assets` -> `AlternativeAssetStability`
-- `/aap-breakdown` -> `AAPComponentBreakdown`
+- `/aas-breakdown` -> `AASComponentBreakdown`
 
 ### Backend Endpoints -> Pages/Widgets
 - `/health` -> deployment health checks
@@ -67,7 +67,7 @@ Date: 2026-01-19
 - `/stocks/{ticker}/projections` -> `StockAnalysis`
 - `/precious-metals/regime`, `/precious-metals/projections/latest` -> `PreciousMetalsWidget`, `PreciousMetalsDiagnostic`
 - `/precious-metals/cb-holdings`, `/precious-metals/supply`, `/precious-metals/demand`, `/precious-metals/market-caps`, `/precious-metals/market-caps/history`, `/precious-metals/correlations`, `/precious-metals/history/{metal}` -> `PreciousMetalsDiagnostic`
-- `/aap/current`, `/aap/history`, `/aap/components/breakdown`, `/aap/components/history`, `/aap/regime/*` -> `AASWidget`, `AlternativeAssetStability`, `AAPComponentBreakdown`
+- `/aas/current`, `/aas/history`, `/aas/components/breakdown`, `/aas/components/history`, `/aas/regime/*` -> `AASWidget`, `AlternativeAssetStability`, `AASComponentBreakdown`
 - `/admin/ingest/*`, `/admin/clear-refetch/*` -> admin actions in `Dashboard`, `IndicatorDetail`
 
 ## Bloat and Duplication Checklist
@@ -76,7 +76,7 @@ Date: 2026-01-19
 - API calls use multiple patterns (`useApi`, `fetch` + `getLegacyApiUrl`, `buildApiUrl`, direct `/api/*`).
 - Repeated chart axis/tooltip styling and date formatting across pages.
 - Repeated state color/pill logic across `styleUtils`, `stabilityConstants`, and component-local helpers.
-- Multiple page variants for AAP (e.g., `AlternativeAssetPressure` vs `AlternativeAssetStability`).
+- Multiple page variants for AAS (e.g., legacy `AlternativeAssetPressure` naming versus `AlternativeAssetStability`).
 - Redundant date formatting helpers: `styleUtils` vs inline `new Date().toLocaleDateString`.
 
 ### Backend

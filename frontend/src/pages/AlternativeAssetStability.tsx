@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react";
 import * as React from "react";
+import { useSearchParams } from "react-router-dom";
+import { useApi } from "../hooks/useApi";
+import { OverviewTab } from "../components/aas/OverviewTab";
+import PreciousMetalsDiagnostic from "./PreciousMetalsDiagnostic";
+import CryptoDiagnostic from "./CryptoDiagnostic";
+import MarketLoading from "../components/ui/MarketLoading";
 
-interface AAPHistoryPoint {
+interface AASHistoryPoint {
   date: string;
   stability_score: number;
   regime: string;
@@ -11,18 +17,18 @@ interface AAPHistoryPoint {
   crypto_contribution: number;
 }
 
-interface AAPComponent {
+interface AASComponent {
   name: string;
   category: string;
   value: number;
   weight: number;
   contribution: number;
-  status: 'active' | 'missing';
+  status: "active" | "missing";
   description: string;
 }
 
-interface AAPBreakdownData {
-  components: AAPComponent[];
+interface AASBreakdownData {
+  components: AASComponent[];
   metals_contribution: number;
   crypto_contribution: number;
   stability_score: number;
@@ -30,52 +36,46 @@ interface AAPBreakdownData {
   data_completeness?: number;
 }
 
-type AAPComponentHistoryResponse = { data: Record<string, { date: string; value: number | null }[]> };
-import { useSearchParams } from "react-router-dom";
-import { useApi } from "../hooks/useApi";
-import { OverviewTab } from "../components/aap/OverviewTab";
-import PreciousMetalsDiagnostic from "./PreciousMetalsDiagnostic";
-import CryptoDiagnostic from "./CryptoDiagnostic";
-import MarketLoading from "../components/ui/MarketLoading";
+type AASComponentHistoryResponse = { data: Record<string, { date: string; value: number | null }[]> };
 
 export default function AlternativeAssetStability() {
   const [searchParams] = useSearchParams();
-  const { data: aapData, loading } = useApi<AAPBreakdownData>('/aap/components/breakdown');
-  const { data: historyData } = useApi<{ data: AAPHistoryPoint[] }>('/aap/history?days=365');
-  const { data: componentHistory } = useApi<AAPComponentHistoryResponse>('/aap/components/history?days=365');
-  const [timeframe, setTimeframe] = useState<'30d' | '90d' | '180d' | '365d'>('90d');
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'metals' | 'crypto'>('overview');
+  const { data: aasData, loading } = useApi<AASBreakdownData>("/aas/components/breakdown");
+  const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>("/aas/history?days=365");
+  const { data: componentHistory } = useApi<AASComponentHistoryResponse>("/aas/components/history?days=365");
+  const [timeframe, setTimeframe] = useState<"30d" | "90d" | "180d" | "365d">("90d");
+  const [selectedTab, setSelectedTab] = useState<"overview" | "metals" | "crypto">("overview");
 
-  // Handle tab query parameter
   useEffect(() => {
-    const tabParam = searchParams.get('tab');
-    if (tabParam === 'metals' || tabParam === 'overview' || tabParam === 'crypto') {
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "metals" || tabParam === "overview" || tabParam === "crypto") {
       setSelectedTab(tabParam);
     }
   }, [searchParams]);
 
-  // Filter history based on timeframe
   const history = React.useMemo(() => {
-    if (!historyData || !historyData.data || !Array.isArray(historyData.data)) return [];
-    
-    const days = parseInt(timeframe);
+    if (!historyData || !historyData.data || !Array.isArray(historyData.data)) {
+      return [];
+    }
+
+    const days = parseInt(timeframe, 10);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
-    
+
     return historyData.data
-      .filter((d: AAPHistoryPoint) => new Date(d.date) >= cutoffDate)
-      .map((d: AAPHistoryPoint) => ({
-        date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        score: d.stability_score || 0,
-        regime: d.regime || '',
-        sma20: d.sma_20 || 0,
-        sma200: d.sma_200 || 0,
-        metals_contribution: (d.metals_contribution || 0) * 100,
-        crypto_contribution: (d.crypto_contribution || 0) * 100
+      .filter((point: AASHistoryPoint) => new Date(point.date) >= cutoffDate)
+      .map((point: AASHistoryPoint) => ({
+        date: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        score: point.stability_score || 0,
+        regime: point.regime || "",
+        sma20: point.sma_20 || 0,
+        sma200: point.sma_200 || 0,
+        metals_contribution: (point.metals_contribution || 0) * 100,
+        crypto_contribution: (point.crypto_contribution || 0) * 100,
       }));
   }, [historyData, timeframe]);
 
-  if (loading || !aapData) {
+  if (loading || !aasData) {
     return (
       <div className="min-h-screen bg-stealth-900 flex items-center justify-center">
         <MarketLoading size={120} variant="pulse" label="Loading AAS diagnostic..." />
@@ -138,7 +138,7 @@ export default function AlternativeAssetStability() {
         {/* Tab Content */}
         {selectedTab === "overview" && (
           <OverviewTab 
-            aapData={aapData}
+            aasData={aasData}
             history={history}
             componentHistory={componentHistory ?? undefined}
             timeframe={timeframe}
@@ -156,7 +156,7 @@ export default function AlternativeAssetStability() {
           <div className="text-stealth-100">
             <CryptoDiagnostic
               embedded={true}
-              aapData={aapData}
+              aasData={aasData}
               componentHistory={componentHistory ?? undefined}
             />
           </div>

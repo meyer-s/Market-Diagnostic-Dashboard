@@ -1,13 +1,13 @@
 """
-Backfill AAP (Alternative Asset Pressure) indicator data.
+Backfill AAS (Alternative Asset Stability) indicator data.
 
-This script populates historical AAP calculations by running AAP calculations for the past 365 days.
+This script populates historical AAS calculations by running AAS calculations for the past 365 days.
 Ensures only one record per calendar date (no duplicate timestamps).
 """
 
 from datetime import datetime, timedelta, date
 from app.core.db import SessionLocal
-from app.services.aap_calculator import AAPCalculator
+from app.services.aas_calculator import AASCalculator
 from sqlalchemy import func
 import logging
 
@@ -15,19 +15,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def backfill_aap_data():
-    """Backfill AAP indicator data."""
+def backfill_aas_data():
+    """Backfill AAS indicator data."""
     db = SessionLocal()
     
     try:
-        logger.info("🚀 Starting AAP data backfill...")
+        logger.info("🚀 Starting AAS data backfill...")
         
-        # Calculate AAP for the past 365 days
-        logger.info("🧮 Calculating AAP indicator for past 365 days...")
+        # Calculate AAS for the past 365 days
+        logger.info("🧮 Calculating AAS indicator for past 365 days...")
         
-        from app.models.alternative_assets import AAPIndicator
+        from app.models.alternative_assets import AASIndicator
         
-        calculator = AAPCalculator(db)
+        calculator = AASCalculator(db)
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
         successful_calculations = 0
@@ -39,8 +39,8 @@ def backfill_aap_data():
             target_date_only = target_date.date()
             
             # Check if indicator already exists for this date (date-only comparison)
-            existing = db.query(AAPIndicator).filter(
-                func.date(AAPIndicator.date) == target_date_only
+            existing = db.query(AASIndicator).filter(
+                func.date(AASIndicator.date) == target_date_only
             ).first()
             
             if existing:
@@ -69,9 +69,9 @@ def backfill_aap_data():
         logger.info(f"   ⚠️  Failed: {failed_calculations} days")
         
         # Show most recent calculation
-        latest = db.query(AAPIndicator).order_by(AAPIndicator.date.desc()).first()
+        latest = db.query(AASIndicator).order_by(AASIndicator.date.desc()).first()
         if latest:
-            logger.info(f"\n🎯 Latest AAP Reading:")
+            logger.info(f"\n🎯 Latest AAS Reading:")
             logger.info(f"   Date: {latest.date.date()}")
             logger.info(f"   Stability Score: {latest.stability_score:.1f}")
             logger.info(f"   Regime: {latest.regime}")
@@ -87,4 +87,4 @@ def backfill_aap_data():
 
 
 if __name__ == "__main__":
-    backfill_aap_data()
+    backfill_aas_data()

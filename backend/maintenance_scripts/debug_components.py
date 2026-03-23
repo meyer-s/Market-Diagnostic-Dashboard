@@ -1,13 +1,13 @@
-"""Debug script to check AAP component availability"""
+"""Debug script to check AAS component availability"""
 from datetime import datetime, timedelta
-from app.services.aap_calculator import AAPCalculator
+from app.services.aas_calculator import AASCalculator
 from app.core.db import SessionLocal
 
 def main():
     calc = None
     db = SessionLocal()
     try:
-        calc = AAPCalculator(db)
+        calc = AASCalculator(db)
         date = datetime.utcnow() - timedelta(days=1)
         
         # Manually gather components to bypass the threshold check
@@ -79,7 +79,7 @@ def main():
             print("\n❌ No components could be gathered!\n")
             return
         
-        print('\n=== AAP Component Availability ===\n')
+        print('\n=== AAS Component Availability ===\n')
         print('METALS SUBSYSTEM (9 components):')
         metals_keys = [
             'gold_usd_zscore', 'silver_usd_zscore', 'platinum_usd_zscore', 

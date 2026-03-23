@@ -312,7 +312,7 @@ class PreciousMetalsIngester:
                 db.add(ratio)
                 count += 1
 
-            # Ensure we have enough DXY ratio history for AAP z-scores
+            # Ensure we have enough DXY ratio history for AAS z-scores
             if dxy_value:
                 self._backfill_dxy_ratios(db, days=365)
 

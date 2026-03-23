@@ -14,7 +14,7 @@ interface HistoricalData {
   sma200?: number;
 }
 
-interface AAPComponent {
+interface AASComponent {
   name: string;
   category: string;
   value: number;
@@ -24,8 +24,8 @@ interface AAPComponent {
   description: string;
 }
 
-interface AAPData {
-  components: AAPComponent[];
+interface AASData {
+  components: AASComponent[];
   metals_contribution: number;
   crypto_contribution: number;
   stability_score: number;
@@ -35,7 +35,7 @@ interface AAPData {
 }
 
 interface OverviewTabProps {
-  aapData: AAPData;
+  aasData: AASData;
   history: HistoricalData[];
   componentHistory?: { data: Record<string, ComponentSeries> };
   timeframe: '30d' | '90d' | '180d' | '365d';
@@ -69,7 +69,7 @@ function smoothSeries(
   return smoothed;
 }
 
-export function OverviewTab({ aapData, history, componentHistory, timeframe, setTimeframe }: OverviewTabProps) {
+export function OverviewTab({ aasData, history, componentHistory, timeframe, setTimeframe }: OverviewTabProps) {
   const [showComponentHealth, setShowComponentHealth] = useState(false);
   
   const getScoreColor = (score: number): string => {
@@ -106,7 +106,7 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
     return labels[regime] || regime.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
-  const components: AAPComponent[] = aapData.components || [];
+  const components: AASComponent[] = aasData.components || [];
   const activeCount = components.filter((c) => c.status === 'active').length;
   const totalCount = components.length;
   const completenessPercent = totalCount > 0 ? (activeCount / totalCount) * 100 : 0;
@@ -134,9 +134,9 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
   }, [rawComponentHistory]);
 
   // Calculate relative contributions as percentages
-  const totalContribution = aapData.metals_contribution + aapData.crypto_contribution;
-  const metalsPercent = totalContribution > 0 ? (aapData.metals_contribution / totalContribution) * 100 : 50;
-  const cryptoPercent = totalContribution > 0 ? (aapData.crypto_contribution / totalContribution) * 100 : 50;
+  const totalContribution = aasData.metals_contribution + aasData.crypto_contribution;
+  const metalsPercent = totalContribution > 0 ? (aasData.metals_contribution / totalContribution) * 100 : 50;
+  const cryptoPercent = totalContribution > 0 ? (aasData.crypto_contribution / totalContribution) * 100 : 50;
   const metalsColor = getFamilyColor("metals");
   const metalsFill = getFamilyColor("metals");
   const cryptoColor = getFamilyColor("crypto");
@@ -155,8 +155,8 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
           </div>
-          <div className={`text-3xl md:text-5xl font-bold mb-2 ${getScoreColor(aapData.stability_score)}`}>
-            {aapData.stability_score.toFixed(1)}
+          <div className={`text-3xl md:text-5xl font-bold mb-2 ${getScoreColor(aasData.stability_score)}`}>
+            {aasData.stability_score.toFixed(1)}
           </div>
           <div className="flex items-center gap-2 text-xs md:text-sm text-stealth-500">
             <span>0 = Min Stability</span>
@@ -166,10 +166,10 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
           <div className="mt-3 w-full bg-stealth-700 rounded-full h-2">
             <div 
               className={`h-2 rounded-full transition-all ${
-                aapData.stability_score >= 67 ? 'bg-green-500' :
-                aapData.stability_score >= 34 ? 'bg-yellow-500' : 'bg-red-500'
+                aasData.stability_score >= 67 ? 'bg-green-500' :
+                aasData.stability_score >= 34 ? 'bg-yellow-500' : 'bg-red-500'
               }`}
-              style={{ width: `${aapData.stability_score}%` }}
+              style={{ width: `${aasData.stability_score}%` }}
             ></div>
           </div>
         </div>
@@ -181,12 +181,12 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
           </div>
           <div 
             className="text-xl md:text-2xl font-bold mb-2"
-            style={{ color: getRegimeColor(aapData.regime) }}
+            style={{ color: getRegimeColor(aasData.regime) }}
           >
-            {getRegimeLabel(aapData.regime)}
+            {getRegimeLabel(aasData.regime)}
           </div>
           <div className="text-xs md:text-sm text-stealth-500">
-            Primary: <span className="text-stealth-300 capitalize">{aapData.primary_driver}</span>
+            Primary: <span className="text-stealth-300 capitalize">{aasData.primary_driver}</span>
           </div>
         </div>
 
@@ -346,14 +346,14 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
         <h3 className="text-lg font-semibold text-stealth-100 mb-3">Quick Interpretation</h3>
         <div className="space-y-3 text-sm text-stealth-300">
           <p>
-            <strong className="text-stealth-100">Current State:</strong> The AAS Stability Score of {aapData.stability_score.toFixed(1)} 
-            indicates <strong className={aapData.stability_score >= 67 ? 'text-green-400' : aapData.stability_score >= 34 ? 'text-yellow-400' : 'text-red-400'}>
-              {aapData.stability_score >= 67 ? 'high stability' : aapData.stability_score >= 34 ? 'moderate stability' : 'low stability'}
+            <strong className="text-stealth-100">Current State:</strong> The AAS Stability Score of {aasData.stability_score.toFixed(1)} 
+            indicates <strong className={aasData.stability_score >= 67 ? 'text-green-400' : aasData.stability_score >= 34 ? 'text-yellow-400' : 'text-red-400'}>
+              {aasData.stability_score >= 67 ? 'high stability' : aasData.stability_score >= 34 ? 'moderate stability' : 'low stability'}
             </strong> in alternative asset markets.
           </p>
           <p>
-            <strong className="text-stealth-100">Primary Driver:</strong> The dominant signal is coming from <strong className="text-emerald-400 capitalize">{aapData.primary_driver}</strong> markets, 
-            contributing {aapData.primary_driver === 'metals' ? metalsPercent.toFixed(1) : cryptoPercent.toFixed(1)}% of the instability signal.
+            <strong className="text-stealth-100">Primary Driver:</strong> The dominant signal is coming from <strong className="text-emerald-400 capitalize">{aasData.primary_driver}</strong> markets, 
+            contributing {aasData.primary_driver === 'metals' ? metalsPercent.toFixed(1) : cryptoPercent.toFixed(1)}% of the instability signal.
           </p>
           <p>
             <strong className="text-stealth-100">System Health:</strong> {activeCount} of {totalCount} components are operational 
@@ -400,14 +400,14 @@ export function OverviewTab({ aapData, history, componentHistory, timeframe, set
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <MetalsSubsystemPanel
                   components={metalsComponents}
-                  contribution={aapData.metals_contribution}
+                  contribution={aasData.metals_contribution}
                   sharePercent={metalsPercent}
                   rawHistory={rawComponentHistory}
                   smoothedHistory={smoothedComponentHistory}
                 />
                 <CryptoSubsystemPanel
                   components={cryptoComponents}
-                  contribution={aapData.crypto_contribution}
+                  contribution={aasData.crypto_contribution}
                   sharePercent={cryptoPercent}
                   rawHistory={rawComponentHistory}
                   smoothedHistory={smoothedComponentHistory}

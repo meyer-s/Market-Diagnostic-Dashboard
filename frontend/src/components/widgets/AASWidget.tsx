@@ -77,8 +77,8 @@ interface AASWidgetProps {
 }
 
 export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetProps) {
-  const { data: aasData, loading } = useApi<AASData>('/aap/current');
-  const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>(`/aap/history?days=${parseInt(timeframe)}`);
+  const { data: aasData, loading } = useApi<AASData>('/aas/current');
+  const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>(`/aas/history?days=${parseInt(timeframe)}`);
   const { data: metalsProjectionData } = useApi<MetalsProjectionResponse>('/precious-metals/projections/latest');
   const { data: cryptoMarketData } = useApi<CryptoMarketOverviewResponse>('/crypto/market-overview?days=90');
   const [metalsPercent, setMetalsPercent] = useState(50);

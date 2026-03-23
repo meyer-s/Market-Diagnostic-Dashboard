@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Deploy AAP Full 18-Component System
+# Deploy AAS Full 18-Component System
 #
 # This script:
 # 1. Pulls latest code
@@ -14,7 +14,7 @@ set -e  # Exit on error
 
 echo ""
 echo "========================================================================"
-echo " 🚀 AAP FULL DEPLOYMENT - 18 Component System"
+echo " 🚀 AAS FULL DEPLOYMENT - 18 Component System"
 echo "========================================================================"
 echo ""
 
@@ -61,7 +61,7 @@ echo "========================================================================"
 echo ""
 
 echo "Running complete component implementation..."
-docker exec market_backend python complete_aap_components.py
+docker exec market_backend python complete_aas_components.py
 echo ""
 
 echo "========================================================================"
@@ -110,11 +110,11 @@ finally:
 echo ""
 
 echo "========================================================================"
-echo " 🔄 PHASE 4: AAP Backfill (90 days)"
+echo " 🔄 PHASE 4: AAS Backfill (90 days)"
 echo "========================================================================"
 echo ""
 
-docker exec market_backend python backfill_aap.py
+docker exec market_backend python backfill_aas.py
 echo ""
 
 echo "========================================================================"
@@ -122,8 +122,8 @@ echo " ✅ PHASE 5: Verification"
 echo "========================================================================"
 echo ""
 
-echo "Checking AAP status..."
-curl -s https://marketdiagnostictool.com/api/aap/current | python3 -c "
+echo "Checking AAS status..."
+curl -s https://marketdiagnostictool.com/api/aas/current | python3 -c "
 import json
 import sys
 
@@ -139,7 +139,7 @@ except Exception as e:
 "
 
 echo "Checking component breakdown..."
-curl -s https://marketdiagnostictool.com/api/aap/components/breakdown | python3 -c "
+curl -s https://marketdiagnostictool.com/api/aas/components/breakdown | python3 -c "
 import json
 import sys
 
@@ -171,12 +171,12 @@ echo "========================================================================"
 echo ""
 echo "✅ All data sources refreshed"
 echo "✅ All 18 components implemented"
-echo "✅ AAP backfill complete"
+echo "✅ AAS backfill complete"
 echo "✅ System operational"
 echo ""
 echo "View results:"
 echo "  Dashboard: https://marketdiagnostictool.com/"
 echo "  Indicators: https://marketdiagnostictool.com/indicators"
-echo "  AAP Breakdown: https://marketdiagnostictool.com/aap-breakdown"
-echo "  API: https://marketdiagnostictool.com/api/aap/current"
+echo "  AAS Breakdown: https://marketdiagnostictool.com/aas-breakdown"
+echo "  API: https://marketdiagnostictool.com/api/aas/current"
 echo ""

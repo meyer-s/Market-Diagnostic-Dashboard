@@ -48,7 +48,7 @@ class CryptoDataIngestion:
                 CryptoPrice.date >= date_key - timedelta(days=60)
             ).count()
             if recent_count < 30:
-                logger.info("Seeding historical crypto prices for AAP calculations...")
+                logger.info("Seeding historical crypto prices for AAS calculations...")
                 self.fetch_historical_prices(365)
 
             # Get BTC and ETH prices
@@ -999,7 +999,7 @@ def run_daily_ingestion():
     db = SessionLocal()
     
     try:
-        logger.info("Starting daily AAP data ingestion...")
+        logger.info("Starting daily AAS data ingestion...")
         
         # Fetch crypto data
         crypto_ingest = CryptoDataIngestion(db)
@@ -1041,7 +1041,7 @@ def run_daily_ingestion():
         else:
             logger.warning("Crypto ecosystem metrics not available")
         
-        logger.info("Daily AAP data ingestion completed")
+        logger.info("Daily AAS data ingestion completed")
         
     except Exception as e:
         logger.error(f"Error in daily ingestion: {e}", exc_info=True)

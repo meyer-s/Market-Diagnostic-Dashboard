@@ -14,18 +14,18 @@ The alternative-assets section now covers:
 Key frontend routes:
 
 - `/alternative-assets`
-- `/aap-breakdown`
+- `/aas-breakdown`
 
-Key backend routes from `backend/app/api/aap.py`:
+Key backend routes from `backend/app/api/aas.py`:
 
-- `GET /aap/current`
-- `GET /aap/history`
-- `GET /aap/components/breakdown`
-- `GET /aap/components/current`
-- `GET /aap/components/history`
-- `GET /aap/regime/current`
-- `GET /aap/regime/history`
-- `GET /aap/dashboard`
+- `GET /aas/current`
+- `GET /aas/history`
+- `GET /aas/components/breakdown`
+- `GET /aas/components/current`
+- `GET /aas/components/history`
+- `GET /aas/regime/current`
+- `GET /aas/regime/history`
+- `GET /aas/dashboard`
 
 ## Current State
 
@@ -41,16 +41,16 @@ What matters now:
 
 Backend:
 
-- `backend/app/api/aap.py`
-- `backend/app/services/aap_calculator.py`
-- `backend/refresh_aap_data.py`
-- `backend/backfill_aap.py`
-- `backend/backfill_aap_weekly.py`
+- `backend/app/api/aas.py`
+- the AAS calculation service in `backend/app/services/`
+- `backend/refresh_aas_data.py`
+- `backend/backfill_aas.py`
+- `backend/backfill_aas_weekly.py`
 
 Frontend:
 
 - `frontend/src/pages/AlternativeAssetStability.tsx`
-- `frontend/src/pages/AAPComponentBreakdown.tsx`
+- `frontend/src/pages/AASComponentBreakdown.tsx`
 - `frontend/src/pages/CryptoDiagnostic.tsx`
 
 ## Data and Refresh Flow
@@ -59,9 +59,9 @@ Alternative-assets data is refreshed through the broader ingestion and scheduler
 
 Common scripts:
 
-- `backend/refresh_aap_data.py`
-- `backend/backfill_aap.py`
-- `backend/backfill_aap_weekly.py`
+- `backend/refresh_aas_data.py`
+- `backend/backfill_aas.py`
+- `backend/backfill_aas_weekly.py`
 - `backend/fetch_cb_holdings.py`
 - `backend/fetch_comex_data.py`
 - `backend/fetch_extended_crypto.py`

@@ -66,9 +66,9 @@ class ETLRunner:
             db.close()
             raise ValueError(f"Indicator {code} not found in DB")
 
-        if code == "AAP":
+        if code == "AAS":
             db.close()
-            return await self._ingest_aap(backfill_days)
+            return await self._ingest_aas(backfill_days)
 
         # Pull enough data for normalization + backfill
         lookback_days = max(800, backfill_days + ind.lookback_days_for_z)
@@ -1138,16 +1138,16 @@ class ETLRunner:
                 "state": latest_state
             }
 
-    async def _ingest_aap(self, backfill_days: int = 0):
+    async def _ingest_aas(self, backfill_days: int = 0):
         from sqlalchemy import desc, func
-        from app.services.ingestion.aap_data_ingestion import run_daily_ingestion
-        from app.services.aap_calculator import AAPCalculator
+        from app.services.ingestion.aas_data_ingestion import run_daily_ingestion
+        from app.services.aas_calculator import AASCalculator
 
         run_daily_ingestion()
 
         db: Session = SessionLocal()
         try:
-            calculator = AAPCalculator(db)
+            calculator = AASCalculator(db)
             backfilled = 0
             latest_indicator = None
 
@@ -1163,15 +1163,14 @@ class ETLRunner:
                 latest_indicator = calculator.calculate_for_date(datetime.utcnow())
 
             if not latest_indicator:
-                return {"indicator": "AAP", "error": "AAP calculation skipped - insufficient data"}
-
-            aap_indicator_def = db.query(Indicator).filter_by(code="AAP").first()
+                return {"indicator": "AAS", "error": "AAS calculation skipped - insufficient data"}
+            aas_indicator_def = db.query(Indicator).filter_by(code="AAS").first()
             indicator_value = None
-            if aap_indicator_def:
+            if aas_indicator_def:
                 indicator_value = (
                     db.query(IndicatorValue)
                     .filter(
-                        IndicatorValue.indicator_id == aap_indicator_def.id,
+                        IndicatorValue.indicator_id == aas_indicator_def.id,
                         func.date(IndicatorValue.timestamp) == latest_indicator.date.date(),
                     )
                     .order_by(desc(IndicatorValue.timestamp))
@@ -1179,7 +1178,7 @@ class ETLRunner:
                 )
 
             return {
-                "indicator": "AAP",
+                "indicator": "AAS",
                 "date": latest_indicator.date.date().isoformat(),
                 "raw": indicator_value.raw_value if indicator_value else latest_indicator.pressure_index,
                 "score": indicator_value.score if indicator_value else latest_indicator.stability_score,

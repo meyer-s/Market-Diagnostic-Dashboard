@@ -1,5 +1,5 @@
 """
-Cleanup duplicate AAP records by calendar date.
+Cleanup duplicate AAS records by calendar date.
 
 Keeps the latest record per day (based on timestamp), deletes the rest,
 and normalizes the kept record to midnight for consistency.
@@ -11,7 +11,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.exc import OperationalError
 
 from app.core.db import SessionLocal
-from app.models.alternative_assets import AAPIndicator, AAPComponentV2
+from app.models.alternative_assets import AASIndicator, AASComponentV2
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,14 +56,14 @@ def _dedupe_model(db, model, date_field, label: str) -> None:
     logger.info("Removed %s duplicate rows from %s.", removed_total, label)
 
 
-def cleanup_aap_duplicates() -> None:
+def cleanup_aas_duplicates() -> None:
     db = SessionLocal()
     try:
-        _dedupe_model(db, AAPIndicator, AAPIndicator.date, "aap_indicator")
+        _dedupe_model(db, AASIndicator, AASIndicator.date, "aas_indicator")
         try:
-            _dedupe_model(db, AAPComponentV2, AAPComponentV2.date, "aap_component_v2")
+            _dedupe_model(db, AASComponentV2, AASComponentV2.date, "aas_component_v2")
         except OperationalError as exc:
-            logger.warning("Skipping aap_component_v2 cleanup: %s", exc)
+            logger.warning("Skipping aas_component_v2 cleanup: %s", exc)
         db.commit()
     except Exception:
         db.rollback()
@@ -73,4 +73,4 @@ def cleanup_aap_duplicates() -> None:
 
 
 if __name__ == "__main__":
-    cleanup_aap_duplicates()
+    cleanup_aas_duplicates()

@@ -186,7 +186,7 @@ def add_extended_crypto_fields():
         for sample in samples:
             print(f"    {sample.date.date()}: BTC={sample.btc_usd:.2f} DOM={sample.btc_dominance:.1f}% MCAP={sample.total_crypto_mcap:.0f}B")
         
-        print(f"\n  💡 Extended data now available for AAP components:")
+        print(f"\n  💡 Extended data now available for AAS components:")
         print(f"     - BTC Dominance (for dominance momentum)")
         print(f"     - Total Crypto Market Cap (for crypto/M2 ratio)")
         if defi_tvl:

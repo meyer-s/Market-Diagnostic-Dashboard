@@ -4,7 +4,7 @@ from datetime import datetime
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 
-from app.models.alternative_assets import AAPComponentV2, AAPIndicator, CryptoPrice
+from app.models.alternative_assets import AASComponentV2, AASIndicator, CryptoPrice
 from app.utils.db_helpers import get_db_session
 
 router = APIRouter(prefix="/crypto", tags=["Crypto"])
@@ -201,8 +201,8 @@ def get_crypto_diagnostic_context(
     days: int = Query(365, ge=30, le=730, description="Number of days of stored crypto diagnostic context to retrieve")
 ):
     with get_db_session() as db:
-        latest_indicator = db.query(AAPIndicator).order_by(AAPIndicator.date.desc()).first()
-        latest_component = db.query(AAPComponentV2).order_by(AAPComponentV2.date.desc()).first()
+        latest_indicator = db.query(AASIndicator).order_by(AASIndicator.date.desc()).first()
+        latest_component = db.query(AASComponentV2).order_by(AASComponentV2.date.desc()).first()
 
         market_rows = (
             db.query(CryptoPrice)
@@ -211,8 +211,8 @@ def get_crypto_diagnostic_context(
             .all()
         )
         component_rows = (
-            db.query(AAPComponentV2)
-            .order_by(AAPComponentV2.date.desc())
+            db.query(AASComponentV2)
+            .order_by(AASComponentV2.date.desc())
             .limit(days * 2)
             .all()
         )

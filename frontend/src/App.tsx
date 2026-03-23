@@ -13,7 +13,7 @@ import SectorProjections from "./pages/SectorProjections";
 import StockAnalysis from "./pages/StockAnalysis";
 import SecretOptions from "./pages/SecretOptions";
 import AlternativeAssetStability from "./pages/AlternativeAssetStability";
-import AAPComponentBreakdown from "./pages/AAPComponentBreakdown";
+import AASComponentBreakdown from "./pages/AASComponentBreakdown";
 import RecapIndex from "./pages/tools/RecapIndex";
 import RecapPost from "./pages/tools/RecapPost";
 import { trackPageView } from "./utils/analytics";
@@ -30,22 +30,21 @@ function AppWithAnalytics() {
   const location = useLocation();
 
   useEffect(() => {
-    // Track page view on route change
-    const pageName = location.pathname === '/' ? 'Dashboard' : 
-                     location.pathname.includes('/indicators/') ? 'Indicator Detail' :
-                     location.pathname.includes('/indicators') ? 'Indicators' :
-                     location.pathname.includes('/news') ? 'Market News' :
-                     location.pathname.includes('/system-breakdown') ? 'System Breakdown' :
-                     location.pathname.includes('/market-map') ? 'Market Map' :
-                     location.pathname.includes('/sector-projections') ? 'Sector Projections' :
-                     location.pathname.includes('/stock-analysis') ? 'Stock Analysis' :
-                     location.pathname.includes('/secret/options') ? 'Secret Options' :
-                     location.pathname.includes('/precious-metals') ? 'Precious Metals' :
-                     location.pathname.includes('/alternative-assets') ? 'Alternative Assets' :
-                     location.pathname.includes('/tools/recap') || location.pathname.includes('/tools/updates') ? 'Recap' :
-                     location.pathname.includes('/aap-breakdown') ? 'AAS Breakdown' :
-                     'Unknown';
-    
+    const pageName = location.pathname === "/" ? "Dashboard" :
+      location.pathname.includes("/indicators/") ? "Indicator Detail" :
+      location.pathname.includes("/indicators") ? "Indicators" :
+      location.pathname.includes("/news") ? "Market News" :
+      location.pathname.includes("/system-breakdown") ? "System Breakdown" :
+      location.pathname.includes("/market-map") ? "Market Map" :
+      location.pathname.includes("/sector-projections") ? "Sector Projections" :
+      location.pathname.includes("/stock-analysis") ? "Stock Analysis" :
+      location.pathname.includes("/secret/options") ? "Secret Options" :
+      location.pathname.includes("/precious-metals") ? "Precious Metals" :
+      location.pathname.includes("/alternative-assets") ? "Alternative Assets" :
+      location.pathname.includes("/tools/recap") || location.pathname.includes("/tools/updates") ? "Recap" :
+      location.pathname.includes("/aas-breakdown") ? "AAS Breakdown" :
+      "Unknown";
+
     trackPageView(location.pathname, pageName);
   }, [location]);
 
@@ -59,7 +58,6 @@ function AppWithAnalytics() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/indicators" element={<Indicators />} />
           <Route path="/indicators/:code" element={<IndicatorDetail />} />
-          {/* News replaces the old alerts page */}
           <Route path="/news" element={<MarketNews />} />
           <Route path="/system-breakdown" element={<SystemBreakdown />} />
           <Route path="/market-map" element={<MarketMap />} />
@@ -71,10 +69,9 @@ function AppWithAnalytics() {
           <Route path="/tools/recap/:slug" element={<RecapPost />} />
           <Route path="/tools/updates" element={<Navigate to="/tools/recap" replace />} />
           <Route path="/tools/updates/:slug" element={<LegacyRecapSlugRedirect />} />
-          {/* Redirect old precious-metals route to alternative-assets */}
           <Route path="/precious-metals" element={<Navigate to="/alternative-assets?tab=metals" replace />} />
           <Route path="/alternative-assets" element={<AlternativeAssetStability />} />
-          <Route path="/aap-breakdown" element={<AAPComponentBreakdown />} />
+          <Route path="/aas-breakdown" element={<AASComponentBreakdown />} />
         </Routes>
       </main>
 

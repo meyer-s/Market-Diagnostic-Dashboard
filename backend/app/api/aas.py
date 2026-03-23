@@ -1,6 +1,6 @@
 """Alternative Asset Stability (AAS) Indicator API Endpoints
 
-Provides access to AAP indicator data, components, and regime analysis.
+Provides access to AAS indicator data, components, and regime analysis.
 
 Note: The indicator measures systemic stability - lower scores indicate
 less stability and greater alternative asset adoption.
@@ -14,22 +14,22 @@ import numpy as np
 
 from app.utils.db_helpers import get_db_session
 from app.models.alternative_assets import (
-    AAPIndicator,
-    AAPComponentV2,
-    AAPRegimeHistory,
+    AASIndicator,
+    AASComponentV2,
+    AASRegimeHistory,
     CryptoPrice,
     MacroLiquidityData
 )
-from app.services.aap_calculator import AAPCalculator
+from app.services.aas_calculator import AASCalculator
 
-router = APIRouter(prefix="/aap", tags=["Alternative Asset Stability"])
+router = APIRouter(prefix="/aas", tags=["Alternative Asset Stability"])
 
 
 @router.get("/current")
-def get_current_aap():
+def get_current_aas():
     """
-    Get the most recent AAP indicator reading.
-    
+    Get the most recent AAS indicator reading.
+
     Returns:
         - stability_score: 0-100 (higher = more stable system)
         - regime: Current market regime classification
@@ -37,12 +37,12 @@ def get_current_aap():
         - stress_type: Type of stress being indicated
     """
     with get_db_session() as db:
-        indicator = db.query(AAPIndicator).order_by(
-            desc(AAPIndicator.date)
+        indicator = db.query(AASIndicator).order_by(
+            desc(AASIndicator.date)
         ).first()
         
         if not indicator:
-            raise HTTPException(status_code=404, detail="No AAP data available")
+            raise HTTPException(status_code=404, detail="No AAS data available")
         
         return {
             "date": indicator.date.isoformat(),
@@ -79,11 +79,11 @@ def get_current_aap():
 
 
 @router.get("/history")
-def get_aap_history(
+def get_aas_history(
     days: int = Query(90, ge=1, le=730, description="Number of days of history")
 ):
     """
-    Get historical AAP indicator values.
+    Get historical AAS indicator values.
     
     Query params:
         - days: Number of days to retrieve (default 90, max 730)
@@ -91,9 +91,9 @@ def get_aap_history(
     with get_db_session() as db:
         start_date = datetime.utcnow() - timedelta(days=days)
         
-        indicators = db.query(AAPIndicator).filter(
-            AAPIndicator.date >= start_date
-        ).order_by(AAPIndicator.date).all()
+        indicators = db.query(AASIndicator).filter(
+            AASIndicator.date >= start_date
+        ).order_by(AASIndicator.date).all()
 
         if not indicators:
             raise HTTPException(status_code=404, detail="No historical data available")
@@ -152,21 +152,21 @@ def get_aap_history(
 @router.get("/components/breakdown")
 def get_component_breakdown():
     """
-    Get structured component breakdown for the AAP breakdown page.
+    Get structured component breakdown for the AAS breakdown page.
     Returns all 18 components with status, weights, and current values.
     """
     with get_db_session() as db:
         # Get latest indicator and component data
-        indicator = db.query(AAPIndicator).order_by(desc(AAPIndicator.date)).first()
+        indicator = db.query(AASIndicator).order_by(desc(AASIndicator.date)).first()
         if not indicator:
-            raise HTTPException(status_code=404, detail="No AAP data available")
+            raise HTTPException(status_code=404, detail="No AAS data available")
         
-        component = db.query(AAPComponentV2).filter(
-            AAPComponentV2.date == indicator.date
+        component = db.query(AASComponentV2).filter(
+            AASComponentV2.date == indicator.date
         ).first()
         
         # Define all 18 components with their weights
-        component_weights = AAPCalculator.WEIGHTS
+        component_weights = AASCalculator.WEIGHTS
         
         # Build component list with status
         components_list = []
@@ -230,12 +230,12 @@ def get_component_breakdown():
 @router.get("/components/current")
 def get_current_components():
     """
-    Get detailed component breakdown for the most recent AAP calculation.
+    Get detailed component breakdown for the most recent AAS calculation.
     Useful for understanding what's driving the signal.
     """
     with get_db_session() as db:
-        component = db.query(AAPComponentV2).order_by(
-            desc(AAPComponentV2.date)
+        component = db.query(AASComponentV2).order_by(
+            desc(AASComponentV2.date)
         ).first()
         
         if not component:
@@ -285,14 +285,14 @@ def get_component_history(
     days: int = Query(365, ge=30, le=730, description="Number of days of history")
 ):
     """
-    Get historical values for all AAP components.
+    Get historical values for all AAS components.
     Returns per-component time series for charting.
     """
     with get_db_session() as db:
         start_date = datetime.utcnow() - timedelta(days=days)
-        rows = db.query(AAPComponentV2).filter(
-            AAPComponentV2.date >= start_date
-        ).order_by(AAPComponentV2.date).all()
+        rows = db.query(AASComponentV2).filter(
+            AASComponentV2.date >= start_date
+        ).order_by(AASComponentV2.date).all()
 
         if not rows:
             raise HTTPException(status_code=404, detail="No component history available")
@@ -302,7 +302,7 @@ def get_component_history(
             rows_by_day[row.date.date()] = row
         rows = sorted(rows_by_day.values(), key=lambda row: row.date)
 
-        component_keys = list(AAPCalculator.WEIGHTS.keys())
+        component_keys = list(AASCalculator.WEIGHTS.keys())
         history = {key: [] for key in component_keys}
 
         for row in rows:
@@ -330,15 +330,15 @@ def get_current_regime():
     Get detailed information about the current market regime.
     """
     with get_db_session() as db:
-        indicator = db.query(AAPIndicator).order_by(
-            desc(AAPIndicator.date)
+        indicator = db.query(AASIndicator).order_by(
+            desc(AASIndicator.date)
         ).first()
         
         if not indicator:
             raise HTTPException(status_code=404, detail="No regime data available")
         
-        regime_history = db.query(AAPRegimeHistory).filter(
-            AAPRegimeHistory.regime_end.is_(None)
+        regime_history = db.query(AASRegimeHistory).filter(
+            AASRegimeHistory.regime_end.is_(None)
         ).first()
         
         return {
@@ -371,8 +371,8 @@ def get_regime_history(
     Get historical regime transitions and their characteristics.
     """
     with get_db_session() as db:
-        regimes = db.query(AAPRegimeHistory).order_by(
-            desc(AAPRegimeHistory.regime_start)
+        regimes = db.query(AASRegimeHistory).order_by(
+            desc(AASRegimeHistory.regime_start)
         ).limit(limit).all()
         
         if not regimes:
@@ -400,31 +400,31 @@ def get_regime_history(
 @router.get("/dashboard")
 def get_dashboard_summary():
     """
-    Get comprehensive AAP dashboard summary with all key metrics.
+    Get comprehensive AAS dashboard summary with all key metrics.
     Designed for main dashboard display.
     """
     with get_db_session() as db:
         # Current indicator
-        current = db.query(AAPIndicator).order_by(
-            desc(AAPIndicator.date)
+        current = db.query(AASIndicator).order_by(
+            desc(AASIndicator.date)
         ).first()
         
         if not current:
-            raise HTTPException(status_code=404, detail="No AAP data available")
+            raise HTTPException(status_code=404, detail="No AAS data available")
         
         # Recent history for trend
-        recent = db.query(AAPIndicator).filter(
-            AAPIndicator.date >= current.date - timedelta(days=30)
-        ).order_by(AAPIndicator.date).all()
+        recent = db.query(AASIndicator).filter(
+            AASIndicator.date >= current.date - timedelta(days=30)
+        ).order_by(AASIndicator.date).all()
         
         # Current regime details
-        regime_history = db.query(AAPRegimeHistory).filter(
-            AAPRegimeHistory.regime_end.is_(None)
+        regime_history = db.query(AASRegimeHistory).filter(
+            AASRegimeHistory.regime_end.is_(None)
         ).first()
         
         # Components
-        components = db.query(AAPComponentV2).filter(
-            AAPComponentV2.date == current.date
+        components = db.query(AASComponentV2).filter(
+            AASComponentV2.date == current.date
         ).first()
         
         return {
@@ -486,7 +486,7 @@ def trigger_calculation(
     date: Optional[str] = Query(None, description="Date to calculate (YYYY-MM-DD), defaults to today")
 ):
     """
-    Manually trigger AAP calculation for a specific date.
+    Manually trigger AAS calculation for a specific date.
     Admin/development endpoint.
     """
     if date:
@@ -498,7 +498,7 @@ def trigger_calculation(
         target_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
     with get_db_session() as db:
-        calculator = AAPCalculator(db)
+        calculator = AASCalculator(db)
         indicator = calculator.calculate_for_date(target_date)
         
         if not indicator:
@@ -579,7 +579,7 @@ def _get_status_level(stability_score: float) -> str:
         return "CRITICAL"
 
 
-def _calculate_trend(indicators: List[AAPIndicator]) -> str:
+def _calculate_trend(indicators: List[AASIndicator]) -> str:
     """Calculate recent trend direction"""
     if len(indicators) < 5:
         return "insufficient_data"
@@ -597,7 +597,7 @@ def _calculate_trend(indicators: List[AAPIndicator]) -> str:
         return "stable"
 
 
-def _get_top_metal_signals(component: AAPComponentV2) -> List[dict]:
+def _get_top_metal_signals(component: AASComponentV2) -> List[dict]:
     """Identify top metal signals driving pressure"""
     signals = []
     
@@ -632,7 +632,7 @@ def _get_top_metal_signals(component: AAPComponentV2) -> List[dict]:
     return signals[:3]  # Top 3
 
 
-def _get_top_crypto_signals(component: AAPComponentV2) -> List[dict]:
+def _get_top_crypto_signals(component: AASComponentV2) -> List[dict]:
     """Identify top crypto signals driving pressure"""
     signals = []
     

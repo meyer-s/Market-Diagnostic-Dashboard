@@ -18,7 +18,7 @@ The platform tracks 11 core indicators seeded by [backend/seed_indicators.py](c:
 - Liquidity Proxy
 - Analyst Anxiety / Confidence
 - Sentiment Composite
-- Alternative Asset Pressure
+- Alternative Asset Stability
 
 In addition to the core dashboard, the app now includes:
 
@@ -41,7 +41,7 @@ Primary frontend routes live in [frontend/src/App.tsx](c:/Users/sjmey/OneDrive/D
 - `/sector-projections` sector model output
 - `/stock-analysis` and `/stock-analysis/:symbol` stock analysis
 - `/alternative-assets` alternative-asset diagnostics
-- `/aap-breakdown` AAS component breakdown
+- `/aas-breakdown` AAS component breakdown
 - `/tools/recap` published recap index and posts
 - `/news` cached market news
 - `/secret/options` secret options page
@@ -67,7 +67,7 @@ The scheduler in [backend/app/services/scheduler.py](c:/Users/sjmey/OneDrive/Doc
 - runs an initial ETL job on startup
 - refreshes indicators on a recurring schedule
 - ingests AAS, crypto, metals, and sector-projection data
-- recalculates the Alternative Asset Pressure / Stability framework
+- recalculates the Alternative Asset Stability framework
 
 Representative data sources include:
 
@@ -125,7 +125,7 @@ Representative API surface from [backend/app/main.py](c:/Users/sjmey/OneDrive/Do
 - `/indicators`
 - `/indicators/{code}`
 - `/indicators/{code}/history`
-- `/aap/components/breakdown`
+- `/aas/components/breakdown`
 - `/precious-metals/regime`
 - `/crypto/market-overview`
 - `/crypto/diagnostic-context`

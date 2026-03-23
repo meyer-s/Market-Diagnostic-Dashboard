@@ -5,7 +5,7 @@ This runs the ingestion for multiple historical days to build up data
 from datetime import datetime, timedelta
 import time
 from app.core.db import SessionLocal
-from app.services.ingestion.aap_data_ingestion import CryptoDataIngestion, MacroDataIngestion
+from app.services.ingestion.aas_data_ingestion import CryptoDataIngestion, MacroDataIngestion
 from app.models.alternative_assets import CryptoPrice, MacroLiquidityData
 
 def backfill_with_ingestion(days=7):

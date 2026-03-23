@@ -7,9 +7,9 @@ from .alternative_assets import (
     CryptoEcosystemMetric,
     EquityPrice,
     MacroLiquidityData, 
-    AAPComponent, 
-    AAPComponentV2,
-    AAPIndicator, 
-    AAPRegimeHistory
+    AASComponent, 
+    AASComponentV2,
+    AASIndicator, 
+    AASRegimeHistory
 )
 from .closed_positions import ClosedPosition

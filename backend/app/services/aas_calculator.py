@@ -1,7 +1,7 @@
 """
-Alternative Asset Pressure (AAP) Calculator Service
+Alternative Asset Stability (AAS) Calculator Service
 
-Implements the AAP indicator calculation logic with regime classification.
+Implements the AAS indicator calculation logic with regime classification.
 This is a slow-moving structural indicator, not a day-trading signal.
 """
 
@@ -18,9 +18,9 @@ from app.models.alternative_assets import (
     BitcoinNetworkMetric,
     CryptoEcosystemMetric,
     EquityPrice,
-    AAPComponentV2,
-    AAPIndicator,
-    AAPRegimeHistory
+    AASComponentV2,
+    AASIndicator,
+    AASRegimeHistory
 )
 from app.models.precious_metals import MetalPrice, MetalRatio, COMEXInventory, CBHolding, ETFHolding
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 COMEX_PLACEHOLDER_SOURCES = ["SEED", "ESTIMATED_FROM_PRICES"]
 
 
-class AAPCalculator:
+class AASCalculator:
     """
     Calculates the Alternative Asset Stability indicator.
     
@@ -89,12 +89,12 @@ class AAPCalculator:
             self.db.delete(extra)
         return rows[0] if rows else None
     
-    def calculate_for_date(self, target_date: datetime) -> Optional[AAPIndicator]:
+    def calculate_for_date(self, target_date: datetime) -> Optional[AASIndicator]:
         """
-        Calculate AAP indicator for a specific date.
+        Calculate AAS indicator for a specific date.
         
         Returns:
-            AAPIndicator object or None if insufficient data
+            AASIndicator object or None if insufficient data
         """
         try:
             target_date = self._normalize_date(target_date)
@@ -102,7 +102,7 @@ class AAPCalculator:
             # Step 1: Calculate all components
             components = self._calculate_components(target_date)
             if not components:
-                logger.warning(f"Insufficient data for AAP calculation on {target_date}")
+                logger.warning(f"Insufficient data for AAS calculation on {target_date}")
                 return None
             
             # Step 2: Compute subsystem instability scores
@@ -184,11 +184,11 @@ class AAPCalculator:
                 "data_completeness": to_python_type(data_completeness),
             }
 
-            indicator = self._get_latest_daily_record(AAPIndicator, AAPIndicator.date, target_date)
+            indicator = self._get_latest_daily_record(AASIndicator, AASIndicator.date, target_date)
             if indicator:
                 self._apply_model_updates(indicator, indicator_data)
             else:
-                indicator = AAPIndicator(**indicator_data)
+                indicator = AASIndicator(**indicator_data)
             
             # Persist component details
             component_record = self._create_component_record(
@@ -196,7 +196,7 @@ class AAPCalculator:
                 multiplier, correlation_regime
             )
 
-            existing_component = self._get_latest_daily_record(AAPComponentV2, AAPComponentV2.date, target_date)
+            existing_component = self._get_latest_daily_record(AASComponentV2, AASComponentV2.date, target_date)
             if existing_component:
                 self._apply_component_updates(existing_component, component_record)
             else:
@@ -207,14 +207,14 @@ class AAPCalculator:
             from app.models.indicator_value import IndicatorValue
             from app.models.indicator import Indicator
             
-            # Get AAP indicator definition
-            aap_indicator_def = self.db.query(Indicator).filter_by(code='AAP').first()
-            if aap_indicator_def:
+            # Get AAS indicator definition
+            aas_indicator_def = self.db.query(Indicator).filter_by(code='AAS').first()
+            if aas_indicator_def:
                 # Map stability_score to indicator value
                 # Stability score is 0-100 (higher = less pressure = better)
                 # So we can use it directly as the indicator score
                 indicator_values = self.db.query(IndicatorValue).filter(
-                    IndicatorValue.indicator_id == aap_indicator_def.id,
+                    IndicatorValue.indicator_id == aas_indicator_def.id,
                     func.date(IndicatorValue.timestamp) == target_date.date()
                 ).order_by(desc(IndicatorValue.timestamp)).all()
                 indicator_value = indicator_values[0] if indicator_values else None
@@ -226,7 +226,7 @@ class AAPCalculator:
                     indicator_value.state = self._map_regime_to_state(regime)
                 else:
                     indicator_value = IndicatorValue(
-                        indicator_id=aap_indicator_def.id,
+                        indicator_id=aas_indicator_def.id,
                         timestamp=target_date,
                         raw_value=to_python_type(pressure_index),  # 0-1 pressure index
                         score=to_python_type(stability_score),  # 0-100 stability score
@@ -242,20 +242,20 @@ class AAPCalculator:
             self.db.commit()
             
             logger.info(
-                f"AAP calculated for {target_date.date()}: "
+                f"AAS calculated for {target_date.date()}: "
                 f"Score={stability_score:.1f}, Regime={regime}, Driver={primary_driver}"
             )
             
             return indicator
             
         except Exception as e:
-            logger.error(f"Error calculating AAP for {target_date}: {e}", exc_info=True)
+            logger.error(f"Error calculating AAS for {target_date}: {e}", exc_info=True)
             self.db.rollback()
             return None
     
     def _calculate_components(self, date: datetime) -> Optional[Dict[str, float]]:
         """
-        Calculate all individual components for the AAP indicator.
+        Calculate all individual components for the AAS indicator.
         
         Returns dict with normalized component values (0-1 scale, higher = less stability)
         """
@@ -358,7 +358,7 @@ class AAPCalculator:
             components = {k: v for k, v in components.items() if v is not None}
             
             # Log availability
-            logger.info(f"AAP components: {len(components)}/{len(self.WEIGHTS)} available")
+            logger.info(f"AAS components: {len(components)}/{len(self.WEIGHTS)} available")
             
             # Need at least 70% of components for reliable signal
             required = int(np.ceil(len(self.WEIGHTS) * 0.70))
@@ -1643,10 +1643,10 @@ class AAPCalculator:
     
     def _calculate_rolling_stats(self, date: datetime, current_score: float) -> Dict:
         """Calculate rolling statistics for the indicator"""
-        historical = self.db.query(AAPIndicator).filter(
-            AAPIndicator.date < date,
-            AAPIndicator.date >= date - timedelta(days=100)
-        ).order_by(desc(AAPIndicator.date)).all()
+        historical = self.db.query(AASIndicator).filter(
+            AASIndicator.date < date,
+            AASIndicator.date >= date - timedelta(days=100)
+        ).order_by(desc(AASIndicator.date)).all()
         
         stats = {}
         
@@ -1666,10 +1666,10 @@ class AAPCalculator:
     
     def _check_regime_transition(self, date: datetime, current_regime: str) -> int:
         """Check if we're transitioning between regimes"""
-        recent = self.db.query(AAPIndicator).filter(
-            AAPIndicator.date < date,
-            AAPIndicator.date >= date - timedelta(days=10)
-        ).order_by(desc(AAPIndicator.date)).limit(5).all()
+        recent = self.db.query(AASIndicator).filter(
+            AASIndicator.date < date,
+            AASIndicator.date >= date - timedelta(days=10)
+        ).order_by(desc(AASIndicator.date)).limit(5).all()
         
         if len(recent) < 3:
             return 0
@@ -1692,7 +1692,7 @@ class AAPCalculator:
     def _create_component_record(
         self, date: datetime, components: Dict, metals_instability: float,
         crypto_instability: float, multiplier: float, correlation_regime: str
-    ) -> AAPComponentV2:
+    ) -> AASComponentV2:
         """Create detailed component record for audit trail"""
         # Convert numpy types to Python types for PostgreSQL compatibility
         def to_python_float(val):
@@ -1700,7 +1700,7 @@ class AAPCalculator:
                 return None
             return float(val)
         
-        return AAPComponentV2(
+        return AASComponentV2(
             date=date,
             # Metals components
             gold_dxy_ratio=to_python_float(components.get('gold_dxy_ratio')),
@@ -1730,7 +1730,7 @@ class AAPCalculator:
         )
     
     def _map_regime_to_state(self, regime: str) -> str:
-        """Map AAP regime to indicator state (RED/YELLOW/GREEN)"""
+        """Map AAS regime to indicator state (RED/YELLOW/GREEN)"""
         regime_to_state = {
             'normal_confidence': 'GREEN',
             'mild_caution': 'YELLOW',
@@ -1743,13 +1743,13 @@ class AAPCalculator:
     def _update_regime_history(self, date: datetime, regime: str) -> Optional[datetime]:
         """Update regime history tracking"""
         # Get most recent regime history entry
-        current = self.db.query(AAPRegimeHistory).filter(
-            AAPRegimeHistory.regime_end.is_(None)
-        ).order_by(desc(AAPRegimeHistory.regime_start)).first()
+        current = self.db.query(AASRegimeHistory).filter(
+            AASRegimeHistory.regime_end.is_(None)
+        ).order_by(desc(AASRegimeHistory.regime_start)).first()
         
         if not current:
             # First entry
-            new_regime = AAPRegimeHistory(
+            new_regime = AASRegimeHistory(
                 regime_start=date,
                 regime_name=regime,
                 duration_days=1
@@ -1761,9 +1761,9 @@ class AAPCalculator:
             current.regime_end = date
             
             # Calculate statistics for completed regime
-            regime_indicators = self.db.query(AAPIndicator).filter(
-                AAPIndicator.date >= current.regime_start,
-                AAPIndicator.date < date
+            regime_indicators = self.db.query(AASIndicator).filter(
+                AASIndicator.date >= current.regime_start,
+                AASIndicator.date < date
             ).all()
             
             if regime_indicators:
@@ -1774,7 +1774,7 @@ class AAPCalculator:
                 current.duration_days = (date - current.regime_start).days
             
             # Start new regime
-            new_regime = AAPRegimeHistory(
+            new_regime = AASRegimeHistory(
                 regime_start=date,
                 regime_name=regime,
                 duration_days=1
@@ -1790,8 +1790,8 @@ class AAPCalculator:
         for key, value in updates.items():
             setattr(model, key, value)
 
-    def _apply_component_updates(self, target: AAPComponentV2, source: AAPComponentV2) -> None:
-        for column in AAPComponentV2.__table__.columns:
+    def _apply_component_updates(self, target: AASComponentV2, source: AASComponentV2) -> None:
+        for column in AASComponentV2.__table__.columns:
             if column.name in ("id", "created_at"):
                 continue
             setattr(target, column.name, getattr(source, column.name))

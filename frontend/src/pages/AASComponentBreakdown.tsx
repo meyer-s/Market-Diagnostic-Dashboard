@@ -34,7 +34,7 @@ const Info = ({ className }: { className?: string }) => (
   </svg>
 );
 
-interface AAPComponent {
+interface AASComponent {
   name: string;
   category: string;
   value: number;
@@ -44,7 +44,7 @@ interface AAPComponent {
   description: string;
 }
 
-interface AAPData {
+interface AASData {
   date: string;
   stability_score: number;
   pressure_index: number;  // Internal metric (inverted)
@@ -52,24 +52,24 @@ interface AAPData {
   primary_driver: string;
   metals_contribution: number;  // Contribution to instability
   crypto_contribution: number;  // Contribution to instability
-  components: AAPComponent[];
+  components: AASComponent[];
   data_completeness: number;
 }
 
-const AAPComponentBreakdown: React.FC = () => {
+const AASComponentBreakdown: React.FC = () => {
   const navigate = useNavigate();
-  const [data, setData] = useState<AAPData | null>(null);
+  const [data, setData] = useState<AASData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAAPData();
+    fetchAASData();
   }, []);
 
-  const fetchAAPData = async () => {
+  const fetchAASData = async () => {
     try {
       setLoading(true);
-      const result = await apiFetch<AAPData>("/aap/current");
+      const result = await apiFetch<AASData>("/aas/current");
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -410,4 +410,4 @@ const AAPComponentBreakdown: React.FC = () => {
   );
 };
 
-export default AAPComponentBreakdown;
+export default AASComponentBreakdown;

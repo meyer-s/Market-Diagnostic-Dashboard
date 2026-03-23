@@ -15,7 +15,7 @@ Indicators:
 - LIQUIDITY_PROXY: M2 growth, Fed balance sheet, RRP (low liquidity = stress)
 - ANALYST_ANXIETY: Composite from VIX, MOVE, HY OAS, ERP (high = stress)
 - SENTIMENT_COMPOSITE: Consumer & corporate confidence from Michigan, NFIB, ISM, CapEx
-- AAP: Alternative Asset Pressure from crypto and precious metals (low = pressure/distrust)
+- AAS: Alternative Asset Stability from crypto and precious metals (low = pressure/distrust)
 
 DFF (Federal Funds Rate) was removed — its signal is redundant given T10Y2Y,
 LIQUIDITY_PROXY, and BOND_MARKET_STABILITY, and it provides no incremental information
@@ -155,10 +155,10 @@ INDICATORS = [
         "weight": 1.7,  # +0.1 — consumer/corporate sentiment
     },
     {
-        "code": "AAP",
-        "name": "Alternative Asset Pressure",
+        "code": "AAS",
+        "name": "Alternative Asset Stability",
         "source": "DERIVED",
-        "source_symbol": "AAP_COMPOSITE",
+        "source_symbol": "AAS_COMPOSITE",
         "category": "alternative_assets",
         "direction": -1,  # Backend outputs stability score (high = stable, low = pressure)
         "lookback_days_for_z": 252,

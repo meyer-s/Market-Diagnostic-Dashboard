@@ -1,26 +1,26 @@
 """
-Backfill AAP (Alternative Asset Pressure) indicator data using weekly aggregates.
+Backfill AAS (Alternative Asset Stability) indicator data using weekly aggregates.
 
-This script calculates AAP for historical weeks using available macro data,
+This script calculates AAS for historical weeks using available macro data,
 even when daily crypto data isn't available. Uses weekly averages to smooth data.
 """
 
 from datetime import datetime, timedelta
 from app.core.db import SessionLocal
-from app.services.aap_calculator import AAPCalculator
-from app.models.alternative_assets import AAPIndicator, MacroLiquidityData
+from app.services.aas_calculator import AASCalculator
+from app.models.alternative_assets import AASIndicator, MacroLiquidityData
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def backfill_aap_weekly():
-    """Backfill AAP indicator data using weekly aggregates."""
+def backfill_aas_weekly():
+    """Backfill AAS indicator data using weekly aggregates."""
     db = SessionLocal()
     
     try:
-        logger.info("🚀 Starting AAP weekly data backfill...")
+        logger.info("🚀 Starting AAS weekly data backfill...")
         
         # Find earliest and latest macro data
         earliest_macro = db.query(MacroLiquidityData).order_by(
@@ -31,7 +31,7 @@ def backfill_aap_weekly():
             logger.warning("No macro data available for backfill")
             return
         
-        calculator = AAPCalculator(db)
+        calculator = AASCalculator(db)
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
         successful_calculations = 0
@@ -46,14 +46,14 @@ def backfill_aap_weekly():
         while current_date.weekday() != 6:  # 6 = Sunday
             current_date -= timedelta(days=1)
         
-        logger.info(f"🧮 Calculating AAP indicator for historical weeks...")
+        logger.info(f"🧮 Calculating AAS indicator for historical weeks...")
         logger.info(f"   Macro data available from {earliest_macro.date.date()}")
         
         weeks_processed = 0
         while current_date >= earliest_macro.date.replace(hour=0, minute=0, second=0, microsecond=0):
             # Check if indicator already exists for this date
-            existing = db.query(AAPIndicator).filter(
-                AAPIndicator.date == current_date
+            existing = db.query(AASIndicator).filter(
+                AASIndicator.date == current_date
             ).first()
             
             if existing:
@@ -83,15 +83,15 @@ def backfill_aap_weekly():
         
         # Show coverage
         from sqlalchemy import func, desc
-        first_aap = db.query(AAPIndicator).order_by(AAPIndicator.date).first()
-        last_aap = db.query(AAPIndicator).order_by(desc(AAPIndicator.date)).first()
-        total = db.query(func.count(AAPIndicator.id)).scalar()
+        first_aas = db.query(AASIndicator).order_by(AASIndicator.date).first()
+        last_aas = db.query(AASIndicator).order_by(desc(AASIndicator.date)).first()
+        total = db.query(func.count(AASIndicator.id)).scalar()
         
-        if first_aap and last_aap:
-            days_span = (last_aap.date - first_aap.date).days
-            logger.info(f"\n🎯 AAP Coverage:")
-            logger.info(f"   From: {first_aap.date.date()}")
-            logger.info(f"   To: {last_aap.date.date()}")
+        if first_aas and last_aas:
+            days_span = (last_aas.date - first_aas.date).days
+            logger.info(f"\n🎯 AAS Coverage:")
+            logger.info(f"   From: {first_aas.date.date()}")
+            logger.info(f"   To: {last_aas.date.date()}")
             logger.info(f"   Total: {total} records ({days_span} days)")
         
     except Exception as e:
@@ -102,4 +102,4 @@ def backfill_aap_weekly():
 
 
 if __name__ == "__main__":
-    backfill_aap_weekly()
+    backfill_aas_weekly()

@@ -14,7 +14,7 @@ from datetime import datetime
 
 
 class CryptoPrice(Base):
-    """Daily crypto asset prices for AAP calculation"""
+    """Daily crypto asset prices for AAS calculation"""
     __tablename__ = "crypto_prices"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -37,7 +37,7 @@ class CryptoPrice(Base):
 
 
 class BitcoinNetworkMetric(Base):
-    """Daily Bitcoin network metrics for AAP calculation"""
+    """Daily Bitcoin network metrics for AAS calculation"""
     __tablename__ = "bitcoin_network_metric"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -49,7 +49,7 @@ class BitcoinNetworkMetric(Base):
 
 
 class CryptoEcosystemMetric(Base):
-    """Daily crypto ecosystem metrics for AAP calculation"""
+    """Daily crypto ecosystem metrics for AAS calculation"""
     __tablename__ = "crypto_ecosystem_metric"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -65,7 +65,7 @@ class CryptoEcosystemMetric(Base):
 
 
 class EquityPrice(Base):
-    """Daily equity prices for AAP correlation calculations"""
+    """Daily equity prices for AAS correlation calculations"""
     __tablename__ = "equity_price"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -101,8 +101,8 @@ class MacroLiquidityData(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class AAPComponent(Base):
-    """Individual component calculations for AAP indicator"""
+class AASComponent(Base):
+    """Individual component calculations for AAS indicator"""
     __tablename__ = "aap_components"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -151,8 +151,8 @@ class AAPComponent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class AAPComponentV2(Base):
-    """V2 component calculations aligned to 9+9 AAP specification"""
+class AASComponentV2(Base):
+    """V2 component calculations aligned to 9+9 AAS specification"""
     __tablename__ = "aap_component_v2"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -191,7 +191,7 @@ class AAPComponentV2(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class AAPIndicator(Base):
+class AASIndicator(Base):
     """Final Alternative Asset Stability indicator values and regime classification"""
     __tablename__ = "aap_indicator"
     
@@ -239,7 +239,7 @@ class AAPIndicator(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class AAPRegimeHistory(Base):
+class AASRegimeHistory(Base):
     """Historical regime transitions for pattern analysis"""
     __tablename__ = "aap_regime_history"
     

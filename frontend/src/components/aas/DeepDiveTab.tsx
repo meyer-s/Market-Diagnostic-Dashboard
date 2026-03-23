@@ -2,7 +2,7 @@ import { MetalsSubsystemPanel } from './MetalsSubsystemPanel';
 import { CryptoSubsystemPanel } from './CryptoSubsystemPanel';
 import { MethodologyPanel } from './MethodologyPanel';
 
-interface AAPComponent {
+interface AASComponent {
   name: string;
   category: string;
   value: number;
@@ -13,15 +13,15 @@ interface AAPComponent {
 }
 
 interface DeepDiveTabProps {
-  aapData: {
-    components: AAPComponent[];
+  aasData: {
+    components: AASComponent[];
     metals_contribution: number;
     crypto_contribution: number;
   };
 }
 
-export function DeepDiveTab({ aapData }: DeepDiveTabProps) {
-  const components: AAPComponent[] = aapData.components || [];
+export function DeepDiveTab({ aasData }: DeepDiveTabProps) {
+  const components: AASComponent[] = aasData.components || [];
   const metalsComponents = components.filter((c) => c.category === 'metals');
   const cryptoComponents = components.filter((c) => c.category === 'crypto');
 
@@ -29,8 +29,8 @@ export function DeepDiveTab({ aapData }: DeepDiveTabProps) {
     <div className="space-y-6">
       {/* Subsystem Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MetalsSubsystemPanel components={metalsComponents} contribution={aapData.metals_contribution} />
-        <CryptoSubsystemPanel components={cryptoComponents} contribution={aapData.crypto_contribution} />
+        <MetalsSubsystemPanel components={metalsComponents} contribution={aasData.metals_contribution} />
+        <CryptoSubsystemPanel components={cryptoComponents} contribution={aasData.crypto_contribution} />
       </div>
 
       {/* Methodology & Interpretation */}

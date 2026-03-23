@@ -12,11 +12,16 @@ import {
 } from "recharts";
 import { useApi } from "../hooks/useApi";
 import MarketLoading from "../components/ui/MarketLoading";
-import { CryptoSubsystemPanel } from "../components/aap/CryptoSubsystemPanel";
-import { MethodologyPanel } from "../components/aap/MethodologyPanel";
+import { CryptoSubsystemPanel } from "../components/aas/CryptoSubsystemPanel";
+import { MethodologyPanel } from "../components/aas/MethodologyPanel";
 import { CHART_NEUTRAL, CHART_MARGIN } from "../utils/chartUtils";
+import {
+  buildTechnicalProjections,
+  type RelativeClassification,
+  type TechnicalProjection,
+} from "../utils/technicalProjections";
 
-interface AAPComponent {
+interface AASComponent {
   name: string;
   category: string;
   value: number;
@@ -26,12 +31,12 @@ interface AAPComponent {
   description: string;
 }
 
-interface AAPBreakdownData {
-  components: AAPComponent[];
+interface AASBreakdownData {
+  components: AASComponent[];
   crypto_contribution: number;
 }
 
-type AAPComponentHistoryResponse = {
+type AASComponentHistoryResponse = {
   data: Record<string, { date: string; value: number | null }[]>;
 };
 
@@ -114,18 +119,11 @@ interface CryptoDiagnosticContextResponse {
 
 interface CryptoDiagnosticProps {
   embedded?: boolean;
-  aapData?: AAPBreakdownData;
-  componentHistory?: AAPComponentHistoryResponse;
+  aasData?: AASBreakdownData;
+  componentHistory?: AASComponentHistoryResponse;
 }
 
-type RelativeClassification = "Winner" | "Neutral" | "Loser";
-
-interface RelativeCryptoRanking extends CryptoAsset {
-  rank: number;
-  rawRelativeScore: number;
-  relativeScore: number;
-  relativeClassification: RelativeClassification;
-}
+type CryptoProjection = TechnicalProjection<CryptoAsset>;
 
 const formatCurrency = (value: number | null, compact = false) => {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -204,49 +202,41 @@ const getRelativeClassColor = (relativeClass: RelativeClassification) => {
   }
 };
 
-const buildRelativeRankings = (assets: CryptoAsset[]): RelativeCryptoRanking[] => {
-  const scoredAssets = assets.map((asset) => {
-    const change30d = asset.change_30d ?? 0;
-    const change24h = asset.change_24h ?? 0;
-    const rawRelativeScore = (change30d * 0.7) + (change24h * 0.3);
-
-    return {
-      ...asset,
-      rawRelativeScore,
-      relativeScore: rawRelativeScore * 10,
-      rank: 0,
-      relativeClassification: "Neutral" as RelativeClassification,
-    };
-  });
-
-  return scoredAssets
-    .sort((left, right) => right.relativeScore - left.relativeScore)
-    .map((asset, index, rankedAssets) => ({
-      ...asset,
-      rank: index + 1,
-      relativeClassification:
-        index === 0 ? "Winner" : index === rankedAssets.length - 1 ? "Loser" : "Neutral",
-    }));
+const getClassificationColor = (classification: string) => {
+  switch (classification) {
+    case "Strong":
+      return "text-emerald-400";
+    case "Bullish":
+      return "text-green-400";
+    case "Neutral":
+      return "text-yellow-400";
+    case "Bearish":
+      return "text-orange-400";
+    case "Weak":
+      return "text-red-400";
+    default:
+      return "text-stealth-400";
+  }
 };
 
 export default function CryptoDiagnostic({
   embedded = false,
-  aapData,
+  aasData,
   componentHistory,
 }: CryptoDiagnosticProps) {
   const { data: marketData, loading, error } = useApi<CryptoMarketOverviewResponse>("/crypto/market-overview?days=365");
   const { data: diagnosticContext } = useApi<CryptoDiagnosticContextResponse>("/crypto/diagnostic-context?days=365");
-  const { data: fallbackAapData } = useApi<AAPBreakdownData>(aapData ? "" : "/aap/components/breakdown");
-  const { data: fallbackComponentHistory } = useApi<AAPComponentHistoryResponse>(componentHistory ? "" : "/aap/components/history?days=365");
+  const { data: fallbackAasData } = useApi<AASBreakdownData>(aasData ? "" : "/aas/components/breakdown");
+  const { data: fallbackComponentHistory } = useApi<AASComponentHistoryResponse>(componentHistory ? "" : "/aas/components/history?days=365");
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
   const [timeframe, setTimeframe] = useState<30 | 90 | 180 | 365>(90);
 
-  const resolvedAapData = aapData ?? fallbackAapData;
+  const resolvedAasData = aasData ?? fallbackAasData;
   const resolvedComponentHistory = componentHistory ?? fallbackComponentHistory;
 
   const cryptoComponents = useMemo(
-    () => (resolvedAapData?.components ?? []).filter((component) => component.category === "crypto"),
-    [resolvedAapData]
+    () => (resolvedAasData?.components ?? []).filter((component) => component.category === "crypto"),
+    [resolvedAasData]
   );
 
   const cutoffDate = useMemo(() => {
@@ -281,7 +271,7 @@ export default function CryptoDiagnostic({
         }
 
         const row = dateMap.get(point.date)!;
-        row[asset.symbol] = point.price;
+        row[asset.symbol] = point.price ?? null;
       }
     }
 
@@ -335,12 +325,12 @@ export default function CryptoDiagnostic({
     [diagnosticContext, cutoffDate]
   );
 
-  const relativeRankings = useMemo<RelativeCryptoRanking[]>(() => {
+  const cryptoProjections = useMemo<CryptoProjection[]>(() => {
     if (!marketData?.assets?.length) {
       return [];
     }
 
-    return buildRelativeRankings([...marketData.assets]);
+    return buildTechnicalProjections<CryptoAsset>([...marketData.assets]);
   }, [marketData]);
 
   const hasLargeCapChartData = largeCapChartData.length > 1;
@@ -444,65 +434,119 @@ export default function CryptoDiagnostic({
             <div className="mb-4">
               <h3 className="text-lg font-semibold text-stealth-100">Winners & Losers Right Now</h3>
               <p className="text-xs text-stealth-400">
-                Relative crypto leadership across this four-asset basket, weighted toward 30-day trend with a smaller 24-hour momentum input.
+                Competitive ranking across this four-asset basket based on trend strength, momentum, and exhaustion risk.
               </p>
             </div>
 
             <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-              {relativeRankings.map((asset) => (
+              {cryptoProjections.map((asset) => (
                 <div key={asset.symbol} className={`rounded-lg border p-3 ${getRelativeClassColor(asset.relativeClassification)}`}>
                   <div className="mb-1 text-xs font-semibold">
                     #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
                   </div>
                   <div className="text-lg font-bold text-stealth-100">{formatCurrency(asset.current_price)}</div>
-                  <div className="mt-1 text-xs">Score: {asset.relativeScore.toFixed(0)}/100</div>
-                  <div className="mt-1 text-xs font-semibold">{asset.relativeClassification}</div>
+                  <div className="mt-1 text-xs">Score: {asset.score_total}/100</div>
+                  <div className={`mt-1 text-xs font-semibold ${getClassificationColor(asset.classification)}`}>{asset.classification}</div>
                 </div>
               ))}
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {relativeRankings.map((asset) => (
+              {cryptoProjections.map((asset) => (
                 <div key={`${asset.symbol}-detail`} className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                       <h4 className="text-base font-semibold text-stealth-100">
                         <span style={{ color: asset.color }}>{asset.name}</span> ({asset.symbol})
                       </h4>
-                      <div className="text-xs text-stealth-500">Relative rank #{asset.rank} in the current crypto basket</div>
+                      <div className="text-xs" style={{ color: asset.color }}>{asset.coin_id.toUpperCase()}</div>
                     </div>
                     <div className={`rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassColor(asset.relativeClassification)}`}>
                       {asset.relativeClassification}
                     </div>
                   </div>
 
-                  <div className="mb-3 grid grid-cols-2 gap-3 text-sm">
+                  <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <div className="text-xs text-stealth-500">Current Price</div>
+                      <div className="text-xs text-stealth-500">Current</div>
                       <div className="font-semibold text-stealth-100">{formatCurrency(asset.current_price)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-stealth-500">Relative Score</div>
-                      <div className="font-semibold text-stealth-100">{asset.relativeScore.toFixed(0)}/100</div>
+                      <div className="text-xs text-stealth-500">RSI</div>
+                      <div className="font-semibold text-stealth-100">{asset.technicals.rsi?.toFixed(1) ?? "N/A"}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-stealth-500">24H Move</div>
-                      <div className={`font-semibold ${getPercentColor(asset.change_24h)}`}>{formatPercent(asset.change_24h)}</div>
+                      <div className="text-xs text-stealth-500">SMA 20</div>
+                      <div className="font-semibold text-stealth-100">{formatCurrency(asset.technicals.sma_20)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-stealth-500">30D Move</div>
-                      <div className={`font-semibold ${getPercentColor(asset.change_30d)}`}>{formatPercent(asset.change_30d)}</div>
+                      <div className="text-xs text-stealth-500">SMA 50</div>
+                      <div className="font-semibold text-stealth-100">{formatCurrency(asset.technicals.sma_50)}</div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="mb-3">
+                    <div className="mb-1 text-xs text-stealth-500">Momentum</div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <span className="text-stealth-400">5d:</span>
+                        <span className={`ml-1 font-semibold ${getPercentColor(asset.technicals.momentum_5d)}`}>
+                          {formatPercent(asset.technicals.momentum_5d)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-stealth-400">20d:</span>
+                        <span className={`ml-1 font-semibold ${getPercentColor(asset.technicals.momentum_20d)}`}>
+                          {formatPercent(asset.technicals.momentum_20d)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-stealth-400">60d:</span>
+                        <span className={`ml-1 font-semibold ${getPercentColor(asset.technicals.momentum_60d)}`}>
+                          {formatPercent(asset.technicals.momentum_60d)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-3 grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <div className="mb-1 text-stealth-500">Liquidity</div>
-                      <div className="font-semibold text-stealth-200">24H Vol: {formatCurrency(asset.total_volume_24h, true)}</div>
+                      <div className="mb-1 text-stealth-500">Support Levels</div>
+                      {asset.levels.support.length > 0 ? asset.levels.support.map((level: number, index: number) => (
+                        <div key={`${asset.symbol}-support-${index}`} className="font-semibold text-green-400">
+                          {formatCurrency(level)}
+                        </div>
+                      )) : <div className="text-stealth-500">None detected</div>}
                     </div>
                     <div>
-                      <div className="mb-1 text-stealth-500">Size</div>
-                      <div className="font-semibold text-stealth-200">MCAP: {formatCurrency(asset.market_cap, true)}</div>
+                      <div className="mb-1 text-stealth-500">Resistance Levels</div>
+                      {asset.levels.resistance.length > 0 ? asset.levels.resistance.map((level: number, index: number) => (
+                        <div key={`${asset.symbol}-resistance-${index}`} className="font-semibold text-red-400">
+                          {formatCurrency(level)}
+                        </div>
+                      )) : <div className="text-stealth-500">None detected</div>}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 border-t border-stealth-600 pt-3 text-xs">
+                    <div>
+                      <span className="text-stealth-400">Upper:</span>
+                      <span className="ml-2 font-semibold text-green-400">{formatCurrency(asset.levels.take_profit)}</span>
+                    </div>
+                    <div>
+                      <span className="text-stealth-400">Lower:</span>
+                      <span className="ml-2 font-semibold text-red-400">{formatCurrency(asset.levels.stop_loss)}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 border-t border-stealth-600 pt-3">
+                    <div className="mb-1 flex justify-between text-xs">
+                      <span className="text-stealth-400">Trend Score:</span>
+                      <span className="font-semibold">{asset.score_trend}/100</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-stealth-400">Momentum Score:</span>
+                      <span className="font-semibold">{asset.score_momentum}/100</span>
                     </div>
                   </div>
                 </div>
@@ -510,7 +554,8 @@ export default function CryptoDiagnostic({
             </div>
 
             <div className="mt-4 rounded border-l-2 border-blue-500 bg-stealth-900/50 p-3 text-xs text-stealth-400">
-              Winner/loser labels are relative across BTC, ETH, SOL, and XRP only. This is a compact leadership read, not a full-crypto market ranking.
+              <strong>Technical Analysis:</strong> Projections are based on SMA crossovers (20/50/200), RSI, momentum,
+              and recent support/resistance. Winner/Loser classification is relative across BTC, ETH, SOL, and XRP only.
             </div>
           </div>
 
@@ -577,7 +622,7 @@ export default function CryptoDiagnostic({
                         labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
                         formatter={(value: number, name: string) => [formatAxisCurrency(value), name]}
                       />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
+                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.text }} />
                       <Line yAxisId="left" type="monotone" dataKey="BTC" name="BTC" stroke="#f59e0b" strokeWidth={2.5} dot={false} connectNulls />
                       <Line yAxisId="right" type="monotone" dataKey="ETH" name="ETH" stroke="#60a5fa" strokeWidth={2.5} dot={false} connectNulls />
                     </LineChart>
@@ -626,7 +671,7 @@ export default function CryptoDiagnostic({
                         labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
                         formatter={(value: number, name: string) => [formatAxisCurrency(value), name]}
                       />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
+                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.text }} />
                       <Line yAxisId="left" type="monotone" dataKey="SOL" name="SOL" stroke="#14b8a6" strokeWidth={2.4} dot={false} connectNulls />
                       <Line yAxisId="right" type="monotone" dataKey="XRP" name="XRP" stroke="#f472b6" strokeWidth={2.4} dot={false} connectNulls />
                     </LineChart>
@@ -666,7 +711,7 @@ export default function CryptoDiagnostic({
                           return [formatCurrency(value, true), name];
                         }}
                       />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
+                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.text }} />
                       <ReferenceLine yAxisId="left" y={60} stroke="#64748b" strokeDasharray="4 4" />
                       <Line yAxisId="left" type="monotone" dataKey="btc_dominance_pct" name="BTC Dominance" stroke="#fbbf24" strokeWidth={2.4} dot={false} connectNulls />
                       <Line yAxisId="right" type="monotone" dataKey="total_market_cap" name="Total Market Cap" stroke="#60a5fa" strokeWidth={2.2} dot={false} connectNulls />
@@ -711,7 +756,7 @@ export default function CryptoDiagnostic({
                         labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
                         formatter={(value: number, name: string) => [value?.toFixed(2), name]}
                       />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
+                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.text }} />
                       <ReferenceLine y={0.33} stroke="#1e293b" strokeDasharray="4 4" />
                       <ReferenceLine y={0.67} stroke="#1e293b" strokeDasharray="4 4" />
                       <Line type="monotone" dataKey="stablecoin_supply" name="Stablecoin Supply" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls />
@@ -776,10 +821,10 @@ export default function CryptoDiagnostic({
             </div>
           )}
 
-          {resolvedAapData && cryptoComponents.length > 0 && (
+          {resolvedAasData && cryptoComponents.length > 0 && (
             <CryptoSubsystemPanel
               components={cryptoComponents}
-              contribution={resolvedAapData.crypto_contribution}
+              contribution={resolvedAasData.crypto_contribution}
               rawHistory={resolvedComponentHistory?.data}
             />
           )}

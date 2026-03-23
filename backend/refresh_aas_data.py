@@ -1,5 +1,5 @@
 """
-Master script to fetch all AAP data sources and achieve 18/18 components.
+Master script to fetch all AAS data sources and achieve 18/18 components.
 
 This script orchestrates the complete data refresh:
 1. Precious metals (already working from YAHOO/FRED)
@@ -9,14 +9,14 @@ This script orchestrates the complete data refresh:
 5. CB holdings (from WGC/IMF Q4 2025 data)
 6. Extended crypto (dominance, DeFi TVL, stablecoins)
 
-After data refresh, runs comprehensive AAP backfill.
+After data refresh, runs comprehensive AAS backfill.
 """
 import sys
 import time
 from datetime import datetime
 
 print("\n" + "="*70)
-print(" AAP DATA REFRESH - Full 18 Component System")
+print(" AAS DATA REFRESH - Full 18 Component System")
 print("="*70 + "\n")
 
 print("This script will:")
@@ -27,7 +27,7 @@ print("  4. Ingest COMEX inventory")
 print("  5. Fetch CB gold holdings")
 print("  6. Extend crypto market data")
 print("  7. Clean up seed data")
-print("  8. Run AAP backfill")
+print("  8. Run AAS backfill")
 print()
 
 response = input("Continue? (y/n): ")
@@ -160,15 +160,15 @@ with get_db_session() as db:
 time.sleep(2)
 
 print("="*70)
-print(" Step 8: AAP Backfill (90 days)")
+print(" Step 8: AAS Backfill (90 days)")
 print("="*70 + "\n")
 
-print("Running AAP calculation with all available data...")
+print("Running AAS calculation with all available data...")
 print()
 
-from backfill_aap import backfill_aap
+from backfill_aas import backfill_aas_data
 try:
-    backfill_aap(days=90)
+    backfill_aas_data()
 except Exception as e:
     print(f"❌ Backfill error: {e}")
     import traceback
@@ -179,18 +179,18 @@ print(" DATA REFRESH COMPLETE")
 print("="*70 + "\n")
 
 print("✅ All data sources refreshed")
-print("✅ AAP calculations updated")
+print("✅ AAS calculations updated")
 print()
 print("Next steps:")
 print("  1. Review component availability in logs")
 print("  2. Check indicator page: https://marketdiagnostictool.com/indicators")
-print("  3. View detailed breakdown: /api/aap/components")
+print("  3. View detailed breakdown: /api/aas/components")
 print()
 print("💡 To deploy to production:")
 print("   git add backend/*.py")
-print("   git commit -m 'Add comprehensive AAP data fetchers'")
+print("   git commit -m 'Add comprehensive AAS data fetchers'")
 print("   git push")
 print("   ssh ubuntu@100.49.90.221")
 print("   cd ~/Market-Diagnostic-Dashboard && git pull")
-print("   docker exec market_backend python refresh_aap_data.py")
+print("   docker exec market_backend python refresh_aas_data.py")
 print()

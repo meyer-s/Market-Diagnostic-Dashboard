@@ -1,5 +1,5 @@
 """
-Seed precious metals data for AAP calculations.
+Seed precious metals data for AAS calculations.
 """
 from datetime import datetime, timedelta
 from app.models.precious_metals import *
@@ -9,7 +9,7 @@ print('Seeding precious metals data...')
 
 db = SessionLocal()
 try:
-    # Seed metal prices (last 90 days for better AAP calculations)
+    # Seed metal prices (last 90 days for better AAS calculations)
     today = datetime.utcnow()
     metals = [
         ('AU', 2100.0),

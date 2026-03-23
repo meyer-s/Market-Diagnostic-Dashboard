@@ -1,5 +1,5 @@
 """
-Quick implementation of 3 missing AAP components to reach 13/18 threshold
+Quick implementation of 3 missing AAS components to reach 13/18 threshold
 
 This adds:
 1. gold_real_rate_divergence - Gold vs real interest rates
@@ -175,7 +175,7 @@ def estimate_backwardation():
 def main():
     """Execute all quick-win components"""
     print("\n" + "="*70)
-    print(" AAP Quick Wins - Adding 3 Components to Reach 70% Threshold")
+    print(" AAS Quick Wins - Adding 3 Components to Reach 70% Threshold")
     print("="*70 + "\n")
     
     success_count = 0
@@ -210,10 +210,10 @@ def main():
     
     if success_count >= 3:
         print("✅ SUCCESS! We now have 13/18 components (72.2%)")
-        print("   AAP calculations should resume!")
+        print("   AAS calculations should resume!")
         print()
         print("Next step: Run backfill")
-        print("   docker exec market_backend python backfill_aap.py")
+        print("   docker exec market_backend python backfill_aas.py")
     elif success_count >= 2:
         print("⚠️ PARTIAL SUCCESS: 12/18 components (66.7%)")
         print("   Need 1 more component to reach 70% threshold")

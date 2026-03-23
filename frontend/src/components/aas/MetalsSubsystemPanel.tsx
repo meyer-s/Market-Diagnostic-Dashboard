@@ -1,7 +1,7 @@
 import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import { getFamilyColor } from "../../theme/metricColors";
 
-interface AAPComponent {
+interface AASComponent {
   name: string;
   category: string;
   value: number;
@@ -12,7 +12,7 @@ interface AAPComponent {
 }
 
 interface MetalsSubsystemPanelProps {
-  components: AAPComponent[];
+  components: AASComponent[];
   contribution: number;
   sharePercent?: number;
   rawHistory?: Record<string, { date: string; value: number | null }[]>;

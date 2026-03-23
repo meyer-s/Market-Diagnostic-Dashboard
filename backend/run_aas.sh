@@ -1,14 +1,14 @@
 #!/bin/bash
-# AAP Indicator - Data Ingestion & Calculation Script
+# AAS Indicator - Data Ingestion & Calculation Script
 
 cd "$(dirname "$0")"
 source ../.venv/bin/activate
 
-echo "=== Alternative Asset Pressure (AAP) Indicator ==="
+echo "=== Alternative Asset Stability (AAS) Indicator ==="
 echo ""
 echo "Step 1: Fetching real crypto data from CoinGecko..."
 python3 -c "
-from app.services.ingestion.aap_data_ingestion import CryptoDataIngestion
+from app.services.ingestion.aas_data_ingestion import CryptoDataIngestion
 from app.core.db import SessionLocal
 
 db = SessionLocal()
@@ -24,19 +24,19 @@ finally:
 "
 
 echo ""
-echo "Step 2: Calculating AAP indicator..."
+echo "Step 2: Calculating AAS indicator..."
 python3 -c "
 from datetime import datetime
-from app.services.aap_calculator import AAPCalculator
+from app.services.aas_calculator import AASCalculator
 from app.core.db import SessionLocal
 
 db = SessionLocal()
 try:
-    calc = AAPCalculator(db)
+    calc = AASCalculator(db)
     result = calc.calculate_for_date(datetime.utcnow())
     
     if result:
-        print(f'✓ AAP Score: {result.stability_score:.1f}/100')
+        print(f'✓ AAS Score: {result.stability_score:.1f}/100')
         print(f'  Regime: {result.regime.replace(\"_\", \" \").upper()}')
         print(f'  Driver: {result.primary_driver}')
         print(f'  Data: {result.data_completeness:.0%} complete')
@@ -47,4 +47,4 @@ finally:
 "
 
 echo ""
-echo "Done! Use '/aap/current' API endpoint to access data."
+echo "Done! Use '/aas/current' API endpoint to access data."

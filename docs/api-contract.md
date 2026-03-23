@@ -124,23 +124,23 @@ Working reference for the current backend API surface used by the frontend.
 
 ## Alternative Assets
 
-- `GET /aap/current`
+- `GET /aas/current`
   - Response fields: `stability_score`, `regime`, `components`, `metals_contribution`, `crypto_contribution`
   - Consumers: AAS widget and alternative-assets page
-- `GET /aap/history?days=365`
+- `GET /aas/history?days=365`
   - Params: `days`
   - Response fields: stability-score history and subsystem history
   - Consumers: alternative-assets page
-- `GET /aap/components/breakdown`
-- `GET /aap/components/history?days=365`
+- `GET /aas/components/breakdown`
+- `GET /aas/components/history?days=365`
   - Params: `days` where supported
   - Response fields: component breakdowns and histories
   - Consumers: alternative-assets page and AAS breakdown page
-- `GET /aap/regime/current`
-- `GET /aap/regime/history`
+- `GET /aas/regime/current`
+- `GET /aas/regime/history`
   - Response fields: regime snapshots and history
   - Consumers: alternative-assets page
-- `GET /aap/dashboard`
+- `GET /aas/dashboard`
   - Response fields: dashboard-facing AAS snapshot
   - Consumers: dashboard where wired
 

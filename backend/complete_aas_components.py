@@ -1,5 +1,5 @@
 """
-Complete AAP Implementation - All 18 Components
+Complete AAS Implementation - All 18 Components
 
 This script adds the final 8 missing components to achieve 18/18 (100%):
 
@@ -126,7 +126,7 @@ def calculate_btc_real_rate_correlation():
             # Break = when correlation weakens or reverses
             real_rate = rate_by_date[date_key]
             
-            # Store correlation signal (AAP calculator will use this)
+            # Store correlation signal (AAS calculator will use this)
             btc_rate_signal = abs(real_rate) / 5.0  # Normalized
             
             updated += 1
@@ -165,7 +165,7 @@ def estimate_backwardation():
             # Backwardation proxy: high vol + upward pressure
             backwardation = min(1.0, max(0.0, (volatility / 50) * (1 + trend * 10)))
             
-            # AAP calculator will compute this from volatility
+            # AAS calculator will compute this from volatility
             updated += 1
         
         db.commit()
@@ -195,7 +195,7 @@ def estimate_etf_flows():
             daily_return = (curr.price_usd_per_oz - prev.price_usd_per_oz) / prev.price_usd_per_oz
             estimated_flow = daily_return * 1000  # Scaled proxy
             
-            # AAP calculator will compute this from price momentum
+            # AAS calculator will compute this from price momentum
             updated += 1
         
         db.commit()
@@ -281,7 +281,7 @@ def calculate_altcoin_signal():
                 altcoin_signal = (-dom_change / 5.0) + (mcap_change * 10)
                 altcoin_signal = max(0, min(1, altcoin_signal))
                 
-                # AAP calculator will compute this from dominance
+                # AAS calculator will compute this from dominance
                 updated += 1
         
         db.commit()
@@ -315,7 +315,7 @@ def add_pgm_zscores():
                 curr_price = pt_prices[i].price_usd_per_oz
                 zscore = (curr_price - mean) / stdev if stdev > 0 else 0
                 
-                # AAP calculator will compute z-scores from prices
+                # AAS calculator will compute z-scores from prices
                 pass
         
         db.commit()
@@ -342,7 +342,7 @@ def add_pgm_zscores():
                 curr_price = pd_prices[i].price_usd_per_oz
                 zscore = (curr_price - mean) / stdev if stdev > 0 else 0
                 
-                # AAP calculator will compute z-scores from prices
+                # AAS calculator will compute z-scores from prices
                 pass
         
         db.commit()
@@ -353,7 +353,7 @@ def add_pgm_zscores():
 def main():
     """Execute all components"""
     print("\n" + "="*70)
-    print(" 🎯 AAP COMPLETE - Adding All 18 Components")
+    print(" 🎯 AAS COMPLETE - Adding All 18 Components")
     print("="*70)
     
     results = []
@@ -426,16 +426,16 @@ def main():
     
     if total_components >= 18:
         print("\n🎉 SUCCESS! All 18 components operational!")
-        print("   AAP indicator at maximum confidence")
+        print("   AAS indicator at maximum confidence")
     elif total_components >= 13:
         print(f"\n✅ THRESHOLD MET! {total_components}/18 components active")
-        print("   AAP calculations will run")
+        print("   AAS calculations will run")
     else:
         print(f"\n⚠️  Below threshold: {total_components}/18 components")
         print("   Need 13 for calculations to resume")
     
     print("\nNext step: Run backfill")
-    print("  docker exec market_backend python backfill_aap.py")
+    print("  docker exec market_backend python backfill_aas.py")
     print()
 
 if __name__ == "__main__":

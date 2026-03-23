@@ -7,7 +7,7 @@ from app.core.db import Base, engine
 from app.models import options_alerts  # noqa: F401
 from app.models import option_positions  # noqa: F401
 from app.models import update_post  # noqa: F401
-from app.services.schema_patches import ensure_signal_attribution_columns
+from app.services.schema_patches import ensure_aas_indicator_code, ensure_signal_attribution_columns
 from app.api.health import router as health_router
 from app.api.status import router as status_router
 from app.api.indicators import router as indicators_router
@@ -19,7 +19,7 @@ from app.api.options_alerts import router as options_alerts_router
 from app.api.secret_options import router as secret_options_router
 from app.api.precious_metals import router as precious_metals_router
 from app.api.crypto import router as crypto_router
-from app.api.aap import router as aap_router
+from app.api.aas import router as aas_router
 from app.api.discord import router as discord_router
 from app.api.update_posts import router as update_posts_router
 from app.api.actions import router as actions_router
@@ -78,6 +78,7 @@ app.add_middleware(
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+ensure_aas_indicator_code(engine)
 ensure_signal_attribution_columns(engine)
 
 # Routers
@@ -123,8 +124,8 @@ app.include_router(crypto_router, tags=["Crypto"])
 from app.api.metal_projections import router as metal_projections_router
 app.include_router(metal_projections_router, prefix="/precious-metals", tags=["MetalProjections"])
 
-# Alternative Asset Pressure (AAP) Indicator
-app.include_router(aap_router, tags=["AlternativeAssetPressure"])
+# Alternative Asset Stability indicator
+app.include_router(aas_router, tags=["AlternativeAssetStability"])
 
 # Discord Bot Integration
 app.include_router(discord_router, tags=["Discord"])

@@ -1,5 +1,5 @@
 """
-Seed crypto prices and macro liquidity data for AAP calculations
+Seed crypto prices and macro liquidity data for AAS calculations
 This will provide the missing 6+ components needed to reach the 9 component threshold
 """
 from datetime import datetime, timedelta
@@ -10,7 +10,7 @@ import random
 def main():
     db = SessionLocal()
     try:
-        print("\n🔄 Seeding crypto and macro data for AAP...")
+        print("\n🔄 Seeding crypto and macro data for AAS...")
         
         today = datetime.utcnow()
         added_crypto = 0
