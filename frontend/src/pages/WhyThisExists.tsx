@@ -37,117 +37,115 @@ const audience = [
 
 function HeroSignalIllustration() {
   return (
-    <div className="rounded-3xl border border-stealth-700/90 bg-stealth-900/75 p-2 shadow-[0_24px_80px_rgba(5,12,24,0.48)]">
-      <svg
-        viewBox="0 0 560 360"
-        role="img"
-        aria-label="Abstract signal-inspired vector illustration"
-        className="w-full h-full rounded-[20px]"
-      >
-        <defs>
-          <linearGradient id="visionHeroBg" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#0b1220" />
-            <stop offset="100%" stopColor="#111827" />
-          </linearGradient>
-          <radialGradient id="visionOrbA" cx="0%" cy="0%" r="120%">
-            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="visionOrbB" cx="100%" cy="100%" r="120%">
-            <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="#60A5FA" stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id="visionRibbonA" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.78" />
-            <stop offset="100%" stopColor="#34D399" stopOpacity="0.3" />
-          </linearGradient>
-          <linearGradient id="visionRibbonB" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.78" />
-            <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.32" />
-          </linearGradient>
-          <linearGradient id="visionRibbonFill" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.16" />
-            <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.01" />
-          </linearGradient>
-          <filter id="visionSoftBlur" x="-25%" y="-25%" width="150%" height="150%">
-            <feGaussianBlur stdDeviation="32" />
-          </filter>
-        </defs>
+    <svg
+      viewBox="0 0 560 360"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      className="absolute inset-0 h-full w-full"
+    >
+      <defs>
+        <linearGradient id="visionHeroBg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0b1220" />
+          <stop offset="100%" stopColor="#111827" />
+        </linearGradient>
+        <radialGradient id="visionOrbA" cx="0%" cy="0%" r="120%">
+          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="visionOrbB" cx="100%" cy="100%" r="120%">
+          <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#60A5FA" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id="visionRibbonA" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.78" />
+          <stop offset="100%" stopColor="#34D399" stopOpacity="0.3" />
+        </linearGradient>
+        <linearGradient id="visionRibbonB" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.78" />
+          <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.32" />
+        </linearGradient>
+        <linearGradient id="visionRibbonFill" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.01" />
+        </linearGradient>
+        <filter id="visionSoftBlur" x="-25%" y="-25%" width="150%" height="150%">
+          <feGaussianBlur stdDeviation="32" />
+        </filter>
+      </defs>
 
-        <rect x="0" y="0" width="560" height="360" fill="url(#visionHeroBg)" />
-        <circle cx="120" cy="76" r="128" fill="url(#visionOrbA)" filter="url(#visionSoftBlur)" />
-        <circle cx="472" cy="274" r="138" fill="url(#visionOrbB)" filter="url(#visionSoftBlur)" />
+      <rect x="0" y="0" width="560" height="360" fill="url(#visionHeroBg)" />
+      <circle cx="120" cy="76" r="128" fill="url(#visionOrbA)" filter="url(#visionSoftBlur)" />
+      <circle cx="472" cy="274" r="138" fill="url(#visionOrbB)" filter="url(#visionSoftBlur)" />
 
-        <path
-          d="M-12 258 C84 224, 126 292, 220 252 C306 214, 354 152, 446 176 C512 194, 544 218, 572 248 L572 360 L-12 360 Z"
-          fill="url(#visionRibbonFill)"
-        />
-        <path
-          d="M-8 246 C84 212, 126 282, 218 242 C304 205, 354 148, 446 170 C512 186, 548 212, 572 238"
-          stroke="url(#visionRibbonA)"
-          strokeWidth="4.5"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <path
-          d="M-8 196 C70 174, 122 210, 206 184 C292 158, 358 108, 438 126 C500 140, 538 170, 572 200"
-          stroke="url(#visionRibbonB)"
-          strokeWidth="3.2"
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray="7 10"
-          opacity="0.9"
-        />
-        <path
-          d="M-8 144 C72 132, 128 158, 200 142 C280 124, 350 86, 438 98 C504 108, 544 136, 572 162"
-          stroke="#cbd5e1"
-          strokeOpacity="0.35"
-          strokeWidth="2"
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray="2 11"
-        />
+      <path
+        d="M-12 258 C84 224, 126 292, 220 252 C306 214, 354 152, 446 176 C512 194, 544 218, 572 248 L572 360 L-12 360 Z"
+        fill="url(#visionRibbonFill)"
+      />
+      <path
+        d="M-8 246 C84 212, 126 282, 218 242 C304 205, 354 148, 446 170 C512 186, 548 212, 572 238"
+        stroke="url(#visionRibbonA)"
+        strokeWidth="4.5"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path
+        d="M-8 196 C70 174, 122 210, 206 184 C292 158, 358 108, 438 126 C500 140, 538 170, 572 200"
+        stroke="url(#visionRibbonB)"
+        strokeWidth="3.2"
+        fill="none"
+        strokeLinecap="round"
+        strokeDasharray="7 10"
+        opacity="0.9"
+      />
+      <path
+        d="M-8 144 C72 132, 128 158, 200 142 C280 124, 350 86, 438 98 C504 108, 544 136, 572 162"
+        stroke="#cbd5e1"
+        strokeOpacity="0.35"
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+        strokeDasharray="2 11"
+      />
 
-        {[88, 144, 200, 256, 312, 368, 424, 480].map((x, idx) => (
-          <g key={`pulse-${x}`}>
-            <line
-              x1={x}
-              y1="288"
-              x2={x}
-              y2={272 - (idx % 3) * 8}
-              stroke="#94a3b8"
-              strokeOpacity="0.55"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
-            <circle
-              cx={x}
-              cy={266 - (idx % 3) * 8}
-              r="2.6"
-              fill={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
-              fillOpacity="0.82"
-            />
-          </g>
-        ))}
-
-        {[92, 188, 284, 380, 476].map((x, idx) => (
-          <circle
-            key={`halo-${x}`}
-            cx={x}
-            cy={208 - (idx % 2) * 24}
-            r="15"
-            fill="none"
-            stroke="#e2e8f0"
-            strokeOpacity="0.16"
-            strokeWidth="1.2"
+      {[88, 144, 200, 256, 312, 368, 424, 480].map((x, idx) => (
+        <g key={`pulse-${x}`}>
+          <line
+            x1={x}
+            y1="288"
+            x2={x}
+            y2={272 - (idx % 3) * 8}
+            stroke="#94a3b8"
+            strokeOpacity="0.55"
+            strokeWidth="1.4"
+            strokeLinecap="round"
           />
-        ))}
+          <circle
+            cx={x}
+            cy={266 - (idx % 3) * 8}
+            r="2.6"
+            fill={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
+            fillOpacity="0.82"
+          />
+        </g>
+      ))}
 
-        <circle cx="462" cy="92" r="52" fill="none" stroke="#6EE7B7" strokeOpacity="0.2" strokeWidth="1.5" />
-        <circle cx="462" cy="92" r="31" fill="none" stroke="#93C5FD" strokeOpacity="0.34" strokeWidth="1.3" />
-        <circle cx="462" cy="92" r="8" fill="#f8fafc" fillOpacity="0.78" />
-      </svg>
-    </div>
+      {[92, 188, 284, 380, 476].map((x, idx) => (
+        <circle
+          key={`halo-${x}`}
+          cx={x}
+          cy={208 - (idx % 2) * 24}
+          r="15"
+          fill="none"
+          stroke="#e2e8f0"
+          strokeOpacity="0.16"
+          strokeWidth="1.2"
+        />
+      ))}
+
+      <circle cx="462" cy="92" r="52" fill="none" stroke="#6EE7B7" strokeOpacity="0.2" strokeWidth="1.5" />
+      <circle cx="462" cy="92" r="31" fill="none" stroke="#93C5FD" strokeOpacity="0.34" strokeWidth="1.3" />
+      <circle cx="462" cy="92" r="8" fill="#f8fafc" fillOpacity="0.78" />
+    </svg>
   );
 }
 
@@ -288,24 +286,23 @@ export default function WhyThisExists() {
   return (
     <div className="bg-stealth-900 text-gray-100">
       <section className="relative overflow-hidden border-b border-stealth-700">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(110,231,183,0.14),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(96,165,250,0.12),_transparent_32%)]" />
+        <HeroSignalIllustration />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(110,231,183,0.16),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(96,165,250,0.14),_transparent_34%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(96deg,_rgba(15,23,42,0.9)_0%,_rgba(15,23,42,0.72)_46%,_rgba(15,23,42,0.42)_100%)]" />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 lg:py-24">
-          <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] items-center">
-            <div className="max-w-4xl">
-              <div className="inline-flex items-center rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
-                Vision
-              </div>
-              <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold leading-tight text-white">
-                Less Guesswork. More Context.
-              </h1>
-              <p className="mt-6 max-w-3xl text-lg sm:text-xl leading-8 text-stealth-200">
-                Built to help you think clearly when markets feel confusing.
-              </p>
-              <p className="mt-4 max-w-3xl text-base sm:text-lg leading-8 text-stealth-300">
-                The core purpose of this tool is to reduce the cognitive load of juggling macro indicators while placing a single trade. Everything affects everything. If you try to carry every signal in your head at once, it can run away from you. This platform helps organize the full backdrop into something readable so you can make decisions without the mental spiral.
-              </p>
+          <div className="max-w-4xl">
+            <div className="inline-flex items-center rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
+              Vision
             </div>
-            <HeroSignalIllustration />
+            <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold leading-tight text-white">
+              Less Guesswork. More Context.
+            </h1>
+            <p className="mt-6 max-w-3xl text-lg sm:text-xl leading-8 text-stealth-200">
+              Built to help you think clearly when markets feel confusing.
+            </p>
+            <p className="mt-4 max-w-3xl text-base sm:text-lg leading-8 text-stealth-300">
+              The core purpose of this tool is to reduce the cognitive load of juggling macro indicators while placing a single trade. Everything affects everything. If you try to carry every signal in your head at once, it can run away from you. This platform helps organize the full backdrop into something readable so you can make decisions without the mental spiral.
+            </p>
           </div>
         </div>
       </section>
