@@ -16,6 +16,8 @@ CRYPTO_ASSETS = [
     {"symbol": "SOL", "name": "Solana", "coin_id": "solana", "color": "#14f195"},
     {"symbol": "XRP", "name": "XRP", "coin_id": "ripple", "color": "#f472b6"},
 ]
+MARKET_OVERVIEW_CACHE_TTL_SECONDS = 300
+_market_overview_cache: dict[int, tuple[float, dict]] = {}
 
 
 def _coingecko_date(timestamp_ms: float) -> str:
@@ -28,11 +30,59 @@ def _safe_round(value: float | None, digits: int = 2) -> float | None:
     return round(float(value), digits)
 
 
+def _get_cached_market_overview(days: int) -> dict | None:
+    cached = _market_overview_cache.get(days)
+    if not cached:
+        return None
+
+    cached_at, payload = cached
+    if (datetime.utcnow().timestamp() - cached_at) > MARKET_OVERVIEW_CACHE_TTL_SECONDS:
+        return None
+
+    return payload
+
+
+def _set_cached_market_overview(days: int, payload: dict) -> None:
+    _market_overview_cache[days] = (datetime.utcnow().timestamp(), payload)
+
+
+def _get_market_structure_history(days: int) -> list[dict[str, float | str | None]]:
+    with get_db_session() as db:
+        rows = (
+            db.query(CryptoPrice)
+            .order_by(CryptoPrice.date.desc())
+            .limit(days * 2)
+            .all()
+        )
+
+    history = []
+    for row in sorted(rows, key=lambda item: item.date)[-days:]:
+        total_market_cap = None
+        if row.total_crypto_mcap is not None:
+            total_market_cap = float(row.total_crypto_mcap) * 1_000_000_000
+
+        history.append(
+            {
+                "date": row.date.date().isoformat(),
+                "total_market_cap": _safe_round(total_market_cap, 2),
+                "btc_dominance_pct": _safe_round(row.btc_dominance, 2),
+            }
+        )
+
+    return history
+
+
 @router.get("/market-overview")
 async def get_crypto_market_overview(
     days: int = Query(365, ge=30, le=730, description="Number of days of market history to retrieve")
 ):
+    cached_payload = _get_cached_market_overview(days)
+    if cached_payload is not None:
+        return cached_payload
+
     asset_ids = ",".join(asset["coin_id"] for asset in CRYPTO_ASSETS)
+    market_structure_history = _get_market_structure_history(days)
+    latest_market_structure = market_structure_history[-1] if market_structure_history else None
 
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -47,13 +97,6 @@ async def get_crypto_market_overview(
                 },
             )
             global_task = client.get(f"{COINGECKO_BASE_URL}/global")
-            global_history_task = client.get(
-                f"{COINGECKO_BASE_URL}/global/market_cap_chart",
-                params={
-                    "vs_currency": "usd",
-                    "days": days,
-                },
-            )
             history_tasks = [
                 client.get(
                     f"{COINGECKO_BASE_URL}/coins/{asset['coin_id']}/market_chart",
@@ -66,30 +109,30 @@ async def get_crypto_market_overview(
                 for asset in CRYPTO_ASSETS
             ]
 
-            current_response, global_response, global_history_response, *history_responses = await asyncio.gather(
+            current_response, global_response, *history_responses = await asyncio.gather(
                 current_task,
                 global_task,
-                global_history_task,
                 *history_tasks,
             )
 
         current_response.raise_for_status()
         global_response.raise_for_status()
-        global_history_response.raise_for_status()
         for response in history_responses:
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
+        if cached_payload is not None:
+            return cached_payload
         raise HTTPException(status_code=502, detail=f"Crypto source returned an error: {exc}")
     except Exception as exc:
+        if cached_payload is not None:
+            return cached_payload
         raise HTTPException(status_code=502, detail=f"Failed to fetch crypto market data: {exc}")
 
     current_payload = current_response.json()
     global_payload = global_response.json().get("data", {})
-    global_history_payload = global_history_response.json()
 
     assets = []
     advancing_assets_24h = 0
-    btc_market_caps_by_date: dict[str, float] = {}
 
     for asset, history_response in zip(CRYPTO_ASSETS, history_responses):
         market_payload = current_payload.get(asset["coin_id"], {})
@@ -102,8 +145,6 @@ async def get_crypto_market_overview(
         for timestamp, market_cap in history_payload.get("market_caps", []):
             date_key = _coingecko_date(timestamp)
             history_by_date.setdefault(date_key, {"date": date_key})["market_cap"] = _safe_round(market_cap, 2)
-            if asset["symbol"] == "BTC":
-                btc_market_caps_by_date[date_key] = float(market_cap)
         for timestamp, volume in history_payload.get("total_volumes", []):
             date_key = _coingecko_date(timestamp)
             history_by_date.setdefault(date_key, {"date": date_key})["total_volume"] = _safe_round(volume, 2)
@@ -136,32 +177,13 @@ async def get_crypto_market_overview(
             }
         )
 
-    global_market_caps_by_date: dict[str, float] = {}
-    for timestamp, market_cap in global_history_payload.get("market_cap", []) or global_history_payload.get("market_caps", []):
-        date_key = _coingecko_date(timestamp)
-        global_market_caps_by_date[date_key] = float(market_cap)
-
-    market_structure_history = []
-    for date_key in sorted(global_market_caps_by_date.keys()):
-        total_market_cap = global_market_caps_by_date[date_key]
-        btc_market_cap = btc_market_caps_by_date.get(date_key)
-        btc_dominance_pct = None
-        if btc_market_cap and total_market_cap:
-            btc_dominance_pct = (btc_market_cap / total_market_cap) * 100
-
-        market_structure_history.append(
-            {
-                "date": date_key,
-                "total_market_cap": _safe_round(total_market_cap, 2),
-                "btc_dominance_pct": _safe_round(btc_dominance_pct, 2),
-            }
-        )
-
-    return {
+    payload = {
         "as_of": datetime.utcnow().isoformat(),
         "summary": {
-            "btc_dominance": _safe_round(global_payload.get("market_cap_percentage", {}).get("btc"), 2),
-            "total_market_cap": _safe_round(global_payload.get("total_market_cap", {}).get("usd"), 2),
+            "btc_dominance": _safe_round(global_payload.get("market_cap_percentage", {}).get("btc"), 2)
+            or (latest_market_structure.get("btc_dominance_pct") if latest_market_structure else None),
+            "total_market_cap": _safe_round(global_payload.get("total_market_cap", {}).get("usd"), 2)
+            or (latest_market_structure.get("total_market_cap") if latest_market_structure else None),
             "market_cap_change_24h": _safe_round(global_payload.get("market_cap_change_percentage_24h_usd"), 2),
             "advancing_assets_24h": advancing_assets_24h,
             "monitored_assets": len(CRYPTO_ASSETS),
@@ -169,6 +191,9 @@ async def get_crypto_market_overview(
         "assets": assets,
         "market_structure_history": market_structure_history,
     }
+
+    _set_cached_market_overview(days, payload)
+    return payload
 
 
 @router.get("/diagnostic-context")

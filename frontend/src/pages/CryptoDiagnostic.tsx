@@ -290,6 +290,11 @@ export default function CryptoDiagnostic({
     [diagnosticContext, cutoffDate]
   );
 
+  const hasLargeCapChartData = largeCapChartData.length > 1;
+  const hasSecondaryChartData = secondaryChartData.length > 1;
+  const hasMarketStructureData = marketStructureData.length > 1;
+  const hasSignalPanelData = signalPanelData.length > 1;
+
   if (loading) {
     return (
       <div className={embedded ? "py-8" : "p-6"}>
@@ -442,13 +447,14 @@ export default function CryptoDiagnostic({
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <div className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4 xl:col-span-2">
+              <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/60 p-4 xl:col-span-2">
                 <div className="mb-3">
                   <h4 className="text-sm font-semibold text-stealth-100">BTC vs ETH</h4>
                   <p className="text-xs text-stealth-500">BTC stays on the left axis and ETH on the right so institutional leadership and smart-contract beta can diverge cleanly.</p>
                 </div>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-80 min-w-0 w-full">
+                  {hasLargeCapChartData ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={largeCapChartData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
@@ -482,16 +488,22 @@ export default function CryptoDiagnostic({
                       <Line yAxisId="right" type="monotone" dataKey="ETH" name="ETH" stroke="#60a5fa" strokeWidth={2.5} dot={false} connectNulls />
                     </LineChart>
                   </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-500">
+                      Large-cap history is temporarily unavailable.
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+              <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
                 <div className="mb-3">
                   <h4 className="text-sm font-semibold text-stealth-100">SOL vs XRP</h4>
                   <p className="text-xs text-stealth-500">The higher-beta pair sits in a separate panel so alt rotation is visible without flattening the larger-cap leaders.</p>
                 </div>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-80 min-w-0 w-full">
+                  {hasSecondaryChartData ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={secondaryChartData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
@@ -525,6 +537,11 @@ export default function CryptoDiagnostic({
                       <Line yAxisId="right" type="monotone" dataKey="XRP" name="XRP" stroke="#f472b6" strokeWidth={2.4} dot={false} connectNulls />
                     </LineChart>
                   </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-500">
+                      Alt-rotation history is temporarily unavailable.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -532,13 +549,14 @@ export default function CryptoDiagnostic({
 
           {diagnosticContext && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
-              <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+              <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
                 <div className="mb-3">
                   <h3 className="text-lg font-semibold text-stealth-100">Leadership Concentration</h3>
                   <p className="text-xs text-stealth-400">BTC dominance versus total crypto market cap shows whether leadership is broadening out or collapsing back toward defensive concentration.</p>
                 </div>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-72 min-w-0 w-full">
+                  {hasMarketStructureData ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={marketStructureData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
@@ -560,6 +578,11 @@ export default function CryptoDiagnostic({
                       <Line yAxisId="right" type="monotone" dataKey="total_market_cap" name="Total Market Cap" stroke="#60a5fa" strokeWidth={2.2} dot={false} connectNulls />
                     </LineChart>
                   </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-500">
+                      Market-structure history is temporarily unavailable.
+                    </div>
+                  )}
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                   <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
@@ -577,13 +600,14 @@ export default function CryptoDiagnostic({
                 </div>
               </div>
 
-              <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+              <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
                 <div className="mb-3">
                   <h3 className="text-lg font-semibold text-stealth-100">Liquidity Plumbing & Alt Behavior</h3>
                   <p className="text-xs text-stealth-400">AAP crypto signals on a normalized 0 to 1 scale. The reference bands help separate benign plumbing from a more defensive or stress-heavy tape.</p>
                 </div>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-72 min-w-0 w-full">
+                  {hasSignalPanelData ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={signalPanelData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
@@ -602,6 +626,11 @@ export default function CryptoDiagnostic({
                       <Line type="monotone" dataKey="altcoin_weakness" name="Alt Breadth Stress" stroke="#f97316" strokeWidth={2.2} dot={false} connectNulls />
                     </LineChart>
                   </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-500">
+                      Signal history is temporarily unavailable.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
