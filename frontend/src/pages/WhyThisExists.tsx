@@ -100,7 +100,7 @@ function HeroSignalIllustration() {
     count * denseCellWidth + Math.max(count - 1, 0) * denseCellGap;
   const denseRowHeight = 18;
   const blockRowHeight = 24;
-  const rowGap = 12;
+  const rowGap = 8;
   const fadeStart = chartWidth * 0.28;
   const fadeEnd = chartWidth * 0.48;
 
