@@ -237,8 +237,8 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
       <path d="M102 48 C134 54, 164 62, 196 68" stroke="#64748b" strokeOpacity="0.46" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       <path d="M104 47 C134 41, 164 37, 196 34" stroke="#6EE7B7" strokeOpacity="0.96" strokeWidth="3.3" fill="none" strokeLinecap="round" />
 
-      <path d="M46 22 C82 18, 126 19, 186 28" stroke="#93C5FD" strokeOpacity="0.56" strokeWidth="1.9" fill="none" strokeLinecap="round" />
-      <path d="M62 74 C98 66, 132 52, 188 38" stroke="#6EE7B7" strokeOpacity="0.64" strokeWidth="1.9" fill="none" strokeLinecap="round" />
+      <path d="M46 22 C82 20, 114 23, 144 28 C166 31, 182 33, 196 34" stroke="#93C5FD" strokeOpacity="0.56" strokeWidth="1.9" fill="none" strokeLinecap="round" />
+      <path d="M62 74 C90 64, 116 52, 146 42 C168 37, 184 35, 196 34" stroke="#6EE7B7" strokeOpacity="0.64" strokeWidth="1.9" fill="none" strokeLinecap="round" />
 
       <circle cx="92" cy="48" r="3.4" fill="#111827" fillOpacity="0.2" />
     </svg>
