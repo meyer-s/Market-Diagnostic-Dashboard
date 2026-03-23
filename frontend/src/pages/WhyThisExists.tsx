@@ -57,16 +57,18 @@ function HeroSignalIllustration() {
           <stop offset="100%" stopColor="#60A5FA" stopOpacity="0" />
         </radialGradient>
         <linearGradient id="visionRibbonA" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.78" />
-          <stop offset="100%" stopColor="#34D399" stopOpacity="0.3" />
+          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.04" />
+          <stop offset="62%" stopColor="#6EE7B7" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#34D399" stopOpacity="0.86" />
         </linearGradient>
         <linearGradient id="visionRibbonB" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.78" />
-          <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.32" />
+          <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.03" />
+          <stop offset="62%" stopColor="#93C5FD" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.82" />
         </linearGradient>
         <linearGradient id="visionRibbonFill" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.16" />
-          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.01" />
+          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.03" />
+          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.14" />
         </linearGradient>
         <filter id="visionSoftBlur" x="-25%" y="-25%" width="150%" height="150%">
           <feGaussianBlur stdDeviation="32" />
@@ -74,77 +76,99 @@ function HeroSignalIllustration() {
       </defs>
 
       <rect x="0" y="0" width="1440" height="560" fill="url(#visionHeroBg)" />
-      <circle cx="260" cy="112" r="252" fill="url(#visionOrbA)" filter="url(#visionSoftBlur)" />
-      <circle cx="1260" cy="430" r="284" fill="url(#visionOrbB)" filter="url(#visionSoftBlur)" />
+      <circle cx="180" cy="126" r="170" fill="url(#visionOrbA)" filter="url(#visionSoftBlur)" />
+      <circle cx="1260" cy="362" r="330" fill="url(#visionOrbB)" filter="url(#visionSoftBlur)" />
 
       <path
-        d="M-40 390 C220 330, 340 450, 580 386 C820 320, 930 210, 1170 250 C1320 276, 1440 340, 1490 386 L1490 560 L-40 560 Z"
+        d="M-20 440 C210 416, 420 430, 650 392 C860 356, 1030 300, 1212 304 C1358 308, 1450 338, 1496 366 L1496 560 L-20 560 Z"
         fill="url(#visionRibbonFill)"
       />
       <path
-        d="M-32 374 C214 314, 342 432, 580 370 C822 306, 928 204, 1168 244 C1322 272, 1442 332, 1490 370"
+        d="M-16 394 C190 362, 408 382, 640 352 C842 328, 1014 274, 1218 288 C1360 298, 1454 328, 1496 352"
         stroke="url(#visionRibbonA)"
-        strokeWidth="6.2"
+        strokeWidth="5.2"
         fill="none"
         strokeLinecap="round"
       />
       <path
-        d="M-32 304 C176 250, 334 310, 548 282 C764 252, 932 168, 1150 192 C1300 210, 1412 254, 1490 300"
+        d="M-16 324 C168 288, 386 316, 608 288 C828 258, 1008 194, 1222 212 C1360 224, 1460 266, 1496 292"
         stroke="url(#visionRibbonB)"
-        strokeWidth="4.4"
+        strokeWidth="3.8"
         fill="none"
         strokeLinecap="round"
-        strokeDasharray="9 12"
+        strokeDasharray="8 12"
         opacity="0.9"
       />
       <path
-        d="M-32 224 C188 188, 336 224, 550 206 C782 186, 930 124, 1146 138 C1298 146, 1412 188, 1490 230"
+        d="M-16 264 C186 240, 386 258, 612 242 C850 228, 1032 154, 1232 164 C1368 170, 1456 206, 1496 228"
         stroke="#cbd5e1"
-        strokeOpacity="0.35"
-        strokeWidth="2.8"
+        strokeOpacity="0.26"
+        strokeWidth="2.2"
         fill="none"
         strokeLinecap="round"
         strokeDasharray="3 14"
       />
 
-      {[210, 330, 450, 570, 690, 810, 930, 1050, 1170, 1290].map((x, idx) => (
+      {[880, 960, 1040, 1120, 1200, 1280, 1360].map((x, idx) => (
         <g key={`pulse-${x}`}>
           <line
             x1={x}
-            y1="450"
+            y1="448"
             x2={x}
-            y2={422 - (idx % 3) * 12}
+            y2={416 - (idx % 3) * 16}
             stroke="#94a3b8"
-            strokeOpacity="0.55"
-            strokeWidth="1.8"
+            strokeOpacity="0.6"
+            strokeWidth="1.9"
             strokeLinecap="round"
           />
           <circle
             cx={x}
-            cy={414 - (idx % 3) * 12}
-            r="3.2"
+            cy={406 - (idx % 3) * 16}
+            r="3.5"
             fill={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
-            fillOpacity="0.82"
+            fillOpacity="0.86"
           />
         </g>
       ))}
 
-      {[320, 560, 800, 1040, 1280].map((x, idx) => (
-        <circle
-          key={`halo-${x}`}
-          cx={x}
-          cy={312 - (idx % 2) * 34}
-          r="22"
+      {[34, 55, 89, 144, 233].map((r, idx) => (
+        <path
+          key={`fib-left-${r}`}
+          d={`M ${1236 - r} 344 A ${r} ${r} 0 0 1 1236 ${344 - r}`}
           fill="none"
-          stroke="#e2e8f0"
-          strokeOpacity="0.16"
-          strokeWidth="1.6"
+          stroke={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
+          strokeOpacity={0.7 - idx * 0.1}
+          strokeWidth={2.6 - idx * 0.25}
+          strokeLinecap="round"
         />
       ))}
 
-      <circle cx="1224" cy="128" r="82" fill="none" stroke="#6EE7B7" strokeOpacity="0.2" strokeWidth="2.1" />
-      <circle cx="1224" cy="128" r="50" fill="none" stroke="#93C5FD" strokeOpacity="0.34" strokeWidth="1.8" />
-      <circle cx="1224" cy="128" r="12" fill="#f8fafc" fillOpacity="0.78" />
+      {[34, 55, 89, 144].map((r, idx) => (
+        <path
+          key={`fib-right-${r}`}
+          d={`M 1236 ${344 - r} A ${r} ${r} 0 0 1 ${1236 + r} 344`}
+          fill="none"
+          stroke={idx % 2 === 0 ? "#93C5FD" : "#6EE7B7"}
+          strokeOpacity={0.58 - idx * 0.08}
+          strokeWidth={2.2 - idx * 0.2}
+          strokeLinecap="round"
+        />
+      ))}
+
+      {[1108, 1168, 1236, 1302, 1364].map((x, idx) => (
+        <circle
+          key={`detail-node-${x}`}
+          cx={x}
+          cy={248 + (idx % 2) * 24}
+          r={idx === 2 ? 6 : 3.8}
+          fill={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
+          fillOpacity={idx === 2 ? 0.95 : 0.75}
+        />
+      ))}
+
+      <circle cx="1236" cy="344" r="89" fill="none" stroke="#6EE7B7" strokeOpacity="0.18" strokeWidth="1.8" />
+      <circle cx="1236" cy="344" r="55" fill="none" stroke="#93C5FD" strokeOpacity="0.28" strokeWidth="1.6" />
+      <circle cx="1236" cy="344" r="12" fill="#f8fafc" fillOpacity="0.8" />
     </svg>
   );
 }
