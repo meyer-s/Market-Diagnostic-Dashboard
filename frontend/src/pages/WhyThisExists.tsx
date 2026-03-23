@@ -8,6 +8,8 @@ type PrincipleCard = {
   motif: PrincipleMotif;
 };
 
+type HeroState = "G" | "Y" | "R";
+
 const principles = [
   {
     title: "Shorten The Learning Curve",
@@ -36,6 +38,79 @@ const audience = [
 ];
 
 function HeroSignalIllustration() {
+  const statePalette: Record<HeroState, string> = {
+    G: "#60BC8C",
+    Y: "#E8BF43",
+    R: "#E2554D",
+  };
+
+  const expandStateRow = (segments: Array<[HeroState, number]>) =>
+    segments.flatMap(([state, count]) => Array.from({ length: count }, () => state));
+
+  const denseRows = [
+    { y: 18, states: expandStateRow([["R", 5], ["Y", 3], ["G", 1], ["Y", 2], ["R", 1], ["Y", 1], ["R", 3], ["Y", 3], ["R", 5], ["Y", 2], ["R", 1], ["Y", 1], ["R", 1], ["Y", 4], ["R", 1], ["Y", 7], ["G", 10], ["Y", 5], ["R", 1]]) },
+    { y: 44, states: expandStateRow([["Y", 4], ["R", 2], ["Y", 5], ["R", 1], ["Y", 1], ["R", 3], ["Y", 2], ["R", 2], ["Y", 4], ["R", 1], ["Y", 2], ["R", 2], ["Y", 1], ["R", 2], ["Y", 1], ["R", 4], ["Y", 4], ["R", 4], ["Y", 1], ["R", 2], ["Y", 1], ["R", 1], ["Y", 2], ["R", 1], ["Y", 2], ["R", 2], ["Y", 4]]) },
+    { y: 70, states: expandStateRow([["Y", 1], ["R", 7], ["Y", 20], ["R", 1], ["Y", 4], ["R", 2], ["Y", 16], ["R", 3]]) },
+    { y: 96, states: expandStateRow([["Y", 18], ["G", 1], ["Y", 2], ["G", 2], ["Y", 3], ["G", 14], ["Y", 1], ["G", 17], ["Y", 4]]) },
+    { y: 122, states: expandStateRow([["Y", 1], ["R", 7], ["Y", 14], ["G", 1], ["Y", 2], ["G", 1], ["Y", 3], ["G", 1], ["Y", 10], ["R", 1], ["Y", 3], ["G", 1], ["Y", 2], ["G", 3], ["Y", 9], ["R", 4]]) },
+    { y: 220, states: expandStateRow([["G", 63]]) },
+    { y: 246, states: expandStateRow([["G", 7], ["Y", 1], ["G", 4], ["Y", 1], ["G", 1], ["Y", 14], ["R", 2], ["Y", 4], ["R", 16], ["Y", 2], ["R", 2], ["Y", 6], ["G", 3], ["Y", 1], ["G", 1], ["Y", 4], ["R", 1]]) },
+    { y: 272, states: expandStateRow([["R", 7], ["Y", 2], ["G", 2], ["Y", 1], ["G", 1], ["Y", 1], ["G", 2], ["Y", 2], ["G", 7], ["Y", 3], ["G", 1], ["Y", 5], ["G", 1], ["Y", 1], ["G", 1], ["Y", 6], ["G", 1], ["Y", 9], ["R", 2], ["Y", 1], ["R", 2], ["Y", 1], ["R", 5]]) },
+  ];
+
+  const blockRows = [
+    {
+      y: 156,
+      segments: [
+        ["R", 92],
+        ["Y", 110],
+        ["Y", 110],
+        ["Y", 110],
+        ["G", 110],
+        ["Y", 110],
+        ["Y", 110],
+      ] as Array<[HeroState, number]>,
+    },
+    {
+      y: 188,
+      segments: [
+        ["Y", 156],
+        ["R", 156],
+        ["Y", 156],
+        ["G", 156],
+        ["Y", 156],
+        ["R", 156],
+        ["Y", 156],
+        ["R", 156],
+      ] as Array<[HeroState, number]>,
+    },
+    {
+      y: 304,
+      segments: [
+        ["R", 120],
+        ["R", 120],
+        ["R", 120],
+        ["R", 120],
+        ["R", 120],
+        ["R", 120],
+        ["R", 120],
+        ["R", 120],
+      ] as Array<[HeroState, number]>,
+    },
+  ];
+
+  const panelX = 804;
+  const panelY = 150;
+  const panelWidth = 620;
+  const panelHeight = 338;
+  const panelPadding = 18;
+  const panelContentWidth = panelWidth - panelPadding * 2;
+  const denseCellWidth = 7;
+  const denseCellGap = 2;
+  const denseCellStep = denseCellWidth + denseCellGap;
+  const denseRowWidth = (count: number) =>
+    count * denseCellWidth + Math.max(count - 1, 0) * denseCellGap;
+
   return (
     <svg
       viewBox="0 0 1440 560"
@@ -70,17 +145,13 @@ function HeroSignalIllustration() {
           <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.03" />
           <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.14" />
         </linearGradient>
-        <linearGradient id="visionStateGreen" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#34D399" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.76" />
-        </linearGradient>
-        <linearGradient id="visionStateAmber" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.14" />
-          <stop offset="100%" stopColor="#FBBF24" stopOpacity="0.58" />
-        </linearGradient>
-        <linearGradient id="visionStateRed" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#EF4444" stopOpacity="0.12" />
-          <stop offset="100%" stopColor="#F87171" stopOpacity="0.46" />
+        <linearGradient id="visionStateFadeOverlay" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#0b1321" stopOpacity="0.98" />
+          <stop offset="56%" stopColor="#0b1321" stopOpacity="0.98" />
+          <stop offset="66%" stopColor="#0b1321" stopOpacity="0.72" />
+          <stop offset="74%" stopColor="#0b1321" stopOpacity="0.14" />
+          <stop offset="80%" stopColor="#0b1321" stopOpacity="0" />
+          <stop offset="100%" stopColor="#0b1321" stopOpacity="0" />
         </linearGradient>
         <filter id="visionSoftBlur" x="-25%" y="-25%" width="150%" height="150%">
           <feGaussianBlur stdDeviation="32" />
@@ -120,68 +191,46 @@ function HeroSignalIllustration() {
         strokeLinecap="round"
         strokeDasharray="3 16"
       />
-      <g opacity="0.95">
-        {[
-          { x: 1068, y: 176, pattern: ["G", "G", "Y", "G", "G", "G", "Y", "G", "R", "Y", "G", "G", "Y"] },
-          { x: 1016, y: 224, pattern: ["R", "Y", "Y", "G", "G", "Y", "G", "G", "G", "Y", "R", "G", "G", "Y", "Y", "G", "G"] },
-          { x: 972, y: 272, pattern: ["Y", "G", "G", "G", "R", "Y", "G", "G", "Y", "G", "G", "G", "R", "Y", "Y", "G", "G", "G", "Y", "R", "G"] },
-          { x: 1002, y: 320, pattern: ["G", "Y", "R", "R", "Y", "G", "G", "Y", "G", "G", "Y", "R", "G", "G", "Y", "G", "G", "Y", "G"] },
-          { x: 1054, y: 368, pattern: ["G", "G", "Y", "G", "R", "Y", "G", "G", "Y", "G", "G", "R", "Y", "G"] },
-        ].map((row, rowIdx) => (
-          <g key={`distribution-row-${row.y}`}>
-            {row.pattern.map((cellState, cellIdx) => {
-              const fill =
-                cellState === "G"
-                  ? "url(#visionStateGreen)"
-                  : cellState === "Y"
-                    ? "url(#visionStateAmber)"
-                    : "url(#visionStateRed)";
-
-              return (
-                <rect
-                  key={`distribution-row-${row.y}-cell-${cellIdx}`}
-                  x={row.x + cellIdx * 14}
-                  y={row.y}
-                  width="11"
-                  height="14"
-                  rx="2.5"
-                  fill={fill}
-                  fillOpacity={0.88 - rowIdx * 0.04}
-                  stroke="#0f172a"
-                  strokeOpacity="0.18"
-                />
-              );
-            })}
-          </g>
-        ))}
-      </g>
-
-      <g opacity="0.32">
-        {[1046, 1116, 1186, 1256, 1326].map((x, idx) => (
-          <path
-            key={`distribution-column-${x}`}
-            d={`M ${x} 170 L ${x + (idx % 2 === 0 ? 8 : -8)} 390`}
-            fill="none"
-            stroke="#94a3b8"
-            strokeOpacity={0.16 + idx * 0.02}
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeDasharray="3 12"
-          />
-        ))}
-      </g>
-
-      <g opacity="0.62">
-        {[
-          { x: 1186, y: 432, width: 122, fill: 74, color: "url(#visionStateGreen)" },
-          { x: 1186, y: 452, width: 122, fill: 38, color: "url(#visionStateAmber)" },
-          { x: 1186, y: 472, width: 122, fill: 22, color: "url(#visionStateRed)" },
-        ].map((bar) => (
-          <g key={`ratio-bar-${bar.y}`}>
-            <rect x={bar.x} y={bar.y} width={bar.width} height="9" rx="4.5" fill="#0f172a" fillOpacity="0.46" stroke="#334155" strokeOpacity="0.3" />
-            <rect x={bar.x} y={bar.y} width={bar.fill} height="9" rx="4.5" fill={bar.color} />
-          </g>
-        ))}
+      <g transform={`translate(${panelX} ${panelY})`} opacity="0.96" shapeRendering="crispEdges">
+        <rect x="0" y="0" width={panelWidth} height={panelHeight} rx="18" fill="#0b1321" fillOpacity="0.62" />
+        <g transform={`translate(${panelPadding} ${panelPadding})`}>
+          {denseRows.map((row) => {
+            const rowOffset = panelContentWidth - denseRowWidth(row.states.length);
+            return (
+              <g key={`hero-dense-row-${row.y}`} transform={`translate(${rowOffset} ${row.y})`}>
+                {row.states.map((state, idx) => (
+                  <rect
+                    key={`hero-dense-row-${row.y}-cell-${idx}`}
+                    x={idx * denseCellStep}
+                    y="0"
+                    width={denseCellWidth}
+                    height="18"
+                    rx="1.4"
+                    fill={statePalette[state]}
+                  />
+                ))}
+              </g>
+            );
+          })}
+          {blockRows.map((row) => {
+            const totalUnits = row.segments.reduce((sum, [, width]) => sum + width, 0);
+            const gap = 3;
+            const totalGapWidth = gap * Math.max(row.segments.length - 1, 0);
+            const scale = (panelContentWidth - totalGapWidth) / totalUnits;
+            let cursor = 0;
+            return (
+              <g key={`hero-block-row-${row.y}`} transform={`translate(0 ${row.y})`}>
+                {row.segments.map(([state, width], idx) => {
+                  const x = cursor;
+                  const scaledWidth = width * scale;
+                  cursor += scaledWidth + gap;
+                  return <rect key={`hero-block-row-${row.y}-segment-${idx}`} x={x} y="0" width={scaledWidth} height="24" rx="1.2" fill={statePalette[state]} />;
+                })}
+              </g>
+            );
+          })}
+        </g>
+        <rect x="0" y="0" width={panelWidth} height={panelHeight} rx="18" fill="url(#visionStateFadeOverlay)" />
       </g>
     </svg>
   );
