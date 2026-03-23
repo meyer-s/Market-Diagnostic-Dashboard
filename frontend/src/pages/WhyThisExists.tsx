@@ -237,16 +237,16 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
       <circle cx="138" cy="64" r="3.8" fill="#6EE7B7" fillOpacity="0.2" />
       <circle cx="156" cy="20" r="3.4" fill="#e2e8f0" fillOpacity="0.14" />
 
-      <path d="M118 18 C146 18, 174 22, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-      <path d="M138 64 C162 66, 184 67, 204 68" stroke="#6EE7B7" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-      <path d="M156 20 C176 22, 192 26, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+      <path d="M30 16 H118 C134 16, 142 22, 154 22 H186 C198 22, 204 28, 204 34" stroke="#93C5FD" strokeOpacity="0.16" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+      <path d="M118 18 H184 C198 18, 204 24, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      <path d="M156 20 H188 C198 20, 204 26, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
 
-      <path d="M102 48 C132 42, 162 38, 196 34" stroke="#64748b" strokeOpacity="0.5" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-      <path d="M102 48 C134 54, 164 62, 196 68" stroke="#64748b" strokeOpacity="0.46" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-      <path d="M104 47 C134 41, 164 37, 196 34" stroke="#6EE7B7" strokeOpacity="0.96" strokeWidth="3.3" fill="none" strokeLinecap="round" />
+      <path d="M48 82 H122 C138 82, 148 74, 160 74 H190 C200 74, 204 72, 204 68" stroke="#6EE7B7" strokeOpacity="0.18" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+      <path d="M138 64 H192 C200 64, 204 66, 204 68" stroke="#6EE7B7" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
 
-      <path d="M30 16 C78 18, 118 24, 150 30 C170 32, 186 33, 204 34" stroke="#93C5FD" strokeOpacity="0.2" strokeWidth="1.9" fill="none" strokeLinecap="round" />
-      <path d="M48 82 C90 78, 124 74, 152 71 C172 69, 188 68, 204 68" stroke="#6EE7B7" strokeOpacity="0.22" strokeWidth="1.9" fill="none" strokeLinecap="round" />
+      <path d="M102 48 H130 C144 48, 150 36, 164 36 H194 C200 36, 204 35, 204 34" stroke="#64748b" strokeOpacity="0.5" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      <path d="M102 48 H130 C144 48, 150 62, 164 62 H194 C200 62, 204 65, 204 68" stroke="#64748b" strokeOpacity="0.46" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      <path d="M104 46 H134 C148 46, 154 34, 168 34 H196" stroke="#6EE7B7" strokeOpacity="0.96" strokeWidth="3.3" fill="none" strokeLinecap="round" />
 
       <circle cx="92" cy="48" r="3.4" fill="#111827" fillOpacity="0.2" />
     </svg>
