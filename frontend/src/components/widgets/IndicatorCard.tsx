@@ -84,7 +84,7 @@ export default function IndicatorCard({ indicator }: Props) {
 
   return (
     <Link to={`/indicators/${routeCode}`}>
-      <div className="bg-stealth-800 rounded p-4 shadow hover:bg-stealth-700 transition">
+      <div className="primary-card primary-card-hover p-4">
         <div className="text-gray-300 text-sm">{displayName}</div>
         <div className="text-2xl font-semibold mt-2">
           {formatValue(indicator.raw_value, 2)}

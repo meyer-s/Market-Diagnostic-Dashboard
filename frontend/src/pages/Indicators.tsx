@@ -57,8 +57,8 @@ export default function Indicators() {
       <h2 className="text-xl sm:text-2xl font-bold mb-3 md:mb-4">All Indicators</h2>
 
       {/* Desktop Table View */}
-      <div className="hidden lg:block overflow-x-auto">
-        <table className="w-full bg-stealth-800 rounded">
+      <div className="hidden lg:block overflow-x-auto overflow-hidden primary-card">
+        <table className="w-full">
           <thead className="text-left text-gray-400">
             <tr>
               <th className="px-4 py-3">Code</th>
@@ -114,7 +114,7 @@ function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
 
   return (
     <Link to={`/indicators/${routeCode}`}>
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-3 hover:bg-stealth-750 transition">
+      <div className="primary-card primary-card-hover p-3">
         <div className="flex items-start justify-between mb-2">
           <div>
             <div className="text-accent-yellow font-semibold text-sm">{displayCode}</div>

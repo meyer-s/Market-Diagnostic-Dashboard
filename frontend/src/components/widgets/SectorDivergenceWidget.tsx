@@ -251,7 +251,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
 
   if (loading) {
     return (
-      <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">
+      <div className="primary-card p-6">
         <div className="animate-pulse">
           <div className="h-6 bg-stealth-700 rounded w-1/3 mb-4"></div>
           <div className="h-4 bg-stealth-700 rounded w-2/3 mb-3"></div>
@@ -310,7 +310,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       : `Compares defensive vs growth sectors. Growth is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth leadership indicates stronger cyclicality in sector positioning.`;
 
   return (
-    <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">
+    <div className="primary-card p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold">Sector Divergence Analysis</h3>
         <Link 
@@ -325,7 +325,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       </div>
 
       {/* Market Interpretation - Prominent Card */}
-      <div className="bg-gradient-to-br from-stealth-900 to-stealth-850 rounded-lg p-4 mb-6 border border-stealth-600">
+      <div className="secondary-card p-4 mb-6 bg-gradient-to-br from-white/[0.05] to-transparent">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <div className={`text-lg font-bold ${interpretation.color} mb-2`}>
@@ -346,7 +346,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
 
       {/* Key Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
+        <div className="secondary-card p-4">
           <div className="text-xs text-gray-400 mb-2">Regime Alignment</div>
           <div className="flex items-end justify-between">
             <div className={`text-3xl font-bold ${getAlignmentColor(data.regime_alignment_score)}`}>
@@ -361,7 +361,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
           </div>
         </div>
 
-        <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
+        <div className="secondary-card p-4">
           <div className="text-xs text-gray-400 mb-2">Sector Breadth</div>
           <div className="flex justify-between items-end mb-2 gap-2 min-w-0">
             <div className="flex-1 min-w-0">
@@ -381,7 +381,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
       </div>
 
       {/* Trend Chart */}
-      <div className="bg-stealth-900 rounded-lg p-4 border border-stealth-700">
+      <div className="secondary-card p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm font-semibold text-stealth-200">Defensive vs Cyclical Spread</div>
           <div className="text-xs text-stealth-500">{periodLabel}</div>
@@ -447,7 +447,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
             {alerts.map((alert, idx) => (
               <div
                 key={idx}
-                className={`bg-stealth-900 rounded p-4 border-l-4 ${
+                className={`secondary-card p-4 border-l-4 ${
                   alert.severity === "WARNING" 
                     ? "border-yellow-400" 
                     : "border-blue-400"
@@ -471,7 +471,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
                 </p>
                 
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-stealth-800 rounded p-2">
+                  <div className="secondary-card p-2">
                     <div className="text-gray-500">System State</div>
                     <div className={`font-bold ${
                       alert.details.system_state === "RED" ? "text-red-400" :
@@ -482,21 +482,21 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
                     </div>
                   </div>
                   
-                  <div className="bg-stealth-800 rounded p-2">
+                  <div className="secondary-card p-2">
                     <div className="text-gray-500">Spread</div>
                     <div className="font-bold text-stealth-200">
                       {(alert.details.spread ?? 0) > 0 ? "+" : ""}{alert.details.spread ?? 0} pts
                     </div>
                   </div>
                   
-                  <div className="bg-stealth-800 rounded p-2">
+                  <div className="secondary-card p-2">
                     <div className="text-gray-500">Defensive Avg</div>
                     <div className="font-bold text-blue-400">
                       {alert.details.defensive_avg}
                     </div>
                   </div>
                   
-                  <div className="bg-stealth-800 rounded p-2">
+                  <div className="secondary-card p-2">
                     <div className="text-gray-500">Cyclical Avg</div>
                     <div className="font-bold text-orange-400">
                       {alert.details.cyclical_avg}
@@ -509,7 +509,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
         </div>
       )}
 
-      <div className="mt-6 bg-stealth-900 border border-stealth-700 rounded p-3">
+      <div className="mt-6 secondary-card p-3">
         <p className="text-xs text-stealth-300 leading-relaxed">{sectorSummary}</p>
       </div>
     </div>

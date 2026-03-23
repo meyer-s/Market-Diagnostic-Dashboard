@@ -152,7 +152,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
 
   if (loading) {
     return (
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
+      <div className="primary-card p-6">
         <div className="animate-pulse">
           <div className="h-6 bg-stealth-700 rounded w-1/3 mb-4"></div>
           <div className="h-4 bg-stealth-700 rounded w-2/3"></div>
@@ -163,7 +163,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
 
   if (error || !data) {
     return (
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
+      <div className="primary-card p-6">
         <h3 className="text-lg font-semibold text-red-400 mb-2">
           System Overview
         </h3>
@@ -250,7 +250,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
 
   return (
     <Link to="/system-breakdown" className="block">
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-3 sm:p-6 space-y-4 hover:bg-stealth-750 hover:border-stealth-600 transition cursor-pointer">
+      <div className="primary-card primary-card-hover p-3 sm:p-6 space-y-4 cursor-pointer">
         {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-start gap-1 sm:gap-2 min-w-0">
@@ -344,7 +344,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             {recentNews.map((item) => (
               <div
                 key={item.id}
-                className="flex items-start gap-2 p-2 bg-stealth-900 rounded border border-stealth-700"
+                className="secondary-card p-2 flex items-start gap-2"
               >
                 <span className="text-xs text-sky-400 mt-0.5">{item.symbol}</span>
                 <div className="flex-1 min-w-0">
@@ -581,7 +581,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
       </div>
 
       {/* Conclusion */}
-      <div className="bg-stealth-900 border border-stealth-700 rounded p-3 mt-4">
+      <div className="secondary-card p-3 mt-4">
         <p className="text-xs text-stealth-300 leading-relaxed">{systemSummary}</p>
       </div>
       </div>

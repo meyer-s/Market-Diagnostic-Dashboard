@@ -15,7 +15,7 @@ export function ComponentCard({
   weight 
 }: ComponentCardProps) {
   return (
-    <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+    <div className="secondary-card p-4">
       <div className="text-xs text-stealth-400 mb-1">{label}</div>
       <div className={`text-lg font-bold ${valueColor}`}>
         {typeof value === 'number' ? value.toFixed(2) : value}

@@ -216,7 +216,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
   if (loading) {
     return (
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
+      <div className="primary-card p-6">
         <div className="animate-pulse">
           <div className="h-6 bg-stealth-700 rounded w-1/3 mb-4"></div>
           <div className="h-4 bg-stealth-700 rounded w-2/3"></div>
@@ -227,7 +227,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
   if (error || !data) {
     return (
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
+      <div className="primary-card p-6">
         <h3 className="text-lg font-semibold text-red-400 mb-2">
           Dow Theory Trends
         </h3>
@@ -383,7 +383,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   };
 
   return (
-    <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 space-y-5">
+    <div className="primary-card p-6 space-y-5">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-stealth-100">
           Dow Theory Trends
@@ -393,7 +393,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
         </span>
       </div>
 
-      <div className="bg-stealth-900 border border-stealth-700 rounded-lg p-4 space-y-3">
+      <div className="secondary-card p-4 space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-sm font-semibold text-stealth-200">
@@ -486,7 +486,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
       <div className="pt-2 border-t border-stealth-700">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-stealth-900 border border-stealth-700 rounded p-3 text-xs text-stealth-300">
+          <div className="secondary-card p-3 text-xs text-stealth-300">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Classic snapshot</div>
             <div className="mt-2 space-y-1">
               <div>
@@ -507,7 +507,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
               </div>
             </div>
           </div>
-          <div className="bg-stealth-900 border border-stealth-700 rounded p-3 text-xs text-stealth-300">
+          <div className="secondary-card p-3 text-xs text-stealth-300">
             <div className="text-[11px] uppercase tracking-wide text-stealth-500">Modern snapshot</div>
             <div className="mt-2 space-y-1">
               <div>
@@ -532,7 +532,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
       </div>
 
       <div className="pt-3">
-        <div className="bg-stealth-900 border border-stealth-700 rounded p-3">
+        <div className="secondary-card p-3">
           <p className="text-xs text-stealth-300 leading-relaxed">{dowSummary}</p>
         </div>
       </div>

@@ -378,7 +378,7 @@ const MarketMap = () => {
           INTRADAY MAJOR INDICES CHART
           Shows 5-minute interval price action for SPY, DJI, RTY across last 5 trading days
           ================================================================= */}
-      <div className="bg-stealth-800 rounded-lg p-3 md:p-6 border border-stealth-700">
+      <div className="primary-card p-3 md:p-6">
         <h2 className="text-base md:text-lg font-semibold text-stealth-200 mb-2">Major Indices Intraday (5 min)</h2>
         <p className="text-stealth-400 text-xs mb-3 md:mb-4">SPY (S&P 500), DJI (Dow Jones), RTY (Russell 2000)</p>
         <div className="h-48 sm:h-64">
@@ -539,7 +539,7 @@ const MarketMap = () => {
             return (
               <div
                 key={sector.name}
-                className="bg-stealth-800 rounded-lg border border-stealth-700 overflow-hidden"
+                className="primary-card overflow-hidden"
               >
                 {/* Sector Header */}
                 <div className="flex flex-col gap-1 px-4 py-2.5 bg-stealth-900 border-b border-stealth-700">

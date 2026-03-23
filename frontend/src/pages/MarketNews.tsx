@@ -282,7 +282,7 @@ export default function MarketNews() {
       </div>
 
       {/* Collapsible editor for the cached ticker list (presets load into this editor). */}
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4">
+      <div className="primary-card p-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <div>
             <h3 className="text-sm font-semibold text-stealth-100">Ticker Cache</h3>
@@ -369,7 +369,7 @@ export default function MarketNews() {
               href={article.link}
               target="_blank"
               rel="noreferrer"
-              className="block bg-stealth-800 border border-stealth-700 rounded-lg p-4 hover:bg-stealth-750 transition"
+              className="block primary-card primary-card-hover p-4"
             >
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="flex-1 min-w-0">

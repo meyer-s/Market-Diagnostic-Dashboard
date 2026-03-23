@@ -71,7 +71,7 @@ export default function PreciousMetalsWidget() {
 
   if (loading) {
     return (
-      <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <h3 className="text-base sm:text-lg font-bold mb-3">Precious Metals</h3>
         <div className="text-sm text-stealth-400">Loading...</div>
       </div>
@@ -81,7 +81,7 @@ export default function PreciousMetalsWidget() {
   return (
     <Link 
       to="/precious-metals"
-      className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6 hover:border-stealth-600 transition-colors cursor-pointer block"
+      className="primary-card primary-card-hover p-4 md:p-6 cursor-pointer block"
     >
       <div className="flex justify-between items-start mb-4">
         <h3 className="text-base sm:text-lg font-bold">Precious Metals</h3>

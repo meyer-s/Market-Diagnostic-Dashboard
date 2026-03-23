@@ -314,7 +314,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
 
   if (loading) {
     return (
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <div className="animate-pulse">
           <div className="h-8 bg-stealth-700 rounded mb-3 w-1/3"></div>
           <div className="h-12 bg-stealth-700 rounded mb-4"></div>
@@ -325,7 +325,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
 
   if (!aasData) {
     return (
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <p className="text-stealth-400 text-sm">Unable to load AAS data</p>
       </div>
     );
@@ -333,7 +333,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
 
   return (
     <Link to="/alternative-assets">
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6 hover:border-stealth-600 transition cursor-pointer h-full">
+      <div className="primary-card primary-card-hover p-4 md:p-6 cursor-pointer h-full">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-stealth-100">Alternative Asset Stability</h3>
           <svg className="w-5 h-5 text-stealth-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -415,7 +415,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
         </div>
 
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
-          <div className="rounded-lg border border-stealth-700 bg-stealth-900/50 p-3">
+          <div className="secondary-card p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: metalsColor }}>
                 Metals Leaders
@@ -445,7 +445,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
             </div>
           </div>
 
-          <div className="rounded-lg border border-stealth-700 bg-stealth-900/50 p-3">
+          <div className="secondary-card p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: cryptoColor }}>
                 Crypto Leaders

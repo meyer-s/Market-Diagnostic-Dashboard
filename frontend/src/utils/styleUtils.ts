@@ -123,9 +123,9 @@ export const BUTTON_STYLES = {
  * Common card/container styles
  */
 export const CARD_STYLES = {
-  base: "bg-stealth-800 border border-stealth-700 rounded-lg",
-  hover: "hover:bg-stealth-750 transition",
-  info: "bg-stealth-850/50 border border-stealth-700/50 rounded-lg",
+  base: "primary-card",
+  hover: "primary-card-hover",
+  info: "secondary-card",
 } as const;
 
 /**

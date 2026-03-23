@@ -316,12 +316,12 @@ export default function Dashboard() {
 
       <div className="mb-3 md:mb-6">
         {!overallInsight && (
-          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
+          <div className="primary-card p-4 sm:p-5">
             <p className="text-xs text-stealth-400">Overall read forming...</p>
           </div>
         )}
         {overallInsight && (
-          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 sm:p-5">
+          <div className="primary-card p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
