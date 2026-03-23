@@ -34,6 +34,15 @@ const HOST_LABEL_OVERRIDES: Record<string, string> = {
   "www.federalreserve.gov": "Fed",
 };
 
+const RISK_REGIME_HEADER_LABELS = [
+  "Risk Regime:",
+  "Correction risk elevated?:",
+  "Recession risk elevated?:",
+  "Final Regime:",
+  "Confidence:",
+];
+const INLINE_SPLIT_LABELS = ["Signal:", ...RISK_REGIME_HEADER_LABELS];
+
 const labelFromUrl = (url: string) => {
   const raw = url.trim();
   try {
@@ -70,18 +79,13 @@ const normalizeMarkdownSources = (markdown: string) => {
       line = `${cleaned} [[SOURCE:u=${encoded}]]`;
     }
 
-    const signalIdx = line.indexOf("Signal:");
-    if (signalIdx > 0 && !line.trimStart().startsWith("Signal:")) {
-      const before = line.slice(0, signalIdx).trimEnd();
-      const after = line.slice(signalIdx).trimStart();
-      return [before, after].filter(Boolean);
-    }
-
-    const finalIdx = line.indexOf("Final Regime:");
-    if (finalIdx > 0 && !line.trimStart().startsWith("Final Regime:")) {
-      const before = line.slice(0, finalIdx).trimEnd();
-      const after = line.slice(finalIdx).trimStart();
-      return [before, after].filter(Boolean);
+    for (const label of INLINE_SPLIT_LABELS) {
+      const labelIndex = line.indexOf(label);
+      if (labelIndex > 0 && !line.trimStart().startsWith(label)) {
+        const before = line.slice(0, labelIndex).trimEnd();
+        const after = line.slice(labelIndex).trimStart();
+        return [before, after].filter(Boolean);
+      }
     }
 
     return [line];
@@ -105,21 +109,26 @@ const normalizeMarkdownSources = (markdown: string) => {
       currentBlock.unshift(signalLine);
     }
 
-    // For the Risk Regime section, lift `Final Regime:` and `Confidence:` into the subheader
-    // (before the first bullet list) to avoid being treated as lazy-continuation list text.
+    // For the Risk Regime section, lift the regime header lines into a proper subheader block
+    // (before the first bullet list) and separate them with blank lines so markdown renders
+    // each one as its own paragraph instead of one run-on paragraph.
     if (currentHeading?.trim() === "## Risk Regime Assessment") {
-      const finalRegimeIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("Final Regime:"));
-      const finalRegimeLine = finalRegimeIndex >= 0 ? currentBlock.splice(finalRegimeIndex, 1)[0] : null;
+      const headerLines = RISK_REGIME_HEADER_LABELS.flatMap((label) => {
+        const lineIndex = currentBlock.findIndex((line) => line.trimStart().startsWith(label));
+        if (lineIndex < 0) {
+          return [];
+        }
+        return currentBlock.splice(lineIndex, 1);
+      });
 
-      const confidenceIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("Confidence:"));
-      const confidenceLine = confidenceIndex >= 0 ? currentBlock.splice(confidenceIndex, 1)[0] : null;
-
-      if (finalRegimeLine || confidenceLine) {
+      if (headerLines.length > 0) {
         const firstBulletIndex = currentBlock.findIndex((line) => line.trimStart().startsWith("- "));
-        const insertAt = firstBulletIndex >= 0 ? firstBulletIndex : currentBlock.length;
-
-        const toInsert = [finalRegimeLine, confidenceLine].filter(Boolean) as string[];
-        currentBlock.splice(insertAt, 0, ...toInsert);
+        const hasBullets = firstBulletIndex >= 0;
+        const insertAt = hasBullets ? firstBulletIndex : currentBlock.length;
+        const toInsert = headerLines.flatMap((line, index) =>
+          index < headerLines.length - 1 ? [line, ""] : [line],
+        );
+        currentBlock.splice(insertAt, 0, ...toInsert, ...(hasBullets ? [""] : []));
       }
     }
 
@@ -232,6 +241,14 @@ export default function UpdatesViewer({
     [post?.content_markdown],
   );
 
+  const aiSummary = useMemo(() => {
+    const summary = post?.summary?.trim();
+    if (!summary) {
+      return null;
+    }
+    return summary.replace(/\s+/g, " ");
+  }, [post?.summary]);
+
   const headerLabel = useMemo(() => {
     if (!overlayLoading) {
       return null;
@@ -283,7 +300,14 @@ export default function UpdatesViewer({
             {post.pinned && <span className="ml-auto text-xs font-semibold text-stealth-300">PINNED</span>}
           </div>
           <h1 className="text-2xl font-semibold text-stealth-100">{post.title}</h1>
-          <p className="mt-2 text-sm text-stealth-300">{post.summary}</p>
+          {aiSummary && (
+            <div className="mt-4 rounded-2xl border border-pulse-500/20 bg-gradient-to-r from-pulse-500/10 via-stealth-850/90 to-stealth-850/90 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-pulse-300/85">
+                AI Summary
+              </div>
+              <p className="mt-2 text-sm leading-7 text-stealth-200">{aiSummary}</p>
+            </div>
+          )}
           {post.tags.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {post.tags.map((tag) => (
