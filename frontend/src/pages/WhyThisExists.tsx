@@ -122,18 +122,18 @@ function HeroSignalIllustration() {
       />
       <g opacity="0.95">
         {[
-          { x: 1068, y: 176, cells: 13, green: 9, amber: 3 },
-          { x: 1016, y: 224, cells: 17, green: 11, amber: 4 },
-          { x: 972, y: 272, cells: 21, green: 14, amber: 4 },
-          { x: 1002, y: 320, cells: 19, green: 12, amber: 4 },
-          { x: 1054, y: 368, cells: 14, green: 9, amber: 3 },
+          { x: 1068, y: 176, pattern: ["G", "G", "Y", "G", "G", "G", "Y", "G", "R", "Y", "G", "G", "Y"] },
+          { x: 1016, y: 224, pattern: ["R", "Y", "Y", "G", "G", "Y", "G", "G", "G", "Y", "R", "G", "G", "Y", "Y", "G", "G"] },
+          { x: 972, y: 272, pattern: ["Y", "G", "G", "G", "R", "Y", "G", "G", "Y", "G", "G", "G", "R", "Y", "Y", "G", "G", "G", "Y", "R", "G"] },
+          { x: 1002, y: 320, pattern: ["G", "Y", "R", "R", "Y", "G", "G", "Y", "G", "G", "Y", "R", "G", "G", "Y", "G", "G", "Y", "G"] },
+          { x: 1054, y: 368, pattern: ["G", "G", "Y", "G", "R", "Y", "G", "G", "Y", "G", "G", "R", "Y", "G"] },
         ].map((row, rowIdx) => (
           <g key={`distribution-row-${row.y}`}>
-            {Array.from({ length: row.cells }).map((_, cellIdx) => {
+            {row.pattern.map((cellState, cellIdx) => {
               const fill =
-                cellIdx < row.green
+                cellState === "G"
                   ? "url(#visionStateGreen)"
-                  : cellIdx < row.green + row.amber
+                  : cellState === "Y"
                     ? "url(#visionStateAmber)"
                     : "url(#visionStateRed)";
 
@@ -168,6 +168,19 @@ function HeroSignalIllustration() {
             strokeLinecap="round"
             strokeDasharray="3 12"
           />
+        ))}
+      </g>
+
+      <g opacity="0.62">
+        {[
+          { x: 1186, y: 432, width: 122, fill: 74, color: "url(#visionStateGreen)" },
+          { x: 1186, y: 452, width: 122, fill: 38, color: "url(#visionStateAmber)" },
+          { x: 1186, y: 472, width: 122, fill: 22, color: "url(#visionStateRed)" },
+        ].map((bar) => (
+          <g key={`ratio-bar-${bar.y}`}>
+            <rect x={bar.x} y={bar.y} width={bar.width} height="9" rx="4.5" fill="#0f172a" fillOpacity="0.46" stroke="#334155" strokeOpacity="0.3" />
+            <rect x={bar.x} y={bar.y} width={bar.fill} height="9" rx="4.5" fill={bar.color} />
+          </g>
         ))}
       </g>
     </svg>
