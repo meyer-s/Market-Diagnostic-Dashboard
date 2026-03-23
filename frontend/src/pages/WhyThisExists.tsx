@@ -225,18 +225,8 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
     );
   }
 
-  return (
-    <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
-      <circle cx="30" cy="16" r="5.2" fill="#33455f" />
-      <circle cx="48" cy="82" r="5.2" fill="#2b524f" />
-
-      <circle cx="92" cy="48" r="9.5" fill="#f8fafc" fillOpacity="0.9" />
-      <circle cx="204" cy="34" r="8.8" fill="#6EE7B7" fillOpacity="0.95" />
-      <circle cx="204" cy="68" r="7.4" fill="#64748b" fillOpacity="0.82" />
-      <circle cx="118" cy="18" r="4.2" fill="#28374d" />
-      <circle cx="138" cy="64" r="3.8" fill="#234143" />
-      <circle cx="156" cy="20" r="3.4" fill="#2e3543" />
-
+    return (
+      <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
       <path d="M30 16 C46 18, 60 22, 76 26 H138 C150 26, 160 30, 174 30 H194 C200 30, 204 32, 204 34" stroke="#93C5FD" strokeOpacity="0.16" strokeWidth="1.4" fill="none" strokeLinecap="round" />
       <path d="M118 18 C126 20, 132 25, 140 30 H176 C190 30, 200 32, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
       <path d="M156 20 C164 21, 170 23, 178 25 H190 C198 25, 204 29, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
@@ -248,6 +238,14 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
       <path d="M102 48 H130 C144 48, 150 62, 164 62 H194 C200 62, 204 65, 204 68" stroke="#64748b" strokeOpacity="0.46" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       <path d="M104 46 H134 C148 46, 154 34, 168 34 H196" stroke="#6EE7B7" strokeOpacity="0.96" strokeWidth="3.3" fill="none" strokeLinecap="round" />
 
+      <circle cx="30" cy="16" r="5.2" fill="#33455f" />
+      <circle cx="48" cy="82" r="5.2" fill="#2b524f" />
+      <circle cx="92" cy="48" r="9.5" fill="#f8fafc" fillOpacity="0.9" />
+      <circle cx="204" cy="34" r="8.8" fill="#6EE7B7" fillOpacity="0.95" />
+      <circle cx="204" cy="68" r="7.4" fill="#64748b" fillOpacity="0.82" />
+      <circle cx="118" cy="18" r="4.2" fill="#28374d" />
+      <circle cx="138" cy="64" r="3.8" fill="#234143" />
+      <circle cx="156" cy="20" r="3.4" fill="#2e3543" />
       <circle cx="92" cy="48" r="3.4" fill="#111827" fillOpacity="0.2" />
     </svg>
   );
