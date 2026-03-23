@@ -70,6 +70,18 @@ function HeroSignalIllustration() {
           <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.03" />
           <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.14" />
         </linearGradient>
+        <linearGradient id="visionStateGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#34D399" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.76" />
+        </linearGradient>
+        <linearGradient id="visionStateAmber" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.14" />
+          <stop offset="100%" stopColor="#FBBF24" stopOpacity="0.58" />
+        </linearGradient>
+        <linearGradient id="visionStateRed" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#EF4444" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="#F87171" stopOpacity="0.46" />
+        </linearGradient>
         <filter id="visionSoftBlur" x="-25%" y="-25%" width="150%" height="150%">
           <feGaussianBlur stdDeviation="32" />
         </filter>
@@ -108,37 +120,47 @@ function HeroSignalIllustration() {
         strokeLinecap="round"
         strokeDasharray="3 16"
       />
+      <g opacity="0.96">
+        {[
+          { y: 178, width: 246, x: 1038, green: 132, amber: 36, red: 20 },
+          { y: 228, width: 286, x: 998, green: 168, amber: 48, red: 26 },
+          { y: 280, width: 322, x: 964, green: 182, amber: 56, red: 32 },
+          { y: 334, width: 294, x: 1012, green: 154, amber: 42, red: 24 },
+          { y: 388, width: 248, x: 1062, green: 126, amber: 34, red: 18 },
+        ].map((lane, idx) => (
+          <g key={`distribution-lane-${lane.y}`}>
+            <rect
+              x={lane.x}
+              y={lane.y}
+              width={lane.width}
+              height="14"
+              rx="7"
+              fill="#0f172a"
+              fillOpacity={0.46 - idx * 0.03}
+              stroke="#334155"
+              strokeOpacity={0.38}
+            />
+            <rect x={lane.x + 10} y={lane.y + 2} width={lane.green} height="10" rx="5" fill="url(#visionStateGreen)" />
+            <rect x={lane.x + 16 + lane.green} y={lane.y + 2} width={lane.amber} height="10" rx="5" fill="url(#visionStateAmber)" />
+            <rect x={lane.x + 22 + lane.green + lane.amber} y={lane.y + 2} width={lane.red} height="10" rx="5" fill="url(#visionStateRed)" />
+          </g>
+        ))}
+      </g>
 
-      {[55, 89, 144, 233].map((r, idx) => (
-        <path
-          key={`fib-left-${r}`}
-          d={`M ${1224 - r} 334 A ${r} ${r} 0 0 1 1224 ${334 - r}`}
-          fill="none"
-          stroke={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
-          strokeOpacity={0.58 - idx * 0.1}
-          strokeWidth={2.2 - idx * 0.25}
-          strokeLinecap="round"
-        />
-      ))}
-
-      {[55, 89, 144].map((r, idx) => (
-        <path
-          key={`fib-right-${r}`}
-          d={`M 1224 ${334 - r} A ${r} ${r} 0 0 1 ${1224 + r} 334`}
-          fill="none"
-          stroke={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
-          strokeOpacity={0.46 - idx * 0.09}
-          strokeWidth={1.9 - idx * 0.18}
-          strokeLinecap="round"
-        />
-      ))}
-
-      {[988, 1078, 1168, 1258, 1348].map((x) => (
-        <circle key={`detail-${x}`} cx={x} cy="250" r="3.2" fill="#93C5FD" fillOpacity="0.62" />
-      ))}
-
-      <circle cx="1224" cy="334" r="55" fill="none" stroke="#6EE7B7" strokeOpacity="0.2" strokeWidth="1.4" />
-      <circle cx="1224" cy="334" r="13" fill="#f8fafc" fillOpacity="0.82" />
+      <g opacity="0.52">
+        {[1088, 1158, 1228, 1298].map((x, idx) => (
+          <path
+            key={`distribution-link-${x}`}
+            d={`M ${x} 176 C ${x - 18} 236, ${x - 26} 306, ${x - 8} 390`}
+            fill="none"
+            stroke={idx % 2 === 0 ? "#93C5FD" : "#6EE7B7"}
+            strokeOpacity={0.2 + idx * 0.03}
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeDasharray="4 10"
+          />
+        ))}
+      </g>
     </svg>
   );
 }
