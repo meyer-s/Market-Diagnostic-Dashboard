@@ -19,23 +19,6 @@ INDICATOR_METADATA = {
         "impact": "Critical early warning indicator. Elevated VIX (RED state) signals imminent market volatility and potential corrections."
     },
     
-    "DFF": {
-        "name": "Federal Funds Effective Rate",
-        "description": "The Federal Funds Rate is the interest rate at which depository institutions lend reserve balances to other institutions overnight. It's the primary tool the Federal Reserve uses to implement monetary policy.",
-        "relevance": "The Fed Funds Rate directly influences all other interest rates in the economy, affecting borrowing costs for consumers and businesses. Rapid rate increases can stress financial markets and slow economic growth.",
-        "scoring": "Direction: +1 (high = stress). Scored on RATE OF CHANGE: rising rates = tightening = stress, falling rates = easing = stability. The velocity of change matters more than absolute level. First data point is skipped to avoid zero-padding bias.",
-        "direction": 1,
-        "positive_is_good": False,
-        "interpretation": "Rising rates = Tightening Policy/Stress (BAD). Falling rates = Easing Policy (GOOD).",
-        "use_rate_of_change": True,
-        "thresholds": {
-            "green_below": 40,
-            "yellow_below": 70
-        },
-        "typical_range": "Near-zero during easing (0-0.25%). Neutral: 2-3%. Restrictive: 4%+. Crisis response involves rapid cuts.",
-        "impact": "Very high impact. Rate changes affect borrowing costs, financing conditions, and economic activity. Sharp hiking cycles typically coincide with tighter financial conditions."
-    },
-    
     "SPY": {
         "name": "S&P 500 ETF (SPY)",
         "description": "SPY tracks the S&P 500 index, representing the 500 largest U.S. companies. Scored based on distance from 50-day EMA to capture trend strength and mean reversion dynamics.",
@@ -55,19 +38,48 @@ INDICATOR_METADATA = {
     },
 
     "BREADTH_HEALTH": {
-        "name": "Breadth Health",
-        "description": "Measures market participation using the equal-weight vs cap-weight proxy (RSP/SPY ratio). This reduces reliance on index-level price moves and highlights whether gains are broad-based.",
-        "relevance": "Broad participation signals healthier market internals, while narrowing participation suggests leadership concentration and weaker internal support. This is a diagnostic breadth check, not a forecast.",
-        "scoring": "Uses a 252-day z-score of the RSP/SPY ratio (level) and a 30-day change z-score (trend). The final stability score blends 65% level + 35% trend. Direction: -1 (higher ratio and improving trend = higher stability score).",
+        "name": "Market Breadth Health",
+        "description": (
+            "A 3-component composite measuring whether market gains are broadly shared across "
+            "stocks and sectors, not driven by a narrow concentration of large-cap tech. "
+            "Components: (1) RSP/SPY ratio — equal-weight vs cap-weight participation (35%); "
+            "(2) Sector participation — fraction of 11 SPDR sector ETFs trading above their "
+            "50-day moving average (40%); (3) Sector return breadth — fraction of sectors with "
+            "a positive 20-day return (25%). A market rotating out of tech-heavy concentration "
+            "into broad sector participation scores higher here."
+        ),
+        "relevance": (
+            "Broad participation is a hallmark of healthy bull markets. When gains concentrate "
+            "in 2–3 mega-cap sectors, the market is fragile — a single rotation can cause "
+            "index-level damage. Conversely, when sectors like Financials, Industrials, Energy, "
+            "and Healthcare all advance together, it reflects genuine economic expansion rather "
+            "than momentum chasing. Sector widening is structurally good for the economy."
+        ),
+        "scoring": (
+            "Each component is z-score normalized over a 252-day lookback (direction: -1, higher = better). "
+            "RSP/SPY also blends a 30-day trend component (65% level, 35% trend). "
+            "The three normalized scores are combined at 35/40/25 weights."
+        ),
         "direction": -1,
         "positive_is_good": True,
-        "interpretation": "Rising RSP/SPY ratio = broader participation (GOOD). Falling ratio = narrowing participation (BAD).",
+        "interpretation": (
+            "High score = broad participation across sectors (GOOD). "
+            "Low score = narrow, tech-heavy or mega-cap-only leadership (BAD). "
+            "A rising score during a market rally means the rally is healthy and sustainable."
+        ),
         "thresholds": {
             "green_below": 40,
             "yellow_below": 70
         },
-        "typical_range": "RSP/SPY typically clusters near 1.0. Sustained declines indicate narrowing participation; sustained rises indicate broadening participation.",
-        "impact": "Moderate to high impact. Breadth Health adds an internal participation check so the system is not overly dependent on cap-weighted price moves."
+        "typical_range": (
+            "RSP/SPY ratio typically clusters near 1.0. Sector participation above 70% is healthy; "
+            "below 40% indicates most sectors are lagging. Return breadth above 60% is constructive."
+        ),
+        "impact": (
+            "High impact. Breadth Health captures market internals that price-level indicators miss. "
+            "Strong breadth confirmed by sector diversification is one of the most reliable signals "
+            "of a sustainable advance vs a narrow, momentum-driven market prone to sharp reversals."
+        )
     },
     
     "DXY": {

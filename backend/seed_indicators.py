@@ -1,22 +1,25 @@
 """
 Seed Indicators Script
 ----------------------
-Creates all 12 indicator metadata entries in the database.
+Creates/updates all 11 indicator metadata entries in the database.
 This script is automatically run on container startup via startup.sh.
 
 Indicators:
 - VIX: Volatility stress indicator (high = stress)
 - SPY: S&P 500 ETF momentum (stores EMA gap %, below EMA = stress)
-- BREADTH_HEALTH: Breadth proxy from equal-weight vs cap-weight (RSP/SPY ratio)
-- DFF: Federal Funds Rate (stores absolute rate, scores based on rate-of-change)
+- BREADTH_HEALTH: 3-component breadth (RSP/SPY ratio + sector participation + return breadth)
 - T10Y2Y: Treasury yield curve (inverted = stress)
 - UNRATE: Unemployment rate (high = stress)
 - CONSUMER_HEALTH: Derived from PCE, CPI, and PI (low = stress)
-- BOND_MARKET_STABILITY: Derived from 10Y and 30Y volatility (high = stress)
-- LIQUIDITY_PROXY: EFFR volatility (high = stress)
-- ANALYST_ANXIETY: Composite sentiment indicator from VIX, MOVE, HY OAS, ERP (high = stress)
+- BOND_MARKET_STABILITY: Derived from credit spreads, yield curve, momentum, vol
+- LIQUIDITY_PROXY: M2 growth, Fed balance sheet, RRP (low liquidity = stress)
+- ANALYST_ANXIETY: Composite from VIX, MOVE, HY OAS, ERP (high = stress)
 - SENTIMENT_COMPOSITE: Consumer & corporate confidence from Michigan, NFIB, ISM, CapEx
 - AAP: Alternative Asset Pressure from crypto and precious metals (low = pressure/distrust)
+
+DFF (Federal Funds Rate) was removed — its signal is redundant given T10Y2Y,
+LIQUIDITY_PROXY, and BOND_MARKET_STABILITY, and it provides no incremental information
+during stable-rate environments.
 
 Real data will be fetched automatically by the ETL scheduler every 4 hours.
 """
@@ -57,29 +60,15 @@ INDICATORS = [
     },
     {
         "code": "BREADTH_HEALTH",
-        "name": "Breadth Health",
+        "name": "Market Breadth Health",
         "source": "DERIVED",
-        "source_symbol": "RSP_SPY_RATIO",
+        "source_symbol": "BREADTH_COMPOSITE",
         "category": "equity",
         "direction": -1,  # higher participation = healthier = higher stability score
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.0,
-    },
-    {
-        "code": "DFF",
-        "name": "Federal Funds Effective Rate",
-        "source": "fred",
-        "source_symbol": "DFF",
-        "category": "rates",
-        # Backend stores rate-of-change: rising rates = tightening = stress
-        # Direction=1 inverts positive ROC (stress) to low stability score
-        "direction": 1,
-        "lookback_days_for_z": 252,
-        "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
-        "threshold_yellow_max": 70,
-        "weight": 1.3,
+        "weight": 1.6,  # Upgraded: now a 3-component composite (RSP/SPY + sector participation + return breadth)
     },
     {
         "code": "T10Y2Y",
@@ -91,7 +80,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.6,
+        "weight": 1.7,  # +0.1 — takes on more of the rates signal vacated by DFF
     },
     {
         "code": "UNRATE",
@@ -127,7 +116,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.8,
+        "weight": 1.9,  # +0.1 — comprehensive bonds, primary rates stress proxy
     },
     {
         "code": "LIQUIDITY_PROXY",
@@ -139,7 +128,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.6,
+        "weight": 1.7,  # +0.1 — monetary policy proxy, absorbs some DFF signal
     },
     {
         "code": "ANALYST_ANXIETY",
@@ -151,7 +140,7 @@ INDICATORS = [
         "lookback_days_for_z": 520,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.7,
+        "weight": 1.8,  # +0.1 — forward-looking composite
     },
     {
         "code": "SENTIMENT_COMPOSITE",
@@ -163,7 +152,7 @@ INDICATORS = [
         "lookback_days_for_z": 520,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.6,
+        "weight": 1.7,  # +0.1 — consumer/corporate sentiment
     },
     {
         "code": "AAP",
@@ -179,27 +168,44 @@ INDICATORS = [
     },
 ]
 
-# Check which indicators already exist
-new_indicators = []
+# --- Remove deprecated indicators ---
+DEPRECATED_CODES = ["DFF"]
+from app.models.indicator_value import IndicatorValue
+
+for dep_code in DEPRECATED_CODES:
+    dep = db.query(Indicator).filter(Indicator.code == dep_code).first()
+    if dep:
+        deleted = db.query(IndicatorValue).filter(IndicatorValue.indicator_id == dep.id).delete()
+        db.delete(dep)
+        print(f"🗑️  Removed deprecated indicator {dep_code} ({deleted} values deleted)")
+
+db.commit()
+
+# --- Create new indicators / update existing weights and metadata ---
+created = 0
+updated = 0
 for ind_data in INDICATORS:
     existing = db.query(Indicator).filter(Indicator.code == ind_data["code"]).first()
     if not existing:
-        new_indicators.append(ind_data)
-
-if not new_indicators:
-    print("✅ All 12 indicators already exist")
-    db.close()
-    exit(0)
-
-for ind_data in new_indicators:
-    indicator = Indicator(**ind_data)
-    db.add(indicator)
-    print(f"✅ Adding {ind_data['name']}")
+        indicator = Indicator(**ind_data)
+        db.add(indicator)
+        print(f"✅ Adding {ind_data['name']}")
+        created += 1
+    else:
+        # Update mutable fields so weight/name changes take effect on restart
+        changed = False
+        for field in ("weight", "name", "source_symbol", "direction", "lookback_days_for_z"):
+            if field in ind_data and getattr(existing, field) != ind_data[field]:
+                setattr(existing, field, ind_data[field])
+                changed = True
+        if changed:
+            print(f"🔄 Updated {existing.code}")
+            updated += 1
 
 db.commit()
 db.close()
 
-print(f"\n✅ Created {len(new_indicators)} new indicator(s)")
+print(f"\n✅ Seed complete: {created} created, {updated} updated, {len(DEPRECATED_CODES)} deprecated removed")
 print("\n📊 To backfill 365 days of historical data, run:")
 print("   curl -X POST http://localhost:8000/admin/backfill")
 print("\nOr the ETL scheduler will fetch latest data automatically.")

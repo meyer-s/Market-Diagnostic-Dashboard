@@ -20,7 +20,11 @@ from app.models.system_status import SystemStatus
 
 from app.services.ingestion.fred_client import FredClient
 from app.services.ingestion.yahoo_client import YahooClient
-from app.services.ingestion.breadth_utils import compute_breadth_composite_z
+from app.services.ingestion.breadth_utils import (
+    compute_breadth_composite,
+    compute_sector_breadth_series,
+    SECTOR_TICKERS,
+)
 from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 from app.utils.system_scoring import compute_weighted_composite
 
@@ -860,7 +864,10 @@ class ETLRunner:
                 ind.direction,
             )
         elif code == "BREADTH_HEALTH":
-            # Breadth proxy: equal-weight vs cap-weight relative strength (RSP/SPY)
+            # 3-component breadth composite:
+            #   35% RSP/SPY ratio (equal-weight vs cap-weight)
+            #   40% sector participation (% of 11 SPDR ETFs above 50-day MA)
+            #   25% sector return breadth (% of sectors with positive 20-day return)
             rsp_series = self.yahoo.fetch_series("RSP", start_date=start_date)
             spy_series = self.yahoo.fetch_series("SPY", start_date=start_date)
 
@@ -886,59 +893,41 @@ class ETLRunner:
 
             series = []
             clean_ratio_vals = []
+            clean_dates = []
             for date, ratio in zip(common_dates, ratio_vals):
                 if ratio is None:
                     continue
                 series.append({"date": date, "value": ratio})
                 clean_ratio_vals.append(ratio)
+                clean_dates.append(date)
 
             if len(clean_ratio_vals) < 30:
                 db.close()
                 raise ValueError(f"Insufficient clean ratio data for {code}: only {len(clean_ratio_vals)} points")
 
+            # Fetch all 11 SPDR sector ETFs for breadth metrics
+            sector_price_dicts = {}
+            for ticker in SECTOR_TICKERS:
+                try:
+                    raw = self.yahoo.fetch_series(ticker, start_date=start_date)
+                    sector_price_dicts[ticker] = series_to_dict(raw)
+                except Exception:
+                    pass  # degrade gracefully if a ticker fails
+
+            participation_vals, return_breadth_vals = compute_sector_breadth_series(
+                sector_price_dicts, clean_dates
+            )
+
             clean_values = series
             raw_series = clean_ratio_vals
 
-            normalized_series = compute_breadth_composite_z(
+            normalized_series = compute_breadth_composite(
                 clean_ratio_vals,
+                participation_vals,
+                return_breadth_vals,
                 lookback=ind.lookback_days_for_z,
                 trend_window=30,
-                level_weight=0.65,
-                trend_weight=0.35,
                 direction=ind.direction,
-            )
-        elif code == "DFF":
-            # CRITICAL: For DFF, we store the ABSOLUTE RATE but score based on 6-MONTH RATE CHANGE
-            # This captures the policy cycle (tightening vs easing) rather than day-to-day noise
-            # Rationale: Market stress comes from sustained rate changes, not daily fluctuations
-            
-            import numpy as np
-            
-            # Calculate 6-month (126 trading days) cumulative rate change
-            lookback_period = 126  # ~6 months of trading days
-            rate_change_series = []
-            
-            for i in range(len(raw_series)):
-                if i < lookback_period:
-                    # Not enough history, use shorter lookback
-                    lookback_idx = 0
-                else:
-                    lookback_idx = i - lookback_period
-                
-                # Cumulative change over period
-                rate_change = raw_series[i] - raw_series[lookback_idx]
-                rate_change_series.append(rate_change)
-            
-            # Store absolute rates in database (raw_series unchanged)
-            # But normalize based on 6-month rate change for scoring
-            # Positive change = rates rising = tightening = stress
-            # With direction=1, rising rates → negative z-score (after inversion) → low stability score (RED)
-            # Falling rates → positive z-score → high stability score (GREEN)
-            
-            normalized_series = normalize_series(
-                rate_change_series,
-                direction=ind.direction,
-                lookback=ind.lookback_days_for_z,
             )
         elif code == "UNRATE":
             # CRITICAL: For UNRATE, we store ABSOLUTE RATE but score based on 6-MONTH CHANGE
