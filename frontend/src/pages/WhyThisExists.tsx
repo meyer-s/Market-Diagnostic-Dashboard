@@ -428,7 +428,7 @@ export default function WhyThisExists() {
                 Principle
               </div>
               <h2 className="mt-3 text-2xl font-semibold text-white">{item.title}</h2>
-              <div className="mt-4">
+              <div className="mt-4 mx-auto w-[72%] max-w-[220px] sm:w-full sm:max-w-none">
                 <PrincipleMotifGraphic motif={item.motif} />
               </div>
               <p className="mt-4 text-base leading-7 text-stealth-200">{item.body}</p>
