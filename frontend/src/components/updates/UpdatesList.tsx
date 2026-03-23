@@ -1,6 +1,5 @@
 import type { UpdatePostListItem } from "../../types/updates";
 import { UPDATE_STATUS_STYLES, formatUpdateDate } from "./updateStyles";
-import { splitUpdateSummary } from "./updateSummaryUtils";
 
 interface UpdatesListProps {
   posts: UpdatePostListItem[];
@@ -23,7 +22,6 @@ export default function UpdatesList({
       <div className="max-h-[68vh] overflow-y-auto p-2">
         {posts.map((post) => {
           const isActive = post.id === selectedId;
-          const summaryParts = splitUpdateSummary(post.summary);
           return (
             <button
               key={post.id}
@@ -46,14 +44,6 @@ export default function UpdatesList({
                 <div className="text-xs text-stealth-500">{formatUpdateDate(post.created_at)}</div>
               </div>
               <div className="line-clamp-2 text-sm font-semibold text-stealth-100">{post.title}</div>
-              {summaryParts.lead && (
-                <>
-                  <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-stealth-500">
-                    Quick Read
-                  </div>
-                  <div className="mt-1 line-clamp-3 text-xs leading-5 text-stealth-400">{summaryParts.lead}</div>
-                </>
-              )}
               {post.pinned && <div className="mt-2 text-[10px] font-semibold text-stealth-300">PINNED</div>}
             </button>
           );
