@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
 import { Link } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { getFamilyColor } from "../../theme/metricColors";
+import { getFamilyColor, getMetricColor } from "../../theme/metricColors";
 import {
   analyzeSeries,
   getTrendTone,
@@ -149,13 +149,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
     }).format(value);
   };
 
-  const formatSignedPercent = (value: number | null | undefined) => {
-    if (value === null || value === undefined || !Number.isFinite(value)) {
-      return "n/a";
-    }
-
-    return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
-  };
+  const getMetalColor = (metal: string) => getMetricColor(metal);
 
   const metalsRankings = (metalsProjectionData?.projections ?? []).slice().sort((left, right) => left.rank - right.rank);
   const cryptoRankings: RelativeCryptoRanking[] = buildRelativeRankings(cryptoMarketData?.assets ?? []);
@@ -444,7 +438,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                   <div key={metal.metal} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs">
                     <div className="min-w-0">
                       <div className="font-semibold text-stealth-100">
-                        #{metal.rank} {metal.metal_name}
+                        #{metal.rank} <span style={{ color: getMetalColor(metal.metal) }}>{metal.metal_name}</span>
                       </div>
                       <div className="text-stealth-400">{formatMiniPrice(metal.current_price)} · Score {metal.score_total.toFixed(0)}</div>
                     </div>
@@ -476,7 +470,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                       <div className="font-semibold text-stealth-100">
                         #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
                       </div>
-                      <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.relativeScore.toFixed(0)}/100</div>
+                      <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.relativeScore.toFixed(0)}</div>
                     </div>
                     <span className={`shrink-0 rounded border px-2 py-1 text-[11px] font-semibold ${getRelativeClassStyles(asset.relativeClassification)}`}>
                       {asset.relativeClassification}
