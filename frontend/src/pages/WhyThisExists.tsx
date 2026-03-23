@@ -274,7 +274,7 @@ function HeroSignalIllustration() {
         strokeDasharray="3 16"
       />
       {renderChartRows(874, -54, 1.44, 680 / chartContentHeight, "md:hidden")}
-      {renderChartRows(chartX, -34, chartScaleX, 620 / chartContentHeight, "hidden md:block")}
+      {renderChartRows(chartX, -8, chartScaleX, 560 / chartContentHeight, "hidden md:block")}
     </svg>
   );
 }
