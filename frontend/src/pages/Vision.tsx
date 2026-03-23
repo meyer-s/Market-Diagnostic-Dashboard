@@ -422,6 +422,7 @@ function FrameworkHouseGraphic() {
 
 export default function Vision() {
   const [activeHighlight, setActiveHighlight] = useState<VisionHighlightId>("goal");
+  const activeHeroHighlight = heroHighlights.find((item) => item.id === activeHighlight) ?? heroHighlights[1];
 
   return (
     <div className="bg-stealth-900 text-gray-100">
@@ -445,7 +446,8 @@ export default function Vision() {
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
                 Explore The Core Ideas
               </div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
+                <div className="space-y-3">
                 {heroHighlights.map((item) => {
                   const isActive = activeHighlight === item.id;
 
@@ -456,7 +458,7 @@ export default function Vision() {
                       onClick={() => setActiveHighlight(item.id)}
                       onMouseEnter={() => setActiveHighlight(item.id)}
                       onFocus={() => setActiveHighlight(item.id)}
-                      className={`rounded-2xl border px-4 py-4 text-left transition-all duration-200 ${
+                      className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors duration-200 ${
                         isActive
                           ? "border-emerald-300/40 bg-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
                           : "border-stealth-700 bg-stealth-900/35 hover:border-stealth-500 hover:bg-white/[0.04]"
@@ -471,20 +473,27 @@ export default function Vision() {
                       <p className="mt-2 text-sm leading-6 text-stealth-300">
                         {item.summary}
                       </p>
-                      <div
-                        className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ${
-                          isActive ? "mt-3 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"
-                        }`}
-                      >
-                        <div className="overflow-hidden">
-                          <p className="border-t border-white/8 pt-3 text-sm leading-6 text-stealth-200">
-                            {item.detail}
-                          </p>
-                        </div>
-                      </div>
                     </button>
                   );
                 })}
+                </div>
+
+                <div className="rounded-[28px] border border-emerald-300/20 bg-gradient-to-br from-white/[0.08] to-white/[0.03] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.18)]">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+                    {activeHeroHighlight.eyebrow}
+                  </div>
+                  <h2 className="mt-3 text-2xl sm:text-3xl font-semibold text-white">
+                    {activeHeroHighlight.title}
+                  </h2>
+                  <p className="mt-3 text-base sm:text-lg leading-7 text-stealth-200">
+                    {activeHeroHighlight.summary}
+                  </p>
+                  <div className="mt-5 border-t border-white/8 pt-5">
+                    <p className="text-sm sm:text-base leading-7 text-stealth-300">
+                      {activeHeroHighlight.detail}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
