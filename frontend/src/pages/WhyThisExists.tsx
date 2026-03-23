@@ -148,17 +148,29 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
     return (
       <svg viewBox="0 0 240 96" role="img" aria-label="Board zoom-out motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-        <rect x="22" y="14" width="196" height="68" rx="12" fill="#0d1526" stroke="#334155" />
-        <rect x="56" y="26" width="128" height="44" rx="9" fill="none" stroke="#93C5FD" strokeOpacity="0.6" strokeWidth="1.7" />
-        <rect x="72" y="34" width="96" height="28" rx="7" fill="none" stroke="#6EE7B7" strokeOpacity="0.82" strokeWidth="1.7" />
-        {[56, 184, 72, 168].map((x, idx) => (
-          <circle key={`board-node-${x}-${idx}`} cx={x} cy={idx < 2 ? 26 : 62} r="3.4" fill="#93C5FD" fillOpacity="0.72" />
-        ))}
-        <circle cx="120" cy="48" r="5.6" fill="#6EE7B7" fillOpacity="0.94" />
+        <rect x="18" y="16" width="204" height="64" rx="11" fill="#0d1526" stroke="#334155" />
+        <rect x="34" y="24" width="88" height="48" rx="8" fill="none" stroke="#93C5FD" strokeOpacity="0.72" strokeWidth="1.7" />
+        <rect x="136" y="30" width="56" height="36" rx="7" fill="none" stroke="#334155" strokeOpacity="0.7" strokeWidth="1.4" />
         <path
-          d="M78 56 C94 48, 108 54, 122 43 C134 34, 148 35, 164 39"
+          d="M18 58 C34 54, 48 52, 60 54 C72 56, 82 50, 92 44 C104 38, 116 40, 128 44 C142 48, 154 42, 168 40 C184 38, 202 40, 222 44"
+          stroke="#93C5FD"
+          strokeOpacity="0.22"
+          strokeWidth="1.8"
+          fill="none"
+          strokeLinecap="round"
+        />
+        <path
+          d="M34 56 C48 52, 60 51, 70 54 C80 57, 90 51, 100 45 C108 40, 116 40, 122 42"
           stroke="#6EE7B7"
-          strokeOpacity="0.8"
+          strokeOpacity="0.95"
+          strokeWidth="2.2"
+          fill="none"
+          strokeLinecap="round"
+        />
+        <path
+          d="M122 42 C132 45, 144 46, 156 42 C168 38, 180 38, 192 40"
+          stroke="#6EE7B7"
+          strokeOpacity="0.26"
           strokeWidth="1.9"
           fill="none"
           strokeLinecap="round"
@@ -172,15 +184,15 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
       <svg viewBox="0 0 240 96" role="img" aria-label="Learning shortcut curve motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
         <path
-          d="M18 74 C44 82, 72 80, 96 70 C122 60, 146 62, 170 52 C190 44, 204 36, 220 24"
+          d="M18 74 C44 82, 64 80, 78 72 C92 64, 102 56, 112 56 C126 56, 126 72, 140 72 C154 72, 156 52, 170 44 C186 34, 200 30, 220 24"
           fill="none"
           stroke="#64748b"
-          strokeOpacity="0.82"
-          strokeWidth="2.8"
+          strokeOpacity="0.88"
+          strokeWidth="3"
           strokeLinecap="round"
         />
         <path
-          d="M18 74 C78 58, 140 44, 220 24"
+          d="M18 74 C68 60, 134 44, 220 24"
           fill="none"
           stroke="#6EE7B7"
           strokeOpacity="0.96"
@@ -190,7 +202,7 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
         <polygon points="220,24 210,24 216,18" fill="#6EE7B7" fillOpacity="0.92" />
         <circle cx="18" cy="74" r="4.5" fill="#93C5FD" fillOpacity="0.85" />
         <circle cx="220" cy="24" r="5.5" fill="#6EE7B7" fillOpacity="0.95" />
-        <circle cx="112" cy="50" r="4.2" fill="#6EE7B7" fillOpacity="0.24" />
+        <circle cx="120" cy="49" r="4.2" fill="#6EE7B7" fillOpacity="0.24" />
       </svg>
     );
   }
@@ -198,16 +210,27 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   return (
     <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
       <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-      <circle cx="48" cy="28" r="6" fill="#93C5FD" fillOpacity="0.78" />
-      <circle cx="48" cy="68" r="6" fill="#6EE7B7" fillOpacity="0.78" />
-      <circle cx="112" cy="48" r="9.5" fill="#f8fafc" fillOpacity="0.9" />
-      <circle cx="192" cy="48" r="9" fill="#6EE7B7" fillOpacity="0.92" />
+      {[34, 34, 34].map((_, idx) => (
+        <circle
+          key={`input-${idx}`}
+          cx="36"
+          cy={24 + idx * 24}
+          r="5.2"
+          fill={idx === 1 ? "#f8fafc" : "#93C5FD"}
+          fillOpacity={idx === 1 ? 0.82 : 0.7}
+        />
+      ))}
+      <circle cx="104" cy="34" r="6.2" fill="#93C5FD" fillOpacity="0.72" />
+      <circle cx="104" cy="62" r="6.2" fill="#6EE7B7" fillOpacity="0.72" />
+      <circle cx="164" cy="36" r="7.6" fill="#64748b" fillOpacity="0.5" />
+      <circle cx="164" cy="60" r="7.8" fill="#6EE7B7" fillOpacity="0.92" />
+      <circle cx="210" cy="36" r="7.2" fill="#64748b" fillOpacity="0.44" />
+      <circle cx="210" cy="60" r="8.4" fill="#6EE7B7" fillOpacity="0.96" />
 
-      <path d="M54 28 C78 30, 94 36, 106 44" stroke="#93C5FD" strokeWidth="2.1" fill="none" strokeLinecap="round" />
-      <path d="M54 68 C78 66, 94 60, 106 52" stroke="#6EE7B7" strokeWidth="2.1" fill="none" strokeLinecap="round" />
-      <path d="M122 48 C146 48, 166 48, 184 48" stroke="#f8fafc" strokeOpacity="0.92" strokeWidth="2.7" fill="none" strokeLinecap="round" />
-      <path d="M148 26 C168 30, 182 38, 190 46" stroke="#93C5FD" strokeOpacity="0.72" strokeWidth="1.9" fill="none" strokeLinecap="round" />
-      <path d="M148 70 C168 66, 182 58, 190 50" stroke="#6EE7B7" strokeOpacity="0.72" strokeWidth="1.9" fill="none" strokeLinecap="round" />
+      <path d="M42 24 L98 34 M42 48 L98 34 M42 48 L98 62 M42 72 L98 62" stroke="#94a3b8" strokeOpacity="0.55" strokeWidth="1.4" />
+      <path d="M110 34 L156 36 M110 34 L156 60 M110 62 L156 36 M110 62 L156 60" stroke="#94a3b8" strokeOpacity="0.5" strokeWidth="1.4" />
+      <path d="M172 36 L202 36" stroke="#94a3b8" strokeOpacity="0.32" strokeWidth="1.6" />
+      <path d="M172 60 L202 60" stroke="#6EE7B7" strokeOpacity="0.95" strokeWidth="2.6" />
     </svg>
   );
 }
