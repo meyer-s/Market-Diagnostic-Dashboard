@@ -147,7 +147,6 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   if (motif === "board") {
     return (
       <svg viewBox="0 0 240 96" role="img" aria-label="Overlapping board correlation motif" className="w-full h-auto">
-        <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
         <rect x="18" y="16" width="204" height="64" rx="11" fill="#0d1526" stroke="#334155" />
         <rect x="28" y="24" width="76" height="44" rx="8" fill="none" stroke="#93C5FD" strokeOpacity="0.74" strokeWidth="1.6" />
         <rect x="88" y="18" width="78" height="46" rx="8" fill="none" stroke="#64748b" strokeOpacity="0.78" strokeWidth="1.5" />
@@ -199,7 +198,6 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   if (motif === "curve") {
     return (
       <svg viewBox="0 0 240 96" role="img" aria-label="Learning shortcut curve motif" className="w-full h-auto">
-        <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
         <path
           d="M18 76 C38 62, 58 52, 76 56 C90 60, 95 70, 110 76 C126 82, 150 70, 170 48 C188 30, 202 24, 220 24"
           fill="none"
@@ -228,7 +226,6 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
 
   return (
     <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
-      <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
       <circle cx="40" cy="22" r="5.2" fill="#93C5FD" fillOpacity="0.7" />
       <circle cx="56" cy="74" r="5.2" fill="#6EE7B7" fillOpacity="0.7" />
 
@@ -258,8 +255,6 @@ function FrameworkHouseGraphic() {
           <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.9" />
         </linearGradient>
       </defs>
-
-      <rect x="0.5" y="0.5" width="219" height="219" rx="31.5" fill="#111827" stroke="#334155" />
 
       <path d="M54 146 L110 86 L166 146" fill="none" stroke="url(#frameworkHouseStroke)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M68 146 L68 92 L152 92 L152 146" fill="none" stroke="#94a3b8" strokeOpacity="0.8" strokeWidth="2" strokeLinecap="round" />
