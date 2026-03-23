@@ -77,81 +77,14 @@ Representative data sources include:
 - DeFiLlama for DeFi and stablecoin context
 - metals-specific sources including COMEX, ETF, and central-bank feeds
 
-## Running Locally
-
-Prerequisites:
-
-- Docker
-- Docker Compose
-
-Start the stack:
-
-```bash
-git clone https://github.com/meyer-s/Market-Diagnostic-Dashboard.git
-cd Market-Diagnostic-Dashboard
-docker compose up -d --build
-```
-
-Default local endpoints from the current compose file:
-
-- Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:8000`
-
-Useful commands:
-
-```bash
-docker compose logs -f
-docker exec market_backend python seed_indicators.py
-curl -X POST http://localhost:8000/admin/backfill
-```
-
 ## Docs
 
 Active project documentation now lives under the `docs/` folder.
 
-- Deployment and runtime workflow: [docs/deployment.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/deployment.md)
 - Alternative assets and AAS: [docs/alternative-assets.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/alternative-assets.md)
 - Discord integration: [docs/discord.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/discord.md)
 - Secret Options: [docs/secret-options.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/secret-options.md)
 - API reference draft: [docs/api-contract.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/api-contract.md)
-
-## Key APIs
-
-Representative API surface from [backend/app/main.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/app/main.py) and `backend/app/api/*`:
-
-- `/health/`
-- `/system`
-- `/system/history`
-- `/indicators`
-- `/indicators/{code}`
-- `/indicators/{code}/history`
-- `/aas/components/breakdown`
-- `/precious-metals/regime`
-- `/crypto/market-overview`
-- `/crypto/diagnostic-context`
-- `/sectors/projections/latest`
-- `/stocks/{ticker}/projections`
-- `/news`
-- `/updates` and `/updates/by-slug/{slug}`
-
-## Tests
-
-Backend tests live under [backend/tests](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/tests).
-
-Run them with:
-
-```bash
-cd backend
-pytest
-```
-
-Frontend package scripts are defined in [frontend/package.json](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/frontend/package.json).
-
-```bash
-cd frontend
-npm test
-npm run build
-```
 
 ## Notes
 
