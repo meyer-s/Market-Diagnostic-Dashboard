@@ -235,11 +235,11 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   );
 }
 
-function FrameworkCubeGraphic() {
+function FrameworkHouseGraphic() {
   return (
-    <svg viewBox="0 0 220 220" role="img" aria-label="Wireframe cube framework motif" className="w-full max-w-[220px] h-auto">
+    <svg viewBox="0 0 220 220" role="img" aria-label="House scaffold framework motif" className="w-full max-w-[220px] h-auto">
       <defs>
-        <linearGradient id="frameworkCubeStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="frameworkHouseStroke" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.9" />
           <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.9" />
         </linearGradient>
@@ -247,25 +247,24 @@ function FrameworkCubeGraphic() {
 
       <rect x="0.5" y="0.5" width="219" height="219" rx="31.5" fill="#111827" stroke="#334155" />
 
-      <path d="M76 52 L148 52 L148 124 L76 124 Z" fill="none" stroke="url(#frameworkCubeStroke)" strokeWidth="2.2" />
-      <path d="M98 34 L170 34 L170 106 L98 106 Z" fill="none" stroke="#94a3b8" strokeOpacity="0.72" strokeWidth="2" />
+      <path d="M54 146 L110 86 L166 146" fill="none" stroke="url(#frameworkHouseStroke)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M68 146 L68 92 L152 92 L152 146" fill="none" stroke="#94a3b8" strokeOpacity="0.8" strokeWidth="2" strokeLinecap="round" />
+      <path d="M86 146 L86 110 L134 110 L134 146" fill="none" stroke="#64748b" strokeOpacity="0.82" strokeWidth="1.8" strokeLinecap="round" />
 
-      <path d="M76 52 L98 34" fill="none" stroke="#64748b" strokeWidth="1.9" />
-      <path d="M148 52 L170 34" fill="none" stroke="#64748b" strokeWidth="1.9" />
-      <path d="M148 124 L170 106" fill="none" stroke="#64748b" strokeWidth="1.9" />
-      <path d="M76 124 L98 106" fill="none" stroke="#64748b" strokeWidth="1.9" />
+      <path d="M110 86 L110 146" fill="none" stroke="#334155" strokeWidth="1.6" />
+      <path d="M68 118 L152 118" fill="none" stroke="#334155" strokeWidth="1.6" />
+      <path d="M86 128 L134 128" fill="none" stroke="#334155" strokeWidth="1.4" />
 
-      <path d="M76 52 L170 106" fill="none" stroke="#6EE7B7" strokeOpacity="0.22" strokeWidth="1.6" />
-      <path d="M148 52 L98 106" fill="none" stroke="#93C5FD" strokeOpacity="0.22" strokeWidth="1.6" />
+      <path d="M68 92 L110 118 L152 92" fill="none" stroke="#6EE7B7" strokeOpacity="0.2" strokeWidth="1.5" />
+      <path d="M86 110 L110 86 L134 110" fill="none" stroke="#93C5FD" strokeOpacity="0.2" strokeWidth="1.5" />
 
-      <circle cx="76" cy="52" r="3.8" fill="#93C5FD" fillOpacity="0.88" />
-      <circle cx="148" cy="52" r="3.8" fill="#6EE7B7" fillOpacity="0.88" />
-      <circle cx="148" cy="124" r="3.8" fill="#93C5FD" fillOpacity="0.82" />
-      <circle cx="76" cy="124" r="3.8" fill="#6EE7B7" fillOpacity="0.82" />
-      <circle cx="98" cy="34" r="3.4" fill="#e2e8f0" fillOpacity="0.78" />
-      <circle cx="170" cy="34" r="3.4" fill="#e2e8f0" fillOpacity="0.78" />
-      <circle cx="170" cy="106" r="3.4" fill="#e2e8f0" fillOpacity="0.72" />
-      <circle cx="98" cy="106" r="3.4" fill="#e2e8f0" fillOpacity="0.72" />
+      <circle cx="54" cy="146" r="3.6" fill="#93C5FD" fillOpacity="0.84" />
+      <circle cx="110" cy="86" r="3.8" fill="#f8fafc" fillOpacity="0.86" />
+      <circle cx="166" cy="146" r="3.6" fill="#6EE7B7" fillOpacity="0.86" />
+      <circle cx="68" cy="92" r="3.2" fill="#93C5FD" fillOpacity="0.72" />
+      <circle cx="152" cy="92" r="3.2" fill="#6EE7B7" fillOpacity="0.72" />
+      <circle cx="68" cy="146" r="3.2" fill="#e2e8f0" fillOpacity="0.72" />
+      <circle cx="152" cy="146" r="3.2" fill="#e2e8f0" fillOpacity="0.72" />
     </svg>
   );
 }
@@ -366,7 +365,7 @@ export default function WhyThisExists() {
             </div>
 
             <div className="flex justify-center lg:justify-end">
-              <FrameworkCubeGraphic />
+              <FrameworkHouseGraphic />
             </div>
           </div>
 
