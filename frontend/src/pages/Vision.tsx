@@ -391,7 +391,7 @@ function FrameworkHouseGraphic() {
   );
 }
 
-export default function WhyThisExists() {
+export default function Vision() {
   return (
     <div className="bg-stealth-900 text-gray-100">
       <section className="relative overflow-hidden border-b border-stealth-700">
