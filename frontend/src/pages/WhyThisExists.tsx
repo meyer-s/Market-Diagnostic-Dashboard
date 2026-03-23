@@ -237,9 +237,9 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
       <circle cx="138" cy="64" r="3.8" fill="#234143" />
       <circle cx="156" cy="20" r="3.4" fill="#2e3543" />
 
-      <path d="M30 16 C46 18, 60 24, 76 28 H140 C152 28, 160 34, 174 34 H196" stroke="#93C5FD" strokeOpacity="0.16" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-      <path d="M118 18 C126 20, 132 25, 140 30 H180 C194 30, 204 32, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-      <path d="M156 20 C164 22, 170 26, 178 30 H194 C200 30, 204 32, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+      <path d="M30 16 C46 18, 60 22, 76 26 H138 C150 26, 160 30, 174 30 H194 C200 30, 204 32, 204 34" stroke="#93C5FD" strokeOpacity="0.16" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+      <path d="M118 18 C126 20, 132 25, 140 30 H176 C190 30, 200 32, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      <path d="M156 20 C164 21, 170 23, 178 25 H190 C198 25, 204 29, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
 
       <path d="M48 82 H122 C138 82, 148 74, 160 74 H190 C200 74, 204 72, 204 68" stroke="#6EE7B7" strokeOpacity="0.18" strokeWidth="1.4" fill="none" strokeLinecap="round" />
       <path d="M138 64 H192 C200 64, 204 66, 204 68" stroke="#6EE7B7" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
