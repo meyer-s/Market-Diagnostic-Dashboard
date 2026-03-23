@@ -41,131 +41,111 @@ function HeroSignalIllustration() {
       <svg
         viewBox="0 0 560 360"
         role="img"
-        aria-label="Stylized market context chart illustration"
+        aria-label="Abstract signal-inspired vector illustration"
         className="w-full h-full rounded-[20px]"
       >
         <defs>
-          <linearGradient id="visionGlowGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.14" />
-            <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.12" />
+          <linearGradient id="visionHeroBg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#0b1220" />
+            <stop offset="100%" stopColor="#111827" />
           </linearGradient>
-          <linearGradient id="visionLineA" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#34D399" stopOpacity="0.78" />
+          <radialGradient id="visionOrbA" cx="0%" cy="0%" r="120%">
+            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="visionOrbB" cx="100%" cy="100%" r="120%">
+            <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#60A5FA" stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id="visionRibbonA" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.78" />
+            <stop offset="100%" stopColor="#34D399" stopOpacity="0.3" />
           </linearGradient>
-          <linearGradient id="visionLineB" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.78" />
+          <linearGradient id="visionRibbonB" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.78" />
+            <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.32" />
           </linearGradient>
-          <linearGradient id="visionBars" x1="0%" y1="100%" x2="0%" y2="0%">
-            <stop offset="0%" stopColor="#94A3B8" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="#CBD5E1" stopOpacity="0.48" />
+          <linearGradient id="visionRibbonFill" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.16" />
+            <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.01" />
           </linearGradient>
-          <linearGradient id="visionArea" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.24" />
-            <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.02" />
-          </linearGradient>
+          <filter id="visionSoftBlur" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="32" />
+          </filter>
         </defs>
 
-        <rect x="0" y="0" width="560" height="360" fill="#0f172a" />
-        <rect x="0" y="0" width="560" height="360" fill="url(#visionGlowGradient)" />
-
-        {[56, 104, 152, 200, 248, 296].map((y) => (
-          <line
-            key={`y-grid-${y}`}
-            x1="28"
-            y1={y}
-            x2="536"
-            y2={y}
-            stroke="#334155"
-            strokeWidth="1"
-            strokeOpacity="0.58"
-          />
-        ))}
-        {[64, 128, 192, 256, 320, 384, 448, 512].map((x) => (
-          <line
-            key={`x-grid-${x}`}
-            x1={x}
-            y1="32"
-            x2={x}
-            y2="330"
-            stroke="#1e293b"
-            strokeWidth="1"
-            strokeOpacity="0.72"
-          />
-        ))}
+        <rect x="0" y="0" width="560" height="360" fill="url(#visionHeroBg)" />
+        <circle cx="120" cy="76" r="128" fill="url(#visionOrbA)" filter="url(#visionSoftBlur)" />
+        <circle cx="472" cy="274" r="138" fill="url(#visionOrbB)" filter="url(#visionSoftBlur)" />
 
         <path
-          d="M40 252 L88 238 L136 242 L184 224 L232 230 L280 198 L328 186 L376 204 L424 174 L472 166 L520 146 L520 330 L40 330 Z"
-          fill="url(#visionArea)"
+          d="M-12 258 C84 224, 126 292, 220 252 C306 214, 354 152, 446 176 C512 194, 544 218, 572 248 L572 360 L-12 360 Z"
+          fill="url(#visionRibbonFill)"
         />
         <path
-          d="M40 252 L88 238 L136 242 L184 224 L232 230 L280 198 L328 186 L376 204 L424 174 L472 166 L520 146"
-          stroke="url(#visionLineA)"
-          strokeWidth="4"
+          d="M-8 246 C84 212, 126 282, 218 242 C304 205, 354 148, 446 170 C512 186, 548 212, 572 238"
+          stroke="url(#visionRibbonA)"
+          strokeWidth="4.5"
           fill="none"
           strokeLinecap="round"
-          strokeLinejoin="round"
         />
         <path
-          d="M40 216 L88 214 L136 204 L184 214 L232 206 L280 186 L328 194 L376 180 L424 186 L472 176 L520 178"
-          stroke="url(#visionLineB)"
-          strokeWidth="3"
+          d="M-8 196 C70 174, 122 210, 206 184 C292 158, 358 108, 438 126 C500 140, 538 170, 572 200"
+          stroke="url(#visionRibbonB)"
+          strokeWidth="3.2"
           fill="none"
           strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeDasharray="5 8"
-          opacity="0.94"
+          strokeDasharray="7 10"
+          opacity="0.9"
+        />
+        <path
+          d="M-8 144 C72 132, 128 158, 200 142 C280 124, 350 86, 438 98 C504 108, 544 136, 572 162"
+          stroke="#cbd5e1"
+          strokeOpacity="0.35"
+          strokeWidth="2"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray="2 11"
         />
 
-        {[0, 1, 2, 3, 4, 5, 6].map((idx) => {
-          const x = 66 + idx * 64;
-          const height = [28, 44, 34, 56, 42, 62, 50][idx];
-          return (
-            <rect
-              key={`bar-${idx}`}
-              x={x}
-              y={300 - height}
-              width="22"
-              height={height}
-              rx="6"
-              fill="url(#visionBars)"
-              opacity={0.92}
+        {[88, 144, 200, 256, 312, 368, 424, 480].map((x, idx) => (
+          <g key={`pulse-${x}`}>
+            <line
+              x1={x}
+              y1="288"
+              x2={x}
+              y2={272 - (idx % 3) * 8}
+              stroke="#94a3b8"
+              strokeOpacity="0.55"
+              strokeWidth="1.4"
+              strokeLinecap="round"
             />
-          );
-        })}
+            <circle
+              cx={x}
+              cy={266 - (idx % 3) * 8}
+              r="2.6"
+              fill={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
+              fillOpacity="0.82"
+            />
+          </g>
+        ))}
 
-        {[40, 184, 280, 424, 520].map((x, idx) => (
+        {[92, 188, 284, 380, 476].map((x, idx) => (
           <circle
-            key={`node-${x}`}
+            key={`halo-${x}`}
             cx={x}
-            cy={[252, 224, 198, 174, 146][idx]}
-            r="5.5"
-            fill="#6EE7B7"
-            stroke="#0f172a"
-            strokeWidth="2"
+            cy={208 - (idx % 2) * 24}
+            r="15"
+            fill="none"
+            stroke="#e2e8f0"
+            strokeOpacity="0.16"
+            strokeWidth="1.2"
           />
         ))}
 
-        <rect
-          x="356"
-          y="36"
-          width="168"
-          height="72"
-          rx="14"
-          fill="#0b1220"
-          stroke="#334155"
-          strokeWidth="1.2"
-        />
-        <text x="372" y="62" fill="#e2e8f0" fontSize="13" fontWeight="600" letterSpacing="0.05em">
-          REGIME CONTEXT
-        </text>
-        <text x="372" y="84" fill="#94a3b8" fontSize="12">
-          Trend: constructive
-        </text>
-        <text x="372" y="102" fill="#94a3b8" fontSize="12">
-          Breadth: improving
-        </text>
+        <circle cx="462" cy="92" r="52" fill="none" stroke="#6EE7B7" strokeOpacity="0.2" strokeWidth="1.5" />
+        <circle cx="462" cy="92" r="31" fill="none" stroke="#93C5FD" strokeOpacity="0.34" strokeWidth="1.3" />
+        <circle cx="462" cy="92" r="8" fill="#f8fafc" fillOpacity="0.78" />
       </svg>
     </div>
   );
@@ -174,97 +154,132 @@ function HeroSignalIllustration() {
 function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   if (motif === "board") {
     return (
-      <svg viewBox="0 0 240 96" role="img" aria-label="Multi-chart board motif" className="w-full h-auto">
+      <svg viewBox="0 0 240 96" role="img" aria-label="Abstract market-field motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-        {[
-          [16, 14],
-          [126, 14],
-          [16, 52],
-          [126, 52],
-        ].map(([x, y], idx) => (
-          <g key={`${x}-${y}`}>
-            <rect x={x} y={y} width="98" height="30" rx="8" fill="#0f172a" stroke="#1f2937" />
-            <path
-              d={
-                idx === 0
-                  ? `M${x + 8} ${y + 20} L${x + 28} ${y + 16} L${x + 48} ${y + 22} L${x + 68} ${y + 10} L${x + 88} ${y + 14}`
-                  : idx === 1
-                    ? `M${x + 8} ${y + 18} L${x + 28} ${y + 20} L${x + 48} ${y + 12} L${x + 68} ${y + 16} L${x + 88} ${y + 9}`
-                    : idx === 2
-                      ? `M${x + 8} ${y + 18} L${x + 28} ${y + 14} L${x + 48} ${y + 18} L${x + 68} ${y + 12} L${x + 88} ${y + 7}`
-                      : `M${x + 8} ${y + 18} L${x + 28} ${y + 11} L${x + 48} ${y + 19} L${x + 68} ${y + 13} L${x + 88} ${y + 15}`
-              }
-              stroke={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
-              strokeWidth="2.25"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </g>
-        ))}
+        <circle cx="72" cy="46" r="30" fill="#6EE7B7" fillOpacity="0.12" />
+        <circle cx="118" cy="38" r="24" fill="#93C5FD" fillOpacity="0.14" />
+        <circle cx="156" cy="52" r="29" fill="#34D399" fillOpacity="0.09" />
+        <path
+          d="M24 62 C58 44, 84 72, 116 52 C142 36, 172 38, 214 50"
+          stroke="#6EE7B7"
+          strokeOpacity="0.78"
+          strokeWidth="2.4"
+          fill="none"
+          strokeLinecap="round"
+        />
+        <path
+          d="M26 34 C56 24, 90 46, 122 36 C152 28, 180 18, 214 28"
+          stroke="#93C5FD"
+          strokeOpacity="0.65"
+          strokeWidth="1.9"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray="4 7"
+        />
       </svg>
     );
   }
 
   if (motif === "curve") {
     return (
-      <svg viewBox="0 0 240 96" role="img" aria-label="Learning curve motif" className="w-full h-auto">
+      <svg viewBox="0 0 240 96" role="img" aria-label="Abstract learning-wave motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-        <line x1="28" y1="72" x2="208" y2="72" stroke="#334155" strokeWidth="1.5" />
-        <line x1="28" y1="72" x2="28" y2="20" stroke="#334155" strokeWidth="1.5" />
         <path
-          d="M32 70 C76 70, 90 56, 114 48 C144 38, 160 34, 208 24"
+          d="M20 66 C52 78, 72 44, 104 50 C130 56, 142 82, 170 68 C192 58, 202 34, 220 26"
           fill="none"
           stroke="#6EE7B7"
-          strokeWidth="3.2"
+          strokeWidth="3"
           strokeLinecap="round"
         />
-        {[50, 92, 134, 176, 208].map((x, idx) => (
-          <circle key={x} cx={x} cy={[68, 60, 48, 36, 24][idx]} r="4.5" fill="#93C5FD" />
-        ))}
+        <path
+          d="M24 48 C54 36, 84 66, 110 44 C138 20, 170 34, 214 16"
+          fill="none"
+          stroke="#93C5FD"
+          strokeOpacity="0.7"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray="5 8"
+        />
+        <circle cx="64" cy="52" r="10" fill="#93C5FD" fillOpacity="0.16" />
+        <circle cx="172" cy="66" r="12" fill="#6EE7B7" fillOpacity="0.13" />
       </svg>
     );
   }
 
   return (
-    <svg viewBox="0 0 240 96" role="img" aria-label="Decision framework motif" className="w-full h-auto">
+    <svg viewBox="0 0 240 96" role="img" aria-label="Abstract decision-flow motif" className="w-full h-auto">
       <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-      <rect x="20" y="34" width="62" height="28" rx="10" fill="#0f172a" stroke="#334155" />
-      <rect x="152" y="14" width="68" height="26" rx="10" fill="#0f172a" stroke="#334155" />
-      <rect x="152" y="56" width="68" height="26" rx="10" fill="#0f172a" stroke="#334155" />
-      <path d="M82 48 H132" stroke="#6EE7B7" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M132 48 L148 27" stroke="#93C5FD" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M132 48 L148 69" stroke="#93C5FD" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="132" cy="48" r="4.5" fill="#f8fafc" />
+      <circle cx="70" cy="48" r="9" fill="#f8fafc" fillOpacity="0.86" />
+      <circle cx="184" cy="26" r="12" fill="#93C5FD" fillOpacity="0.19" />
+      <circle cx="184" cy="70" r="12" fill="#6EE7B7" fillOpacity="0.18" />
+      <path
+        d="M82 48 C112 48, 120 38, 144 30 C158 24, 170 24, 188 26"
+        stroke="#93C5FD"
+        strokeWidth="2.4"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path
+        d="M82 48 C112 50, 122 60, 146 66 C160 70, 170 70, 188 70"
+        stroke="#6EE7B7"
+        strokeWidth="2.4"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path
+        d="M58 30 C88 10, 128 10, 164 20"
+        stroke="#cbd5e1"
+        strokeOpacity="0.28"
+        strokeWidth="1.5"
+        fill="none"
+        strokeDasharray="3 8"
+      />
     </svg>
   );
 }
 
 function AudienceContextGraphic() {
   return (
-    <svg viewBox="0 0 360 132" role="img" aria-label="Context ribbon chart motif" className="w-full h-auto">
+    <svg viewBox="0 0 360 132" role="img" aria-label="Abstract context ribbon motif" className="w-full h-auto">
+      <defs>
+        <linearGradient id="audienceFlowA" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.24" />
+          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.02" />
+        </linearGradient>
+        <linearGradient id="audienceFlowB" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#93C5FD" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
       <rect x="0.5" y="0.5" width="359" height="131" rx="19.5" fill="#0f172a" stroke="#334155" />
-      {[26, 52, 78, 104].map((y) => (
-        <line key={y} x1="20" y1={y} x2="340" y2={y} stroke="#1f2937" strokeWidth="1" />
-      ))}
-      {[60, 105, 150, 195, 240, 285, 330].map((x) => (
-        <line key={x} x1={x} y1="18" x2={x} y2="114" stroke="#111827" strokeWidth="1" />
-      ))}
       <path
-        d="M24 86 C58 80, 82 54, 110 58 C142 62, 160 94, 190 84 C224 72, 248 38, 276 44 C306 50, 322 72, 336 66"
+        d="M18 90 C56 68, 96 98, 136 82 C174 68, 208 36, 246 46 C286 56, 318 78, 342 72 L342 116 L18 116 Z"
+        fill="url(#audienceFlowA)"
+      />
+      <path
+        d="M18 72 C54 54, 92 70, 130 62 C168 54, 202 26, 240 30 C282 34, 318 58, 342 56 L342 98 L18 98 Z"
+        fill="url(#audienceFlowB)"
+      />
+      <path
+        d="M20 88 C58 66, 98 96, 138 80 C176 66, 208 36, 246 44 C286 54, 318 76, 340 70"
         fill="none"
         stroke="#6EE7B7"
-        strokeWidth="3"
+        strokeOpacity="0.76"
+        strokeWidth="2.7"
         strokeLinecap="round"
       />
       <path
-        d="M24 70 C56 74, 84 70, 114 64 C148 56, 172 44, 200 50 C236 58, 266 86, 294 84 C314 82, 326 72, 336 72"
+        d="M20 64 C56 48, 96 66, 132 58 C170 50, 204 24, 242 28 C284 32, 320 54, 340 54"
         fill="none"
         stroke="#93C5FD"
-        strokeWidth="2.5"
+        strokeOpacity="0.72"
+        strokeWidth="2.3"
         strokeLinecap="round"
         strokeDasharray="5 7"
       />
+      {[42, 96, 152, 206, 262, 316].map((x, idx) => (
+        <circle key={`aud-dot-${x}`} cx={x} cy={idx % 2 === 0 ? 96 : 102} r="2.5" fill="#e2e8f0" fillOpacity="0.45" />
+      ))}
     </svg>
   );
 }
