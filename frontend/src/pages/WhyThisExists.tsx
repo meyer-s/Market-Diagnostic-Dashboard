@@ -10,16 +10,16 @@ type PrincipleCard = {
 
 const principles = [
   {
-    title: "See The Full Board",
-    body:
-      "Professionals rarely look at one chart in isolation. They compare breadth, rates, credit, leadership, volatility, commodities, and alternative assets together. This dashboard brings those relationships into one place so you can read the market in context instead of in fragments.",
-    motif: "board",
-  },
-  {
     title: "Shorten The Learning Curve",
     body:
       "Experience still matters, but much of that experience is really repetition: seeing the same intermarket shifts enough times to know what they usually imply. The goal here is to shorten that learning curve by making the structure legible earlier.",
     motif: "curve",
+  },
+  {
+    title: "See The Full Board",
+    body:
+      "Professionals rarely look at one chart in isolation. They compare breadth, rates, credit, leadership, volatility, commodities, and alternative assets together. This dashboard brings those relationships into one place so you can read the market in context instead of in fragments.",
+    motif: "board",
   },
   {
     title: "Support Better Decisions",
@@ -147,6 +147,7 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   if (motif === "board") {
     return (
       <svg viewBox="0 0 240 96" role="img" aria-label="Overlapping board correlation motif" className="w-full h-auto">
+        <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
         <rect x="18" y="16" width="204" height="64" rx="11" fill="#0d1526" stroke="#334155" />
         <rect x="28" y="24" width="76" height="44" rx="8" fill="none" stroke="#93C5FD" strokeOpacity="0.74" strokeWidth="1.6" />
         <rect x="88" y="18" width="78" height="46" rx="8" fill="none" stroke="#64748b" strokeOpacity="0.78" strokeWidth="1.5" />
