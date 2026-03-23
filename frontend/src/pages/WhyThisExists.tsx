@@ -229,27 +229,22 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   return (
     <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
       <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-      {[24, 48, 72].map((y, idx) => (
-        <circle
-          key={`support-${y}`}
-          cx="36"
-          cy={y}
-          r="5.2"
-          fill={idx === 1 ? "#e2e8f0" : "#93C5FD"}
-          fillOpacity={idx === 1 ? 0.78 : 0.68}
-        />
-      ))}
-      <circle cx="102" cy="48" r="9.5" fill="#f8fafc" fillOpacity="0.9" />
-      <circle cx="204" cy="48" r="8.8" fill="#6EE7B7" fillOpacity="0.95" />
+      <circle cx="40" cy="22" r="5.2" fill="#93C5FD" fillOpacity="0.7" />
+      <circle cx="56" cy="74" r="5.2" fill="#6EE7B7" fillOpacity="0.7" />
 
-      <path d="M112 48 L196 48" stroke="#64748b" strokeOpacity="0.42" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-      <path d="M126 48 L196 48" stroke="#6EE7B7" strokeOpacity="0.95" strokeWidth="3.2" fill="none" strokeLinecap="round" />
+      <circle cx="92" cy="48" r="9.5" fill="#f8fafc" fillOpacity="0.9" />
+      <circle cx="204" cy="34" r="8.8" fill="#6EE7B7" fillOpacity="0.95" />
+      <circle cx="204" cy="68" r="7.4" fill="#64748b" fillOpacity="0.82" />
 
-      <path d="M42 24 C72 24, 88 34, 126 48" stroke="#93C5FD" strokeOpacity="0.62" strokeWidth="1.9" fill="none" strokeLinecap="round" />
-      <path d="M42 48 C74 48, 90 48, 126 48" stroke="#e2e8f0" strokeOpacity="0.58" strokeWidth="1.9" fill="none" strokeLinecap="round" />
-      <path d="M42 72 C72 72, 88 62, 126 48" stroke="#6EE7B7" strokeOpacity="0.68" strokeWidth="1.9" fill="none" strokeLinecap="round" />
+      <path d="M102 48 C132 42, 162 38, 196 34" stroke="#64748b" strokeOpacity="0.5" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      <path d="M102 48 C134 54, 164 62, 196 68" stroke="#64748b" strokeOpacity="0.46" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      <path d="M118 46 C142 40, 168 37, 196 34" stroke="#6EE7B7" strokeOpacity="0.96" strokeWidth="3.3" fill="none" strokeLinecap="round" />
 
-      <circle cx="126" cy="48" r="4.2" fill="#6EE7B7" fillOpacity="0.82" />
+      <path d="M46 22 C78 22, 102 26, 138 40" stroke="#93C5FD" strokeOpacity="0.62" strokeWidth="2" fill="none" strokeLinecap="round" />
+      <path d="M62 74 C90 74, 110 62, 144 42" stroke="#6EE7B7" strokeOpacity="0.7" strokeWidth="2" fill="none" strokeLinecap="round" />
+
+      <circle cx="144" cy="42" r="4.4" fill="#6EE7B7" fillOpacity="0.84" />
+      <circle cx="92" cy="48" r="3.4" fill="#111827" fillOpacity="0.2" />
     </svg>
   );
 }
