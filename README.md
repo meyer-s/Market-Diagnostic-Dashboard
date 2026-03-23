@@ -1,12 +1,14 @@
 # Market Diagnostic Dashboard
 
-A real-time macro and market dashboard that turns rates, liquidity, credit, sentiment, alternative assets, and sector internals into a human-readable market regime view.
+Market Diagnostic Dashboard is a live market intelligence tool built to answer the question most dashboards dodge: what kind of tape are we actually trading right now?
+
+Instead of dumping raw charts, it pulls rates, liquidity, credit, sentiment, alternative assets, and sector internals into a single regime read that is fast to scan and hard to misinterpret. The goal is not more noise. The goal is a cleaner market view, tighter context, and better decisions.
 
 Live site: [marketdiagnostictool.com](https://marketdiagnostictool.com)
 
 ## What It Covers
 
-The platform tracks 11 core indicators seeded by [backend/seed_indicators.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/seed_indicators.py), including:
+At the core is a weighted indicator framework seeded by [backend/seed_indicators.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/seed_indicators.py). It tracks the pressure points that actually shape market behavior, including:
 
 - VIX
 - SPY trend
@@ -20,14 +22,14 @@ The platform tracks 11 core indicators seeded by [backend/seed_indicators.py](c:
 - Sentiment Composite
 - Alternative Asset Stability
 
-In addition to the core dashboard, the app now includes:
+Around that core signal engine, the platform expands into a broader operating system for market context:
 
-- Indicator detail pages with expanded methodology and history
-- System Breakdown with weighting logic and historical state distribution
-- Alternative Assets with precious metals and crypto diagnostics
-- Market Map, sector projections, and stock analysis tools
-- Recap pages for published updates
-- Secret options tracking and options-alert infrastructure
+- Indicator detail pages that explain the why behind the signal, not just the score
+- System Breakdown views that expose weighting logic, regime state, and historical drift
+- Alternative asset diagnostics for precious metals and crypto when trust in the core system starts to wobble
+- Market Map, sector projections, and stock analysis tools for moving from macro context into tradable follow-through
+- Recap pages for publishing market updates in a format that is actually readable
+- Secret Options tooling and alert infrastructure for higher-touch options workflows
 
 ## Current Product Surface
 
