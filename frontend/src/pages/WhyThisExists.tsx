@@ -120,44 +120,53 @@ function HeroSignalIllustration() {
         strokeLinecap="round"
         strokeDasharray="3 16"
       />
-      <g opacity="0.96">
+      <g opacity="0.95">
         {[
-          { y: 178, width: 246, x: 1038, green: 132, amber: 36, red: 20 },
-          { y: 228, width: 286, x: 998, green: 168, amber: 48, red: 26 },
-          { y: 280, width: 322, x: 964, green: 182, amber: 56, red: 32 },
-          { y: 334, width: 294, x: 1012, green: 154, amber: 42, red: 24 },
-          { y: 388, width: 248, x: 1062, green: 126, amber: 34, red: 18 },
-        ].map((lane, idx) => (
-          <g key={`distribution-lane-${lane.y}`}>
-            <rect
-              x={lane.x}
-              y={lane.y}
-              width={lane.width}
-              height="14"
-              rx="7"
-              fill="#0f172a"
-              fillOpacity={0.46 - idx * 0.03}
-              stroke="#334155"
-              strokeOpacity={0.38}
-            />
-            <rect x={lane.x + 10} y={lane.y + 2} width={lane.green} height="10" rx="5" fill="url(#visionStateGreen)" />
-            <rect x={lane.x + 16 + lane.green} y={lane.y + 2} width={lane.amber} height="10" rx="5" fill="url(#visionStateAmber)" />
-            <rect x={lane.x + 22 + lane.green + lane.amber} y={lane.y + 2} width={lane.red} height="10" rx="5" fill="url(#visionStateRed)" />
+          { x: 1068, y: 176, cells: 13, green: 9, amber: 3 },
+          { x: 1016, y: 224, cells: 17, green: 11, amber: 4 },
+          { x: 972, y: 272, cells: 21, green: 14, amber: 4 },
+          { x: 1002, y: 320, cells: 19, green: 12, amber: 4 },
+          { x: 1054, y: 368, cells: 14, green: 9, amber: 3 },
+        ].map((row, rowIdx) => (
+          <g key={`distribution-row-${row.y}`}>
+            {Array.from({ length: row.cells }).map((_, cellIdx) => {
+              const fill =
+                cellIdx < row.green
+                  ? "url(#visionStateGreen)"
+                  : cellIdx < row.green + row.amber
+                    ? "url(#visionStateAmber)"
+                    : "url(#visionStateRed)";
+
+              return (
+                <rect
+                  key={`distribution-row-${row.y}-cell-${cellIdx}`}
+                  x={row.x + cellIdx * 14}
+                  y={row.y}
+                  width="11"
+                  height="14"
+                  rx="2.5"
+                  fill={fill}
+                  fillOpacity={0.88 - rowIdx * 0.04}
+                  stroke="#0f172a"
+                  strokeOpacity="0.18"
+                />
+              );
+            })}
           </g>
         ))}
       </g>
 
-      <g opacity="0.52">
-        {[1088, 1158, 1228, 1298].map((x, idx) => (
+      <g opacity="0.32">
+        {[1046, 1116, 1186, 1256, 1326].map((x, idx) => (
           <path
-            key={`distribution-link-${x}`}
-            d={`M ${x} 176 C ${x - 18} 236, ${x - 26} 306, ${x - 8} 390`}
+            key={`distribution-column-${x}`}
+            d={`M ${x} 170 L ${x + (idx % 2 === 0 ? 8 : -8)} 390`}
             fill="none"
-            stroke={idx % 2 === 0 ? "#93C5FD" : "#6EE7B7"}
-            strokeOpacity={0.2 + idx * 0.03}
-            strokeWidth="1.6"
+            stroke="#94a3b8"
+            strokeOpacity={0.16 + idx * 0.02}
+            strokeWidth="1.2"
             strokeLinecap="round"
-            strokeDasharray="4 10"
+            strokeDasharray="3 12"
           />
         ))}
       </g>
