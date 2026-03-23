@@ -1969,17 +1969,17 @@ export default function IndicatorDetail() {
 const MATURITY_ORDER = ["1M","2M","3M","4M","6M","1Y","2Y","3Y","5Y","7Y","10Y","20Y","30Y"];
 const DAILY_CURVE_STYLES = [
   { color: "#67e8f9", opacity: 1.0, width: 3 },
-  { color: "#22d3ee", opacity: 0.88, width: 2.5 },
-  { color: "#06b6d4", opacity: 0.74, width: 2 },
-  { color: "#0891b2", opacity: 0.60, width: 2 },
-  { color: "#0e7490", opacity: 0.48, width: 1.8 },
+  { color: "#22d3ee", opacity: 0.88, width: 2.6 },
+  { color: "#06b6d4", opacity: 0.74, width: 2.2 },
+  { color: "#0891b2", opacity: 0.60, width: 1.8 },
+  { color: "#0e7490", opacity: 0.48, width: 1.4 },
 ];
 const MONTHLY_CURVE_STYLES = [
-  { color: "#fbbf24", opacity: 0.95, width: 2 },
-  { color: "#fbbf24", opacity: 0.78, width: 2 },
-  { color: "#fbbf24", opacity: 0.62, width: 2 },
-  { color: "#fbbf24", opacity: 0.46, width: 2 },
-  { color: "#fbbf24", opacity: 0.32, width: 2 },
+  { color: "#fbbf24", opacity: 0.95, width: 2.1 },
+  { color: "#fbbf24", opacity: 0.78, width: 1.8 },
+  { color: "#fbbf24", opacity: 0.62, width: 1.5 },
+  { color: "#fbbf24", opacity: 0.46, width: 1.3 },
+  { color: "#fbbf24", opacity: 0.32, width: 1.1 },
 ];
 const YIELD_CURVE_MA_COLOR = "#cbd5e1";
 
