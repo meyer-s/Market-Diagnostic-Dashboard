@@ -235,6 +235,41 @@ function AudienceContextGraphic() {
   );
 }
 
+function FrameworkCubeGraphic() {
+  return (
+    <svg viewBox="0 0 220 220" role="img" aria-label="Wireframe cube framework motif" className="w-full max-w-[220px] h-auto">
+      <defs>
+        <linearGradient id="frameworkCubeStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.9" />
+        </linearGradient>
+      </defs>
+
+      <rect x="0.5" y="0.5" width="219" height="219" rx="31.5" fill="#111827" stroke="#334155" />
+
+      <path d="M76 52 L148 52 L148 124 L76 124 Z" fill="none" stroke="url(#frameworkCubeStroke)" strokeWidth="2.2" />
+      <path d="M98 34 L170 34 L170 106 L98 106 Z" fill="none" stroke="#94a3b8" strokeOpacity="0.72" strokeWidth="2" />
+
+      <path d="M76 52 L98 34" fill="none" stroke="#64748b" strokeWidth="1.9" />
+      <path d="M148 52 L170 34" fill="none" stroke="#64748b" strokeWidth="1.9" />
+      <path d="M148 124 L170 106" fill="none" stroke="#64748b" strokeWidth="1.9" />
+      <path d="M76 124 L98 106" fill="none" stroke="#64748b" strokeWidth="1.9" />
+
+      <path d="M76 52 L170 106" fill="none" stroke="#6EE7B7" strokeOpacity="0.22" strokeWidth="1.6" />
+      <path d="M148 52 L98 106" fill="none" stroke="#93C5FD" strokeOpacity="0.22" strokeWidth="1.6" />
+
+      <circle cx="76" cy="52" r="3.8" fill="#93C5FD" fillOpacity="0.88" />
+      <circle cx="148" cy="52" r="3.8" fill="#6EE7B7" fillOpacity="0.88" />
+      <circle cx="148" cy="124" r="3.8" fill="#93C5FD" fillOpacity="0.82" />
+      <circle cx="76" cy="124" r="3.8" fill="#6EE7B7" fillOpacity="0.82" />
+      <circle cx="98" cy="34" r="3.4" fill="#e2e8f0" fillOpacity="0.78" />
+      <circle cx="170" cy="34" r="3.4" fill="#e2e8f0" fillOpacity="0.78" />
+      <circle cx="170" cy="106" r="3.4" fill="#e2e8f0" fillOpacity="0.72" />
+      <circle cx="98" cy="106" r="3.4" fill="#e2e8f0" fillOpacity="0.72" />
+    </svg>
+  );
+}
+
 export default function WhyThisExists() {
   return (
     <div className="bg-stealth-900 text-gray-100">
@@ -320,16 +355,22 @@ export default function WhyThisExists() {
 
       <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
         <div className="rounded-3xl border border-stealth-700 bg-stealth-800/80 p-8 sm:p-10 lg:p-12">
-          <div className="max-w-3xl">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
-              What The Tool Actually Offers
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-center">
+            <div className="max-w-3xl">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
+                What The Tool Actually Offers
+              </div>
+              <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
+                A better framework.
+              </h2>
+              <p className="mt-5 text-lg leading-8 text-stealth-200">
+                The practical value proposition is simple: fewer blind spots, faster context, and a more disciplined read of the market regime. Instead of asking, "What is one chart doing today?" you can ask, "What is the broader market structure telling me, and does my idea fit inside it?"
+              </p>
             </div>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
-              A better framework.
-            </h2>
-            <p className="mt-5 text-lg leading-8 text-stealth-200">
-              The practical value proposition is simple: fewer blind spots, faster context, and a more disciplined read of the market regime. Instead of asking, "What is one chart doing today?" you can ask, "What is the broader market structure telling me, and does my idea fit inside it?"
-            </p>
+
+            <div className="flex justify-center lg:justify-end">
+              <FrameworkCubeGraphic />
+            </div>
           </div>
 
           <div className="mt-8 flex flex-col sm:flex-row gap-4">
