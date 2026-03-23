@@ -227,15 +227,15 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
 
   return (
     <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
-      <circle cx="40" cy="22" r="5.2" fill="#93C5FD" fillOpacity="0.26" />
-      <circle cx="56" cy="74" r="5.2" fill="#6EE7B7" fillOpacity="0.28" />
+      <circle cx="30" cy="16" r="5.2" fill="#93C5FD" fillOpacity="0.26" />
+      <circle cx="48" cy="82" r="5.2" fill="#6EE7B7" fillOpacity="0.28" />
 
       <circle cx="92" cy="48" r="9.5" fill="#f8fafc" fillOpacity="0.9" />
       <circle cx="204" cy="34" r="8.8" fill="#6EE7B7" fillOpacity="0.95" />
       <circle cx="204" cy="68" r="7.4" fill="#64748b" fillOpacity="0.82" />
-      <circle cx="126" cy="28" r="4.2" fill="#93C5FD" fillOpacity="0.18" />
-      <circle cx="136" cy="58" r="3.8" fill="#6EE7B7" fillOpacity="0.2" />
-      <circle cx="148" cy="32" r="3.4" fill="#e2e8f0" fillOpacity="0.14" />
+      <circle cx="118" cy="18" r="4.2" fill="#93C5FD" fillOpacity="0.18" />
+      <circle cx="138" cy="70" r="3.8" fill="#6EE7B7" fillOpacity="0.2" />
+      <circle cx="156" cy="20" r="3.4" fill="#e2e8f0" fillOpacity="0.14" />
 
       <path d="M102 48 C132 42, 162 38, 196 34" stroke="#64748b" strokeOpacity="0.5" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       <path d="M102 48 C134 54, 164 62, 196 68" stroke="#64748b" strokeOpacity="0.46" strokeWidth="2.2" fill="none" strokeLinecap="round" />
