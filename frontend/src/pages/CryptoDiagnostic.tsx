@@ -457,19 +457,19 @@ export default function CryptoDiagnostic({
                       />
                       <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
                       <Line type="monotone" dataKey="stablecoin_supply" name="Stablecoin Supply" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="defi_tvl" name="DeFi TVL" stroke="#22c55e" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="btc_spy_correlation" name="BTC-SPY Alt Behavior" stroke="#c084fc" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="altcoin_weakness" name="Altcoin Weakness" stroke="#f97316" strokeWidth={2.2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="defi_tvl" name="DeFi Participation" stroke="#22c55e" strokeWidth={2.2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="btc_spy_correlation" name="BTC Alt Behavior" stroke="#c084fc" strokeWidth={2.2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="altcoin_weakness" name="Alt Breadth Stress" stroke="#f97316" strokeWidth={2.2} dot={false} connectNulls />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
               </div>
             </div>
           )}
-                      <Line type="monotone" dataKey="stablecoin_supply" name="Stablecoin Supply" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="defi_tvl" name="DeFi Participation" stroke="#22c55e" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="btc_spy_correlation" name="BTC Alt Behavior" stroke="#c084fc" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="altcoin_weakness" name="Alt Breadth Stress" stroke="#f97316" strokeWidth={2.2} dot={false} connectNulls />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {marketData.assets.map((asset) => (
+              <div key={asset.symbol} className="rounded-lg border border-stealth-700 bg-stealth-800 p-4">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <div className="text-sm font-semibold text-stealth-100">{asset.name}</div>
