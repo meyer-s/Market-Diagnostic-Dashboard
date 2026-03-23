@@ -59,6 +59,11 @@ interface ComponentData {
     pi_spread: number;
     consumer_health: number;
   };
+  xly_xlp?: {
+    xly: number | null;
+    xlp: number | null;
+    ratio: number | null;
+  };
   composite?: {
     raw_value?: number;
     normalized_value?: number;
@@ -505,7 +510,7 @@ export default function IndicatorDetail() {
             Measures real consumer financial capacity by comparing spending and income growth against inflation.
           </p>
           <p className="text-xs md:text-sm text-stealth-400 mb-3 md:mb-4 font-mono break-all">
-            Consumer Health = [(PCE Growth - CPI Growth) + (PI Growth - CPI Growth)] / 2
+            Consumer Health = 85% × [(PCE−CPI) + (PI−CPI)] / 2 &nbsp;+&nbsp; 15% × XLY/XLP ratio
           </p>
           
           <div className="bg-stealth-900 border border-stealth-600 rounded p-2 md:p-3 mb-4 md:mb-6">
@@ -529,19 +534,25 @@ export default function IndicatorDetail() {
             const isWaiting = (entryDate?: string) =>
               Boolean(latestDate && entryDate && entryDate < latestDate);
 
+            const latestXlyXlp = components[components.length - 1]?.xly_xlp;
+            const ratio = latestXlyXlp?.ratio ?? null;
+            // 52-week range for XLY/XLP ratio context
+            const ratioHistory = components.map(c => c.xly_xlp?.ratio).filter((v): v is number => v != null);
+            const ratio52wHigh = ratioHistory.length ? Math.max(...ratioHistory) : null;
+            const ratio52wLow = ratioHistory.length ? Math.min(...ratioHistory) : null;
+            const ratioTrend = ratioHistory.length >= 3
+              ? (ratioHistory[ratioHistory.length - 1] > ratioHistory[ratioHistory.length - 3] ? "rising" : "falling")
+              : null;
+
             return (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
                 <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
                   <div className="text-xs text-stealth-400 mb-1">PCE (Spending)</div>
                   <div className="text-lg font-bold text-blue-400">
                     {latestPceEntry.pce.mom_pct.toFixed(3)}%
                   </div>
-                  <div className="text-xs text-stealth-500 mt-1">
-                    MoM Growth
-                  </div>
-                  <div className="text-xs text-stealth-500">
-                    vs CPI: {latestPceEntry.spreads.pce_spread.toFixed(3)}%
-                  </div>
+                  <div className="text-xs text-stealth-500 mt-1">MoM Growth</div>
+                  <div className="text-xs text-stealth-500">vs CPI: {latestPceEntry.spreads.pce_spread.toFixed(3)}%</div>
                   <div className="text-xs text-stealth-600 mt-1">
                     As of {formatAsOf(latestPceEntry.pce.as_of || latestPceEntry.date)}
                   </div>
@@ -549,18 +560,14 @@ export default function IndicatorDetail() {
                     <div className="text-[11px] text-amber-400 mt-1">Waiting on release</div>
                   )}
                 </div>
-                
+
                 <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
                   <div className="text-xs text-stealth-400 mb-1">PI (Income)</div>
                   <div className="text-lg font-bold text-green-400">
                     {latestPiEntry.pi.mom_pct.toFixed(3)}%
                   </div>
-                  <div className="text-xs text-stealth-500 mt-1">
-                    MoM Growth
-                  </div>
-                  <div className="text-xs text-stealth-500">
-                    vs CPI: {latestPiEntry.spreads.pi_spread.toFixed(3)}%
-                  </div>
+                  <div className="text-xs text-stealth-500 mt-1">MoM Growth</div>
+                  <div className="text-xs text-stealth-500">vs CPI: {latestPiEntry.spreads.pi_spread.toFixed(3)}%</div>
                   <div className="text-xs text-stealth-600 mt-1">
                     As of {formatAsOf(latestPiEntry.pi.as_of || latestPiEntry.date)}
                   </div>
@@ -568,24 +575,36 @@ export default function IndicatorDetail() {
                     <div className="text-[11px] text-amber-400 mt-1">Waiting on release</div>
                   )}
                 </div>
-                
+
                 <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
                   <div className="text-xs text-stealth-400 mb-1">CPI (Inflation)</div>
                   <div className="text-lg font-bold text-red-400">
                     {latestCpiEntry.cpi.mom_pct.toFixed(3)}%
                   </div>
-                  <div className="text-xs text-stealth-500 mt-1">
-                    MoM Growth
-                  </div>
-                  <div className="text-xs text-stealth-500">
-                    Baseline
-                  </div>
+                  <div className="text-xs text-stealth-500 mt-1">MoM Growth</div>
+                  <div className="text-xs text-stealth-500">Baseline</div>
                   <div className="text-xs text-stealth-600 mt-1">
                     As of {formatAsOf(latestCpiEntry.cpi.as_of || latestCpiEntry.date)}
                   </div>
                   {isWaiting(latestCpiEntry.cpi.as_of || latestCpiEntry.date) && (
                     <div className="text-[11px] text-amber-400 mt-1">Waiting on release</div>
                   )}
+                </div>
+
+                <div className="bg-stealth-900 border border-stealth-600 rounded p-4">
+                  <div className="text-xs text-stealth-400 mb-1">XLY / XLP (Wants vs Needs)</div>
+                  <div className={`text-lg font-bold ${ratio !== null && ratio > 1 ? "text-emerald-400" : "text-orange-400"}`}>
+                    {ratio !== null ? ratio.toFixed(3) : "—"}
+                  </div>
+                  <div className="text-xs text-stealth-500 mt-1">
+                    {ratioTrend ? (ratioTrend === "rising" ? "↑ Discretionary leading" : "↓ Staples leading") : "—"}
+                  </div>
+                  <div className="text-xs text-stealth-500">
+                    {ratio52wHigh !== null && ratio52wLow !== null
+                      ? `Range: ${ratio52wLow.toFixed(3)} – ${ratio52wHigh.toFixed(3)}`
+                      : ""}
+                  </div>
+                  <div className="text-[11px] text-stealth-600 mt-1">Daily · 15% weight</div>
                 </div>
               </div>
             );
@@ -618,6 +637,36 @@ export default function IndicatorDetail() {
               );
             })()}
           </div>
+
+          {/* XLY vs XLP Divergence Chart */}
+          {components.some(c => c.xly_xlp?.ratio != null) && (
+            <div className="h-72 mb-6">
+              <h4 className="text-sm font-semibold mb-1 text-stealth-200">XLY / XLP Ratio — Wants vs Needs</h4>
+              <p className="text-xs text-stealth-400 mb-2">
+                Rising = consumers spending on discretionary (healthy). Falling = defensive rotation into staples (stress signal).
+              </p>
+              {(() => {
+                const { data: extendedData, dateRange } = prepareExtendedComponentData({
+                  components,
+                  chartRangeDays: chartRange.days,
+                  extendToToday: true
+                });
+                return (
+                  <ComponentChart
+                    data={extendedData}
+                    lines={[
+                      { dataKey: "xly_xlp.ratio", name: "XLY/XLP Ratio", stroke: "#34d399", strokeWidth: 2 },
+                    ]}
+                    referenceLines={[
+                      { y: 1, stroke: getFamilyColor("benchmark"), label: "Parity", labelFill: getFamilyColor("benchmark") }
+                    ]}
+                    yAxisLabel="XLY/XLP"
+                    dateRange={dateRange}
+                  />
+                );
+              })()}
+            </div>
+          )}
 
           {/* Consumer Health Index Chart */}
           <div className="h-80">
@@ -1810,7 +1859,7 @@ export default function IndicatorDetail() {
                       stroke={CHART_NEUTRAL.axis}
                       width={72}
                       tickMargin={8}
-                      label={{ value: 'Score (0-100)', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
+                      label={{ value: 'Score', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
                     />
                     <Tooltip
                     contentStyle={{
@@ -1842,7 +1891,7 @@ export default function IndicatorDetail() {
                     <Line
                       type="monotone"
                       dataKey="score"
-                      name="Bond Market Stability"
+                      name={displayName}
                       stroke={getFamilyColor("system")}
                       strokeWidth={2}
                       dot={false}

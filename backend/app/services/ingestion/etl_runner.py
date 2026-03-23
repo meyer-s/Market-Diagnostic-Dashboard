@@ -84,15 +84,24 @@ class ETLRunner:
                 pce_series = await self.fred.fetch_series("PCE", start_date=start_date)
                 cpi_series = await self.fred.fetch_series("CPIAUCSL", start_date=start_date)
                 pi_series = await self.fred.fetch_series("PI", start_date=start_date)
-                
+
+                # Fetch XLY (Consumer Discretionary) and XLP (Consumer Staples) for
+                # wants-vs-needs divergence signal
+                xly_series = self.yahoo.fetch_series("XLY", start_date=start_date)
+                xlp_series = self.yahoo.fetch_series("XLP", start_date=start_date)
+                xly_price_dict = {x["date"]: x["value"] for x in xly_series if x["value"] is not None}
+                xlp_price_dict = {x["date"]: x["value"] for x in xlp_series if x["value"] is not None}
+                xly_dates_sorted = sorted(xly_price_dict.keys())
+                xlp_dates_sorted = sorted(xlp_price_dict.keys())
+
                 # Create dictionaries for forward-filling
                 pce_dict = {x["date"]: x["value"] for x in pce_series if x["value"] is not None}
                 cpi_dict = {x["date"]: x["value"] for x in cpi_series if x["value"] is not None}
                 pi_dict = {x["date"]: x["value"] for x in pi_series if x["value"] is not None}
-                
+
                 # Use union of all dates to capture all available data
                 all_dates = sorted(set(pce_dict.keys()) | set(cpi_dict.keys()) | set(pi_dict.keys()))
-                
+
                 # Forward-fill: build lists with last known values
                 pce_raw = []
                 cpi_raw = []
@@ -100,7 +109,7 @@ class ETLRunner:
                 last_pce = None
                 last_cpi = None
                 last_pi = None
-                
+
                 common_dates = []
                 for date in all_dates:
                     if date in pce_dict:
@@ -109,14 +118,14 @@ class ETLRunner:
                         last_cpi = cpi_dict[date]
                     if date in pi_dict:
                         last_pi = pi_dict[date]
-                    
+
                     # Only add if we have at least one value for each series
                     if last_pce is not None and last_cpi is not None and last_pi is not None:
                         common_dates.append(date)
                         pce_raw.append(last_pce)
                         cpi_raw.append(last_cpi)
                         pi_raw.append(last_pi)
-                
+
                 # Build aligned series
                 series = [{"date": date, "value": 0.0} for date in common_dates]
             elif code == "BOND_MARKET_STABILITY":
@@ -165,42 +174,64 @@ class ETLRunner:
         # --- Check if this indicator should use rate-of-change ---
         # For derived indicators, calculate the derived metric
         if code == "CONSUMER_HEALTH":
+            import bisect
+
             # Calculate MoM% for PCE, CPI, and PI
             pce_mom = [0.0]
             cpi_mom = [0.0]
             pi_mom = [0.0]
-            
+
             for i in range(1, len(pce_raw)):
                 pce_pct = ((pce_raw[i] - pce_raw[i-1]) / pce_raw[i-1]) * 100 if pce_raw[i-1] != 0 else 0.0
                 cpi_pct = ((cpi_raw[i] - cpi_raw[i-1]) / cpi_raw[i-1]) * 100 if cpi_raw[i-1] != 0 else 0.0
                 pi_pct = ((pi_raw[i] - pi_raw[i-1]) / pi_raw[i-1]) * 100 if pi_raw[i-1] != 0 else 0.0
-                
+
                 pce_mom.append(pce_pct)
                 cpi_mom.append(cpi_pct)
                 pi_mom.append(pi_pct)
-            
-            # Consumer Health = Average of (PCE growth - CPI growth) and (PI growth - CPI growth)
-            # This avoids double-weighting CPI
-            # Positive = spending and income outpacing inflation (healthy)
-            # Negative = inflation outpacing spending/income (consumer squeeze)
+
+            # PCE/CPI/PI composite: [(PCE-CPI) + (PI-CPI)] / 2
             consumer_health = []
             for i in range(len(pce_mom)):
                 pce_spread = pce_mom[i] - cpi_mom[i]
                 pi_spread = pi_mom[i] - cpi_mom[i]
-                health = (pce_spread + pi_spread) / 2
-                consumer_health.append(health)
-            
-            # Update raw_series with the derived consumer health values
+                consumer_health.append((pce_spread + pi_spread) / 2)
+
             raw_series = consumer_health
-            
-            # Normalize the consumer health metric
-            # Positive values = healthy consumer (spending/income > inflation)
-            # Negative values = consumer stress (inflation > spending/income)
-            normalized_series = normalize_series(
-                consumer_health,
-                direction=ind.direction,
-                lookback=ind.lookback_days_for_z,
-            )
+
+            # --- XLY/XLP ratio: discretionary vs staples (wants vs needs) ---
+            # For each macro date, look up the nearest prior XLY and XLP price
+            xly_xlp_ratios = []
+            for date in common_dates:
+                xi = bisect.bisect_right(xly_dates_sorted, date) - 1
+                li = bisect.bisect_right(xlp_dates_sorted, date) - 1
+                if xi >= 0 and li >= 0:
+                    xly_v = xly_price_dict[xly_dates_sorted[xi]]
+                    xlp_v = xlp_price_dict[xlp_dates_sorted[li]]
+                    xly_xlp_ratios.append(xly_v / xlp_v if xlp_v else None)
+                else:
+                    xly_xlp_ratios.append(None)
+
+            # Forward-fill any missing ratio values
+            last_valid_ratio = None
+            clean_ratios = []
+            for v in xly_xlp_ratios:
+                if v is not None:
+                    last_valid_ratio = v
+                clean_ratios.append(last_valid_ratio)
+
+            # Normalize each component separately, then blend 85% macro + 15% XLY/XLP
+            macro_norm = normalize_series(consumer_health, direction=ind.direction, lookback=ind.lookback_days_for_z)
+
+            if any(v is not None for v in clean_ratios):
+                filled_ratios = [v if v is not None else 1.0 for v in clean_ratios]
+                xly_xlp_norm = normalize_series(filled_ratios, direction=ind.direction, lookback=ind.lookback_days_for_z)
+                normalized_series = [
+                    0.85 * macro_norm[i] + 0.15 * xly_xlp_norm[i]
+                    for i in range(len(macro_norm))
+                ]
+            else:
+                normalized_series = macro_norm
         elif code == "BOND_MARKET_STABILITY":
             import numpy as np
             

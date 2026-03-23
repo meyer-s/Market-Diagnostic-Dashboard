@@ -1119,15 +1119,27 @@ async def get_indicator_components(code: str, days: int = Query(365, ge=1, le=10
             if indicator_cfg.lookback_days_for_z:
                 lookback_days_for_z = int(indicator_cfg.lookback_days_for_z)
 
+    import bisect
+    from app.services.ingestion.yahoo_client import YahooClient
+
     # Fetch enough history for z-score normalization window.
     client = FredClient()
+    yahoo = YahooClient()
     fetch_days = max(800, days + lookback_days_for_z + 30)
     cutoff = datetime.utcnow() - timedelta(days=fetch_days)
     start_date = cutoff.strftime("%Y-%m-%d")
-    
+
     pce_series = await client.fetch_series("PCE", start_date=start_date)
     cpi_series = await client.fetch_series("CPIAUCSL", start_date=start_date)
     pi_series = await client.fetch_series("PI", start_date=start_date)
+
+    # XLY / XLP — daily discretionary vs staples prices
+    xly_raw = yahoo.fetch_series("XLY", start_date=start_date)
+    xlp_raw = yahoo.fetch_series("XLP", start_date=start_date)
+    xly_price = {x["date"]: x["value"] for x in xly_raw if x["value"] is not None}
+    xlp_price = {x["date"]: x["value"] for x in xlp_raw if x["value"] is not None}
+    xly_dates_sorted = sorted(xly_price.keys())
+    xlp_dates_sorted = sorted(xlp_price.keys())
     
     # Calculate MoM% for each
     def calc_mom_pct(series):
@@ -1206,10 +1218,17 @@ async def get_indicator_components(code: str, days: int = Query(365, ge=1, le=10
         pce_spread = pce_mom - cpi_mom
         pi_spread = pi_mom - cpi_mom
         consumer_health = (pce_spread + pi_spread) / 2  # Average of the two spreads
-        
+
         pce_is_filled = date not in pce_dict
         cpi_is_filled = date not in cpi_dict
         pi_is_filled = date not in pi_dict
+
+        # XLY/XLP ratio at this date — nearest prior trading day
+        xi = bisect.bisect_right(xly_dates_sorted, date) - 1
+        li = bisect.bisect_right(xlp_dates_sorted, date) - 1
+        xly_val = xly_price[xly_dates_sorted[xi]] if xi >= 0 else None
+        xlp_val = xlp_price[xlp_dates_sorted[li]] if li >= 0 else None
+        xly_xlp_ratio = (xly_val / xlp_val) if (xly_val and xlp_val) else None
 
         consumer_health_series.append(consumer_health)
 
@@ -1238,6 +1257,11 @@ async def get_indicator_components(code: str, days: int = Query(365, ge=1, le=10
                 "pi_spread": pi_spread,
                 "consumer_health": consumer_health,
             },
+            "xly_xlp": {
+                "xly": xly_val,
+                "xlp": xlp_val,
+                "ratio": xly_xlp_ratio,
+            },
         })
         
         # Update previous values for next iteration
@@ -1249,18 +1273,30 @@ async def get_indicator_components(code: str, days: int = Query(365, ge=1, le=10
             prev_pi_val = last_pi["value"]
     
     if consumer_health_series:
-        normalized_series = normalize_series(
-            consumer_health_series,
-            direction=direction,
-            lookback=lookback_days_for_z,
-        )
-        stability_scores = score_series(normalized_series)
+        macro_norm = normalize_series(consumer_health_series, direction=direction, lookback=lookback_days_for_z)
+
+        # Blend XLY/XLP at 15% if data is available
+        xly_xlp_ratios_raw = [e["xly_xlp"]["ratio"] for e in result]
+        has_ratio = any(v is not None for v in xly_xlp_ratios_raw)
+        if has_ratio:
+            last_r = None
+            filled_ratios = []
+            for v in xly_xlp_ratios_raw:
+                if v is not None:
+                    last_r = v
+                filled_ratios.append(last_r if last_r is not None else 1.0)
+            xly_xlp_norm = normalize_series(filled_ratios, direction=direction, lookback=lookback_days_for_z)
+            blended_norm = [0.85 * macro_norm[i] + 0.15 * xly_xlp_norm[i] for i in range(len(macro_norm))]
+        else:
+            blended_norm = macro_norm
+
+        stability_scores = score_series(blended_norm)
 
         for i, entry in enumerate(result):
             stability_score = float(stability_scores[i])
             entry["composite"] = {
                 "raw_value": float(consumer_health_series[i]),
-                "normalized_value": float(normalized_series[i]),
+                "normalized_value": float(blended_norm[i]),
                 "stress_score": float(100.0 - stability_score),
                 "stability_score": stability_score,
             }
