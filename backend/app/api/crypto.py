@@ -14,7 +14,7 @@ CRYPTO_ASSETS = [
     {"symbol": "BTC", "name": "Bitcoin", "coin_id": "bitcoin", "color": "#f7931a"},
     {"symbol": "ETH", "name": "Ethereum", "coin_id": "ethereum", "color": "#627eea"},
     {"symbol": "SOL", "name": "Solana", "coin_id": "solana", "color": "#14f195"},
-    {"symbol": "XRP", "name": "XRP", "coin_id": "ripple", "color": "#60a5fa"},
+    {"symbol": "XRP", "name": "XRP", "coin_id": "ripple", "color": "#f472b6"},
 ]
 
 
@@ -47,6 +47,13 @@ async def get_crypto_market_overview(
                 },
             )
             global_task = client.get(f"{COINGECKO_BASE_URL}/global")
+            global_history_task = client.get(
+                f"{COINGECKO_BASE_URL}/global/market_cap_chart",
+                params={
+                    "vs_currency": "usd",
+                    "days": days,
+                },
+            )
             history_tasks = [
                 client.get(
                     f"{COINGECKO_BASE_URL}/coins/{asset['coin_id']}/market_chart",
@@ -59,14 +66,16 @@ async def get_crypto_market_overview(
                 for asset in CRYPTO_ASSETS
             ]
 
-            current_response, global_response, *history_responses = await asyncio.gather(
+            current_response, global_response, global_history_response, *history_responses = await asyncio.gather(
                 current_task,
                 global_task,
+                global_history_task,
                 *history_tasks,
             )
 
         current_response.raise_for_status()
         global_response.raise_for_status()
+        global_history_response.raise_for_status()
         for response in history_responses:
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -76,9 +85,11 @@ async def get_crypto_market_overview(
 
     current_payload = current_response.json()
     global_payload = global_response.json().get("data", {})
+    global_history_payload = global_history_response.json()
 
     assets = []
     advancing_assets_24h = 0
+    btc_market_caps_by_date: dict[str, float] = {}
 
     for asset, history_response in zip(CRYPTO_ASSETS, history_responses):
         market_payload = current_payload.get(asset["coin_id"], {})
@@ -91,6 +102,8 @@ async def get_crypto_market_overview(
         for timestamp, market_cap in history_payload.get("market_caps", []):
             date_key = _coingecko_date(timestamp)
             history_by_date.setdefault(date_key, {"date": date_key})["market_cap"] = _safe_round(market_cap, 2)
+            if asset["symbol"] == "BTC":
+                btc_market_caps_by_date[date_key] = float(market_cap)
         for timestamp, volume in history_payload.get("total_volumes", []):
             date_key = _coingecko_date(timestamp)
             history_by_date.setdefault(date_key, {"date": date_key})["total_volume"] = _safe_round(volume, 2)
@@ -123,6 +136,27 @@ async def get_crypto_market_overview(
             }
         )
 
+    global_market_caps_by_date: dict[str, float] = {}
+    for timestamp, market_cap in global_history_payload.get("market_cap", []) or global_history_payload.get("market_caps", []):
+        date_key = _coingecko_date(timestamp)
+        global_market_caps_by_date[date_key] = float(market_cap)
+
+    market_structure_history = []
+    for date_key in sorted(global_market_caps_by_date.keys()):
+        total_market_cap = global_market_caps_by_date[date_key]
+        btc_market_cap = btc_market_caps_by_date.get(date_key)
+        btc_dominance_pct = None
+        if btc_market_cap and total_market_cap:
+            btc_dominance_pct = (btc_market_cap / total_market_cap) * 100
+
+        market_structure_history.append(
+            {
+                "date": date_key,
+                "total_market_cap": _safe_round(total_market_cap, 2),
+                "btc_dominance_pct": _safe_round(btc_dominance_pct, 2),
+            }
+        )
+
     return {
         "as_of": datetime.utcnow().isoformat(),
         "summary": {
@@ -133,6 +167,7 @@ async def get_crypto_market_overview(
             "monitored_assets": len(CRYPTO_ASSETS),
         },
         "assets": assets,
+        "market_structure_history": market_structure_history,
     }
 
 

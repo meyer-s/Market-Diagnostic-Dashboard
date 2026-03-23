@@ -65,6 +65,11 @@ interface CryptoMarketOverviewResponse {
     monitored_assets: number;
   };
   assets: CryptoAsset[];
+  market_structure_history: Array<{
+    date: string;
+    total_market_cap: number | null;
+    btc_dominance_pct: number | null;
+  }>;
 }
 
 interface CryptoDiagnosticContextResponse {
@@ -149,6 +154,27 @@ const formatSignal = (value: number | null) => {
   return value.toFixed(2);
 };
 
+const formatAxisCurrency = (value: number | null | undefined) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "n/a";
+  }
+
+  if (Math.abs(value) >= 1000) {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value);
+  }
+
+  if (Math.abs(value) >= 10) {
+    return `$${value.toFixed(0)}`;
+  }
+
+  return `$${value.toFixed(2)}`;
+};
+
 const getSignalTone = (value: number | null) => {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "text-stealth-400";
@@ -178,18 +204,28 @@ export default function CryptoDiagnostic({
     [resolvedAapData]
   );
 
-  const chartData = useMemo(() => {
+  const cutoffDate = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - timeframe);
+    return cutoff;
+  }, [timeframe]);
+
+  const buildPriceChartData = (symbols: string[]) => {
     if (!marketData?.assets?.length) {
       return [];
     }
 
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - timeframe);
     const dateMap = new Map<string, Record<string, string | number | null>>();
 
-    for (const asset of marketData.assets) {
-      const filteredHistory = asset.history.filter((point) => new Date(point.date) >= cutoff && point.price !== null && point.price !== undefined);
-      const basePrice = filteredHistory[0]?.price ?? null;
+    for (const symbol of symbols) {
+      const asset = marketData.assets.find((candidate) => candidate.symbol === symbol);
+      if (!asset) {
+        continue;
+      }
+
+      const filteredHistory = asset.history.filter(
+        (point) => new Date(point.date) >= cutoffDate && point.price !== null && point.price !== undefined
+      );
 
       for (const point of filteredHistory) {
         if (!dateMap.has(point.date)) {
@@ -201,12 +237,14 @@ export default function CryptoDiagnostic({
 
         const row = dateMap.get(point.date)!;
         row[asset.symbol] = point.price;
-        row[`${asset.symbol}_indexed`] = basePrice ? (Number(point.price) / Number(basePrice)) * 100 : null;
       }
     }
 
     return Array.from(dateMap.values()).sort((left, right) => String(left.date).localeCompare(String(right.date)));
-  }, [marketData, timeframe]);
+  };
+
+  const largeCapChartData = useMemo(() => buildPriceChartData(["BTC", "ETH"]), [marketData, cutoffDate]);
+  const secondaryChartData = useMemo(() => buildPriceChartData(["SOL", "XRP"]), [marketData, cutoffDate]);
 
   const regime = useMemo(() => {
     if (!marketData) {
@@ -232,20 +270,24 @@ export default function CryptoDiagnostic({
 
   const marketStructureData = useMemo(
     () =>
-      (diagnosticContext?.market_history ?? []).map((point) => ({
-        ...point,
-        label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      })),
-    [diagnosticContext]
+      (marketData?.market_structure_history ?? [])
+        .filter((point) => new Date(point.date) >= cutoffDate)
+        .map((point) => ({
+          ...point,
+          label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        })),
+    [marketData, cutoffDate]
   );
 
   const signalPanelData = useMemo(
     () =>
-      (diagnosticContext?.signal_history ?? []).map((point) => ({
-        ...point,
-        label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      })),
-    [diagnosticContext]
+      (diagnosticContext?.signal_history ?? [])
+        .filter((point) => new Date(point.date) >= cutoffDate)
+        .map((point) => ({
+          ...point,
+          label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        })),
+    [diagnosticContext, cutoffDate]
   );
 
   if (loading) {
@@ -340,134 +382,7 @@ export default function CryptoDiagnostic({
 
       {selectedTab === "overview" && (
         <>
-          <div className="mb-6 bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div>
-                <h3 className="text-lg font-semibold text-stealth-100">Relative Performance</h3>
-                <p className="text-xs text-stealth-400">Each asset is rebased to 100 at the start of the selected window so leadership shifts are easy to compare.</p>
-              </div>
-              <div className="flex gap-2">
-                {[30, 90, 180, 365].map((days) => (
-                  <button
-                    key={days}
-                    onClick={() => setTimeframe(days as 30 | 90 | 180 | 365)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                      timeframe === days
-                        ? "bg-blue-500/20 text-blue-200 border border-blue-500/40"
-                        : "bg-stealth-900/60 text-stealth-400 border border-stealth-700"
-                    }`}
-                  >
-                    {days}D
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={CHART_MARGIN}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                  <YAxis tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} tickFormatter={(value) => `${value.toFixed(0)}`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
-                    labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
-                    formatter={(value: number, name: string) => [value?.toFixed(1), name.replace("_indexed", "")]} 
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
-                  <ReferenceLine y={100} stroke="#475569" strokeDasharray="4 4" />
-                  {marketData.assets.map((asset) => (
-                    <Line
-                      key={asset.symbol}
-                      type="monotone"
-                      dataKey={`${asset.symbol}_indexed`}
-                      name={asset.symbol}
-                      stroke={asset.color}
-                      strokeWidth={2.5}
-                      dot={false}
-                      connectNulls
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {diagnosticContext && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
-              <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
-                <div className="mb-3">
-                  <h3 className="text-lg font-semibold text-stealth-100">Leadership Concentration</h3>
-                  <p className="text-xs text-stealth-400">BTC dominance versus total crypto market cap shows whether leadership is broadening out or collapsing back toward defensive concentration.</p>
-                </div>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={marketStructureData} margin={CHART_MARGIN}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                      <YAxis yAxisId="left" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} tickFormatter={(value) => `${value}%`} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} tickFormatter={(value) => `$${value.toFixed(0)}B`} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
-                        labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
-                        formatter={(value: number, name: string) => {
-                          if (name === "BTC Dominance") {
-                            return [`${value?.toFixed(2)}%`, name];
-                          }
-                          return [`$${value?.toFixed(0)}B`, name];
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
-                      <Line yAxisId="left" type="monotone" dataKey="btc_dominance_pct" name="BTC Dominance" stroke="#fbbf24" strokeWidth={2.4} dot={false} connectNulls />
-                      <Line yAxisId="right" type="monotone" dataKey="total_crypto_mcap_b" name="Total MCAP" stroke="#60a5fa" strokeWidth={2.2} dot={false} connectNulls />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-                  <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
-                    <div className="text-xs text-stealth-500">Primary Driver</div>
-                    <div className="font-semibold text-stealth-100">{diagnosticContext.summary.primary_driver ?? "n/a"}</div>
-                  </div>
-                  <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
-                    <div className="text-xs text-stealth-500">Stress Type</div>
-                    <div className="font-semibold text-stealth-100">{diagnosticContext.summary.stress_type ?? "n/a"}</div>
-                  </div>
-                  <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
-                    <div className="text-xs text-stealth-500">Correlation Regime</div>
-                    <div className="font-semibold text-stealth-100">{diagnosticContext.summary.correlation_regime ?? "n/a"}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
-                <div className="mb-3">
-                  <h3 className="text-lg font-semibold text-stealth-100">Liquidity Plumbing & Alt Behavior</h3>
-                  <p className="text-xs text-stealth-400">AAP crypto signals on a normalized 0 to 1 scale. Higher values indicate more stress, more defensiveness, or stronger alternative-asset behavior.</p>
-                </div>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={signalPanelData} margin={CHART_MARGIN}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                      <YAxis domain={[0, 1]} tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
-                        labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
-                        formatter={(value: number, name: string) => [value?.toFixed(2), name]}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
-                      <Line type="monotone" dataKey="stablecoin_supply" name="Stablecoin Supply" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="defi_tvl" name="DeFi Participation" stroke="#22c55e" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="btc_spy_correlation" name="BTC Alt Behavior" stroke="#c084fc" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="altcoin_weakness" name="Alt Breadth Stress" stroke="#f97316" strokeWidth={2.2} dot={false} connectNulls />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
             {marketData.assets.map((asset) => (
               <div key={asset.symbol} className="rounded-lg border border-stealth-700 bg-stealth-800 p-4">
                 <div className="flex items-start justify-between gap-3 mb-3">
@@ -499,6 +414,199 @@ export default function CryptoDiagnostic({
               </div>
             ))}
           </div>
+
+          <div className="mb-6 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-stealth-100">Price Structure</h3>
+                <p className="text-xs text-stealth-400">
+                  Raw-price curves are separated by market tier so the leadership signal is readable without compressing BTC,
+                  ETH, SOL, and XRP into one distorted axis.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {[30, 90, 180, 365].map((days) => (
+                  <button
+                    key={days}
+                    onClick={() => setTimeframe(days as 30 | 90 | 180 | 365)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                      timeframe === days
+                        ? "border border-blue-500/40 bg-blue-500/20 text-blue-200"
+                        : "border border-stealth-700 bg-stealth-900/60 text-stealth-400"
+                    }`}
+                  >
+                    {days}D
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <div className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4 xl:col-span-2">
+                <div className="mb-3">
+                  <h4 className="text-sm font-semibold text-stealth-100">BTC vs ETH</h4>
+                  <p className="text-xs text-stealth-500">BTC stays on the left axis and ETH on the right so institutional leadership and smart-contract beta can diverge cleanly.</p>
+                </div>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={largeCapChartData} margin={CHART_MARGIN}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                      <XAxis
+                        dataKey="label"
+                        minTickGap={28}
+                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
+                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                      />
+                      <YAxis
+                        yAxisId="left"
+                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
+                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                        tickFormatter={(value) => formatAxisCurrency(Number(value))}
+                        width={72}
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
+                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                        tickFormatter={(value) => formatAxisCurrency(Number(value))}
+                        width={72}
+                      />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
+                        labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
+                        formatter={(value: number, name: string) => [formatAxisCurrency(value), name]}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
+                      <Line yAxisId="left" type="monotone" dataKey="BTC" name="BTC" stroke="#f59e0b" strokeWidth={2.5} dot={false} connectNulls />
+                      <Line yAxisId="right" type="monotone" dataKey="ETH" name="ETH" stroke="#60a5fa" strokeWidth={2.5} dot={false} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+                <div className="mb-3">
+                  <h4 className="text-sm font-semibold text-stealth-100">SOL vs XRP</h4>
+                  <p className="text-xs text-stealth-500">The higher-beta pair sits in a separate panel so alt rotation is visible without flattening the larger-cap leaders.</p>
+                </div>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={secondaryChartData} margin={CHART_MARGIN}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                      <XAxis
+                        dataKey="label"
+                        minTickGap={24}
+                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
+                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                      />
+                      <YAxis
+                        yAxisId="left"
+                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
+                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                        tickFormatter={(value) => formatAxisCurrency(Number(value))}
+                        width={68}
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
+                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                        tickFormatter={(value) => formatAxisCurrency(Number(value))}
+                        width={68}
+                      />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
+                        labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
+                        formatter={(value: number, name: string) => [formatAxisCurrency(value), name]}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
+                      <Line yAxisId="left" type="monotone" dataKey="SOL" name="SOL" stroke="#14b8a6" strokeWidth={2.4} dot={false} connectNulls />
+                      <Line yAxisId="right" type="monotone" dataKey="XRP" name="XRP" stroke="#f472b6" strokeWidth={2.4} dot={false} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {diagnosticContext && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+              <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+                <div className="mb-3">
+                  <h3 className="text-lg font-semibold text-stealth-100">Leadership Concentration</h3>
+                  <p className="text-xs text-stealth-400">BTC dominance versus total crypto market cap shows whether leadership is broadening out or collapsing back toward defensive concentration.</p>
+                </div>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={marketStructureData} margin={CHART_MARGIN}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={56} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} tickFormatter={(value) => formatAxisCurrency(Number(value))} width={78} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
+                        labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
+                        formatter={(value: number, name: string) => {
+                          if (name === "BTC Dominance") {
+                            return [`${value?.toFixed(2)}%`, name];
+                          }
+                          return [formatCurrency(value, true), name];
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
+                      <ReferenceLine yAxisId="left" y={60} stroke="#64748b" strokeDasharray="4 4" />
+                      <Line yAxisId="left" type="monotone" dataKey="btc_dominance_pct" name="BTC Dominance" stroke="#fbbf24" strokeWidth={2.4} dot={false} connectNulls />
+                      <Line yAxisId="right" type="monotone" dataKey="total_market_cap" name="Total Market Cap" stroke="#60a5fa" strokeWidth={2.2} dot={false} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                  <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
+                    <div className="text-xs text-stealth-500">Primary Driver</div>
+                    <div className="font-semibold text-stealth-100">{diagnosticContext.summary.primary_driver ?? "n/a"}</div>
+                  </div>
+                  <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
+                    <div className="text-xs text-stealth-500">Stress Type</div>
+                    <div className="font-semibold text-stealth-100">{diagnosticContext.summary.stress_type ?? "n/a"}</div>
+                  </div>
+                  <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
+                    <div className="text-xs text-stealth-500">Correlation Regime</div>
+                    <div className="font-semibold text-stealth-100">{diagnosticContext.summary.correlation_regime ?? "n/a"}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+                <div className="mb-3">
+                  <h3 className="text-lg font-semibold text-stealth-100">Liquidity Plumbing & Alt Behavior</h3>
+                  <p className="text-xs text-stealth-400">AAP crypto signals on a normalized 0 to 1 scale. The reference bands help separate benign plumbing from a more defensive or stress-heavy tape.</p>
+                </div>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={signalPanelData} margin={CHART_MARGIN}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
+                      <YAxis domain={[0, 1]} tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
+                        labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
+                        formatter={(value: number, name: string) => [value?.toFixed(2), name]}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.legend }} />
+                      <ReferenceLine y={0.33} stroke="#1e293b" strokeDasharray="4 4" />
+                      <ReferenceLine y={0.67} stroke="#1e293b" strokeDasharray="4 4" />
+                      <Line type="monotone" dataKey="stablecoin_supply" name="Stablecoin Supply" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="defi_tvl" name="DeFi Participation" stroke="#22c55e" strokeWidth={2.2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="btc_spy_correlation" name="BTC Equity Correlation" stroke="#c084fc" strokeWidth={2.2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="altcoin_weakness" name="Alt Breadth Stress" stroke="#f97316" strokeWidth={2.2} dot={false} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          )}
+
         </>
       )}
 
