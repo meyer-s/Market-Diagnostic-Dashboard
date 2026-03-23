@@ -307,6 +307,7 @@ export default function IndicatorDetail() {
   const [isRefetching, setIsRefetching] = React.useState(false);
   const [refetchMessage, setRefetchMessage] = React.useState<string | null>(null);
   const [bondTab, setBondTab] = React.useState<"core" | "public" | "yield">("core");
+  const [descExpanded, setDescExpanded] = React.useState(false);
 
   React.useEffect(() => {
     if (normalizedCode === "ANALYST_ANXIETY") {
@@ -471,36 +472,49 @@ export default function IndicatorDetail() {
       </h2>
 
       {/* Metadata Section */}
-      {meta?.metadata && (
-        <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6 space-y-3 md:space-y-4">
-          <div>
-            <h3 className="text-base md:text-lg font-semibold text-stealth-100 mb-2">Description</h3>
-            <p className="text-sm md:text-base text-stealth-300 leading-relaxed">{meta.metadata.description}</p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-            <div>
-              <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Relevance</h4>
-              <p className="text-xs md:text-sm text-stealth-400">{meta.metadata.relevance}</p>
-            </div>
-            <div>
-              <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Impact</h4>
-              <p className="text-xs md:text-sm text-stealth-400">{meta.metadata.impact}</p>
-            </div>
-          </div>
+      {meta?.metadata && (() => {
+        const firstSentence = meta.metadata.description.split(/\.\s+/)[0].replace(/\.$/, "");
+        return (
+          <div className="bg-stealth-800 border border-stealth-700 rounded-lg mb-4 md:mb-6">
+            <button
+              onClick={() => setDescExpanded(e => !e)}
+              className="w-full flex items-start justify-between gap-4 p-4 md:p-5 text-left"
+            >
+              <p className="text-sm md:text-base text-stealth-300 leading-relaxed flex-1">
+                {descExpanded ? meta.metadata.description : firstSentence + "."}
+              </p>
+              <span className="text-stealth-500 text-xs mt-1 shrink-0 select-none">
+                {descExpanded ? "▲ Less" : "▼ More"}
+              </span>
+            </button>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-            <div>
-              <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Scoring Method</h4>
-              <p className="text-xs md:text-sm text-stealth-400">{meta.metadata.scoring}</p>
-            </div>
-            <div>
-              <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Typical Range</h4>
-              <p className="text-xs md:text-sm text-stealth-400">{meta.metadata.typical_range}</p>
-            </div>
+            {descExpanded && (
+              <div className="px-4 md:px-5 pb-4 md:pb-5 space-y-3 md:space-y-4 border-t border-stealth-700 pt-3 md:pt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                  <div>
+                    <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Relevance</h4>
+                    <p className="text-xs md:text-sm text-stealth-400">{meta.metadata.relevance}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Impact</h4>
+                    <p className="text-xs md:text-sm text-stealth-400">{meta.metadata.impact}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                  <div>
+                    <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Scoring Method</h4>
+                    <p className="text-xs md:text-sm text-stealth-400">{meta.metadata.scoring}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Typical Range</h4>
+                    <p className="text-xs md:text-sm text-stealth-400">{meta.metadata.typical_range}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Component Breakdown for Consumer Health */}
       {apiCode === "CONSUMER_HEALTH" && components && components.length > 0 && (

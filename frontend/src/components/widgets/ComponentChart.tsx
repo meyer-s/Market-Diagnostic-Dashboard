@@ -1,4 +1,4 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { CHART_MARGIN, CHART_NEUTRAL } from "../../utils/chartUtils";
 
 interface ChartLine {
@@ -87,6 +87,7 @@ export function ComponentChart({
           }}
           labelFormatter={(label: number) => new Date(label).toLocaleDateString()}
         />
+        <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.tick }} iconType="circle" />
         {lines.map((line, idx) => {
           // Check if this line should be rendered (for conditional lines)
           if (line.conditional && !line.conditional(data)) {
