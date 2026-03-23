@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 type PrincipleMotif = "board" | "curve" | "decision";
@@ -9,6 +10,7 @@ type PrincipleCard = {
 };
 
 type HeroState = "G" | "Y" | "R";
+type VisionHighlightId = "vision" | "goal" | "advantage";
 
 const principles = [
   {
@@ -35,6 +37,33 @@ const audience = [
   "Investors who know they should care about macro conditions but do not want to piece them together across ten tabs.",
   "Traders who want a faster read on whether the tape is confirming or fighting their thesis.",
   "Curious learners who want to think more like a professional without pretending to already be one.",
+];
+
+const heroHighlights = [
+  {
+    id: "vision" as const,
+    eyebrow: "Vision",
+    title: "Market context should not be exclusive.",
+    summary: "Capital markets shape everyday life, not just corporate strategy.",
+    detail:
+      "Markets do not exist only to serve institutions and corporations. They shape the lives of everyone who works, saves, invests, borrows, or spends. A system this important should be more legible to the people living inside it.",
+  },
+  {
+    id: "goal" as const,
+    eyebrow: "Goal",
+    title: "Reduce mental clutter. Centralize context.",
+    summary: "Replace scattered signals with one readable backdrop.",
+    detail:
+      "The practical purpose of this platform is to lower the cognitive load of juggling macro indicators while trying to make a decision. Instead of holding every moving part in your head, you can read the broader backdrop in one place.",
+  },
+  {
+    id: "advantage" as const,
+    eyebrow: "Why It Matters",
+    title: "Narrow the knowledge gap.",
+    summary: "Turn hidden structure into clearer judgment for everyday participants.",
+    detail:
+      "People who understand the underlying mechanics of the market hold a real advantage over those who only feel its effects. By making that structure more reliable and human-readable, this tool helps more people act with context rather than confusion.",
+  },
 ];
 
 function HeroSignalIllustration() {
@@ -392,6 +421,8 @@ function FrameworkHouseGraphic() {
 }
 
 export default function Vision() {
+  const [activeHighlight, setActiveHighlight] = useState<VisionHighlightId>("goal");
+
   return (
     <div className="bg-stealth-900 text-gray-100">
       <section className="relative overflow-hidden border-b border-stealth-700">
@@ -407,11 +438,55 @@ export default function Vision() {
               Less Guesswork. More Context.
             </h1>
             <p className="mt-6 max-w-3xl text-lg sm:text-xl leading-8 text-stealth-200">
-              Markets do not shape only corporations and institutions. They shape the lives of everyone who works, saves, invests, borrows, or spends. The people who understand the underlying mechanics of the market hold a real advantage over those who are left to live with its effects without the same context. This tool exists to narrow that gap by making market structure more legible, more reliable, and more human-readable for everyday participants.
+              A market framework should be readable by the people who live inside the system, not only by the people paid to interpret it.
             </p>
-            <p className="mt-4 max-w-3xl text-base sm:text-lg leading-8 text-stealth-300">
-              Goal: reduce mental clutter and centralize context. The practical purpose of this platform is to lower the cognitive load of juggling macro indicators while trying to make a decision. Everything affects everything. If you try to carry every signal in your head at once, it can quickly become overwhelming. This platform organizes the broader backdrop into a single readable view so you can think more clearly and act with more context.
-            </p>
+
+            <div className="mt-8 max-w-5xl">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
+                Explore The Core Ideas
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {heroHighlights.map((item) => {
+                  const isActive = activeHighlight === item.id;
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setActiveHighlight(item.id)}
+                      onMouseEnter={() => setActiveHighlight(item.id)}
+                      onFocus={() => setActiveHighlight(item.id)}
+                      className={`rounded-2xl border px-4 py-4 text-left transition-all duration-200 ${
+                        isActive
+                          ? "border-emerald-300/40 bg-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
+                          : "border-stealth-700 bg-stealth-900/35 hover:border-stealth-500 hover:bg-white/[0.04]"
+                      }`}
+                    >
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stealth-400">
+                        {item.eyebrow}
+                      </div>
+                      <div className="mt-2 text-lg font-semibold text-white">
+                        {item.title}
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-stealth-300">
+                        {item.summary}
+                      </p>
+                      <div
+                        className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ${
+                          isActive ? "mt-3 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"
+                        }`}
+                      >
+                        <div className="overflow-hidden">
+                          <p className="border-t border-white/8 pt-3 text-sm leading-6 text-stealth-200">
+                            {item.detail}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </section>
