@@ -38,7 +38,7 @@ export function MethodologyPanel() {
       <div className="p-4 md:p-6 border-b border-stealth-700">
         <h2 className="text-lg md:text-xl font-semibold text-stealth-100 mb-2">Methodology & Interpretation</h2>
         <p className="text-xs text-stealth-400">
-          Detailed explanations of AAP construction, scoring, and regime classification
+          Detailed explanations of AAS construction, scoring, and regime classification
         </p>
       </div>
 
@@ -458,7 +458,7 @@ export function MethodologyPanel() {
               <ul className="space-y-1.5 text-xs text-stealth-300">
                 <li className="flex items-start gap-2">
                   <span className="text-red-400">•</span>
-                  <span><strong>Lagging Indicator:</strong> AAP confirms regime changes; it doesn't predict them</span>
+                  <span><strong>Lagging Indicator:</strong> AAS confirms regime changes; it doesn't predict them</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-400">•</span>
@@ -484,7 +484,7 @@ export function MethodologyPanel() {
               <ul className="space-y-1.5 text-xs text-stealth-300">
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400">✓</span>
-                  <span>Use AAP as a <em>regime filter</em> for portfolio allocation, not trade timing</span>
+                  <span>Use AAS as a <em>regime filter</em> for portfolio allocation, not trade timing</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400">✓</span>
@@ -500,7 +500,7 @@ export function MethodologyPanel() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400">✓</span>
-                  <span>Rebalance quarterly or when AAP crosses major regime thresholds (25, 50, 75)</span>
+                  <span>Rebalance quarterly or when AAS crosses major regime thresholds (25, 50, 75)</span>
                 </li>
               </ul>
             </div>

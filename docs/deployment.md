@@ -83,11 +83,11 @@ Use those when you need to force a refresh without changing application code.
 
 ## Feature-Specific Deploy Notes
 
-### Alternative Assets and AAP
+### Alternative Assets and AAS
 
 The repository still includes a heavier helper at `deploy_full_aap.sh`. Keep it for recovery or backfill-heavy work, not as the primary deployment path.
 
-The active AAP and alternative-assets reference now lives in `docs/alternative-assets.md`.
+The active AAS and alternative-assets reference now lives in `docs/alternative-assets.md`.
 
 ### Discord Bot
 

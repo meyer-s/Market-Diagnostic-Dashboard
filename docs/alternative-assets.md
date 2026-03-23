@@ -1,12 +1,12 @@
 # Alternative Assets
 
-This document replaces the older AAP rollout summaries and keeps the active alternative-assets documentation in one place.
+This document replaces the older AAS rollout summaries and keeps the active alternative-assets documentation in one place.
 
 ## Scope
 
 The alternative-assets section now covers:
 
-- the AAP backend and breakdown endpoints
+- the AAS backend and breakdown endpoints
 - the frontend alternative-assets page
 - precious metals diagnostics
 - crypto diagnostics
@@ -33,8 +33,8 @@ This repo no longer needs point-in-time "10 of 18" or "ready for deployment" mem
 
 What matters now:
 
-- AAP is a maintained subsystem with its own API surface.
-- The frontend includes both the main alternative-assets page and the AAP breakdown view.
+- AAS is a maintained subsystem with its own API surface.
+- The frontend includes both the main alternative-assets page and the AAS breakdown view.
 - crypto and precious metals each have their own diagnostic views under the broader alternative-assets section.
 
 ## Core Files

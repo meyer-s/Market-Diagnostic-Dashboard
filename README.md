@@ -66,7 +66,7 @@ The scheduler in [backend/app/services/scheduler.py](c:/Users/sjmey/OneDrive/Doc
 
 - runs an initial ETL job on startup
 - refreshes indicators on a recurring schedule
-- ingests AAP, crypto, metals, and sector-projection data
+- ingests AAS, crypto, metals, and sector-projection data
 - recalculates the Alternative Asset Pressure / Stability framework
 
 Representative data sources include:
@@ -110,7 +110,7 @@ curl -X POST http://localhost:8000/admin/backfill
 Active project documentation now lives under the `docs/` folder.
 
 - Deployment and runtime workflow: [docs/deployment.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/deployment.md)
-- Alternative assets and AAP: [docs/alternative-assets.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/alternative-assets.md)
+- Alternative assets and AAS: [docs/alternative-assets.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/alternative-assets.md)
 - Discord integration: [docs/discord.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/discord.md)
 - Secret Options: [docs/secret-options.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/secret-options.md)
 - API reference draft: [docs/api-contract.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/api-contract.md)

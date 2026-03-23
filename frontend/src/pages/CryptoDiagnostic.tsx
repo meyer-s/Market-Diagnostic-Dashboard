@@ -697,7 +697,7 @@ export default function CryptoDiagnostic({
               <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
                 <div className="mb-3">
                   <h3 className="text-lg font-semibold text-stealth-100">Liquidity Plumbing & Alt Behavior</h3>
-                  <p className="text-xs text-stealth-400">AAP crypto signals on a normalized 0 to 1 scale. The reference bands help separate benign plumbing from a more defensive or stress-heavy tape.</p>
+                  <p className="text-xs text-stealth-400">AAS crypto signals on a normalized 0 to 1 scale. The reference bands help separate benign plumbing from a more defensive or stress-heavy tape.</p>
                 </div>
                 <div className="h-72 min-w-0 w-full">
                   {hasSignalPanelData ? (

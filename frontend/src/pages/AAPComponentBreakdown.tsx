@@ -122,7 +122,7 @@ const AAPComponentBreakdown: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <MarketLoading size={110} variant="pulse" label="Loading AAP component data..." />
+        <MarketLoading size={110} variant="pulse" label="Loading AAS component data..." />
       </div>
     );
   }

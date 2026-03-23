@@ -135,13 +135,13 @@ Working reference for the current backend API surface used by the frontend.
 - `GET /aap/components/history?days=365`
   - Params: `days` where supported
   - Response fields: component breakdowns and histories
-  - Consumers: alternative-assets page and AAP breakdown page
+  - Consumers: alternative-assets page and AAS breakdown page
 - `GET /aap/regime/current`
 - `GET /aap/regime/history`
   - Response fields: regime snapshots and history
   - Consumers: alternative-assets page
 - `GET /aap/dashboard`
-  - Response fields: dashboard-facing AAP snapshot
+  - Response fields: dashboard-facing AAS snapshot
   - Consumers: dashboard where wired
 
 ## Crypto
