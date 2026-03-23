@@ -375,7 +375,7 @@ export default function WhyThisExists() {
           </div>
 
           <div className="relative mx-auto mt-10 w-full max-w-[320px] sm:max-w-[380px] lg:absolute lg:right-[-28px] lg:top-1/2 lg:z-0 lg:mt-0 lg:w-[440px] lg:max-w-none lg:-translate-y-1/2 xl:right-[-8px] xl:w-[500px] pointer-events-none">
-            <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,_rgba(96,165,250,0.10),_transparent_66%)] blur-2xl" />
+            <div className="absolute -inset-10 rounded-full bg-[radial-gradient(circle_at_center,_rgba(96,165,250,0.06),_transparent_74%)] blur-3xl" />
             <div className="relative">
               <FrameworkHouseGraphic />
             </div>
