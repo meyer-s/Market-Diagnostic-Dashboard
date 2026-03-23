@@ -410,7 +410,7 @@ export default function Vision() {
               Markets do not shape only corporations and institutions. They shape the lives of everyone who works, saves, invests, borrows, or spends. The people who understand the underlying mechanics of the market hold a real advantage over those who are left to live with its effects without the same context. This tool exists to narrow that gap by making market structure more legible, more reliable, and more human-readable for everyday participants.
             </p>
             <p className="mt-4 max-w-3xl text-base sm:text-lg leading-8 text-stealth-300">
-              Principle: reduce mental clutter and centralize context. The practical purpose of this platform is to reduce the cognitive load of juggling macro indicators while trying to make a decision. Everything affects everything. If you try to carry every signal in your head at once, it can run away from you. This platform organizes the broader backdrop into a single readable view so you can think more clearly and act with more context.
+              Goal: reduce mental clutter and centralize context. The practical purpose of this platform is to lower the cognitive load of juggling macro indicators while trying to make a decision. Everything affects everything. If you try to carry every signal in your head at once, it can quickly become overwhelming. This platform organizes the broader backdrop into a single readable view so you can think more clearly and act with more context.
             </p>
           </div>
         </div>
