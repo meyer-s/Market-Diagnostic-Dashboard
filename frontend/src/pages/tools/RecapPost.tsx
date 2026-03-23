@@ -61,7 +61,6 @@ export default function RecapPost() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-stealth-100">Recap Post</h1>
-          <p className="mt-1 text-sm text-stealth-400">Direct permalink view for this recap entry.</p>
         </div>
         <Link
           to="/tools/recap"
