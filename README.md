@@ -2,268 +2,166 @@
 
 A real-time macro and market dashboard that turns rates, liquidity, credit, sentiment, alternative assets, and sector internals into a human-readable market regime view.
 
-🌐 **Live at**: [marketdiagnostictool.com](https://marketdiagnostictool.com)
+Live site: [marketdiagnostictool.com](https://marketdiagnostictool.com)
 
----
+## What It Covers
 
-## 📊 System Overview
+The platform tracks 11 core indicators seeded by [backend/seed_indicators.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/seed_indicators.py), including:
 
-### Core Market Indicators
-- **VIX**: Market volatility and fear gauge
-- **SPY**: S&P 500 trend strength (50-day EMA distance)
-- **Federal Funds Rate**: Rate-of-change momentum
-- **10Y-2Y Treasury Curve**: Yield curve inversion detector
-- **Unemployment Rate**: Labor market health
-- **Consumer Health**: Composite consumer strength indicator
-- **Bond Market Stability**: 4-component weighted (credit, curve, momentum, volatility)
-- **Liquidity Proxy**: 3-component z-score (M2, Fed BS, RRP)
-- **Analyst Confidence**: Market sentiment gauge
-- **Sentiment Composite**: Combined consumer & corporate sentiment
+- VIX
+- SPY trend
+- Breadth Health
+- 10Y minus 2Y Treasury spread
+- Unemployment
+- Consumer Health
+- Bond Market Stability
+- Liquidity Proxy
+- Analyst Anxiety / Confidence
+- Sentiment Composite
+- Alternative Asset Pressure
 
----
+In addition to the core dashboard, the app now includes:
 
-## 🚀 Key Features
+- Indicator detail pages with expanded methodology and history
+- System Breakdown with weighting logic and historical state distribution
+- Alternative Assets with precious metals and crypto diagnostics
+- Market Map, sector projections, and stock analysis tools
+- Recap pages for published updates
+- Secret options tracking and options-alert infrastructure
 
-### Real-Time Monitoring
-- **Automated Data Ingestion**: 4-hour ETL pipeline from FRED API & Yahoo Finance
-- **365-Day Historical Backfill**: Complete historical context on startup
-- **Manual Refresh**: One-click data updates on dashboard
-- **Data Freshness Indicators**: Visual status showing last update times
+## Current Product Surface
 
-### Advanced Analytics
-- **Dow Theory Market Strain**: Direction and strain analysis based on Dow Theory principles
-- **System Breakdown**: Weighted methodology view with historical heatmap and live component logic
-- **Alternative Assets**: Precious metals and crypto diagnostics inside the AAS framework
-- **Market Map**: Visual sector performance heatmap and intraday context
-- **Sector & Stock Projections**: Forward-looking sector and single-name analysis
-- **Recap Tools**: Published market recap workflow and archive pages
+Primary frontend routes live in [frontend/src/App.tsx](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/frontend/src/App.tsx).
 
-### User Experience
-- **Responsive Design**: Mobile-first and production-deployed
-- **Market News Integration**: Cached headlines with ticker filtering
-- **Indicator Detail Pages**: Historical context, methodology, and chart tooling per signal
+- `/` Dashboard
+- `/indicators` indicator library
+- `/indicators/:code` indicator detail
+- `/system-breakdown` system methodology and state view
+- `/market-map` market-map and intraday sector context
+- `/sector-projections` sector model output
+- `/stock-analysis` and `/stock-analysis/:symbol` stock analysis
+- `/alternative-assets` alternative-asset diagnostics
+- `/aap-breakdown` AAS component breakdown
+- `/tools/recap` published recap index and posts
+- `/news` cached market news
+- `/secret/options` secret options page
 
----
+## Stack
 
-## 🏗️ Architecture
+- Backend: FastAPI, SQLAlchemy, PostgreSQL
+- Frontend: React, TypeScript, Vite, Recharts
+- Deployment: Docker Compose
 
-### Backend (FastAPI + PostgreSQL)
-```
-backend/
-├── app/
-│   ├── api/          # REST endpoints
-│   ├── models/       # SQLAlchemy models
-│   ├── services/     # Business logic (calculators, ingestion)
-│   └── utils/        # Helper functions
-├── backfill_*.py     # Data backfill scripts
-├── fetch_*.py        # Data fetcher scripts
-└── complete_aap_components.py  # AAP full implementation
-```
+Code entry points:
 
-### Frontend (React + TypeScript)
-```
-frontend/
-├── src/
-│   ├── components/   # Reusable UI components
-│   ├── pages/        # Route pages
-│   ├── hooks/        # Custom React hooks
-│   ├── types/        # TypeScript definitions
-│   └── utils/        # Helper functions
-```
+- Backend app: [backend/app/main.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/app/main.py)
+- Frontend app: [frontend/src/App.tsx](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/frontend/src/App.tsx)
+- Docker services: [docker-compose.yml](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docker-compose.yml)
 
-### Deployment (Docker)
-- **Docker Compose**: Orchestrates backend, frontend, and PostgreSQL
-- **Multi-arch Support**: Works on Mac ARM64 and x86_64
-- **Production Ready**: Nginx reverse proxy, health checks, auto-restart
+## Data Pipeline
 
----
+At startup, the backend seeds indicator metadata and launches the API via [backend/startup.sh](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/startup.sh).
 
-## 🚀 Quick Start
+The scheduler in [backend/app/services/scheduler.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/app/services/scheduler.py):
 
-### Prerequisites
-- Docker & Docker Compose
-- Git
+- runs an initial ETL job on startup
+- refreshes indicators on a recurring schedule
+- ingests AAP, crypto, metals, and sector-projection data
+- recalculates the Alternative Asset Pressure / Stability framework
 
-### Development Setup
+Representative data sources include:
+
+- FRED for macro and rates data
+- Yahoo Finance for equity and market pricing inputs
+- CoinGecko for crypto market data
+- DeFiLlama for DeFi and stablecoin context
+- metals-specific sources including COMEX, ETF, and central-bank feeds
+
+## Running Locally
+
+Prerequisites:
+
+- Docker
+- Docker Compose
+
+Start the stack:
+
 ```bash
-# Clone repository
 git clone https://github.com/meyer-s/Market-Diagnostic-Dashboard.git
 cd Market-Diagnostic-Dashboard
-
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Access dashboard
-open http://localhost:3000
+docker compose up -d --build
 ```
 
-### Production Deployment
+Default local endpoints from the current compose file:
+
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8000`
+
+Useful commands:
+
 ```bash
-# On production server
-cd ~/Market-Diagnostic-Dashboard
-git pull
-
-# Deploy full AAP system (runs all data fetchers + backfills)
-./deploy_full_aap.sh
-
-# Or manual deployment
-docker-compose up -d --build
+docker compose logs -f
 docker exec market_backend python seed_indicators.py
-docker exec market_backend python complete_aap_components.py
-docker exec market_backend python backfill_aap.py
+curl -X POST http://localhost:8000/admin/backfill
 ```
 
----
+## Production Deploy
 
-## 📦 Data Sources
+The current production workflow is git-based:
 
-### Primary APIs
-- **FRED (Federal Reserve Economic Data)**: Macro indicators, rates, and economic context
-- **Yahoo Finance**: Equity and market pricing inputs
-- **CoinGecko**: Crypto prices, market caps, and leadership context
-- **DeFiLlama**: DeFi TVL and stablecoin supply
-- **Additional specialty sources**: COMEX, ETF, central-bank, and metals-specific data feeds
-
-### Data Quality
-- ✅ **100% Real Data**: All seed data replaced with live sources
-- ✅ **Daily Updates**: Scheduled ingestion every 4 hours
-- ✅ **Historical Depth**: 90-365 days depending on indicator
-- ✅ **Source Attribution**: All data tagged with origin
-
----
-
-## 🔧 Key Scripts
-
-### Operational Scripts
-- **`seed_indicators.py`**: Initialize 11 core indicators in database
-- **`backfill_metals.py`**: Backfill precious metals data
-- **`fetch_real_macro.py`**: Fetch macro liquidity data from FRED
-- **`fetch_cb_holdings.py`**: Fetch central bank gold holdings
-- **`fetch_comex_data.py`**: Estimate COMEX inventory stress
-- **`refresh_aap_data.py`**: Master script to refresh all data sources
-
-### Deployment Scripts
-- **`deploy_full_aap.sh`**: One-command full system deployment
-- Pulls code, runs all data fetchers, backfills historical data
-
-### Maintenance Scripts (in `backend/maintenance_scripts/`)
-- One-time use scripts for debugging and development
-- Archived documentation in `archive/` folder
-
----
-
-## 🎯 API Endpoints
-
-### Core Indicators
-- `GET /indicators` - List all 11 indicators with current values
-- `GET /indicators/{code}` - Detailed indicator data
-- `GET /indicators/{code}/history?days=90` - Historical data
-
-### System
-- `GET /health` - System health check
-- `GET /admin/status` - Detailed system status
-- `GET /dow-theory/strain` - Dow Theory analysis
-- `GET /precious-metals/regime` - Metals diagnostic
-
-### Sector Analysis
-- `GET /sector-projections` - Forward sector analysis
-- `GET /stocks/{ticker}/projections` - Individual stock signals
-- `GET /sector-alerts` - Active sector alerts
-
----
-
-## 📊 Frontend Pages
-
-### Main Pages
-- `/` - Dashboard with market regime summary and core signal monitoring
-- `/indicators` - Indicator library with detail pages and history
-- `/system-breakdown` - Methodology, weighting, and historical state distribution
-- `/market-map` - Sector performance visualization
-- `/news` - Market news with ticker filtering
-
-### Specialized Pages
-- `/alternative-assets` - AAS overview plus precious metals and crypto diagnostics
-- `/sector-projections` - Sector forward analysis
-- `/stock-analysis` - Individual stock projections
-- `/tools/recap` - Published recap index and post pages
-- `/aap-breakdown` - Full Alternative Asset Stability component breakdown
-
----
-
-## 🛠️ Development
-
-### Environment Variables
 ```bash
-# Backend (.env or devops/env/backend.env)
-DATABASE_URL=postgresql://user:pass@db:5432/market_diagnostic
-FRED_API_KEY=your_fred_api_key
-
-# Frontend (devops/env/frontend.env)
-VITE_API_URL=http://localhost:8000
+cd ~/Market-Diagnostic-Dashboard
+git pull origin main
+docker compose up -d --build
 ```
 
-### Running Tests
+There is also a heavier legacy deployment helper at [deploy_full_aap.sh](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/deploy_full_aap.sh), but the standard deploy path used now is pull plus rebuild.
+
+## Key APIs
+
+Representative API surface from [backend/app/main.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/app/main.py) and `backend/app/api/*`:
+
+- `/health/`
+- `/system`
+- `/system/history`
+- `/indicators`
+- `/indicators/{code}`
+- `/indicators/{code}/history`
+- `/aap/components/breakdown`
+- `/precious-metals/regime`
+- `/crypto/market-overview`
+- `/crypto/diagnostic-context`
+- `/sectors/projections/latest`
+- `/stocks/{ticker}/projections`
+- `/news`
+- `/updates` and `/updates/by-slug/{slug}`
+
+## Tests
+
+Backend tests live under [backend/tests](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/tests).
+
+Run them with:
+
 ```bash
-# Backend tests
 cd backend
 pytest
+```
 
-# Frontend tests
+Frontend package scripts are defined in [frontend/package.json](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/frontend/package.json).
+
+```bash
 cd frontend
 npm test
+npm run build
 ```
 
-### Database Migrations
-```bash
-# Create migration
-docker exec market_backend alembic revision --autogenerate -m "description"
+## Notes
 
-# Apply migration
-docker exec market_backend alembic upgrade head
-```
+- The repository is public, but the project is not licensed as open-source software.
+- Some older documentation files in the repo describe January-era architecture and workflows; this README is intended to reflect the current app surface more closely.
 
----
+## Links
 
-## 🤝 Contributing
-
-This is a private project. For questions or issues, contact the development team.
-
----
-
-## 📄 License
-
-Proprietary - All rights reserved © 2026 Steven J Meyer LLC
-
----
-
-## 🔗 Links
-
-- **Production**: [marketdiagnostictool.com](https://marketdiagnostictool.com)
-- **Repository**: [github.com/meyer-s/Market-Diagnostic-Dashboard](https://github.com/meyer-s/Market-Diagnostic-Dashboard)
-- **Documentation**: See `DEPLOYMENT_GUIDE.md` and `AAP_FULL_IMPLEMENTATION.md`
-
----
-
-## 📝 Version History
-
-### v2.1 (January 2026)
-- ✅ Integrated CoinGecko for 365-day crypto historical data
-- ✅ Added precious metals diagnostic page
-- ✅ Comprehensive system breakdown visualization
-- ✅ Removed AAP from main dashboard (moved to specialized section)
-- ✅ Improved data freshness indicators
-
-### v2.0 (January 2026)
-- ✅ Added Alternative Asset Stability (AAS) indicator
-- ✅ Implemented 18-component framework
-- ✅ Replaced all seed data with real sources
-- ✅ Comprehensive documentation and deployment automation
-
-### v1.0 (Initial Release)
-- ✅ 11 core market indicators
-- ✅ Real-time dashboard and analytics
-- ✅ Docker deployment
-- ✅ FRED + Yahoo Finance integration
+- Production: [marketdiagnostictool.com](https://marketdiagnostictool.com)
+- Repository: [github.com/meyer-s/Market-Diagnostic-Dashboard](https://github.com/meyer-s/Market-Diagnostic-Dashboard)
+- Deployment notes: [DEPLOYMENT_GUIDE.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/DEPLOYMENT_GUIDE.md)
