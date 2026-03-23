@@ -212,29 +212,6 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   );
 }
 
-function AudienceContextGraphic() {
-  return (
-    <svg viewBox="0 0 360 132" role="img" aria-label="People and conversation motif" className="w-full h-auto">
-      <rect x="0.5" y="0.5" width="359" height="131" rx="19.5" fill="#0f172a" stroke="#334155" />
-
-      <circle cx="96" cy="46" r="11.5" fill="#93C5FD" fillOpacity="0.84" />
-      <path d="M72 92 C80 72, 112 72, 120 92" fill="none" stroke="#93C5FD" strokeOpacity="0.78" strokeWidth="3" strokeLinecap="round" />
-
-      <circle cx="264" cy="46" r="11.5" fill="#6EE7B7" fillOpacity="0.86" />
-      <path d="M240 92 C248 72, 280 72, 288 92" fill="none" stroke="#6EE7B7" strokeOpacity="0.8" strokeWidth="3" strokeLinecap="round" />
-
-      <rect x="132" y="24" width="96" height="28" rx="12" fill="#1e293b" stroke="#334155" />
-      <path d="M172 52 L178 62 L186 52" fill="#1e293b" stroke="#334155" />
-      <circle cx="158" cy="38" r="2.3" fill="#e2e8f0" />
-      <circle cx="172" cy="38" r="2.3" fill="#e2e8f0" />
-      <circle cx="186" cy="38" r="2.3" fill="#e2e8f0" />
-
-      <path d="M108 48 C126 40, 140 38, 156 38" fill="none" stroke="#93C5FD" strokeWidth="2" strokeLinecap="round" />
-      <path d="M228 38 C244 38, 254 40, 272 48" fill="none" stroke="#6EE7B7" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function FrameworkCubeGraphic() {
   return (
     <svg viewBox="0 0 220 220" role="img" aria-label="Wireframe cube framework motif" className="w-full max-w-[220px] h-auto">
@@ -335,9 +312,6 @@ export default function WhyThisExists() {
           <div className="rounded-3xl border border-stealth-700 bg-gradient-to-br from-stealth-800 to-stealth-900 p-6 sm:p-7">
             <div className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300">
               Who It Helps
-            </div>
-            <div className="mt-4">
-              <AudienceContextGraphic />
             </div>
             <div className="mt-5 space-y-4">
               {audience.map((item) => (
