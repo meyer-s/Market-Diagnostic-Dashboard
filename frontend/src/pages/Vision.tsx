@@ -498,7 +498,7 @@ export default function Vision() {
       </section>
 
       <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-14 sm:pb-16">
-        <div className="border-t border-stealth-700">
+        <div>
           {principles.map((item, idx) => {
             const isReversed = idx % 2 === 1;
             const isBoard = item.motif === "board";
@@ -506,7 +506,7 @@ export default function Vision() {
             return (
               <div
                 key={item.title}
-                className={`grid gap-8 border-b border-stealth-700 py-12 lg:items-center ${
+                className={`grid gap-8 py-12 lg:items-center ${
                   isBoard
                     ? "lg:grid-cols-3 lg:gap-10"
                     : "lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,360px)]"
