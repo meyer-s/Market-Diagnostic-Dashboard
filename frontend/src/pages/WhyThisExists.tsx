@@ -38,8 +38,8 @@ const audience = [
 function HeroSignalIllustration() {
   return (
     <svg
-      viewBox="0 0 560 360"
-      preserveAspectRatio="none"
+      viewBox="0 0 1440 560"
+      preserveAspectRatio="xMidYMid slice"
       aria-hidden="true"
       className="absolute inset-0 h-full w-full"
     >
@@ -73,78 +73,78 @@ function HeroSignalIllustration() {
         </filter>
       </defs>
 
-      <rect x="0" y="0" width="560" height="360" fill="url(#visionHeroBg)" />
-      <circle cx="120" cy="76" r="128" fill="url(#visionOrbA)" filter="url(#visionSoftBlur)" />
-      <circle cx="472" cy="274" r="138" fill="url(#visionOrbB)" filter="url(#visionSoftBlur)" />
+      <rect x="0" y="0" width="1440" height="560" fill="url(#visionHeroBg)" />
+      <circle cx="260" cy="112" r="252" fill="url(#visionOrbA)" filter="url(#visionSoftBlur)" />
+      <circle cx="1260" cy="430" r="284" fill="url(#visionOrbB)" filter="url(#visionSoftBlur)" />
 
       <path
-        d="M-12 258 C84 224, 126 292, 220 252 C306 214, 354 152, 446 176 C512 194, 544 218, 572 248 L572 360 L-12 360 Z"
+        d="M-40 390 C220 330, 340 450, 580 386 C820 320, 930 210, 1170 250 C1320 276, 1440 340, 1490 386 L1490 560 L-40 560 Z"
         fill="url(#visionRibbonFill)"
       />
       <path
-        d="M-8 246 C84 212, 126 282, 218 242 C304 205, 354 148, 446 170 C512 186, 548 212, 572 238"
+        d="M-32 374 C214 314, 342 432, 580 370 C822 306, 928 204, 1168 244 C1322 272, 1442 332, 1490 370"
         stroke="url(#visionRibbonA)"
-        strokeWidth="4.5"
+        strokeWidth="6.2"
         fill="none"
         strokeLinecap="round"
       />
       <path
-        d="M-8 196 C70 174, 122 210, 206 184 C292 158, 358 108, 438 126 C500 140, 538 170, 572 200"
+        d="M-32 304 C176 250, 334 310, 548 282 C764 252, 932 168, 1150 192 C1300 210, 1412 254, 1490 300"
         stroke="url(#visionRibbonB)"
-        strokeWidth="3.2"
+        strokeWidth="4.4"
         fill="none"
         strokeLinecap="round"
-        strokeDasharray="7 10"
+        strokeDasharray="9 12"
         opacity="0.9"
       />
       <path
-        d="M-8 144 C72 132, 128 158, 200 142 C280 124, 350 86, 438 98 C504 108, 544 136, 572 162"
+        d="M-32 224 C188 188, 336 224, 550 206 C782 186, 930 124, 1146 138 C1298 146, 1412 188, 1490 230"
         stroke="#cbd5e1"
         strokeOpacity="0.35"
-        strokeWidth="2"
+        strokeWidth="2.8"
         fill="none"
         strokeLinecap="round"
-        strokeDasharray="2 11"
+        strokeDasharray="3 14"
       />
 
-      {[88, 144, 200, 256, 312, 368, 424, 480].map((x, idx) => (
+      {[210, 330, 450, 570, 690, 810, 930, 1050, 1170, 1290].map((x, idx) => (
         <g key={`pulse-${x}`}>
           <line
             x1={x}
-            y1="288"
+            y1="450"
             x2={x}
-            y2={272 - (idx % 3) * 8}
+            y2={422 - (idx % 3) * 12}
             stroke="#94a3b8"
             strokeOpacity="0.55"
-            strokeWidth="1.4"
+            strokeWidth="1.8"
             strokeLinecap="round"
           />
           <circle
             cx={x}
-            cy={266 - (idx % 3) * 8}
-            r="2.6"
+            cy={414 - (idx % 3) * 12}
+            r="3.2"
             fill={idx % 2 === 0 ? "#6EE7B7" : "#93C5FD"}
             fillOpacity="0.82"
           />
         </g>
       ))}
 
-      {[92, 188, 284, 380, 476].map((x, idx) => (
+      {[320, 560, 800, 1040, 1280].map((x, idx) => (
         <circle
           key={`halo-${x}`}
           cx={x}
-          cy={208 - (idx % 2) * 24}
-          r="15"
+          cy={312 - (idx % 2) * 34}
+          r="22"
           fill="none"
           stroke="#e2e8f0"
           strokeOpacity="0.16"
-          strokeWidth="1.2"
+          strokeWidth="1.6"
         />
       ))}
 
-      <circle cx="462" cy="92" r="52" fill="none" stroke="#6EE7B7" strokeOpacity="0.2" strokeWidth="1.5" />
-      <circle cx="462" cy="92" r="31" fill="none" stroke="#93C5FD" strokeOpacity="0.34" strokeWidth="1.3" />
-      <circle cx="462" cy="92" r="8" fill="#f8fafc" fillOpacity="0.78" />
+      <circle cx="1224" cy="128" r="82" fill="none" stroke="#6EE7B7" strokeOpacity="0.2" strokeWidth="2.1" />
+      <circle cx="1224" cy="128" r="50" fill="none" stroke="#93C5FD" strokeOpacity="0.34" strokeWidth="1.8" />
+      <circle cx="1224" cy="128" r="12" fill="#f8fafc" fillOpacity="0.78" />
     </svg>
   );
 }
