@@ -93,6 +93,16 @@ Active project documentation now lives under the `docs/` folder.
 - The repository is public, but the project is not licensed as open-source software.
 - Historical or superseded planning material remains under `archive/`.
 
+## License
+
+All rights reserved.
+
+This project is source-available for viewing only. No permission is granted to
+use, copy, modify, distribute, sublicense, sell, or create derivative works
+from this code without prior written permission from the copyright holder.
+
+See [LICENSE](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/LICENSE).
+
 ## Links
 
 - Production: [marketdiagnostictool.com](https://marketdiagnostictool.com)
