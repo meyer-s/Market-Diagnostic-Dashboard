@@ -35,7 +35,7 @@ export default function WhyThisExists() {
               Vision
             </div>
             <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold leading-tight text-white">
-              Less guesswork. More Context.
+              Less Guesswork. More Context.
             </h1>
             <p className="mt-6 max-w-3xl text-lg sm:text-xl leading-8 text-stealth-200">
               Built to help you think clearly when markets feel confusing.
