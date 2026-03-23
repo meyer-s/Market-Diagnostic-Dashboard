@@ -15,7 +15,7 @@ export default function Indicators() {
   const { data, loading, error } = useApi<IndicatorStatus[]>("/indicators");
 
   // Filter out AAS (Alternative Asset Stability) since it has its own dedicated page
-  const filteredData = data?.filter(i => i.code !== "AAS") || [];
+  const filteredData = data?.filter(i => i.code !== "AAS" && i.code !== "AAP") || [];
 
   if (loading) {
     return (

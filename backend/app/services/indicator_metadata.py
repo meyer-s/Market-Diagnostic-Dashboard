@@ -441,6 +441,7 @@ def get_all_metadata() -> dict:
 
 ALIAS_TO_CANONICAL = {
     "ANALYST_CONFIDENCE": "ANALYST_ANXIETY",
+    "AAP": "AAS",
 }
 
 DISPLAY_NAME_OVERRIDES = {

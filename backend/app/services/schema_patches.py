@@ -23,19 +23,20 @@ def ensure_aas_indicator_code(engine: Engine) -> None:
         aas_row = conn.execute(
             text("SELECT id FROM indicator WHERE code = 'AAS' LIMIT 1")
         ).fetchone()
-        legacy_row = conn.execute(
+        legacy_rows = conn.execute(
             text(
                 """
-                SELECT id FROM indicator
+                SELECT id, code FROM indicator
                 WHERE code != 'AAS'
                   AND category = 'alternative_assets'
                   AND source = 'DERIVED'
-                LIMIT 1
+                ORDER BY id ASC
                 """
             )
-        ).fetchone()
+        ).fetchall()
 
-        if legacy_row and not aas_row:
+        if legacy_rows and not aas_row:
+            legacy_row = legacy_rows[0]
             conn.execute(
                 text(
                     """
@@ -49,7 +50,12 @@ def ensure_aas_indicator_code(engine: Engine) -> None:
                 {"indicator_id": legacy_row.id},
             )
             logger.info("Normalized alternative-assets indicator code to AAS")
-        elif aas_row:
+
+            aas_row = conn.execute(
+                text("SELECT id FROM indicator WHERE code = 'AAS' LIMIT 1")
+            ).fetchone()
+
+        if aas_row:
             conn.execute(
                 text(
                     """
@@ -60,6 +66,44 @@ def ensure_aas_indicator_code(engine: Engine) -> None:
                     """
                 )
             )
+
+            for legacy_row in legacy_rows:
+                if legacy_row.id == aas_row.id:
+                    continue
+
+                conn.execute(
+                    text(
+                        """
+                        DELETE FROM indicator_value AS legacy
+                        WHERE legacy.indicator_id = :legacy_id
+                          AND EXISTS (
+                              SELECT 1
+                              FROM indicator_value AS canonical
+                              WHERE canonical.indicator_id = :aas_id
+                                AND canonical.timestamp = legacy.timestamp
+                          )
+                        """
+                    ),
+                    {"legacy_id": legacy_row.id, "aas_id": aas_row.id},
+                )
+                conn.execute(
+                    text(
+                        """
+                        UPDATE indicator_value
+                        SET indicator_id = :aas_id
+                        WHERE indicator_id = :legacy_id
+                        """
+                    ),
+                    {"legacy_id": legacy_row.id, "aas_id": aas_row.id},
+                )
+                conn.execute(
+                    text("DELETE FROM indicator WHERE id = :legacy_id"),
+                    {"legacy_id": legacy_row.id},
+                )
+                logger.info(
+                    "Merged legacy alternative-assets indicator %s into AAS",
+                    legacy_row.code,
+                )
 
 def ensure_signal_attribution_columns(engine: Engine) -> None:
     """
