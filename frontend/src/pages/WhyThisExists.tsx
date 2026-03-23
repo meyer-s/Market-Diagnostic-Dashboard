@@ -227,9 +227,9 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
 
     return (
       <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
-      <path d="M30 16 C46 18, 60 22, 76 26 H138 C150 26, 160 30, 174 30 H194 C200 30, 204 32, 204 34" stroke="#93C5FD" strokeOpacity="0.16" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-      <path d="M118 18 C126 20, 132 25, 140 30 H176 C190 30, 200 32, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-      <path d="M156 20 C164 21, 170 23, 178 25 H190 C198 25, 204 29, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+      <path d="M30 16 C44 16, 58 18, 72 22 H186 C198 22, 204 28, 204 34" stroke="#93C5FD" strokeOpacity="0.16" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+      <path d="M118 18 C126 18, 132 22, 140 26 H188 C198 26, 204 30, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      <path d="M156 20 C164 20, 170 24, 178 30 H190 C198 30, 204 32, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
 
       <path d="M48 82 H122 C138 82, 148 74, 160 74 H190 C200 74, 204 72, 204 68" stroke="#6EE7B7" strokeOpacity="0.18" strokeWidth="1.4" fill="none" strokeLinecap="round" />
       <path d="M138 64 H192 C200 64, 204 66, 204 68" stroke="#6EE7B7" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
