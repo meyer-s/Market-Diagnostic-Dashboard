@@ -269,6 +269,7 @@ def _build_prompts(
         "You MUST output exactly one JSON object and nothing else.\n"
         "The JSON MUST contain exactly these top-level keys: "
         "title, summary, status, tags, slug, content_markdown, chart_urls, published, pinned.\n"
+        "The summary is shown as an 'AI Summary' block at the top of the post, so it must read like a plain-English synthesis, not a subtitle.\n"
         "Only use the emojis 🟢🟡🔴 in Signal/Risk Regime lines.\n"
     )
 
@@ -281,7 +282,7 @@ def _build_prompts(
             "recent_titles_to_avoid_repeating_verbatim": list(recent_titles),
             "schema": {
                 "title": "news-driven weekly recap headline",
-                "summary": "single-sentence subtitle",
+                "summary": "plain-English AI summary in a few short sentences for human readers",
                 "status": "GREEN",
                 "tags": ["market-diagnostic", "macro", "example-topic"],
                 "slug": f"market-diagnostic-{run_date_utc}",
@@ -316,7 +317,9 @@ def _build_prompts(
                 "Generate title + summary + tags; do not use boilerplate strings.",
                 "title MUST be specific and must NOT be a generic 'Market Diagnostic' placeholder or a raw date string.",
                 "Do not reuse any recent title verbatim. Use a different opening phrase and framing.",
-                "summary MUST be 12-28 words and read like a subtitle.",
+                "summary MUST be 35-90 words across a few short sentences.",
+                "summary MUST read like a plain-language AI synthesis for a human reader, not a subtitle or bullet list.",
+                "summary should explain the current backdrop and what that means for conviction, caution, or risk-taking.",
                 "tags MUST include market-diagnostic and macro, plus 1-4 additional lowercase hyphenated topical tags.",
                 "chart_urls MUST be an empty array unless you have real http(s) URLs from sources (otherwise keep []).",
                 "content_markdown MUST include the required headings in order and exactly once each.",
@@ -393,6 +396,7 @@ def _build_repair_prompts(
         "You MUST output exactly one JSON object and nothing else.\n"
         "The JSON MUST contain exactly these top-level keys: "
         "title, summary, status, tags, slug, content_markdown, chart_urls, published, pinned.\n"
+        "The summary is shown as an 'AI Summary' block at the top of the post, so it must read like a plain-English synthesis, not a subtitle.\n"
         "Only use the emojis 🟢🟡🔴 in Signal/Risk Regime lines.\n"
         "Fix validation issues by adjusting content_markdown (and other fields if necessary) so it passes strict validation.\n"
     )
@@ -413,6 +417,8 @@ def _build_repair_prompts(
                 "Output JSON only (no markdown fences, no commentary).",
                 f"slug MUST equal market-diagnostic-{run_date_utc}.",
                 "title and summary must be specific and non-boilerplate.",
+                "summary MUST be 35-90 words across a few short sentences.",
+                "summary MUST read like a plain-language AI synthesis for a human reader, not a subtitle or bullet list.",
                 "Do not reuse any recent title verbatim; pick a new headline framing.",
                 "tags MUST include market-diagnostic and macro, plus additional topical tags.",
                 "content_markdown MUST include required headings in order and exactly once each.",

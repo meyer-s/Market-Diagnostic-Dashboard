@@ -134,21 +134,27 @@ def _summary_for_snapshot(snapshot: dict[str, Any]) -> str:
     yellow_count = snapshot["yellow_count"]
 
     if score is None:
-        return "Cross-asset conditions are mixed and the current regime remains in a caution posture."
+        return (
+            "Cross-asset conditions still look mixed, so the backdrop leans cautious rather than decisive. "
+            "Without a cleaner read across the board, this is a regime to navigate with context instead of conviction alone."
+        )
 
     if status == "GREEN":
         return (
-            f"System conditions remain broadly stable with a composite score near {score:.1f} "
-            f"and limited stress breadth ({red_count or 0} red, {yellow_count or 0} yellow)."
+            f"The broad backdrop still looks constructive, with the composite score near {score:.1f} "
+            f"and stress mostly contained ({red_count or 0} red, {yellow_count or 0} yellow). "
+            "That does not remove risk, but it does suggest the market is operating from a steadier footing than a stressed regime."
         )
     if status == "RED":
         return (
-            f"System conditions remain stressed with a composite score near {score:.1f} "
-            f"and broad risk participation ({red_count or 0} red, {yellow_count or 0} yellow)."
+            f"The backdrop still reads as stressed, with the composite score near {score:.1f} "
+            f"and risk now broad enough to matter ({red_count or 0} red, {yellow_count or 0} yellow). "
+            "In this kind of tape, preserving flexibility and respecting downside usually matters more than pressing for upside."
         )
     return (
-        f"System conditions remain mixed with a composite score near {score:.1f} "
-        f"and moderate caution breadth ({red_count or 0} red, {yellow_count or 0} yellow)."
+        f"The system is still giving a mixed read, with the composite score near {score:.1f} "
+        f"and enough caution signals in play ({red_count or 0} red, {yellow_count or 0} yellow). "
+        "That usually argues for measured conviction: not a full risk-off posture, but not a backdrop to treat casually either."
     )
 
 
