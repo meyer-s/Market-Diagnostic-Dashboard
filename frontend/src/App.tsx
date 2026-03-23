@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, useLocation, Navigate, useParams } from "
 import { useEffect } from "react";
 import Topbar from "./components/layout/Topbar";
 import Footer from "./components/layout/Footer";
-import GlobalLoading from "./components/ui/GlobalLoading";
 import Dashboard from "./pages/Dashboard";
 import Indicators from "./pages/Indicators";
 import MarketNews from "./pages/MarketNews";
@@ -51,7 +50,6 @@ function AppWithAnalytics() {
   return (
     <div className="bg-stealth-900 min-h-screen flex flex-col">
       <Topbar />
-      <GlobalLoading />
 
       <main className="flex-1">
         <Routes>

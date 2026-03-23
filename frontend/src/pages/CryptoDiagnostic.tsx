@@ -585,8 +585,8 @@ export default function CryptoDiagnostic({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/60 p-4 xl:col-span-2">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
                 <div className="mb-3">
                   <h4 className="text-sm font-semibold text-stealth-100">BTC vs ETH</h4>
                   <p className="text-xs text-stealth-500">BTC stays on the left axis and ETH on the right so institutional leadership and smart-contract beta can diverge cleanly.</p>
@@ -604,16 +604,18 @@ export default function CryptoDiagnostic({
                       />
                       <YAxis
                         yAxisId="left"
-                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
-                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                        tick={{ fontSize: 11, fill: "#f59e0b" }}
+                        axisLine={{ stroke: "#f59e0b" }}
+                        tickLine={{ stroke: "#f59e0b" }}
                         tickFormatter={(value) => formatAxisCurrency(Number(value))}
                         width={72}
                       />
                       <YAxis
                         yAxisId="right"
                         orientation="right"
-                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
-                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                        tick={{ fontSize: 11, fill: "#60a5fa" }}
+                        axisLine={{ stroke: "#60a5fa" }}
+                        tickLine={{ stroke: "#60a5fa" }}
                         tickFormatter={(value) => formatAxisCurrency(Number(value))}
                         width={72}
                       />
@@ -653,16 +655,18 @@ export default function CryptoDiagnostic({
                       />
                       <YAxis
                         yAxisId="left"
-                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
-                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                        tick={{ fontSize: 11, fill: "#14b8a6" }}
+                        axisLine={{ stroke: "#14b8a6" }}
+                        tickLine={{ stroke: "#14b8a6" }}
                         tickFormatter={(value) => formatAxisCurrency(Number(value))}
                         width={68}
                       />
                       <YAxis
                         yAxisId="right"
                         orientation="right"
-                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
-                        axisLine={{ stroke: CHART_NEUTRAL.axis }}
+                        tick={{ fontSize: 11, fill: "#f472b6" }}
+                        axisLine={{ stroke: "#f472b6" }}
+                        tickLine={{ stroke: "#f472b6" }}
                         tickFormatter={(value) => formatAxisCurrency(Number(value))}
                         width={68}
                       />
@@ -699,8 +703,8 @@ export default function CryptoDiagnostic({
                     <LineChart data={marketStructureData} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                      <YAxis yAxisId="left" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={56} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} tickFormatter={(value) => formatAxisCurrency(Number(value))} width={78} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#fbbf24" }} axisLine={{ stroke: "#fbbf24" }} tickLine={{ stroke: "#fbbf24" }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={56} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: "#60a5fa" }} axisLine={{ stroke: "#60a5fa" }} tickLine={{ stroke: "#60a5fa" }} tickFormatter={(value) => formatAxisCurrency(Number(value))} width={78} />
                       <Tooltip
                         contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
                         labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
