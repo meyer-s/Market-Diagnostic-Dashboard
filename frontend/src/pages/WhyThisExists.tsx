@@ -234,11 +234,11 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
       <circle cx="204" cy="34" r="8.8" fill="#6EE7B7" fillOpacity="0.95" />
       <circle cx="204" cy="68" r="7.4" fill="#64748b" fillOpacity="0.82" />
       <circle cx="118" cy="18" r="4.2" fill="#93C5FD" fillOpacity="0.18" />
-      <circle cx="138" cy="70" r="3.8" fill="#6EE7B7" fillOpacity="0.2" />
+      <circle cx="138" cy="64" r="3.8" fill="#6EE7B7" fillOpacity="0.2" />
       <circle cx="156" cy="20" r="3.4" fill="#e2e8f0" fillOpacity="0.14" />
 
       <path d="M118 18 C146 18, 174 22, 204 34" stroke="#93C5FD" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-      <path d="M138 70 C162 72, 184 70, 204 68" stroke="#6EE7B7" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      <path d="M138 64 C162 66, 184 67, 204 68" stroke="#6EE7B7" strokeOpacity="0.14" strokeWidth="1.3" fill="none" strokeLinecap="round" />
       <path d="M156 20 C176 22, 192 26, 204 34" stroke="#e2e8f0" strokeOpacity="0.1" strokeWidth="1.2" fill="none" strokeLinecap="round" />
 
       <path d="M102 48 C132 42, 162 38, 196 34" stroke="#64748b" strokeOpacity="0.5" strokeWidth="2.2" fill="none" strokeLinecap="round" />
