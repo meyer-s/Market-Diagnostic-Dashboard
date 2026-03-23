@@ -148,50 +148,26 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
     return (
       <svg viewBox="0 0 240 96" role="img" aria-label="Overlapping board correlation motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-        <rect x="18" y="16" width="204" height="64" rx="11" fill="#0d1526" stroke="#334155" />
-        <rect x="28" y="24" width="76" height="44" rx="8" fill="none" stroke="#93C5FD" strokeOpacity="0.74" strokeWidth="1.6" />
-        <rect x="88" y="18" width="78" height="46" rx="8" fill="none" stroke="#64748b" strokeOpacity="0.78" strokeWidth="1.5" />
-        <rect x="150" y="28" width="56" height="32" rx="7" fill="none" stroke="#334155" strokeOpacity="0.74" strokeWidth="1.3" />
+        <rect x="30" y="24" width="92" height="48" rx="9" fill="#0d1526" stroke="#93C5FD" strokeOpacity="0.74" strokeWidth="1.6" />
+        <rect x="108" y="18" width="96" height="50" rx="9" fill="none" stroke="#64748b" strokeOpacity="0.42" strokeWidth="1.4" />
         <path
-          d="M28 54 C40 50, 48 49, 58 52 C68 55, 76 49, 84 43 C92 37, 100 36, 106 39"
+          d="M38 54 C54 50, 66 49, 80 52 C92 55, 102 48, 112 40"
           stroke="#6EE7B7"
           strokeOpacity="0.96"
-          strokeWidth="2.2"
+          strokeWidth="2.4"
           fill="none"
           strokeLinecap="round"
         />
         <path
-          d="M106 39 C116 42, 126 42, 136 38 C146 34, 156 35, 166 38"
-          stroke="#93C5FD"
-          strokeOpacity="0.42"
-          strokeWidth="2"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <path
-          d="M166 38 C176 41, 184 40, 192 37 C198 35, 202 35, 206 36"
+          d="M112 40 C128 36, 144 34, 160 35 C176 36, 188 38, 196 40"
           stroke="#6EE7B7"
-          strokeOpacity="0.24"
-          strokeWidth="1.8"
+          strokeOpacity="0.36"
+          strokeWidth="2.1"
           fill="none"
           strokeLinecap="round"
+          strokeDasharray="3 7"
         />
-        <path
-          d="M106 39 L118 33 M136 38 L146 33 M166 38 L174 34"
-          stroke="#94a3b8"
-          strokeOpacity="0.34"
-          strokeWidth="1.2"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <path
-          d="M104 46 L122 46 M166 46 L182 46"
-          stroke="#64748b"
-          strokeOpacity="0.42"
-          strokeWidth="1.2"
-          fill="none"
-          strokeLinecap="round"
-        />
+        <circle cx="112" cy="40" r="4.4" fill="#f8fafc" fillOpacity="0.86" />
       </svg>
     );
   }
