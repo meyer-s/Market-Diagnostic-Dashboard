@@ -315,9 +315,6 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
         <polygon points="220,24 210,24 216,18" fill="#6EE7B7" fillOpacity="0.92" />
         <circle cx="18" cy="74" r="4.5" fill="#93C5FD" fillOpacity="0.85" />
         <circle cx="220" cy="24" r="5.5" fill="#6EE7B7" fillOpacity="0.95" />
-        <circle cx="78" cy="56" r="4" fill="#64748b" fillOpacity="0.34" />
-        <circle cx="112" cy="76" r="4" fill="#64748b" fillOpacity="0.34" />
-        <circle cx="120" cy="50" r="4.2" fill="#6EE7B7" fillOpacity="0.24" />
       </svg>
     );
   }
