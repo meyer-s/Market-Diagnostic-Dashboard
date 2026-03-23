@@ -125,6 +125,72 @@ function HeroSignalIllustration() {
     { kind: "block" as const, segments: blockRows[2] },
   ];
 
+  const renderChartRows = (x: number, y: number, scale: number, className?: string) => (
+    <g className={className} transform={`translate(${x} ${y})`} opacity="0.98" shapeRendering="crispEdges">
+      <g transform={`scale(${scale})`}>
+        {chartRows.map((row, rowIdx) => {
+          const y =
+            chartRows
+              .slice(0, rowIdx)
+              .reduce((sum, priorRow) => sum + (priorRow.kind === "dense" ? denseRowHeight : blockRowHeight) + rowGap, 0);
+
+          if (row.kind === "dense") {
+            const rowWidth = denseRowWidth(row.states.length);
+            const rowOffset = chartWidth - rowWidth;
+
+            return (
+              <g key={`hero-dense-row-${rowIdx}`} transform={`translate(${rowOffset} ${y})`}>
+                {row.states.map((state, idx) => {
+                  const x = idx * denseCellStep;
+                  return (
+                    <rect
+                      key={`hero-dense-row-${rowIdx}-cell-${idx}`}
+                      x={x}
+                      y="0"
+                      width={denseCellWidth}
+                      height={denseRowHeight}
+                      rx="1.4"
+                      fill={statePalette[state]}
+                      fillOpacity={getBarOpacity(rowOffset + x, denseCellWidth)}
+                    />
+                  );
+                })}
+              </g>
+            );
+          }
+
+          const totalUnits = row.segments.reduce((sum, [, width]) => sum + width, 0);
+          const gap = 3;
+          const totalGapWidth = gap * Math.max(row.segments.length - 1, 0);
+          const scale = (chartWidth - totalGapWidth) / totalUnits;
+          let cursor = 0;
+
+          return (
+            <g key={`hero-block-row-${rowIdx}`} transform={`translate(0 ${y})`}>
+              {row.segments.map(([state, width], idx) => {
+                const x = cursor;
+                const scaledWidth = width * scale;
+                cursor += scaledWidth + gap;
+                return (
+                  <rect
+                    key={`hero-block-row-${rowIdx}-segment-${idx}`}
+                    x={x}
+                    y="0"
+                    width={scaledWidth}
+                    height={blockRowHeight}
+                    rx="1.2"
+                    fill={statePalette[state]}
+                    fillOpacity={getBarOpacity(x, scaledWidth)}
+                  />
+                );
+              })}
+            </g>
+          );
+        })}
+      </g>
+    </g>
+  );
+
   return (
     <svg
       viewBox="0 0 1440 560"
@@ -197,69 +263,8 @@ function HeroSignalIllustration() {
         strokeLinecap="round"
         strokeDasharray="3 16"
       />
-      <g transform={`translate(${chartX} ${chartY})`} opacity="0.98" shapeRendering="crispEdges">
-        <g transform={`scale(${chartScale})`}>
-          {chartRows.map((row, rowIdx) => {
-          const y =
-            chartRows
-              .slice(0, rowIdx)
-              .reduce((sum, priorRow) => sum + (priorRow.kind === "dense" ? denseRowHeight : blockRowHeight) + rowGap, 0);
-
-          if (row.kind === "dense") {
-            const rowWidth = denseRowWidth(row.states.length);
-            const rowOffset = chartWidth - rowWidth;
-
-              return (
-                <g key={`hero-dense-row-${rowIdx}`} transform={`translate(${rowOffset} ${y})`}>
-                  {row.states.map((state, idx) => {
-                    const x = idx * denseCellStep;
-                    return (
-                      <rect
-                        key={`hero-dense-row-${rowIdx}-cell-${idx}`}
-                        x={x}
-                        y="0"
-                        width={denseCellWidth}
-                        height={denseRowHeight}
-                        rx="1.4"
-                        fill={statePalette[state]}
-                        fillOpacity={getBarOpacity(rowOffset + x, denseCellWidth)}
-                      />
-                    );
-                  })}
-                </g>
-              );
-            }
-
-            const totalUnits = row.segments.reduce((sum, [, width]) => sum + width, 0);
-            const gap = 3;
-            const totalGapWidth = gap * Math.max(row.segments.length - 1, 0);
-            const scale = (chartWidth - totalGapWidth) / totalUnits;
-            let cursor = 0;
-
-            return (
-              <g key={`hero-block-row-${rowIdx}`} transform={`translate(0 ${y})`}>
-                {row.segments.map(([state, width], idx) => {
-                  const x = cursor;
-                  const scaledWidth = width * scale;
-                  cursor += scaledWidth + gap;
-                  return (
-                    <rect
-                      key={`hero-block-row-${rowIdx}-segment-${idx}`}
-                      x={x}
-                      y="0"
-                      width={scaledWidth}
-                      height={blockRowHeight}
-                      rx="1.2"
-                      fill={statePalette[state]}
-                      fillOpacity={getBarOpacity(x, scaledWidth)}
-                    />
-                  );
-                })}
-              </g>
-            );
-          })}
-        </g>
-      </g>
+      {renderChartRows(862, 62, 1.42, "md:hidden")}
+      {renderChartRows(chartX, chartY, chartScale, "hidden md:block")}
     </svg>
   );
 }
