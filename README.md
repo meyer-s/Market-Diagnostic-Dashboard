@@ -1,14 +1,14 @@
-# Market Stability Diagnostic Dashboard
+# Market Diagnostic Dashboard
 
-A comprehensive real-time market health monitoring system featuring **11 core indicators** tracking volatility, rates, liquidity, and sentiment across multiple timeframes.
+A real-time macro and market dashboard that turns rates, liquidity, credit, sentiment, alternative assets, and sector internals into a human-readable market regime view.
 
-🌐 **Live at**: https://marketdiagnostictool.com
+🌐 **Live at**: [marketdiagnostictool.com](https://marketdiagnostictool.com)
 
 ---
 
 ## 📊 System Overview
 
-### Core Market Indicators (11)
+### Core Market Indicators
 - **VIX**: Market volatility and fear gauge
 - **SPY**: S&P 500 trend strength (50-day EMA distance)
 - **Federal Funds Rate**: Rate-of-change momentum
@@ -32,15 +32,16 @@ A comprehensive real-time market health monitoring system featuring **11 core in
 
 ### Advanced Analytics
 - **Dow Theory Market Strain**: Direction and strain analysis based on Dow Theory principles
-- **Composite Scoring**: Weighted system health calculation across all indicators
-- **Precious Metals Diagnostic**: Comprehensive metals market regime analysis
-- **Market Map**: Visual sector performance heatmap
-- **Sector & Stock Projections**: Forward-looking analysis and alerts
+- **System Breakdown**: Weighted methodology view with historical heatmap and live component logic
+- **Alternative Assets**: Precious metals and crypto diagnostics inside the AAS framework
+- **Market Map**: Visual sector performance heatmap and intraday context
+- **Sector & Stock Projections**: Forward-looking sector and single-name analysis
+- **Recap Tools**: Published market recap workflow and archive pages
 
 ### User Experience
-- **Responsive Design**: Mobile-first, works on all devices
-- **Market News Integration**: Cached Seeking Alpha headlines with ticker filtering
-- **System Breakdown**: Historical heatmap and indicator state distribution visualization
+- **Responsive Design**: Mobile-first and production-deployed
+- **Market News Integration**: Cached headlines with ticker filtering
+- **Indicator Detail Pages**: Historical context, methodology, and chart tooling per signal
 
 ---
 
@@ -120,10 +121,11 @@ docker exec market_backend python backfill_aap.py
 ## 📦 Data Sources
 
 ### Primary APIs
-- **FRED (Federal Reserve Economic Data)**: Macro indicators, crypto prices (CBBTCUSD, CBETHUSD), rates
-- **Yahoo Finance**: Precious metals prices (AU, AG, PT, PD), equity data
-- **DeFiLlama**: DeFi TVL, stablecoin supply (free, no key required)
-- **CoinGecko**: Crypto market data (dominance, market caps)
+- **FRED (Federal Reserve Economic Data)**: Macro indicators, rates, and economic context
+- **Yahoo Finance**: Equity and market pricing inputs
+- **CoinGecko**: Crypto prices, market caps, and leadership context
+- **DeFiLlama**: DeFi TVL and stablecoin supply
+- **Additional specialty sources**: COMEX, ETF, central-bank, and metals-specific data feeds
 
 ### Data Quality
 - ✅ **100% Real Data**: All seed data replaced with live sources
@@ -176,16 +178,18 @@ docker exec market_backend python backfill_aap.py
 ## 📊 Frontend Pages
 
 ### Main Pages
-- `/` - Dashboard with all 11 indicators overview
-- `/indicators` - All indicators with sparklines and detailed data
-- `/system-breakdown` - Historical heatmap and indicator state distribution
+- `/` - Dashboard with market regime summary and core signal monitoring
+- `/indicators` - Indicator library with detail pages and history
+- `/system-breakdown` - Methodology, weighting, and historical state distribution
 - `/market-map` - Sector performance visualization
 - `/news` - Market news with ticker filtering
 
 ### Specialized Pages
-- `/precious-metals` - Comprehensive metals diagnostic
+- `/alternative-assets` - AAS overview plus precious metals and crypto diagnostics
 - `/sector-projections` - Sector forward analysis
 - `/stock-analysis` - Individual stock projections
+- `/tools/recap` - Published recap index and post pages
+- `/aap-breakdown` - Full Alternative Asset Stability component breakdown
 
 ---
 
@@ -237,8 +241,8 @@ Proprietary - All rights reserved © 2026 Steven J Meyer LLC
 
 ## 🔗 Links
 
-- **Production**: https://marketdiagnostictool.com
-- **Repository**: https://github.com/meyer-s/Market-Diagnostic-Dashboard
+- **Production**: [marketdiagnostictool.com](https://marketdiagnostictool.com)
+- **Repository**: [github.com/meyer-s/Market-Diagnostic-Dashboard](https://github.com/meyer-s/Market-Diagnostic-Dashboard)
 - **Documentation**: See `DEPLOYMENT_GUIDE.md` and `AAP_FULL_IMPLEMENTATION.md`
 
 ---
