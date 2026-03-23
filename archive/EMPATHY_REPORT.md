@@ -1,3 +1,13 @@
+# Empathy Report
+
+Original date: 2026-01-19
+
+This archived document captures the original interpretive philosophy and interaction rationale behind the Market Stability Diagnostic dashboard.
+
+It is preserved as historical design context rather than active product documentation.
+
+---
+
 # Empathy Report — Market Stability Diagnostic
 Date: 2026-01-19
 
@@ -5,21 +15,19 @@ This document defines the interpretive philosophy, interaction model, and reduct
 behind the Market Stability Diagnostic dashboard.
 
 It exists to preserve intent, protect coherence, and prevent drift.
-It is not an implementation spec — it is a system self-explanation.
+It is not an implementation spec. It is a system self-explanation.
 
-────────────────────────────────────────────────────────────
 CORE PHILOSOPHY
-────────────────────────────────────────────────────────────
 
 The dashboard is a diagnostic lens, not an advisory tool.
 
 Every UI element must answer at least ONE of the following questions
 at its current interaction level:
 
-1) Has something changed?
-2) Is this certain or uncertain?
-3) Should I look closer?
-4) Where am I in the system?
+1. Has something changed?
+2. Is this certain or uncertain?
+3. Should I look closer?
+4. Where am I in the system?
 
 If an element does not answer one of these, it does not belong at that level.
 
@@ -28,9 +36,7 @@ Empathy is expressed structurally:
 - by avoiding over-explanation
 - by rewarding curiosity only after intent is shown
 
-────────────────────────────────────────────────────────────
 PROGRESSIVE COMMITMENT MODEL
-────────────────────────────────────────────────────────────
 
 The system uses Progressive Commitment rather than modes or overlays.
 
@@ -39,9 +45,8 @@ REST → FOCUS → CLICK
 There is no Inspect Mode and no special lens.
 The interface explains itself by how it behaves.
 
---------------------------------
 REST
---------------------------------
+
 REST is the default, always-visible state.
 
 Purpose:
@@ -67,9 +72,8 @@ REST uses the Signal Sentence pattern:
 Signal: <short factual statement>
 Context: <where this sits in the system>
 
---------------------------------
 FOCUS
---------------------------------
+
 FOCUS is a temporary clarification state.
 
 FOCUS answers ambiguity, not curiosity.
@@ -98,9 +102,8 @@ Examples:
 
 FOCUS is a semantic state, not a visual flourish.
 
---------------------------------
 CLICK
---------------------------------
+
 CLICK represents explicit curiosity.
 
 CLICK answers:
@@ -118,9 +121,7 @@ CLICK is the only place where:
 - deeper explanation
 appear.
 
-────────────────────────────────────────────────────────────
 MOBILE PARITY
-────────────────────────────────────────────────────────────
 
 Hover is not a requirement.
 
@@ -132,22 +133,19 @@ FOCUS is shared across devices:
 No information may exist exclusively on hover.
 Mobile users must receive the same meaning, not a reduced experience.
 
-────────────────────────────────────────────────────────────
 COLOR AS SEMANTIC LANGUAGE
-────────────────────────────────────────────────────────────
 
 Color communicates identity and condition, not decoration.
 
 Two color layers exist:
 
-1) Metric family color (identity)
-2) State color (condition)
+1. Metric family color (identity)
+2. State color (condition)
 
 These must never be mixed.
 
---------------------------------
 Metric Families
---------------------------------
+
 Every metric belongs to exactly one family
 (e.g. rates, liquidity, volatility, metals, credit, crypto).
 
@@ -161,9 +159,8 @@ Example:
 Charts do not choose colors.
 They request them from a central registry.
 
---------------------------------
 State Colors
---------------------------------
+
 Green / Yellow / Red indicate condition only.
 
 They may appear as:
@@ -174,9 +171,7 @@ They may appear as:
 They must NEVER be used as chart series colors
 and must never replace a metric’s identity color.
 
-────────────────────────────────────────────────────────────
 RELATIONSHIPS
-────────────────────────────────────────────────────────────
 
 Relationships are powerful and therefore constrained.
 
@@ -194,9 +189,7 @@ A relationship must meet at least one criterion:
 
 Relationships are explanatory, not exploratory.
 
-────────────────────────────────────────────────────────────
 SECTION-BY-SECTION REDUCTION RATIONALE
-────────────────────────────────────────────────────────────
 
 Global Header:
 - Reduced to orientation only
@@ -220,11 +213,9 @@ Indicator Grid:
 Across the system:
 - Any paragraph-length explanation was moved deeper
 - Any duplicate interpretation was merged or removed
-- Load was reduced from “dense” to “inspectable”
+- Load was reduced from dense to inspectable
 
-────────────────────────────────────────────────────────────
 MODULARITY & FUTURE EXPANSION
-────────────────────────────────────────────────────────────
 
 This system is designed to grow without redesign.
 
@@ -237,9 +228,7 @@ Rules:
 If a feature cannot fit cleanly into this model,
 it should not be added.
 
-────────────────────────────────────────────────────────────
 WHEN IN DOUBT
-────────────────────────────────────────────────────────────
 
 When decisions are ambiguous:
 - Remove content rather than add UI
@@ -249,9 +238,7 @@ When decisions are ambiguous:
 
 The system should err toward restraint.
 
-────────────────────────────────────────────────────────────
 SUCCESS CRITERIA
-────────────────────────────────────────────────────────────
 
 - The dashboard is understandable without interaction
 - FOCUS clarifies rather than overwhelms

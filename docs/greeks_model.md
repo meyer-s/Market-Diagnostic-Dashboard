@@ -316,13 +316,13 @@ generate_theta_curve(
 ### Test Coverage
 
 Comprehensive test suite in `/backend/tests/test_greeks_calculator.py` covering:
-- ✅ Basic pricing calculations
-- ✅ Greeks accuracy (delta, gamma, theta, vega)
-- ✅ Put-call relationships
-- ✅ Implied volatility inversion
-- ✅ Curve generation
-- ✅ Edge cases (zero time, zero vol, negative prices)
-- ✅ Real-world scenarios (KTOS, NEOG, ERAS, NKE positions)
+- Basic pricing calculations
+- Greeks accuracy (delta, gamma, theta, vega)
+- Put-call relationships
+- Implied volatility inversion
+- Curve generation
+- Edge cases (zero time, zero vol, negative prices)
+- Real-world scenarios (KTOS, NEOG, ERAS, NKE positions)
 
 ### Reference Values
 
@@ -344,29 +344,29 @@ pytest tests/test_greeks_calculator.py -v
 ### Delta showing 0.000 for ITM options
 
 **Possible Causes:**
-- ✅ **FIXED:** Theta not scaled to per-contract
-- ✅ **FIXED:** Time to expiry calculation incorrect
+- Resolved: Theta not scaled to per-contract
+- Resolved: Time to expiry calculation incorrect
 - Check: Volatility is non-zero
 - Check: Option chain data is current
 
 ### Gamma shows absurdly high values
 
 **Possible Causes:**
-- ✅ **FIXED:** Incorrect gamma formula scaling
-- ✅ **FIXED:** Time to expiry very small (numerical instability)
+- Resolved: Incorrect gamma formula scaling
+- Resolved: Time to expiry very small (numerical instability)
 - Check: T is clamped to minimum 1e-6 years
 
 ### Delta saturates at 1.000 instantly
 
 **Possible Causes:**
-- ✅ **FIXED:** Used incorrect time units (days instead of years)
-- ✅ **FIXED:** Risk-free rate wrong units (percentage instead of decimal)
+- Resolved: Used incorrect time units (days instead of years)
+- Resolved: Risk-free rate wrong units (percentage instead of decimal)
 
 ### Theta curve looks flat or wrong direction
 
 **Possible Causes:**
-- ✅ **FIXED:** Generated curve from 1→max instead of max→1
-- ✅ **FIXED:** Theta units (annual vs daily, per-share vs per-contract)
+- Resolved: Generated curve from 1 to max instead of max to 1
+- Resolved: Theta units (annual vs daily, per-share vs per-contract)
 
 ## Future Enhancements
 

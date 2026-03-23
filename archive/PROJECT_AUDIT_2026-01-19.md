@@ -1,3 +1,11 @@
+# Project Audit
+
+Original date: 2026-01-19
+
+This archived document is a point-in-time audit of the project structure, routes, and duplication concerns. It is preserved for historical reference rather than active documentation.
+
+---
+
 # Project Audit: Market Stability Diagnostic
 Date: 2026-01-19
 
@@ -67,7 +75,7 @@ Date: 2026-01-19
 ### Frontend
 - API calls use multiple patterns (`useApi`, `fetch` + `getLegacyApiUrl`, `buildApiUrl`, direct `/api/*`).
 - Repeated chart axis/tooltip styling and date formatting across pages.
-- Repeated "state" color/pill logic across `styleUtils`, `stabilityConstants`, and component-local helpers.
+- Repeated state color/pill logic across `styleUtils`, `stabilityConstants`, and component-local helpers.
 - Multiple page variants for AAP (e.g., `AlternativeAssetPressure` vs `AlternativeAssetStability`).
 - Redundant date formatting helpers: `styleUtils` vs inline `new Date().toLocaleDateString`.
 

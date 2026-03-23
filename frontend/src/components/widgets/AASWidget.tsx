@@ -29,6 +29,39 @@ interface AASHistoryPoint {
   sma_200?: number;
 }
 
+interface MetalProjection {
+  metal: string;
+  metal_name: string;
+  current_price: number;
+  score_total: number;
+  relative_classification: "Winner" | "Neutral" | "Loser";
+  rank: number;
+}
+
+interface MetalsProjectionResponse {
+  projections: MetalProjection[];
+}
+
+interface CryptoAsset {
+  symbol: string;
+  name: string;
+  color: string;
+  current_price: number | null;
+  change_24h: number | null;
+  change_30d: number | null;
+}
+
+interface CryptoMarketOverviewResponse {
+  assets: CryptoAsset[];
+}
+
+interface RelativeCryptoRanking extends CryptoAsset {
+  rank: number;
+  rawRelativeScore: number;
+  relativeScore: number;
+  relativeClassification: "Winner" | "Neutral" | "Loser";
+}
+
 interface HistoricalData {
   date: string;
   stability_score: number;
@@ -46,6 +79,8 @@ interface AASWidgetProps {
 export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetProps) {
   const { data: aasData, loading } = useApi<AASData>('/aap/current');
   const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>(`/aap/history?days=${parseInt(timeframe)}`);
+  const { data: metalsProjectionData } = useApi<MetalsProjectionResponse>('/precious-metals/projections/latest');
+  const { data: cryptoMarketData } = useApi<CryptoMarketOverviewResponse>('/crypto/market-overview?days=90');
   const [metalsPercent, setMetalsPercent] = useState(50);
   const [cryptoPercent, setCryptoPercent] = useState(50);
   const [chartData, setChartData] = useState<HistoricalData[]>([]);
@@ -56,6 +91,74 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const metalsSoft = getFamilyColor("metals", "faint");
   const cryptoSoft = getFamilyColor("crypto", "faint");
   const benchmarkColor = getFamilyColor("benchmark");
+
+  const buildRelativeRankings = (assets: CryptoAsset[]): RelativeCryptoRanking[] => {
+    const scoredAssets = assets.map((asset) => {
+      const change30d = asset.change_30d ?? 0;
+      const change24h = asset.change_24h ?? 0;
+
+      return {
+        ...asset,
+        rawRelativeScore: (change30d * 0.7) + (change24h * 0.3),
+        relativeScore: 50,
+        rank: 0,
+        relativeClassification: "Neutral" as const,
+      };
+    });
+
+    const rawScores = scoredAssets.map((asset) => asset.rawRelativeScore);
+    const minRawScore = rawScores.length ? Math.min(...rawScores) : 0;
+    const maxRawScore = rawScores.length ? Math.max(...rawScores) : 0;
+    const scoreRange = maxRawScore - minRawScore;
+
+    return scoredAssets
+      .map((asset) => ({
+        ...asset,
+        relativeScore: scoreRange > 0
+          ? ((asset.rawRelativeScore - minRawScore) / scoreRange) * 100
+          : 50,
+      }))
+      .sort((left, right) => right.relativeScore - left.relativeScore)
+      .map((asset, index, rankedAssets) => ({
+        ...asset,
+        rank: index + 1,
+        relativeClassification: index === 0 ? "Winner" : index === rankedAssets.length - 1 ? "Loser" : "Neutral",
+      }));
+  };
+
+  const getRelativeClassStyles = (classification: "Winner" | "Neutral" | "Loser") => {
+    switch (classification) {
+      case "Winner":
+        return "border-emerald-500/50 bg-emerald-500/10 text-emerald-300";
+      case "Loser":
+        return "border-red-500/50 bg-red-500/10 text-red-300";
+      default:
+        return "border-blue-500/40 bg-blue-500/10 text-blue-300";
+    }
+  };
+
+  const formatMiniPrice = (value: number | null | undefined) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "n/a";
+    }
+
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: value >= 1000 ? 0 : 2,
+    }).format(value);
+  };
+
+  const formatSignedPercent = (value: number | null | undefined) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "n/a";
+    }
+
+    return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+  };
+
+  const metalsRankings = (metalsProjectionData?.projections ?? []).slice().sort((left, right) => left.rank - right.rank);
+  const cryptoRankings: RelativeCryptoRanking[] = buildRelativeRankings(cryptoMarketData?.assets ?? []);
 
   useEffect(() => {
     if (aasData) {
@@ -323,6 +426,68 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
               }
             >
               Crypto {cryptoPercent.toFixed(0)}%
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <div className="rounded-lg border border-stealth-700 bg-stealth-900/50 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: metalsColor }}>
+                Metals Leaders
+              </p>
+              <span className="text-[11px] text-stealth-500">ranked basket</span>
+            </div>
+            <div className="space-y-2">
+              {metalsRankings.length > 0 ? (
+                metalsRankings.map((metal) => (
+                  <div key={metal.metal} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-stealth-100">
+                        #{metal.rank} {metal.metal_name}
+                      </div>
+                      <div className="text-stealth-400">{formatMiniPrice(metal.current_price)} · Score {metal.score_total.toFixed(0)}</div>
+                    </div>
+                    <span className={`shrink-0 rounded border px-2 py-1 text-[11px] font-semibold ${getRelativeClassStyles(metal.relative_classification)}`}>
+                      {metal.relative_classification}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs text-stealth-400">
+                  Loading metals ranking...
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-stealth-700 bg-stealth-900/50 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: cryptoColor }}>
+                Crypto Leaders
+              </p>
+              <span className="text-[11px] text-stealth-500">30d and 24h mix</span>
+            </div>
+            <div className="space-y-2">
+              {cryptoRankings.length > 0 ? (
+                cryptoRankings.map((asset) => (
+                  <div key={asset.symbol} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-stealth-100">
+                        #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
+                      </div>
+                      <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.relativeScore.toFixed(0)}/100</div>
+                    </div>
+                    <span className={`shrink-0 rounded border px-2 py-1 text-[11px] font-semibold ${getRelativeClassStyles(asset.relativeClassification)}`}>
+                      {asset.relativeClassification}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs text-stealth-400">
+                  Loading crypto ranking...
+                </div>
+              )}
             </div>
           </div>
         </div>

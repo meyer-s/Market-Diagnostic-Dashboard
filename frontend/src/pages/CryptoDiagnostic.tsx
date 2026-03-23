@@ -122,6 +122,7 @@ type RelativeClassification = "Winner" | "Neutral" | "Loser";
 
 interface RelativeCryptoRanking extends CryptoAsset {
   rank: number;
+  rawRelativeScore: number;
   relativeScore: number;
   relativeClassification: RelativeClassification;
 }
@@ -201,6 +202,41 @@ const getRelativeClassColor = (relativeClass: RelativeClassification) => {
     default:
       return "border-blue-500 bg-blue-500/10 text-blue-300";
   }
+};
+
+const buildRelativeRankings = (assets: CryptoAsset[]): RelativeCryptoRanking[] => {
+  const scoredAssets = assets.map((asset) => {
+    const change30d = asset.change_30d ?? 0;
+    const change24h = asset.change_24h ?? 0;
+
+    return {
+      ...asset,
+      rawRelativeScore: (change30d * 0.7) + (change24h * 0.3),
+      relativeScore: 50,
+      rank: 0,
+      relativeClassification: "Neutral" as RelativeClassification,
+    };
+  });
+
+  const rawScores = scoredAssets.map((asset) => asset.rawRelativeScore);
+  const minRawScore = rawScores.length ? Math.min(...rawScores) : 0;
+  const maxRawScore = rawScores.length ? Math.max(...rawScores) : 0;
+  const scoreRange = maxRawScore - minRawScore;
+
+  return scoredAssets
+    .map((asset) => ({
+      ...asset,
+      relativeScore: scoreRange > 0
+        ? ((asset.rawRelativeScore - minRawScore) / scoreRange) * 100
+        : 50,
+    }))
+    .sort((left, right) => right.relativeScore - left.relativeScore)
+    .map((asset, index, rankedAssets) => ({
+      ...asset,
+      rank: index + 1,
+      relativeClassification:
+        index === 0 ? "Winner" : index === rankedAssets.length - 1 ? "Loser" : "Neutral",
+    }));
 };
 
 export default function CryptoDiagnostic({
@@ -314,30 +350,7 @@ export default function CryptoDiagnostic({
       return [];
     }
 
-    return [...marketData.assets]
-      .map((asset) => {
-        const change30d = asset.change_30d ?? 0;
-        const change24h = asset.change_24h ?? 0;
-        const relativeScore = (change30d * 0.7) + (change24h * 0.3);
-
-        return {
-          ...asset,
-          rank: 0,
-          relativeScore,
-          relativeClassification: "Neutral" as RelativeClassification,
-        };
-      })
-      .sort((left, right) => right.relativeScore - left.relativeScore)
-      .map((asset, index, assets) => ({
-        ...asset,
-        rank: index + 1,
-        relativeClassification:
-          index === 0
-            ? "Winner"
-            : index === assets.length - 1
-              ? "Loser"
-              : "Neutral",
-      }));
+    return buildRelativeRankings([...marketData.assets]);
   }, [marketData]);
 
   const hasLargeCapChartData = largeCapChartData.length > 1;
@@ -452,7 +465,7 @@ export default function CryptoDiagnostic({
                     #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
                   </div>
                   <div className="text-lg font-bold text-stealth-100">{formatCurrency(asset.current_price)}</div>
-                  <div className="mt-1 text-xs">Score: {asset.relativeScore.toFixed(1)}</div>
+                  <div className="mt-1 text-xs">Score: {asset.relativeScore.toFixed(0)}/100</div>
                   <div className="mt-1 text-xs font-semibold">{asset.relativeClassification}</div>
                 </div>
               ))}
@@ -480,7 +493,7 @@ export default function CryptoDiagnostic({
                     </div>
                     <div>
                       <div className="text-xs text-stealth-500">Relative Score</div>
-                      <div className="font-semibold text-stealth-100">{asset.relativeScore.toFixed(1)}</div>
+                      <div className="font-semibold text-stealth-100">{asset.relativeScore.toFixed(0)}/100</div>
                     </div>
                     <div>
                       <div className="text-xs text-stealth-500">24H Move</div>

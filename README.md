@@ -105,17 +105,15 @@ docker exec market_backend python seed_indicators.py
 curl -X POST http://localhost:8000/admin/backfill
 ```
 
-## Production Deploy
+## Docs
 
-The current production workflow is git-based:
+Active project documentation now lives under the `docs/` folder.
 
-```bash
-cd ~/Market-Diagnostic-Dashboard
-git pull origin main
-docker compose up -d --build
-```
-
-There is also a heavier legacy deployment helper at [deploy_full_aap.sh](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/deploy_full_aap.sh), but the standard deploy path used now is pull plus rebuild.
+- Deployment and runtime workflow: [docs/deployment.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/deployment.md)
+- Alternative assets and AAP: [docs/alternative-assets.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/alternative-assets.md)
+- Discord integration: [docs/discord.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/discord.md)
+- Secret Options: [docs/secret-options.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/secret-options.md)
+- API reference draft: [docs/api-contract.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/api-contract.md)
 
 ## Key APIs
 
@@ -158,10 +156,10 @@ npm run build
 ## Notes
 
 - The repository is public, but the project is not licensed as open-source software.
-- Some older documentation files in the repo describe January-era architecture and workflows; this README is intended to reflect the current app surface more closely.
+- Historical or superseded planning material remains under `archive/`.
 
 ## Links
 
 - Production: [marketdiagnostictool.com](https://marketdiagnostictool.com)
 - Repository: [github.com/meyer-s/Market-Diagnostic-Dashboard](https://github.com/meyer-s/Market-Diagnostic-Dashboard)
-- Deployment notes: [DEPLOYMENT_GUIDE.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/DEPLOYMENT_GUIDE.md)
+- Docs folder: [docs](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs)

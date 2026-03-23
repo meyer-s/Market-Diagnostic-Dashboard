@@ -1,144 +1,177 @@
-# API Contract (Draft)
-Date: 2026-01-19
+# API Contract
+
+Working reference for the current backend API surface used by the frontend.
 
 ## Conventions
+
 - Base URL: `/api`
-- Response naming: snake_case (frontend consumes fields as-is).
-- Time series: use `timestamp` or `date` strings in ISO-8601, plus numeric projections where needed.
-- When present, `state` values are `GREEN`, `YELLOW`, `RED`.
+- Response naming: snake_case unless a legacy endpoint already returns a different shape
+- Time series fields usually use `timestamp` or `date` in ISO-8601 form
+- State values, when present, are `GREEN`, `YELLOW`, or `RED`
 
 ## Health
+
 - `GET /health`
   - Response: `{ status: "ok" }`
   - Consumers: deployment checks
 
 ## System Status
+
 - `GET /system`
-  - Response fields: `timestamp`, `composite_score`, `state`, `red_count`, `yellow_count`, `green_count` (as formatted)
-  - Consumers: `SystemOverviewWidget`, `Dashboard`
+  - Response fields: `timestamp`, `composite_score`, `state`, `red_count`, `yellow_count`, `green_count`
+  - Consumers: dashboard and system overview widgets
 - `GET /system/history?days=365`
-  - Params: `days` (int)
+  - Params: `days`
   - Response fields: `timestamp`, `composite_score`, `state`, `red_count`, `yellow_count`
-  - Consumers: `SystemOverviewWidget`, `SystemBreakdown`
+  - Consumers: system overview and system breakdown views
 
 ## Indicators
+
 - `GET /indicators`
-  - Response fields: `code`, `name`, `description`, `weight`, `state`, `score` (when available)
-  - Consumers: `Dashboard`, `Indicators`, `SystemBreakdown`
+  - Response fields: `code`, `name`, `description`, `weight`, `state`, `score`
+  - Consumers: dashboard, indicators page, system breakdown
 - `GET /indicators/{code}`
-  - Response fields: `code`, `name`, `latest` (with `timestamp`, `raw_value`, `normalized_value`, `score`, `state`), `metadata`
-  - Consumers: `IndicatorDetail`
+  - Response fields: `code`, `name`, `latest`, `metadata`
+  - Consumers: indicator detail
 - `GET /indicators/{code}/history?days=365`
-  - Params: `days` (int)
-  - Response fields: list of `{ timestamp, raw_value, normalized_value, score, state }`
-  - Consumers: `IndicatorDetail`, `SystemBreakdown`
-- `GET /indicators/{code}/components` and special cases:
-  - `/indicators/BOND_MARKET_STABILITY/components`
-  - `/indicators/LIQUIDITY_PROXY/components`
-  - `/indicators/ANALYST_ANXIETY/components`
-  - `/indicators/ANALYST_CONFIDENCE/components`
-  - `/indicators/SENTIMENT_COMPOSITE/components`
-  - Response fields: component-specific nested fields (see `IndicatorDetail`)
-  - Consumers: `IndicatorDetail`
+  - Params: `days`
+  - Response fields: `timestamp`, `raw_value`, `normalized_value`, `score`, `state`
+  - Consumers: indicator detail and system breakdown
+- `GET /indicators/{code}/components`
+  - Includes special component payloads for bond market stability, liquidity proxy, analyst anxiety, analyst confidence, and sentiment composite
+  - Consumers: indicator detail
 
 ## Dow Theory
+
 - `GET /dow-theory`
   - Response fields: `signal`, `strain_level`, `primary_trend`, `confirmation_status`, `last_updated`
-  - Consumers: `DowTheoryWidget`
+  - Consumers: Dow Theory widget
 - `GET /dow-theory/history?days=365`
-  - Params: `days` (int)
-  - Response fields: time series of strain/confirmation metrics
-  - Consumers: `DowTheoryWidget`
+  - Params: `days`
+  - Response fields: time series of strain and confirmation metrics
+  - Consumers: Dow Theory widget
 
 ## News
+
 - `GET /news?hours=24&limit=200&symbol=...`
-  - Params: `hours`, `limit`, `symbol` (optional)
-  - Response fields: list of `{ id, title, source, published_at, url, summary, symbol }`
-  - Consumers: `Dashboard`, `MarketNews`, `StockAnalysis`
+  - Params: `hours`, `limit`, optional `symbol`
+  - Response fields: `id`, `title`, `source`, `published_at`, `url`, `summary`, `symbol`
+  - Consumers: dashboard, market news, stock analysis
 - `POST /news/refresh`
   - Response fields: refresh status and counts
-  - Consumers: `MarketNews`
-- `GET /news/tickers`, `PUT /news/tickers`, `GET /news/ticker-presets`
+  - Consumers: market news
+- `GET /news/tickers`
+- `PUT /news/tickers`
+- `GET /news/ticker-presets`
   - Response fields: ticker lists and preset metadata
-  - Consumers: `MarketNews`
+  - Consumers: market news
 
 ## Market Map
+
 - `GET /market-map/data?days=5`
-  - Params: `days` (int)
-  - Response fields: `sectors` (list of sector + stocks), `week_performance`
-  - Consumers: `MarketMap`
+  - Params: `days`
+  - Response fields: `sectors`, `week_performance`
+  - Consumers: market map
 - `GET /market-map/spy-intraday`
   - Response fields: intraday time series for indices
-  - Consumers: `MarketMap`
+  - Consumers: market map
 
 ## Sectors
+
 - `GET /sectors/summary`
   - Response fields: `as_of`, `spread`, `alignment_score`, `defensive_avg`, `cyclical_avg`
-  - Consumers: `SectorDivergenceWidget`
+  - Consumers: sector divergence widgets
 - `GET /sectors/alerts`
   - Response fields: alert list with `type`, `severity`, `message`, `timestamp`
-  - Consumers: `SectorAlertsWidget`, `SectorDivergenceWidget`
+  - Consumers: sector alerts widgets
 - `GET /sectors/projections/latest`
-  - Response fields: `projections` by horizon (`T`, `3m`, `6m`, `12m`), `system_state`, `as_of_date`
-  - Consumers: `SectorProjections`, `MarketMap`
+  - Response fields: `projections`, `system_state`, `as_of_date`
+  - Consumers: sector projections and market map
 - `GET /sectors/projections/history?days=365`
-  - Params: `days` (int)
-  - Response fields: history keyed by sector + horizon
-  - Consumers: `SectorProjections`
+  - Params: `days`
+  - Response fields: history keyed by sector and horizon
+  - Consumers: sector projections
 - `GET /sectors/projections/warnings`
   - Response fields: warning list
-  - Consumers: `SectorProjections` (if wired)
+  - Consumers: sector projections where wired
 
 ## Stocks
+
 - `GET /stocks/{ticker}/projections`
-  - Response fields: projections across horizons plus `technicals`, `history`, `news`
-  - Consumers: `StockAnalysis`
+  - Response fields: projections plus `technicals`, `history`, `news`
+  - Consumers: stock analysis
 
 ## Precious Metals
+
 - `GET /precious-metals/regime`
   - Response fields: `regime`, `overall_regime`, `paper_physical_risk`, `gold_bias`
-  - Consumers: `PreciousMetalsWidget`, `PreciousMetalsDiagnostic`
+  - Consumers: precious metals widget and diagnostic page
 - `GET /precious-metals/projections/latest`
-  - Response fields: list of metals with `score_total`, `classification`, `relative_classification`
-  - Consumers: `PreciousMetalsWidget`, `PreciousMetalsDiagnostic`
-- `GET /precious-metals/cb-holdings`, `/precious-metals/supply`, `/precious-metals/demand`
-  - Response fields: per-metal data tables
-  - Consumers: `PreciousMetalsDiagnostic`
-- `GET /precious-metals/market-caps`, `/precious-metals/market-caps/history`
-  - Response fields: aggregate caps + history
-  - Consumers: `PreciousMetalsDiagnostic`
+  - Response fields: metal list with `score_total`, `classification`, `relative_classification`
+  - Consumers: precious metals widget and diagnostic page
+- `GET /precious-metals/cb-holdings`
+- `GET /precious-metals/supply`
+- `GET /precious-metals/demand`
+- `GET /precious-metals/market-caps`
+- `GET /precious-metals/market-caps/history`
 - `GET /precious-metals/correlations`
-  - Response fields: correlation matrix
-  - Consumers: `PreciousMetalsDiagnostic`
+  - Response fields: metals-specific tables, history, and correlation data
+  - Consumers: precious metals diagnostic page
 - `GET /precious-metals/history/{metal}?days=365`
   - Params: `metal`, `days`
-  - Response fields: time series of `{ date, price }`
-  - Consumers: `PreciousMetalsDiagnostic`
+  - Response fields: `{ date, price }`
+  - Consumers: precious metals diagnostic page
 
-## Alternative Assets (AAP)
+## Alternative Assets
+
 - `GET /aap/current`
   - Response fields: `stability_score`, `regime`, `components`, `metals_contribution`, `crypto_contribution`
-  - Consumers: `AASWidget`, `AlternativeAssetStability`
+  - Consumers: AAS widget and alternative-assets page
 - `GET /aap/history?days=365`
   - Params: `days`
-  - Response fields: time series of stability scores and subsystems
-  - Consumers: `AlternativeAssetStability`
-- `GET /aap/components/breakdown`, `/aap/components/history?days=365`
-  - Params: `days`
+  - Response fields: stability-score history and subsystem history
+  - Consumers: alternative-assets page
+- `GET /aap/components/breakdown`
+- `GET /aap/components/history?days=365`
+  - Params: `days` where supported
   - Response fields: component breakdowns and histories
-  - Consumers: `AlternativeAssetStability`, `AAPComponentBreakdown`
-- `GET /aap/regime/current`, `/aap/regime/history`
-  - Response fields: regime history
-  - Consumers: `AlternativeAssetStability`
+  - Consumers: alternative-assets page and AAP breakdown page
+- `GET /aap/regime/current`
+- `GET /aap/regime/history`
+  - Response fields: regime snapshots and history
+  - Consumers: alternative-assets page
 - `GET /aap/dashboard`
-  - Response fields: AAP snapshot for dashboard
-  - Consumers: `Dashboard` (if wired)
+  - Response fields: dashboard-facing AAP snapshot
+  - Consumers: dashboard where wired
 
-## Admin (internal)
-- `POST /admin/ingest/run`, `POST /admin/ingest/{code}`, `POST /admin/backfill`
-  - Response fields: job status, counts
-  - Consumers: `Dashboard`
+## Crypto
+
+- `GET /crypto/market-overview`
+  - Response fields: basket overview, price history, market structure history, liquidity context
+  - Consumers: crypto diagnostic page
+- `GET /crypto/diagnostic-context`
+  - Response fields: narrative and supporting diagnostic context
+  - Consumers: crypto diagnostic page
+
+## Secret Options
+
+- `GET /secret/options/positions`
+- `POST /secret/options/positions`
+- `PUT /secret/options/positions/{position_id}`
+- `DELETE /secret/options/positions/{position_id}`
+- `GET /secret/options/greeks/{position_id}`
+- `GET /secret/options/closed-positions`
+- `POST /secret/options/attribution/backfill`
+  - Consumers: secret options page
+
+## Admin
+
+- `POST /admin/ingest/run`
+- `POST /admin/ingest/{code}`
+- `POST /admin/backfill`
+  - Response fields: job status and counts
+  - Consumers: dashboard and maintenance flows
 - `POST /admin/clear-refetch/{code}?days=365`
   - Params: `days`
-  - Response fields: clear + refetch status
-  - Consumers: `IndicatorDetail`
+  - Response fields: clear and refetch status
+  - Consumers: indicator detail maintenance actions
