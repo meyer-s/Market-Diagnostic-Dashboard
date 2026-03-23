@@ -483,8 +483,8 @@ export default function IndicatorDetail() {
               <p className="text-sm md:text-base text-stealth-300 leading-relaxed flex-1">
                 {descExpanded ? meta.metadata.description : firstSentence + "."}
               </p>
-              <span className="text-stealth-500 text-xs mt-1 shrink-0 select-none">
-                {descExpanded ? "▲ Less" : "▼ More"}
+              <span className="text-stealth-400 text-xl leading-none shrink-0 select-none">
+                {descExpanded ? "-" : "+"}
               </span>
             </button>
 
