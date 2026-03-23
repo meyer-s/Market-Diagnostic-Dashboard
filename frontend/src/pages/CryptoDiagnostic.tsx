@@ -437,39 +437,6 @@ export default function CryptoDiagnostic({
 
       {selectedTab === "overview" && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-            {marketData.assets.map((asset) => (
-              <div key={asset.symbol} className="rounded-lg border border-stealth-700 bg-stealth-800 p-4">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div>
-                    <div className="text-sm font-semibold text-stealth-100">{asset.name}</div>
-                    <div className="text-xs text-stealth-500">{asset.symbol}</div>
-                  </div>
-                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: asset.color }} />
-                </div>
-                <div className="text-2xl font-bold text-stealth-100 mb-3">{formatCurrency(asset.current_price)}</div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs text-stealth-500">24H</div>
-                    <div className={`font-semibold ${getPercentColor(asset.change_24h)}`}>{formatPercent(asset.change_24h)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-stealth-500">30D</div>
-                    <div className={`font-semibold ${getPercentColor(asset.change_30d)}`}>{formatPercent(asset.change_30d)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-stealth-500">Market Cap</div>
-                    <div className="font-semibold text-stealth-200">{formatCurrency(asset.market_cap, true)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-stealth-500">24H Volume</div>
-                    <div className="font-semibold text-stealth-200">{formatCurrency(asset.total_volume_24h, true)}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
           <div className="mb-6 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
             <div className="mb-4">
               <h3 className="text-lg font-semibold text-stealth-100">Winners & Losers Right Now</h3>
