@@ -547,7 +547,12 @@ export default function Vision() {
                         }`
                   }`}
                 >
-                  <PrincipleMotifGraphic motif={item.motif} />
+                  <div className="relative">
+                    <div className="absolute -inset-6 rounded-full bg-[radial-gradient(circle_at_center,_rgba(96,165,250,0.04),_rgba(110,231,183,0.03)_44%,_transparent_74%)] blur-2xl" />
+                    <div className="relative">
+                      <PrincipleMotifGraphic motif={item.motif} />
+                    </div>
+                  </div>
                 </div>
               </div>
             );
