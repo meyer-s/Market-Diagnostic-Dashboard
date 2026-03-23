@@ -562,13 +562,13 @@ export default function Vision() {
               The Humble Case
             </div>
             <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
-              You should not need a decade to read market conditions.
+              You should not have to play detective to read market conditions.
             </h2>
             <p className="mt-5 text-lg leading-8 text-stealth-200">
-              There is real value in expertise, and this tool does not replace it. What it can do is reduce the penalty for not having lived through every cycle yourself. By organizing market structure into something readable, it helps you borrow some of the discipline of a professional process before you have all of the professional mileage.
+              Right now, understanding the market often means chasing clues across disconnected charts, headlines, and indicators, then trying to infer how they relate and which signals actually matter. This tool does not replace expertise, but it does reduce the penalty for not having years of pattern memory by organizing those moving parts into one readable view.
             </p>
             <p className="mt-4 text-lg leading-8 text-stealth-200">
-              That matters because informed decisions are often less about finding a perfect prediction and more about knowing the backdrop you are operating inside. When rates, breadth, leadership, and defensive behavior all point in the same direction, that should shape your conviction. When they conflict, that should shape your caution.
+              That matters because better decisions are usually less about finding a perfect prediction and more about reading the environment clearly. When rates, breadth, leadership, and defensive behavior all point in the same direction, that should strengthen your conviction. When they conflict, that should sharpen your caution.
             </p>
           </div>
 
