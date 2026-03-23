@@ -13,6 +13,7 @@ import StockAnalysis from "./pages/StockAnalysis";
 import SecretOptions from "./pages/SecretOptions";
 import AlternativeAssetStability from "./pages/AlternativeAssetStability";
 import AASComponentBreakdown from "./pages/AASComponentBreakdown";
+import WhyThisExists from "./pages/WhyThisExists";
 import RecapIndex from "./pages/tools/RecapIndex";
 import RecapPost from "./pages/tools/RecapPost";
 import { trackPageView } from "./utils/analytics";
@@ -34,6 +35,7 @@ function AppWithAnalytics() {
       location.pathname.includes("/indicators") ? "Indicators" :
       location.pathname.includes("/news") ? "Market News" :
       location.pathname.includes("/system-breakdown") ? "System Breakdown" :
+      location.pathname.includes("/why-this-exists") ? "Vision" :
       location.pathname.includes("/market-map") ? "Market Map" :
       location.pathname.includes("/sector-projections") ? "Sector Projections" :
       location.pathname.includes("/stock-analysis") ? "Stock Analysis" :
@@ -58,6 +60,7 @@ function AppWithAnalytics() {
           <Route path="/indicators/:code" element={<IndicatorDetail />} />
           <Route path="/news" element={<MarketNews />} />
           <Route path="/system-breakdown" element={<SystemBreakdown />} />
+          <Route path="/why-this-exists" element={<WhyThisExists />} />
           <Route path="/market-map" element={<MarketMap />} />
           <Route path="/sector-projections" element={<SectorProjections />} />
           <Route path="/stock-analysis/:symbol" element={<StockAnalysis />} />
