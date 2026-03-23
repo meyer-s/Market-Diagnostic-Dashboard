@@ -501,15 +501,30 @@ export default function Vision() {
         <div className="border-t border-stealth-700">
           {principles.map((item, idx) => {
             const isReversed = idx % 2 === 1;
+            const isBoard = item.motif === "board";
 
             return (
               <div
                 key={item.title}
-                className={`grid gap-8 border-b border-stealth-700 py-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,360px)] lg:items-center ${
+                className={`grid gap-8 border-b border-stealth-700 py-12 lg:items-center ${
+                  isBoard
+                    ? "lg:grid-cols-3 lg:gap-10"
+                    : "lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,360px)]"
+                } ${
                   isReversed ? "lg:[&>*:first-child]:order-2 lg:[&>*:last-child]:order-1" : ""
                 }`}
               >
-                <div className={isReversed ? "lg:pl-8" : "lg:pr-8"}>
+                <div
+                  className={
+                    isBoard
+                      ? isReversed
+                        ? "lg:col-span-2 lg:pl-8"
+                        : "lg:col-span-2 lg:pr-8"
+                      : isReversed
+                        ? "lg:pl-8"
+                        : "lg:pr-8"
+                  }
+                >
                   <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
                     Principle {idx + 1}
                   </div>
@@ -521,7 +536,17 @@ export default function Vision() {
                   </p>
                 </div>
 
-                <div className={`mx-auto w-[68%] max-w-[220px] sm:w-[56%] lg:w-full lg:max-w-[340px] ${isReversed ? "lg:mr-auto lg:ml-0" : "lg:ml-auto lg:mr-0"}`}>
+                <div
+                  className={`mx-auto w-[68%] max-w-[220px] sm:w-[56%] ${
+                    isBoard
+                      ? `lg:col-span-1 lg:w-full lg:max-w-[20rem] xl:max-w-[22rem] ${
+                          isReversed ? "lg:mr-auto lg:ml-0" : "lg:ml-auto lg:mr-0"
+                        }`
+                      : `lg:w-full lg:max-w-[340px] ${
+                          isReversed ? "lg:mr-auto lg:ml-0" : "lg:ml-auto lg:mr-0"
+                        }`
+                  }`}
+                >
                   <PrincipleMotifGraphic motif={item.motif} />
                 </div>
               </div>
