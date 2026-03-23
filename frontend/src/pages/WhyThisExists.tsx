@@ -227,23 +227,22 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
 
   return (
     <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
-      <circle cx="40" cy="22" r="5.2" fill="#93C5FD" fillOpacity="0.7" />
-      <circle cx="56" cy="74" r="5.2" fill="#6EE7B7" fillOpacity="0.7" />
+      <circle cx="40" cy="22" r="5.2" fill="#93C5FD" fillOpacity="0.26" />
+      <circle cx="56" cy="74" r="5.2" fill="#6EE7B7" fillOpacity="0.28" />
 
       <circle cx="92" cy="48" r="9.5" fill="#f8fafc" fillOpacity="0.9" />
       <circle cx="204" cy="34" r="8.8" fill="#6EE7B7" fillOpacity="0.95" />
       <circle cx="204" cy="68" r="7.4" fill="#64748b" fillOpacity="0.82" />
-      <circle cx="226" cy="18" r="4.6" fill="#93C5FD" fillOpacity="0.68" />
-      <circle cx="226" cy="50" r="4.2" fill="#6EE7B7" fillOpacity="0.62" />
+      <circle cx="126" cy="28" r="4.2" fill="#93C5FD" fillOpacity="0.18" />
+      <circle cx="136" cy="58" r="3.8" fill="#6EE7B7" fillOpacity="0.2" />
+      <circle cx="148" cy="32" r="3.4" fill="#e2e8f0" fillOpacity="0.14" />
 
       <path d="M102 48 C132 42, 162 38, 196 34" stroke="#64748b" strokeOpacity="0.5" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       <path d="M102 48 C134 54, 164 62, 196 68" stroke="#64748b" strokeOpacity="0.46" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       <path d="M104 47 C134 41, 164 37, 196 34" stroke="#6EE7B7" strokeOpacity="0.96" strokeWidth="3.3" fill="none" strokeLinecap="round" />
 
-      <path d="M46 22 C82 22, 114 25, 146 30 C166 32, 182 32, 196 31" stroke="#93C5FD" strokeOpacity="0.56" strokeWidth="1.9" fill="none" strokeLinecap="round" />
-      <path d="M62 74 C92 64, 118 50, 148 38 C168 35, 184 36, 196 37" stroke="#6EE7B7" strokeOpacity="0.64" strokeWidth="1.9" fill="none" strokeLinecap="round" />
-      <path d="M222 20 C218 22, 215 24, 212 28" stroke="#93C5FD" strokeOpacity="0.54" strokeWidth="1.8" fill="none" strokeLinecap="round" />
-      <path d="M222 47 C218 45, 215 42, 212 39" stroke="#6EE7B7" strokeOpacity="0.56" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+      <path d="M46 22 C82 22, 114 25, 146 30 C166 32, 182 32, 196 31" stroke="#93C5FD" strokeOpacity="0.2" strokeWidth="1.9" fill="none" strokeLinecap="round" />
+      <path d="M62 74 C92 64, 118 50, 148 38 C168 35, 184 36, 196 37" stroke="#6EE7B7" strokeOpacity="0.22" strokeWidth="1.9" fill="none" strokeLinecap="round" />
 
       <circle cx="92" cy="48" r="3.4" fill="#111827" fillOpacity="0.2" />
     </svg>
