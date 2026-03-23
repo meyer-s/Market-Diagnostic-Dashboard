@@ -46,7 +46,6 @@ Primary frontend routes live in [frontend/src/App.tsx](c:/Users/sjmey/OneDrive/D
 - `/aas-breakdown` AAS component breakdown
 - `/tools/recap` published recap index and posts
 - `/news` cached market news
-- `/secret/options` secret options page
 
 ## Stack
 
