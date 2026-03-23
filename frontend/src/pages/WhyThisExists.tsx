@@ -201,15 +201,15 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
       <svg viewBox="0 0 240 96" role="img" aria-label="Learning shortcut curve motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
         <path
-          d="M18 74 C44 82, 64 80, 78 72 C92 64, 102 56, 112 56 C126 56, 126 72, 140 72 C154 72, 156 52, 170 44 C186 34, 200 30, 220 24"
+          d="M18 76 C38 62, 58 52, 76 56 C90 60, 95 70, 110 76 C126 82, 150 70, 170 48 C188 30, 202 24, 220 24"
           fill="none"
           stroke="#64748b"
-          strokeOpacity="0.88"
+          strokeOpacity="0.9"
           strokeWidth="3"
           strokeLinecap="round"
         />
         <path
-          d="M18 74 C68 60, 134 44, 220 24"
+          d="M18 76 C74 60, 138 44, 220 24"
           fill="none"
           stroke="#6EE7B7"
           strokeOpacity="0.96"
@@ -219,7 +219,9 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
         <polygon points="220,24 210,24 216,18" fill="#6EE7B7" fillOpacity="0.92" />
         <circle cx="18" cy="74" r="4.5" fill="#93C5FD" fillOpacity="0.85" />
         <circle cx="220" cy="24" r="5.5" fill="#6EE7B7" fillOpacity="0.95" />
-        <circle cx="120" cy="49" r="4.2" fill="#6EE7B7" fillOpacity="0.24" />
+        <circle cx="78" cy="56" r="4" fill="#64748b" fillOpacity="0.34" />
+        <circle cx="112" cy="76" r="4" fill="#64748b" fillOpacity="0.34" />
+        <circle cx="120" cy="50" r="4.2" fill="#6EE7B7" fillOpacity="0.24" />
       </svg>
     );
   }
