@@ -152,27 +152,38 @@ function HeroSignalIllustration() {
 function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
   if (motif === "board") {
     return (
-      <svg viewBox="0 0 240 96" role="img" aria-label="Abstract market-field motif" className="w-full h-auto">
+      <svg viewBox="0 0 240 96" role="img" aria-label="Board zoom-out motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-        <circle cx="72" cy="46" r="30" fill="#6EE7B7" fillOpacity="0.12" />
-        <circle cx="118" cy="38" r="24" fill="#93C5FD" fillOpacity="0.14" />
-        <circle cx="156" cy="52" r="29" fill="#34D399" fillOpacity="0.09" />
+
+        <rect x="24" y="12" width="192" height="72" rx="14" fill="none" stroke="#475569" strokeOpacity="0.7" />
+        <rect x="44" y="22" width="152" height="52" rx="12" fill="none" stroke="#64748b" strokeOpacity="0.75" />
+        <rect x="64" y="30" width="112" height="36" rx="10" fill="#0f172a" stroke="#94a3b8" strokeOpacity="0.65" />
+
+        {[
+          [36, 24],
+          [204, 24],
+          [36, 72],
+          [204, 72],
+          [120, 48],
+        ].map(([x, y], idx) => (
+          <circle
+            key={`board-node-${x}-${y}`}
+            cx={x}
+            cy={y}
+            r={idx === 4 ? 5.5 : 4}
+            fill={idx === 4 ? "#6EE7B7" : "#93C5FD"}
+            fillOpacity={idx === 4 ? 0.95 : 0.7}
+          />
+        ))}
+
+        <path d="M120 48 L36 24 M120 48 L204 24 M120 48 L36 72 M120 48 L204 72" stroke="#334155" strokeWidth="1.4" />
         <path
-          d="M24 62 C58 44, 84 72, 116 52 C142 36, 172 38, 214 50"
+          d="M70 56 C90 50, 106 58, 122 44 C134 34, 150 36, 170 40"
           stroke="#6EE7B7"
-          strokeOpacity="0.78"
-          strokeWidth="2.4"
+          strokeOpacity="0.82"
+          strokeWidth="2.2"
           fill="none"
           strokeLinecap="round"
-        />
-        <path
-          d="M26 34 C56 24, 90 46, 122 36 C152 28, 180 18, 214 28"
-          stroke="#93C5FD"
-          strokeOpacity="0.65"
-          strokeWidth="1.9"
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray="4 7"
         />
       </svg>
     );
@@ -180,57 +191,76 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
 
   if (motif === "curve") {
     return (
-      <svg viewBox="0 0 240 96" role="img" aria-label="Abstract learning-wave motif" className="w-full h-auto">
+      <svg viewBox="0 0 240 96" role="img" aria-label="Learning shortcut curve motif" className="w-full h-auto">
         <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
         <path
-          d="M20 66 C52 78, 72 44, 104 50 C130 56, 142 82, 170 68 C192 58, 202 34, 220 26"
+          d="M18 74 C44 82, 72 80, 94 70 C116 60, 138 62, 156 54 C176 46, 190 36, 220 24"
           fill="none"
-          stroke="#6EE7B7"
+          stroke="#64748b"
+          strokeOpacity="0.95"
           strokeWidth="3"
           strokeLinecap="round"
         />
         <path
-          d="M24 48 C54 36, 84 66, 110 44 C138 20, 170 34, 214 16"
+          d="M18 74 C78 58, 140 44, 220 24"
           fill="none"
-          stroke="#93C5FD"
-          strokeOpacity="0.7"
-          strokeWidth="2"
+          stroke="#6EE7B7"
+          strokeOpacity="0.92"
+          strokeWidth="3.4"
           strokeLinecap="round"
-          strokeDasharray="5 8"
         />
-        <circle cx="64" cy="52" r="10" fill="#93C5FD" fillOpacity="0.16" />
-        <circle cx="172" cy="66" r="12" fill="#6EE7B7" fillOpacity="0.13" />
+        <circle cx="18" cy="74" r="4.5" fill="#93C5FD" fillOpacity="0.85" />
+        <circle cx="220" cy="24" r="5.5" fill="#6EE7B7" fillOpacity="0.95" />
+        <circle cx="110" cy="50" r="4.5" fill="#6EE7B7" fillOpacity="0.32" />
       </svg>
     );
   }
 
   return (
-    <svg viewBox="0 0 240 96" role="img" aria-label="Abstract decision-flow motif" className="w-full h-auto">
+    <svg viewBox="0 0 240 96" role="img" aria-label="Decision reinforcement motif" className="w-full h-auto">
       <rect x="0.5" y="0.5" width="239" height="95" rx="15.5" fill="#111827" stroke="#334155" />
-      <circle cx="70" cy="48" r="9" fill="#f8fafc" fillOpacity="0.86" />
-      <circle cx="184" cy="26" r="12" fill="#93C5FD" fillOpacity="0.19" />
-      <circle cx="184" cy="70" r="12" fill="#6EE7B7" fillOpacity="0.18" />
+      <circle cx="56" cy="24" r="6.5" fill="#93C5FD" fillOpacity="0.8" />
+      <circle cx="56" cy="72" r="6.5" fill="#6EE7B7" fillOpacity="0.8" />
+      <circle cx="116" cy="48" r="10" fill="#f8fafc" fillOpacity="0.9" />
+      <circle cx="192" cy="48" r="8.5" fill="#6EE7B7" fillOpacity="0.9" />
+
       <path
-        d="M82 48 C112 48, 120 38, 144 30 C158 24, 170 24, 188 26"
+        d="M62 24 C84 24, 96 32, 110 44"
         stroke="#93C5FD"
-        strokeWidth="2.4"
+        strokeWidth="2.2"
         fill="none"
         strokeLinecap="round"
       />
       <path
-        d="M82 48 C112 50, 122 60, 146 66 C160 70, 170 70, 188 70"
+        d="M62 72 C84 72, 96 64, 110 52"
         stroke="#6EE7B7"
-        strokeWidth="2.4"
+        strokeWidth="2.2"
         fill="none"
         strokeLinecap="round"
       />
       <path
-        d="M58 30 C88 10, 128 10, 164 20"
-        stroke="#cbd5e1"
-        strokeOpacity="0.28"
-        strokeWidth="1.5"
+        d="M126 48 C148 48, 166 48, 184 48"
+        stroke="#f8fafc"
+        strokeOpacity="0.9"
+        strokeWidth="2.6"
         fill="none"
-        strokeDasharray="3 8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M140 22 C160 28, 172 34, 188 44"
+        stroke="#93C5FD"
+        strokeOpacity="0.75"
+        strokeWidth="2.1"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path
+        d="M140 74 C160 68, 172 62, 188 52"
+        stroke="#6EE7B7"
+        strokeOpacity="0.75"
+        strokeWidth="2.1"
+        fill="none"
+        strokeLinecap="round"
       />
     </svg>
   );
@@ -238,46 +268,30 @@ function PrincipleMotifGraphic({ motif }: { motif: PrincipleMotif }) {
 
 function AudienceContextGraphic() {
   return (
-    <svg viewBox="0 0 360 132" role="img" aria-label="Abstract context ribbon motif" className="w-full h-auto">
-      <defs>
-        <linearGradient id="audienceFlowA" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#6EE7B7" stopOpacity="0.24" />
-          <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.02" />
-        </linearGradient>
-        <linearGradient id="audienceFlowB" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.22" />
-          <stop offset="100%" stopColor="#93C5FD" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
+    <svg viewBox="0 0 360 132" role="img" aria-label="People and conversation motif" className="w-full h-auto">
       <rect x="0.5" y="0.5" width="359" height="131" rx="19.5" fill="#0f172a" stroke="#334155" />
-      <path
-        d="M18 90 C56 68, 96 98, 136 82 C174 68, 208 36, 246 46 C286 56, 318 78, 342 72 L342 116 L18 116 Z"
-        fill="url(#audienceFlowA)"
-      />
-      <path
-        d="M18 72 C54 54, 92 70, 130 62 C168 54, 202 26, 240 30 C282 34, 318 58, 342 56 L342 98 L18 98 Z"
-        fill="url(#audienceFlowB)"
-      />
-      <path
-        d="M20 88 C58 66, 98 96, 138 80 C176 66, 208 36, 246 44 C286 54, 318 76, 340 70"
-        fill="none"
-        stroke="#6EE7B7"
-        strokeOpacity="0.76"
-        strokeWidth="2.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M20 64 C56 48, 96 66, 132 58 C170 50, 204 24, 242 28 C284 32, 320 54, 340 54"
-        fill="none"
-        stroke="#93C5FD"
-        strokeOpacity="0.72"
-        strokeWidth="2.3"
-        strokeLinecap="round"
-        strokeDasharray="5 7"
-      />
-      {[42, 96, 152, 206, 262, 316].map((x, idx) => (
-        <circle key={`aud-dot-${x}`} cx={x} cy={idx % 2 === 0 ? 96 : 102} r="2.5" fill="#e2e8f0" fillOpacity="0.45" />
-      ))}
+
+      <circle cx="72" cy="44" r="11" fill="#93C5FD" fillOpacity="0.8" />
+      <path d="M48 88 C54 70, 90 70, 96 88" fill="none" stroke="#93C5FD" strokeOpacity="0.75" strokeWidth="3" strokeLinecap="round" />
+
+      <circle cx="180" cy="40" r="12" fill="#f8fafc" fillOpacity="0.85" />
+      <path d="M152 90 C160 68, 200 68, 208 90" fill="none" stroke="#cbd5e1" strokeOpacity="0.9" strokeWidth="3.2" strokeLinecap="round" />
+
+      <circle cx="288" cy="46" r="11" fill="#6EE7B7" fillOpacity="0.85" />
+      <path d="M264 88 C270 70, 306 70, 312 88" fill="none" stroke="#6EE7B7" strokeOpacity="0.8" strokeWidth="3" strokeLinecap="round" />
+
+      <rect x="102" y="18" width="66" height="24" rx="11" fill="#1e293b" stroke="#334155" />
+      <circle cx="120" cy="30" r="2.2" fill="#e2e8f0" />
+      <circle cx="134" cy="30" r="2.2" fill="#e2e8f0" />
+      <circle cx="148" cy="30" r="2.2" fill="#e2e8f0" />
+
+      <rect x="194" y="62" width="74" height="24" rx="11" fill="#1e293b" stroke="#334155" />
+      <circle cx="214" cy="74" r="2.2" fill="#e2e8f0" />
+      <circle cx="228" cy="74" r="2.2" fill="#e2e8f0" />
+      <circle cx="242" cy="74" r="2.2" fill="#e2e8f0" />
+
+      <path d="M92 44 C112 40, 126 40, 146 42" fill="none" stroke="#93C5FD" strokeWidth="2" strokeLinecap="round" />
+      <path d="M206 66 C224 62, 240 56, 260 52" fill="none" stroke="#6EE7B7" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
