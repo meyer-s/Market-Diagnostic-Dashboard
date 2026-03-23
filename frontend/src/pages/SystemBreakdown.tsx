@@ -458,7 +458,7 @@ export default function SystemBreakdown() {
                       {sampledPoints.map((point, idx) => (
                         <div
                           key={idx}
-                          className="flex-1 h-8 transition-opacity hover:opacity-75 cursor-pointer"
+                          className="flex-1 h-8 rounded-sm transition-opacity hover:opacity-75 cursor-pointer"
                           style={{ 
                             backgroundColor: getStateColor(point.state as StabilityState),
                             minWidth: '2px',

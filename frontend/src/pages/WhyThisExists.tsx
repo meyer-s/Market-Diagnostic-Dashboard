@@ -89,9 +89,10 @@ function HeroSignalIllustration() {
     ] as Array<[HeroState, number]>,
   ];
 
-  const chartX = 750;
-  const chartY = 136;
+  const chartX = 782;
+  const chartY = 92;
   const chartWidth = 640;
+  const chartScale = 1.18;
   const denseCellWidth = 7;
   const denseCellGap = 2;
   const denseCellStep = denseCellWidth + denseCellGap;
@@ -197,7 +198,8 @@ function HeroSignalIllustration() {
         strokeDasharray="3 16"
       />
       <g transform={`translate(${chartX} ${chartY})`} opacity="0.98" shapeRendering="crispEdges">
-        {chartRows.map((row, rowIdx) => {
+        <g transform={`scale(${chartScale})`}>
+          {chartRows.map((row, rowIdx) => {
           const y =
             chartRows
               .slice(0, rowIdx)
@@ -207,55 +209,56 @@ function HeroSignalIllustration() {
             const rowWidth = denseRowWidth(row.states.length);
             const rowOffset = chartWidth - rowWidth;
 
+              return (
+                <g key={`hero-dense-row-${rowIdx}`} transform={`translate(${rowOffset} ${y})`}>
+                  {row.states.map((state, idx) => {
+                    const x = idx * denseCellStep;
+                    return (
+                      <rect
+                        key={`hero-dense-row-${rowIdx}-cell-${idx}`}
+                        x={x}
+                        y="0"
+                        width={denseCellWidth}
+                        height={denseRowHeight}
+                        rx="1.4"
+                        fill={statePalette[state]}
+                        fillOpacity={getBarOpacity(rowOffset + x, denseCellWidth)}
+                      />
+                    );
+                  })}
+                </g>
+              );
+            }
+
+            const totalUnits = row.segments.reduce((sum, [, width]) => sum + width, 0);
+            const gap = 3;
+            const totalGapWidth = gap * Math.max(row.segments.length - 1, 0);
+            const scale = (chartWidth - totalGapWidth) / totalUnits;
+            let cursor = 0;
+
             return (
-              <g key={`hero-dense-row-${rowIdx}`} transform={`translate(${rowOffset} ${y})`}>
-                {row.states.map((state, idx) => {
-                  const x = idx * denseCellStep;
+              <g key={`hero-block-row-${rowIdx}`} transform={`translate(0 ${y})`}>
+                {row.segments.map(([state, width], idx) => {
+                  const x = cursor;
+                  const scaledWidth = width * scale;
+                  cursor += scaledWidth + gap;
                   return (
                     <rect
-                      key={`hero-dense-row-${rowIdx}-cell-${idx}`}
+                      key={`hero-block-row-${rowIdx}-segment-${idx}`}
                       x={x}
                       y="0"
-                      width={denseCellWidth}
-                      height={denseRowHeight}
-                      rx="1.4"
+                      width={scaledWidth}
+                      height={blockRowHeight}
+                      rx="1.2"
                       fill={statePalette[state]}
-                      fillOpacity={getBarOpacity(rowOffset + x, denseCellWidth)}
+                      fillOpacity={getBarOpacity(x, scaledWidth)}
                     />
                   );
                 })}
               </g>
             );
-          }
-
-          const totalUnits = row.segments.reduce((sum, [, width]) => sum + width, 0);
-          const gap = 3;
-          const totalGapWidth = gap * Math.max(row.segments.length - 1, 0);
-          const scale = (chartWidth - totalGapWidth) / totalUnits;
-          let cursor = 0;
-
-          return (
-            <g key={`hero-block-row-${rowIdx}`} transform={`translate(0 ${y})`}>
-              {row.segments.map(([state, width], idx) => {
-                const x = cursor;
-                const scaledWidth = width * scale;
-                cursor += scaledWidth + gap;
-                return (
-                  <rect
-                    key={`hero-block-row-${rowIdx}-segment-${idx}`}
-                    x={x}
-                    y="0"
-                    width={scaledWidth}
-                    height={blockRowHeight}
-                    rx="1.2"
-                    fill={statePalette[state]}
-                    fillOpacity={getBarOpacity(x, scaledWidth)}
-                  />
-                );
-              })}
-            </g>
-          );
-        })}
+          })}
+        </g>
       </g>
     </svg>
   );
