@@ -484,15 +484,13 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
             {row.latest_price !== null && (
               <>
                 <div
-                  className={`absolute top-1/2 h-8 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full ${currentIsInsideCluster ? "bg-[radial-gradient(circle,rgba(226,232,240,0.22)_0%,rgba(226,232,240,0.08)_38%,rgba(226,232,240,0)_72%)]" : "bg-[radial-gradient(circle,rgba(248,250,252,0.16)_0%,rgba(226,232,240,0.05)_38%,rgba(226,232,240,0)_72%)]"}`}
+                  className={`absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full ${currentIsInsideCluster ? "bg-[radial-gradient(circle,rgba(226,232,240,0.22)_0%,rgba(226,232,240,0.07)_46%,rgba(226,232,240,0)_74%)]" : "bg-[radial-gradient(circle,rgba(226,232,240,0.16)_0%,rgba(226,232,240,0.05)_44%,rgba(226,232,240,0)_74%)]"}`}
                   style={currentMarkerStyle}
                 />
                 <div
-                  className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/14 bg-[radial-gradient(circle_at_35%_35%,rgba(248,250,252,0.85),rgba(148,163,184,0.28)_42%,rgba(15,23,42,0.96)_78%)] shadow-[0_0_18px_rgba(226,232,240,0.2)]"
+                  className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-stealth-950`}
                   style={currentMarkerStyle}
-                >
-                  <div className="absolute inset-[3px] rounded-full bg-stealth-950/80" />
-                </div>
+                />
               </>
             )}
           </div>
