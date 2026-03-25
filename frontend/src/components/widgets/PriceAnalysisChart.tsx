@@ -202,14 +202,6 @@ export function PriceAnalysisChart({
               ) : (
                 <div className="text-sm text-gray-400">Price history unavailable for overlay.</div>
               )}
-              />
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-green-400 font-semibold">Take Profit</p>
-              <p className="text-xs text-green-300">${takeProfit.toFixed(2)}</p>
-              <p className="text-xs text-green-200">+{tpUpside.toFixed(1)}%</p>
-            </div>
-          </div>
         </div>
       </div>
       
