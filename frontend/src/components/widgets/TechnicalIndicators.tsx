@@ -295,14 +295,17 @@ export function TechnicalIndicators({
         return null;
       }
 
+      const candle = candles[candleIndex];
+
       return {
         ...event,
         eventKey: `${event.date}-${event.side}-${event.price}-${event.volume}`,
+        anchorPrice: candle.open,
         candleIndex,
         markerRadius: Math.max(4, Math.min(9, 3 + event.strength * 1.15)),
       };
     })
-    .filter((event): event is FlowEventPoint & { eventKey: string; candleIndex: number; markerRadius: number } => event !== null);
+    .filter((event): event is FlowEventPoint & { eventKey: string; anchorPrice: number; candleIndex: number; markerRadius: number } => event !== null);
   const activeFlowEvent = overlayEvents.find((event) => event.eventKey === activeFlowEventKey) ?? null;
 
   const volumeChartHeight = 160;
@@ -412,7 +415,7 @@ export function TechnicalIndicators({
 
             {overlayEvents.map((event) => {
               const x = scaleX(event.candleIndex);
-              const y = scalePrice(event.price);
+              const y = scalePrice(event.anchorPrice);
               const fill = event.side === "buy" ? chartColors.priceUp : event.side === "sell" ? chartColors.priceDown : chartColors.tick;
               const stroke = event.side === "buy" ? "#bbf7d0" : event.side === "sell" ? "#fecaca" : "#e2e8f0";
 
@@ -429,7 +432,7 @@ export function TechnicalIndicators({
                     strokeWidth="1.1"
                     tabIndex={0}
                     role="button"
-                    aria-label={`${event.side} event on ${event.date} at $${event.price.toFixed(2)}`}
+                    aria-label={`${event.side} event on ${event.date} anchored to candle open at $${event.anchorPrice.toFixed(2)}`}
                     onMouseEnter={() => setActiveFlowEventKey(event.eventKey)}
                     onMouseLeave={() => setActiveFlowEventKey((current) => (current === event.eventKey ? null : current))}
                     onFocus={() => setActiveFlowEventKey(event.eventKey)}
@@ -453,7 +456,7 @@ export function TechnicalIndicators({
                   {activeFlowEvent.side.toUpperCase()} · {activeFlowEvent.date}
                 </div>
                 <div className="text-gray-400">
-                  ${activeFlowEvent.price.toFixed(2)} · z {activeFlowEvent.volume_z.toFixed(2)} · {formatCompact(activeFlowEvent.notional)}
+                  open ${activeFlowEvent.anchorPrice.toFixed(2)} · event ${activeFlowEvent.price.toFixed(2)} · z {activeFlowEvent.volume_z.toFixed(2)} · {formatCompact(activeFlowEvent.notional)}
                 </div>
               </div>
             ) : (
