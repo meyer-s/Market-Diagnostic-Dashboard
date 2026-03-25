@@ -127,12 +127,12 @@ function getSignalClasses(signal: FlowSignal["signal"]): string {
 
 function getBubbleSurface(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
-    return "border-emerald-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.95)_68%,rgba(74,222,128,0.48)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.12),0_0_22px_rgba(74,222,128,0.3)]";
+    return "border-emerald-300/80 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_64%,rgba(74,222,128,0.58)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.16),0_0_28px_rgba(74,222,128,0.38)]";
   }
   if (signal === "distribution") {
-    return "border-rose-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.95)_68%,rgba(251,113,133,0.48)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.12),0_0_22px_rgba(251,113,133,0.28)]";
+    return "border-rose-300/80 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_64%,rgba(251,113,133,0.58)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.16),0_0_28px_rgba(251,113,133,0.36)]";
   }
-  return "border-slate-300/45 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.95)_70%,rgba(148,163,184,0.34)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.1),0_0_18px_rgba(148,163,184,0.2)]";
+  return "border-slate-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_66%,rgba(148,163,184,0.42)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.14),0_0_22px_rgba(148,163,184,0.24)]";
 }
 
 function totalNotional(row: FlowSignal): number {
@@ -161,7 +161,7 @@ function longestDirectionalStreak(timeline: FlowTimelineBucket[], direction: "po
 
 function SignalPill({ signal }: { signal: FlowSignal["signal"] }) {
   return (
-    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold uppercase tracking-wide ${getSignalClasses(signal)}`}>
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getSignalClasses(signal)}`}>
       {signal}
     </span>
   );
@@ -176,9 +176,9 @@ function GroupBadge({ label, value, tone = "default" }: { label: string; value: 
         : "border-stealth-700 bg-stealth-900/70 text-stealth-200";
 
   return (
-    <div className={`rounded-xl border px-3 py-2 ${toneClass}`}>
+    <div className={`rounded-xl border px-2.5 py-1.5 ${toneClass}`}>
       <div className="text-[10px] uppercase tracking-[0.18em] opacity-70">{label}</div>
-      <div className="mt-1 text-sm font-semibold">{value}</div>
+      <div className="mt-0.5 text-sm font-semibold">{value}</div>
     </div>
   );
 }
@@ -311,7 +311,7 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
               key={`${row.category}-${row.symbol}`}
               type="button"
               onClick={() => onSelect(row.symbol)}
-              className={`flex shrink-0 flex-col items-center justify-center rounded-full px-2 text-center transition duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
+              className={`flex shrink-0 flex-col items-center justify-center rounded-full border-2 px-2 text-center transition duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
               style={{ width: `${size}px`, height: `${size}px` }}
             >
               <span className="max-w-full text-center text-[13px] font-semibold leading-tight tracking-wide md:text-sm">{row.symbol}</span>
@@ -380,10 +380,10 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
 
       {timeline.length > 0 && <div className="mt-4"><TimelineCluster timeline={timeline} /></div>}
 
-      <div className="mt-4 rounded-2xl border border-stealth-700 bg-stealth-950/45 p-3">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Latest Triggered Bars</div>
-        <div className="mt-2 space-y-2">
-          {row.recent_events.slice(0, 4).map((event) => (
+      <div className="mt-3 rounded-2xl border border-stealth-700 bg-stealth-950/45 p-2.5">
+        <div className="text-[10px] uppercase tracking-[0.2em] text-stealth-500">Latest Triggers</div>
+        <div className="mt-2 space-y-1.5">
+          {row.recent_events.slice(0, 2).map((event) => (
             <div key={`${row.symbol}-${event.date}-${event.side}-${event.price}`} className="flex items-center justify-between rounded-xl border border-stealth-800 bg-stealth-900/60 px-3 py-2 text-xs">
               <div>
                 <div className="font-medium text-stealth-100">{new Date(event.date).toLocaleDateString()}</div>
@@ -444,21 +444,27 @@ function GroupSection({
 function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal[]; tone: "buy" | "sell" }) {
   const sectionClass = tone === "buy" ? "border-emerald-700/40 bg-emerald-950/20" : "border-rose-700/40 bg-rose-950/20";
   const textClass = tone === "buy" ? "text-emerald-300" : "text-rose-300";
+  const compactItems = items.slice(0, 4);
 
   return (
-    <section className={`rounded-3xl border p-4 sm:p-5 ${sectionClass}`}>
-      <h2 className={`text-lg font-semibold ${textClass}`}>{title}</h2>
-      <div className="mt-4 space-y-3">
-        {items.length === 0 && <p className="text-sm text-stealth-300">No strong signals yet.</p>}
-        {items.map((item, index) => (
-          <div key={`${title}-${item.symbol}`} className="flex items-center justify-between rounded-xl bg-stealth-900/50 px-4 py-3">
-            <div>
-              <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">#{index + 1}</div>
-              <div className="mt-1 font-semibold text-stealth-100">{item.symbol}</div>
-            </div>
-            <div className="text-right">
-              <div className={`font-semibold ${textClass}`}>{formatCompactCurrency(item.net_flow_usd)}</div>
-              <div className="text-xs text-stealth-400">confidence {item.confidence.toFixed(1)}</div>
+    <section className={`rounded-[24px] border p-3 ${sectionClass}`}>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className={`text-sm font-semibold ${textClass}`}>{title}</h2>
+        <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Top 4</div>
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {compactItems.length === 0 && <p className="text-sm text-stealth-300">No strong signals yet.</p>}
+        {compactItems.map((item, index) => (
+          <div key={`${title}-${item.symbol}`} className="rounded-xl bg-stealth-900/50 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">#{index + 1}</div>
+                <div className="mt-0.5 font-semibold text-stealth-100">{item.symbol}</div>
+              </div>
+              <div className="text-right">
+                <div className={`text-sm font-semibold ${textClass}`}>{formatCompactCurrency(item.net_flow_usd)}</div>
+                <div className="text-[10px] text-stealth-400">{item.confidence.toFixed(0)} conf</div>
+              </div>
             </div>
           </div>
         ))}
@@ -511,16 +517,16 @@ export default function InstitutionalFlow() {
 
   return (
     <div className="mx-auto max-w-7xl p-3 text-stealth-100 sm:p-4">
-      <div className="mb-4 rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top_left,rgba(58,94,138,0.32),rgba(13,18,29,0.98)_55%)] p-4 sm:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mb-3 rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top_left,rgba(58,94,138,0.32),rgba(13,18,29,0.98)_55%)] p-3.5 sm:p-4">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="text-xs uppercase tracking-[0.25em] text-stealth-400">Institutional Flow</div>
-            <h1 className="mt-1.5 text-2xl font-bold tracking-tight">Clustered Volume Dashboard</h1>
-            <p className="mt-1.5 max-w-2xl text-xs text-stealth-300 sm:text-sm">
+            <h1 className="mt-1 text-xl font-bold tracking-tight">Clustered Volume Dashboard</h1>
+            <p className="mt-1 max-w-2xl text-xs text-stealth-300">
               Bubble constellations surface where clustered accumulation and distribution are concentrating across sectors, metals, crypto, and stocks.
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2">
             <GroupBadge label="Signals" value={totalSignals} />
             <GroupBadge label="Accumulations" value={totalAccumulations} tone="buy" />
             <GroupBadge label="Distributions" value={totalDistributions} tone="sell" />
@@ -528,9 +534,9 @@ export default function InstitutionalFlow() {
         </div>
 
         {!!data?.stock_selection?.symbols?.length && (
-          <div className="mt-4 rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
+          <div className="mt-3 rounded-2xl border border-stealth-700 bg-stealth-950/55 p-2.5">
             <div className="text-[10px] uppercase tracking-[0.22em] text-stealth-500">Auto-selected stock basket</div>
-            <div className="mt-1.5 text-xs text-stealth-200 sm:text-sm">
+            <div className="mt-1 text-xs text-stealth-200">
               Top {data.stock_selection.count} stocks by close dollar volume: <span className="font-semibold text-stealth-100">{data.stock_selection.symbols.join(", ")}</span>
             </div>
           </div>
@@ -542,15 +548,17 @@ export default function InstitutionalFlow() {
 
       {data && (
         <>
-          <div className="mb-4 grid gap-3 lg:grid-cols-2">
+          <div className="mb-3 grid gap-2 lg:grid-cols-2">
             <LeadersPanel title="Top Accumulation" items={data.leaders.accumulation} tone="buy" />
             <LeadersPanel title="Top Distribution" items={data.leaders.distribution} tone="sell" />
           </div>
 
-          <div className="mb-4 rounded-2xl border border-stealth-700 bg-stealth-850/50 p-3 text-xs text-stealth-300">
-            <p><strong>Method:</strong> {data.method.description}</p>
+          <div className="mb-3 rounded-2xl border border-stealth-700 bg-stealth-850/50 p-2.5 text-xs text-stealth-300">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p><strong>Method:</strong> {data.method.description}</p>
+              <p>As of {new Date(data.as_of).toLocaleString()}</p>
+            </div>
             <p className="mt-1"><strong>Important:</strong> {data.method.note}</p>
-            <p className="mt-1">As of {new Date(data.as_of).toLocaleString()}</p>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.78fr)] xl:items-start">
