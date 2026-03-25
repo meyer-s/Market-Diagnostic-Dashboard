@@ -134,22 +134,22 @@ function getSignalClasses(signal: FlowSignal["signal"]): string {
 
 function getBubbleSurface(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
-    return "border-emerald-300/80 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_64%,rgba(74,222,128,0.58)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.16),0_0_28px_rgba(74,222,128,0.38)]";
+    return "border-white/8 bg-[radial-gradient(circle_at_center,rgba(6,12,20,0.99)_86%,rgba(74,222,128,0.10)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.20),0_0_32px_rgba(74,222,128,0.44)]";
   }
   if (signal === "distribution") {
-    return "border-rose-300/80 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_64%,rgba(251,113,133,0.58)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.16),0_0_28px_rgba(251,113,133,0.36)]";
+    return "border-white/8 bg-[radial-gradient(circle_at_center,rgba(6,12,20,0.99)_86%,rgba(251,113,133,0.10)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.22),0_0_32px_rgba(251,113,133,0.42)]";
   }
-  return "border-slate-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_66%,rgba(148,163,184,0.42)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.14),0_0_22px_rgba(148,163,184,0.24)]";
+  return "border-white/6 bg-[radial-gradient(circle_at_center,rgba(6,12,20,0.98)_88%,rgba(148,163,184,0.07)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.10),0_0_20px_rgba(148,163,184,0.20)]";
 }
 
 function getConfidenceStrokeClass(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
-    return "stroke-emerald-300/75 drop-shadow-[0_0_5px_rgba(74,222,128,0.2)]";
+    return "stroke-emerald-300/92 drop-shadow-[0_0_7px_rgba(74,222,128,0.55)]";
   }
   if (signal === "distribution") {
-    return "stroke-rose-300/75 drop-shadow-[0_0_5px_rgba(251,113,133,0.2)]";
+    return "stroke-rose-300/92 drop-shadow-[0_0_7px_rgba(251,113,133,0.55)]";
   }
-  return "stroke-slate-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
+  return "stroke-slate-300/80 drop-shadow-[0_0_5px_rgba(148,163,184,0.30)]";
 }
 
 function ConfidenceArc({
@@ -189,8 +189,8 @@ function ConfidenceArc({
 
 function BubbleConfidenceArc({ confidence, signal }: { confidence: number; signal: FlowSignal["signal"] }) {
   return (
-    <div className="pointer-events-none absolute inset-[5px] opacity-90">
-      <ConfidenceArc confidence={confidence} signal={signal} sizeClass="h-full w-full" strokeWidth={4.5} />
+    <div className="pointer-events-none absolute inset-[2px] opacity-95">
+      <ConfidenceArc confidence={confidence} signal={signal} sizeClass="h-full w-full" strokeWidth={7} />
     </div>
   );
 }
