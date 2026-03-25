@@ -69,19 +69,6 @@ export function PriceAnalysisChart({
       analystColor = "text-blue-300";
     }
   }
-
-  const historyStart = priceHistory[0]?.date;
-  const historyEnd = priceHistory[priceHistory.length - 1]?.date;
-  const overlayEvents = flowEvents
-    .filter((event) => !historyStart || !historyEnd || (event.date >= historyStart && event.date <= historyEnd))
-    .map((event) => ({
-      ...event,
-      markerSize: Math.max(60, Math.min(220, event.strength * 30)),
-    }));
-  const buyEvents = overlayEvents.filter((event) => event.side === "buy");
-  const sellEvents = overlayEvents.filter((event) => event.side === "sell");
-  const neutralEvents = overlayEvents.filter((event) => event.side === "neutral");
-  const hasPriceHistory = priceHistory.length > 1;
   
   return (
     <div className="bg-gray-900 rounded-lg p-3 sm:p-4 border border-gray-700">

@@ -540,6 +540,7 @@ export default function StockAnalysis() {
               technicalData={technicalData ?? undefined}
               optionsFlow={optionsFlow}
               optionalityMetrics={optionalityMetrics}
+              flowEvents={institutionalFlow?.event_history ?? []}
             />
           )}
 

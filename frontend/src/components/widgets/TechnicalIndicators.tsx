@@ -67,16 +67,28 @@ interface OptionalityMetrics {
   avg_edr: number | null;
 }
 
+interface FlowEventPoint {
+  date: string;
+  price: number;
+  volume: number;
+  notional: number;
+  volume_z: number;
+  side: "buy" | "sell" | "neutral";
+  strength: number;
+}
+
 interface TechnicalIndicatorsProps {
   technicalData?: TechnicalData;
   optionsFlow?: OptionsFlowData | null;
   optionalityMetrics?: OptionalityMetrics | null;
+  flowEvents?: FlowEventPoint[];
 }
 
 export function TechnicalIndicators({
   technicalData,
   optionsFlow,
   optionalityMetrics,
+  flowEvents = [],
 }: TechnicalIndicatorsProps) {
   if (!technicalData && !optionsFlow) {
     return (
@@ -272,6 +284,33 @@ export function TechnicalIndicators({
     ? sortedVolumes[Math.floor(sortedVolumes.length / 2)]
     : 0;
 
+  const candleDateValues = candles.map((candle) => new Date(`${candle.date}T00:00:00`).getTime());
+  const overlayEvents = flowEvents
+    .map((event) => {
+      const eventTime = new Date(`${event.date}T00:00:00`).getTime();
+      let closestIndex = -1;
+      let closestDiff = Number.POSITIVE_INFINITY;
+
+      candleDateValues.forEach((candleTime, index) => {
+        const diff = Math.abs(candleTime - eventTime);
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closestIndex = index;
+        }
+      });
+
+      if (closestIndex < 0 || closestDiff > 3 * 24 * 60 * 60 * 1000) {
+        return null;
+      }
+
+      return {
+        ...event,
+        candleIndex: closestIndex,
+        markerRadius: Math.max(4, Math.min(9, 3 + event.strength * 1.15)),
+      };
+    })
+    .filter((event): event is FlowEventPoint & { candleIndex: number; markerRadius: number } => event !== null);
+
   const volumeChartHeight = 160;
   const volumePadding = { top: 10, right: 30, bottom: 25, left: 55 };
   const volumePlotHeight = volumeChartHeight - volumePadding.top - volumePadding.bottom;
@@ -287,6 +326,7 @@ export function TechnicalIndicators({
       <div className="bg-gray-800 rounded-lg p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base sm:text-lg font-semibold">Price History ({technicalData.lookback_days}-Day)</h3>
+          <div className="text-[10px] text-gray-500">{overlayEvents.length} flow markers</div>
         </div>
 
         <div className="bg-gray-900 rounded-lg p-4 mb-4 overflow-x-auto">
@@ -334,6 +374,24 @@ export function TechnicalIndicators({
                   <line x1={x} y1={h} x2={x} y2={l} stroke={color} strokeWidth="1" opacity="0.6" />
                   {/* Body */}
                   <rect x={x - wickWidth} y={bodyTop} width={wickWidth * 2} height={bodyHeight} fill={color} opacity="0.8" />
+                </g>
+              );
+            })}
+
+            {overlayEvents.map((event) => {
+              const x = scaleX(event.candleIndex);
+              const y = scalePrice(event.price);
+              const fill = event.side === "buy" ? chartColors.priceUp : event.side === "sell" ? chartColors.priceDown : chartColors.tick;
+              const stroke = event.side === "buy" ? "#bbf7d0" : event.side === "sell" ? "#fecaca" : "#e2e8f0";
+
+              return (
+                <g key={`flow-${event.date}-${event.side}-${event.price}-${event.volume}`}>
+                  <circle cx={x} cy={y} r={event.markerRadius + 2.5} fill={fill} opacity="0.12" />
+                  <circle cx={x} cy={y} r={event.markerRadius} fill={fill} fillOpacity="0.78" stroke={stroke} strokeWidth="1.25">
+                    <title>
+                      {`${event.side.toUpperCase()} ${event.date} | $${event.price.toFixed(2)} | z ${event.volume_z.toFixed(2)} | ${formatCompact(event.notional)}`}
+                    </title>
+                  </circle>
                 </g>
               );
             })}
@@ -421,6 +479,14 @@ export function TechnicalIndicators({
             </p>
           </div>
         </div>
+
+        {overlayEvents.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-gray-400">
+            <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-1 text-green-300">Buy events</span>
+            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-300">Sell events</span>
+            <span className="rounded-full border border-gray-500/30 bg-gray-500/10 px-2 py-1 text-gray-300">Neutral events</span>
+          </div>
+        )}
       </div>
 
       {/* RSI */}
