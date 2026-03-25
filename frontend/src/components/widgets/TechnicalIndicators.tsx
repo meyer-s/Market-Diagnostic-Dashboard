@@ -4,6 +4,7 @@
  * Displays price history (252 days), RSI, and MACD charts with real data
  */
 
+import { useState } from "react";
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import { getFamilyColor, statePalette } from "../../theme/metricColors";
@@ -90,6 +91,8 @@ export function TechnicalIndicators({
   optionalityMetrics,
   flowEvents = [],
 }: TechnicalIndicatorsProps) {
+  const [activeFlowEventKey, setActiveFlowEventKey] = useState<string | null>(null);
+
   if (!technicalData && !optionsFlow) {
     return (
       <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
@@ -284,32 +287,23 @@ export function TechnicalIndicators({
     ? sortedVolumes[Math.floor(sortedVolumes.length / 2)]
     : 0;
 
-  const candleDateValues = candles.map((candle) => new Date(`${candle.date}T00:00:00`).getTime());
+  const candleIndexByDate = new Map(candles.map((candle, index) => [candle.date, index]));
   const overlayEvents = flowEvents
     .map((event) => {
-      const eventTime = new Date(`${event.date}T00:00:00`).getTime();
-      let closestIndex = -1;
-      let closestDiff = Number.POSITIVE_INFINITY;
-
-      candleDateValues.forEach((candleTime, index) => {
-        const diff = Math.abs(candleTime - eventTime);
-        if (diff < closestDiff) {
-          closestDiff = diff;
-          closestIndex = index;
-        }
-      });
-
-      if (closestIndex < 0 || closestDiff > 3 * 24 * 60 * 60 * 1000) {
+      const candleIndex = candleIndexByDate.get(event.date);
+      if (candleIndex === undefined) {
         return null;
       }
 
       return {
         ...event,
-        candleIndex: closestIndex,
+        eventKey: `${event.date}-${event.side}-${event.price}-${event.volume}`,
+        candleIndex,
         markerRadius: Math.max(4, Math.min(9, 3 + event.strength * 1.15)),
       };
     })
-    .filter((event): event is FlowEventPoint & { candleIndex: number; markerRadius: number } => event !== null);
+    .filter((event): event is FlowEventPoint & { eventKey: string; candleIndex: number; markerRadius: number } => event !== null);
+  const activeFlowEvent = overlayEvents.find((event) => event.eventKey === activeFlowEventKey) ?? null;
 
   const volumeChartHeight = 160;
   const volumePadding = { top: 10, right: 30, bottom: 25, left: 55 };
@@ -423,13 +417,24 @@ export function TechnicalIndicators({
               const stroke = event.side === "buy" ? "#bbf7d0" : event.side === "sell" ? "#fecaca" : "#e2e8f0";
 
               return (
-                <g key={`flow-${event.date}-${event.side}-${event.price}-${event.volume}`}>
-                  <circle cx={x} cy={y} r={event.markerRadius + 2.5} fill={fill} opacity="0.12" />
-                  <circle cx={x} cy={y} r={event.markerRadius} fill={fill} fillOpacity="0.78" stroke={stroke} strokeWidth="1.25">
-                    <title>
-                      {`${event.side.toUpperCase()} ${event.date} | $${event.price.toFixed(2)} | z ${event.volume_z.toFixed(2)} | ${formatCompact(event.notional)}`}
-                    </title>
-                  </circle>
+                <g key={`flow-${event.eventKey}`}>
+                  <circle cx={x} cy={y} r={event.markerRadius + 2} fill={fill} opacity="0.08" />
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={event.markerRadius}
+                    fill={fill}
+                    fillOpacity="0.54"
+                    stroke={stroke}
+                    strokeWidth="1.1"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${event.side} event on ${event.date} at $${event.price.toFixed(2)}`}
+                    onMouseEnter={() => setActiveFlowEventKey(event.eventKey)}
+                    onMouseLeave={() => setActiveFlowEventKey((current) => (current === event.eventKey ? null : current))}
+                    onFocus={() => setActiveFlowEventKey(event.eventKey)}
+                    onBlur={() => setActiveFlowEventKey((current) => (current === event.eventKey ? null : current))}
+                  />
                 </g>
               );
             })}
@@ -439,6 +444,23 @@ export function TechnicalIndicators({
             <line x1={padding.left} y1={chartHeight - padding.bottom} x2={chartWidth - padding.right} y2={chartHeight - padding.bottom} stroke={chartColors.axis} strokeWidth="2" />
           </svg>
         </div>
+
+        {overlayEvents.length > 0 && (
+          <div className="mb-4 rounded-lg border border-gray-700 bg-gray-900/80 px-3 py-2 text-xs text-gray-300">
+            {activeFlowEvent ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-medium text-gray-100">
+                  {activeFlowEvent.side.toUpperCase()} · {activeFlowEvent.date}
+                </div>
+                <div className="text-gray-400">
+                  ${activeFlowEvent.price.toFixed(2)} · z {activeFlowEvent.volume_z.toFixed(2)} · {formatCompact(activeFlowEvent.notional)}
+                </div>
+              </div>
+            ) : (
+              <div className="text-gray-400">Hover or focus a flow marker for event details.</div>
+            )}
+          </div>
+        )}
 
         {/* Price Info Row */}
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
