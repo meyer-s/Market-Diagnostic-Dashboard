@@ -144,12 +144,12 @@ function getBubbleSurface(signal: FlowSignal["signal"]): string {
 
 function getConfidenceStrokeClass(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
-    return "stroke-emerald-300/92 drop-shadow-[0_0_7px_rgba(74,222,128,0.55)]";
+    return "stroke-emerald-300/75 drop-shadow-[0_0_5px_rgba(74,222,128,0.2)]";
   }
   if (signal === "distribution") {
-    return "stroke-rose-300/92 drop-shadow-[0_0_7px_rgba(251,113,133,0.55)]";
+    return "stroke-rose-300/75 drop-shadow-[0_0_5px_rgba(251,113,133,0.2)]";
   }
-  return "stroke-slate-300/80 drop-shadow-[0_0_5px_rgba(148,163,184,0.30)]";
+  return "stroke-slate-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
 }
 
 function ConfidenceArc({
@@ -189,8 +189,8 @@ function ConfidenceArc({
 
 function BubbleConfidenceArc({ confidence, signal }: { confidence: number; signal: FlowSignal["signal"] }) {
   return (
-    <div className="pointer-events-none absolute inset-[2px] opacity-95">
-      <ConfidenceArc confidence={confidence} signal={signal} sizeClass="h-full w-full" strokeWidth={7} />
+    <div className="pointer-events-none absolute inset-[5px] opacity-90">
+      <ConfidenceArc confidence={confidence} signal={signal} sizeClass="h-full w-full" strokeWidth={4.5} />
     </div>
   );
 }
