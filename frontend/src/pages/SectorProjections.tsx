@@ -625,16 +625,20 @@ export default function SectorProjections() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4">
             <h2 className="text-base sm:text-lg font-semibold">Sector Rankings</h2>
             <div className="flex flex-wrap gap-1 sm:gap-2">
+            aria-expanded={methodologyOpen}
               {["T", "3m", "6m", "12m"].map((h) => {
                 if (h === "T" && !tScoresValid) return null;
                 return (
-                  <button
-                    key={h}
-                    onClick={() => setSelectedHorizon(h as "T" | "3m" | "6m" | "12m")}
+              <span className={`collapsible-icon ${methodologyOpen ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </span>
                     className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition min-h-10 ${
                       selectedHorizon === h
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+          <div className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
+            <div className="collapsible-panel-inner">
+              <div className="rounded-b-lg border border-t-0 border-gray-700 bg-gray-800 px-4 pb-6 pt-4 text-xs text-gray-300 sm:px-6 sm:text-sm">
                     }`}
                   >
                     {h === "T" ? "T" : h === "3m" ? "T+3M" : h === "6m" ? "T+6M" : "T+12M"}
@@ -718,6 +722,7 @@ export default function SectorProjections() {
                   <button
                     onClick={() => setExpandedCard(expandedCard === row.sector_symbol ? null : row.sector_symbol)}
                     className="w-full p-2 sm:p-3 flex items-start justify-between gap-2 sm:gap-3 hover:bg-black/20 transition-colors"
+                    aria-expanded={expandedCard === row.sector_symbol}
                   >
                     <div className="text-left">
                       <div className="text-xs sm:text-sm font-semibold text-gray-100">
@@ -735,22 +740,26 @@ export default function SectorProjections() {
                       }>
                         {row.classification}
                       </span>
-                      <div className="text-lg font-bold text-gray-500">
-                        {expandedCard === row.sector_symbol ? '-' : '+'}
-                      </div>
+                      <span className={`collapsible-icon ${expandedCard === row.sector_symbol ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </span>
                     </div>
                   </button>
                   <div className="px-3 pt-2 pb-3">
                     <ScoreBar label="Total" value={row.score_total} color={scoreBarColors.total} />
                   </div>
-                  {expandedCard === row.sector_symbol && (
-                    <div className="border-t border-gray-700 bg-black/20 p-3 space-y-2">
-                      <ScoreBar label="Trend" value={row.score_trend} color={scoreBarColors.trend} />
-                      <ScoreBar label="Rel" value={row.score_rel} color={scoreBarColors.rel} />
-                      <ScoreBar label="Risk" value={row.score_risk} color={scoreBarColors.risk} />
-                      <ScoreBar label="Regime" value={row.score_regime} color={scoreBarColors.regime} />
+                  <div className={`collapsible-panel ${expandedCard === row.sector_symbol ? 'collapsible-panel-open' : ''}`}>
+                    <div className="collapsible-panel-inner">
+                      <div className="border-t border-gray-700 bg-black/20 p-3 space-y-2">
+                        <ScoreBar label="Trend" value={row.score_trend} color={scoreBarColors.trend} />
+                        <ScoreBar label="Rel" value={row.score_rel} color={scoreBarColors.rel} />
+                        <ScoreBar label="Risk" value={row.score_risk} color={scoreBarColors.risk} />
+                        <ScoreBar label="Regime" value={row.score_regime} color={scoreBarColors.regime} />
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -763,20 +772,27 @@ export default function SectorProjections() {
         <button
           onClick={() => setReadingGuideOpen(!readingGuideOpen)}
           className="w-full bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 sm:p-4 text-left hover:bg-blue-900/30 transition"
+          aria-expanded={readingGuideOpen}
         >
           <div className="flex items-center justify-between">
             <h3 className="text-xs sm:text-sm font-semibold text-blue-200">How to Read This Chart</h3>
-            <span className="text-blue-300 text-lg sm:text-xl">{readingGuideOpen ? '-' : '+'}</span>
+            <span className={`collapsible-icon ${readingGuideOpen ? 'collapsible-icon-open' : ''} border-blue-700/50 bg-blue-950/30 text-blue-300`} aria-hidden="true">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
           </div>
         </button>
-        {readingGuideOpen && (
-          <div className="bg-blue-900/20 border border-blue-700/50 border-t-0 rounded-b-lg p-3 sm:p-4 text-xs sm:text-sm text-blue-200/80 space-y-2 leading-relaxed">
-            <p><strong>Score (0-100):</strong> Higher scores indicate stronger technical outlook based on trend, relative strength vs SPY, risk metrics, and market regime alignment. Compare sectors vertically-higher is better.</p>
-            <p><strong>Score Changes:</strong> Lines moving up show improving outlook; lines moving down show deteriorating conditions. Crossing lines indicate sector rotation.</p>
-            <p><strong>Uncertainty Cones (Click a Sector):</strong> The shaded area shows confidence range based on score divergence. Larger gaps create wider cones; smaller gaps keep them tighter.</p>
-            <p><strong>Historical (-3M):</strong> Score from 3 months ago, or estimated offset to preserve trend shape.</p>
+        <div className={`collapsible-panel ${readingGuideOpen ? 'collapsible-panel-open' : ''}`}>
+          <div className="collapsible-panel-inner">
+            <div className="bg-blue-900/20 border border-blue-700/50 border-t-0 rounded-b-lg p-3 sm:p-4 text-xs sm:text-sm text-blue-200/80 space-y-2 leading-relaxed">
+              <p><strong>Score (0-100):</strong> Higher scores indicate stronger technical outlook based on trend, relative strength vs SPY, risk metrics, and market regime alignment. Compare sectors vertically-higher is better.</p>
+              <p><strong>Score Changes:</strong> Lines moving up show improving outlook; lines moving down show deteriorating conditions. Crossing lines indicate sector rotation.</p>
+              <p><strong>Uncertainty Cones (Click a Sector):</strong> The shaded area shows confidence range based on score divergence. Larger gaps create wider cones; smaller gaps keep them tighter.</p>
+              <p><strong>Historical (-3M):</strong> Score from 3 months ago, or estimated offset to preserve trend shape.</p>
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Methodology Explanation - Collapsible */}
@@ -784,14 +800,18 @@ export default function SectorProjections() {
         <button
           onClick={() => setMethodologyOpen(!methodologyOpen)}
           className="w-full px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between hover:bg-gray-750 transition-colors rounded-lg"
+          aria-expanded={methodologyOpen}
         >
           <h2 className="text-base sm:text-lg font-semibold">Methodology & Algorithm Details</h2>
-          <div className="text-lg font-bold text-gray-500">
-            {methodologyOpen ? '-' : '+'}
-          </div>
+          <span className={`collapsible-icon ${methodologyOpen ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
         </button>
-        {methodologyOpen && (
-          <div className="px-4 sm:px-6 pb-6 text-xs sm:text-sm text-gray-300 space-y-5">
+        <div className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
+          <div className="collapsible-panel-inner">
+            <div className="px-4 sm:px-6 pb-6 text-xs sm:text-sm text-gray-300 space-y-5">
             <div>
               <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Transparent Rule-Based Scoring</h3>
               <p className="text-gray-400 mb-2 text-xs sm:text-sm">
@@ -914,8 +934,9 @@ export default function SectorProjections() {
                 <p><strong>System State:</strong> Market Stability Dashboard composite indicator model</p>
               </div>
             </div>
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Disclaimer */}

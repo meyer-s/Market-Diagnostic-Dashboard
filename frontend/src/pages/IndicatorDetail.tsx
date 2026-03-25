@@ -476,21 +476,28 @@ export default function IndicatorDetail() {
       {meta?.metadata && (() => {
         const firstSentence = meta.metadata.description.split(/\.\s+/)[0].replace(/\.$/, "");
         return (
-          <div className="bg-stealth-800 border border-stealth-700 rounded-lg mb-4 md:mb-6">
+          <div className="surface-card-strong mb-4 overflow-hidden md:mb-6">
             <button
               onClick={() => setDescExpanded(e => !e)}
-              className="w-full flex items-start justify-between gap-4 p-4 md:p-5 text-left"
+              className="flex w-full items-start justify-between gap-4 p-4 text-left md:p-5"
+              aria-expanded={descExpanded}
             >
-              <p className="text-sm md:text-base text-stealth-300 leading-relaxed flex-1">
-                {descExpanded ? meta.metadata.description : firstSentence + "."}
-              </p>
-              <span className="text-stealth-400 text-xl leading-none shrink-0 select-none">
-                {descExpanded ? "-" : "+"}
+              <div className="flex-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Indicator Framework</div>
+                <p className="mt-2 flex-1 text-sm leading-relaxed text-stealth-300 md:text-base">
+                  {descExpanded ? meta.metadata.description : firstSentence + "."}
+                </p>
+              </div>
+              <span className={`collapsible-icon ${descExpanded ? 'collapsible-icon-open' : ''} shrink-0`} aria-hidden="true">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </span>
             </button>
 
-            {descExpanded && (
-              <div className="px-4 md:px-5 pb-4 md:pb-5 space-y-3 md:space-y-4 border-t border-stealth-700 pt-3 md:pt-4">
+            <div className={`collapsible-panel ${descExpanded ? 'collapsible-panel-open' : ''}`}>
+              <div className="collapsible-panel-inner">
+                <div className="border-t border-stealth-700 px-4 pb-4 pt-3 md:px-5 md:pb-5 md:pt-4 space-y-3 md:space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                   <div>
                     <h4 className="text-xs md:text-sm font-semibold text-stealth-200 mb-1">Relevance</h4>
@@ -512,7 +519,8 @@ export default function IndicatorDetail() {
                   </div>
                 </div>
               </div>
-            )}
+              </div>
+            </div>
           </div>
         );
       })()}

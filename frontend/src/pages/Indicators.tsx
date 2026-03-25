@@ -1,8 +1,13 @@
 import { useApi } from "../hooks/useApi";
 import { IndicatorStatus } from "../types";
 import { Link } from "react-router-dom";
-import { getStateBadgeClass } from "../utils/styleUtils";
 import MarketLoading from "../components/ui/MarketLoading";
+
+const stateDotMap = {
+  GREEN: "bg-accent-green",
+  YELLOW: "bg-accent-yellow",
+  RED: "bg-accent-red",
+};
 
 function resolveIndicatorDisplay(code: string, name: string) {
   if (code === "ANALYST_ANXIETY") {
@@ -97,7 +102,7 @@ export default function Indicators() {
       </div>
 
       {/* Mobile/Tablet Card View */}
-      <div className="grid auto-rows-fr gap-3 lg:hidden">
+      <div className="grid gap-3 lg:hidden">
         {filteredData.map((i) => (
           <IndicatorCard key={i.code} indicator={i} />
         ))}
@@ -135,14 +140,14 @@ function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
   return (
     <Link to={`/indicators/${routeCode}`}>
       <div className="primary-card primary-card-hover p-3">
-        <div className="flex items-start justify-between mb-2">
+        <div className="mb-2 flex items-start justify-between gap-3">
           <div>
             <div className="text-accent-yellow font-semibold text-sm">{displayCode}</div>
             <div className="text-stealth-300 text-xs mt-0.5">{displayName}</div>
           </div>
-          <div className={getStateBadgeClass(indicator.state)}>
-            {indicator.state}
-          </div>
+          <span className="mt-1 inline-flex items-center" aria-label={`State ${indicator.state}`} title={indicator.state}>
+            <span className={`h-2.5 w-2.5 rounded-full ${stateDotMap[indicator.state]}`}></span>
+          </span>
         </div>
         <div className="flex items-end justify-between">
           <div className="text-lg font-bold text-stealth-100">Score: {indicator.score}</div>

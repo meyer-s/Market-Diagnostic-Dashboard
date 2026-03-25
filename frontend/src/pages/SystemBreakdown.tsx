@@ -71,6 +71,14 @@ export default function SystemBreakdown() {
     });
   };
 
+  const renderDisclosureIcon = (isExpanded: boolean) => (
+    <span className={`collapsible-icon ${isExpanded ? "collapsible-icon-open" : ""}`} aria-hidden="true">
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </span>
+  );
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -519,14 +527,16 @@ export default function SystemBreakdown() {
         <button
           onClick={() => toggleSection('methodology')}
           className="collapsible-header"
+          aria-expanded={expandedSections.has('methodology')}
         >
           <div className="flex items-center gap-2">
             <h3 className="text-lg md:text-xl font-semibold text-stealth-100">Composite Score Calculation</h3>
           </div>
-          <span className="text-stealth-400 text-xl">{expandedSections.has('methodology') ? '-' : '+'}</span>
+          {renderDisclosureIcon(expandedSections.has('methodology'))}
         </button>
-        {expandedSections.has('methodology') && (
-          <div className="collapsible-content">
+        <div className={`collapsible-panel ${expandedSections.has('methodology') ? 'collapsible-panel-open' : ''}`}>
+          <div className="collapsible-panel-inner">
+            <div className="collapsible-content">
             <div className="space-y-4">
               <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 relative">
                 <div className="group absolute top-4 right-4">
@@ -602,7 +612,8 @@ export default function SystemBreakdown() {
               </div>
             </div>
           </div>
-        )}
+          </div>
+        </div>
       </div>
 
       {/* Indicator Weights & Configuration */}
@@ -610,12 +621,14 @@ export default function SystemBreakdown() {
         <button
           onClick={() => toggleSection('weights')}
           className="collapsible-header"
+          aria-expanded={expandedSections.has('weights')}
         >
           <h3 className="text-lg md:text-xl font-semibold text-stealth-100">Indicator Weights & Configuration</h3>
-          <span className="text-stealth-400 text-xl">{expandedSections.has('weights') ? '-' : '+'}</span>
+          {renderDisclosureIcon(expandedSections.has('weights'))}
         </button>
-        {expandedSections.has('weights') && (
-          <div className="collapsible-content">
+        <div className={`collapsible-panel ${expandedSections.has('weights') ? 'collapsible-panel-open' : ''}`}>
+          <div className="collapsible-panel-inner">
+            <div className="collapsible-content">
             <p className="text-xs sm:text-sm text-stealth-300 mb-3 md:mb-4">
               Each indicator is assigned a weight based on its historical association with market stability shifts. 
               Weights reflect how strongly each metric influences the composite score and overall system state. The values below come directly from the live API configuration.
@@ -650,6 +663,7 @@ export default function SystemBreakdown() {
                     <div 
                       className={`flex items-center justify-between mb-2 ${isComposite ? 'cursor-pointer hover:bg-stealth-800/50 -m-4 p-4 rounded-t' : ''}`}
                       onClick={isComposite ? () => toggleSection(`indicator_${meta.code}`) : undefined}
+                      aria-expanded={isComposite ? isExpanded : undefined}
                     >
                       <div className="flex items-center gap-4">
                         <div className="font-semibold text-stealth-100 min-w-[180px]">{meta.name}</div>
@@ -668,7 +682,7 @@ export default function SystemBreakdown() {
                           </div>
                         )}
                         {isComposite && (
-                          <span className="text-stealth-400 text-lg">{isExpanded ? '-' : '+'}</span>
+                          renderDisclosureIcon(isExpanded)
                         )}
                       </div>
                     </div>
@@ -677,7 +691,10 @@ export default function SystemBreakdown() {
                     </div>
                     
                     {/* Expanded details for composite indicators */}
-                    {isComposite && isExpanded && meta.code === 'BOND_MARKET_STABILITY' && (
+                    {isComposite && (
+                      <div className={`collapsible-panel ${isExpanded ? 'collapsible-panel-open' : ''}`}>
+                        <div className="collapsible-panel-inner">
+                    {meta.code === 'BOND_MARKET_STABILITY' && (
                       <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
                         <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
                           <div className="font-mono text-xs text-stealth-300">
@@ -721,7 +738,7 @@ export default function SystemBreakdown() {
                       </div>
                     )}
 
-                    {isComposite && isExpanded && meta.code === 'BREADTH_HEALTH' && (
+                    {meta.code === 'BREADTH_HEALTH' && (
                       <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
                         <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
                           <div className="font-mono text-xs text-stealth-300">
@@ -750,7 +767,7 @@ export default function SystemBreakdown() {
                       </div>
                     )}
                     
-                    {isComposite && isExpanded && meta.code === 'LIQUIDITY_PROXY' && (
+                    {meta.code === 'LIQUIDITY_PROXY' && (
                       <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
                         <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
                           <div className="font-mono text-xs text-stealth-300">
@@ -785,7 +802,7 @@ export default function SystemBreakdown() {
                       </div>
                     )}
                     
-                    {isComposite && isExpanded && meta.code === 'CONSUMER_HEALTH' && (
+                    {meta.code === 'CONSUMER_HEALTH' && (
                       <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
                         <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
                           <div className="font-mono text-xs text-stealth-300">
@@ -823,7 +840,7 @@ export default function SystemBreakdown() {
                       </div>
                     )}
                     
-                    {isComposite && isExpanded && meta.code === 'ANALYST_ANXIETY' && (
+                    {meta.code === 'ANALYST_ANXIETY' && (
                       <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
                         <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
                           <div className="font-mono text-xs text-stealth-300">
@@ -857,7 +874,7 @@ export default function SystemBreakdown() {
                       </div>
                     )}
                     
-                    {isComposite && isExpanded && meta.code === 'SENTIMENT_COMPOSITE' && (
+                    {meta.code === 'SENTIMENT_COMPOSITE' && (
                       <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
                         <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
                           <div className="font-mono text-xs text-stealth-300">
@@ -890,6 +907,9 @@ export default function SystemBreakdown() {
                         </div>
                       </div>
                     )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -907,7 +927,8 @@ export default function SystemBreakdown() {
               </div>
             </div>
           </div>
-        )}
+          </div>
+        </div>
       </div>
 
       {/* Known Limitations */}

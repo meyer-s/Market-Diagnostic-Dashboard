@@ -9,7 +9,6 @@ export default function Topbar() {
   const navItems = [
     { path: "/", label: "Dashboard" },
     { path: "/vision", label: "Vision" },
-    { path: "/indicators", label: "Indicators" },
     { path: "/system-breakdown", label: "System Breakdown" },
   ];
 

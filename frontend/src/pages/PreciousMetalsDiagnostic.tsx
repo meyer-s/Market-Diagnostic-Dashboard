@@ -420,22 +420,33 @@ function MethodologyPanel() {
     setExpandedSections(newExpanded);
   };
 
+  const renderDisclosureIcon = (isExpanded: boolean) => (
+    <span className={`collapsible-icon ${isExpanded ? "collapsible-icon-open" : ""}`} aria-hidden="true">
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </span>
+  );
+
   const Section = ({ id, title, children }: { id: string, title: string, children: React.ReactNode }) => {
     const isExpanded = expandedSections.has(id);
     return (
       <div className="border-b border-stealth-700 last:border-b-0">
         <button
           onClick={() => toggleSection(id)}
-          className="w-full flex justify-between items-center py-3 px-4 hover:bg-stealth-700/50 transition-colors text-left"
+          className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-stealth-700/50"
+          aria-expanded={isExpanded}
         >
           <span className="font-semibold text-stealth-200">{title}</span>
-          <span className="text-stealth-400 text-xl">{isExpanded ? '-' : '+'}</span>
+          {renderDisclosureIcon(isExpanded)}
         </button>
-        {isExpanded && (
-          <div className="px-4 pb-4 text-sm text-stealth-300 space-y-3">
-            {children}
+        <div className={`collapsible-panel ${isExpanded ? "collapsible-panel-open" : ""}`}>
+          <div className="collapsible-panel-inner">
+            <div className="px-4 pb-4 text-sm text-stealth-300 space-y-3">
+              {children}
+            </div>
           </div>
-        )}
+        </div>
       </div>
     );
   };

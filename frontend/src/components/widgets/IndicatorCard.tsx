@@ -26,10 +26,10 @@ const DATA_FREQUENCY: Record<string, { frequency: string; description: string; e
   SENTIMENT_COMPOSITE: { frequency: "Monthly", description: "Composite of Michigan sentiment, business confidence, regional new orders, and CapEx data", expectedLag: 30 },
 };
 
-const colorMap = {
-  GREEN: "text-accent-green",
-  YELLOW: "text-accent-yellow",
-  RED: "text-accent-red",
+const stateDotMap = {
+  GREEN: "bg-accent-green",
+  YELLOW: "bg-accent-yellow",
+  RED: "bg-accent-red",
 };
 
 export default function IndicatorCard({ indicator }: Props) {
@@ -84,26 +84,26 @@ export default function IndicatorCard({ indicator }: Props) {
 
   return (
     <Link to={`/indicators/${routeCode}`} className="block h-full">
-      <div className="primary-card primary-card-hover flex h-full min-h-[278px] flex-col p-4">
-        <div className="min-h-[3.5rem] text-sm leading-7 text-gray-300">{displayName}</div>
-        <div className="mt-2 text-2xl font-semibold">
+      <div className="primary-card primary-card-hover flex h-full flex-col p-3.5">
+        <div className="text-sm leading-6 text-gray-300">{displayName}</div>
+        <div className="mt-1 text-2xl font-semibold">
           {formatValue(indicator.raw_value, 2)}
         </div>
         
         {/* Score Trend Sparkline - matches indicator detail pages */}
-        <div className="mt-3">
+        <div className="mt-2.5">
           <StateSparkline history={history} width={200} height={24} />
         </div>
         
-        <div className="flex justify-between items-center mt-2">
+        <div className="mt-2 flex items-center justify-between">
           <span className="text-sm text-gray-400">Score: {indicator.score}</span>
-          <span className={`font-semibold ${colorMap[indicator.state]}`}>
-            {indicator.state}
+          <span className="inline-flex items-center" aria-label={`State ${indicator.state}`} title={indicator.state}>
+            <span className={`h-2.5 w-2.5 rounded-full ${stateDotMap[indicator.state]}`}></span>
           </span>
         </div>
         
         {/* Timestamp with tooltip */}
-        <div className="mt-auto flex items-center justify-between pt-3 text-xs">
+        <div className="mt-auto flex items-center justify-between pt-2.5 text-xs">
           <div className="flex items-center gap-1.5 group relative">
             {freshnessIcon}
             <span className="text-gray-500">Last updated: {timeDisplay}</span>

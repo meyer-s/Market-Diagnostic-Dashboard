@@ -1183,14 +1183,18 @@ export default function StockAnalysis() {
             <button
               onClick={() => setMethodologyOpen(!methodologyOpen)}
               className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-750 transition-colors rounded-lg"
+              aria-expanded={methodologyOpen}
             >
               <h2 className="text-lg font-semibold">Methodology & Scoring Details</h2>
-              <div className="text-lg font-bold text-gray-500">
-                {methodologyOpen ? '-' : '+'}
-              </div>
+              <span className={`collapsible-icon ${methodologyOpen ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </span>
             </button>
-            {methodologyOpen && (
-              <div className="px-6 pb-6 text-sm text-gray-300 space-y-4">
+            <div className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
+              <div className="collapsible-panel-inner">
+                <div className="px-6 pb-6 text-sm text-gray-300 space-y-4">
                 <p>
                   Stock analysis uses the same transparent scoring methodology as sector analysis, 
                   evaluating performance across 3-month, 6-month, and 12-month lookback periods.
@@ -1231,7 +1235,8 @@ export default function StockAnalysis() {
                   </p>
                 </div>
               </div>
-            )}
+              </div>
+            </div>
           </div>
 
           {/* Disclaimer */}
