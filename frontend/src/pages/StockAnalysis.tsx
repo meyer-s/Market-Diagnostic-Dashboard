@@ -363,15 +363,6 @@ export default function StockAnalysis() {
 
   const formatDateLabel = (date: string) =>
     new Date(date).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-  const formatShortDateLabel = (date: string) =>
-    new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const formatDollarCompact = (value: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: 2,
-    }).format(value);
 
   const summaryInput = useMemo(
     () =>
@@ -540,83 +531,6 @@ export default function StockAnalysis() {
                 volatility={projections[selectedHorizon].volatility}
                 horizon={selectedHorizon.toUpperCase()}
               />
-            </div>
-          )}
-
-          {institutionalFlow && (
-            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-4">
-                <div>
-                  <h3 className="text-base sm:text-lg font-semibold">Institutional Flow History</h3>
-                  <p className="text-sm text-gray-400 mt-1">
-                    Stored large-trade detections for {searchTicker}, persisted across future screener loads.
-                  </p>
-                </div>
-                <span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
-                  institutionalFlow.summary.signal === "accumulation"
-                    ? "bg-green-500/10 text-green-300 border border-green-500/30"
-                    : institutionalFlow.summary.signal === "distribution"
-                      ? "bg-red-500/10 text-red-300 border border-red-500/30"
-                      : "bg-gray-700 text-gray-300 border border-gray-600"
-                }`}>
-                  {institutionalFlow.summary.signal}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 text-xs">
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Events Stored</p>
-                  <p className="font-semibold text-gray-100">{institutionalFlow.summary.event_count}</p>
-                </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Confidence</p>
-                  <p className="font-semibold text-blue-300">{institutionalFlow.summary.confidence.toFixed(1)}</p>
-                </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Buy Cluster</p>
-                  <p className="font-semibold text-green-300">
-                    {institutionalFlow.summary.buy_cluster_level ? `$${institutionalFlow.summary.buy_cluster_level.toFixed(2)}` : "n/a"}
-                  </p>
-                </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Sell Cluster</p>
-                  <p className="font-semibold text-red-300">
-                    {institutionalFlow.summary.sell_cluster_level ? `$${institutionalFlow.summary.sell_cluster_level.toFixed(2)}` : "n/a"}
-                  </p>
-                </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
-                  <p className="text-gray-400 mb-1">Net Flow</p>
-                  <p className={`font-semibold ${institutionalFlow.summary.net_flow_usd >= 0 ? "text-green-300" : "text-red-300"}`}>
-                    {formatDollarCompact(institutionalFlow.summary.net_flow_usd)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
-                {institutionalFlow.event_history.length > 0 ? (
-                  <div className="space-y-2">
-                    {institutionalFlow.event_history.slice(-6).reverse().map((event) => (
-                      <div key={`${event.date}-${event.side}-${event.price}-${event.volume}`} className="flex items-center justify-between rounded-md border border-gray-800 bg-gray-950/70 px-3 py-2 text-sm">
-                        <div>
-                          <div className="font-medium text-gray-100">
-                            {formatShortDateLabel(event.date)} · {event.side.toUpperCase()}
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            ${event.price.toFixed(2)} · z {event.volume_z.toFixed(2)} · {formatDollarCompact(event.notional)}
-                          </div>
-                        </div>
-                        <div className={`text-xs font-semibold ${event.side === "buy" ? "text-green-300" : event.side === "sell" ? "text-red-300" : "text-gray-300"}`}>
-                          {event.strength.toFixed(2)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400">
-                    No large-trade history stored yet for this symbol.
-                  </div>
-                )}
-              </div>
             </div>
           )}
 

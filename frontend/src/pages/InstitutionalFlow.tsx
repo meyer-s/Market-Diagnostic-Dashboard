@@ -488,10 +488,10 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
                   style={currentMarkerStyle}
                 />
                 <div
-                  className="absolute top-1/2 h-5 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/12 bg-[linear-gradient(180deg,rgba(248,250,252,0.16),rgba(15,23,42,0.92))] shadow-[0_0_18px_rgba(226,232,240,0.18)]"
+                  className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/14 bg-[radial-gradient(circle_at_35%_35%,rgba(248,250,252,0.85),rgba(148,163,184,0.28)_42%,rgba(15,23,42,0.96)_78%)] shadow-[0_0_18px_rgba(226,232,240,0.2)]"
                   style={currentMarkerStyle}
                 >
-                  <div className="absolute inset-x-[3px] top-[3px] bottom-[3px] rounded-full bg-stealth-950/85" />
+                  <div className="absolute inset-[3px] rounded-full bg-stealth-950/80" />
                 </div>
               </>
             )}
