@@ -83,10 +83,10 @@ export default function IndicatorCard({ indicator }: Props) {
     indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
 
   return (
-    <Link to={`/indicators/${routeCode}`}>
-      <div className="primary-card primary-card-hover p-4">
-        <div className="text-gray-300 text-sm">{displayName}</div>
-        <div className="text-2xl font-semibold mt-2">
+    <Link to={`/indicators/${routeCode}`} className="block h-full">
+      <div className="primary-card primary-card-hover flex h-full min-h-[278px] flex-col p-4">
+        <div className="min-h-[3.5rem] text-sm leading-7 text-gray-300">{displayName}</div>
+        <div className="mt-2 text-2xl font-semibold">
           {formatValue(indicator.raw_value, 2)}
         </div>
         
@@ -103,7 +103,7 @@ export default function IndicatorCard({ indicator }: Props) {
         </div>
         
         {/* Timestamp with tooltip */}
-        <div className="flex items-center justify-between mt-2 text-xs">
+        <div className="mt-auto flex items-center justify-between pt-3 text-xs">
           <div className="flex items-center gap-1.5 group relative">
             {freshnessIcon}
             <span className="text-gray-500">Last updated: {timeDisplay}</span>

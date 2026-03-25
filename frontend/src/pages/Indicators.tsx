@@ -105,7 +105,7 @@ export default function Indicators() {
       </div>
 
       {/* Mobile/Tablet Card View */}
-      <div className="lg:hidden space-y-3">
+      <div className="grid auto-rows-fr gap-3 lg:hidden">
         {filteredData.map((i) => (
           <IndicatorCard key={i.code} indicator={i} />
         ))}
