@@ -139,6 +139,27 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
     }
 
 
+def _build_price_history(df: pd.DataFrame, days: int = 180) -> list[dict]:
+    if df is None or df.empty or "Close" not in df.columns:
+        return []
+
+    history = []
+    for idx, row in df.tail(days).iterrows():
+        close_price = row.get("Close")
+        if pd.isna(close_price):
+            continue
+        date = pd.to_datetime(idx, errors="coerce")
+        if pd.isna(date):
+            continue
+        history.append(
+            {
+                "date": date.date().isoformat(),
+                "close": round(float(close_price), 4),
+            }
+        )
+    return history
+
+
 def _get_quarterly_df(stock: yf.Ticker, getters) -> pd.DataFrame:
     frames = []
     for getter in getters:
@@ -1293,6 +1314,7 @@ def get_stock_projections(
         "options_flow": options_flow,
         "optionality": optionality,
         "institutional_flow": institutional_flow,
+        "price_history": _build_price_history(df),
         "projections": projections,
         "historical": {
             "score_3m_ago": historical_score  # What the score was 90 days ago
