@@ -7,6 +7,7 @@ from app.core.db import Base, engine
 from app.models import options_alerts  # noqa: F401
 from app.models import option_positions  # noqa: F401
 from app.models import update_post  # noqa: F401
+from app.models import institutional_flow_event  # noqa: F401
 from app.services.schema_patches import ensure_aas_indicator_code, ensure_signal_attribution_columns
 from app.api.health import router as health_router
 from app.api.status import router as status_router

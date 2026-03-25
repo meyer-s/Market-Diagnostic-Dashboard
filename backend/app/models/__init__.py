@@ -13,3 +13,4 @@ from .alternative_assets import (
     AASRegimeHistory
 )
 from .closed_positions import ClosedPosition
+from .institutional_flow_event import InstitutionalFlowEvent

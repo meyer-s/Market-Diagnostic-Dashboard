@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useApi } from "../hooks/useApi";
 import MarketLoading from "../components/ui/MarketLoading";
 
@@ -39,6 +39,11 @@ interface FlowOverviewResponse {
   leaders: {
     accumulation: FlowSignal[];
     distribution: FlowSignal[];
+  };
+  stock_selection?: {
+    mode: string;
+    symbols: string[];
+    count: number;
   };
   method: {
     description: string;
@@ -125,16 +130,10 @@ function GroupTable({ title, rows }: { title: string; rows: FlowSignal[] }) {
 }
 
 export default function InstitutionalFlow() {
-  const [stocksInput, setStocksInput] = useState("AAPL,MSFT,NVDA,AMZN,META,TSLA");
-  const [submittedStocks, setSubmittedStocks] = useState(stocksInput);
-
   const endpoint = useMemo(() => {
     const params = new URLSearchParams({ lookback_days: "120" });
-    if (submittedStocks.trim()) {
-      params.set("stocks", submittedStocks);
-    }
     return `/flow-signals/overview?${params.toString()}`;
-  }, [submittedStocks]);
+  }, []);
 
   const { data, loading, error } = useApi<FlowOverviewResponse>(endpoint);
 
@@ -142,33 +141,18 @@ export default function InstitutionalFlow() {
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6 text-stealth-100">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-6 flex flex-col gap-3">
         <div>
           <h1 className="text-2xl font-bold">Institutional Flow Levels</h1>
           <p className="mt-1 text-sm text-stealth-300">
             Dark-pool style proxy for clustered accumulation/distribution across sectors, metals, crypto, and stocks.
           </p>
         </div>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setSubmittedStocks(stocksInput);
-          }}
-          className="flex w-full gap-2 sm:w-auto"
-        >
-          <input
-            value={stocksInput}
-            onChange={(event) => setStocksInput(event.target.value.toUpperCase())}
-            placeholder="AAPL,MSFT,NVDA"
-            className="w-full rounded-md border border-stealth-600 bg-stealth-900 px-3 py-2 text-sm text-stealth-100 focus:border-pulse-500 focus:outline-none sm:w-[320px]"
-          />
-          <button
-            type="submit"
-            className="rounded-md bg-pulse-600 px-4 py-2 text-sm font-semibold text-white hover:bg-pulse-500"
-          >
-            Refresh
-          </button>
-        </form>
+        {!!data?.stock_selection?.symbols?.length && (
+          <div className="rounded-md border border-stealth-700 bg-stealth-850/70 px-3 py-2 text-xs text-stealth-300">
+            Top {data.stock_selection.count} stocks by close dollar volume: {data.stock_selection.symbols.join(", ")}
+          </div>
+        )}
       </div>
 
       {loading && <MarketLoading label="Scanning for clustered institutional flow..." />}

@@ -13,6 +13,11 @@ SECTOR_SYMBOLS = ["XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU"
 METAL_SYMBOLS = ["GLD", "SLV", "PPLT", "PALL", "GDX", "SIL"]
 CRYPTO_SYMBOLS = ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD"]
 DEFAULT_STOCK_SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMZN", "META", "TSLA"]
+LIQUID_STOCK_UNIVERSE = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "BRK-B", "JPM",
+    "XOM", "V", "WMT", "LLY", "ORCL", "NFLX", "COST", "KO", "AMD", "DIS",
+    "PLTR", "INTC", "BAC", "PFE", "CSCO", "CRM", "UBER", "QCOM", "ADBE", "NKE",
+]
 
 
 @dataclass
@@ -188,25 +193,60 @@ def _download_universe(symbols: list[str], period: str = "9mo") -> pd.DataFrame:
     )
 
 
+def _select_top_close_volume_stocks(raw_data: pd.DataFrame, candidates: list[str], top_n: int = 5) -> list[str]:
+    ranked: list[tuple[str, float]] = []
+    for symbol in candidates:
+        frame = _extract_symbol_frame(raw_data, symbol)
+        if frame.empty:
+            continue
+
+        latest = frame.iloc[-1]
+        close_px = _to_float(latest.get("Close"))
+        volume = _to_float(latest.get("Volume"))
+        if close_px is None or volume is None:
+            continue
+
+        ranked.append((symbol, close_px * volume))
+
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    return [symbol for symbol, _ in ranked[:top_n]]
+
+
 def build_institutional_flow_overview(stock_symbols: list[str] | None = None, lookback_days: int = 120) -> dict[str, Any]:
     config = FlowConfig(lookback_days=max(60, min(lookback_days, 365)))
 
-    stock_symbols_clean = [symbol.strip().upper() for symbol in (stock_symbols or DEFAULT_STOCK_SYMBOLS) if symbol.strip()]
-    if not stock_symbols_clean:
-        stock_symbols_clean = DEFAULT_STOCK_SYMBOLS
+    requested_stocks = [symbol.strip().upper() for symbol in (stock_symbols or []) if symbol.strip()]
+    stock_selection_mode = "manual" if requested_stocks else "auto_top_close_volume"
+
+    stock_selection_pool = requested_stocks if requested_stocks else LIQUID_STOCK_UNIVERSE
+
+    selection_universe = {
+        "sectors": [(symbol, symbol) for symbol in SECTOR_SYMBOLS],
+        "metals": [(symbol, symbol) for symbol in METAL_SYMBOLS],
+        "crypto": [(symbol, symbol.replace("-USD", "")) for symbol in CRYPTO_SYMBOLS],
+        "stocks": [(symbol, symbol) for symbol in stock_selection_pool[:30]],
+    }
+
+    all_symbols: list[str] = []
+    for items in selection_universe.values():
+        all_symbols.extend([symbol for symbol, _ in items])
+
+    raw_data = _download_universe(sorted(set(all_symbols)))
+
+    selected_stock_symbols = (
+        requested_stocks[:25]
+        if requested_stocks
+        else _select_top_close_volume_stocks(raw_data, stock_selection_pool, top_n=5)
+    )
+    if not selected_stock_symbols:
+        selected_stock_symbols = DEFAULT_STOCK_SYMBOLS[:5]
 
     universe = {
         "sectors": [(symbol, symbol) for symbol in SECTOR_SYMBOLS],
         "metals": [(symbol, symbol) for symbol in METAL_SYMBOLS],
         "crypto": [(symbol, symbol.replace("-USD", "")) for symbol in CRYPTO_SYMBOLS],
-        "stocks": [(symbol, symbol) for symbol in stock_symbols_clean[:25]],
+        "stocks": [(symbol, symbol) for symbol in selected_stock_symbols],
     }
-
-    all_symbols: list[str] = []
-    for items in universe.values():
-        all_symbols.extend([symbol for symbol, _ in items])
-
-    raw_data = _download_universe(sorted(set(all_symbols)))
 
     grouped_results: dict[str, list[dict[str, Any]]] = {}
     all_results: list[dict[str, Any]] = []
@@ -248,5 +288,10 @@ def build_institutional_flow_overview(stock_symbols: list[str] | None = None, lo
         "leaders": {
             "accumulation": leaders_acc,
             "distribution": leaders_dist,
+        },
+        "stock_selection": {
+            "mode": stock_selection_mode,
+            "symbols": selected_stock_symbols,
+            "count": len(selected_stock_symbols),
         },
     }
