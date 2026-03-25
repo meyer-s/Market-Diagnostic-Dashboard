@@ -142,21 +142,55 @@ function getBubbleSurface(signal: FlowSignal["signal"]): string {
   return "border-slate-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_66%,rgba(148,163,184,0.42)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.14),0_0_22px_rgba(148,163,184,0.24)]";
 }
 
-function ConfidenceBand({ confidence, signal }: { confidence: number; signal: FlowSignal["signal"] }) {
+function getConfidenceStrokeClass(signal: FlowSignal["signal"]): string {
+  if (signal === "accumulation") {
+    return "stroke-emerald-300/75 drop-shadow-[0_0_5px_rgba(74,222,128,0.2)]";
+  }
+  if (signal === "distribution") {
+    return "stroke-rose-300/75 drop-shadow-[0_0_5px_rgba(251,113,133,0.2)]";
+  }
+  return "stroke-slate-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
+}
+
+function ConfidenceArc({
+  confidence,
+  signal,
+  sizeClass = "h-4 w-4",
+  strokeWidth = 8,
+}: {
+  confidence: number;
+  signal: FlowSignal["signal"];
+  sizeClass?: string;
+  strokeWidth?: number;
+}) {
   const normalizedConfidence = Math.max(0, Math.min(100, confidence));
-  const fillWidth = Math.max(14, normalizedConfidence);
-  const activeClass =
-    signal === "accumulation"
-      ? "bg-[linear-gradient(90deg,rgba(110,231,183,0.28),rgba(110,231,183,0.72),rgba(167,243,208,0.5))] shadow-[0_0_12px_rgba(74,222,128,0.22)]"
-      : signal === "distribution"
-        ? "bg-[linear-gradient(90deg,rgba(253,164,175,0.28),rgba(251,113,133,0.72),rgba(253,164,175,0.5))] shadow-[0_0_12px_rgba(251,113,133,0.2)]"
-        : "bg-[linear-gradient(90deg,rgba(203,213,225,0.22),rgba(148,163,184,0.58),rgba(203,213,225,0.35))] shadow-[0_0_10px_rgba(148,163,184,0.16)]";
+  const radius = 50 - strokeWidth;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - normalizedConfidence / 100);
 
   return (
-    <div className="inline-flex items-center" aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}>
-      <div className="h-1.5 w-8 overflow-hidden rounded-full border border-white/10 bg-white/6">
-        <div className={`h-full rounded-full ${activeClass}`} style={{ width: `${fillWidth}%` }} aria-hidden="true" />
-      </div>
+    <div className={`inline-flex items-center ${sizeClass}`} aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}>
+      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
+        <circle cx="50" cy="50" r={radius} className="fill-none stroke-white/8" strokeWidth={strokeWidth} />
+        <circle
+          cx="50"
+          cy="50"
+          r={radius}
+          className={`fill-none ${getConfidenceStrokeClass(signal)}`}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+        />
+      </svg>
+    </div>
+  );
+}
+
+function BubbleConfidenceArc({ confidence, signal }: { confidence: number; signal: FlowSignal["signal"] }) {
+  return (
+    <div className="pointer-events-none absolute inset-[5px] opacity-90">
+      <ConfidenceArc confidence={confidence} signal={signal} sizeClass="h-full w-full" strokeWidth={4.5} />
     </div>
   );
 }
@@ -373,10 +407,8 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
               className={`relative flex shrink-0 flex-col items-center justify-center overflow-hidden rounded-full border-2 px-2 text-center transition duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
               style={{ width: `${size}px`, height: `${size}px` }}
             >
+              <BubbleConfidenceArc confidence={row.confidence} signal={row.signal} />
               <span className="max-w-full text-center text-[13px] font-semibold leading-tight tracking-wide md:text-sm">{formatSignalSymbol(row.symbol, row.category)}</span>
-              <span className="mt-1.5 flex justify-center">
-                <ConfidenceBand confidence={row.confidence} signal={row.signal} />
-              </span>
               <span className="mt-1 max-w-full text-[10px] font-medium leading-tight md:text-[11px]">{formatCompactCurrency(totalNotional(row))}</span>
             </button>
           );
@@ -397,6 +429,8 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
     ? Math.max(0, Math.min(100, ((row.latest_price - clusterLow) / clusterRange) * 100))
     : 50;
   const currentIsInsideCluster = row.latest_price !== null && row.latest_price >= clusterLow && row.latest_price <= clusterHigh;
+  const currentInsetPx = 18;
+  const currentMarkerStyle = { left: `clamp(${currentInsetPx}px, ${currentPosition}%, calc(100% - ${currentInsetPx}px))` };
 
   return (
     <article className="rounded-[24px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-4 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
@@ -416,7 +450,7 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
           </div>
           <div className="text-right text-xs text-stealth-400">
             <div className="flex justify-end">
-              <ConfidenceBand confidence={row.confidence} signal={row.signal} />
+              <ConfidenceArc confidence={row.confidence} signal={row.signal} sizeClass="h-4 w-4" strokeWidth={10} />
             </div>
             <div className="mt-0.5">Events {row.event_count ?? row.recent_events.length}</div>
           </div>
@@ -451,11 +485,11 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
               <>
                 <div
                   className={`absolute top-1/2 h-8 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full ${currentIsInsideCluster ? "bg-[radial-gradient(circle,rgba(226,232,240,0.22)_0%,rgba(226,232,240,0.08)_38%,rgba(226,232,240,0)_72%)]" : "bg-[radial-gradient(circle,rgba(248,250,252,0.16)_0%,rgba(226,232,240,0.05)_38%,rgba(226,232,240,0)_72%)]"}`}
-                  style={{ left: `${currentPosition}%` }}
+                  style={currentMarkerStyle}
                 />
                 <div
                   className="absolute top-1/2 h-5 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/12 bg-[linear-gradient(180deg,rgba(248,250,252,0.16),rgba(15,23,42,0.92))] shadow-[0_0_18px_rgba(226,232,240,0.18)]"
-                  style={{ left: `${currentPosition}%` }}
+                  style={currentMarkerStyle}
                 >
                   <div className="absolute inset-x-[3px] top-[3px] bottom-[3px] rounded-full bg-stealth-950/85" />
                 </div>
@@ -553,7 +587,7 @@ function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal
               <div className="text-right">
                 <div className={`text-sm font-semibold ${textClass}`}>{formatCompactCurrency(item.net_flow_usd)}</div>
                 <div className="mt-1 flex justify-end">
-                  <ConfidenceBand confidence={item.confidence} signal={item.signal} />
+                  <ConfidenceArc confidence={item.confidence} signal={item.signal} sizeClass="h-4 w-4" strokeWidth={10} />
                 </div>
               </div>
             </div>
