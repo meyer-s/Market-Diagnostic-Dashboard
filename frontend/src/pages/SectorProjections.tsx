@@ -625,20 +625,16 @@ export default function SectorProjections() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4">
             <h2 className="text-base sm:text-lg font-semibold">Sector Rankings</h2>
             <div className="flex flex-wrap gap-1 sm:gap-2">
-            aria-expanded={methodologyOpen}
               {["T", "3m", "6m", "12m"].map((h) => {
                 if (h === "T" && !tScoresValid) return null;
                 return (
-              <span className={`collapsible-icon ${methodologyOpen ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </span>
+                  <button
+                    key={h}
+                    onClick={() => setSelectedHorizon(h as "T" | "3m" | "6m" | "12m")}
                     className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition min-h-10 ${
                       selectedHorizon === h
-          <div className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
-            <div className="collapsible-panel-inner">
-              <div className="rounded-b-lg border border-t-0 border-gray-700 bg-gray-800 px-4 pb-6 pt-4 text-xs text-gray-300 sm:px-6 sm:text-sm">
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                     }`}
                   >
                     {h === "T" ? "T" : h === "3m" ? "T+3M" : h === "6m" ? "T+6M" : "T+12M"}
