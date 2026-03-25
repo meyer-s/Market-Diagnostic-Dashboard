@@ -135,6 +135,29 @@ function getBubbleSurface(signal: FlowSignal["signal"]): string {
   return "border-slate-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_66%,rgba(148,163,184,0.42)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.14),0_0_22px_rgba(148,163,184,0.24)]";
 }
 
+function ConfidenceDots({ confidence, signal }: { confidence: number; signal: FlowSignal["signal"] }) {
+  const normalizedConfidence = Math.max(0, Math.min(100, confidence));
+  const filledDots = normalizedConfidence >= 85 ? 4 : normalizedConfidence >= 65 ? 3 : normalizedConfidence >= 40 ? 2 : normalizedConfidence > 0 ? 1 : 0;
+  const activeClass =
+    signal === "accumulation"
+      ? "border-emerald-300/50 bg-emerald-300/55 shadow-[0_0_10px_rgba(74,222,128,0.2)]"
+      : signal === "distribution"
+        ? "border-rose-300/50 bg-rose-300/55 shadow-[0_0_10px_rgba(251,113,133,0.2)]"
+        : "border-slate-300/45 bg-slate-300/50 shadow-[0_0_8px_rgba(148,163,184,0.18)]";
+
+  return (
+    <div className="inline-flex items-center gap-1" aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}>
+      {Array.from({ length: 4 }, (_, index) => (
+        <span
+          key={index}
+          className={`h-1.5 w-1.5 rounded-full border ${index < filledDots ? activeClass : "border-white/10 bg-white/8"}`}
+          aria-hidden="true"
+        />
+      ))}
+    </div>
+  );
+}
+
 function totalNotional(row: FlowSignal): number {
   if (row.flow_timeline?.length) {
     return row.flow_timeline.reduce((sum, bucket) => sum + bucket.total_notional_usd, 0);
@@ -317,11 +340,7 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
 
   return (
     <div className="rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top,rgba(46,67,96,0.34),rgba(10,15,26,0.95)_68%)] p-3">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Signal Constellation</div>
-          <div className="mt-1 text-xs text-stealth-300">Bubble size tracks traded activity. Click a bubble to focus the detail card.</div>
-        </div>
+      <div className="mb-2 flex justify-end">
         <div className="flex flex-wrap gap-2 text-[11px] text-stealth-400">
           <span className="rounded-full border border-emerald-700/40 bg-emerald-950/25 px-2 py-1 text-emerald-300">Accumulation</span>
           <span className="rounded-full border border-rose-700/40 bg-rose-950/25 px-2 py-1 text-rose-300">Distribution</span>
@@ -340,11 +359,13 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
               key={`${row.category}-${row.symbol}`}
               type="button"
               onClick={() => onSelect(row.symbol)}
-              className={`flex shrink-0 flex-col items-center justify-center rounded-full border-2 px-2 text-center transition duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
+              className={`relative flex shrink-0 flex-col items-center justify-center overflow-hidden rounded-full border-2 px-2 text-center transition duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
               style={{ width: `${size}px`, height: `${size}px` }}
             >
               <span className="max-w-full text-center text-[13px] font-semibold leading-tight tracking-wide md:text-sm">{row.symbol}</span>
-              <span className="mt-1 text-[9px] uppercase tracking-[0.16em] text-white/70 md:text-[10px]">{row.confidence.toFixed(0)} conf</span>
+              <span className="mt-1.5 flex justify-center">
+                <ConfidenceDots confidence={row.confidence} signal={row.signal} />
+              </span>
               <span className="mt-1 max-w-full text-[10px] font-medium leading-tight md:text-[11px]">{formatCompactCurrency(totalNotional(row))}</span>
             </button>
           );
@@ -358,35 +379,21 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
 function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; groupScale: number; groupTitle: string }) {
   const timeline = row.flow_timeline ?? [];
   const flowTone = (row.net_flow_usd ?? 0) > 0 ? "text-emerald-300" : (row.net_flow_usd ?? 0) < 0 ? "text-rose-300" : "text-stealth-300";
+  const clusterLow = row.sell_cluster_level ?? row.latest_price ?? row.buy_cluster_level ?? 0;
+  const clusterHigh = row.buy_cluster_level ?? row.latest_price ?? row.sell_cluster_level ?? 0;
+  const clusterRange = Math.max(0.0001, clusterHigh - clusterLow);
+  const currentPosition = row.latest_price !== null
+    ? Math.max(0, Math.min(100, ((row.latest_price - clusterLow) / clusterRange) * 100))
+    : 50;
 
   return (
     <article className="rounded-[24px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-4 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.25em] text-stealth-500">Focused Signal</div>
-          <div className="mt-1.5 text-xl font-semibold text-stealth-100">{row.symbol}</div>
+          <div className="text-xl font-semibold text-stealth-100">{row.symbol}</div>
           <div className="mt-1 text-xs text-stealth-400">{row.name} · {groupTitle}</div>
         </div>
         <SignalPill signal={row.signal} />
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-        <div className="rounded-2xl border border-stealth-700 bg-stealth-900/60 p-2.5">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Current Price</div>
-          <div className="mt-1 font-semibold text-stealth-100">{formatCurrency(row.latest_price)}</div>
-        </div>
-        <div className="rounded-2xl border border-stealth-700 bg-stealth-900/60 p-2.5">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Confidence</div>
-          <div className="mt-1 font-semibold text-stealth-100">{row.confidence.toFixed(1)}</div>
-        </div>
-        <div className="rounded-2xl border border-stealth-700 bg-stealth-900/60 p-2.5">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Buy Cluster</div>
-          <div className="mt-1 font-semibold text-emerald-300">{formatCurrency(row.buy_cluster_level)}</div>
-        </div>
-        <div className="rounded-2xl border border-stealth-700 bg-stealth-900/60 p-2.5">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Sell Cluster</div>
-          <div className="mt-1 font-semibold text-rose-300">{formatCurrency(row.sell_cluster_level)}</div>
-        </div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
@@ -395,7 +402,45 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
             <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Net Flow Bias</div>
             <div className={`mt-1 text-base font-semibold ${flowTone}`}>{formatCompactCurrency(row.net_flow_usd)}</div>
           </div>
-          <div className="text-right text-xs text-stealth-400">Events {row.event_count ?? row.recent_events.length}</div>
+          <div className="text-right text-xs text-stealth-400">
+            <div className="flex justify-end">
+              <ConfidenceDots confidence={row.confidence} signal={row.signal} />
+            </div>
+            <div className="mt-0.5">Events {row.event_count ?? row.recent_events.length}</div>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 text-[10px] uppercase tracking-[0.16em] text-stealth-500">
+          <div>
+            <div>Sell Cluster</div>
+            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-rose-300">{formatCurrency(row.sell_cluster_level)}</div>
+          </div>
+          <div className="text-center">
+            <div>Current</div>
+            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-stealth-100">{formatCurrency(row.latest_price)}</div>
+          </div>
+          <div className="text-right">
+            <div>Buy Cluster</div>
+            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-emerald-300">{formatCurrency(row.buy_cluster_level)}</div>
+          </div>
+        </div>
+        <div className="mt-2 relative">
+          <div className="relative h-8 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
+            <div className="absolute inset-y-2 left-0 w-1/2 rounded-l-full bg-rose-400/8" />
+            <div className="absolute inset-y-2 right-0 w-1/2 rounded-r-full bg-emerald-400/8" />
+            <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/80" />
+            {row.sell_cluster_level !== null && (
+              <div className="absolute left-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border border-rose-300/90 bg-rose-300/80 shadow-[0_0_10px_rgba(251,113,133,0.35)]" />
+            )}
+            {row.buy_cluster_level !== null && (
+              <div className="absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border border-emerald-300/90 bg-emerald-300/80 shadow-[0_0_10px_rgba(74,222,128,0.35)]" />
+            )}
+            {row.latest_price !== null && (
+              <div
+                className="absolute top-1/2 h-5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stealth-100 shadow-[0_0_12px_rgba(226,232,240,0.45)]"
+                style={{ left: `${currentPosition}%` }}
+              />
+            )}
+          </div>
         </div>
         <div className="mt-3">
           <CenteredFlowBar value={row.net_flow_usd} scale={groupScale} />
@@ -433,13 +478,11 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
 }
 
 function GroupSection({
-  groupKey,
   title,
   rows,
   selectedSymbol,
   onSelectSymbol,
 }: {
-  groupKey: string;
   title: string;
   rows: FlowSignal[];
   selectedSymbol: string | null;
@@ -453,9 +496,6 @@ function GroupSection({
       <div className="flex flex-wrap items-start justify-between gap-4 text-left">
         <div>
           <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
-          <p className="mt-1 text-xs text-stealth-400">
-            Bubble field groups the whole {groupKey} universe by activity and bias.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <GroupBadge label="Accumulations" value={accumulationCount} tone="buy" />
@@ -479,7 +519,6 @@ function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal
     <section className={`rounded-[24px] border p-3 ${sectionClass}`}>
       <div className="flex items-center justify-between gap-2">
         <h2 className={`text-sm font-semibold ${textClass}`}>{title}</h2>
-        <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Top 4</div>
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {compactItems.length === 0 && <p className="text-sm text-stealth-300">No strong signals yet.</p>}
@@ -492,7 +531,9 @@ function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal
               </div>
               <div className="text-right">
                 <div className={`text-sm font-semibold ${textClass}`}>{formatCompactCurrency(item.net_flow_usd)}</div>
-                <div className="text-[10px] text-stealth-400">{item.confidence.toFixed(0)} conf</div>
+                <div className="mt-1 flex justify-end">
+                  <ConfidenceDots confidence={item.confidence} signal={item.signal} />
+                </div>
               </div>
             </div>
           </div>
@@ -551,9 +592,6 @@ export default function InstitutionalFlow() {
           <div>
             <div className="text-xs uppercase tracking-[0.25em] text-stealth-400">Institutional Flow</div>
             <h1 className="mt-1 text-xl font-bold tracking-tight">Clustered Volume Dashboard</h1>
-            <p className="mt-1 max-w-2xl text-xs text-stealth-300">
-              Bubble constellations surface where clustered accumulation and distribution are concentrating across sectors, metals, crypto, and stocks.
-            </p>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <GroupBadge label="Signals" value={totalSignals} />
@@ -582,39 +620,27 @@ export default function InstitutionalFlow() {
             <LeadersPanel title="Top Distribution" items={data.leaders.distribution} tone="sell" />
           </div>
 
-          <div className="mb-3 rounded-2xl border border-stealth-700 bg-stealth-850/50 p-2.5 text-xs text-stealth-300">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p><strong>Method:</strong> {data.method.description}</p>
-              <p>As of {new Date(data.as_of).toLocaleString()}</p>
-            </div>
-            <p className="mt-1"><strong>Important:</strong> {data.method.note}</p>
-          </div>
-
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.78fr)] xl:items-start">
             <div className="grid gap-3">
               <GroupSection
-                groupKey="stocks"
                 title="Stocks"
                 rows={groups.stocks ?? []}
                 selectedSymbol={resolvedSelection?.groupKey === "stocks" ? resolvedSelection.row.symbol : null}
                 onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "stocks", symbol })}
               />
               <GroupSection
-                groupKey="sectors"
                 title="Sectors"
                 rows={groups.sectors ?? []}
                 selectedSymbol={resolvedSelection?.groupKey === "sectors" ? resolvedSelection.row.symbol : null}
                 onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "sectors", symbol })}
               />
               <GroupSection
-                groupKey="metals"
                 title="Precious Metals"
                 rows={groups.metals ?? []}
                 selectedSymbol={resolvedSelection?.groupKey === "metals" ? resolvedSelection.row.symbol : null}
                 onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "metals", symbol })}
               />
               <GroupSection
-                groupKey="crypto"
                 title="Crypto"
                 rows={groups.crypto ?? []}
                 selectedSymbol={resolvedSelection?.groupKey === "crypto" ? resolvedSelection.row.symbol : null}
@@ -631,7 +657,7 @@ export default function InstitutionalFlow() {
                 />
               ) : (
                 <div className="rounded-[28px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-6 text-sm text-stealth-300">
-                  Select a bubble on the left to inspect its flow detail.
+                  No active signal.
                 </div>
               )}
             </div>
