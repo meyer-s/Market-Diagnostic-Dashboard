@@ -16,9 +16,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import {
+  CartesianGrid,
   LineChart,
   Line,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   XAxis,
   YAxis,
   Tooltip,
@@ -115,6 +118,34 @@ interface FundamentalsPayload {
   revenue_yoy?: FundamentalSeries;
 }
 
+interface InstitutionalFlowEvent {
+  date: string;
+  price: number;
+  volume: number;
+  notional: number;
+  volume_z: number;
+  clv: number;
+  price_change_pct: number;
+  side: "buy" | "sell" | "neutral";
+  strength: number;
+}
+
+interface InstitutionalFlowPayload {
+  summary: {
+    signal: "accumulation" | "distribution" | "neutral";
+    confidence: number;
+    buy_cluster_level: number | null;
+    sell_cluster_level: number | null;
+    distance_to_buy_pct: number | null;
+    distance_to_sell_pct: number | null;
+    buy_notional_usd: number;
+    sell_notional_usd: number;
+    net_flow_usd: number;
+    event_count: number;
+  };
+  event_history: InstitutionalFlowEvent[];
+}
+
 export default function StockAnalysis() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -132,6 +163,7 @@ export default function StockAnalysis() {
   const [historicalScore, setHistoricalScore] = useState<number | null>(null);
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [dataWarnings, setDataWarnings] = useState<DataWarning[]>([]);
+  const [institutionalFlow, setInstitutionalFlow] = useState<InstitutionalFlowPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [projectionUnavailable, setProjectionUnavailable] = useState(false);
@@ -158,6 +190,7 @@ export default function StockAnalysis() {
       technical?: TechnicalData;
       options_flow?: OptionsFlowData;
       optionality?: OptionalityMetrics;
+      institutional_flow?: InstitutionalFlowPayload;
       fundamentals?: FundamentalsPayload;
       analyst_target?: number;
       analyst_count?: number;
@@ -185,6 +218,7 @@ export default function StockAnalysis() {
       setTechnicalData(projectionsPayload.technical || null);
       setOptionsFlow(projectionsPayload.options_flow || null);
       setOptionalityMetrics(projectionsPayload.optionality || null);
+      setInstitutionalFlow(projectionsPayload.institutional_flow || null);
       setFundamentals(projectionsPayload.fundamentals || null);
       setAnalystTarget(projectionsPayload.analyst_target ?? null);
       setAnalystCount(projectionsPayload.analyst_count ?? null);
@@ -197,6 +231,7 @@ export default function StockAnalysis() {
       setTechnicalData(null);
       setOptionsFlow(null);
       setOptionalityMetrics(null);
+      setInstitutionalFlow(null);
       setFundamentals(null);
       setAnalystTarget(null);
       setAnalystCount(null);
@@ -322,6 +357,36 @@ export default function StockAnalysis() {
 
   const formatDateLabel = (date: string) =>
     new Date(date).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  const formatShortDateLabel = (date: string) =>
+    new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const formatDollarCompact = (value: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      notation: "compact",
+      maximumFractionDigits: 2,
+    }).format(value);
+
+  const institutionalFlowChart = useMemo(() => {
+    const events = institutionalFlow?.event_history ?? [];
+    if (!events.length) return null;
+
+    const withTimestamps = events.map((event) => ({
+      ...event,
+      timestamp: new Date(`${event.date}T00:00:00Z`).getTime(),
+      markerSize: Math.max(50, Math.min(240, event.strength * 32)),
+    }));
+
+    return {
+      buys: withTimestamps.filter((event) => event.side === "buy"),
+      sells: withTimestamps.filter((event) => event.side === "sell"),
+      neutral: withTimestamps.filter((event) => event.side === "neutral"),
+      minTime: Math.min(...withTimestamps.map((event) => event.timestamp)),
+      maxTime: Math.max(...withTimestamps.map((event) => event.timestamp)),
+      minPrice: Math.min(...withTimestamps.map((event) => event.price)),
+      maxPrice: Math.max(...withTimestamps.map((event) => event.price)),
+    };
+  }, [institutionalFlow]);
 
   const summaryInput = useMemo(
     () =>
@@ -488,6 +553,118 @@ export default function StockAnalysis() {
                 volatility={projections[selectedHorizon].volatility}
                 horizon={selectedHorizon.toUpperCase()}
               />
+            </div>
+          )}
+
+          {institutionalFlow && (
+            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-4">
+                <div>
+                  <h3 className="text-base sm:text-lg font-semibold">Institutional Flow History</h3>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Stored large-trade detections for {searchTicker}, persisted across future screener loads.
+                  </p>
+                </div>
+                <span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                  institutionalFlow.summary.signal === "accumulation"
+                    ? "bg-green-500/10 text-green-300 border border-green-500/30"
+                    : institutionalFlow.summary.signal === "distribution"
+                      ? "bg-red-500/10 text-red-300 border border-red-500/30"
+                      : "bg-gray-700 text-gray-300 border border-gray-600"
+                }`}>
+                  {institutionalFlow.summary.signal}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 text-xs">
+                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                  <p className="text-gray-400 mb-1">Events Stored</p>
+                  <p className="font-semibold text-gray-100">{institutionalFlow.summary.event_count}</p>
+                </div>
+                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                  <p className="text-gray-400 mb-1">Confidence</p>
+                  <p className="font-semibold text-blue-300">{institutionalFlow.summary.confidence.toFixed(1)}</p>
+                </div>
+                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                  <p className="text-gray-400 mb-1">Buy Cluster</p>
+                  <p className="font-semibold text-green-300">
+                    {institutionalFlow.summary.buy_cluster_level ? `$${institutionalFlow.summary.buy_cluster_level.toFixed(2)}` : "n/a"}
+                  </p>
+                </div>
+                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                  <p className="text-gray-400 mb-1">Sell Cluster</p>
+                  <p className="font-semibold text-red-300">
+                    {institutionalFlow.summary.sell_cluster_level ? `$${institutionalFlow.summary.sell_cluster_level.toFixed(2)}` : "n/a"}
+                  </p>
+                </div>
+                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                  <p className="text-gray-400 mb-1">Net Flow</p>
+                  <p className={`font-semibold ${institutionalFlow.summary.net_flow_usd >= 0 ? "text-green-300" : "text-red-300"}`}>
+                    {formatDollarCompact(institutionalFlow.summary.net_flow_usd)}
+                  </p>
+                </div>
+              </div>
+
+              {institutionalFlowChart ? (
+                <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+                  <div className="h-72" style={{ minWidth: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ScatterChart margin={{ top: 12, right: 18, bottom: 12, left: 8 }}>
+                        <CartesianGrid stroke={CHART_NEUTRAL.grid} strokeDasharray="4 4" />
+                        <XAxis
+                          type="number"
+                          dataKey="timestamp"
+                          domain={[institutionalFlowChart.minTime, institutionalFlowChart.maxTime]}
+                          tickFormatter={(value) => formatShortDateLabel(new Date(Number(value)).toISOString())}
+                          tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          type="number"
+                          dataKey="price"
+                          domain={[
+                            Math.max(0, institutionalFlowChart.minPrice * 0.97),
+                            institutionalFlowChart.maxPrice * 1.03,
+                          ]}
+                          tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
+                          tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <Tooltip
+                          cursor={{ strokeDasharray: "3 3", stroke: "#4b5563" }}
+                          formatter={(value, _name, item) => {
+                            const payload = item?.payload as InstitutionalFlowEvent | undefined;
+                            if (!payload) return value;
+                            return [
+                              `${payload.side.toUpperCase()} | ${formatDollarCompact(payload.notional)} | z ${payload.volume_z.toFixed(2)}`,
+                              `$${payload.price.toFixed(2)}`,
+                            ];
+                          }}
+                          labelFormatter={(value) => formatShortDateLabel(new Date(Number(value)).toISOString())}
+                          contentStyle={{
+                            background: "#111827",
+                            border: "1px solid #374151",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                          }}
+                        />
+                        <Scatter name="Buy Flow" data={institutionalFlowChart.buys} fill="#4ade80" />
+                        <Scatter name="Sell Flow" data={institutionalFlowChart.sells} fill="#f87171" />
+                        <Scatter name="Neutral Flow" data={institutionalFlowChart.neutral} fill="#94a3b8" />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-400">
+                    Each marker is a stored high-volume event. Green markers suggest accumulation near the close; red markers suggest distribution.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-gray-900 rounded-lg p-3 border border-gray-700 text-sm text-gray-400">
+                  No large-trade history stored yet for this symbol.
+                </div>
+              )}
             </div>
           )}
 

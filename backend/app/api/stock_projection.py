@@ -20,7 +20,9 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import math
+from app.models.institutional_flow_event import InstitutionalFlowEvent
 from app.models.system_status import SystemStatus
+from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
 from app.utils.db_helpers import get_db_session
 
 router = APIRouter()
@@ -47,6 +49,94 @@ def sanitize_for_json(obj):
         return obj
     return obj
 T_WINDOW_DAYS = 21
+
+
+def _event_datetime(date_str: str) -> datetime:
+    return datetime.fromisoformat(f"{date_str}T00:00:00")
+
+
+def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_price: Optional[float]) -> dict:
+    detected_events = detect_flow_events_from_frame(df, lookback_days=365)
+
+    if detected_events:
+        min_date = _event_datetime(min(event["date"] for event in detected_events))
+        max_date = _event_datetime(max(event["date"] for event in detected_events))
+        existing_rows = (
+            db.query(InstitutionalFlowEvent)
+            .filter(
+                InstitutionalFlowEvent.symbol == symbol,
+                InstitutionalFlowEvent.event_date >= min_date,
+                InstitutionalFlowEvent.event_date <= max_date,
+            )
+            .all()
+        )
+        existing_keys = {
+            (
+                row.event_date.date().isoformat(),
+                row.side,
+                round(float(row.price), 4),
+                int(row.volume),
+            )
+            for row in existing_rows
+        }
+
+        inserted = False
+        for event in detected_events:
+            key = (
+                event["date"],
+                event["side"],
+                round(float(event["price"]), 4),
+                int(event["volume"]),
+            )
+            if key in existing_keys:
+                continue
+            db.add(
+                InstitutionalFlowEvent(
+                    symbol=symbol,
+                    event_date=_event_datetime(event["date"]),
+                    side=event["side"],
+                    price=float(event["price"]),
+                    volume=int(event["volume"]),
+                    notional=float(event["notional"]),
+                    volume_z=float(event["volume_z"]),
+                    clv=float(event["clv"]),
+                    price_change_pct=float(event["price_change_pct"]),
+                    strength=float(event["strength"]),
+                )
+            )
+            inserted = True
+
+        if inserted:
+            db.commit()
+
+    rows = (
+        db.query(InstitutionalFlowEvent)
+        .filter(InstitutionalFlowEvent.symbol == symbol)
+        .order_by(InstitutionalFlowEvent.event_date.asc())
+        .limit(250)
+        .all()
+    )
+
+    history = [
+        {
+            "date": row.event_date.date().isoformat(),
+            "price": round(float(row.price), 4),
+            "volume": int(row.volume),
+            "notional": round(float(row.notional), 2),
+            "volume_z": round(float(row.volume_z), 2),
+            "clv": round(float(row.clv), 3),
+            "price_change_pct": round(float(row.price_change_pct), 2),
+            "side": row.side,
+            "strength": round(float(row.strength), 2),
+        }
+        for row in rows
+    ]
+
+    summary = summarize_flow_events(history, latest_price=latest_price)
+    return {
+        "summary": summary,
+        "event_history": history,
+    }
 
 
 def _get_quarterly_df(stock: yf.Ticker, getters) -> pd.DataFrame:
@@ -1129,6 +1219,7 @@ def get_stock_projections(
     with get_db_session() as db:
         status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
         system_state = status.state if status else "YELLOW"
+        institutional_flow = _sync_institutional_flow_history(db, ticker, df, current_price)
     
     # Get stock name
     stock_info = {}
@@ -1201,6 +1292,7 @@ def get_stock_projections(
         "analyst_count": analyst_count,
         "options_flow": options_flow,
         "optionality": optionality,
+        "institutional_flow": institutional_flow,
         "projections": projections,
         "historical": {
             "score_3m_ago": historical_score  # What the score was 90 days ago

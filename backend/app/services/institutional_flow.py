@@ -117,6 +117,53 @@ def _weighted_level(events: list[dict[str, Any]]) -> float | None:
     return weighted_sum / total_weight
 
 
+def detect_flow_events_from_frame(df: pd.DataFrame, lookback_days: int = 120) -> list[dict[str, Any]]:
+    config = FlowConfig(lookback_days=max(60, min(lookback_days, 365)))
+    if df is None or df.empty:
+        return []
+    frame = df.copy().tail(config.lookback_days)
+    if len(frame) < config.rolling_window + 1:
+        return []
+    return _build_events(frame, config)
+
+
+def summarize_flow_events(events: list[dict[str, Any]], latest_price: float | None = None) -> dict[str, Any]:
+    buys = [event for event in events if event["side"] == "buy"]
+    sells = [event for event in events if event["side"] == "sell"]
+
+    buy_notional = sum(event["notional"] for event in buys)
+    sell_notional = sum(event["notional"] for event in sells)
+    net_flow = buy_notional - sell_notional
+
+    buy_level = _weighted_level(buys)
+    sell_level = _weighted_level(sells)
+    avg_strength = mean([event["strength"] for event in events]) if events else 0.0
+    confidence = min(100.0, avg_strength * 22.0)
+
+    if net_flow > 0 and confidence >= 35:
+        signal = "accumulation"
+    elif net_flow < 0 and confidence >= 35:
+        signal = "distribution"
+    else:
+        signal = "neutral"
+
+    pct_to_buy = ((latest_price - buy_level) / buy_level * 100) if latest_price and buy_level else None
+    pct_to_sell = ((sell_level - latest_price) / latest_price * 100) if latest_price and sell_level else None
+
+    return {
+        "signal": signal,
+        "confidence": round(confidence, 1),
+        "buy_cluster_level": round(buy_level, 4) if buy_level is not None else None,
+        "sell_cluster_level": round(sell_level, 4) if sell_level is not None else None,
+        "distance_to_buy_pct": round(pct_to_buy, 2) if pct_to_buy is not None else None,
+        "distance_to_sell_pct": round(pct_to_sell, 2) if pct_to_sell is not None else None,
+        "buy_notional_usd": round(buy_notional, 2),
+        "sell_notional_usd": round(sell_notional, 2),
+        "net_flow_usd": round(net_flow, 2),
+        "event_count": len(events),
+    }
+
+
 def _build_signal(symbol: str, name: str, category: str, frame: pd.DataFrame, config: FlowConfig) -> dict[str, Any]:
     if frame.empty or len(frame) < config.rolling_window + 1:
         return {
