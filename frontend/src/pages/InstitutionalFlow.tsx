@@ -115,6 +115,13 @@ function formatGroupTitle(groupKey: GroupKey): string {
   return "Stocks";
 }
 
+function formatSignalSymbol(symbol: string, category?: string): string {
+  if (category === "crypto" && symbol.endsWith("-USD")) {
+    return symbol.slice(0, -4);
+  }
+  return symbol;
+}
+
 function getSignalClasses(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
     return "border-emerald-700/50 bg-emerald-950/35 text-emerald-300";
@@ -135,25 +142,21 @@ function getBubbleSurface(signal: FlowSignal["signal"]): string {
   return "border-slate-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_66%,rgba(148,163,184,0.42)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.14),0_0_22px_rgba(148,163,184,0.24)]";
 }
 
-function ConfidenceDots({ confidence, signal }: { confidence: number; signal: FlowSignal["signal"] }) {
+function ConfidenceBand({ confidence, signal }: { confidence: number; signal: FlowSignal["signal"] }) {
   const normalizedConfidence = Math.max(0, Math.min(100, confidence));
-  const filledDots = normalizedConfidence >= 85 ? 4 : normalizedConfidence >= 65 ? 3 : normalizedConfidence >= 40 ? 2 : normalizedConfidence > 0 ? 1 : 0;
+  const fillWidth = Math.max(14, normalizedConfidence);
   const activeClass =
     signal === "accumulation"
-      ? "border-emerald-300/50 bg-emerald-300/55 shadow-[0_0_10px_rgba(74,222,128,0.2)]"
+      ? "bg-[linear-gradient(90deg,rgba(110,231,183,0.28),rgba(110,231,183,0.72),rgba(167,243,208,0.5))] shadow-[0_0_12px_rgba(74,222,128,0.22)]"
       : signal === "distribution"
-        ? "border-rose-300/50 bg-rose-300/55 shadow-[0_0_10px_rgba(251,113,133,0.2)]"
-        : "border-slate-300/45 bg-slate-300/50 shadow-[0_0_8px_rgba(148,163,184,0.18)]";
+        ? "bg-[linear-gradient(90deg,rgba(253,164,175,0.28),rgba(251,113,133,0.72),rgba(253,164,175,0.5))] shadow-[0_0_12px_rgba(251,113,133,0.2)]"
+        : "bg-[linear-gradient(90deg,rgba(203,213,225,0.22),rgba(148,163,184,0.58),rgba(203,213,225,0.35))] shadow-[0_0_10px_rgba(148,163,184,0.16)]";
 
   return (
-    <div className="inline-flex items-center gap-1" aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}>
-      {Array.from({ length: 4 }, (_, index) => (
-        <span
-          key={index}
-          className={`h-1.5 w-1.5 rounded-full border ${index < filledDots ? activeClass : "border-white/10 bg-white/8"}`}
-          aria-hidden="true"
-        />
-      ))}
+    <div className="inline-flex items-center" aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}>
+      <div className="h-1.5 w-8 overflow-hidden rounded-full border border-white/10 bg-white/6">
+        <div className={`h-full rounded-full ${activeClass}`} style={{ width: `${fillWidth}%` }} aria-hidden="true" />
+      </div>
     </div>
   );
 }
@@ -238,7 +241,15 @@ function TrendZoneBar({
   const numericValue = value ?? 0;
   const direction = numericValue > 0 ? "positive" : numericValue < 0 ? "negative" : "neutral";
   const baseReach = scale > 0 ? Math.max(6, Math.min(50, (Math.abs(numericValue) / scale) * 50)) : 0;
+  const totalReach = Math.max(8, Math.min(50, certainty * 50));
   const certaintyReach = Math.max(baseReach, Math.min(50, baseReach * (0.7 + certainty * 0.45)));
+  const counterReach = direction === "neutral" ? totalReach : Math.max(5, Math.min(totalReach, totalReach * 0.42));
+  const straddleClass =
+    direction === "positive"
+      ? "bg-[linear-gradient(90deg,rgba(148,163,184,0.12),rgba(110,231,183,0.16),rgba(110,231,183,0.12))]"
+      : direction === "negative"
+        ? "bg-[linear-gradient(90deg,rgba(251,113,133,0.12),rgba(251,113,133,0.16),rgba(148,163,184,0.12))]"
+        : "bg-[linear-gradient(90deg,rgba(148,163,184,0.12),rgba(148,163,184,0.18),rgba(148,163,184,0.12))]";
   const glowClass =
     direction === "positive"
       ? "bg-emerald-400/25"
@@ -255,10 +266,18 @@ function TrendZoneBar({
   return (
     <div className="relative h-6 overflow-hidden rounded-full border border-stealth-800 bg-stealth-950/90">
       <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/80" />
+      <div
+        className={`absolute top-1/2 h-3.5 -translate-y-1/2 rounded-full ${straddleClass}`}
+        style={{ left: `${50 - totalReach}%`, width: `${totalReach * 2}%` }}
+      />
       {direction === "neutral" ? (
         <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80 shadow-[0_0_12px_rgba(148,163,184,0.25)]" />
       ) : (
         <>
+          <div
+            className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${direction === "positive" ? "bg-emerald-200/28" : "bg-rose-200/28"}`}
+            style={direction === "positive" ? { right: "50%", width: `${counterReach}%` } : { left: "50%", width: `${counterReach}%` }}
+          />
           <div
             className={`absolute top-1/2 h-4 -translate-y-1/2 rounded-full ${glowClass}`}
             style={direction === "positive" ? { left: "50%", width: `${certaintyReach}%` } : { right: "50%", width: `${certaintyReach}%` }}
@@ -340,14 +359,6 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
 
   return (
     <div className="rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top,rgba(46,67,96,0.34),rgba(10,15,26,0.95)_68%)] p-3">
-      <div className="mb-2 flex justify-end">
-        <div className="flex flex-wrap gap-2 text-[11px] text-stealth-400">
-          <span className="rounded-full border border-emerald-700/40 bg-emerald-950/25 px-2 py-1 text-emerald-300">Accumulation</span>
-          <span className="rounded-full border border-rose-700/40 bg-rose-950/25 px-2 py-1 text-rose-300">Distribution</span>
-          <span className="rounded-full border border-stealth-600 bg-stealth-900/70 px-2 py-1 text-stealth-300">Normal</span>
-        </div>
-      </div>
-
       <div className="rounded-[20px] border border-stealth-800 bg-[radial-gradient(circle_at_center,rgba(23,37,59,0.38),rgba(2,6,23,0.96)_70%)] p-3">
         <div className="flex flex-wrap items-center justify-center gap-2.5 md:gap-3">
         {rows.map((row) => {
@@ -362,9 +373,9 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
               className={`relative flex shrink-0 flex-col items-center justify-center overflow-hidden rounded-full border-2 px-2 text-center transition duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
               style={{ width: `${size}px`, height: `${size}px` }}
             >
-              <span className="max-w-full text-center text-[13px] font-semibold leading-tight tracking-wide md:text-sm">{row.symbol}</span>
+              <span className="max-w-full text-center text-[13px] font-semibold leading-tight tracking-wide md:text-sm">{formatSignalSymbol(row.symbol, row.category)}</span>
               <span className="mt-1.5 flex justify-center">
-                <ConfidenceDots confidence={row.confidence} signal={row.signal} />
+                <ConfidenceBand confidence={row.confidence} signal={row.signal} />
               </span>
               <span className="mt-1 max-w-full text-[10px] font-medium leading-tight md:text-[11px]">{formatCompactCurrency(totalNotional(row))}</span>
             </button>
@@ -385,12 +396,13 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
   const currentPosition = row.latest_price !== null
     ? Math.max(0, Math.min(100, ((row.latest_price - clusterLow) / clusterRange) * 100))
     : 50;
+  const currentIsInsideCluster = row.latest_price !== null && row.latest_price >= clusterLow && row.latest_price <= clusterHigh;
 
   return (
     <article className="rounded-[24px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-4 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xl font-semibold text-stealth-100">{row.symbol}</div>
+          <div className="text-xl font-semibold text-stealth-100">{formatSignalSymbol(row.symbol, row.category)}</div>
           <div className="mt-1 text-xs text-stealth-400">{row.name} · {groupTitle}</div>
         </div>
         <SignalPill signal={row.signal} />
@@ -404,7 +416,7 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
           </div>
           <div className="text-right text-xs text-stealth-400">
             <div className="flex justify-end">
-              <ConfidenceDots confidence={row.confidence} signal={row.signal} />
+              <ConfidenceBand confidence={row.confidence} signal={row.signal} />
             </div>
             <div className="mt-0.5">Events {row.event_count ?? row.recent_events.length}</div>
           </div>
@@ -425,20 +437,29 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
         </div>
         <div className="mt-2 relative">
           <div className="relative h-8 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
-            <div className="absolute inset-y-2 left-0 w-1/2 rounded-l-full bg-rose-400/8" />
-            <div className="absolute inset-y-2 right-0 w-1/2 rounded-r-full bg-emerald-400/8" />
-            <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/80" />
+            <div className="absolute inset-y-0 left-0 w-[26%] bg-[radial-gradient(circle_at_left_center,rgba(251,113,133,0.35)_0%,rgba(251,113,133,0.18)_28%,rgba(251,113,133,0.06)_48%,rgba(251,113,133,0)_75%)]" />
+            <div className="absolute inset-y-0 right-0 w-[26%] bg-[radial-gradient(circle_at_right_center,rgba(110,231,183,0.35)_0%,rgba(110,231,183,0.18)_28%,rgba(110,231,183,0.06)_48%,rgba(110,231,183,0)_75%)]" />
+            <div className="absolute inset-y-[7px] left-5 right-5 rounded-full bg-[linear-gradient(90deg,rgba(251,113,133,0.04),rgba(148,163,184,0.05)_50%,rgba(110,231,183,0.04))]" />
+            <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/65" />
             {row.sell_cluster_level !== null && (
-              <div className="absolute left-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border border-rose-300/90 bg-rose-300/80 shadow-[0_0_10px_rgba(251,113,133,0.35)]" />
+              <div className="absolute left-3 top-1/2 h-4 w-px -translate-y-1/2 bg-rose-200/60 shadow-[0_0_10px_rgba(251,113,133,0.4)]" />
             )}
             {row.buy_cluster_level !== null && (
-              <div className="absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border border-emerald-300/90 bg-emerald-300/80 shadow-[0_0_10px_rgba(74,222,128,0.35)]" />
+              <div className="absolute right-3 top-1/2 h-4 w-px -translate-y-1/2 bg-emerald-200/65 shadow-[0_0_10px_rgba(74,222,128,0.4)]" />
             )}
             {row.latest_price !== null && (
-              <div
-                className="absolute top-1/2 h-5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stealth-100 shadow-[0_0_12px_rgba(226,232,240,0.45)]"
-                style={{ left: `${currentPosition}%` }}
-              />
+              <>
+                <div
+                  className={`absolute top-1/2 h-8 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full ${currentIsInsideCluster ? "bg-[radial-gradient(circle,rgba(226,232,240,0.22)_0%,rgba(226,232,240,0.08)_38%,rgba(226,232,240,0)_72%)]" : "bg-[radial-gradient(circle,rgba(248,250,252,0.16)_0%,rgba(226,232,240,0.05)_38%,rgba(226,232,240,0)_72%)]"}`}
+                  style={{ left: `${currentPosition}%` }}
+                />
+                <div
+                  className="absolute top-1/2 h-5 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/12 bg-[linear-gradient(180deg,rgba(248,250,252,0.16),rgba(15,23,42,0.92))] shadow-[0_0_18px_rgba(226,232,240,0.18)]"
+                  style={{ left: `${currentPosition}%` }}
+                >
+                  <div className="absolute inset-x-[3px] top-[3px] bottom-[3px] rounded-full bg-stealth-950/85" />
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -527,12 +548,12 @@ function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">#{index + 1}</div>
-                <div className="mt-0.5 font-semibold text-stealth-100">{item.symbol}</div>
+                <div className="mt-0.5 font-semibold text-stealth-100">{formatSignalSymbol(item.symbol, item.category)}</div>
               </div>
               <div className="text-right">
                 <div className={`text-sm font-semibold ${textClass}`}>{formatCompactCurrency(item.net_flow_usd)}</div>
                 <div className="mt-1 flex justify-end">
-                  <ConfidenceDots confidence={item.confidence} signal={item.signal} />
+                  <ConfidenceBand confidence={item.confidence} signal={item.signal} />
                 </div>
               </div>
             </div>
