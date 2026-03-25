@@ -1,16 +1,17 @@
 export default function Footer() {
   return (
-    <footer className="bg-stealth-900 border-t border-stealth-700 py-4 px-6 mt-auto">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-stealth-400">
+    <footer className="mt-auto border-t border-stealth-700/80 bg-stealth-950/72 px-6 py-5 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 text-sm text-stealth-400 md:flex-row">
         <div className="text-center md:text-left">
+          <div className="text-[10px] uppercase tracking-[0.26em] text-stealth-500">Market Stability Diagnostic</div>
           © 2026 Steven J Meyer LLC. All rights reserved.
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center justify-center gap-6">
           <a 
             href="https://www.steven-meyer.com/" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="hover:text-stealth-200 transition-colors"
+            className="transition-colors hover:text-stealth-200"
           >
             Portfolio
           </a>
@@ -40,7 +41,7 @@ export default function Footer() {
             href="https://www.paypal.com/donate/?hosted_button_id=UMTL4BWY2HAEA" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="bg-white hover:bg-blue-600 text-stealth-900 hover:text-white px-4 py-1.5 rounded-md transition-colors font-medium"
+            className="rounded-full border border-stealth-600 bg-stealth-100 px-4 py-1.5 font-medium text-stealth-950 transition-colors hover:border-sky-400 hover:bg-sky-400 hover:text-stealth-950"
           >
             Donate
           </a>

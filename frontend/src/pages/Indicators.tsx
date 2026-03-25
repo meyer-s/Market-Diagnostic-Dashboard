@@ -19,8 +19,14 @@ export default function Indicators() {
 
   if (loading) {
     return (
-      <div className="p-3 md:p-6 text-gray-200">
-        <h2 className="text-xl sm:text-2xl font-bold mb-3 md:mb-4">All Indicators</h2>
+      <div className="page-shell page-stack">
+        <div className="page-hero">
+          <div className="relative z-10">
+            <span className="page-kicker">Diagnostic Library</span>
+            <h2 className="page-title">All Indicators</h2>
+            <p className="page-subtitle">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
+          </div>
+        </div>
         <div className="flex justify-center py-6">
           <MarketLoading size={96} variant="pulse" label="Loading indicators..." />
         </div>
@@ -30,9 +36,15 @@ export default function Indicators() {
 
   if (error) {
     return (
-      <div className="p-3 md:p-6 text-gray-200">
-        <h2 className="text-xl sm:text-2xl font-bold mb-3 md:mb-4">All Indicators</h2>
-        <div className="bg-red-900/20 border border-red-700 text-red-200 p-4 rounded">
+      <div className="page-shell page-stack">
+        <div className="page-hero">
+          <div className="relative z-10">
+            <span className="page-kicker">Diagnostic Library</span>
+            <h2 className="page-title">All Indicators</h2>
+            <p className="page-subtitle">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
+          </div>
+        </div>
+        <div className="surface-card rounded-2xl border border-red-700/60 bg-red-950/18 p-4 text-red-200">
           <div className="font-semibold mb-2">Error loading indicators:</div>
           <div className="text-sm">{error}</div>
           <div className="text-xs mt-2 text-red-400">
@@ -45,21 +57,37 @@ export default function Indicators() {
 
   if (!data || data.length === 0) {
     return (
-      <div className="p-3 md:p-6 text-gray-200">
-        <h2 className="text-xl sm:text-2xl font-bold mb-3 md:mb-4">All Indicators</h2>
+      <div className="page-shell page-stack">
+        <div className="page-hero">
+          <div className="relative z-10">
+            <span className="page-kicker">Diagnostic Library</span>
+            <h2 className="page-title">All Indicators</h2>
+            <p className="page-subtitle">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
+          </div>
+        </div>
         <div className="text-stealth-400">No indicators available.</div>
       </div>
     );
   }
 
   return (
-    <div className="p-3 md:p-6 text-gray-200">
-      <h2 className="text-xl sm:text-2xl font-bold mb-3 md:mb-4">All Indicators</h2>
+    <div className="page-shell page-stack">
+      <div className="page-hero">
+        <div className="relative z-10">
+          <span className="page-kicker">Diagnostic Library</span>
+          <h2 className="page-title">All Indicators</h2>
+          <p className="page-subtitle">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
+          <div className="page-meta">
+            <span className="page-badge">{filteredData.length} active rows</span>
+            <span className="page-badge">Tap any row for history</span>
+          </div>
+        </div>
+      </div>
 
       {/* Desktop Table View */}
-      <div className="hidden lg:block overflow-x-auto overflow-hidden primary-card">
+      <div className="surface-card-strong hidden overflow-x-auto overflow-hidden lg:block">
         <table className="w-full">
-          <thead className="text-left text-gray-400">
+          <thead className="text-left text-stealth-400">
             <tr>
               <th className="px-4 py-3">Code</th>
               <th className="px-4 py-3">Name</th>
@@ -68,7 +96,7 @@ export default function Indicators() {
               <th className="px-4 py-3">Trend</th>
             </tr>
           </thead>
-          <tbody className="text-gray-300">
+          <tbody className="text-stealth-300">
             {filteredData.map((i) => (
               <IndicatorRow key={i.code} indicator={i} />
             ))}

@@ -52,7 +52,7 @@ function AppWithAnalytics() {
   }, [location]);
 
   return (
-    <div className="bg-stealth-900 min-h-screen flex flex-col">
+    <div className="app-shell flex min-h-screen flex-col">
       <Topbar />
 
       <main className="flex-1">

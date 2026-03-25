@@ -249,14 +249,21 @@ export default function SectorProjections() {
     : divergenceTimestamps;
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto text-gray-100">
-      <h1 className="text-2xl font-bold mb-2">Sector Projections</h1>
-      <p className="mb-4 text-gray-400 text-sm sm:text-base">Identify sector leadership across multiple time horizons with quantified confidence levels</p>
-      
-      {data && <p className="mb-6 text-xs text-gray-500">System State: <span className={data.system_state === "RED" ? "text-red-400 font-semibold" : data.system_state === "GREEN" ? "text-green-400 font-semibold" : "text-yellow-400 font-semibold"}>{data.system_state}</span> - As of: {data.as_of_date}</p>}
+    <div className="page-shell-narrow page-stack">
+      <div className="page-hero">
+        <div className="relative z-10">
+          <span className="page-kicker">Rotation Monitor</span>
+          <h1 className="page-title">Sector Projections</h1>
+          <p className="page-subtitle">Identify sector leadership across multiple time horizons with quantified confidence levels.</p>
+          <div className="page-meta">
+            {data && <span className="page-badge">System {data.system_state}</span>}
+            {data && <span className="page-badge">As of {data.as_of_date}</span>}
+          </div>
+        </div>
+      </div>
 
       {(data?.data_warnings?.length ?? 0) > 0 && (
-        <div className="mb-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3 sm:p-4">
+        <div className="rounded-2xl border border-yellow-700/50 bg-yellow-900/20 p-3 sm:p-4">
           <p className="text-xs sm:text-sm text-yellow-200/90 leading-relaxed">
             <strong>Data Warning:</strong> Recent projections contain data quality flags that may reduce accuracy.
           </p>
@@ -279,13 +286,13 @@ export default function SectorProjections() {
       
       {/* Defensive vs Cyclical Spread - Historical Trend */}
       {!loading && !error && (
-        <div className="mb-8 bg-gray-800 rounded-lg p-4 sm:p-6 shadow">
+        <div className="surface-card-strong p-4 sm:p-6">
           <h2 className="text-base sm:text-lg font-semibold mb-2">Defensive vs Cyclical Spread</h2>
-          <p className="text-xs text-gray-400 mb-4">
+          <p className="mb-4 text-xs text-stealth-400">
             Rolling history of the defensive minus cyclical average (3M projection scores).
           </p>
           {divergenceHistory.length > 0 ? (
-            <div className="bg-gray-900 rounded-lg p-2 sm:p-4">
+            <div className="surface-card-muted p-2 sm:p-4">
               <div className="h-44 sm:h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={divergenceHistory} margin={CHART_MARGIN}>
@@ -334,7 +341,7 @@ export default function SectorProjections() {
               </div>
             </div>
           ) : (
-            <div className="bg-gray-900 rounded-lg p-6 text-xs text-gray-400 text-center">
+            <div className="surface-card-muted p-6 text-center text-xs text-stealth-400">
               No history available yet.
             </div>
           )}
@@ -344,9 +351,9 @@ export default function SectorProjections() {
       
       {/* Overview Chart - Sector Score Trends Across Horizons */}
       {!loading && !error && Object.keys(projections).length > 0 && (
-        <div className="mb-8 bg-gray-800 rounded-lg p-4 sm:p-6 shadow">
+        <div className="surface-card-strong p-4 sm:p-6">
           <h2 className="text-base sm:text-lg font-semibold mb-3">Sector Score Trends Across Time Horizons</h2>
-          <p className="text-xs text-gray-400 mb-3">Each line shows how a sector's composite score evolves from current to forward projections</p>
+          <p className="mb-3 text-xs text-stealth-400">Each line shows how a sector's composite score evolves from current to forward projections</p>
           {tInterpolated && (
             <p className="text-xs text-amber-300/90 mb-3">
               Note: Some T values are estimated from historical and 3M data due to missing current readings.
@@ -354,7 +361,7 @@ export default function SectorProjections() {
           )}
           
           {/* Smooth Line Chart */}
-          <div className="bg-gray-900 rounded-lg p-2 sm:p-4 mb-2">
+          <div className="surface-card-muted mb-2 p-2 sm:p-4">
             <div className="w-full" style={{ aspectRatio: '2 / 1', maxHeight: '240px' }}>
               <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
                 {/* Gradient definitions for uncertainty cones */}

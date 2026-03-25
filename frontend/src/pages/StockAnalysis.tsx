@@ -389,25 +389,34 @@ export default function StockAnalysis() {
   );
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto text-gray-100">
-      <h1 className="text-2xl font-bold mb-2">Stock Analysis</h1>
-      <p className="mb-4 text-gray-400">Analyze individual stocks across multiple time horizons with quantified confidence levels</p>
+    <div className="page-shell-narrow page-stack">
+      <div className="page-hero">
+        <div className="relative z-10">
+          <span className="page-kicker">Single Name Lens</span>
+          <h1 className="page-title">Stock Analysis</h1>
+          <p className="page-subtitle">Analyze individual stocks across multiple time horizons with quantified confidence levels.</p>
+          <div className="page-meta">
+            <span className="page-badge">Projection horizons T, 3M, 6M, 12M</span>
+            {searchTicker && <span className="page-badge">Tracking {searchTicker}</span>}
+          </div>
+        </div>
+      </div>
       
       {/* Stock Search */}
-      <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6 shadow-lg">
+      <div className="surface-card-strong p-4 sm:p-6">
         <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3">
           <input
             type="text"
             value={ticker}
             onChange={(e) => setTicker(e.target.value.toUpperCase())}
             placeholder="e.g., AAPL, MSFT, TSLA"
-            className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 sm:py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition text-sm sm:text-base"
+            className="flex-1 rounded-2xl border border-stealth-700 bg-stealth-950/85 px-4 py-3 text-sm text-white placeholder-stealth-500 transition focus:border-sky-500 focus:outline-none sm:py-2 sm:text-base"
             disabled={loading}
           />
           <button
             type="submit"
             disabled={loading || !ticker.trim()}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-semibold transition whitespace-nowrap"
+            className="whitespace-nowrap rounded-full bg-stealth-100 px-6 py-3 font-semibold text-stealth-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-stealth-700 disabled:text-stealth-400"
           >
             {loading ? "Analyzing..." : "Analyze"}
           </button>
@@ -416,7 +425,7 @@ export default function StockAnalysis() {
 
       {/* Error State */}
       {error && (
-        <div className="bg-red-900/20 border border-red-700 rounded-lg p-4 mb-6">
+        <div className="rounded-2xl border border-red-700 bg-red-900/20 p-4">
           <p className="text-red-300">{error}</p>
           <p className="text-sm text-red-400 mt-2">
             Please check the ticker symbol and try again. The stock must have sufficient historical data available.
@@ -425,7 +434,7 @@ export default function StockAnalysis() {
       )}
 
       {projectionUnavailable && !error && (
-        <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4 mb-6">
+        <div className="rounded-2xl border border-yellow-700/50 bg-yellow-900/20 p-4">
           <p className="text-yellow-200">Projections unavailable for this asset.</p>
         </div>
       )}
@@ -435,13 +444,13 @@ export default function StockAnalysis() {
         <>
           {/* Fundamentals Summary */}
           {projections["T"] && (
-            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-4 shadow-lg">
+            <div className="surface-card-strong p-4 sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1">
                     <h2 className="text-xl font-bold">{chartData.ticker}</h2>
                     {lastUpdated && (
-                      <span className="text-[10px] text-gray-500 bg-gray-900 px-2 py-0.5 rounded">
+                      <span className="rounded-full bg-stealth-950/90 px-2 py-0.5 text-[10px] text-stealth-500">
                         Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
@@ -464,8 +473,8 @@ export default function StockAnalysis() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+              <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
+                <div className="surface-card-muted p-3">
                   <p className="text-gray-400 mb-1" title="52-week low and high range">52W Range</p>
                   <p className="font-semibold">
                     {technicalData?.low_52w !== undefined && technicalData?.high_52w !== undefined
@@ -473,7 +482,7 @@ export default function StockAnalysis() {
                       : "n/a"}
                   </p>
                 </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                <div className="surface-card-muted p-3">
                   <p className="text-gray-400 mb-1" title="Price momentum and moving averages">Trend</p>
                   <p
                     className={`font-semibold capitalize ${
@@ -487,21 +496,21 @@ export default function StockAnalysis() {
                     {technicalData?.trend ?? "n/a"}
                   </p>
                 </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                <div className="surface-card-muted p-3">
                   <p className="text-gray-400 mb-1" title="Confidence level in the composite projection (0-100)">Conviction</p>
                   <p className="font-semibold text-purple-300">{Math.round(projections["T"].conviction)}%</p>
                 </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                <div className="surface-card-muted p-3">
                   <p className="text-gray-400 mb-1" title="Upper reference band derived from volatility">Upper Reference</p>
                   <p className="font-semibold text-green-400">${projections["T"].take_profit.toFixed(2)}</p>
                 </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                <div className="surface-card-muted p-3">
                   <p className="text-gray-400 mb-1" title="Lower reference band derived from volatility">Lower Reference</p>
                   <p className="font-semibold text-red-400">
                     ${Math.max(0, projections["T"].stop_loss).toFixed(2)}
                   </p>
                 </div>
-                <div className="bg-gray-900 rounded p-3 border border-gray-700">
+                <div className="surface-card-muted p-3">
                   <p className="text-gray-400 mb-1" title="Volatility and max drawdown">Risk</p>
                   <p className="font-semibold text-gray-200">
                     Vol {projections["T"].volatility.toFixed(1)}% / DD {projections["T"].max_drawdown.toFixed(1)}%
@@ -546,7 +555,7 @@ export default function StockAnalysis() {
 
           {/* Fundamental Analysis */}
           {fundamentals && (
-            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
+            <div className="surface-card p-4 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
                 <span className="text-[10px] sm:text-xs text-gray-500">Up to 3 years (quarterly)</span>
@@ -715,7 +724,7 @@ export default function StockAnalysis() {
 
           {/* Holistic Summary */}
           {holisticSummary && (
-            <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
+            <div className="surface-card p-4 sm:p-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-base sm:text-lg font-semibold">Holistic Summary</h3>
                 <span className="text-[10px] sm:text-xs text-gray-300 bg-gray-900 border border-gray-700 px-2 py-1 rounded-full">
@@ -768,7 +777,7 @@ export default function StockAnalysis() {
           )}
 
           {/* Interactive Chart */}
-          <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
+          <div className="surface-card p-4 sm:p-6">
             <h3 className="text-base sm:text-lg font-semibold mb-4">Score Trends</h3>
             <div className="bg-gray-900 rounded-lg p-2 sm:p-4 mb-2">
               <div className="w-full" style={{ aspectRatio: '3 / 1', maxHeight: '240px' }}>

@@ -227,24 +227,30 @@ export default function MarketNews() {
   };
 
   return (
-    <div className="p-3 md:p-6 text-gray-200 space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold">News</h2>
-          <p className="text-sm text-stealth-400 mt-1">
+    <div className="page-shell page-stack">
+      <div className="page-hero">
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <span className="page-kicker">Signal Feed</span>
+            <h2 className="page-title">News</h2>
+            <p className="page-subtitle">
             Cached Seeking Alpha headlines for your portfolio tickers.
-          </p>
-        </div>
+            </p>
+            <div className="page-meta">
+              <span className="page-badge">{availableTickers.length} tracked symbols</span>
+              <span className="page-badge">Window {HOURS_OPTIONS.find((option) => option.value === hours)?.label ?? `${hours}h`}</span>
+            </div>
+          </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-1 bg-stealth-800 border border-stealth-700 rounded-lg p-1">
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="control-strip">
             {HOURS_OPTIONS.map((option) => (
               <button
                 key={option.value}
                 onClick={() => setHours(option.value)}
-                className={`flex-1 px-3 py-1 rounded text-xs sm:text-sm font-medium transition whitespace-nowrap ${
+                className={`flex-1 whitespace-nowrap rounded-full px-3 py-1 text-xs sm:text-sm font-medium transition ${
                   hours === option.value
-                    ? "bg-stealth-600 text-stealth-100"
+                    ? "bg-stealth-700 text-stealth-50"
                     : "text-stealth-400 hover:text-stealth-200"
                 }`}
               >
@@ -253,7 +259,7 @@ export default function MarketNews() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 bg-stealth-800 border border-stealth-700 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 rounded-2xl border border-stealth-700 bg-stealth-900/80 px-3 py-2">
             <span className="text-xs text-stealth-400">Ticker</span>
             <select
               value={selectedTicker}
@@ -272,7 +278,7 @@ export default function MarketNews() {
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-xs sm:text-sm transition ${
+            className={`flex items-center justify-center gap-2 rounded-full px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition ${
               isRefreshing ? BUTTON_STYLES.disabled : BUTTON_STYLES.primary
             }`}
           >
@@ -280,9 +286,10 @@ export default function MarketNews() {
           </button>
         </div>
       </div>
+      </div>
 
       {/* Collapsible editor for the cached ticker list (presets load into this editor). */}
-      <div className="primary-card p-4">
+      <div className="surface-card-strong p-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <div>
             <h3 className="text-sm font-semibold text-stealth-100">Ticker Cache</h3>
@@ -291,7 +298,7 @@ export default function MarketNews() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 bg-stealth-900 border border-stealth-700 rounded-lg px-2 py-1">
+            <div className="flex items-center gap-2 rounded-xl border border-stealth-700 bg-stealth-950/80 px-2 py-1">
               <span className="text-xs text-stealth-400">Preset</span>
               <select
                 value={selectedPreset}
@@ -309,13 +316,13 @@ export default function MarketNews() {
             </div>
             <button
               onClick={() => setIsTickerOpen((prev) => !prev)}
-              className="px-3 py-2 rounded-lg text-xs sm:text-sm font-medium bg-stealth-700 text-stealth-200 hover:bg-stealth-600 transition"
+              className="rounded-full bg-stealth-800 px-3 py-2 text-xs font-medium text-stealth-200 transition hover:bg-stealth-700 sm:text-sm"
             >
               {isTickerOpen ? "Hide" : "Show"}
             </button>
             <button
               onClick={handleSaveTickers}
-              className="px-3 py-2 rounded-lg text-xs sm:text-sm font-medium bg-stealth-700 text-stealth-200 hover:bg-stealth-600 transition"
+              className="rounded-full bg-stealth-100 px-3 py-2 text-xs font-medium text-stealth-950 transition hover:bg-white sm:text-sm"
             >
               Save Tickers
             </button>

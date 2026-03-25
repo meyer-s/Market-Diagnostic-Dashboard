@@ -201,8 +201,14 @@ export default function SystemBreakdown() {
 
   if (loading) {
     return (
-      <div className="p-6 text-gray-200">
-        <h2 className="text-2xl font-bold mb-6">System Breakdown</h2>
+      <div className="page-shell page-stack">
+        <div className="page-hero">
+          <div className="relative z-10">
+            <span className="page-kicker">Methodology</span>
+            <h2 className="page-title">System Breakdown</h2>
+            <p className="page-subtitle">See how the composite state is built, how the indicators distribute over time, and where weight is concentrated.</p>
+          </div>
+        </div>
         <div className="flex justify-center py-6">
           <MarketLoading size={110} variant="scan" label="Loading system overview..." />
         </div>
@@ -256,12 +262,21 @@ export default function SystemBreakdown() {
     .join(", ");
 
   return (
-    <div className="p-3 md:p-6 text-gray-200">
-      <h2 className="text-xl sm:text-2xl font-bold mb-2">System Breakdown & Methodology</h2>
-      <p className="text-sm text-gray-400 mb-4 md:mb-6">Assess market regime with confidence, spot inflection points early, and align positioning with macroeconomic reality</p>
+    <div className="page-shell page-stack">
+      <div className="page-hero">
+        <div className="relative z-10">
+          <span className="page-kicker">Methodology</span>
+          <h2 className="page-title">System Breakdown & Methodology</h2>
+          <p className="page-subtitle">Assess market regime with confidence, spot inflection points early, and align positioning with macroeconomic reality.</p>
+          <div className="page-meta">
+            <span className="page-badge">{indicatorCount} live inputs</span>
+            <span className="page-badge">Breadth {breadthTrend}</span>
+          </div>
+        </div>
+      </div>
 
       {/* Overview Section */}
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+      <div className="surface-card-strong p-4 md:p-6">
         <div className="flex items-center gap-2 mb-3 md:mb-4">
           <h3 className="text-lg md:text-xl font-semibold text-stealth-100">System Overview</h3>
           <div className="group relative">
@@ -359,8 +374,8 @@ export default function SystemBreakdown() {
       </div>
 
       {/* Current Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="surface-card p-6">
           <h3 className="text-xl font-semibold mb-4 text-stealth-100">Current State Distribution</h3>
           <div className="flex items-center justify-center" style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -385,7 +400,7 @@ export default function SystemBreakdown() {
           </div>
         </div>
 
-        <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
+        <div className="surface-card p-6">
           <h3 className="text-xl font-semibold mb-4 text-stealth-100">State Ratios</h3>
           <div className="space-y-4 mt-8">
             <div>
@@ -431,7 +446,7 @@ export default function SystemBreakdown() {
       </div>
 
       {/* Historical State Distribution Heatmap - Moved here */}
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+      <div className="surface-card p-4 md:p-6">
         <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Historical State Distribution (1 Year)</h3>
         <p className="text-xs sm:text-sm text-stealth-400 mb-3 md:mb-4">Each row represents an indicator. Color shows state: Green (healthy), Yellow (caution), Red (stress)</p>
         
