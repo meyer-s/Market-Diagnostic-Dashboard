@@ -41,7 +41,7 @@ export default function Footer() {
             href="https://www.paypal.com/donate/?hosted_button_id=UMTL4BWY2HAEA" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="rounded-full border border-stealth-600 bg-stealth-100 px-4 py-1.5 font-medium text-stealth-950 transition-colors hover:border-sky-400 hover:bg-sky-400 hover:text-stealth-950"
+            className="rounded-full border border-stealth-600 bg-white px-4 py-1.5 font-medium text-stealth-900 transition-colors hover:border-sky-400 hover:bg-sky-400 hover:text-stealth-900"
           >
             Donate
           </a>

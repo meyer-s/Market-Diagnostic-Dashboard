@@ -29,7 +29,7 @@ export default function Topbar() {
     <div className="sticky top-0 z-50 w-full border-b border-stealth-700/80 bg-stealth-950/78 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
         <div className="mr-2 min-w-0">
-          <span className="block truncate text-base font-semibold tracking-[0.04em] text-stealth-50 md:text-lg">Market Stability Diagnostic</span>
+          <span className="block truncate text-base font-semibold tracking-[0.04em] text-white md:text-lg">Market Stability Diagnostic</span>
           <span className="hidden text-[10px] uppercase tracking-[0.24em] text-stealth-500 md:block">Macro Context Engine</span>
         </div>
         
@@ -43,7 +43,7 @@ export default function Topbar() {
                 to={item.path}
                 className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${
                   isActive
-                    ? "border border-stealth-600 bg-stealth-800 text-stealth-50 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]"
+                    ? "border border-stealth-600 bg-stealth-800 text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)]"
                     : "text-stealth-300 hover:bg-stealth-800/90 hover:text-stealth-100"
                 }`}
               >
@@ -61,7 +61,7 @@ export default function Topbar() {
               onClick={() => setToolsOpen((prev) => !prev)}
               className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all ${
                 isToolsActive
-                  ? "border border-stealth-600 bg-stealth-800 text-stealth-50 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]"
+                  ? "border border-stealth-600 bg-stealth-800 text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)]"
                   : "text-stealth-300 hover:bg-stealth-800/90 hover:text-stealth-100"
               }`}
               aria-haspopup="true"
@@ -89,7 +89,7 @@ export default function Topbar() {
                         onClick={() => setToolsOpen(false)}
                         className={`block px-4 py-2.5 text-sm transition-colors ${
                           isActive
-                            ? "bg-stealth-800 text-stealth-50"
+                            ? "bg-stealth-800 text-white"
                             : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100"
                         }`}
                       >
@@ -131,7 +131,7 @@ export default function Topbar() {
                 onClick={() => setMobileMenuOpen(false)}
                 className={`block border-b border-stealth-700 px-4 py-3 text-sm font-medium transition-colors last:border-b-0 ${
                   isActive
-                    ? "bg-stealth-800 text-stealth-50"
+                    ? "bg-stealth-800 text-white"
                     : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100"
                 }`}
               >
@@ -151,7 +151,7 @@ export default function Topbar() {
                 onClick={() => setMobileMenuOpen(false)}
                 className={`block border-b border-stealth-700 px-6 py-3 text-sm font-medium transition-colors last:border-b-0 ${
                   isActive
-                    ? "bg-stealth-800 text-stealth-50"
+                    ? "bg-stealth-800 text-white"
                     : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100"
                 }`}
               >

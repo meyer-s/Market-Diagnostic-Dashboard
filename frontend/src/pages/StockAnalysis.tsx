@@ -416,7 +416,7 @@ export default function StockAnalysis() {
           <button
             type="submit"
             disabled={loading || !ticker.trim()}
-            className="whitespace-nowrap rounded-full bg-stealth-100 px-6 py-3 font-semibold text-stealth-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-stealth-700 disabled:text-stealth-400"
+            className="whitespace-nowrap rounded-full bg-white px-6 py-3 font-semibold text-stealth-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-stealth-700 disabled:text-stealth-400"
           >
             {loading ? "Analyzing..." : "Analyze"}
           </button>

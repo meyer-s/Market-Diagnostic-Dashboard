@@ -262,7 +262,7 @@ export default function Dashboard() {
               className={`flex items-center justify-center gap-2 rounded-full px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition ${
                 isRefreshing
                   ? 'bg-stealth-800 text-stealth-500 cursor-not-allowed'
-                  : 'bg-stealth-100 text-stealth-950 hover:bg-white'
+                  : 'bg-white text-stealth-900 hover:bg-slate-100'
               }`}
               title="Refresh all indicator data"
             >
@@ -289,7 +289,7 @@ export default function Dashboard() {
                 onClick={() => setTrendPeriod(90)}
                 className={`flex-1 whitespace-nowrap rounded-full px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium transition ${
                   trendPeriod === 90
-                    ? 'bg-stealth-700 text-stealth-50'
+                    ? 'bg-stealth-700 text-white'
                     : 'text-stealth-400 hover:text-stealth-200'
                 }`}
               >
@@ -299,7 +299,7 @@ export default function Dashboard() {
                 onClick={() => setTrendPeriod(180)}
                 className={`flex-1 whitespace-nowrap rounded-full px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium transition ${
                   trendPeriod === 180
-                    ? 'bg-stealth-700 text-stealth-50'
+                    ? 'bg-stealth-700 text-white'
                     : 'text-stealth-400 hover:text-stealth-200'
                 }`}
               >
@@ -309,7 +309,7 @@ export default function Dashboard() {
                 onClick={() => setTrendPeriod(365)}
                 className={`flex-1 whitespace-nowrap rounded-full px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium transition ${
                   trendPeriod === 365
-                    ? 'bg-stealth-700 text-stealth-50'
+                    ? 'bg-stealth-700 text-white'
                     : 'text-stealth-400 hover:text-stealth-200'
                 }`}
               >
