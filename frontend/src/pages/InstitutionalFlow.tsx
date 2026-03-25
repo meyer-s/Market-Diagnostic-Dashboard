@@ -65,6 +65,8 @@ interface FlowOverviewResponse {
 }
 
 type GroupTone = "default" | "buy" | "sell";
+type GroupKey = "sectors" | "metals" | "crypto" | "stocks";
+type ActiveSelection = { groupKey: GroupKey; symbol: string };
 
 function formatCurrency(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -98,6 +100,19 @@ function formatPercent(value: number | null | undefined): string {
 
 function formatBucket(bucket: string): string {
   return new Date(bucket).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatGroupTitle(groupKey: GroupKey): string {
+  if (groupKey === "sectors") {
+    return "Sectors";
+  }
+  if (groupKey === "metals") {
+    return "Precious Metals";
+  }
+  if (groupKey === "crypto") {
+    return "Crypto";
+  }
+  return "Stocks";
 }
 
 function getSignalClasses(signal: FlowSignal["signal"]): string {
@@ -196,19 +211,20 @@ function CenteredFlowBar({ value, scale }: { value: number | null; scale: number
 }
 
 function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
-  const scale = Math.max(1, ...timeline.map((bucket) => Math.abs(bucket.net_flow_usd)));
-  const accumulationBuckets = timeline.filter((bucket) => bucket.net_flow_usd > 0).length;
-  const distributionBuckets = timeline.filter((bucket) => bucket.net_flow_usd < 0).length;
-  const positiveStreak = longestDirectionalStreak(timeline, "positive");
-  const negativeStreak = longestDirectionalStreak(timeline, "negative");
+  const recentTimeline = timeline.slice(-6);
+  const scale = Math.max(1, ...recentTimeline.map((bucket) => Math.abs(bucket.net_flow_usd)));
+  const accumulationBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd > 0).length;
+  const distributionBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd < 0).length;
+  const positiveStreak = longestDirectionalStreak(recentTimeline, "positive");
+  const negativeStreak = longestDirectionalStreak(recentTimeline, "negative");
   const dominantCluster = positiveStreak > negativeStreak ? "Accumulation clustering" : negativeStreak > positiveStreak ? "Distribution clustering" : "Mixed clustering";
 
   return (
     <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Flow Over Time</div>
-          <div className="mt-1 text-sm text-stealth-300">{dominantCluster} across the recent weekly buckets.</div>
+          <div className="mt-1 text-sm text-stealth-300">{dominantCluster} across the latest weekly buckets.</div>
         </div>
         <div className="flex gap-2 text-xs">
           <GroupBadge label="Up Weeks" value={accumulationBuckets} tone="buy" />
@@ -216,25 +232,35 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
         </div>
       </div>
 
-      <div className="mt-4 flex h-32 items-end gap-2">
-        {timeline.map((bucket) => {
-          const height = Math.max(12, (Math.abs(bucket.net_flow_usd) / scale) * 88);
-          const toneClass = bucket.net_flow_usd > 0 ? "bg-emerald-400/85" : bucket.net_flow_usd < 0 ? "bg-rose-400/85" : "bg-slate-400/60";
-
+      <div className="mt-4 space-y-3">
+        {recentTimeline.map((bucket) => {
           return (
-            <div key={bucket.bucket} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
-              <div className="relative flex h-24 w-full items-center justify-center rounded-full border border-stealth-800 bg-stealth-900/70 px-1">
-                <div className="absolute inset-x-2 top-1/2 h-px -translate-y-1/2 bg-stealth-700" />
-                <div
-                  className={`absolute left-1/2 w-3 -translate-x-1/2 rounded-full ${toneClass}`}
-                  style={{
-                    height: `${height}px`,
-                    bottom: bucket.net_flow_usd >= 0 ? "50%" : undefined,
-                    top: bucket.net_flow_usd < 0 ? "50%" : undefined,
-                  }}
-                />
+            <div key={bucket.bucket} className="rounded-xl border border-stealth-800 bg-stealth-900/55 px-3 py-3">
+              <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.18em] text-stealth-500">
+                <span>{formatBucket(bucket.bucket)}</span>
+                <span>{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</span>
               </div>
-              <div className="text-center text-[10px] text-stealth-500">{formatBucket(bucket.bucket)}</div>
+              <div className="mt-3">
+                <CenteredFlowBar value={bucket.net_flow_usd} scale={scale} />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <div className="rounded-lg border border-stealth-800 bg-stealth-950/65 px-2 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Net</div>
+                  <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
+                </div>
+                <div className="rounded-lg border border-stealth-800 bg-stealth-950/65 px-2 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Total</div>
+                  <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(bucket.total_notional_usd)}</div>
+                </div>
+                <div className="rounded-lg border border-stealth-800 bg-stealth-950/65 px-2 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Buy/Sell</div>
+                  <div className="mt-1 font-semibold text-stealth-100">{bucket.buy_events}/{bucket.sell_events}</div>
+                </div>
+                <div className="rounded-lg border border-stealth-800 bg-stealth-950/65 px-2 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Neutral</div>
+                  <div className="mt-1 font-semibold text-stealth-100">{bucket.neutral_events}</div>
+                </div>
+              </div>
             </div>
           );
         })}
@@ -251,11 +277,11 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
         </div>
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-3 py-2">
           <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Total Flow</div>
-          <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(timeline.reduce((sum, bucket) => sum + bucket.net_flow_usd, 0))}</div>
+          <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.net_flow_usd, 0))}</div>
         </div>
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-3 py-2">
           <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Tracked Activity</div>
-          <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(timeline.reduce((sum, bucket) => sum + bucket.total_notional_usd, 0))}</div>
+          <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.total_notional_usd, 0))}</div>
         </div>
       </div>
     </div>
@@ -279,15 +305,10 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
         </div>
       </div>
 
-      <div className="relative min-h-[26rem] overflow-hidden rounded-[24px] border border-stealth-800 bg-[radial-gradient(circle_at_center,rgba(23,37,59,0.55),rgba(2,6,23,0.96)_72%)]">
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(244,63,94,0.05),transparent_35%,transparent_65%,rgba(16,185,129,0.05))]" />
-        {rows.map((row, index) => {
-          const angle = ((index * 137.5) / 180) * Math.PI;
-          const ring = Math.floor(index / 4);
-          const radius = 8 + ring * 12 + (index % 4) * 4;
-          const x = 50 + Math.cos(angle) * radius;
-          const y = 50 + Math.sin(angle) * radius;
-          const size = 72 + Math.min(78, (Math.sqrt(totalNotional(row) / scale) || 0) * 78);
+      <div className="rounded-[24px] border border-stealth-800 bg-[radial-gradient(circle_at_center,rgba(23,37,59,0.55),rgba(2,6,23,0.96)_72%)] p-4">
+        <div className="flex flex-wrap items-center justify-center gap-4 md:gap-5">
+        {rows.map((row) => {
+          const size = 88 + Math.min(48, (Math.sqrt(totalNotional(row) / scale) || 0) * 48);
           const isSelected = row.symbol === selectedSymbol;
           const flowDirection = row.net_flow_usd ?? 0;
 
@@ -296,24 +317,25 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
               key={`${row.category}-${row.symbol}`}
               type="button"
               onClick={() => onSelect(row.symbol)}
-              className={`absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border text-center transition duration-200 hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
-              style={{ left: `${x}%`, top: `${y}%`, width: `${size}px`, height: `${size}px` }}
+              className={`flex shrink-0 flex-col items-center justify-center rounded-full border px-3 text-center transition duration-200 hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
+              style={{ width: `${size}px`, height: `${size}px` }}
             >
-              <span className="text-base font-semibold tracking-wide">{row.symbol}</span>
-              <span className="mt-1 text-[10px] uppercase tracking-[0.18em] text-white/70">{row.confidence.toFixed(0)} conf</span>
-              <span className="mt-2 text-xs font-medium">{formatCompactCurrency(totalNotional(row))}</span>
-              <div className="mt-2 flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-white/70">
+              <span className="max-w-full text-center text-sm font-semibold leading-tight tracking-wide md:text-base">{row.symbol}</span>
+              <span className="mt-1 text-[9px] uppercase tracking-[0.16em] text-white/70 md:text-[10px]">{row.confidence.toFixed(0)} conf</span>
+              <span className="mt-1 max-w-full text-[11px] font-medium leading-tight md:text-xs">{formatCompactCurrency(totalNotional(row))}</span>
+              <div className="mt-1 flex items-center gap-1 text-[9px] uppercase tracking-[0.14em] text-white/70 md:text-[10px]">
                 <span>{flowDirection > 0 ? "Net In" : flowDirection < 0 ? "Net Out" : "Flat"}</span>
               </div>
             </button>
           );
         })}
+        </div>
       </div>
     </div>
   );
 }
 
-function FlowFocusCard({ row, groupScale }: { row: FlowSignal; groupScale: number }) {
+function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; groupScale: number; groupTitle: string }) {
   const timeline = row.flow_timeline ?? [];
   const flowTone = (row.net_flow_usd ?? 0) > 0 ? "text-emerald-300" : (row.net_flow_usd ?? 0) < 0 ? "text-rose-300" : "text-stealth-300";
 
@@ -323,7 +345,7 @@ function FlowFocusCard({ row, groupScale }: { row: FlowSignal; groupScale: numbe
         <div>
           <div className="text-[11px] uppercase tracking-[0.25em] text-stealth-500">Focused Signal</div>
           <div className="mt-2 text-2xl font-semibold text-stealth-100">{row.symbol}</div>
-          <div className="mt-1 text-sm text-stealth-400">{row.name}</div>
+          <div className="mt-1 text-sm text-stealth-400">{row.name} · {groupTitle}</div>
         </div>
         <SignalPill signal={row.signal} />
       </div>
@@ -394,51 +416,36 @@ function GroupSection({
   groupKey,
   title,
   rows,
-  open,
-  onToggle,
   selectedSymbol,
   onSelectSymbol,
 }: {
   groupKey: string;
   title: string;
   rows: FlowSignal[];
-  open: boolean;
-  onToggle: () => void;
   selectedSymbol: string | null;
   onSelectSymbol: (symbol: string) => void;
 }) {
   const accumulationCount = rows.filter((row) => row.signal === "accumulation").length;
   const distributionCount = rows.filter((row) => row.signal === "distribution").length;
-  const strongest = [...rows].sort((left, right) => right.confidence - left.confidence)[0] ?? null;
-  const focused = rows.find((row) => row.symbol === selectedSymbol) ?? strongest;
-  const groupScale = Math.max(1, ...rows.map((row) => Math.abs(row.net_flow_usd ?? 0)));
 
   return (
     <section className="rounded-3xl border border-stealth-700 bg-[radial-gradient(circle_at_top,rgba(31,49,73,0.45),rgba(12,17,27,0.98)_60%)] p-4 sm:p-5">
-      <button type="button" onClick={onToggle} className="flex w-full items-center justify-between gap-4 text-left">
+      <div className="flex flex-wrap items-start justify-between gap-4 text-left">
         <div>
           <h2 className="text-xl font-semibold text-stealth-100">{title}</h2>
           <p className="mt-1 text-sm text-stealth-400">
-            {focused ? `${focused.symbol} is selected. Bubble field groups the whole ${groupKey} universe by activity and bias.` : "No active signals in this group."}
+            Bubble field groups the whole {groupKey} universe by activity and bias.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <GroupBadge label="Accumulations" value={accumulationCount} tone="buy" />
           <GroupBadge label="Distributions" value={distributionCount} tone="sell" />
-          <div className="rounded-full border border-stealth-600 p-2 text-stealth-300">
-            <svg className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-            </svg>
-          </div>
         </div>
-      </button>
+      </div>
 
-      {open && focused && (
-        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.95fr)]">
-          <BubbleCluster rows={rows} selectedSymbol={focused.symbol} onSelect={onSelectSymbol} />
-          <FlowFocusCard row={focused} groupScale={groupScale} />
-        </div>
-      )}
+      <div className="mt-5">
+        <BubbleCluster rows={rows} selectedSymbol={selectedSymbol} onSelect={onSelectSymbol} />
+      </div>
     </section>
   );
 }
@@ -470,13 +477,7 @@ function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal
 }
 
 export default function InstitutionalFlow() {
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    sectors: true,
-    metals: false,
-    crypto: false,
-    stocks: true,
-  });
-  const [selectedSymbols, setSelectedSymbols] = useState<Record<string, string | null>>({});
+  const [activeSelection, setActiveSelection] = useState<ActiveSelection | null>(null);
 
   const endpoint = useMemo(() => {
     const params = new URLSearchParams({ lookback_days: "120" });
@@ -490,6 +491,32 @@ export default function InstitutionalFlow() {
   const totalAccumulations = allRows.filter((row) => row.signal === "accumulation").length;
   const totalDistributions = allRows.filter((row) => row.signal === "distribution").length;
   const totalSignals = allRows.length;
+  const orderedGroupKeys: GroupKey[] = ["sectors", "metals", "crypto", "stocks"];
+
+  const resolvedSelection = useMemo(() => {
+    const preferredGroup = activeSelection?.groupKey;
+    const preferredSymbol = activeSelection?.symbol;
+
+    if (preferredGroup && preferredSymbol) {
+      const rows = groups[preferredGroup] ?? [];
+      const activeRow = rows.find((row) => row.symbol === preferredSymbol);
+      if (activeRow) {
+        return { groupKey: preferredGroup, row: activeRow };
+      }
+    }
+
+    for (const groupKey of orderedGroupKeys) {
+      const rows = groups[groupKey] ?? [];
+      const strongest = [...rows].sort((left, right) => right.confidence - left.confidence)[0];
+      if (strongest) {
+        return { groupKey, row: strongest };
+      }
+    }
+
+    return null;
+  }, [activeSelection, groups]);
+
+  const detailScale = Math.max(1, ...allRows.map((row) => Math.abs(row.net_flow_usd ?? 0)));
 
   return (
     <div className="mx-auto max-w-7xl p-4 text-stealth-100 sm:p-6">
@@ -535,43 +562,51 @@ export default function InstitutionalFlow() {
             <p className="mt-1">As of {new Date(data.as_of).toLocaleString()}</p>
           </div>
 
-          <div className="grid gap-4">
-            <GroupSection
-              groupKey="sectors"
-              title="Sectors"
-              rows={groups.sectors ?? []}
-              open={!!openSections.sectors}
-              selectedSymbol={selectedSymbols.sectors ?? null}
-              onSelectSymbol={(symbol) => setSelectedSymbols((current) => ({ ...current, sectors: symbol }))}
-              onToggle={() => setOpenSections((current) => ({ ...current, sectors: !current.sectors }))}
-            />
-            <GroupSection
-              groupKey="metals"
-              title="Precious Metals"
-              rows={groups.metals ?? []}
-              open={!!openSections.metals}
-              selectedSymbol={selectedSymbols.metals ?? null}
-              onSelectSymbol={(symbol) => setSelectedSymbols((current) => ({ ...current, metals: symbol }))}
-              onToggle={() => setOpenSections((current) => ({ ...current, metals: !current.metals }))}
-            />
-            <GroupSection
-              groupKey="crypto"
-              title="Crypto"
-              rows={groups.crypto ?? []}
-              open={!!openSections.crypto}
-              selectedSymbol={selectedSymbols.crypto ?? null}
-              onSelectSymbol={(symbol) => setSelectedSymbols((current) => ({ ...current, crypto: symbol }))}
-              onToggle={() => setOpenSections((current) => ({ ...current, crypto: !current.crypto }))}
-            />
-            <GroupSection
-              groupKey="stocks"
-              title="Stocks"
-              rows={groups.stocks ?? []}
-              open={!!openSections.stocks}
-              selectedSymbol={selectedSymbols.stocks ?? null}
-              onSelectSymbol={(symbol) => setSelectedSymbols((current) => ({ ...current, stocks: symbol }))}
-              onToggle={() => setOpenSections((current) => ({ ...current, stocks: !current.stocks }))}
-            />
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)] xl:items-start">
+            <div className="grid gap-4">
+              <GroupSection
+                groupKey="sectors"
+                title="Sectors"
+                rows={groups.sectors ?? []}
+                selectedSymbol={resolvedSelection?.groupKey === "sectors" ? resolvedSelection.row.symbol : null}
+                onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "sectors", symbol })}
+              />
+              <GroupSection
+                groupKey="metals"
+                title="Precious Metals"
+                rows={groups.metals ?? []}
+                selectedSymbol={resolvedSelection?.groupKey === "metals" ? resolvedSelection.row.symbol : null}
+                onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "metals", symbol })}
+              />
+              <GroupSection
+                groupKey="crypto"
+                title="Crypto"
+                rows={groups.crypto ?? []}
+                selectedSymbol={resolvedSelection?.groupKey === "crypto" ? resolvedSelection.row.symbol : null}
+                onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "crypto", symbol })}
+              />
+              <GroupSection
+                groupKey="stocks"
+                title="Stocks"
+                rows={groups.stocks ?? []}
+                selectedSymbol={resolvedSelection?.groupKey === "stocks" ? resolvedSelection.row.symbol : null}
+                onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "stocks", symbol })}
+              />
+            </div>
+
+            <div className="xl:sticky xl:top-6">
+              {resolvedSelection?.row ? (
+                <FlowFocusCard
+                  row={resolvedSelection.row}
+                  groupScale={detailScale}
+                  groupTitle={formatGroupTitle(resolvedSelection.groupKey)}
+                />
+              ) : (
+                <div className="rounded-[28px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-6 text-sm text-stealth-300">
+                  Select a bubble on the left to inspect its flow detail.
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}
