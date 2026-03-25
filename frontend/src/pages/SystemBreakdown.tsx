@@ -202,12 +202,10 @@ export default function SystemBreakdown() {
   if (loading) {
     return (
       <div className="page-shell page-stack">
-        <div className="page-hero">
-          <div className="relative z-10">
-            <span className="page-kicker">Methodology</span>
-            <h2 className="page-title">System Breakdown</h2>
-            <p className="page-subtitle">See how the composite state is built, how the indicators distribute over time, and where weight is concentrated.</p>
-          </div>
+        <div className="flex flex-col">
+          <span className="page-kicker">Methodology</span>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">System Breakdown</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">See how the composite state is built, how the indicators distribute over time, and where weight is concentrated.</p>
         </div>
         <div className="flex justify-center py-6">
           <MarketLoading size={110} variant="scan" label="Loading system overview..." />
@@ -263,15 +261,13 @@ export default function SystemBreakdown() {
 
   return (
     <div className="page-shell page-stack">
-      <div className="page-hero">
-        <div className="relative z-10">
-          <span className="page-kicker">Methodology</span>
-          <h2 className="page-title">System Breakdown & Methodology</h2>
-          <p className="page-subtitle">Assess market regime with confidence, spot inflection points early, and align positioning with macroeconomic reality.</p>
-          <div className="page-meta">
-            <span className="page-badge">{indicatorCount} live inputs</span>
-            <span className="page-badge">Breadth {breadthTrend}</span>
-          </div>
+      <div className="flex flex-col">
+        <span className="page-kicker">Methodology</span>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">System Breakdown & Methodology</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Assess market regime with confidence, spot inflection points early, and align positioning with macroeconomic reality.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+          <span className="page-badge">{indicatorCount} live inputs</span>
+          <span className="page-badge">Breadth {breadthTrend}</span>
         </div>
       </div>
 

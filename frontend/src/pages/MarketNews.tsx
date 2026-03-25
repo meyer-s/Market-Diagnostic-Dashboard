@@ -228,21 +228,18 @@ export default function MarketNews() {
 
   return (
     <div className="page-shell page-stack">
-      <div className="page-hero">
-        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <span className="page-kicker">Signal Feed</span>
-            <h2 className="page-title">News</h2>
-            <p className="page-subtitle">
-            Cached Seeking Alpha headlines for your portfolio tickers.
-            </p>
-            <div className="page-meta">
-              <span className="page-badge">{availableTickers.length} tracked symbols</span>
-              <span className="page-badge">Window {HOURS_OPTIONS.find((option) => option.value === hours)?.label ?? `${hours}h`}</span>
-            </div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <span className="page-kicker">Signal Feed</span>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">News</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Cached Seeking Alpha headlines for your portfolio tickers.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+            <span className="page-badge">{availableTickers.length} tracked symbols</span>
+            <span className="page-badge">Window {HOURS_OPTIONS.find((option) => option.value === hours)?.label ?? `${hours}h`}</span>
           </div>
+        </div>
 
-          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
           <div className="control-strip">
             {HOURS_OPTIONS.map((option) => (
               <button
@@ -285,7 +282,6 @@ export default function MarketNews() {
             {isRefreshing ? "Refreshing..." : "Refresh News"}
           </button>
         </div>
-      </div>
       </div>
 
       {/* Collapsible editor for the cached ticker list (presets load into this editor). */}

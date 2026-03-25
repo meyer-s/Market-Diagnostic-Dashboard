@@ -390,15 +390,13 @@ export default function StockAnalysis() {
 
   return (
     <div className="page-shell-narrow page-stack">
-      <div className="page-hero">
-        <div className="relative z-10">
-          <span className="page-kicker">Single Name Lens</span>
-          <h1 className="page-title">Stock Analysis</h1>
-          <p className="page-subtitle">Analyze individual stocks across multiple time horizons with quantified confidence levels.</p>
-          <div className="page-meta">
-            <span className="page-badge">Projection horizons T, 3M, 6M, 12M</span>
-            {searchTicker && <span className="page-badge">Tracking {searchTicker}</span>}
-          </div>
+      <div className="flex flex-col">
+        <span className="page-kicker">Single Name Lens</span>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Stock Analysis</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Analyze individual stocks across multiple time horizons with quantified confidence levels.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+          <span className="page-badge">Projection horizons T, 3M, 6M, 12M</span>
+          {searchTicker && <span className="page-badge">Tracking {searchTicker}</span>}
         </div>
       </div>
       

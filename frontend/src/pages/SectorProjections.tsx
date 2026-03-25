@@ -250,15 +250,13 @@ export default function SectorProjections() {
 
   return (
     <div className="page-shell-narrow page-stack">
-      <div className="page-hero">
-        <div className="relative z-10">
-          <span className="page-kicker">Rotation Monitor</span>
-          <h1 className="page-title">Sector Projections</h1>
-          <p className="page-subtitle">Identify sector leadership across multiple time horizons with quantified confidence levels.</p>
-          <div className="page-meta">
-            {data && <span className="page-badge">System {data.system_state}</span>}
-            {data && <span className="page-badge">As of {data.as_of_date}</span>}
-          </div>
+      <div className="flex flex-col">
+        <span className="page-kicker">Rotation Monitor</span>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Sector Projections</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Identify sector leadership across multiple time horizons with quantified confidence levels.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+          {data && <span className="page-badge">System {data.system_state}</span>}
+          {data && <span className="page-badge">As of {data.as_of_date}</span>}
         </div>
       </div>
 

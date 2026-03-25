@@ -20,12 +20,10 @@ export default function Indicators() {
   if (loading) {
     return (
       <div className="page-shell page-stack">
-        <div className="page-hero">
-          <div className="relative z-10">
-            <span className="page-kicker">Diagnostic Library</span>
-            <h2 className="page-title">All Indicators</h2>
-            <p className="page-subtitle">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
-          </div>
+        <div className="flex flex-col">
+          <span className="page-kicker">Diagnostic Library</span>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">All Indicators</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
         </div>
         <div className="flex justify-center py-6">
           <MarketLoading size={96} variant="pulse" label="Loading indicators..." />
@@ -37,12 +35,10 @@ export default function Indicators() {
   if (error) {
     return (
       <div className="page-shell page-stack">
-        <div className="page-hero">
-          <div className="relative z-10">
-            <span className="page-kicker">Diagnostic Library</span>
-            <h2 className="page-title">All Indicators</h2>
-            <p className="page-subtitle">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
-          </div>
+        <div className="flex flex-col">
+          <span className="page-kicker">Diagnostic Library</span>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">All Indicators</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
         </div>
         <div className="surface-card rounded-2xl border border-red-700/60 bg-red-950/18 p-4 text-red-200">
           <div className="font-semibold mb-2">Error loading indicators:</div>
@@ -58,12 +54,10 @@ export default function Indicators() {
   if (!data || data.length === 0) {
     return (
       <div className="page-shell page-stack">
-        <div className="page-hero">
-          <div className="relative z-10">
-            <span className="page-kicker">Diagnostic Library</span>
-            <h2 className="page-title">All Indicators</h2>
-            <p className="page-subtitle">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
-          </div>
+        <div className="flex flex-col">
+          <span className="page-kicker">Diagnostic Library</span>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">All Indicators</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
         </div>
         <div className="text-stealth-400">No indicators available.</div>
       </div>
@@ -72,15 +66,13 @@ export default function Indicators() {
 
   return (
     <div className="page-shell page-stack">
-      <div className="page-hero">
-        <div className="relative z-10">
-          <span className="page-kicker">Diagnostic Library</span>
-          <h2 className="page-title">All Indicators</h2>
-          <p className="page-subtitle">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
-          <div className="page-meta">
-            <span className="page-badge">{filteredData.length} active rows</span>
-            <span className="page-badge">Tap any row for history</span>
-          </div>
+      <div className="flex flex-col">
+        <span className="page-kicker">Diagnostic Library</span>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">All Indicators</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Browse each underlying metric, its current state, and the detail view that explains the read.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+          <span className="page-badge">{filteredData.length} active rows</span>
+          <span className="page-badge">Tap any row for history</span>
         </div>
       </div>
 
