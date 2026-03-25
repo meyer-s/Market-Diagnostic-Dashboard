@@ -188,7 +188,7 @@ body {
   }
 
   .collapsible-icon {
-    @apply inline-flex h-9 w-9 items-center justify-center rounded-full border border-stealth-700 bg-stealth-900 text-stealth-300 transition-all;
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-full border border-stealth-700 bg-stealth-900 text-slate-300 transition-all;
     background-color: rgba(15, 23, 39, 0.88);
   }
 
