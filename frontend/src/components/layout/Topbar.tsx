@@ -17,6 +17,7 @@ export default function Topbar() {
     { path: "/tools/recap", label: "Recap" },
     { path: "/market-map", label: "Market Map" },
     { path: "/sector-projections", label: "Sector Projections" },
+    { path: "/institutional-flow", label: "Institutional Flow" },
     { path: "/stock-analysis", label: "Stock Analysis" },
     { path: "/alternative-assets", label: "Alternative Assets" },
     { path: "/news", label: "News" },

@@ -13,6 +13,7 @@ import StockAnalysis from "./pages/StockAnalysis";
 import SecretOptions from "./pages/SecretOptions";
 import AlternativeAssetStability from "./pages/AlternativeAssetStability";
 import AASComponentBreakdown from "./pages/AASComponentBreakdown";
+import InstitutionalFlow from "./pages/InstitutionalFlow";
 import Vision from "./pages/Vision";
 import RecapIndex from "./pages/tools/RecapIndex";
 import RecapPost from "./pages/tools/RecapPost";
@@ -39,6 +40,7 @@ function AppWithAnalytics() {
       location.pathname.includes("/market-map") ? "Market Map" :
       location.pathname.includes("/sector-projections") ? "Sector Projections" :
       location.pathname.includes("/stock-analysis") ? "Stock Analysis" :
+      location.pathname.includes("/institutional-flow") ? "Institutional Flow" :
       location.pathname.includes("/secret/options") ? "Secret Options" :
       location.pathname.includes("/precious-metals") ? "Precious Metals" :
       location.pathname.includes("/alternative-assets") ? "Alternative Assets" :
@@ -66,6 +68,7 @@ function AppWithAnalytics() {
           <Route path="/sector-projections" element={<SectorProjections />} />
           <Route path="/stock-analysis/:symbol" element={<StockAnalysis />} />
           <Route path="/stock-analysis" element={<StockAnalysis />} />
+          <Route path="/institutional-flow" element={<InstitutionalFlow />} />
           <Route path="/secret/options" element={<SecretOptions />} />
           <Route path="/tools/recap" element={<RecapIndex />} />
           <Route path="/tools/recap/:slug" element={<RecapPost />} />
