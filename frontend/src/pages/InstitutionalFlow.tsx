@@ -127,12 +127,12 @@ function getSignalClasses(signal: FlowSignal["signal"]): string {
 
 function getBubbleSurface(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
-    return "border-emerald-400/35 bg-[radial-gradient(circle_at_center,rgba(10,18,28,0.96)_72%,rgba(74,222,128,0.22)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.08),0_0_18px_rgba(74,222,128,0.14)]";
+    return "border-emerald-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.95)_68%,rgba(74,222,128,0.48)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.12),0_0_22px_rgba(74,222,128,0.3)]";
   }
   if (signal === "distribution") {
-    return "border-rose-400/35 bg-[radial-gradient(circle_at_center,rgba(10,18,28,0.96)_72%,rgba(251,113,133,0.22)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.08),0_0_18px_rgba(251,113,133,0.14)]";
+    return "border-rose-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.95)_68%,rgba(251,113,133,0.48)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.12),0_0_22px_rgba(251,113,133,0.28)]";
   }
-  return "border-slate-400/30 bg-[radial-gradient(circle_at_center,rgba(10,18,28,0.96)_74%,rgba(148,163,184,0.18)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06),0_0_14px_rgba(148,163,184,0.12)]";
+  return "border-slate-300/45 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.95)_70%,rgba(148,163,184,0.34)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.1),0_0_18px_rgba(148,163,184,0.2)]";
 }
 
 function totalNotional(row: FlowSignal): number {
@@ -211,13 +211,14 @@ function CenteredFlowBar({ value, scale }: { value: number | null; scale: number
 }
 
 function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
-  const recentTimeline = timeline.slice(-6);
+  const recentTimeline = timeline.slice(-4);
   const scale = Math.max(1, ...recentTimeline.map((bucket) => Math.abs(bucket.net_flow_usd)));
   const accumulationBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd > 0).length;
   const distributionBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd < 0).length;
   const positiveStreak = longestDirectionalStreak(recentTimeline, "positive");
   const negativeStreak = longestDirectionalStreak(recentTimeline, "negative");
-  const dominantCluster = positiveStreak > negativeStreak ? "Accumulation clustering" : negativeStreak > positiveStreak ? "Distribution clustering" : "Mixed clustering";
+  const maxVolume = Math.max(1, ...recentTimeline.map((bucket) => bucket.total_notional_usd));
+  const dominantCluster = positiveStreak > negativeStreak ? "Accumulation trend" : negativeStreak > positiveStreak ? "Distribution trend" : "Mixed trend";
 
   return (
     <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
@@ -227,60 +228,54 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
           <div className="mt-1 text-xs text-stealth-300">{dominantCluster} across the latest weekly buckets.</div>
         </div>
         <div className="flex gap-2 text-xs">
-          <GroupBadge label="Up Weeks" value={accumulationBuckets} tone="buy" />
-          <GroupBadge label="Down Weeks" value={distributionBuckets} tone="sell" />
+          <GroupBadge label="Up" value={accumulationBuckets} tone="buy" />
+          <GroupBadge label="Down" value={distributionBuckets} tone="sell" />
         </div>
       </div>
 
-      <div className="mt-3 space-y-2">
+      <div className="mt-2.5 space-y-1.5">
         {recentTimeline.map((bucket) => {
+          const volumeWidth = Math.max(8, Math.min(100, (bucket.total_notional_usd / maxVolume) * 100));
+
           return (
-            <div key={bucket.bucket} className="rounded-xl border border-stealth-800 bg-stealth-900/55 px-3 py-2.5">
-              <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.18em] text-stealth-500">
-                <span>{formatBucket(bucket.bucket)}</span>
-                <span>{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</span>
+            <div key={bucket.bucket} className="grid grid-cols-[54px_minmax(0,1fr)_88px] items-center gap-2 rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-[60px_minmax(0,1fr)] items-center gap-2">
+                  <span className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Net</span>
+                  <CenteredFlowBar value={bucket.net_flow_usd} scale={scale} />
+                </div>
+                <div className="grid grid-cols-[60px_minmax(0,1fr)] items-center gap-2">
+                  <span className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Volume</span>
+                  <div className="h-2 overflow-hidden rounded-full border border-stealth-800 bg-stealth-950/90">
+                    <div className="h-full rounded-full bg-sky-400/70" style={{ width: `${volumeWidth}%` }} />
+                  </div>
+                </div>
               </div>
-              <div className="mt-2">
-                <CenteredFlowBar value={bucket.net_flow_usd} scale={scale} />
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                <div className="rounded-lg border border-stealth-800 bg-stealth-950/65 px-2 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Net</div>
-                  <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
-                </div>
-                <div className="rounded-lg border border-stealth-800 bg-stealth-950/65 px-2 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Total</div>
-                  <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(bucket.total_notional_usd)}</div>
-                </div>
-                <div className="rounded-lg border border-stealth-800 bg-stealth-950/65 px-2 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Buy/Sell</div>
-                  <div className="mt-1 font-semibold text-stealth-100">{bucket.buy_events}/{bucket.sell_events}</div>
-                </div>
-                <div className="rounded-lg border border-stealth-800 bg-stealth-950/65 px-2 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Neutral</div>
-                  <div className="mt-1 font-semibold text-stealth-100">{bucket.neutral_events}</div>
-                </div>
+              <div className="text-right">
+                <div className="text-[11px] font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
+                <div className="mt-0.5 text-[9px] uppercase tracking-[0.16em] text-stealth-500">{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</div>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-stealth-300 sm:grid-cols-4">
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Longest Up Streak</div>
+      <div className="mt-2.5 grid grid-cols-4 gap-2 text-xs text-stealth-300">
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Up Streak</div>
           <div className="mt-1 font-semibold text-emerald-300">{positiveStreak}</div>
         </div>
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Longest Down Streak</div>
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Down Streak</div>
           <div className="mt-1 font-semibold text-rose-300">{negativeStreak}</div>
         </div>
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Total Flow</div>
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Net</div>
           <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.net_flow_usd, 0))}</div>
         </div>
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Tracked Activity</div>
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Volume</div>
           <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.total_notional_usd, 0))}</div>
         </div>
       </div>
@@ -487,7 +482,7 @@ export default function InstitutionalFlow() {
   const totalAccumulations = allRows.filter((row) => row.signal === "accumulation").length;
   const totalDistributions = allRows.filter((row) => row.signal === "distribution").length;
   const totalSignals = allRows.length;
-  const orderedGroupKeys: GroupKey[] = ["sectors", "metals", "crypto", "stocks"];
+  const orderedGroupKeys: GroupKey[] = ["stocks", "sectors", "metals", "crypto"];
 
   const resolvedSelection = useMemo(() => {
     const preferredGroup = activeSelection?.groupKey;
@@ -561,6 +556,13 @@ export default function InstitutionalFlow() {
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.78fr)] xl:items-start">
             <div className="grid gap-3">
               <GroupSection
+                groupKey="stocks"
+                title="Stocks"
+                rows={groups.stocks ?? []}
+                selectedSymbol={resolvedSelection?.groupKey === "stocks" ? resolvedSelection.row.symbol : null}
+                onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "stocks", symbol })}
+              />
+              <GroupSection
                 groupKey="sectors"
                 title="Sectors"
                 rows={groups.sectors ?? []}
@@ -580,13 +582,6 @@ export default function InstitutionalFlow() {
                 rows={groups.crypto ?? []}
                 selectedSymbol={resolvedSelection?.groupKey === "crypto" ? resolvedSelection.row.symbol : null}
                 onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "crypto", symbol })}
-              />
-              <GroupSection
-                groupKey="stocks"
-                title="Stocks"
-                rows={groups.stocks ?? []}
-                selectedSymbol={resolvedSelection?.groupKey === "stocks" ? resolvedSelection.row.symbol : null}
-                onSelectSymbol={(symbol) => setActiveSelection({ groupKey: "stocks", symbol })}
               />
             </div>
 
