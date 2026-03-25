@@ -134,12 +134,12 @@ function getSignalClasses(signal: FlowSignal["signal"]): string {
 
 function getBubbleSurface(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
-    return "border-white/8 bg-[radial-gradient(circle_at_center,rgba(6,12,20,0.99)_86%,rgba(74,222,128,0.10)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.20),0_0_32px_rgba(74,222,128,0.44)]";
+    return "border-emerald-300/80 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_64%,rgba(74,222,128,0.58)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.16),0_0_28px_rgba(74,222,128,0.38)]";
   }
   if (signal === "distribution") {
-    return "border-white/8 bg-[radial-gradient(circle_at_center,rgba(6,12,20,0.99)_86%,rgba(251,113,133,0.10)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.22),0_0_32px_rgba(251,113,133,0.42)]";
+    return "border-rose-300/80 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_64%,rgba(251,113,133,0.58)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.16),0_0_28px_rgba(251,113,133,0.36)]";
   }
-  return "border-white/6 bg-[radial-gradient(circle_at_center,rgba(6,12,20,0.98)_88%,rgba(148,163,184,0.07)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.10),0_0_20px_rgba(148,163,184,0.20)]";
+  return "border-slate-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_66%,rgba(148,163,184,0.42)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.14),0_0_22px_rgba(148,163,184,0.24)]";
 }
 
 function getConfidenceStrokeClass(signal: FlowSignal["signal"]): string {
@@ -474,6 +474,13 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
             <div className="absolute inset-y-0 left-0 w-[26%] bg-[radial-gradient(circle_at_left_center,rgba(251,113,133,0.35)_0%,rgba(251,113,133,0.18)_28%,rgba(251,113,133,0.06)_48%,rgba(251,113,133,0)_75%)]" />
             <div className="absolute inset-y-0 right-0 w-[26%] bg-[radial-gradient(circle_at_right_center,rgba(110,231,183,0.35)_0%,rgba(110,231,183,0.18)_28%,rgba(110,231,183,0.06)_48%,rgba(110,231,183,0)_75%)]" />
             <div className="absolute inset-y-[7px] left-5 right-5 rounded-full bg-[linear-gradient(90deg,rgba(251,113,133,0.04),rgba(148,163,184,0.05)_50%,rgba(110,231,183,0.04))]" />
+            <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/65" />
+            {row.sell_cluster_level !== null && (
+              <div className="absolute left-3 top-1/2 h-4 w-px -translate-y-1/2 bg-rose-200/60 shadow-[0_0_10px_rgba(251,113,133,0.4)]" />
+            )}
+            {row.buy_cluster_level !== null && (
+              <div className="absolute right-3 top-1/2 h-4 w-px -translate-y-1/2 bg-emerald-200/65 shadow-[0_0_10px_rgba(74,222,128,0.4)]" />
+            )}
             {row.latest_price !== null && (
               <>
                 <div
@@ -481,9 +488,11 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
                   style={currentMarkerStyle}
                 />
                 <div
-                  className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/20 bg-stealth-900 shadow-[0_0_8px_3px_rgba(226,232,240,0.35),0_0_18px_rgba(226,232,240,0.18)]"
+                  className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/14 bg-[radial-gradient(circle_at_35%_35%,rgba(248,250,252,0.85),rgba(148,163,184,0.28)_42%,rgba(15,23,42,0.96)_78%)] shadow-[0_0_18px_rgba(226,232,240,0.2)]"
                   style={currentMarkerStyle}
-                />
+                >
+                  <div className="absolute inset-[3px] rounded-full bg-stealth-950/80" />
+                </div>
               </>
             )}
           </div>
