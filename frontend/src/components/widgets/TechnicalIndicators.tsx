@@ -4,7 +4,7 @@
  * Displays price history (252 days), RSI, and MACD charts with real data
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import { getFamilyColor, statePalette } from "../../theme/metricColors";
@@ -92,6 +92,8 @@ export function TechnicalIndicators({
   flowEvents = [],
 }: TechnicalIndicatorsProps) {
   const [activeFlowEventKey, setActiveFlowEventKey] = useState<string | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
 
   if (!technicalData && !optionsFlow) {
     return (
@@ -303,10 +305,31 @@ export function TechnicalIndicators({
         anchorPrice: candle.open,
         candleIndex,
         markerRadius: Math.max(4, Math.min(9, 3 + event.strength * 1.15)),
+        tooltipX: scaleX(candleIndex),
+        tooltipY: scalePrice(candle.open),
       };
     })
-    .filter((event): event is FlowEventPoint & { eventKey: string; anchorPrice: number; candleIndex: number; markerRadius: number } => event !== null);
+    .filter((event): event is FlowEventPoint & { eventKey: string; anchorPrice: number; candleIndex: number; markerRadius: number; tooltipX: number; tooltipY: number } => event !== null);
   const activeFlowEvent = overlayEvents.find((event) => event.eventKey === activeFlowEventKey) ?? null;
+  const handleFlowMarkerPointer = (mouseX: number, mouseY: number, eventKey: string) => {
+    const container = chartContainerRef.current;
+    if (!container) {
+      setActiveFlowEventKey(eventKey);
+      return;
+    }
+
+    const bounds = container.getBoundingClientRect();
+    setActiveFlowEventKey(eventKey);
+    setTooltipPosition({
+      x: mouseX - bounds.left,
+      y: mouseY - bounds.top,
+    });
+  };
+
+  const clearFlowTooltip = (_eventKey: string) => {
+    setActiveFlowEventKey(null);
+    setTooltipPosition(null);
+  };
 
   const volumeChartHeight = 160;
   const volumePadding = { top: 10, right: 30, bottom: 25, left: 55 };
@@ -326,7 +349,7 @@ export function TechnicalIndicators({
           <div className="text-[10px] text-gray-500">{overlayEvents.length} flow markers</div>
         </div>
 
-        <div className="bg-gray-900 rounded-lg p-4 mb-4 overflow-x-auto">
+        <div ref={chartContainerRef} className="relative bg-gray-900 rounded-lg p-4 mb-4 overflow-x-auto">
           <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet" style={{ minWidth: '800px' }}>
             {/* Grid lines */}
             {[0, 0.25, 0.5, 0.75, 1].map((percent) => {
@@ -433,10 +456,14 @@ export function TechnicalIndicators({
                     tabIndex={0}
                     role="button"
                     aria-label={`${event.side} event on ${event.date} anchored to candle open at $${event.anchorPrice.toFixed(2)}`}
-                    onMouseEnter={() => setActiveFlowEventKey(event.eventKey)}
-                    onMouseLeave={() => setActiveFlowEventKey((current) => (current === event.eventKey ? null : current))}
-                    onFocus={() => setActiveFlowEventKey(event.eventKey)}
-                    onBlur={() => setActiveFlowEventKey((current) => (current === event.eventKey ? null : current))}
+                    onMouseEnter={(hoverEvent) => handleFlowMarkerPointer(hoverEvent.clientX, hoverEvent.clientY, event.eventKey)}
+                    onMouseMove={(moveEvent) => handleFlowMarkerPointer(moveEvent.clientX, moveEvent.clientY, event.eventKey)}
+                    onMouseLeave={() => clearFlowTooltip(event.eventKey)}
+                    onFocus={() => {
+                      setActiveFlowEventKey(event.eventKey);
+                      setTooltipPosition({ x: event.tooltipX, y: event.tooltipY });
+                    }}
+                    onBlur={() => clearFlowTooltip(event.eventKey)}
                   />
                 </g>
               );
@@ -446,24 +473,27 @@ export function TechnicalIndicators({
             <line x1={padding.left} y1={padding.top} x2={padding.left} y2={chartHeight - padding.bottom} stroke={chartColors.axis} strokeWidth="2" />
             <line x1={padding.left} y1={chartHeight - padding.bottom} x2={chartWidth - padding.right} y2={chartHeight - padding.bottom} stroke={chartColors.axis} strokeWidth="2" />
           </svg>
-        </div>
 
-        {overlayEvents.length > 0 && (
-          <div className="mb-4 rounded-lg border border-gray-700 bg-gray-900/80 px-3 py-2 text-xs text-gray-300">
-            {activeFlowEvent ? (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-medium text-gray-100">
-                  {activeFlowEvent.side.toUpperCase()} · {activeFlowEvent.date}
-                </div>
-                <div className="text-gray-400">
-                  open ${activeFlowEvent.anchorPrice.toFixed(2)} · event ${activeFlowEvent.price.toFixed(2)} · z {activeFlowEvent.volume_z.toFixed(2)} · {formatCompact(activeFlowEvent.notional)}
-                </div>
+          {activeFlowEvent && tooltipPosition && (
+            <div
+              className="pointer-events-none absolute z-10 max-w-[240px] rounded-lg border border-gray-700 bg-gray-950/95 px-3 py-2 text-xs text-gray-200 shadow-2xl"
+              style={{
+                left: Math.max(12, Math.min(tooltipPosition.x + 14, chartWidth - 250)),
+                top: Math.max(12, tooltipPosition.y - 70),
+              }}
+            >
+              <div className="mb-1 font-medium text-gray-50">
+                {activeFlowEvent.side.toUpperCase()} · {activeFlowEvent.date}
               </div>
-            ) : (
-              <div className="text-gray-400">Hover or focus a flow marker for event details.</div>
-            )}
-          </div>
-        )}
+              <div className="text-gray-300">
+                open ${activeFlowEvent.anchorPrice.toFixed(2)} · event ${activeFlowEvent.price.toFixed(2)}
+              </div>
+              <div className="text-gray-400">
+                z {activeFlowEvent.volume_z.toFixed(2)} · {formatCompact(activeFlowEvent.notional)}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Price Info Row */}
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
