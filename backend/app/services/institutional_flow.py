@@ -240,7 +240,7 @@ def _download_universe(symbols: list[str], period: str = "9mo") -> pd.DataFrame:
     )
 
 
-def _select_top_close_volume_stocks(raw_data: pd.DataFrame, candidates: list[str], top_n: int = 5) -> list[str]:
+def _select_top_close_volume_stocks(raw_data: pd.DataFrame, candidates: list[str], top_n: int = 10) -> list[str]:
     ranked: list[tuple[str, float]] = []
     for symbol in candidates:
         frame = _extract_symbol_frame(raw_data, symbol)
@@ -283,10 +283,10 @@ def build_institutional_flow_overview(stock_symbols: list[str] | None = None, lo
     selected_stock_symbols = (
         requested_stocks[:25]
         if requested_stocks
-        else _select_top_close_volume_stocks(raw_data, stock_selection_pool, top_n=5)
+        else _select_top_close_volume_stocks(raw_data, stock_selection_pool, top_n=10)
     )
     if not selected_stock_symbols:
-        selected_stock_symbols = DEFAULT_STOCK_SYMBOLS[:5]
+        selected_stock_symbols = DEFAULT_STOCK_SYMBOLS[:10]
 
     universe = {
         "sectors": [(symbol, symbol) for symbol in SECTOR_SYMBOLS],
