@@ -1,30 +1,9 @@
-import {
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  ReferenceLine,
-  ResponsiveContainer,
-  Scatter,
-  Tooltip,
-  XAxis,
-  YAxis,
-  ZAxis,
-} from "recharts";
-
-interface PriceHistoryPoint {
-  date: string;
-  close: number;
-}
-
-interface FlowEventPoint {
-  date: string;
-  price: number;
-  volume: number;
-  notional: number;
-  volume_z: number;
-  side: "buy" | "sell" | "neutral";
-  strength: number;
-}
+/**
+ * Price Analysis Chart Component
+ *
+ * Displays stock price with volatility-based reference bands
+ * Visual representation of upside/downside potential and risk levels
+ */
 
 interface PriceAnalysisChartProps {
   currentPrice: number;
@@ -34,24 +13,16 @@ interface PriceAnalysisChartProps {
   horizon: string;
   analystTarget?: number | null;
   analystCount?: number | null;
-  priceHistory?: PriceHistoryPoint[];
-  flowEvents?: FlowEventPoint[];
-}
-
-function formatDateLabel(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatCompactCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 2,
-  }).format(value);
+  priceHistory?: Array<{ date: string; close: number }>;
+  flowEvents?: Array<{
+    date: string;
+    price: number;
+    volume: number;
+    notional: number;
+    volume_z: number;
+    side: "buy" | "sell" | "neutral";
+    strength: number;
+  }>;
 }
 
 export function PriceAnalysisChart({
@@ -62,8 +33,6 @@ export function PriceAnalysisChart({
   horizon,
   analystTarget,
   analystCount,
-  priceHistory = [],
-  flowEvents = [],
 }: PriceAnalysisChartProps) {
   // Calculate percentages for visualization
   const safeStopLoss = Math.max(0, stopLoss);
@@ -76,6 +45,9 @@ export function PriceAnalysisChart({
   const returnColor = isPositive ? "text-green-400" : "text-red-400";
   const returnBg = isPositive ? "bg-green-500/10" : "bg-red-500/10";
   const returnBorder = isPositive ? "border-green-500/50" : "border-red-500/50";
+  const maxRange = Math.max(slDownside, tpUpside) * 1.2;
+  const slHeight = (slDownside / maxRange) * 100;
+  const tpHeight = (tpUpside / maxRange) * 100;
   
   const modelTarget = takeProfit;
   const hasAnalystTarget =
@@ -141,75 +113,36 @@ export function PriceAnalysisChart({
         )}
       </div>
 
-      <div className="mb-3 rounded-lg border border-gray-800 bg-gray-950/70 p-3">
-        {hasPriceHistory ? (
-          <>
-            <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
-              <span>Price history with stored large-trade overlays</span>
-              <span>{overlayEvents.length} markers</span>
+      <div className="mb-3">
+        <div className="flex items-flex-end justify-between h-32 gap-2 px-1">
+          <div className="flex flex-col items-center flex-1">
+            <div className="w-full flex flex-col-reverse items-center justify-end h-32 mb-1">
+              <div
+                className="w-full bg-red-500/30 border border-red-500/50 rounded-sm transition-all"
+                style={{ height: `${slHeight}%`, minHeight: "3px" }}
+              />
             </div>
-            <div className="h-64" style={{ minWidth: 0 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={priceHistory} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
-                  <CartesianGrid stroke="#1f2937" strokeDasharray="4 4" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={formatDateLabel}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
-                    minTickGap={24}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    domain={["dataMin - 5", "dataMax + 5"]}
-                    tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <ZAxis dataKey="markerSize" range={[60, 220]} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#111827",
-                      border: "1px solid #374151",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                    }}
-                    labelFormatter={(label) => formatDateLabel(String(label))}
-                    formatter={(value, name, item) => {
-                      const payload = item?.payload as (PriceHistoryPoint & Partial<FlowEventPoint> & { markerSize?: number }) | undefined;
-                      if (name === "close") {
-                        return [`$${Number(value).toFixed(2)}`, "Close"];
-                      }
-                      if (payload?.notional) {
-                        return [
-                          `${payload.side?.toUpperCase()} | ${formatCompactCurrency(payload.notional)} | z ${Number(payload.volume_z ?? 0).toFixed(2)}`,
-                          `$${Number(payload.price ?? value).toFixed(2)}`,
-                        ];
-                      }
-                      return [value, name];
-                    }}
-                  />
-                  <ReferenceLine y={safeStopLoss} stroke="#f87171" strokeDasharray="5 5" />
-                  <ReferenceLine y={takeProfit} stroke="#4ade80" strokeDasharray="5 5" />
-                  {hasAnalystTarget && <ReferenceLine y={analystTarget!} stroke="#60a5fa" strokeDasharray="3 3" />}
-                  <Line type="monotone" dataKey="close" stroke="#cbd5e1" strokeWidth={2.2} dot={false} />
-                  <Scatter name="buy_events" data={buyEvents} fill="#4ade80" />
-                  <Scatter name="sell_events" data={sellEvents} fill="#f87171" />
-                  <Scatter name="neutral_events" data={neutralEvents} fill="#94a3b8" />
-                </ComposedChart>
-              </ResponsiveContainer>
+            <div className="text-center">
+              <p className="text-xs text-red-400 font-semibold">Stop Loss</p>
+              <p className="text-xs text-red-300">${safeStopLoss.toFixed(2)}</p>
+              <p className="text-xs text-red-200">-{slDownside.toFixed(1)}%</p>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-gray-400">
-              <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-1 text-green-300">Buy events</span>
-              <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-300">Sell events</span>
-              <span className="rounded-full border border-gray-500/30 bg-gray-500/10 px-2 py-1 text-gray-300">Neutral events</span>
-              <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-blue-300">Analyst target</span>
+          </div>
+
+          <div className="flex flex-col items-center flex-1">
+            <div className="w-full flex flex-col-reverse items-center justify-end h-32 mb-1">
+              <div
+                className="w-full bg-green-500/30 border border-green-500/50 rounded-sm transition-all"
+                style={{ height: `${tpHeight}%`, minHeight: "3px" }}
+              />
             </div>
-          </>
-        ) : (
-          <div className="text-sm text-gray-400">Price history unavailable for overlay.</div>
-        )}
+            <div className="text-center">
+              <p className="text-xs text-green-400 font-semibold">Take Profit</p>
+              <p className="text-xs text-green-300">${takeProfit.toFixed(2)}</p>
+              <p className="text-xs text-green-200">+{tpUpside.toFixed(1)}%</p>
+            </div>
+          </div>
+        </div>
       </div>
       
       {/* Stats */}
