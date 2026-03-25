@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from statistics import mean
 from typing import Any
 
@@ -164,6 +164,63 @@ def summarize_flow_events(events: list[dict[str, Any]], latest_price: float | No
     }
 
 
+def _build_flow_timeline(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not events:
+        return []
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for event in events:
+        event_dt = datetime.fromisoformat(event["date"])
+        bucket_dt = event_dt - timedelta(days=event_dt.weekday())
+        bucket_key = bucket_dt.date().isoformat()
+
+        bucket = grouped.setdefault(
+            bucket_key,
+            {
+                "bucket": bucket_key,
+                "buy_notional_usd": 0.0,
+                "sell_notional_usd": 0.0,
+                "neutral_notional_usd": 0.0,
+                "buy_events": 0,
+                "sell_events": 0,
+                "neutral_events": 0,
+            },
+        )
+
+        side = event["side"]
+        notional = float(event["notional"])
+        if side == "buy":
+            bucket["buy_notional_usd"] += notional
+            bucket["buy_events"] += 1
+        elif side == "sell":
+            bucket["sell_notional_usd"] += notional
+            bucket["sell_events"] += 1
+        else:
+            bucket["neutral_notional_usd"] += notional
+            bucket["neutral_events"] += 1
+
+    timeline = []
+    for bucket_key in sorted(grouped.keys()):
+        bucket = grouped[bucket_key]
+        net_flow = bucket["buy_notional_usd"] - bucket["sell_notional_usd"]
+        total_notional = bucket["buy_notional_usd"] + bucket["sell_notional_usd"] + bucket["neutral_notional_usd"]
+        timeline.append(
+            {
+                "bucket": bucket_key,
+                "buy_notional_usd": round(bucket["buy_notional_usd"], 2),
+                "sell_notional_usd": round(bucket["sell_notional_usd"], 2),
+                "neutral_notional_usd": round(bucket["neutral_notional_usd"], 2),
+                "net_flow_usd": round(net_flow, 2),
+                "total_notional_usd": round(total_notional, 2),
+                "buy_events": bucket["buy_events"],
+                "sell_events": bucket["sell_events"],
+                "neutral_events": bucket["neutral_events"],
+            }
+        )
+
+    return timeline
+
+
 def _build_signal(symbol: str, name: str, category: str, frame: pd.DataFrame, config: FlowConfig) -> dict[str, Any]:
     if frame.empty or len(frame) < config.rolling_window + 1:
         return {
@@ -221,6 +278,7 @@ def _build_signal(symbol: str, name: str, category: str, frame: pd.DataFrame, co
         "sell_notional_usd": round(sell_notional, 2),
         "net_flow_usd": round(net_flow, 2),
         "event_count": len(events),
+        "flow_timeline": _build_flow_timeline(events),
         "recent_events": sorted(events, key=lambda event: event["date"], reverse=True)[:8],
     }
 
