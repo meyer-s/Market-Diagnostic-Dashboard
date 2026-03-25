@@ -29,7 +29,7 @@ export default function Topbar() {
     <div className="sticky top-0 z-50 w-full border-b border-stealth-700/80 bg-stealth-950/78 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
         <div className="mr-2 min-w-0">
-          <span className="block truncate text-base font-semibold tracking-[0.04em] text-white md:text-lg">Market Stability Diagnostic</span>
+          <span className="block truncate text-base font-semibold tracking-[0.04em] text-white md:text-lg">Market Stability Tool</span>
           <span className="hidden text-[10px] uppercase tracking-[0.24em] text-stealth-500 md:block">Macro Context Engine</span>
         </div>
         

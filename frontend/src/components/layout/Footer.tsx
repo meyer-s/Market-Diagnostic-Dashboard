@@ -3,7 +3,7 @@ export default function Footer() {
     <footer className="mt-auto border-t border-stealth-700/80 bg-stealth-950/72 px-6 py-5 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 text-sm text-stealth-400 md:flex-row">
         <div className="text-center md:text-left">
-          <div className="text-[10px] uppercase tracking-[0.26em] text-stealth-500">Market Stability Diagnostic</div>
+          <div className="text-[10px] uppercase tracking-[0.26em] text-stealth-500">Market Stability Tool</div>
           © 2026 Steven J Meyer LLC. All rights reserved.
         </div>
         <div className="flex flex-wrap items-center justify-center gap-6">
