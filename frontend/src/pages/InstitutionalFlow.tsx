@@ -189,23 +189,63 @@ function CenteredFlowBar({ value, scale }: { value: number | null; scale: number
   const toneClass = numericValue > 0 ? "bg-emerald-400/85" : numericValue < 0 ? "bg-rose-400/85" : "bg-slate-400/60";
 
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-stealth-500">
-        <span>Distribution</span>
-        <span>Zero</span>
-        <span>Accumulation</span>
-      </div>
-      <div className="relative h-3 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
-        <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-stealth-400/80" />
-        {numericValue === 0 ? (
-          <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80" />
-        ) : (
+    <div className="relative h-3 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
+      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-stealth-400/80" />
+      {numericValue === 0 ? (
+        <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80" />
+      ) : (
+        <div
+          className={`absolute inset-y-0 ${toneClass}`}
+          style={numericValue > 0 ? { left: "50%", width: `${magnitude}%` } : { right: "50%", width: `${magnitude}%` }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TrendZoneBar({
+  value,
+  scale,
+  certainty,
+}: {
+  value: number | null;
+  scale: number;
+  certainty: number;
+}) {
+  const numericValue = value ?? 0;
+  const direction = numericValue > 0 ? "positive" : numericValue < 0 ? "negative" : "neutral";
+  const baseReach = scale > 0 ? Math.max(6, Math.min(50, (Math.abs(numericValue) / scale) * 50)) : 0;
+  const certaintyReach = Math.max(baseReach, Math.min(50, baseReach * (0.7 + certainty * 0.45)));
+  const glowClass =
+    direction === "positive"
+      ? "bg-emerald-400/25"
+      : direction === "negative"
+        ? "bg-rose-400/25"
+        : "bg-slate-400/20";
+  const bodyClass =
+    direction === "positive"
+      ? "bg-emerald-300/90"
+      : direction === "negative"
+        ? "bg-rose-300/90"
+        : "bg-slate-300/75";
+
+  return (
+    <div className="relative h-6 overflow-hidden rounded-full border border-stealth-800 bg-stealth-950/90">
+      <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/80" />
+      {direction === "neutral" ? (
+        <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80 shadow-[0_0_12px_rgba(148,163,184,0.25)]" />
+      ) : (
+        <>
           <div
-            className={`absolute inset-y-0 ${toneClass}`}
-            style={numericValue > 0 ? { left: "50%", width: `${magnitude}%` } : { right: "50%", width: `${magnitude}%` }}
+            className={`absolute top-1/2 h-4 -translate-y-1/2 rounded-full ${glowClass}`}
+            style={direction === "positive" ? { left: "50%", width: `${certaintyReach}%` } : { right: "50%", width: `${certaintyReach}%` }}
           />
-        )}
-      </div>
+          <div
+            className={`absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full ${bodyClass}`}
+            style={direction === "positive" ? { left: "50%", width: `${baseReach}%` } : { right: "50%", width: `${baseReach}%` }}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -235,23 +275,12 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
 
       <div className="mt-2.5 space-y-1.5">
         {recentTimeline.map((bucket) => {
-          const volumeWidth = Math.max(8, Math.min(100, (bucket.total_notional_usd / maxVolume) * 100));
+          const certainty = bucket.total_notional_usd / maxVolume;
 
           return (
             <div key={bucket.bucket} className="grid grid-cols-[54px_minmax(0,1fr)_88px] items-center gap-2 rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
               <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
-              <div className="space-y-1.5">
-                <div className="grid grid-cols-[60px_minmax(0,1fr)] items-center gap-2">
-                  <span className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Net</span>
-                  <CenteredFlowBar value={bucket.net_flow_usd} scale={scale} />
-                </div>
-                <div className="grid grid-cols-[60px_minmax(0,1fr)] items-center gap-2">
-                  <span className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Volume</span>
-                  <div className="h-2 overflow-hidden rounded-full border border-stealth-800 bg-stealth-950/90">
-                    <div className="h-full rounded-full bg-sky-400/70" style={{ width: `${volumeWidth}%` }} />
-                  </div>
-                </div>
-              </div>
+              <TrendZoneBar value={bucket.net_flow_usd} scale={scale} certainty={certainty} />
               <div className="text-right">
                 <div className="text-[11px] font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
                 <div className="mt-0.5 text-[9px] uppercase tracking-[0.16em] text-stealth-500">{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</div>
