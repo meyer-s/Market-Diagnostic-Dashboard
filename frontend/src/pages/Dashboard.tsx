@@ -227,19 +227,19 @@ export default function Dashboard() {
 
   return (
     <div className="page-shell page-stack">
-      <div className="page-hero">
-        <div className="relative z-10 flex flex-col gap-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-col">
-              <span className="page-kicker">Daily Diagnostic</span>
-              <h2 className="page-title">Dashboard</h2>
-              <p className="page-subtitle">Real-time market regime assessment across volatility, rates, liquidity, and sentiment.</p>
-              <div className="page-meta">
-                <span className="page-badge">{visibleIndicators.length} active indicators</span>
-                <span className="page-badge">Trend window {overallTrendLabel}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col">
+          <span className="page-kicker">Daily Diagnostic</span>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Dashboard</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Real-time market regime assessment across volatility, rates, liquidity, and sentiment.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+            <span className="page-badge">{visibleIndicators.length} active indicators</span>
+            <span className="page-badge">Trend window {overallTrendLabel}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:items-end">
+          <div className="flex items-center gap-2 sm:gap-4">
             {newsCount > 0 && (
               <div className="page-badge border-sky-500/40 bg-sky-500/12 text-sky-200">
                 <span className="relative flex h-2 w-2">
@@ -252,7 +252,6 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        </div>
 
           <div className="flex flex-col justify-end gap-2 sm:flex-row sm:items-center sm:gap-3">
             {/* Refresh Button */}
