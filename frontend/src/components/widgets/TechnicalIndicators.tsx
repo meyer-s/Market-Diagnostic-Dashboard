@@ -378,24 +378,6 @@ export function TechnicalIndicators({
               );
             })}
 
-            {overlayEvents.map((event) => {
-              const x = scaleX(event.candleIndex);
-              const y = scalePrice(event.price);
-              const fill = event.side === "buy" ? chartColors.priceUp : event.side === "sell" ? chartColors.priceDown : chartColors.tick;
-              const stroke = event.side === "buy" ? "#bbf7d0" : event.side === "sell" ? "#fecaca" : "#e2e8f0";
-
-              return (
-                <g key={`flow-${event.date}-${event.side}-${event.price}-${event.volume}`}>
-                  <circle cx={x} cy={y} r={event.markerRadius + 2.5} fill={fill} opacity="0.12" />
-                  <circle cx={x} cy={y} r={event.markerRadius} fill={fill} fillOpacity="0.78" stroke={stroke} strokeWidth="1.25">
-                    <title>
-                      {`${event.side.toUpperCase()} ${event.date} | $${event.price.toFixed(2)} | z ${event.volume_z.toFixed(2)} | ${formatCompact(event.notional)}`}
-                    </title>
-                  </circle>
-                </g>
-              );
-            })}
-
             {/* SMA 50 line */}
             {sma_50 && (
               <>
@@ -433,6 +415,24 @@ export function TechnicalIndicators({
                 </text>
               </>
             )}
+
+            {overlayEvents.map((event) => {
+              const x = scaleX(event.candleIndex);
+              const y = scalePrice(event.price);
+              const fill = event.side === "buy" ? chartColors.priceUp : event.side === "sell" ? chartColors.priceDown : chartColors.tick;
+              const stroke = event.side === "buy" ? "#bbf7d0" : event.side === "sell" ? "#fecaca" : "#e2e8f0";
+
+              return (
+                <g key={`flow-${event.date}-${event.side}-${event.price}-${event.volume}`}>
+                  <circle cx={x} cy={y} r={event.markerRadius + 2.5} fill={fill} opacity="0.12" />
+                  <circle cx={x} cy={y} r={event.markerRadius} fill={fill} fillOpacity="0.78" stroke={stroke} strokeWidth="1.25">
+                    <title>
+                      {`${event.side.toUpperCase()} ${event.date} | $${event.price.toFixed(2)} | z ${event.volume_z.toFixed(2)} | ${formatCompact(event.notional)}`}
+                    </title>
+                  </circle>
+                </g>
+              );
+            })}
 
             {/* Axes */}
             <line x1={padding.left} y1={padding.top} x2={padding.left} y2={chartHeight - padding.bottom} stroke={chartColors.axis} strokeWidth="2" />
