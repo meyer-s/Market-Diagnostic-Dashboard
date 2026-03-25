@@ -475,12 +475,6 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
             <div className="absolute inset-y-0 right-0 w-[26%] bg-[radial-gradient(circle_at_right_center,rgba(110,231,183,0.35)_0%,rgba(110,231,183,0.18)_28%,rgba(110,231,183,0.06)_48%,rgba(110,231,183,0)_75%)]" />
             <div className="absolute inset-y-[7px] left-5 right-5 rounded-full bg-[linear-gradient(90deg,rgba(251,113,133,0.04),rgba(148,163,184,0.05)_50%,rgba(110,231,183,0.04))]" />
             <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/65" />
-            {row.sell_cluster_level !== null && (
-              <div className="absolute left-3 top-1/2 h-4 w-px -translate-y-1/2 bg-rose-200/60 shadow-[0_0_10px_rgba(251,113,133,0.4)]" />
-            )}
-            {row.buy_cluster_level !== null && (
-              <div className="absolute right-3 top-1/2 h-4 w-px -translate-y-1/2 bg-emerald-200/65 shadow-[0_0_10px_rgba(74,222,128,0.4)]" />
-            )}
             {row.latest_price !== null && (
               <>
                 <div
@@ -488,7 +482,7 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
                   style={currentMarkerStyle}
                 />
                 <div
-                  className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-stealth-950`}
+                  className={`absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-slate-100/90`}
                   style={currentMarkerStyle}
                 />
               </>
