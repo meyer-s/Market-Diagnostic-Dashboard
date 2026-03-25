@@ -210,7 +210,6 @@ export function PriceAnalysisChart({
         ) : (
           <div className="text-sm text-gray-400">Price history unavailable for overlay.</div>
         )}
-        </div>
       </div>
       
       {/* Stats */}

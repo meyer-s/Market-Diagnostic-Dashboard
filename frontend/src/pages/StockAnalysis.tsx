@@ -16,12 +16,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import {
-  CartesianGrid,
   LineChart,
   Line,
   ResponsiveContainer,
-  Scatter,
-  ScatterChart,
   XAxis,
   YAxis,
   Tooltip,
