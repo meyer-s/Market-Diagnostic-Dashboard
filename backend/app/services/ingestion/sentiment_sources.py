@@ -126,8 +126,13 @@ async def _scrape_michigan_latest() -> Optional[dict]:
     Index of Consumer Sentiment headline number.
 
     Returns {"date": "YYYY-MM-01", "value": float} on success, None on any failure.
-    Typical page text: "The Index of Consumer Sentiment ... was 57.9 in March"
-    or "Consumer sentiment rose to 57.9 in March 2026".
+
+    The page at sca.isr.umich.edu has a table layout:
+        "Preliminary Results for March 2026"
+        "Index of Consumer Sentiment"
+        55.5  56.6  57.0  ...
+    We extract the month/year from the results heading, then grab the first
+    decimal number after "Index of Consumer Sentiment".
     """
     import httpx as _httpx
     from datetime import datetime as _dt
@@ -144,39 +149,42 @@ async def _scrape_michigan_latest() -> Optional[dict]:
                 })
             if r.status_code != 200:
                 continue
-            text = r.text
 
-            # Pattern 1: "Index of Consumer Sentiment ... 79.4 ... in March"
-            m = re.search(
-                r"(?:Index\s+of\s+Consumer\s+Sentim?ent|Consumer\s+[Ss]entiment(?:\s+Index)?)"
-                r"[^<]{0,200}?(\d{2,3}\.?\d?)\s*(?:in|for)\s+"
-                r"(January|February|March|April|May|June|July|August|September|October|November|December)",
+            # Strip HTML tags for easier parsing
+            import re as _re
+            text = _re.sub(r"<[^>]+>", " ", r.text)
+            text = _re.sub(r"\s+", " ", text)
+
+            # Step 1: Find the report month from "Preliminary/Final Results for Month Year"
+            month_match = re.search(
+                r"(?:Preliminary|Final)\s+Results?\s+for\s+"
+                r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+                r"\s+(\d{4})",
                 text,
             )
-            if not m:
-                # Pattern 2: "in March ... sentiment ... 79.4"
-                m = re.search(
-                    r"(?:in|for)\s+(January|February|March|April|May|June|July|August"
-                    r"|September|October|November|December)"
-                    r"[^<]{0,200}?(?:sentiment|Sentiment)[^<]{0,80}?(\d{2,3}\.?\d?)",
-                    text,
-                )
-                if m:
-                    month_name, value_str = m.group(1), m.group(2)
-                else:
-                    continue
-            else:
-                value_str, month_name = m.group(1), m.group(2)
-
+            if not month_match:
+                continue
+            month_name = month_match.group(1)
+            year = int(month_match.group(2))
             month_num = _MONTH_MAP.get(month_name)
             if month_num is None:
                 continue
-            now = _dt.utcnow()
-            year = now.year if month_num <= now.month else now.year - 1
-            val = float(value_str)
+
+            # Step 2: Find "Index of Consumer Sentiment" then grab the first number after it
+            ics_pos = text.find("Index of Consumer Sentiment")
+            if ics_pos < 0:
+                ics_pos = text.find("Consumer Sentiment")
+            if ics_pos < 0:
+                continue
+            after_ics = text[ics_pos:]
+            val_match = re.search(r"(\d{2,3}\.\d)", after_ics)
+            if not val_match:
+                continue
+            val = float(val_match.group(1))
             if val < 20 or val > 150:  # sanity check
                 continue
-            logger.info("Michigan scrape: %s %d = %.1f", month_name, year, val)
+
+            logger.info("Michigan scrape: %s %d = %.1f (from %s)", month_name, year, val, url)
             return {"date": f"{year}-{month_num:02d}-01", "value": val}
         except Exception:
             continue
@@ -184,56 +192,61 @@ async def _scrape_michigan_latest() -> Optional[dict]:
 
 
 async def _scrape_ism_mfg_new_orders() -> Optional[dict]:
-    """Scrape the ISM Report On Business page for the Manufacturing PMI
-    New Orders sub-index.
+    """Attempt to scrape ISM Manufacturing New Orders sub-index.
 
-    Returns {"date": "YYYY-MM-01", "value": float} on success, None on failure.
-    The ISM publishes on the first business day of each month for the prior month.
+    Note: ISM's website uses reCAPTCHA bot protection, so this scraper
+    will only succeed if the page structure changes or an alternative
+    source becomes available.  Returns None when blocked.
     """
     import httpx as _httpx
     from datetime import datetime as _dt
 
-    try:
-        async with _httpx.AsyncClient(timeout=12, follow_redirects=True) as _c:
-            r = await _c.get(
-                "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/pmi/pmi-at-a-glance/",
-                headers={"User-Agent": "Mozilla/5.0 (compatible; MarketDashboard/1.0)"},
+    # Try multiple potential sources
+    _SOURCES = [
+        "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/pmi/pmi-at-a-glance/",
+    ]
+    for url in _SOURCES:
+        try:
+            async with _httpx.AsyncClient(timeout=12, follow_redirects=True) as _c:
+                r = await _c.get(url, headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; MarketDashboard/1.0)"
+                })
+            if r.status_code != 200:
+                continue
+            text = r.text
+
+            # Bail if CAPTCHA page
+            if "captcha" in text.lower() or "recaptcha" in text.lower():
+                continue
+
+            m = re.search(
+                r"New\s+Orders[^<]{0,300}?(\d{2,3}\.?\d?)\s*(?:%|percent)?",
+                text,
             )
-        if r.status_code != 200:
-            return None
-        text = r.text
+            if not m:
+                continue
+            val = float(m.group(1))
+            if val < 20 or val > 80:
+                continue
 
-        # Look for "New Orders" row with month + value, e.g. "New Orders ... 47.2"
-        m = re.search(
-            r"New\s+Orders[^<]{0,300}?(\d{2,3}\.?\d?)\s*(?:%|percent)?",
-            text,
-        )
-        if not m:
-            return None
-        value_str = m.group(1)
-        val = float(value_str)
-        if val < 20 or val > 80:  # ISM range sanity check
-            return None
+            month_m = re.search(
+                r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+                r"\s+(\d{4})\s+(?:Manufacturing|PMI)",
+                text,
+            )
+            if month_m:
+                month_num = _MONTH_MAP[month_m.group(1)]
+                year = int(month_m.group(2))
+            else:
+                now = _dt.utcnow()
+                month_num = now.month - 1 if now.month > 1 else 12
+                year = now.year if now.month > 1 else now.year - 1
 
-        # Find the report month — ISM typically says "March 2026 Manufacturing ISM"
-        month_m = re.search(
-            r"(January|February|March|April|May|June|July|August|September|October|November|December)"
-            r"\s+(\d{4})\s+(?:Manufacturing|PMI)",
-            text,
-        )
-        if month_m:
-            month_num = _MONTH_MAP[month_m.group(1)]
-            year = int(month_m.group(2))
-        else:
-            # Fallback: the ISM report published in month M covers month M-1
-            now = _dt.utcnow()
-            month_num = now.month - 1 if now.month > 1 else 12
-            year = now.year if now.month > 1 else now.year - 1
-
-        logger.info("ISM New Orders scrape: %d-%02d = %.1f", year, month_num, val)
-        return {"date": f"{year}-{month_num:02d}-01", "value": val}
-    except Exception:
-        return None
+            logger.info("ISM New Orders scrape: %d-%02d = %.1f", year, month_num, val)
+            return {"date": f"{year}-{month_num:02d}-01", "value": val}
+        except Exception:
+            continue
+    return None
 
 
 def compute_staleness_weights(
