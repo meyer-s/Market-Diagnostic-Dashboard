@@ -170,22 +170,27 @@ export function buildTechnicalProjections<T extends object>(assets: Array<Techni
     const sma50Distance = sma50 ? ((currentPrice - sma50) / sma50) * 100 : 0;
     const sma200Distance = sma200 ? ((currentPrice - sma200) / sma200) * 100 : 0;
 
+    // Continuous SMA trend score: peaks at moderate outperformance, penalises over-extension and below-SMA
+    const smaTrendScore = (distance: number, peakPct: number): number => {
+      if (distance <= 0) return Math.max(0, 5 + distance * 0.3);
+      if (distance <= peakPct) return 5 + (distance / peakPct) * 20;
+      return Math.max(5, 25 - (distance - peakPct) * 0.8);
+    };
+
     let scoreTrend = 0;
     if (sma20 !== null && sma50 !== null) {
-      scoreTrend += currentPrice > sma20 ? (sma20Distance > 10 ? 10 : sma20Distance > 5 ? 20 : 25) : 5;
-      scoreTrend += currentPrice > sma50 ? (sma50Distance > 15 ? 10 : sma50Distance > 8 ? 20 : 25) : 5;
-      scoreTrend += sma200 !== null && currentPrice > sma200 ? (sma200Distance > 25 ? 10 : sma200Distance > 15 ? 20 : 25) : 5;
-      scoreTrend += sma20 > sma50 ? 25 : 10;
+      scoreTrend += smaTrendScore(sma20Distance, 8);
+      scoreTrend += smaTrendScore(sma50Distance, 12);
+      scoreTrend += sma200 !== null ? smaTrendScore(sma200Distance, 20) : 5;
+      // Alignment: continuous spread between SMA20 and SMA50
+      const spread = ((sma20 - sma50) / sma50) * 100;
+      scoreTrend += spread >= 0 ? Math.min(25, 15 + spread) : Math.max(5, 15 + spread);
     }
 
+    // Continuous RSI momentum: peaks at RSI=50 (neutral/healthy), decays symmetrically toward extremes
     let scoreMomentum = 0;
     if (rsi !== null) {
-      if (rsi >= 45 && rsi <= 55) scoreMomentum = 100;
-      else if ((rsi >= 40 && rsi < 45) || (rsi > 55 && rsi <= 60)) scoreMomentum = 90;
-      else if ((rsi >= 35 && rsi < 40) || (rsi > 60 && rsi <= 65)) scoreMomentum = 75;
-      else if ((rsi >= 30 && rsi < 35) || (rsi > 65 && rsi <= 70)) scoreMomentum = 50;
-      else if (rsi < 30) scoreMomentum = 30;
-      else if (rsi > 70) scoreMomentum = 25;
+      scoreMomentum = Math.max(0, 100 - Math.abs(rsi - 50) * 3);
     }
 
     const levels = detectPriceLevels(prices.slice(-90), currentPrice);
