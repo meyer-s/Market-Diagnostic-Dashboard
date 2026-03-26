@@ -1496,23 +1496,33 @@ export default function IndicatorDetail() {
               const today = new Date();
               const daysBack = new Date(today);
               daysBack.setDate(today.getDate() - 365);
-              
-              const chartData = sentimentCompositeComponents
-                .map(item => ({
-                  ...item,
+              const historyChartData = (history ?? [])
+                .map((item) => ({
+                  date: item.timestamp,
+                  dateNum: new Date(item.timestamp).getTime(),
                   composite: {
-                    ...item.composite,
+                    stability_score: Number(item.score),
+                  },
+                }))
+                .filter((item) => Number.isFinite(item.composite.stability_score) && item.dateNum >= daysBack.getTime());
+
+              const fallbackComponentData = sentimentCompositeComponents
+                .map((item) => ({
+                  date: item.date,
+                  dateNum: new Date(item.date).getTime(),
+                  composite: {
                     stability_score:
                       item.composite?.stability_score ??
                       Math.floor(Math.max(0, Math.min(100, item.composite?.confidence_score ?? 0))),
                   },
-                  dateNum: new Date(item.date).getTime()
                 }))
-                .filter(item => item.dateNum >= daysBack.getTime());
-              
+                .filter((item) => item.dateNum >= daysBack.getTime());
+
+              const chartData = historyChartData.length > 0 ? historyChartData : fallbackComponentData;
+
               // Deduplicate by date
               const dateMap10 = new Map();
-              chartData.forEach(item => dateMap10.set(item.date, item));
+              chartData.forEach((item) => dateMap10.set(item.date, item));
               const deduplicatedData10 = Array.from(dateMap10.values()).sort((a, b) => a.dateNum - b.dateNum);
               
               const maxDate = deduplicatedData10.length > 0 ? Math.max(...deduplicatedData10.map(d => d.dateNum)) : today.getTime();

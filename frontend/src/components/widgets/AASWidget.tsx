@@ -4,6 +4,10 @@ import { Link } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { getFamilyColor, getMetricColor } from "../../theme/metricColors";
 import {
+  buildTechnicalProjections,
+  type TechnicalProjection,
+} from "../../utils/technicalProjections";
+import {
   analyzeSeries,
   getTrendTone,
   getConfidenceFromSignal,
@@ -57,8 +61,7 @@ interface CryptoMarketOverviewResponse {
 
 interface RelativeCryptoRanking extends CryptoAsset {
   rank: number;
-  rawRelativeScore: number;
-  relativeScore: number;
+  score_total: number;
   relativeClassification: "Winner" | "Neutral" | "Loser";
 }
 
@@ -80,7 +83,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const { data: aasData, loading } = useApi<AASData>('/aas/current');
   const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>(`/aas/history?days=${parseInt(timeframe)}`);
   const { data: metalsProjectionData } = useApi<MetalsProjectionResponse>('/precious-metals/projections/latest');
-  const { data: cryptoMarketData } = useApi<CryptoMarketOverviewResponse>('/crypto/market-overview?days=90');
+  const { data: cryptoMarketData } = useApi<CryptoMarketOverviewResponse>('/crypto/market-overview?days=365');
   const [metalsPercent, setMetalsPercent] = useState(50);
   const [cryptoPercent, setCryptoPercent] = useState(50);
   const [chartData, setChartData] = useState<HistoricalData[]>([]);
@@ -93,27 +96,19 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const benchmarkColor = getFamilyColor("benchmark");
 
   const buildRelativeRankings = (assets: CryptoAsset[]): RelativeCryptoRanking[] => {
-    const scoredAssets = assets.map((asset) => {
-      const change30d = asset.change_30d ?? 0;
-      const change24h = asset.change_24h ?? 0;
-      const rawRelativeScore = (change30d * 0.7) + (change24h * 0.3);
+    const projections = buildTechnicalProjections<CryptoAsset>(assets);
 
-      return {
-        ...asset,
-        rawRelativeScore,
-        relativeScore: rawRelativeScore * 10,
-        rank: 0,
-        relativeClassification: "Neutral" as const,
-      };
-    });
-
-    return scoredAssets
-      .sort((left, right) => right.relativeScore - left.relativeScore)
-      .map((asset, index, rankedAssets) => ({
-        ...asset,
-        rank: index + 1,
-        relativeClassification: index === 0 ? "Winner" : index === rankedAssets.length - 1 ? "Loser" : "Neutral",
-      }));
+    return projections.map((projection: TechnicalProjection<CryptoAsset>) => ({
+      symbol: projection.symbol,
+      name: projection.name,
+      color: projection.color,
+      current_price: projection.current_price,
+      change_24h: projection.change_24h,
+      change_30d: projection.change_30d,
+      rank: projection.rank,
+      score_total: projection.score_total,
+      relativeClassification: projection.relativeClassification,
+    }));
   };
 
   const getRelativeClassStyles = (classification: "Winner" | "Neutral" | "Loser") => {
@@ -450,7 +445,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: cryptoColor }}>
                 Crypto Leaders
               </p>
-              <span className="text-[11px] text-stealth-500">30d and 24h mix</span>
+              <span className="text-[11px] text-stealth-500">technical basket</span>
             </div>
             <div className="space-y-2">
               {cryptoRankings.length > 0 ? (
@@ -460,7 +455,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                       <div className="font-semibold text-stealth-100">
                         #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
                       </div>
-                      <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.relativeScore.toFixed(0)}</div>
+                      <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.score_total.toFixed(0)}</div>
                     </div>
                     <span className={`shrink-0 rounded border px-2 py-1 text-[11px] font-semibold ${getRelativeClassStyles(asset.relativeClassification)}`}>
                       {asset.relativeClassification}
