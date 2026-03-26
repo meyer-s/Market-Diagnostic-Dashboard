@@ -4,14 +4,12 @@ import { useApi } from "../hooks/useApi";
 import { IndicatorHistoryPoint } from "../types";
 import StateSparkline from "../components/widgets/StateSparkline";
 import { ComponentChart } from "../components/widgets/ComponentChart";
-import { ComponentCard } from "../components/widgets/ComponentCard";
-import { processComponentData, calculateDateRange, extendStaleData, filterByDateRange } from "../utils/chartDataUtils";
+import { processComponentData } from "../utils/chartDataUtils";
 import { prepareExtendedComponentData } from "../utils/indicatorDetailHelpers";
 import { formatDateTime } from "../utils/styleUtils";
 import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
 import { muniPublicSectorThresholds, muniPublicSectorWeights } from "../theme/metricRegistry";
-import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
 import InfoTooltip from "../components/ui/InfoTooltip";
 import {
@@ -305,8 +303,6 @@ export default function IndicatorDetail() {
   const apiCode =
     normalizedCode === "ANALYST_CONFIDENCE" ? "ANALYST_ANXIETY" : normalizedCode;
   const isAnalystConfidence = apiCode === "ANALYST_ANXIETY";
-  const [isRefetching, setIsRefetching] = React.useState(false);
-  const [refetchMessage, setRefetchMessage] = React.useState<string | null>(null);
   const [bondTab, setBondTab] = React.useState<"core" | "public" | "yield">("core");
   const [descExpanded, setDescExpanded] = React.useState(false);
 
@@ -326,30 +322,30 @@ export default function IndicatorDetail() {
   const { data: meta } = useApi<IndicatorDetailResponse>(
     apiCode ? `/indicators/${apiCode}` : ""
   );
-  const { data: history, refetch: refetchHistory } = useApi<IndicatorHistoryPoint[]>(
+  const { data: history } = useApi<IndicatorHistoryPoint[]>(
     apiCode ? `/indicators/${apiCode}/history?days=${getHistoryDays()}` : ""
   );
-  const { data: components, refetch: refetchComponents } = useApi<ComponentData[]>(
+  const { data: components } = useApi<ComponentData[]>(
     apiCode === "CONSUMER_HEALTH"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: bondComponents, refetch: refetchBondComponents } = useApi<BondComponentData[]>(
+  const { data: bondComponents } = useApi<BondComponentData[]>(
     apiCode === "BOND_MARKET_STABILITY"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: liquidityComponents, refetch: refetchLiquidityComponents } = useApi<LiquidityComponentData[]>(
+  const { data: liquidityComponents } = useApi<LiquidityComponentData[]>(
     apiCode === "LIQUIDITY_PROXY"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: analystAnxietyComponents, refetch: refetchAnalystAnxietyComponents } = useApi<AnalystAnxietyComponentData[]>(
+  const { data: analystAnxietyComponents } = useApi<AnalystAnxietyComponentData[]>(
     apiCode === "ANALYST_ANXIETY"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: sentimentCompositeComponents, refetch: refetchSentimentCompositeComponents } = useApi<SentimentCompositeComponentData[]>(
+  const { data: sentimentCompositeComponents } = useApi<SentimentCompositeComponentData[]>(
     apiCode === "SENTIMENT_COMPOSITE"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
@@ -376,48 +372,6 @@ export default function IndicatorDetail() {
       }
     }
     return items[items.length - 1];
-  };
-
-  const handleClearAndRefetch = async () => {
-    if (!apiCode) return;
-    
-    const confirmLabel = isAnalystConfidence ? "Analyst Confidence" : apiCode;
-    if (!confirm(`Are you sure you want to clear and refetch all data for ${confirmLabel}? This will delete all existing records and fetch fresh data (365 days).`)) {
-      return;
-    }
-    
-    setIsRefetching(true);
-    setRefetchMessage(null);
-    
-    try {
-      const result = await apiFetch<{ deleted_records?: number; message?: string; result?: { backfilled?: number } }>(`/admin/clear-refetch/${apiCode}?days=365`, {
-        method: 'POST'
-      });
-      const deletedCount = result.deleted_records || 0;
-      const backfilledCount = result.result?.backfilled || 0;
-      
-      if (deletedCount === 0 && backfilledCount === 0) {
-        setRefetchMessage(`OK: Data already up to date`);
-      } else if (deletedCount === 0) {
-        setRefetchMessage(`OK: Refetched ${backfilledCount} new data points`);
-      } else {
-        setRefetchMessage(`OK: Cleared ${deletedCount} records and refetched ${backfilledCount} data points`);
-      }
-      
-      // Refetch all data to update the UI
-      refetchHistory?.();
-      refetchComponents?.();
-      refetchBondComponents?.();
-      refetchLiquidityComponents?.();
-      refetchAnalystAnxietyComponents?.();
-      
-      // Clear message after 5 seconds
-      setTimeout(() => setRefetchMessage(null), 5000);
-    } catch (error) {
-      setRefetchMessage(`Error: Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsRefetching(false);
-    }
   };
 
   if (!apiCode) {
@@ -456,14 +410,6 @@ export default function IndicatorDetail() {
     GREEN: "text-green-400 bg-green-500/10 border-green-500/30",
     YELLOW: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
     RED: "text-red-400 bg-red-500/10 border-red-500/30",
-  };
-
-  // Helper to prepare chart data with date range and deduplication
-  const prepareChartData = <T extends { date: string }>(
-    components: T[],
-    daysBack: number
-  ): { data: (T & { dateNum: number })[]; dateRange: { startTime: number; endTime: number } } => {
-    return processComponentData(components, daysBack);
   };
 
   return (
@@ -2010,8 +1956,8 @@ interface YieldCurveTooltipItem {
 
 interface YieldCurveTooltipProps {
   active?: boolean;
-  payload?: YieldCurveTooltipItem[];
-  label?: string;
+  payload?: readonly YieldCurveTooltipItem[];
+  label?: string | number;
 }
 
 function getYieldCurveTooltipSection(dataKey?: string | number) {

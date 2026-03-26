@@ -1,7 +1,6 @@
 /**
  * Specialized helpers for rendering component breakdown charts in IndicatorDetail
  */
-import { ComponentChart } from '../components/widgets/ComponentChart';
 import { processComponentData } from './chartDataUtils';
 
 interface ExtendedDataOptions<T> {

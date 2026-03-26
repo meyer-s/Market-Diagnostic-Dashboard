@@ -572,7 +572,7 @@ export default function SectorProjections() {
           {/* Legend - Compact and scrollable */}
           <div className="mt-2 mb-4 overflow-x-auto">
             <div className="flex flex-wrap gap-1 sm:gap-2 pb-2 min-w-min">
-              {chartData.map((sector, idx) => {
+              {chartData.map((sector) => {
                 const color = getSectorColor(sector.symbol);
                 const isSelected = selectedSector === sector.symbol;
                 return (

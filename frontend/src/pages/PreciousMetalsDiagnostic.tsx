@@ -1,9 +1,9 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useApi } from "../hooks/useApi";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
-import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
+import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
 
 interface RegimeStatus {
@@ -1256,9 +1256,6 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
   };
 
   const gold_cap = market_caps.metals?.AU?.market_cap_usd ?? null;
-  const silver_cap = market_caps.metals?.AG?.market_cap_usd ?? null;
-  const platinum_cap = market_caps.metals?.PT?.market_cap_usd ?? null;
-  const palladium_cap = market_caps.metals?.PD?.market_cap_usd ?? null;
   const total_cap = market_caps.total_market_cap_usd ?? null;
   const m2_ratio = market_caps.metals_to_m2_pct ?? null;
   const m2_ratio_bps = isNumber(m2_ratio) ? m2_ratio * 100 : null;

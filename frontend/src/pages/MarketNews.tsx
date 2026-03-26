@@ -103,7 +103,6 @@ export default function MarketNews() {
     data: articles,
     loading,
     error,
-    refetch,
   } = useApi<NewsArticle[]>(`/news?hours=${hours}&limit=200`);
 
   const {

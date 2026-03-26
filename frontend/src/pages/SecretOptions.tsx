@@ -1354,7 +1354,6 @@ export default function SecretOptions() {
               <tbody className="divide-y divide-gray-800">
                 {sortedPositions.map((item) => {
                   const { position, metrics } = item;
-                  const linked = position.source_event_id !== null && position.source_event_id !== undefined;
                   const heat = attributionHeat(position.source_event_id, position.source_match_confidence);
                   const tooltip = buildAttributionTooltip(
                     position.source_event_id,

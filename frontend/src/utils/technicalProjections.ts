@@ -1,11 +1,11 @@
 export type ProjectionHistoryPoint = {
   date: string;
-  price: number | null | undefined;
+  price?: number | null;
 };
 
 export type TechnicalProjectionInput<T extends object = object> = T & {
   current_price: number | null;
-  history: ProjectionHistoryPoint[];
+  history?: ProjectionHistoryPoint[];
 };
 
 export type RelativeClassification = "Winner" | "Neutral" | "Loser";
@@ -147,7 +147,7 @@ const getClassificationLabel = (scoreTotal: number) => {
 
 export function buildTechnicalProjections<T extends object>(assets: Array<TechnicalProjectionInput<T>>): Array<TechnicalProjection<T>> {
   const projections = assets.flatMap((asset) => {
-    const orderedHistory = [...asset.history]
+    const orderedHistory = [...(asset.history ?? [])]
       .filter((point) => point.price !== null && point.price !== undefined && Number.isFinite(point.price))
       .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
     const prices = orderedHistory.map((point) => point.price as number);

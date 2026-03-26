@@ -200,7 +200,7 @@ const MarketMap = () => {
    */
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 300000); // Refresh every 5 minutes
+    const interval = setInterval(fetchData, REFRESH_INTERVAL);
     return () => clearInterval(interval);
   }, []);
 
@@ -639,23 +639,9 @@ const MarketMap = () => {
 
                     {/* Stock bubbles */}
                     <div className="absolute inset-0">
-                      {sector.stocks.map((stock, stockIdx) => {
-                        // NASDAQ-100 stocks (major tech/growth companies)
-                        const nasdaq100 = [
-                          'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'GOOG', 'AMZN', 'META', 'TSLA', 'AVGO', 'COST',
-                          'NFLX', 'AMD', 'PEP', 'ADBE', 'CSCO', 'TMUS', 'INTC', 'CMCSA', 'TXN', 'QCOM',
-                          'INTU', 'HON', 'AMAT', 'SBUX', 'ISRG', 'BKNG', 'AMGN', 'ADI', 'PANW', 'VRTX',
-                          'ADP', 'GILD', 'MDLZ', 'LRCX', 'REGN', 'MU', 'PYPL', 'SNPS', 'KLAC', 'CDNS',
-                          'MELI', 'CRWD', 'MAR', 'ABNB', 'ORLY', 'CTAS', 'MRVL', 'CSX', 'DASH', 'FTNT',
-                          'ADSK', 'NXPI', 'ASML', 'ROP', 'WDAY', 'PAYX', 'PCAR', 'AEP', 'ROST', 'ODFL',
-                          'MNST', 'CHTR', 'CPRT', 'FAST', 'KDP', 'EA', 'BKR', 'TEAM', 'VRSK', 'DXCM',
-                          'CTSH', 'KHC', 'IDXX', 'LULU', 'GEHC', 'EXC', 'CCEP', 'XEL', 'ZS', 'ON',
-                          'CSGP', 'TTWO', 'ANSS', 'DDOG', 'CDW', 'BIIB', 'ILMN', 'GFS', 'WBD', 'MDB',
-                          'MRNA', 'WBA', 'SMCI', 'ARM', 'DLTR', 'FANG', 'ALGN', 'ZM', 'SIRI', 'LCID'
-                        ];
-                        
+                      {sector.stocks.map((stock) => {
                         // Check if this stock is in NASDAQ-100 (for label display)
-                        const isNasdaq100 = nasdaq100.includes(stock.ticker);
+                        const isNasdaq100 = NASDAQ_100_TICKERS.includes(stock.ticker);
                         
                         // ============================================================
                         // BUBBLE SIZING: Volume-proportional within sector

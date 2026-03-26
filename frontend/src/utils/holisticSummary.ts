@@ -22,13 +22,6 @@ const formatPrice = (value: number | null | undefined) =>
 const formatPoint = (value: number | null | undefined) =>
   isNumber(value) ? value.toFixed(1) : "n/a";
 
-const calcSlope = (values: Array<number | null>, window = 6): number | null => {
-  const filtered = values.filter((val): val is number => isNumber(val));
-  if (filtered.length <= window) return null;
-  const end = filtered.length - 1;
-  return (filtered[end] - filtered[end - window]) / window;
-};
-
 const percentileRank = (values: number[], value: number): number => {
   if (!values.length) return 50;
   const sorted = [...values].sort((a, b) => a - b);

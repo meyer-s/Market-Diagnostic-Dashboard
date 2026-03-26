@@ -4,7 +4,6 @@ import {
   ComposedChart,
   Bar,
   Cell,
-  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -16,8 +15,8 @@ import {
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatDateTime, formatTime } from "../../utils/styleUtils";
-import { CHART_MARGIN, commonXAxisProps, commonYAxisProps, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
-import { getStateFromScore, STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
+import { CHART_MARGIN } from "../../utils/chartUtils";
+import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
 import {
   analyzeSeries,
   getTrendTone,
@@ -470,7 +469,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                     }}
                     labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
                     itemStyle={{ color: "#ffffff", fontSize: 11 }}
-                    formatter={(value: number, name: string, item: { dataKey?: unknown; payload?: Record<string, unknown> }) => {
+                    formatter={(value: number, name: string | number, item: { dataKey?: unknown; payload?: Record<string, unknown> }) => {
                       const dataKey = typeof item?.dataKey === "string" ? item.dataKey : "";
                       const payload = item?.payload ?? {};
                       if (dataKey === "total_pct") {
@@ -482,7 +481,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                           "Indicator mix",
                         ];
                       }
-                      return [`${value.toFixed(1)}`, "Score"];
+                      return [`${value.toFixed(1)}`, typeof name === "string" ? name : "Score"];
                     }}
                     labelFormatter={(label: string | number) =>
                       new Date(label).toLocaleDateString()
