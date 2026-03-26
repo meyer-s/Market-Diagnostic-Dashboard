@@ -253,14 +253,14 @@ INDICATOR_METADATA = {
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "GREEN (Score 70-100): Broad-based optimism across consumers and businesses. YELLOW (Score 40-69): Mixed or neutral sentiment. RED (Score <40): Pervasive pessimism and muted demand.",
-        "derived_from": ["USACSCICP02STSAM", "NFIB (scraped)", "BSCICP02USM460S", "NOCDISA066MSFRBNY", "VNWOSAMFRBDAL", "NOCDFSA066MSFRBPHI", "NEWORDER"],
+        "derived_from": ["UMCSENT", "UMich (scraped)", "NFIB (scraped)", "BSCICP02USM460S", "NOCDISA066MSFRBNY", "VNWOSAMFRBDAL", "NOCDFSA066MSFRBPHI", "NEWORDER", "ISM New Orders (scraped)"],
         "components": {
             "michigan_consumer_sentiment": {
-                "symbol": "USACSCICP02STSAM",
+                "symbol": "UMCSENT + UMich direct scrape",
                 "weight": 0.30,
-                "description": "OECD US Consumer Confidence (30%)",
-                "interpretation": "OECD composite consumer confidence for the United States, updated monthly and typically 1 month more current than the University of Michigan survey on FRED. Values above 100 indicate above-average consumer confidence; below 100 indicates below-average confidence. Tracks consumer willingness to spend, borrow, and make major purchases.",
-                "typical_ranges": "Very Optimistic: >105. Healthy: 100-105. Cautious: 97-100. Pessimistic: 93-97. Crisis: <93 (2008, 2020, 2022).",
+                "description": "University of Michigan Consumer Sentiment (30%)",
+                "interpretation": "University of Michigan Index of Consumer Sentiment from FRED (UMCSENT), supplemented by a direct scrape of the UMich Surveys of Consumers page when FRED lags the preliminary mid-month release. Tracks consumer willingness to spend, borrow, and make major purchases. Higher values indicate stronger consumer confidence.",
+                "typical_ranges": "Very Optimistic: >100. Healthy: 80-100. Cautious: 60-80. Pessimistic: <60. Crisis: <50 (2008, 2022).",
                 "monthly": True
             },
             "nfib_small_business": {
@@ -280,15 +280,15 @@ INDICATOR_METADATA = {
                 "monthly": True
             },
             "capex_proxy": {
-                "symbol": "NEWORDER",
+                "symbol": "NEWORDER + ISM New Orders (scraped)",
                 "weight": 0.15,
                 "description": "Nondefense Capital Goods Orders ex-Aircraft (15%)",
-                "interpretation": "Proxy for corporate capital expenditure - the ultimate vote of confidence in the future. When companies order machinery, equipment, and technology, they're committing to multi-year investments. High orders signal expansion plans. Declining orders indicate pessimism about future demand.",
+                "interpretation": "Proxy for corporate capital expenditure - the ultimate vote of confidence in the future. FRED series NEWORDER from the Census Bureau (3-4 week lag). Supplemented by ISM Manufacturing New Orders sub-index scraped directly from ISM when NEWORDER is stale, z-score-bridged to prevent level shifts. High orders signal expansion plans. Declining orders indicate pessimism about future demand.",
                 "typical_ranges": "Strong CapEx cycle: +10% YoY. Moderate: +2-5% YoY. Weak: -2 to +2% YoY. Recession: -10%+ YoY decline (2008-2009, 2015-2016, 2020).",
                 "monthly": True
             }
         },
-        "calculation": "1) Fetch USACSCICP02STSAM (OECD US consumer confidence) from FRED. 2) Fetch BSCICP02USM460S (OECD business confidence) and translate to NFIB Optimism Index scale; replace or append latest month with directly scraped NFIB value if available. 3) Average NY Fed, Dallas Fed, and Philadelphia Fed new-orders surveys into a 3-district regional proxy. 4) Fetch NEWORDER capex proxy. 5) Align dates on the union of component release dates and forward-fill slower series. 3) Compute z-scores for each using 520-day lookback. 4) Map z-scores to 0-100 confidence scores: ((z + 3) / 6) * 100. 5) Weight and combine. 6) If optional components are missing, redistribute weights. 7) Store as composite confidence score 0-100.",
+        "calculation": "1) Fetch UMCSENT (Michigan Consumer Sentiment) from FRED; supplement with direct UMich website scrape for latest preliminary reading when FRED lags. 2) Fetch BSCICP02USM460S (OECD business confidence) and translate to NFIB Optimism Index scale; replace or append latest month with directly scraped NFIB value if available. 3) Average NY Fed, Dallas Fed, and Philadelphia Fed new-orders surveys into a 3-district regional proxy. 4) Fetch NEWORDER capex proxy from FRED; supplement with ISM Manufacturing New Orders scrape when NEWORDER is stale. 5) Align dates on the union of component release dates and forward-fill slower series. 6) Apply staleness-aware weighting: components >45 days stale have their weight decayed and redistributed to fresher components. 7) Compute z-scores for each using 520-day lookback. 8) Map z-scores to 0-100 confidence scores: ((z + 3) / 6) * 100. 9) Weight and combine. 10) Store as composite confidence score 0-100.",
         "thresholds": {
             "green_above": 70,
             "yellow_above": 40

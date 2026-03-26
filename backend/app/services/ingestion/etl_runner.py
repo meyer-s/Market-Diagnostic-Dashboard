@@ -10,6 +10,8 @@ Supports:
 - ingest_all_indicators()
 """
 
+import logging
+
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
@@ -27,6 +29,8 @@ from app.services.ingestion.breadth_utils import (
 )
 from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 from app.utils.system_scoring import compute_weighted_composite
+
+logger = logging.getLogger(__name__)
 
 # Agent C — clean stubs (will be replaced in Ticket C1)
 from app.services.analytics_stub import (
@@ -742,12 +746,14 @@ class ETLRunner:
             )
         elif code == "SENTIMENT_COMPOSITE":
             import numpy as np
+            from app.services.ingestion.sentiment_sources import compute_staleness_weights
             
             sentiment_sources = await fetch_sentiment_component_series(self.fred, start_date)
             umich_series = sentiment_sources["umich_series"]
             nfib_series = sentiment_sources["business_confidence_series"]
             ism_mfg_series = sentiment_sources["regional_new_orders_series"]
             capex_series = sentiment_sources["capex_series"]
+            ism_pmi_series = sentiment_sources.get("ism_pmi_series", [])
             
             # Convert to dicts for alignment
             def series_to_dict(s):
@@ -757,7 +763,31 @@ class ETLRunner:
             nfib_dict = series_to_dict(nfib_series) if nfib_series else {}
             ism_dict = series_to_dict(ism_mfg_series) if ism_mfg_series else {}
             capex_dict = series_to_dict(capex_series) if capex_series else {}
-            
+
+            # If ISM PMI New Orders is available and more recent than NEWORDER,
+            # use it as a capex supplement.  We normalise the ISM diffusion value
+            # into NEWORDER-scale using z-scores of each series, so the graft
+            # doesn't introduce a level shift.
+            if ism_pmi_series and capex_dict:
+                capex_latest = max(capex_dict.keys()) if capex_dict else "1900-01-01"
+                for pt in ism_pmi_series:
+                    if pt["date"] > capex_latest and pt["value"] is not None:
+                        # Convert ISM diffusion → approximate NEWORDER level
+                        # ISM range ~30-65, NEWORDER typically ~60k-80k
+                        # Use the z-score of ISM mapped to NEWORDER mean/std
+                        capex_vals_list = list(capex_dict.values())
+                        if capex_vals_list:
+                            cap_mean = sum(capex_vals_list) / len(capex_vals_list)
+                            cap_std = (sum((v - cap_mean)**2 for v in capex_vals_list) / len(capex_vals_list)) ** 0.5 or 1.0
+                            # ISM New Orders long-run mean ~52, std ~6
+                            ism_z = (pt["value"] - 52.0) / 6.0
+                            synthetic = cap_mean + ism_z * cap_std
+                            capex_dict[pt["date"]] = synthetic
+                            logger.info(
+                                "Grafted ISM PMI New Orders (%.1f → %.0f) onto NEWORDER at %s",
+                                pt["value"], synthetic, pt["date"],
+                            )
+
             # Require a solid Michigan history, but build the composite on the
             # union of component release dates so delayed Michigan updates do not
             # block fresher NFIB / orders releases.
@@ -822,55 +852,46 @@ class ETLRunner:
             ism_conf = compute_confidence_score(ism_vals) if has_ism else None
             capex_conf = compute_confidence_score(capex_vals) if has_capex else None
             
-            # Determine weights based on available components
+            # --- Staleness-aware weighting ---
+            # Determine the freshest real observation date for each component
+            # (before forward fill) to detect stale data.
+            component_latest = {
+                "umich": max(umich_dict.keys()) if umich_dict else None,
+                "nfib": max(nfib_dict.keys()) if nfib_dict else None,
+                "ism": max(ism_dict.keys()) if ism_dict else None,
+                "capex": max(capex_dict.keys()) if capex_dict else None,
+            }
+
+            # Nominal weights (all-components case)
+            nominal = {}
             if has_nfib and has_ism and has_capex:
-                # All components available
-                weights = {
-                    'umich': 0.30,
-                    'nfib': 0.30,
-                    'ism': 0.25,
-                    'capex': 0.15
-                }
-                composite_conf = (
-                    umich_conf * weights['umich'] +
-                    nfib_conf * weights['nfib'] +
-                    ism_conf * weights['ism'] +
-                    capex_conf * weights['capex']
-                )
+                nominal = {"umich": 0.30, "nfib": 0.30, "ism": 0.25, "capex": 0.15}
             elif has_nfib and has_ism:
-                # No CapEx
-                weights = {
-                    'umich': 0.33,
-                    'nfib': 0.33,
-                    'ism': 0.34,
-                    'capex': 0.00
-                }
-                composite_conf = (
-                    umich_conf * weights['umich'] +
-                    nfib_conf * weights['nfib'] +
-                    ism_conf * weights['ism']
-                )
+                nominal = {"umich": 0.33, "nfib": 0.33, "ism": 0.34, "capex": 0.0}
             elif has_nfib:
-                # Only Michigan + NFIB
-                weights = {
-                    'umich': 0.50,
-                    'nfib': 0.50,
-                    'ism': 0.00,
-                    'capex': 0.00
-                }
-                composite_conf = (
-                    umich_conf * weights['umich'] +
-                    nfib_conf * weights['nfib']
-                )
+                nominal = {"umich": 0.50, "nfib": 0.50, "ism": 0.0, "capex": 0.0}
             else:
-                # Only Michigan (minimum)
-                weights = {
-                    'umich': 1.00,
-                    'nfib': 0.00,
-                    'ism': 0.00,
-                    'capex': 0.00
-                }
-                composite_conf = umich_conf
+                nominal = {"umich": 1.0, "nfib": 0.0, "ism": 0.0, "capex": 0.0}
+
+            # Compute staleness-adjusted weights using today as reference
+            today_key = datetime.utcnow().strftime("%Y-%m-%d")
+            weights = compute_staleness_weights(component_latest, nominal, as_of=today_key)
+            
+            for comp, w in weights.items():
+                if w != nominal.get(comp, 0):
+                    logger.info(
+                        "Sentiment %s weight adjusted: %.2f → %.2f (latest data: %s)",
+                        comp, nominal.get(comp, 0), w, component_latest.get(comp),
+                    )
+            
+            # Build composite using adjusted weights
+            composite_conf = umich_conf * weights["umich"]
+            if has_nfib:
+                composite_conf = composite_conf + nfib_conf * weights["nfib"]
+            if has_ism:
+                composite_conf = composite_conf + ism_conf * weights["ism"]
+            if has_capex:
+                composite_conf = composite_conf + capex_conf * weights["capex"]
             
             # Store composite confidence score (0-100, higher = better sentiment)
             # With direction=-1 in config, this will be properly normalized

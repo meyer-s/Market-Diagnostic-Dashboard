@@ -1027,36 +1027,38 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
         
         return confidence
     
+    from app.services.ingestion.sentiment_sources import compute_staleness_weights
+
     umich_conf = compute_confidence_score(umich_vals)
     nfib_conf = compute_confidence_score(nfib_vals) if has_nfib else None
     ism_conf = compute_confidence_score(ism_vals) if has_ism else None
     capex_conf = compute_confidence_score(capex_vals) if has_capex else None
     
-    # Determine weights
+    # Staleness-aware weights (mirrors ETL behaviour)
+    component_latest = {
+        "umich": max(umich_dict.keys()) if umich_dict else None,
+        "nfib": max(nfib_dict.keys()) if nfib_dict else None,
+        "ism": max(ism_dict.keys()) if ism_dict else None,
+        "capex": max(capex_dict.keys()) if capex_dict else None,
+    }
     if has_nfib and has_ism and has_capex:
-        weights = {'umich': 0.30, 'nfib': 0.30, 'ism': 0.25, 'capex': 0.15}
-        composite_conf = (
-            umich_conf * weights['umich'] +
-            nfib_conf * weights['nfib'] +
-            ism_conf * weights['ism'] +
-            capex_conf * weights['capex']
-        )
+        nominal = {"umich": 0.30, "nfib": 0.30, "ism": 0.25, "capex": 0.15}
     elif has_nfib and has_ism:
-        weights = {'umich': 0.33, 'nfib': 0.33, 'ism': 0.34, 'capex': 0.00}
-        composite_conf = (
-            umich_conf * weights['umich'] +
-            nfib_conf * weights['nfib'] +
-            ism_conf * weights['ism']
-        )
+        nominal = {"umich": 0.33, "nfib": 0.33, "ism": 0.34, "capex": 0.0}
     elif has_nfib:
-        weights = {'umich': 0.50, 'nfib': 0.50, 'ism': 0.00, 'capex': 0.00}
-        composite_conf = (
-            umich_conf * weights['umich'] +
-            nfib_conf * weights['nfib']
-        )
+        nominal = {"umich": 0.50, "nfib": 0.50, "ism": 0.0, "capex": 0.0}
     else:
-        weights = {'umich': 1.00, 'nfib': 0.00, 'ism': 0.00, 'capex': 0.00}
-        composite_conf = umich_conf
+        nominal = {"umich": 1.0, "nfib": 0.0, "ism": 0.0, "capex": 0.0}
+
+    weights = compute_staleness_weights(component_latest, nominal)
+
+    composite_conf = umich_conf * weights["umich"]
+    if has_nfib:
+        composite_conf = composite_conf + nfib_conf * weights["nfib"]
+    if has_ism:
+        composite_conf = composite_conf + ism_conf * weights["ism"]
+    if has_capex:
+        composite_conf = composite_conf + capex_conf * weights["capex"]
 
     # Carry forward latest known monthly reading to today so this view
     # stays aligned with the headline indicator freshness behavior.
