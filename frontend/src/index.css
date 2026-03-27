@@ -129,10 +129,10 @@ body {
   .primary-card {
     @apply rounded-2xl border border-stealth-700 bg-gradient-to-br from-stealth-800 to-stealth-850;
     background-image:
-      radial-gradient(ellipse 76% 34% at 50% -10%, rgba(96, 116, 138, 0.18) 0%, rgba(84, 101, 122, 0.12) 28%, rgba(50, 61, 76, 0.04) 52%, rgba(35, 43, 56, 0) 72%),
-      radial-gradient(ellipse 140% 72% at 50% -18%, rgba(72, 88, 108, 0.16) 0%, rgba(72, 88, 108, 0.1) 30%, rgba(35, 43, 56, 0.05) 52%, rgba(35, 43, 56, 0) 76%),
-      radial-gradient(ellipse 44% 28% at 12% 108%, rgba(72, 88, 108, 0.08) 0%, rgba(52, 64, 80, 0.05) 40%, rgba(35, 43, 56, 0) 76%),
-      radial-gradient(ellipse 44% 28% at 88% 108%, rgba(72, 88, 108, 0.08) 0%, rgba(52, 64, 80, 0.05) 40%, rgba(35, 43, 56, 0) 76%),
+      radial-gradient(ellipse 76% 34% at 50% -10%, rgba(96, 116, 138, 0.12) 0%, rgba(84, 101, 122, 0.08) 28%, rgba(50, 61, 76, 0.025) 52%, rgba(35, 43, 56, 0) 72%),
+      radial-gradient(ellipse 140% 72% at 50% -18%, rgba(72, 88, 108, 0.1) 0%, rgba(72, 88, 108, 0.065) 30%, rgba(35, 43, 56, 0.03) 52%, rgba(35, 43, 56, 0) 76%),
+      radial-gradient(ellipse 44% 28% at 12% 108%, rgba(72, 88, 108, 0.045) 0%, rgba(52, 64, 80, 0.025) 40%, rgba(35, 43, 56, 0) 76%),
+      radial-gradient(ellipse 44% 28% at 88% 108%, rgba(72, 88, 108, 0.045) 0%, rgba(52, 64, 80, 0.025) 40%, rgba(35, 43, 56, 0) 76%),
       linear-gradient(180deg, rgba(38, 47, 61, 0.98) 0%, rgba(32, 40, 52, 0.98) 42%, rgba(27, 34, 46, 0.99) 100%);
     box-shadow: 0 18px 44px -30px rgba(0, 0, 0, 0.82);
   }
