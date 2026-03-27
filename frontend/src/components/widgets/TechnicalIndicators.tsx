@@ -498,199 +498,6 @@ export function TechnicalIndicators({
           )}
         </div>
 
-        {/* Combined Momentum Lower Panel */}
-        <div className="bg-gray-900 rounded-lg p-3 mb-4 overflow-x-auto">
-          <div className="mb-2 flex items-center justify-between text-[10px]">
-            <span className="font-semibold uppercase tracking-[0.18em] text-gray-400">Momentum Lower Panel</span>
-            <span className="text-gray-500">
-              <span className="mr-2 text-blue-300">MACD</span>
-              <span className="mr-2 text-amber-300">Signal</span>
-              <span className="text-purple-300">RSI (right axis)</span>
-            </span>
-          </div>
-
-          <svg
-            width="100%"
-            height="100%"
-            viewBox={`0 0 ${chartWidth} 220`}
-            preserveAspectRatio="xMidYMid meet"
-            style={{ minWidth: "800px" }}
-          >
-            {(() => {
-              const combinedPadding = { top: 18, right: 52, bottom: 28, left: 52 };
-              const combinedHeight = 220;
-              const combinedPlotHeight = combinedHeight - combinedPadding.top - combinedPadding.bottom;
-              const combinedPlotWidth = chartWidth - combinedPadding.left - combinedPadding.right;
-              const macdValues = macd.macd_series || [];
-              const signalValues = macd.signal_series || [];
-              const histogramValues = macd.histogram_series || [];
-              const rsiValues = rsi.series || [];
-              const pointCount = Math.max(macdValues.length, signalValues.length, histogramValues.length, rsiValues.length, candles.length);
-
-              if (pointCount < 2 || macdValues.length === 0 || signalValues.length === 0 || histogramValues.length === 0 || rsiValues.length === 0) {
-                return (
-                  <text x="50%" y="50%" fill={chartColors.tick} fontSize="12" textAnchor="middle">
-                    Loading momentum data...
-                  </text>
-                );
-              }
-
-              const allMacdValues = [...macdValues, ...signalValues, ...histogramValues].filter((value) => Number.isFinite(value));
-              const macdSpan = Math.max(...allMacdValues.map((value) => Math.abs(value)), 0.01) * 1.15;
-              const centerY = combinedPadding.top + combinedPlotHeight / 2;
-
-              const scaleMomentumX = (index: number) => combinedPadding.left + (index / (pointCount - 1)) * combinedPlotWidth;
-              const scaleMacdY = (value: number) => centerY - (value / (macdSpan * 2)) * combinedPlotHeight;
-              const scaleRsiY = (value: number) => combinedPadding.top + ((100 - value) / 100) * combinedPlotHeight;
-
-              return (
-                <>
-                  {/* MACD grid */}
-                  {[-1, -0.5, 0, 0.5, 1].map((fraction) => {
-                    const y = centerY - fraction * (combinedPlotHeight / 2);
-                    return (
-                      <line
-                        key={`combined-macd-grid-${fraction}`}
-                        x1={combinedPadding.left}
-                        y1={y}
-                        x2={chartWidth - combinedPadding.right}
-                        y2={y}
-                        stroke={fraction === 0 ? chartColors.axis : chartColors.grid}
-                        strokeWidth={fraction === 0 ? "1.4" : "1"}
-                        strokeDasharray={fraction === 0 ? "0" : "4 4"}
-                      />
-                    );
-                  })}
-
-                  {/* RSI threshold guides */}
-                  {[30, 70].map((level) => (
-                    <line
-                      key={`combined-rsi-${level}`}
-                      x1={combinedPadding.left}
-                      y1={scaleRsiY(level)}
-                      x2={chartWidth - combinedPadding.right}
-                      y2={scaleRsiY(level)}
-                      stroke={chartColors.rsiAxis}
-                      strokeDasharray="3 5"
-                      strokeOpacity="0.45"
-                      strokeWidth="1"
-                    />
-                  ))}
-
-                  {/* Histogram bars */}
-                  {histogramValues.map((value, idx) => {
-                    const x = scaleMomentumX(idx);
-                    const barWidth = combinedPlotWidth / pointCount;
-                    const barY = value >= 0 ? scaleMacdY(value) : centerY;
-                    const barHeight = Math.abs(scaleMacdY(value) - centerY);
-                    return (
-                      <rect
-                        key={`combined-hist-${idx}`}
-                        x={x - barWidth / 2}
-                        y={barY}
-                        width={Math.max(barWidth * 0.8, 1)}
-                        height={Math.max(barHeight, 0)}
-                        fill={value >= 0 ? chartColors.priceUp : chartColors.priceDown}
-                        opacity="0.5"
-                      />
-                    );
-                  })}
-
-                  {/* MACD line */}
-                  <polyline
-                    points={macdValues
-                      .map((value, idx) => `${scaleMomentumX(idx)},${scaleMacdY(value)}`)
-                      .join(" ")}
-                    fill="none"
-                    stroke={chartColors.macdLine}
-                    strokeWidth="2"
-                  />
-
-                  {/* Signal line */}
-                  <polyline
-                    points={signalValues
-                      .map((value, idx) => `${scaleMomentumX(idx)},${scaleMacdY(value)}`)
-                      .join(" ")}
-                    fill="none"
-                    stroke={chartColors.macdSignal}
-                    strokeWidth="2"
-                    strokeDasharray="4 2"
-                  />
-
-                  {/* RSI line on right axis scale */}
-                  <polyline
-                    points={rsiValues
-                      .map((value, idx) => `${scaleMomentumX(idx)},${scaleRsiY(value)}`)
-                      .join(" ")}
-                    fill="none"
-                    stroke={chartColors.rsiAxis}
-                    strokeWidth="1.8"
-                    strokeOpacity="0.92"
-                  />
-
-                  {/* Left y-axis (MACD) */}
-                  <line
-                    x1={combinedPadding.left}
-                    y1={combinedPadding.top}
-                    x2={combinedPadding.left}
-                    y2={combinedHeight - combinedPadding.bottom}
-                    stroke={chartColors.axis}
-                    strokeWidth="1.8"
-                  />
-                  {[-1, -0.5, 0, 0.5, 1].map((fraction) => {
-                    const y = centerY - fraction * (combinedPlotHeight / 2);
-                    const value = fraction * macdSpan;
-                    return (
-                      <text
-                        key={`combined-macd-label-${fraction}`}
-                        x={combinedPadding.left - 10}
-                        y={y + 4}
-                        fill={chartColors.tick}
-                        fontSize="10"
-                        textAnchor="end"
-                      >
-                        {value.toFixed(2)}
-                      </text>
-                    );
-                  })}
-
-                  {/* Right y-axis (RSI) */}
-                  <line
-                    x1={chartWidth - combinedPadding.right}
-                    y1={combinedPadding.top}
-                    x2={chartWidth - combinedPadding.right}
-                    y2={combinedHeight - combinedPadding.bottom}
-                    stroke={chartColors.rsiAxis}
-                    strokeWidth="1.8"
-                  />
-                  {[0, 30, 50, 70, 100].map((level) => (
-                    <text
-                      key={`combined-rsi-label-${level}`}
-                      x={chartWidth - combinedPadding.right + 10}
-                      y={scaleRsiY(level) + 4}
-                      fill={chartColors.rsiAxis}
-                      fontSize="10"
-                      textAnchor="start"
-                    >
-                      {level}
-                    </text>
-                  ))}
-
-                  {/* X-axis */}
-                  <line
-                    x1={combinedPadding.left}
-                    y1={combinedHeight - combinedPadding.bottom}
-                    x2={chartWidth - combinedPadding.right}
-                    y2={combinedHeight - combinedPadding.bottom}
-                    stroke={chartColors.axis}
-                    strokeWidth="1.8"
-                  />
-                </>
-              );
-            })()}
-          </svg>
-        </div>
-
         {/* Price Info Row */}
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
           <div className="bg-gray-900 rounded p-2 border border-gray-700">
@@ -738,10 +545,9 @@ export function TechnicalIndicators({
             <span className="rounded-full border border-gray-500/30 bg-gray-500/10 px-2 py-1 text-gray-300">Neutral events</span>
           </div>
         )}
-      </div>
 
       {/* RSI */}
-      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
         <p className="text-xs text-gray-400 mb-3 font-semibold">RSI (14)</p>
         <div className="mb-4">
           <p className="text-3xl font-bold text-blue-400 mb-2">{rsi.current.toFixed(1)}</p>
@@ -773,7 +579,7 @@ export function TechnicalIndicators({
       </div>
 
       {/* Volume */}
-      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs text-gray-400 font-semibold">Volume</p>
           <div className="text-[10px] text-gray-500">
@@ -856,7 +662,7 @@ export function TechnicalIndicators({
       </div>
 
       {/* MACD */}
-      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
         <p className="text-xs text-gray-400 mb-3 font-semibold">MACD</p>
         <div className="mb-2">
           <div className="space-y-1.5 mb-3">
@@ -879,6 +685,150 @@ export function TechnicalIndicators({
             {macd.status}
           </p>
         </div>
+
+        <div className="bg-gray-950 rounded-lg p-3 overflow-x-auto">
+          <svg
+            width="100%"
+            height="100%"
+            viewBox={`0 0 ${chartWidth} 200`}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ minWidth: "800px" }}
+          >
+            {(() => {
+              const macdPadding = { top: 20, right: 50, bottom: 30, left: 50 };
+              const macdPlotHeight = 200 - macdPadding.top - macdPadding.bottom;
+              const macdPlotWidth = chartWidth - macdPadding.left - macdPadding.right;
+
+              const macdValues = macd.macd_series || [];
+              const signalValues = macd.signal_series || [];
+              const histogramValues = macd.histogram_series || [];
+
+              if (macdValues.length === 0 || macdValues.length !== candles.length) {
+                return (
+                  <text x="50%" y="50%" fill={chartColors.tick} fontSize="12" textAnchor="middle">
+                    Loading MACD data...
+                  </text>
+                );
+              }
+
+              const allValues = [...macdValues, ...signalValues, ...histogramValues].filter((v) => Number.isFinite(v));
+              const maxVal = Math.max(...allValues.map(Math.abs), 0.01);
+              const range = maxVal * 2.2;
+              const centerY = macdPadding.top + macdPlotHeight / 2;
+
+              const scaleMacdY = (value: number) => {
+                if (!Number.isFinite(value)) return centerY;
+                const normalized = value / range;
+                return centerY - normalized * macdPlotHeight;
+              };
+
+              return (
+                <>
+                  <line
+                    x1={macdPadding.left}
+                    y1={centerY}
+                    x2={chartWidth - macdPadding.right}
+                    y2={centerY}
+                    stroke={chartColors.axis}
+                    strokeWidth="1.5"
+                  />
+
+                  {[-0.5, 0.5].map((fraction) => {
+                    const y = centerY - fraction * macdPlotHeight;
+                    const value = fraction * range;
+                    return (
+                      <g key={`macd-grid-${fraction}`}>
+                        <line
+                          x1={macdPadding.left}
+                          y1={y}
+                          x2={chartWidth - macdPadding.right}
+                          y2={y}
+                          stroke={chartColors.grid}
+                          strokeWidth="1"
+                          strokeDasharray="4 4"
+                        />
+                        <text
+                          x={macdPadding.left - 10}
+                          y={y + 4}
+                          fill={chartColors.tick}
+                          fontSize="10"
+                          textAnchor="end"
+                        >
+                          {value.toFixed(2)}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {histogramValues.map((hist, idx) => {
+                    const x = macdPadding.left + (idx / (candles.length - 1)) * macdPlotWidth;
+                    const barWidth = macdPlotWidth / candles.length;
+                    const barHeight = Math.abs(scaleMacdY(hist) - centerY);
+                    const y = hist >= 0 ? scaleMacdY(hist) : centerY;
+
+                    return (
+                      <rect
+                        key={`hist-${idx}`}
+                        x={x - barWidth / 2}
+                        y={y}
+                        width={Math.max(barWidth * 0.8, 1)}
+                        height={Math.max(barHeight, 0)}
+                        fill={hist >= 0 ? chartColors.priceUp : chartColors.priceDown}
+                        opacity="0.6"
+                      />
+                    );
+                  })}
+
+                  <polyline
+                    points={macdValues
+                      .map((val, idx) => {
+                        const x = macdPadding.left + (idx / (candles.length - 1)) * macdPlotWidth;
+                        const y = scaleMacdY(val);
+                        return `${x},${y}`;
+                      })
+                      .join(" ")}
+                    fill="none"
+                    stroke={chartColors.macdLine}
+                    strokeWidth="2"
+                  />
+
+                  <polyline
+                    points={signalValues
+                      .map((val, idx) => {
+                        const x = macdPadding.left + (idx / (candles.length - 1)) * macdPlotWidth;
+                        const y = scaleMacdY(val);
+                        return `${x},${y}`;
+                      })
+                      .join(" ")}
+                    fill="none"
+                    stroke={chartColors.macdSignal}
+                    strokeWidth="2"
+                    strokeDasharray="4 2"
+                  />
+
+                  <line
+                    x1={macdPadding.left}
+                    y1={macdPadding.top}
+                    x2={macdPadding.left}
+                    y2={200 - macdPadding.bottom}
+                    stroke={chartColors.axis}
+                    strokeWidth="2"
+                  />
+                  <line
+                    x1={macdPadding.left}
+                    y1={200 - macdPadding.bottom}
+                    x2={chartWidth - macdPadding.right}
+                    y2={200 - macdPadding.bottom}
+                    stroke={chartColors.axis}
+                    strokeWidth="2"
+                  />
+                </>
+              );
+            })()}
+          </svg>
+        </div>
+
+      </div>
 
       </div>
 
