@@ -850,9 +850,9 @@ export default function StockAnalysis() {
                       </span>
                     )}
                   </div>
-                  <p className="text-gray-400">{chartData.name}</p>
+                  <p className="text-stealth-400">{chartData.name}</p>
                   {dataAsOf && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-stealth-500 mt-1">
                       Market data as of {new Date(dataAsOf).toLocaleString('en-US', { 
                         month: 'short', 
                         day: 'numeric', 
@@ -863,14 +863,14 @@ export default function StockAnalysis() {
                   )}
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-gray-400">Current Price</p>
+                  <p className="text-xs text-stealth-400">Current Price</p>
                   <p className="text-2xl font-bold text-blue-400">${projections["T"].current_price.toFixed(2)}</p>
                 </div>
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
                 <div className="surface-card-muted p-3">
-                  <p className="text-gray-400 mb-1" title="52-week low and high range">52W Range</p>
+                  <p className="text-stealth-400 mb-1" title="52-week low and high range">52W Range</p>
                   <p className="font-semibold">
                     {technicalData?.low_52w !== undefined && technicalData?.high_52w !== undefined
                       ? `$${Number(technicalData.low_52w).toFixed(2)} - $${Number(technicalData.high_52w).toFixed(2)}`
@@ -878,36 +878,36 @@ export default function StockAnalysis() {
                   </p>
                 </div>
                 <div className="surface-card-muted p-3">
-                  <p className="text-gray-400 mb-1" title="Price momentum and moving averages">Trend</p>
+                  <p className="text-stealth-400 mb-1" title="Price momentum and moving averages">Trend</p>
                   <p
                     className={`font-semibold capitalize ${
                       technicalData?.trend === "uptrend"
                         ? "text-green-400"
                         : technicalData?.trend === "downtrend"
                           ? "text-red-400"
-                          : "text-gray-300"
+                          : "text-stealth-200"
                     }`}
                   >
                     {technicalData?.trend ?? "n/a"}
                   </p>
                 </div>
                 <div className="surface-card-muted p-3">
-                  <p className="text-gray-400 mb-1" title="Confidence level in the composite projection (0-100)">Conviction</p>
+                  <p className="text-stealth-400 mb-1" title="Confidence level in the composite projection (0-100)">Conviction</p>
                   <p className="font-semibold text-purple-300">{Math.round(projections["T"].conviction)}%</p>
                 </div>
                 <div className="surface-card-muted p-3">
-                  <p className="text-gray-400 mb-1" title="Upper reference band derived from volatility">Upper Reference</p>
+                  <p className="text-stealth-400 mb-1" title="Upper reference band derived from volatility">Upper Reference</p>
                   <p className="font-semibold text-green-400">${projections["T"].take_profit.toFixed(2)}</p>
                 </div>
                 <div className="surface-card-muted p-3">
-                  <p className="text-gray-400 mb-1" title="Lower reference band derived from volatility">Lower Reference</p>
+                  <p className="text-stealth-400 mb-1" title="Lower reference band derived from volatility">Lower Reference</p>
                   <p className="font-semibold text-red-400">
                     ${Math.max(0, projections["T"].stop_loss).toFixed(2)}
                   </p>
                 </div>
                 <div className="surface-card-muted p-3">
-                  <p className="text-gray-400 mb-1" title="Volatility and max drawdown">Risk</p>
-                  <p className="font-semibold text-gray-200">
+                  <p className="text-stealth-400 mb-1" title="Volatility and max drawdown">Risk</p>
+                  <p className="font-semibold text-stealth-100">
                     Vol {projections["T"].volatility.toFixed(1)}% / DD {projections["T"].max_drawdown.toFixed(1)}%
                   </p>
                 </div>
@@ -1048,7 +1048,7 @@ export default function StockAnalysis() {
                   currentPrice={projections["T"]?.current_price ?? null}
                 />
               ) : (
-                <div className="surface-card p-4 sm:p-5">
+                <div className="surface-card-strong p-4 sm:p-5">
                   <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">Institutional Flow Focus</div>
                   <div className="mt-2 rounded-xl border border-dashed border-stealth-700 bg-stealth-900/35 px-3 py-2 text-xs text-stealth-400">
                     Institutional flow events are not available for this symbol.
@@ -1122,7 +1122,7 @@ export default function StockAnalysis() {
             };
 
             return (
-              <div className="surface-card p-4 sm:p-6">
+              <div className="surface-card-strong p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
                   <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/60 p-0.5">
@@ -1130,7 +1130,7 @@ export default function StockAnalysis() {
                       <button
                         key={v}
                         onClick={() => setFundView(v)}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors ${fundView === v ? "bg-stealth-600 text-stealth-100" : "text-stealth-400 hover:text-stealth-200"}`}
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors ${fundView === v ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-stealth-200"}`}
                       >
                         {v}
                       </button>
@@ -1141,8 +1141,8 @@ export default function StockAnalysis() {
                 {/* ── Snapshot Strip ── */}
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-5">
                   {snapMetrics.map((m) => (
-                    <div key={m.label} className="bg-gray-900 rounded-lg border border-gray-700/60 px-3 py-2 text-center">
-                      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{m.label}</div>
+                    <div key={m.label} className="secondary-card px-3 py-2 text-center">
+                      <div className="text-[10px] uppercase tracking-wider text-stealth-500 mb-1">{m.label}</div>
                       <div className="text-sm font-semibold" style={{ color: m.color }}>
                         {m.value !== null ? m.fmt(m.value) : "—"}
                       </div>
@@ -1155,7 +1155,7 @@ export default function StockAnalysis() {
                   ))}
                 </div>
 
-                <div className="text-[11px] text-gray-500 mb-4">
+                <div className="text-[11px] text-stealth-500 mb-4">
                   Source: Yahoo Finance filings via yfinance. Cadence: {isAnnual ? "annual" : "quarterly"}.
                 </div>
 
@@ -1164,13 +1164,13 @@ export default function StockAnalysis() {
 
                   {/* Revenue & Earnings */}
                   {revEpsData.length > 0 && (
-                    <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                    <div className="secondary-card p-4">
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3 text-sm font-semibold text-gray-100">
+                        <div className="flex items-center gap-3 text-sm font-semibold text-stealth-100">
                           <span>Revenue &amp; Earnings</span>
                           <InfoTooltip id="fund-rev-eps" text="Revenue bars (left axis) overlaid with EPS line (right axis) to show top-line growth alongside per-share profitability." />
                         </div>
-                        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                        <div className="flex items-center gap-3 text-[10px] text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("equity"), opacity: 0.35 }} /> Rev</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("growth") }} /> EPS</span>
                         </div>
@@ -1198,13 +1198,13 @@ export default function StockAnalysis() {
 
                   {/* Profitability — ROE & FCF */}
                   {roeFcfData.length > 0 && (
-                    <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                    <div className="secondary-card p-4">
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3 text-sm font-semibold text-gray-100">
+                        <div className="flex items-center gap-3 text-sm font-semibold text-stealth-100">
                           <span>Profitability</span>
                           <InfoTooltip id="fund-roe-fcf" text="ROE line (left axis, %) and FCF bars (right axis, $) show how efficiently equity is deployed and how much cash the business generates." />
                         </div>
-                        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                        <div className="flex items-center gap-3 text-[10px] text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("growth") }} /> ROE</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("liquidity"), opacity: 0.35 }} /> FCF</span>
                         </div>
@@ -1232,13 +1232,13 @@ export default function StockAnalysis() {
 
                   {/* Valuation — P/E & Market Cap */}
                   {peMcapData.length > 0 && (
-                    <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                    <div className="secondary-card p-4">
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3 text-sm font-semibold text-gray-100">
+                        <div className="flex items-center gap-3 text-sm font-semibold text-stealth-100">
                           <span>Valuation &amp; Scale</span>
                           <InfoTooltip id="fund-pe-mcap" text="P/E ratio (left axis) over market cap area (right axis) shows how valuation multiples move against total company size." />
                         </div>
-                        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                        <div className="flex items-center gap-3 text-[10px] text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("sentiment") }} /> P/E</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("financials"), opacity: 0.2 }} /> MCap</span>
                         </div>
@@ -1266,9 +1266,9 @@ export default function StockAnalysis() {
 
                   {/* Revenue YoY Growth */}
                   {yoySeries.length > 0 && (
-                    <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                    <div className="secondary-card p-4">
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3 text-sm font-semibold text-gray-100">
+                        <div className="flex items-center gap-3 text-sm font-semibold text-stealth-100">
                           <span>Revenue Growth (YoY)</span>
                           <InfoTooltip id="fund-yoy" text="Year-over-year revenue growth comparing each quarter to the same quarter one year prior. Green bars indicate growth, red bars indicate contraction." />
                         </div>
@@ -1303,25 +1303,25 @@ export default function StockAnalysis() {
 
           {/* Holistic Summary */}
           {holisticSummary && (
-            <div className="surface-card p-4 sm:p-6">
+            <div className="surface-card-strong p-4 sm:p-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-base sm:text-lg font-semibold">Holistic Summary</h3>
-                <span className="text-[10px] sm:text-xs text-gray-300 bg-gray-900 border border-gray-700 px-2 py-1 rounded-full">
+                <span className="text-[10px] sm:text-xs text-stealth-200 bg-stealth-900/70 border border-stealth-700 px-2 py-1 rounded-full">
                   {holisticSummary.regime}
                 </span>
               </div>
-              <p className="text-sm text-gray-300 leading-relaxed mb-4">
+              <p className="text-sm text-stealth-200 leading-relaxed mb-4">
                 {holisticSummary.narrative}
               </p>
-              <div className="space-y-2 text-sm text-gray-400">
+              <div className="space-y-2 text-sm text-stealth-400">
                 {holisticSummary.bullets.map((bullet) => (
                   <div key={bullet.axis}>
-                    <span className="text-gray-500">{bullet.axis}:</span> {bullet.text}
+                    <span className="text-stealth-500">{bullet.axis}:</span> {bullet.text}
                   </div>
                 ))}
               </div>
-              <div className="mt-3 text-sm text-gray-400">
-                <span className="text-gray-500">Watch:</span> {holisticSummary.watch}
+              <div className="mt-3 text-sm text-stealth-400">
+                <span className="text-stealth-500">Watch:</span> {holisticSummary.watch}
               </div>
               {holisticSummary.debug && (
                 <button
@@ -1333,20 +1333,20 @@ export default function StockAnalysis() {
                 </button>
               )}
               {showSummaryDebug && holisticSummary.debug && (
-                <div className="mt-3 bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 space-y-2">
+                <div className="mt-3 secondary-card p-3 text-xs text-stealth-400 space-y-2">
                   {[
                     holisticSummary.debug.technical,
                     holisticSummary.debug.fundamental,
                     holisticSummary.debug.options,
                   ].map((axis) => (
                     <div key={axis.label}>
-                      <span className="text-gray-500">{axis.label}:</span>{" "}
+                      <span className="text-stealth-500">{axis.label}:</span>{" "}
                       {axis.bias} · score {axis.score} · confidence {axis.confidence} · rules{" "}
                       {Array.isArray(axis.debug?.rules) ? axis.debug?.rules.join(", ") : "n/a"}
                     </div>
                   ))}
                   <div>
-                    <span className="text-gray-500">Regime:</span>{" "}
+                    <span className="text-stealth-500">Regime:</span>{" "}
                     {holisticSummary.debug.regime_matrix.key} ·{" "}
                     {holisticSummary.debug.regime_matrix.rationale.join("; ")}
                   </div>
@@ -1356,9 +1356,9 @@ export default function StockAnalysis() {
           )}
 
           {/* Interactive Chart */}
-          <div className="surface-card p-4 sm:p-6">
+          <div className="surface-card-strong p-4 sm:p-6">
             <h3 className="text-base sm:text-lg font-semibold mb-4">Score Trends</h3>
-            <div className="bg-gray-900 rounded-lg p-2 sm:p-4 mb-2">
+            <div className="secondary-card p-2 sm:p-4 mb-2">
               <div className="w-full" style={{ aspectRatio: '3 / 1', maxHeight: '240px' }}>
                 <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
                 {/* Grid lines */}
@@ -1549,7 +1549,7 @@ export default function StockAnalysis() {
           {/* Score Breakdown Tables - Conditional based on selected horizon */}
           <div className="space-y-6">
             {selectedHorizon === "T" && projections["3m"] && (
-              <div className="bg-gray-800 rounded-lg p-6">
+              <div className="surface-card-strong p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold">Current Position</h3>
                   
@@ -1559,8 +1559,8 @@ export default function StockAnalysis() {
                       onClick={() => setSelectedHorizon("T")}
                       className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
                         isSelectedHorizon("T")
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                          ? "bg-stealth-700 text-white"
+                          : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
                       }`}
                     >
                       Now
@@ -1569,8 +1569,8 @@ export default function StockAnalysis() {
                       onClick={() => setSelectedHorizon("3m")}
                       className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
                         isSelectedHorizon("3m")
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                          ? "bg-stealth-700 text-white"
+                          : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
                       }`}
                     >
                       T+3M
@@ -1579,8 +1579,8 @@ export default function StockAnalysis() {
                       onClick={() => setSelectedHorizon("6m")}
                       className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
                         isSelectedHorizon("6m")
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                          ? "bg-stealth-700 text-white"
+                          : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
                       }`}
                     >
                       T+6M
@@ -1589,15 +1589,15 @@ export default function StockAnalysis() {
                       onClick={() => setSelectedHorizon("12m")}
                       className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
                         isSelectedHorizon("12m")
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                          ? "bg-stealth-700 text-white"
+                          : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
                       }`}
                     >
                       T+12M
                     </button>
                   </div>
                 </div>
-                <div className="text-gray-400 text-xs sm:text-sm">
+                <div className="text-stealth-400 text-xs sm:text-sm">
                   Current score reflects real-time positioning. Select a future horizon to view the outlook.
                 </div>
               </div>
@@ -1608,7 +1608,7 @@ export default function StockAnalysis() {
               if (!projection) return null;
 
               return (
-                <div key={selectedHorizon} className="bg-gray-800 rounded-lg p-6">
+                <div key={selectedHorizon} className="surface-card-strong p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold">{selectedHorizon.toUpperCase()} Outlook</h3>
                     
@@ -1618,8 +1618,8 @@ export default function StockAnalysis() {
                         onClick={() => setSelectedHorizon("T")}
                         className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
                           isSelectedHorizon("T")
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                            ? "bg-stealth-700 text-white"
+                            : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
                         }`}
                       >
                         Now
@@ -1628,8 +1628,8 @@ export default function StockAnalysis() {
                         onClick={() => setSelectedHorizon("3m")}
                         className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
                           isSelectedHorizon("3m")
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                            ? "bg-stealth-700 text-white"
+                            : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
                         }`}
                       >
                         T+3M
@@ -1638,8 +1638,8 @@ export default function StockAnalysis() {
                         onClick={() => setSelectedHorizon("6m")}
                         className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
                           isSelectedHorizon("6m")
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                            ? "bg-stealth-700 text-white"
+                            : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
                         }`}
                       >
                         T+6M
@@ -1648,8 +1648,8 @@ export default function StockAnalysis() {
                         onClick={() => setSelectedHorizon("12m")}
                         className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
                           isSelectedHorizon("12m")
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                            ? "bg-stealth-700 text-white"
+                            : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
                         }`}
                       >
                         T+12M
@@ -1658,12 +1658,12 @@ export default function StockAnalysis() {
                   </div>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
-                    <div className="bg-gray-900 rounded p-4">
-                      <div className="text-xs sm:text-sm text-gray-400 mb-1">Total Score</div>
+                    <div className="secondary-card p-4">
+                      <div className="text-xs sm:text-sm text-stealth-400 mb-1">Total Score</div>
                       <div className="text-2xl sm:text-3xl font-bold text-blue-400">{Math.round(projection.score_total)}</div>
                     </div>
-                    <div className="bg-gray-900 rounded p-4">
-                      <div className="text-xs sm:text-sm text-gray-400 mb-1">Score Change</div>
+                    <div className="secondary-card p-4">
+                      <div className="text-xs sm:text-sm text-stealth-400 mb-1">Score Change</div>
                       <div className={`text-2xl sm:text-3xl font-bold ${
                         projection.score_total >= projections["3m"].score_total ? 'text-green-400' : 'text-red-400'
                       }`}>
@@ -1675,8 +1675,8 @@ export default function StockAnalysis() {
 
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm">
-                      <span className="text-gray-400 w-24 sm:w-32 truncate">Trend (45%)</span>
-                      <div className="flex-1 bg-gray-700 rounded h-3">
+                      <span className="text-stealth-400 w-24 sm:w-32 truncate">Trend (45%)</span>
+                      <div className="flex-1 bg-stealth-800 rounded h-3">
                         <div 
                           className="bg-yellow-500 h-3 rounded transition-all"
                           style={{ width: `${projection.score_trend}%` }}
@@ -1686,8 +1686,8 @@ export default function StockAnalysis() {
                     </div>
                     
                     <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm">
-                      <span className="text-gray-400 w-24 sm:w-32 truncate">Rel. Strength (30%)</span>
-                      <div className="flex-1 bg-gray-700 rounded h-3">
+                      <span className="text-stealth-400 w-24 sm:w-32 truncate">Rel. Strength (30%)</span>
+                      <div className="flex-1 bg-stealth-800 rounded h-3">
                         <div 
                           className="bg-lime-500 h-3 rounded transition-all"
                           style={{ width: `${projection.score_relative_strength}%` }}
@@ -1697,8 +1697,8 @@ export default function StockAnalysis() {
                     </div>
                     
                     <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm">
-                      <span className="text-gray-400 w-24 sm:w-32 truncate">Risk (20%)</span>
-                      <div className="flex-1 bg-gray-700 rounded h-3">
+                      <span className="text-stealth-400 w-24 sm:w-32 truncate">Risk (20%)</span>
+                      <div className="flex-1 bg-stealth-800 rounded h-3">
                         <div 
                           className="bg-red-500 h-3 rounded transition-all"
                           style={{ width: `${projection.score_risk}%` }}
@@ -1708,8 +1708,8 @@ export default function StockAnalysis() {
                     </div>
                     
                     <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm">
-                      <span className="text-gray-400 w-24 sm:w-32 truncate">Regime (5%)</span>
-                      <div className="flex-1 bg-gray-700 rounded h-3">
+                      <span className="text-stealth-400 w-24 sm:w-32 truncate">Regime (5%)</span>
+                      <div className="flex-1 bg-stealth-800 rounded h-3">
                         <div 
                           className="bg-indigo-500 h-3 rounded transition-all"
                           style={{ width: `${projection.score_regime}%` }}
@@ -1719,13 +1719,13 @@ export default function StockAnalysis() {
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-4 border-t border-gray-700 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
+                  <div className="mt-4 pt-4 border-t border-stealth-700 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
                     <div>
-                      <span className="text-gray-400">Volatility:</span>
+                      <span className="text-stealth-400">Volatility:</span>
                       <span className="ml-2 font-semibold">{projection.volatility.toFixed(1)}%</span>
                     </div>
                     <div>
-                      <span className="text-gray-400">Max Drawdown:</span>
+                      <span className="text-stealth-400">Max Drawdown:</span>
                       <span className="ml-2 font-semibold text-red-400">{projection.max_drawdown.toFixed(1)}%</span>
                     </div>
                   </div>
@@ -1760,10 +1760,10 @@ export default function StockAnalysis() {
         )}
 
           {/* Methodology */}
-          <div className="mt-6 bg-gray-800 rounded-lg shadow">
+          <div className="mt-6 surface-card-strong">
             <button
               onClick={() => setMethodologyOpen(!methodologyOpen)}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-750 transition-colors rounded-lg"
+              className="w-full px-6 py-4 flex items-center justify-between hover:bg-stealth-800/40 transition-colors rounded-lg"
               aria-expanded={methodologyOpen}
             >
               <h2 className="text-lg font-semibold">Methodology & Scoring Details</h2>
@@ -1775,12 +1775,12 @@ export default function StockAnalysis() {
             </button>
             <div className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
               <div className="collapsible-panel-inner">
-                <div className="px-6 pb-6 text-sm text-gray-300 space-y-4">
+                <div className="px-6 pb-6 text-sm text-stealth-200 space-y-4">
                 <p>
                   Stock analysis uses the same transparent scoring methodology as sector analysis, 
                   evaluating performance across 3-month, 6-month, and 12-month lookback periods.
                 </p>
-                <div className="bg-gray-900 rounded p-4">
+                <div className="secondary-card p-4">
                   <h4 className="font-semibold mb-2">Scoring Components</h4>
                   <ul className="space-y-2 text-xs">
                     <li><strong>Trend (45%):</strong> Price momentum and technical positioning relative to moving averages</li>
@@ -1789,7 +1789,7 @@ export default function StockAnalysis() {
                     <li><strong>Regime (5%):</strong> Context-aware adjustments based on market environment</li>
                   </ul>
                 </div>
-                <div className="bg-gray-900 rounded p-4">
+                <div className="secondary-card p-4">
                   <h4 className="font-semibold mb-2">Conviction Metric</h4>
                   <p className="text-xs mb-2">
                     Measures confidence in the analysis (0-100) based on three factors:
@@ -1800,7 +1800,7 @@ export default function StockAnalysis() {
                     <li>- <strong>Signal Strength (25%):</strong> How far the score deviates from neutral (50 = stronger signal)</li>
                   </ul>
                 </div>
-                <div className="bg-gray-900 rounded p-4">
+                <div className="secondary-card p-4">
                   <h4 className="font-semibold mb-2">Reference Bands</h4>
                   <ul className="space-y-2 text-xs">
                     <li><strong>Take Profit:</strong> Calculated from projected return with volatility and horizon adjustments. Represents upside potential.</li>
@@ -1808,7 +1808,7 @@ export default function StockAnalysis() {
                     <li><strong>Range Ratio:</strong> Upper band distance divided by lower band distance. Higher values indicate wider asymmetry.</li>
                   </ul>
                 </div>
-                <div className="bg-gray-900 rounded p-4">
+                <div className="secondary-card p-4">
                   <h4 className="font-semibold mb-2">Uncertainty Cones</h4>
                   <p className="text-xs">
                     The expanding cone represents uncertainty bands. Width increases with horizon, 
@@ -1833,18 +1833,18 @@ export default function StockAnalysis() {
       )}
 
       {loading && (
-        <div className="bg-gray-800 rounded-lg p-12 flex justify-center">
+        <div className="surface-card-strong p-12 flex justify-center">
           <MarketLoading size={110} variant="scan" label="Analyzing stock..." />
         </div>
       )}
 
       {/* Recent News */}
       {news.length > 0 && (
-        <div className="mt-6 bg-gray-800 rounded-lg shadow p-4 sm:p-6">
+        <div className="mt-6 surface-card-strong p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base sm:text-lg font-semibold">Recent News for {searchTicker}</h2>
             {lastUpdated && (
-              <span className="text-[10px] text-gray-500">
+              <span className="text-[10px] text-stealth-500">
                 Updated {getRelativeTime(lastUpdated)}
               </span>
             )}
@@ -1856,12 +1856,12 @@ export default function StockAnalysis() {
                 href={article.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block bg-gray-900 rounded-lg p-3 sm:p-4 min-h-20 sm:min-h-24 hover:bg-gray-850 transition-colors border border-gray-700 hover:border-blue-500/50"
+                className="block secondary-card secondary-card-hover p-3 sm:p-4 min-h-20 sm:min-h-24 hover:border-blue-500/50"
               >
                 <h3 className="text-xs sm:text-sm font-semibold text-blue-400 mb-2 line-clamp-2">
                   {article.title}
                 </h3>
-                <div className="flex items-center justify-between text-xs text-gray-400 gap-2">
+                <div className="flex items-center justify-between text-xs text-stealth-400 gap-2">
                   <span className="font-medium truncate">{article.source}</span>
                   <span className="whitespace-nowrap">
                     {getRelativeTime(article.published_at)}
@@ -1875,8 +1875,8 @@ export default function StockAnalysis() {
 
       {/* Empty State */}
       {!chartData && !loading && !error && !projectionUnavailable && (
-        <div className="bg-gray-800 rounded-lg p-12 text-center">
-          <div className="text-gray-400 mb-4">
+        <div className="surface-card-strong p-12 text-center">
+          <div className="text-stealth-400 mb-4">
             <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
