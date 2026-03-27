@@ -286,11 +286,6 @@ export function TechnicalIndicators({
     .map((candle) => candle.volume)
     .filter((value) => Number.isFinite(value) && value >= 0);
   const maxVolume = Math.max(...volumes, 0);
-  const latestVolume = volumes.length ? volumes[volumes.length - 1] : 0;
-  const sortedVolumes = [...volumes].sort((a, b) => a - b);
-  const medianVolume = sortedVolumes.length
-    ? sortedVolumes[Math.floor(sortedVolumes.length / 2)]
-    : 0;
 
   const candleIndexByDate = new Map(candles.map((candle, index) => [candle.date, index]));
   const overlayEvents = flowEvents
@@ -335,7 +330,7 @@ export function TechnicalIndicators({
   };
 
   const volumeChartHeight = 160;
-  const volumePadding = { top: 10, right: 30, bottom: 25, left: 55 };
+  const volumePadding = { top: 10, right: 40, bottom: 25, left: 55 };
   const volumePlotHeight = volumeChartHeight - volumePadding.top - volumePadding.bottom;
   const scaleVolumeY = (volume: number) => {
     if (!maxVolume) return volumeChartHeight - volumePadding.bottom;
@@ -546,145 +541,9 @@ export function TechnicalIndicators({
           </div>
         )}
 
-      {/* RSI */}
-      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
-        <p className="text-xs text-gray-400 mb-3 font-semibold">RSI (14)</p>
-        <div className="mb-4">
-          <p className="text-3xl font-bold text-blue-400 mb-2">{rsi.current.toFixed(1)}</p>
-          <div className="w-full bg-gray-700 rounded-full h-2.5 mb-2">
-            <div
-              className={`h-2.5 rounded-full transition-all ${
-                rsi.current > 70 ? "bg-red-500" : rsi.current < 30 ? "bg-green-500" : "bg-yellow-500"
-              }`}
-              style={{ width: `${Math.min(Math.max(rsi.current, 0), 100)}%` }}
-            />
-          </div>
-          <p
-            className={`text-xs font-semibold capitalize ${
-              rsi.status === "overbought"
-                ? "text-red-400"
-                : rsi.status === "oversold"
-                  ? "text-green-400"
-                  : "text-yellow-400"
-            }`}
-          >
-            {rsi.status}
-          </p>
-        </div>
-        <div className="space-y-1 text-xs text-gray-400">
-          <p>70 = Overbought</p>
-          <p>30 = Oversold</p>
-        </div>
-
-      </div>
-
-      {/* Volume */}
-      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs text-gray-400 font-semibold">Volume</p>
-          <div className="text-[10px] text-gray-500">
-            Latest {volumes.length ? formatCompact(latestVolume) : "n/a"} - Median {volumes.length ? formatCompact(medianVolume) : "n/a"}
-          </div>
-        </div>
-        <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto">
-          <svg
-            width="100%"
-            height="100%"
-            viewBox={`0 0 ${chartWidth} ${volumeChartHeight}`}
-            preserveAspectRatio="xMidYMid meet"
-            style={{ minWidth: "800px" }}
-          >
-            {/* Y-axis labels */}
-            {[0, 0.5, 1].map((t) => {
-              const y = volumePadding.top + t * volumePlotHeight;
-              const v = (1 - t) * maxVolume;
-              return (
-                <g key={`vol-grid-${t}`}>
-                  <line
-                    x1={volumePadding.left}
-                    y1={y}
-                    x2={chartWidth - volumePadding.right}
-                    y2={y}
-                    stroke={chartColors.grid}
-                    strokeWidth="1"
-                    strokeDasharray="4 4"
-                  />
-                  <text
-                    x={volumePadding.left - 10}
-                    y={y + 4}
-                    fill={chartColors.tick}
-                    fontSize="10"
-                    textAnchor="end"
-                  >
-                    {formatCompact(v)}
-                  </text>
-                </g>
-              );
-            })}
-
-            {candles.map((candle, idx) => {
-              const x = scaleX(idx);
-              const y = scaleVolumeY(candle.volume);
-              const barWidth = plotWidth / candles.length;
-              const height = volumeChartHeight - volumePadding.bottom - y;
-              const isGreen = candle.close >= candle.open;
-              return (
-                <rect
-                  key={`vol-${idx}`}
-                  x={x - barWidth / 2}
-                  y={y}
-                  width={Math.max(barWidth * 0.8, 1)}
-                  height={Math.max(height, 0)}
-                  fill={isGreen ? chartColors.priceUp : chartColors.priceDown}
-                  opacity="0.65"
-                />
-              );
-            })}
-
-            <line
-              x1={volumePadding.left}
-              y1={volumePadding.top}
-              x2={volumePadding.left}
-              y2={volumeChartHeight - volumePadding.bottom}
-              stroke={chartColors.axis}
-              strokeWidth="2"
-            />
-            <line
-              x1={volumePadding.left}
-              y1={volumeChartHeight - volumePadding.bottom}
-              x2={chartWidth - volumePadding.right}
-              y2={volumeChartHeight - volumePadding.bottom}
-              stroke={chartColors.axis}
-              strokeWidth="2"
-            />
-          </svg>
-        </div>
-      </div>
-
-      {/* MACD */}
+      {/* MACD — moved above Volume/RSI */}
       <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
         <p className="text-xs text-gray-400 mb-3 font-semibold">MACD</p>
-        <div className="mb-2">
-          <div className="space-y-1.5 mb-3">
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">MACD:</span>
-              <span className="text-blue-300 font-mono">{macd.current.toFixed(4)}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">Signal:</span>
-              <span className="text-orange-300 font-mono">{macd.signal.toFixed(4)}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">Histogram:</span>
-              <span className={`font-mono ${macd.histogram > 0 ? "text-green-300" : "text-red-300"}`}>
-                {macd.histogram.toFixed(4)}
-              </span>
-            </div>
-          </div>
-          <p className={`text-xs font-semibold capitalize ${macd.status === "bullish" ? "text-green-400" : "text-red-400"}`}>
-            {macd.status}
-          </p>
-        </div>
 
         <div className="bg-gray-950 rounded-lg p-3 overflow-x-auto">
           <svg
@@ -828,6 +687,150 @@ export function TechnicalIndicators({
           </svg>
         </div>
 
+      </div>
+
+      {/* Volume + RSI overlay (dual-axis) */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs text-gray-400 font-semibold">Volume &amp; RSI (14)</p>
+          <div className="flex items-center gap-3 text-[10px] text-gray-500">
+            <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500/60" /> Vol</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-full" style={{ background: "#a855f7" }} /> RSI</span>
+            <span style={{ color: rsi.current > 70 ? "#f87171" : rsi.current < 30 ? "#4ade80" : "#eab308", fontWeight: 600 }}>
+              RSI {rsi.current.toFixed(1)} · {rsi.status}
+            </span>
+          </div>
+        </div>
+        <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto">
+          <svg
+            width="100%"
+            height="100%"
+            viewBox={`0 0 ${chartWidth} ${volumeChartHeight}`}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ minWidth: "800px" }}
+          >
+            {/* Volume Y-axis (left) */}
+            {[0, 0.5, 1].map((t) => {
+              const y = volumePadding.top + t * volumePlotHeight;
+              const v = (1 - t) * maxVolume;
+              return (
+                <g key={`vol-grid-${t}`}>
+                  <line
+                    x1={volumePadding.left}
+                    y1={y}
+                    x2={chartWidth - volumePadding.right}
+                    y2={y}
+                    stroke={chartColors.grid}
+                    strokeWidth="1"
+                    strokeDasharray="4 4"
+                  />
+                  <text
+                    x={volumePadding.left - 10}
+                    y={y + 4}
+                    fill={chartColors.tick}
+                    fontSize="10"
+                    textAnchor="end"
+                  >
+                    {formatCompact(v)}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Volume bars */}
+            {candles.map((candle, idx) => {
+              const x = scaleX(idx);
+              const y = scaleVolumeY(candle.volume);
+              const barWidth = plotWidth / candles.length;
+              const height = volumeChartHeight - volumePadding.bottom - y;
+              const isGreen = candle.close >= candle.open;
+              return (
+                <rect
+                  key={`vol-${idx}`}
+                  x={x - barWidth / 2}
+                  y={y}
+                  width={Math.max(barWidth * 0.8, 1)}
+                  height={Math.max(height, 0)}
+                  fill={isGreen ? chartColors.priceUp : chartColors.priceDown}
+                  opacity="0.65"
+                />
+              );
+            })}
+
+            {/* RSI right axis labels (0, 30, 50, 70, 100) */}
+            {(() => {
+              const rsiSeries = rsi.series || [];
+              const rsiRightX = chartWidth - volumePadding.right + 8;
+              const scaleRsiY = (v: number) =>
+                volumePadding.top + (1 - v / 100) * volumePlotHeight;
+              return (
+                <>
+                  {[0, 30, 50, 70, 100].map((level) => {
+                    const y = scaleRsiY(level);
+                    const isKey = level === 30 || level === 70;
+                    return (
+                      <g key={`rsi-ref-${level}`}>
+                        <line
+                          x1={volumePadding.left}
+                          y1={y}
+                          x2={chartWidth - volumePadding.right}
+                          y2={y}
+                          stroke={isKey ? "#a855f7" : "transparent"}
+                          strokeWidth="1"
+                          strokeDasharray="3 5"
+                          opacity="0.35"
+                        />
+                        <text
+                          x={rsiRightX}
+                          y={y + 4}
+                          fill="#a855f7"
+                          fontSize="10"
+                          textAnchor="start"
+                          opacity="0.8"
+                        >
+                          {level}
+                        </text>
+                      </g>
+                    );
+                  })}
+                  {rsiSeries.length > 1 && (
+                    <polyline
+                      points={rsiSeries
+                        .map((val, idx) => {
+                          const x = volumePadding.left + (idx / (rsiSeries.length - 1)) * (chartWidth - volumePadding.left - volumePadding.right);
+                          const y = scaleRsiY(val);
+                          return `${x},${y}`;
+                        })
+                        .join(" ")}
+                      fill="none"
+                      stroke="#a855f7"
+                      strokeWidth="1.75"
+                      opacity="0.9"
+                    />
+                  )}
+                </>
+              );
+            })()}
+
+            {/* Axes */}
+            <line
+              x1={volumePadding.left}
+              y1={volumePadding.top}
+              x2={volumePadding.left}
+              y2={volumeChartHeight - volumePadding.bottom}
+              stroke={chartColors.axis}
+              strokeWidth="2"
+            />
+            <line
+              x1={volumePadding.left}
+              y1={volumeChartHeight - volumePadding.bottom}
+              x2={chartWidth - volumePadding.right}
+              y2={volumeChartHeight - volumePadding.bottom}
+              stroke={chartColors.axis}
+              strokeWidth="2"
+            />
+          </svg>
+        </div>
       </div>
 
       </div>
