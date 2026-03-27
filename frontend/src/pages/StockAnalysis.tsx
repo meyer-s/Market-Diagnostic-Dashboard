@@ -26,6 +26,7 @@ import {
 import { PriceAnalysisChart } from "../components/widgets/PriceAnalysisChart";
 import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
 import { TechnicalIndicators, type TechnicalData } from "../components/widgets/TechnicalIndicators.tsx";
+import { OptionalityMispricingWidget } from "../components/widgets/OptionalityMispricingWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -146,6 +147,363 @@ interface InstitutionalFlowPayload {
     event_count: number;
   };
   event_history: InstitutionalFlowEvent[];
+}
+
+interface FlowTimelineBucket {
+  bucket: string;
+  buy_notional_usd: number;
+  sell_notional_usd: number;
+  neutral_notional_usd: number;
+  net_flow_usd: number;
+  total_notional_usd: number;
+  buy_events: number;
+  sell_events: number;
+  neutral_events: number;
+}
+
+function formatFlowCurrency(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: Math.abs(value) >= 1_000_000 ? 0 : 2,
+  }).format(value);
+}
+
+function formatCompactCurrency(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatFlowPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function getSignalClasses(signal: "accumulation" | "distribution" | "neutral"): string {
+  if (signal === "accumulation") return "border-emerald-700/50 bg-emerald-950/35 text-emerald-300";
+  if (signal === "distribution") return "border-rose-700/50 bg-rose-950/35 text-rose-300";
+  return "border-stealth-600 bg-stealth-800/80 text-stealth-300";
+}
+
+function getConfidenceStrokeClass(signal: "accumulation" | "distribution" | "neutral"): string {
+  if (signal === "accumulation") return "stroke-emerald-300/75 drop-shadow-[0_0_5px_rgba(74,222,128,0.2)]";
+  if (signal === "distribution") return "stroke-rose-300/75 drop-shadow-[0_0_5px_rgba(251,113,133,0.2)]";
+  return "stroke-slate-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
+}
+
+function ConfidenceArc({ confidence, signal }: { confidence: number; signal: "accumulation" | "distribution" | "neutral" }) {
+  const normalizedConfidence = Math.max(0, Math.min(100, confidence));
+  const strokeWidth = 10;
+  const radius = 50 - strokeWidth;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - normalizedConfidence / 100);
+
+  return (
+    <div className="inline-flex items-center h-4 w-4" aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}>
+      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
+        <circle cx="50" cy="50" r={radius} className="fill-none stroke-white/8" strokeWidth={strokeWidth} />
+        <circle
+          cx="50"
+          cy="50"
+          r={radius}
+          className={`fill-none ${getConfidenceStrokeClass(signal)}`}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+        />
+      </svg>
+    </div>
+  );
+}
+
+function GroupBadge({ label, value, tone = "default" }: { label: string; value: string | number; tone?: "default" | "buy" | "sell" }) {
+  const toneClass =
+    tone === "buy"
+      ? "border-emerald-700/40 bg-emerald-950/30 text-emerald-300"
+      : tone === "sell"
+      ? "border-rose-700/40 bg-rose-950/30 text-rose-300"
+      : "border-stealth-700 bg-stealth-900/70 text-stealth-200";
+
+  return (
+    <div className={`rounded-xl border px-2.5 py-1.5 ${toneClass}`}>
+      <div className="text-[10px] uppercase tracking-[0.18em] opacity-70">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function CenteredFlowBar({ value, scale }: { value: number | null; scale: number }) {
+  const numericValue = value ?? 0;
+  const magnitude = scale > 0 ? Math.max(5, Math.min(50, (Math.abs(numericValue) / scale) * 50)) : 0;
+  const toneClass = numericValue > 0 ? "bg-emerald-400/85" : numericValue < 0 ? "bg-rose-400/85" : "bg-slate-400/60";
+
+  return (
+    <div className="relative h-3 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
+      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-stealth-400/80" />
+      {numericValue === 0 ? (
+        <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80" />
+      ) : (
+        <div
+          className={`absolute inset-y-0 ${toneClass}`}
+          style={numericValue > 0 ? { left: "50%", width: `${magnitude}%` } : { right: "50%", width: `${magnitude}%` }}
+        />
+      )}
+    </div>
+  );
+}
+
+function longestDirectionalStreak(timeline: FlowTimelineBucket[], direction: "positive" | "negative"): number {
+  let longest = 0;
+  let current = 0;
+
+  timeline.forEach((bucket) => {
+    const matches = direction === "positive" ? bucket.net_flow_usd > 0 : bucket.net_flow_usd < 0;
+    if (matches) {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 0;
+    }
+  });
+
+  return longest;
+}
+
+function formatBucket(bucket: string): string {
+  return new Date(bucket).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function TrendZoneBar({ value, scale, certainty }: { value: number | null; scale: number; certainty: number }) {
+  const numericValue = value ?? 0;
+  const direction = numericValue > 0 ? "positive" : numericValue < 0 ? "negative" : "neutral";
+  const baseReach = scale > 0 ? Math.max(6, Math.min(50, (Math.abs(numericValue) / scale) * 50)) : 0;
+  const totalReach = Math.max(8, Math.min(50, certainty * 50));
+  const certaintyReach = Math.max(baseReach, Math.min(50, baseReach * (0.7 + certainty * 0.45)));
+  const counterReach = direction === "neutral" ? totalReach : Math.max(5, Math.min(totalReach, totalReach * 0.42));
+  const straddleClass =
+    direction === "positive"
+      ? "bg-[linear-gradient(90deg,rgba(148,163,184,0.12),rgba(110,231,183,0.16),rgba(110,231,183,0.12))]"
+      : direction === "negative"
+      ? "bg-[linear-gradient(90deg,rgba(251,113,133,0.12),rgba(251,113,133,0.16),rgba(148,163,184,0.12))]"
+      : "bg-[linear-gradient(90deg,rgba(148,163,184,0.12),rgba(148,163,184,0.18),rgba(148,163,184,0.12))]";
+  const glowClass = direction === "positive" ? "bg-emerald-400/25" : direction === "negative" ? "bg-rose-400/25" : "bg-slate-400/20";
+  const bodyClass = direction === "positive" ? "bg-emerald-300/90" : direction === "negative" ? "bg-rose-300/90" : "bg-slate-300/75";
+
+  return (
+    <div className="relative h-6 overflow-hidden rounded-full border border-stealth-800 bg-stealth-950/90">
+      <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/80" />
+      <div className={`absolute top-1/2 h-3.5 -translate-y-1/2 rounded-full ${straddleClass}`} style={{ left: `${50 - totalReach}%`, width: `${totalReach * 2}%` }} />
+      {direction === "neutral" ? (
+        <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80 shadow-[0_0_12px_rgba(148,163,184,0.25)]" />
+      ) : (
+        <>
+          <div className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${direction === "positive" ? "bg-emerald-200/28" : "bg-rose-200/28"}`} style={direction === "positive" ? { right: "50%", width: `${counterReach}%` } : { left: "50%", width: `${counterReach}%` }} />
+          <div className={`absolute top-1/2 h-4 -translate-y-1/2 rounded-full ${glowClass}`} style={direction === "positive" ? { left: "50%", width: `${certaintyReach}%` } : { right: "50%", width: `${certaintyReach}%` }} />
+          <div className={`absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full ${bodyClass}`} style={direction === "positive" ? { left: "50%", width: `${baseReach}%` } : { right: "50%", width: `${baseReach}%` }} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
+  const recentTimeline = timeline.slice(-4);
+  const scale = Math.max(1, ...recentTimeline.map((bucket) => Math.abs(bucket.net_flow_usd)));
+  const accumulationBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd > 0).length;
+  const distributionBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd < 0).length;
+  const positiveStreak = longestDirectionalStreak(recentTimeline, "positive");
+  const negativeStreak = longestDirectionalStreak(recentTimeline, "negative");
+  const maxVolume = Math.max(1, ...recentTimeline.map((bucket) => bucket.total_notional_usd));
+  const dominantCluster = positiveStreak > negativeStreak ? "Accumulation trend" : negativeStreak > positiveStreak ? "Distribution trend" : "Mixed trend";
+
+  return (
+    <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Flow Over Time</div>
+          <div className="mt-1 text-xs text-stealth-300">{dominantCluster} across the latest weekly buckets.</div>
+        </div>
+        <div className="flex gap-2 text-xs">
+          <GroupBadge label="Up" value={accumulationBuckets} tone="buy" />
+          <GroupBadge label="Down" value={distributionBuckets} tone="sell" />
+        </div>
+      </div>
+
+      <div className="mt-2.5 space-y-1.5">
+        {recentTimeline.map((bucket) => {
+          const certainty = bucket.total_notional_usd / maxVolume;
+          return (
+            <div key={bucket.bucket} className="grid grid-cols-[54px_minmax(0,1fr)_88px] items-center gap-2 rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
+              <TrendZoneBar value={bucket.net_flow_usd} scale={scale} certainty={certainty} />
+              <div className="text-right">
+                <div className="text-[11px] font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
+                <div className="mt-0.5 text-[9px] uppercase tracking-[0.16em] text-stealth-500">{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-4 gap-2 text-xs text-stealth-300">
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Up Streak</div>
+          <div className="mt-1 font-semibold text-emerald-300">{positiveStreak}</div>
+        </div>
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Down Streak</div>
+          <div className="mt-1 font-semibold text-rose-300">{negativeStreak}</div>
+        </div>
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Net</div>
+          <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.net_flow_usd, 0))}</div>
+        </div>
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Volume</div>
+          <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.total_notional_usd, 0))}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildFlowTimeline(events: InstitutionalFlowEvent[]): FlowTimelineBucket[] {
+  if (!events.length) return [];
+  const buckets = new Map<string, FlowTimelineBucket>();
+
+  events.forEach((event) => {
+    const eventDate = new Date(event.date);
+    if (Number.isNaN(eventDate.getTime())) return;
+    const day = eventDate.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const monday = new Date(eventDate);
+    monday.setDate(eventDate.getDate() + mondayOffset);
+    monday.setHours(0, 0, 0, 0);
+    const key = monday.toISOString().slice(0, 10);
+
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        bucket: key,
+        buy_notional_usd: 0,
+        sell_notional_usd: 0,
+        neutral_notional_usd: 0,
+        net_flow_usd: 0,
+        total_notional_usd: 0,
+        buy_events: 0,
+        sell_events: 0,
+        neutral_events: 0,
+      });
+    }
+
+    const target = buckets.get(key)!;
+    const notional = Number.isFinite(event.notional) ? Math.abs(event.notional) : 0;
+    if (event.side === "buy") {
+      target.buy_notional_usd += notional;
+      target.buy_events += 1;
+      target.net_flow_usd += notional;
+    } else if (event.side === "sell") {
+      target.sell_notional_usd += notional;
+      target.sell_events += 1;
+      target.net_flow_usd -= notional;
+    } else {
+      target.neutral_notional_usd += notional;
+      target.neutral_events += 1;
+    }
+    target.total_notional_usd += notional;
+  });
+
+  return Array.from(buckets.values()).sort((a, b) => a.bucket.localeCompare(b.bucket));
+}
+
+function FlowFocusCard({ flow, events, ticker }: { flow: InstitutionalFlowPayload; events: InstitutionalFlowEvent[]; ticker: string }) {
+  const summary = flow.summary;
+  const signal = summary.signal;
+  const toneClasses = getSignalClasses(signal);
+  const signalLabel = signal === "accumulation" ? "Accumulation" : signal === "distribution" ? "Distribution" : "Neutral";
+  const confidencePercent = Math.max(0, Math.min(100, summary.confidence));
+  const directionalDenominator = Math.max(Math.abs(summary.buy_notional_usd), Math.abs(summary.sell_notional_usd), 1);
+  const normalizedSignal = Math.max(-100, Math.min(100, (summary.net_flow_usd / directionalDenominator) * 100));
+  const signalMagnitude = Math.max(4, Math.min(100, Math.abs(normalizedSignal)));
+  const signalClass = normalizedSignal > 0 ? "bg-emerald-400/80" : normalizedSignal < 0 ? "bg-rose-400/80" : "bg-slate-400/70";
+  const timeline = buildFlowTimeline(events);
+  const recentEvents = events.slice(0, 4);
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-stealth-700 bg-gradient-to-br from-stealth-900/95 via-stealth-900/85 to-stealth-950/90 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Institutional Flow Focus</div>
+          <div className="mt-1 text-sm font-semibold text-stealth-100">{ticker} regime</div>
+        </div>
+        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${toneClasses}`}>
+          {signalLabel}
+        </span>
+      </div>
+
+      <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-stealth-500">
+          <span>Flow Signal</span>
+          <span>{formatFlowPercent(normalizedSignal)}</span>
+        </div>
+        <div className="mt-2 relative h-3 overflow-hidden rounded-full border border-stealth-700 bg-stealth-900/90">
+          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-stealth-400/80" />
+          {normalizedSignal === 0 ? (
+            <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80" />
+          ) : (
+            <div className={`absolute inset-y-0 ${signalClass}`} style={normalizedSignal > 0 ? { left: "50%", width: `${signalMagnitude / 2}%` } : { right: "50%", width: `${signalMagnitude / 2}%` }} />
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <GroupBadge label="Net Flow" value={formatCompactCurrency(summary.net_flow_usd)} tone={summary.net_flow_usd >= 0 ? "buy" : "sell"} />
+        <GroupBadge label="Notional" value={formatCompactCurrency(summary.buy_notional_usd + summary.sell_notional_usd)} />
+        <GroupBadge label="Events" value={summary.event_count} />
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Confidence</div>
+          <div className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-stealth-100">
+            <ConfidenceArc confidence={confidencePercent} signal={signal} />
+            <span>{formatFlowPercent(summary.confidence)}</span>
+          </div>
+        </div>
+      </div>
+
+      {timeline.length > 0 ? <TimelineCluster timeline={timeline} /> : null}
+
+      <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-stealth-500">Recent Trigger Tape</div>
+        <div className="mt-2 space-y-2">
+          {recentEvents.length ? (
+            recentEvents.map((event, index) => {
+              const sideClass = event.side === "buy" ? "text-emerald-300" : event.side === "sell" ? "text-rose-300" : "text-stealth-300";
+              return (
+                <div key={`${event.date}-${event.side}-${index}`} className="rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-semibold text-stealth-100">Flow Event</span>
+                    <span className={sideClass}>{(event.side || "neutral").toUpperCase()}</span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-stealth-400">{new Date(event.date).toLocaleDateString()} • z {event.volume_z.toFixed(2)} • CLV {event.clv.toFixed(2)}</div>
+                  <div className="mt-1.5">
+                    <CenteredFlowBar value={event.side === "buy" ? event.notional : event.side === "sell" ? -event.notional : 0} scale={Math.max(1, (summary.buy_notional_usd + summary.sell_notional_usd) / Math.max(summary.event_count, 1))} />
+                  </div>
+                  <div className="mt-1.5 text-right text-xs font-semibold text-stealth-100">{formatFlowCurrency(event.notional)}</div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="rounded-xl border border-dashed border-stealth-700 bg-stealth-900/35 px-3 py-2 text-xs text-stealth-400">No recent events available.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function StockAnalysis() {
@@ -361,15 +719,6 @@ export default function StockAnalysis() {
   const formatPercent = (value: number, digits = 1) =>
     `${value.toFixed(digits)}%`;
 
-  const formatCurrency = (value: number | null | undefined, digits = 2) => {
-    if (value === null || value === undefined || Number.isNaN(value)) return "n/a";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: digits,
-    }).format(value);
-  };
-
   const formatDateLabel = (date: string) =>
     new Date(date).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
@@ -541,109 +890,12 @@ export default function StockAnalysis() {
                 priceHistory={priceHistory}
                 flowEvents={institutionalFlow?.event_history ?? []}
               />
-              <div className="space-y-4">
-                <ConvictionSnapshot
-                  conviction={projections[selectedHorizon].conviction}
-                  score={projections[selectedHorizon].score_total}
-                  volatility={projections[selectedHorizon].volatility}
-                  horizon={selectedHorizon.toUpperCase()}
-                />
-
-                {institutionalFlow && (() => {
-                  const summary = institutionalFlow.summary;
-                  const events = institutionalFlow.event_history ?? [];
-                  const recentEvents = events.slice(-4).reverse();
-                  const totalNotional = events.reduce((sum, event) => sum + event.notional, 0);
-                  const totalVolume = events.reduce((sum, event) => sum + event.volume, 0);
-                  const flowTone =
-                    summary.net_flow_usd > 0
-                      ? "text-emerald-300"
-                      : summary.net_flow_usd < 0
-                      ? "text-rose-300"
-                      : "text-stealth-300";
-
-                  return (
-                    <div className="surface-card p-4 sm:p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Institutional Flow</div>
-                          <div className="mt-1 text-sm text-stealth-300">Volume and clustered flow for {searchTicker}</div>
-                        </div>
-                        <span
-                          className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
-                            summary.signal === "accumulation"
-                              ? "border-emerald-700/50 bg-emerald-950/35 text-emerald-300"
-                              : summary.signal === "distribution"
-                              ? "border-rose-700/50 bg-rose-950/35 text-rose-300"
-                              : "border-stealth-600 bg-stealth-800/80 text-stealth-300"
-                          }`}
-                        >
-                          {summary.signal}
-                        </span>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Net Flow</div>
-                          <div className={`mt-1 font-semibold ${flowTone}`}>{formatCurrency(summary.net_flow_usd, 0)}</div>
-                        </div>
-                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Confidence</div>
-                          <div className="mt-1 font-semibold text-stealth-100">{summary.confidence.toFixed(0)}%</div>
-                        </div>
-                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Total Volume</div>
-                          <div className="mt-1 font-semibold text-stealth-100">{formatCompact(totalVolume, 2)}</div>
-                        </div>
-                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Total Notional</div>
-                          <div className="mt-1 font-semibold text-stealth-100">{formatCurrency(totalNotional, 0)}</div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Buy Cluster</div>
-                          <div className="mt-1 font-semibold text-emerald-300">{formatCurrency(summary.buy_cluster_level)}</div>
-                        </div>
-                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Current</div>
-                          <div className="mt-1 font-semibold text-stealth-100">{formatCurrency(projections["T"]?.current_price)}</div>
-                        </div>
-                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Sell Cluster</div>
-                          <div className="mt-1 font-semibold text-rose-300">{formatCurrency(summary.sell_cluster_level)}</div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 rounded-2xl border border-stealth-700 bg-stealth-950/45 p-2.5">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-stealth-500">Latest Triggers</div>
-                        <div className="mt-2 space-y-1.5">
-                          {recentEvents.length === 0 && (
-                            <div className="rounded-xl border border-stealth-800 bg-stealth-900/60 px-3 py-2 text-xs text-stealth-400">
-                              No trigger events available.
-                            </div>
-                          )}
-                          {recentEvents.map((event) => (
-                            <div key={`${event.date}-${event.side}-${event.price}`} className="flex items-center justify-between rounded-xl border border-stealth-800 bg-stealth-900/60 px-3 py-2 text-xs">
-                              <div>
-                                <div className="font-medium text-stealth-100">{new Date(event.date).toLocaleDateString()}</div>
-                                <div className="mt-0.5 text-stealth-400">z {event.volume_z.toFixed(2)} | CLV {event.clv.toFixed(2)} | Vol {formatCompact(event.volume, 2)}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className={`font-semibold ${event.side === "buy" ? "text-emerald-300" : event.side === "sell" ? "text-rose-300" : "text-stealth-200"}`}>
-                                  {event.side.toUpperCase()}
-                                </div>
-                                <div className="mt-0.5 text-stealth-300">{formatCurrency(event.notional, 0)}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
+              <ConvictionSnapshot
+                conviction={projections[selectedHorizon].conviction}
+                score={projections[selectedHorizon].score_total}
+                volatility={projections[selectedHorizon].volatility}
+                horizon={selectedHorizon.toUpperCase()}
+              />
             </div>
           )}
 
@@ -654,7 +906,60 @@ export default function StockAnalysis() {
               optionsFlow={optionsFlow}
               optionalityMetrics={optionalityMetrics}
               flowEvents={institutionalFlow?.event_history ?? []}
+              hideOptionsContext={true}
             />
+          )}
+
+          {projections["T"] && (
+            <div className="grid grid-cols-1 gap-4 mb-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="surface-card p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm sm:text-base font-semibold text-stealth-100">Optionality and Structure</h3>
+                    <p className="mt-1 text-xs text-stealth-400">Consolidated options mispricing with resistance and support context.</p>
+                  </div>
+                  <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stealth-300">{searchTicker}</span>
+                </div>
+
+                <div className="mt-3">
+                  <OptionalityMispricingWidget
+                    metrics={optionalityMetrics}
+                  />
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">Support and Resistance</div>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Support</div>
+                      <div className="mt-1 text-sm font-semibold text-emerald-300">{formatFlowCurrency(optionsFlow?.put_walls?.[0]?.strike ?? null)}</div>
+                    </div>
+                    <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Current</div>
+                      <div className="mt-1 text-sm font-semibold text-stealth-100">{formatFlowCurrency(projections["T"].current_price)}</div>
+                    </div>
+                    <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Resistance</div>
+                      <div className="mt-1 text-sm font-semibold text-rose-300">{formatFlowCurrency(optionsFlow?.call_walls?.[0]?.strike ?? null)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-stealth-400">
+                    Trend context: <span className="font-semibold text-stealth-200">{technicalData?.trend ?? "unknown"}</span> • RSI <span className="font-semibold text-stealth-200">{technicalData?.rsi?.current !== undefined ? technicalData.rsi.current.toFixed(1) : "-"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {institutionalFlow ? (
+                <FlowFocusCard flow={institutionalFlow} events={institutionalFlow.event_history ?? []} ticker={searchTicker} />
+              ) : (
+                <div className="surface-card p-4 sm:p-5">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">Institutional Flow Focus</div>
+                  <div className="mt-2 rounded-xl border border-dashed border-stealth-700 bg-stealth-900/35 px-3 py-2 text-xs text-stealth-400">
+                    Institutional flow events are not available for this symbol.
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Fundamental Analysis */}
