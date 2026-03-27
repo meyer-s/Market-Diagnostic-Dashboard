@@ -99,8 +99,8 @@ export function TechnicalIndicators({
 
   if (!technicalData && !optionsFlow) {
     return (
-      <div className="bg-gray-800 rounded-lg p-4 sm:p-6 mb-6">
-        <p className="text-gray-400">Loading technical analysis...</p>
+      <div className="surface-card-strong p-4 sm:p-6 mb-6">
+        <p className="text-stealth-400">Loading technical analysis...</p>
       </div>
     );
   }
@@ -132,74 +132,74 @@ export function TechnicalIndicators({
   const maxPutOi = Math.max(...(optionsFlow?.put_walls?.map((wall) => wall.open_interest) || [0]));
 
   const optionsFlowCard = (
-    <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+    <div className="secondary-card p-4">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-xs text-gray-400 font-semibold">Options Flow</p>
+        <p className="text-xs text-stealth-400 font-semibold">Options Flow</p>
         {optionsFlow?.expiry && (
-          <span className="text-[10px] text-gray-500">Exp {formatExpiry(optionsFlow.expiry)}</span>
+          <span className="text-[10px] text-stealth-500">Exp {formatExpiry(optionsFlow.expiry)}</span>
         )}
       </div>
       {optionsAvailable ? (
         <>
           <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="bg-gray-900 rounded p-2 border border-gray-700">
-              <p className="text-[10px] text-gray-400 mb-1">Call wall (resistance)</p>
+            <div className="secondary-card p-2">
+              <p className="text-[10px] text-stealth-400 mb-1">Call wall (resistance)</p>
               <p className="text-sm font-bold text-green-400">
                 ${callWall?.strike.toFixed(2)}
               </p>
-              <p className="text-[10px] text-gray-500">OI {formatCompact(callWall?.open_interest || 0)}</p>
+              <p className="text-[10px] text-stealth-500">OI {formatCompact(callWall?.open_interest || 0)}</p>
               {callWall && (
-                <p className="text-[10px] text-gray-500">{formatDistance(callWall.strike)} vs price</p>
+                <p className="text-[10px] text-stealth-500">{formatDistance(callWall.strike)} vs price</p>
               )}
             </div>
-            <div className="bg-gray-900 rounded p-2 border border-gray-700">
-              <p className="text-[10px] text-gray-400 mb-1">Put wall (support)</p>
+            <div className="secondary-card p-2">
+              <p className="text-[10px] text-stealth-400 mb-1">Put wall (support)</p>
               <p className="text-sm font-bold text-red-400">
                 ${putWall?.strike.toFixed(2)}
               </p>
-              <p className="text-[10px] text-gray-500">OI {formatCompact(putWall?.open_interest || 0)}</p>
+              <p className="text-[10px] text-stealth-500">OI {formatCompact(putWall?.open_interest || 0)}</p>
               {putWall && (
-                <p className="text-[10px] text-gray-500">{formatDistance(putWall.strike)} vs price</p>
+                <p className="text-[10px] text-stealth-500">{formatDistance(putWall.strike)} vs price</p>
               )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 mb-3 text-[10px]">
             <div>
-              <p className="text-gray-400 mb-1">Top call walls</p>
+              <p className="text-stealth-400 mb-1">Top call walls</p>
               <div className="space-y-1">
                 {(optionsFlow?.call_walls || []).slice(0, 3).map((wall) => (
                   <div key={`call-${wall.strike}`} className="flex items-center gap-1.5">
-                    <span className="w-12 text-gray-400">${wall.strike.toFixed(0)}</span>
-                    <div className="flex-1 bg-gray-700 rounded h-1">
+                    <span className="w-12 text-stealth-400">${wall.strike.toFixed(0)}</span>
+                    <div className="flex-1 bg-stealth-800 rounded h-1">
                       <div
                         className="bg-green-500 h-1 rounded"
                         style={{ width: `${maxCallOi ? (wall.open_interest / maxCallOi) * 100 : 0}%` }}
                       />
                     </div>
-                    <span className="w-10 text-right text-gray-500">{formatCompact(wall.open_interest)}</span>
+                    <span className="w-10 text-right text-stealth-500">{formatCompact(wall.open_interest)}</span>
                   </div>
                 ))}
               </div>
             </div>
             <div>
-              <p className="text-gray-400 mb-1">Top put walls</p>
+              <p className="text-stealth-400 mb-1">Top put walls</p>
               <div className="space-y-1">
                 {(optionsFlow?.put_walls || []).slice(0, 3).map((wall) => (
                   <div key={`put-${wall.strike}`} className="flex items-center gap-1.5">
-                    <span className="w-12 text-gray-400">${wall.strike.toFixed(0)}</span>
-                    <div className="flex-1 bg-gray-700 rounded h-1">
+                    <span className="w-12 text-stealth-400">${wall.strike.toFixed(0)}</span>
+                    <div className="flex-1 bg-stealth-800 rounded h-1">
                       <div
                         className="bg-red-500 h-1 rounded"
                         style={{ width: `${maxPutOi ? (wall.open_interest / maxPutOi) * 100 : 0}%` }}
                       />
                     </div>
-                    <span className="w-10 text-right text-gray-500">{formatCompact(wall.open_interest)}</span>
+                    <span className="w-10 text-right text-stealth-500">{formatCompact(wall.open_interest)}</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-          <div className="space-y-1 text-[10px] text-gray-400">
+          <div className="space-y-1 text-[10px] text-stealth-400">
             <div className="flex justify-between">
               <span>Call OI</span>
               <span className="text-green-300">{formatCompact(optionsFlow?.call_open_interest_total || 0)}</span>
@@ -210,7 +210,7 @@ export function TechnicalIndicators({
             </div>
             <div className="flex justify-between">
               <span>Put/Call OI</span>
-              <span className="text-gray-300">
+              <span className="text-stealth-300">
                 {optionsFlow?.put_call_oi_ratio !== null && optionsFlow?.put_call_oi_ratio !== undefined
                   ? optionsFlow.put_call_oi_ratio.toFixed(2)
                   : "n/a"}
@@ -219,7 +219,7 @@ export function TechnicalIndicators({
           </div>
         </>
       ) : (
-        <p className="text-xs text-gray-400">Options flow data unavailable for this ticker.</p>
+        <p className="text-xs text-stealth-400">Options flow data unavailable for this ticker.</p>
       )}
     </div>
   );
@@ -227,8 +227,8 @@ export function TechnicalIndicators({
   if (!technicalData) {
     return (
       <div className="space-y-4 mb-6">
-        <div className="bg-gray-800 rounded-lg p-4 sm:p-6">
-          <p className="text-gray-400">Technical analysis unavailable for this ticker.</p>
+        <div className="surface-card-strong p-4 sm:p-6">
+          <p className="text-stealth-400">Technical analysis unavailable for this ticker.</p>
         </div>
         {!hideOptionsContext && optionalityMetrics && (
           <OptionalityMispricingWidget metrics={optionalityMetrics} />
@@ -341,13 +341,13 @@ export function TechnicalIndicators({
   return (
     <div className="space-y-4 mb-6">
       {/* Price History Chart */}
-      <div className="bg-gray-800 rounded-lg p-4 sm:p-6">
+      <div className="surface-card-strong p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base sm:text-lg font-semibold">Price History ({technicalData.lookback_days}-Day)</h3>
-          <div className="text-[10px] text-gray-500">{overlayEvents.length} flow markers</div>
+          <div className="text-[10px] text-stealth-500">{overlayEvents.length} flow markers</div>
         </div>
 
-        <div ref={chartContainerRef} className="relative bg-gray-900 rounded-lg p-4 mb-4 overflow-x-auto">
+        <div ref={chartContainerRef} className="relative secondary-card p-4 mb-4 overflow-x-auto">
           <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet" style={{ minWidth: '800px' }}>
             {/* Grid lines */}
             {[0, 0.25, 0.5, 0.75, 1].map((percent) => {
@@ -474,19 +474,19 @@ export function TechnicalIndicators({
 
           {activeFlowEvent && tooltipPosition && (
             <div
-              className="pointer-events-none absolute z-10 max-w-[240px] rounded-lg border border-gray-700 bg-gray-950/95 px-3 py-2 text-xs text-gray-200 shadow-2xl"
+              className="pointer-events-none absolute z-10 max-w-[240px] rounded-lg border border-stealth-700 bg-stealth-950/95 px-3 py-2 text-xs text-stealth-200 shadow-2xl"
               style={{
                 left: Math.max(12, Math.min(tooltipPosition.x + 14, chartWidth - 250)),
                 top: Math.max(12, tooltipPosition.y - 70),
               }}
             >
-              <div className="mb-1 font-medium text-gray-50">
+              <div className="mb-1 font-medium text-stealth-100">
                 {activeFlowEvent.side.toUpperCase()} · {activeFlowEvent.date}
               </div>
-              <div className="text-gray-300">
+              <div className="text-stealth-300">
                 open ${activeFlowEvent.anchorPrice.toFixed(2)} · event ${activeFlowEvent.price.toFixed(2)}
               </div>
-              <div className="text-gray-400">
+              <div className="text-stealth-400">
                 z {activeFlowEvent.volume_z.toFixed(2)} · {formatCompact(activeFlowEvent.notional)}
               </div>
             </div>
@@ -495,37 +495,37 @@ export function TechnicalIndicators({
 
         {/* Price Info Row */}
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
-          <div className="bg-gray-900 rounded p-2 border border-gray-700">
-            <p className="text-gray-400 mb-1">Current</p>
+          <div className="secondary-card p-2">
+            <p className="text-stealth-400 mb-1">Current</p>
             <p className="text-sm font-bold text-blue-300">${technicalData.current_price.toFixed(2)}</p>
           </div>
-          <div className="bg-gray-900 rounded p-2 border border-gray-700">
-            <p className="text-gray-400 mb-1">52W High</p>
+          <div className="secondary-card p-2">
+            <p className="text-stealth-400 mb-1">52W High</p>
             <p className="text-sm font-bold text-green-400">${technicalData.high_52w.toFixed(2)}</p>
           </div>
-          <div className="bg-gray-900 rounded p-2 border border-gray-700">
-            <p className="text-gray-400 mb-1">52W Low</p>
+          <div className="secondary-card p-2">
+            <p className="text-stealth-400 mb-1">52W Low</p>
             <p className="text-sm font-bold text-red-400">${technicalData.low_52w.toFixed(2)}</p>
           </div>
-          <div className="bg-gray-900 rounded p-2 border border-gray-700">
-            <p className="text-gray-400 mb-1">SMA50</p>
+          <div className="secondary-card p-2">
+            <p className="text-stealth-400 mb-1">SMA50</p>
             <p className="text-sm font-bold text-amber-400">${technicalData.sma_50.toFixed(2)}</p>
           </div>
-          <div className="bg-gray-900 rounded p-2 border border-gray-700">
-            <p className="text-gray-400 mb-1">SMA200</p>
+          <div className="secondary-card p-2">
+            <p className="text-stealth-400 mb-1">SMA200</p>
             <p className="text-sm font-bold text-purple-400">
               {technicalData.sma_200 !== null ? `$${technicalData.sma_200.toFixed(2)}` : "n/a"}
             </p>
           </div>
-          <div className="bg-gray-900 rounded p-2 border border-gray-700">
-            <p className="text-gray-400 mb-1">Trend</p>
+          <div className="secondary-card p-2">
+            <p className="text-stealth-400 mb-1">Trend</p>
             <p
               className={`text-sm font-bold capitalize ${
                 technicalData.trend === "uptrend"
                   ? "text-green-400"
                   : technicalData.trend === "downtrend"
                     ? "text-red-400"
-                    : "text-gray-400"
+                    : "text-stealth-400"
               }`}
             >
               {technicalData.trend}
@@ -534,18 +534,18 @@ export function TechnicalIndicators({
         </div>
 
         {overlayEvents.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-gray-400">
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-stealth-400">
             <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-1 text-green-300">Buy events</span>
             <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-300">Sell events</span>
-            <span className="rounded-full border border-gray-500/30 bg-gray-500/10 px-2 py-1 text-gray-300">Neutral events</span>
+            <span className="rounded-full border border-stealth-600/40 bg-stealth-700/20 px-2 py-1 text-stealth-300">Neutral events</span>
           </div>
         )}
 
       {/* MACD — moved above Volume/RSI */}
-      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
-        <p className="text-xs text-gray-400 mb-3 font-semibold">MACD</p>
+      <div className="secondary-card p-4 mt-4">
+        <p className="text-xs text-stealth-400 mb-3 font-semibold">MACD</p>
 
-        <div className="bg-gray-950 rounded-lg p-3 overflow-x-auto">
+        <div className="rounded-lg border border-stealth-800 bg-stealth-950/85 p-3 overflow-x-auto">
           <svg
             width="100%"
             height="100%"
@@ -690,10 +690,10 @@ export function TechnicalIndicators({
       </div>
 
       {/* Volume + RSI overlay (dual-axis) */}
-      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mt-4">
+      <div className="secondary-card p-4 mt-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs text-gray-400 font-semibold">Volume &amp; RSI (14)</p>
-          <div className="flex items-center gap-3 text-[10px] text-gray-500">
+          <p className="text-xs text-stealth-400 font-semibold">Volume &amp; RSI (14)</p>
+          <div className="flex items-center gap-3 text-[10px] text-stealth-500">
             <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500/60" /> Vol</span>
             <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-full" style={{ background: "#a855f7" }} /> RSI</span>
             <span style={{ color: rsi.current > 70 ? "#f87171" : rsi.current < 30 ? "#4ade80" : "#eab308", fontWeight: 600 }}>
@@ -701,7 +701,7 @@ export function TechnicalIndicators({
             </span>
           </div>
         </div>
-        <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto">
+        <div className="rounded-lg border border-stealth-800 bg-stealth-950/85 p-3 overflow-x-auto">
           <svg
             width="100%"
             height="100%"
