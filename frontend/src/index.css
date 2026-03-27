@@ -128,7 +128,7 @@ body {
 
   .primary-card {
     @apply rounded-2xl border border-stealth-700 bg-gradient-to-br from-stealth-800 to-stealth-850;
-    background-image: linear-gradient(135deg, rgba(44, 54, 69, 0.98) 0%, rgba(37, 46, 59, 0.97) 52%, rgba(28, 35, 47, 0.98) 100%);
+    background-image: linear-gradient(135deg, rgba(35, 43, 56, 0.98) 0%, rgba(33, 41, 53, 0.97) 52%, rgba(28, 35, 47, 0.98) 100%);
     box-shadow: 0 18px 44px -30px rgba(0, 0, 0, 0.82);
   }
 
