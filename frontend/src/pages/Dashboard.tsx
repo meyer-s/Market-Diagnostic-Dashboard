@@ -260,8 +260,8 @@ export default function Dashboard() {
               disabled={isRefreshing}
               className={`flex items-center justify-center gap-2 rounded-full px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition ${
                 isRefreshing
-                  ? 'bg-stealth-800 text-stealth-500 cursor-not-allowed'
-                  : 'bg-white text-stealth-900 hover:bg-slate-100'
+                  ? 'border border-stealth-700/80 text-stealth-500 cursor-not-allowed'
+                  : 'border border-stealth-600/90 text-stealth-300 hover:border-stealth-500 hover:text-stealth-200'
               }`}
               title="Refresh all indicator data"
             >
