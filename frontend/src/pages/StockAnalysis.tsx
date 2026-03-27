@@ -452,7 +452,7 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
   const timeline = buildFlowTimeline(events);
 
   return (
-    <div className="space-y-3 rounded-2xl border border-stealth-700 bg-gradient-to-br from-stealth-900/95 via-stealth-900/85 to-stealth-950/90 p-4">
+    <div className="primary-card space-y-3 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Institutional Flow Focus</div>
