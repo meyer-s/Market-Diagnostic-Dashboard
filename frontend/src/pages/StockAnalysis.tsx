@@ -361,6 +361,15 @@ export default function StockAnalysis() {
   const formatPercent = (value: number, digits = 1) =>
     `${value.toFixed(digits)}%`;
 
+  const formatCurrency = (value: number | null | undefined, digits = 2) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return "n/a";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: digits,
+    }).format(value);
+  };
+
   const formatDateLabel = (date: string) =>
     new Date(date).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
@@ -532,12 +541,109 @@ export default function StockAnalysis() {
                 priceHistory={priceHistory}
                 flowEvents={institutionalFlow?.event_history ?? []}
               />
-              <ConvictionSnapshot
-                conviction={projections[selectedHorizon].conviction}
-                score={projections[selectedHorizon].score_total}
-                volatility={projections[selectedHorizon].volatility}
-                horizon={selectedHorizon.toUpperCase()}
-              />
+              <div className="space-y-4">
+                <ConvictionSnapshot
+                  conviction={projections[selectedHorizon].conviction}
+                  score={projections[selectedHorizon].score_total}
+                  volatility={projections[selectedHorizon].volatility}
+                  horizon={selectedHorizon.toUpperCase()}
+                />
+
+                {institutionalFlow && (() => {
+                  const summary = institutionalFlow.summary;
+                  const events = institutionalFlow.event_history ?? [];
+                  const recentEvents = events.slice(-4).reverse();
+                  const totalNotional = events.reduce((sum, event) => sum + event.notional, 0);
+                  const totalVolume = events.reduce((sum, event) => sum + event.volume, 0);
+                  const flowTone =
+                    summary.net_flow_usd > 0
+                      ? "text-emerald-300"
+                      : summary.net_flow_usd < 0
+                      ? "text-rose-300"
+                      : "text-stealth-300";
+
+                  return (
+                    <div className="surface-card p-4 sm:p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Institutional Flow</div>
+                          <div className="mt-1 text-sm text-stealth-300">Volume and clustered flow for {searchTicker}</div>
+                        </div>
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                            summary.signal === "accumulation"
+                              ? "border-emerald-700/50 bg-emerald-950/35 text-emerald-300"
+                              : summary.signal === "distribution"
+                              ? "border-rose-700/50 bg-rose-950/35 text-rose-300"
+                              : "border-stealth-600 bg-stealth-800/80 text-stealth-300"
+                          }`}
+                        >
+                          {summary.signal}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Net Flow</div>
+                          <div className={`mt-1 font-semibold ${flowTone}`}>{formatCurrency(summary.net_flow_usd, 0)}</div>
+                        </div>
+                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Confidence</div>
+                          <div className="mt-1 font-semibold text-stealth-100">{summary.confidence.toFixed(0)}%</div>
+                        </div>
+                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Total Volume</div>
+                          <div className="mt-1 font-semibold text-stealth-100">{formatCompact(totalVolume, 2)}</div>
+                        </div>
+                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Total Notional</div>
+                          <div className="mt-1 font-semibold text-stealth-100">{formatCurrency(totalNotional, 0)}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Buy Cluster</div>
+                          <div className="mt-1 font-semibold text-emerald-300">{formatCurrency(summary.buy_cluster_level)}</div>
+                        </div>
+                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Current</div>
+                          <div className="mt-1 font-semibold text-stealth-100">{formatCurrency(projections["T"]?.current_price)}</div>
+                        </div>
+                        <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Sell Cluster</div>
+                          <div className="mt-1 font-semibold text-rose-300">{formatCurrency(summary.sell_cluster_level)}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-2xl border border-stealth-700 bg-stealth-950/45 p-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-stealth-500">Latest Triggers</div>
+                        <div className="mt-2 space-y-1.5">
+                          {recentEvents.length === 0 && (
+                            <div className="rounded-xl border border-stealth-800 bg-stealth-900/60 px-3 py-2 text-xs text-stealth-400">
+                              No trigger events available.
+                            </div>
+                          )}
+                          {recentEvents.map((event) => (
+                            <div key={`${event.date}-${event.side}-${event.price}`} className="flex items-center justify-between rounded-xl border border-stealth-800 bg-stealth-900/60 px-3 py-2 text-xs">
+                              <div>
+                                <div className="font-medium text-stealth-100">{new Date(event.date).toLocaleDateString()}</div>
+                                <div className="mt-0.5 text-stealth-400">z {event.volume_z.toFixed(2)} | CLV {event.clv.toFixed(2)} | Vol {formatCompact(event.volume, 2)}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className={`font-semibold ${event.side === "buy" ? "text-emerald-300" : event.side === "sell" ? "text-rose-300" : "text-stealth-200"}`}>
+                                  {event.side.toUpperCase()}
+                                </div>
+                                <div className="mt-0.5 text-stealth-300">{formatCurrency(event.notional, 0)}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           )}
 
