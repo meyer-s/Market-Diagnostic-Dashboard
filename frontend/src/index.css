@@ -141,7 +141,8 @@ body {
   }
 
   .secondary-card {
-    @apply rounded-xl border border-stealth-800 bg-stealth-900;
+    @apply rounded-xl border border-stealth-700 bg-stealth-900;
+    border-color: rgba(75, 88, 107, 0.9);
     background-color: rgba(23, 25, 35, 0.78);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
   }
