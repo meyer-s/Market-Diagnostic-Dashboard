@@ -120,7 +120,9 @@ body {
 
   .surface-card-strong {
     @apply rounded-[26px] border border-stealth-700 bg-gradient-to-br from-stealth-800 to-stealth-850;
-    background-image: linear-gradient(135deg, rgba(33, 54, 70, 0.98) 0%, rgba(27, 47, 60, 0.97) 52%, rgba(21, 38, 49, 0.98) 100%);
+    background-image:
+      radial-gradient(ellipse 52% 22% at 50% 46%, rgba(11, 17, 26, 0.1) 0%, rgba(11, 17, 26, 0.06) 36%, rgba(11, 17, 26, 0.02) 60%, rgba(11, 17, 26, 0) 80%),
+      linear-gradient(135deg, rgba(39, 62, 80, 0.98) 0%, rgba(32, 55, 69, 0.97) 52%, rgba(24, 44, 56, 0.98) 100%);
     box-shadow: 0 24px 64px -42px rgba(0, 0, 0, 0.92);
   }
 
