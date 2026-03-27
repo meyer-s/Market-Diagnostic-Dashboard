@@ -433,7 +433,7 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
   const currentMarkerStyle = { left: `clamp(${currentInsetPx}px, ${currentPosition}%, calc(100% - ${currentInsetPx}px))` };
 
   return (
-    <article className="primary-card p-4">
+    <article className="rounded-[24px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-4 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xl font-semibold text-stealth-100">{formatSignalSymbol(row.symbol, row.category)}</div>
@@ -539,7 +539,7 @@ function GroupSection({
   const distributionCount = rows.filter((row) => row.signal === "distribution").length;
 
   return (
-    <section className="primary-card p-3 sm:p-4">
+    <section className="rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top,rgba(31,49,73,0.34),rgba(12,17,27,0.98)_60%)] p-3 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-4 text-left">
         <div>
           <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
@@ -563,7 +563,7 @@ function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal
   const compactItems = items.slice(0, 4);
 
   return (
-    <section className={`primary-card p-3 ${sectionClass}`}>
+    <section className={`rounded-[24px] border p-3 ${sectionClass}`}>
       <div className="flex items-center justify-between gap-2">
         <h2 className={`text-sm font-semibold ${textClass}`}>{title}</h2>
       </div>
@@ -634,7 +634,7 @@ export default function InstitutionalFlow() {
 
   return (
     <div className="mx-auto max-w-7xl p-3 text-stealth-100 sm:p-4">
-      <div className="primary-card mb-3 p-3.5 sm:p-4">
+      <div className="mb-3 rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top_left,rgba(58,94,138,0.32),rgba(13,18,29,0.98)_55%)] p-3.5 sm:p-4">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="text-xs uppercase tracking-[0.25em] text-stealth-400">Institutional Flow</div>
@@ -703,7 +703,7 @@ export default function InstitutionalFlow() {
                   groupTitle={formatGroupTitle(resolvedSelection.groupKey)}
                 />
               ) : (
-                <div className="primary-card p-6 text-sm text-stealth-300">
+                <div className="rounded-[28px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-6 text-sm text-stealth-300">
                   No active signal.
                 </div>
               )}
