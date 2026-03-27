@@ -942,8 +942,8 @@ export default function StockAnalysis() {
           )}
 
           {projections["T"] && (
-            <div className="grid grid-cols-1 gap-4 mb-6 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="surface-card p-4 sm:p-5">
+            <div className="grid grid-cols-1 gap-4 mb-6 xl:grid-cols-2">
+              <div className="surface-card-strong p-4 sm:p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-sm sm:text-base font-semibold text-stealth-100">Optionality and Structure</h3>
