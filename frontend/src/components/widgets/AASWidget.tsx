@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { getFamilyColor, getMetricColor } from "../../theme/metricColors";
 import {
@@ -80,6 +80,7 @@ interface AASWidgetProps {
 }
 
 export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetProps) {
+  const navigate = useNavigate();
   const { data: aasData, loading } = useApi<AASData>('/aas/current');
   const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>(`/aas/history?days=${parseInt(timeframe)}`);
   const { data: metalsProjectionData } = useApi<MetalsProjectionResponse>('/precious-metals/projections/latest');
@@ -327,8 +328,10 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   }
 
   return (
-    <Link to="/alternative-assets">
-      <div className="primary-card primary-card-hover p-4 md:p-6 cursor-pointer h-full">
+      <div
+        className="primary-card primary-card-hover p-4 md:p-6 cursor-pointer h-full"
+        onClick={() => navigate('/alternative-assets')}
+      >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-stealth-100">Alternative Asset Stability</h3>
           <svg className="w-5 h-5 text-stealth-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -410,17 +413,22 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
         </div>
 
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
-          <div className="secondary-card p-3">
+          <Link
+            to="/alternative-assets?tab=metals"
+            onClick={(event) => event.stopPropagation()}
+            className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
+            aria-label="Open Precious Metals detail"
+          >
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: metalsColor }}>
                 Metals Leaders
               </p>
-              <span className="text-[11px] text-stealth-500">ranked basket</span>
+              <span className="text-[11px] text-stealth-500 transition-colors group-hover:text-stealth-300">ranked basket</span>
             </div>
             <div className="space-y-2">
               {metalsRankings.length > 0 ? (
                 metalsRankings.map((metal) => (
-                  <div key={metal.metal} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs">
+                  <div key={metal.metal} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs transition-colors group-hover:border-amber-500/40 group-hover:bg-stealth-800/90">
                     <div className="min-w-0">
                       <div className="font-semibold text-stealth-100">
                         #{metal.rank} <span style={{ color: getMetalColor(metal.metal) }}>{metal.metal_name}</span>
@@ -438,19 +446,28 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                 </div>
               )}
             </div>
-          </div>
+            <div className="mt-2 flex items-center justify-end text-[11px] text-stealth-500 transition-colors group-hover:text-amber-300">
+              View metals tab
+              <span className="ml-1">→</span>
+            </div>
+          </Link>
 
-          <div className="secondary-card p-3">
+          <Link
+            to="/alternative-assets?tab=crypto"
+            onClick={(event) => event.stopPropagation()}
+            className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
+            aria-label="Open Crypto detail"
+          >
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: cryptoColor }}>
                 Crypto Leaders
               </p>
-              <span className="text-[11px] text-stealth-500">technical basket</span>
+              <span className="text-[11px] text-stealth-500 transition-colors group-hover:text-stealth-300">technical basket</span>
             </div>
             <div className="space-y-2">
               {cryptoRankings.length > 0 ? (
                 cryptoRankings.map((asset) => (
-                  <div key={asset.symbol} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs">
+                  <div key={asset.symbol} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs transition-colors group-hover:border-blue-500/40 group-hover:bg-stealth-800/90">
                     <div className="min-w-0">
                       <div className="font-semibold text-stealth-100">
                         #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
@@ -468,7 +485,11 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                 </div>
               )}
             </div>
-          </div>
+            <div className="mt-2 flex items-center justify-end text-[11px] text-stealth-500 transition-colors group-hover:text-blue-300">
+              View crypto tab
+              <span className="ml-1">→</span>
+            </div>
+          </Link>
         </div>
 
         {/* Historical Chart */}
@@ -543,6 +564,5 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
           <p className="leading-relaxed">{aasSummary}</p>
         </div>
       </div>
-    </Link>
   );
 }
