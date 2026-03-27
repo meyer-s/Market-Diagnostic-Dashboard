@@ -46,7 +46,7 @@ export default function Topbar() {
                     : "border border-transparent text-stealth-300 hover:border-sky-300/85 hover:bg-stealth-800/90 hover:text-stealth-100 hover:shadow-[0_0_0_1px_rgba(147,197,253,0.22)]"
                 }`}
               >
-                {item.label}
+                <span className="relative top-px">{item.label}</span>
               </Link>
             );
           })}
@@ -66,7 +66,7 @@ export default function Topbar() {
               aria-haspopup="true"
               aria-expanded={toolsOpen}
             >
-              Tools
+              <span className="relative top-px">Tools</span>
               <svg
                 className={`w-4 h-4 transition-transform ${toolsOpen ? "rotate-180" : ""}`}
                 fill="none"
