@@ -1185,7 +1185,7 @@ export default function StockAnalysis() {
                               formatter={(value: number, name: string) =>
                                 name === "revenue" ? [`$${formatCompact(value, 2)}`, "Revenue"] : [formatDollars(value, 2), "EPS"]
                               }
-                              labelFormatter={(l) => `${isAnnual ? "Year" : "Quarter"}: ${formatDateLabel(String(l))}`}
+                              labelFormatter={(l) => `${isAnnual ? "FY" : "Q"} ${formatDateLabel(String(l))}`}
                               contentStyle={tooltipStyle}
                             />
                             <Bar yAxisId="left" dataKey="revenue" fill={getFamilyColor("equity")} fillOpacity={0.35} radius={[3, 3, 0, 0]} />
@@ -1219,7 +1219,7 @@ export default function StockAnalysis() {
                               formatter={(value: number, name: string) =>
                                 name === "roe" ? [formatPercent(value, 1), "ROE"] : [`$${formatCompact(value, 2)}`, "FCF"]
                               }
-                              labelFormatter={(l) => `${isAnnual ? "Year" : "Quarter"}: ${formatDateLabel(String(l))}`}
+                              labelFormatter={(l) => `${isAnnual ? "FY" : "Q"} ${formatDateLabel(String(l))}`}
                               contentStyle={tooltipStyle}
                             />
                             <Line yAxisId="left" type="monotone" dataKey="roe" stroke={getFamilyColor("growth")} strokeWidth={2} dot={{ r: 2.5 }} />
@@ -1253,7 +1253,7 @@ export default function StockAnalysis() {
                               formatter={(value: number, name: string) =>
                                 name === "pe" ? [value.toFixed(1), "P/E"] : [`$${formatCompact(value, 2)}`, "Market Cap"]
                               }
-                              labelFormatter={(l) => `${isAnnual ? "Year" : "Quarter"}: ${formatDateLabel(String(l))}`}
+                              labelFormatter={(l) => `${isAnnual ? "FY" : "Q"} ${formatDateLabel(String(l))}`}
                               contentStyle={tooltipStyle}
                             />
                             <Area yAxisId="right" type="monotone" dataKey="mcap" fill={getFamilyColor("financials")} fillOpacity={0.12} stroke={getFamilyColor("financials")} strokeOpacity={0.3} strokeWidth={1} />
@@ -1280,7 +1280,7 @@ export default function StockAnalysis() {
                             <YAxis tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
                             <Tooltip
                               formatter={(value: number) => [formatPercent(value, 1), "YoY Growth"]}
-                              labelFormatter={(l) => `${isAnnual ? "Year" : "Quarter"}: ${formatDateLabel(String(l))}`}
+                              labelFormatter={(l) => `${isAnnual ? "FY" : "Q"} ${formatDateLabel(String(l))}`}
                               contentStyle={tooltipStyle}
                             />
                             <Bar
@@ -1888,3 +1888,4 @@ export default function StockAnalysis() {
     </div>
   );
 }
+
