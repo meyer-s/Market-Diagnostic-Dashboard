@@ -77,15 +77,14 @@ export default function AlternativeAssetStability() {
 
   if (loading || !aasData) {
     return (
-      <div className="min-h-screen bg-stealth-900 flex items-center justify-center">
+      <div className="page-shell-wide flex min-h-[60vh] items-center justify-center">
         <MarketLoading size={120} variant="pulse" label="Loading AAS diagnostic..." />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-stealth-900 text-stealth-100">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+    <div className="page-shell-wide page-stack">
         
         {/* Header */}
         <div className="mb-6 md:mb-8">
@@ -161,7 +160,6 @@ export default function AlternativeAssetStability() {
             />
           </div>
         )}
-      </div>
     </div>
   );
 }
