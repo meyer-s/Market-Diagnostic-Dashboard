@@ -425,7 +425,7 @@ function buildFlowTimeline(events: InstitutionalFlowEvent[]): FlowTimelineBucket
   return Array.from(buckets.values()).sort((a, b) => a.bucket.localeCompare(b.bucket));
 }
 
-function FlowFocusCard({ flow, events, ticker }: { flow: InstitutionalFlowPayload; events: InstitutionalFlowEvent[]; ticker: string }) {
+function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: InstitutionalFlowPayload; events: InstitutionalFlowEvent[]; ticker: string; currentPrice: number | null }) {
   const summary = flow.summary;
   const signal = summary.signal;
   const toneClasses = getSignalClasses(signal);
@@ -433,10 +433,16 @@ function FlowFocusCard({ flow, events, ticker }: { flow: InstitutionalFlowPayloa
   const confidencePercent = Math.max(0, Math.min(100, summary.confidence));
   const directionalDenominator = Math.max(Math.abs(summary.buy_notional_usd), Math.abs(summary.sell_notional_usd), 1);
   const normalizedSignal = Math.max(-100, Math.min(100, (summary.net_flow_usd / directionalDenominator) * 100));
-  const signalMagnitude = Math.max(4, Math.min(100, Math.abs(normalizedSignal)));
-  const signalClass = normalizedSignal > 0 ? "bg-emerald-400/80" : normalizedSignal < 0 ? "bg-rose-400/80" : "bg-slate-400/70";
+  const clusterLow = summary.sell_cluster_level ?? currentPrice ?? summary.buy_cluster_level ?? 0;
+  const clusterHigh = summary.buy_cluster_level ?? currentPrice ?? summary.sell_cluster_level ?? 0;
+  const clusterRange = Math.max(0.0001, clusterHigh - clusterLow);
+  const currentPosition = currentPrice !== null
+    ? Math.max(0, Math.min(100, ((currentPrice - clusterLow) / clusterRange) * 100))
+    : 50;
+  const currentIsInsideCluster = currentPrice !== null && currentPrice >= clusterLow && currentPrice <= clusterHigh;
+  const currentInsetPx = 18;
+  const currentMarkerStyle = { left: `clamp(${currentInsetPx}px, ${currentPosition}%, calc(100% - ${currentInsetPx}px))` };
   const timeline = buildFlowTimeline(events);
-  const recentEvents = events.slice(0, 4);
 
   return (
     <div className="space-y-3 rounded-2xl border border-stealth-700 bg-gradient-to-br from-stealth-900/95 via-stealth-900/85 to-stealth-950/90 p-4">
@@ -451,17 +457,62 @@ function FlowFocusCard({ flow, events, ticker }: { flow: InstitutionalFlowPayloa
       </div>
 
       <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
-        <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-stealth-500">
-          <span>Flow Signal</span>
-          <span>{formatFlowPercent(normalizedSignal)}</span>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Net Flow Bias</div>
+            <div className={`mt-1 text-base font-semibold ${summary.net_flow_usd >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+              {formatCompactCurrency(summary.net_flow_usd)}
+            </div>
+          </div>
+          <div className="text-right text-xs text-stealth-400">
+            <div className="flex justify-end">
+              <ConfidenceArc confidence={confidencePercent} signal={signal} />
+            </div>
+            <div className="mt-0.5">Events {summary.event_count}</div>
+          </div>
         </div>
-        <div className="mt-2 relative h-3 overflow-hidden rounded-full border border-stealth-700 bg-stealth-900/90">
-          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-stealth-400/80" />
-          {normalizedSignal === 0 ? (
-            <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80" />
-          ) : (
-            <div className={`absolute inset-y-0 ${signalClass}`} style={normalizedSignal > 0 ? { left: "50%", width: `${signalMagnitude / 2}%` } : { right: "50%", width: `${signalMagnitude / 2}%` }} />
-          )}
+
+        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 text-[10px] uppercase tracking-[0.16em] text-stealth-500">
+          <div>
+            <div>Sell Cluster</div>
+            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-rose-300">{formatFlowCurrency(summary.sell_cluster_level)}</div>
+          </div>
+          <div className="text-center">
+            <div>Current</div>
+            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-stealth-100">{formatFlowCurrency(currentPrice)}</div>
+          </div>
+          <div className="text-right">
+            <div>Buy Cluster</div>
+            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-emerald-300">{formatFlowCurrency(summary.buy_cluster_level)}</div>
+          </div>
+        </div>
+
+        <div className="mt-2 relative">
+          <div className="relative h-8 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
+            <div className="absolute inset-y-0 left-0 w-[26%] bg-[radial-gradient(circle_at_left_center,rgba(251,113,133,0.35)_0%,rgba(251,113,133,0.18)_28%,rgba(251,113,133,0.06)_48%,rgba(251,113,133,0)_75%)]" />
+            <div className="absolute inset-y-0 right-0 w-[26%] bg-[radial-gradient(circle_at_right_center,rgba(110,231,183,0.35)_0%,rgba(110,231,183,0.18)_28%,rgba(110,231,183,0.06)_48%,rgba(110,231,183,0)_75%)]" />
+            <div className="absolute inset-y-[7px] left-5 right-5 rounded-full bg-[linear-gradient(90deg,rgba(251,113,133,0.04),rgba(148,163,184,0.05)_50%,rgba(110,231,183,0.04))]" />
+            <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/65" />
+            {currentPrice !== null && (
+              <>
+                <div
+                  className={`absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full ${currentIsInsideCluster ? "bg-[radial-gradient(circle,rgba(226,232,240,0.22)_0%,rgba(226,232,240,0.07)_46%,rgba(226,232,240,0)_74%)]" : "bg-[radial-gradient(circle,rgba(226,232,240,0.16)_0%,rgba(226,232,240,0.05)_44%,rgba(226,232,240,0)_74%)]"}`}
+                  style={currentMarkerStyle}
+                />
+                <div
+                  className={`absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-slate-100/90`}
+                  style={currentMarkerStyle}
+                />
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <CenteredFlowBar value={summary.net_flow_usd} scale={directionalDenominator} />
+        </div>
+        <div className="mt-2 text-right text-[10px] uppercase tracking-[0.16em] text-stealth-500">
+          {formatFlowPercent(normalizedSignal)}
         </div>
       </div>
 
@@ -480,31 +531,6 @@ function FlowFocusCard({ flow, events, ticker }: { flow: InstitutionalFlowPayloa
 
       {timeline.length > 0 ? <TimelineCluster timeline={timeline} /> : null}
 
-      <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
-        <div className="text-[11px] uppercase tracking-[0.18em] text-stealth-500">Recent Trigger Tape</div>
-        <div className="mt-2 space-y-2">
-          {recentEvents.length ? (
-            recentEvents.map((event, index) => {
-              const sideClass = event.side === "buy" ? "text-emerald-300" : event.side === "sell" ? "text-rose-300" : "text-stealth-300";
-              return (
-                <div key={`${event.date}-${event.side}-${index}`} className="rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="font-semibold text-stealth-100">Flow Event</span>
-                    <span className={sideClass}>{(event.side || "neutral").toUpperCase()}</span>
-                  </div>
-                  <div className="mt-1 text-[11px] text-stealth-400">{new Date(event.date).toLocaleDateString()} • z {event.volume_z.toFixed(2)} • CLV {event.clv.toFixed(2)}</div>
-                  <div className="mt-1.5">
-                    <CenteredFlowBar value={event.side === "buy" ? event.notional : event.side === "sell" ? -event.notional : 0} scale={Math.max(1, (summary.buy_notional_usd + summary.sell_notional_usd) / Math.max(summary.event_count, 1))} />
-                  </div>
-                  <div className="mt-1.5 text-right text-xs font-semibold text-stealth-100">{formatFlowCurrency(event.notional)}</div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="rounded-xl border border-dashed border-stealth-700 bg-stealth-900/35 px-3 py-2 text-xs text-stealth-400">No recent events available.</div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
@@ -1007,7 +1033,12 @@ export default function StockAnalysis() {
               </div>
 
               {institutionalFlow ? (
-                <FlowFocusCard flow={institutionalFlow} events={institutionalFlow.event_history ?? []} ticker={searchTicker} />
+                <FlowFocusCard
+                  flow={institutionalFlow}
+                  events={institutionalFlow.event_history ?? []}
+                  ticker={searchTicker}
+                  currentPrice={projections["T"]?.current_price ?? null}
+                />
               ) : (
                 <div className="surface-card p-4 sm:p-5">
                   <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">Institutional Flow Focus</div>
