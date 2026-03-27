@@ -139,10 +139,105 @@ export const metricFamilyLabels: Record<MetricFamily, string> = {
   neutral: "Neutral",
 };
 
+export const THEME_VIBRANCE_FACTOR = 1.03;
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const toHex = (value: number) => Math.round(clamp(value, 0, 255)).toString(16).padStart(2, "0");
+
+const parseHexColor = (color: string): { r: number; g: number; b: number; a: string } | null => {
+  if (!color.startsWith("#")) return null;
+  const hex = color.slice(1);
+  if (hex.length === 6) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+      a: "",
+    };
+  }
+  if (hex.length === 8) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+      a: hex.slice(6, 8),
+    };
+  }
+  return null;
+};
+
+const rgbToHsl = (r: number, g: number, b: number): { h: number; s: number; l: number } => {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+
+  if (max === min) {
+    return { h: 0, s: 0, l };
+  }
+
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+
+  switch (max) {
+    case rn:
+      h = (gn - bn) / d + (gn < bn ? 6 : 0);
+      break;
+    case gn:
+      h = (bn - rn) / d + 2;
+      break;
+    default:
+      h = (rn - gn) / d + 4;
+      break;
+  }
+
+  h /= 6;
+  return { h, s, l };
+};
+
+const hslToRgb = (h: number, s: number, l: number): { r: number; g: number; b: number } => {
+  if (s === 0) {
+    const gray = l * 255;
+    return { r: gray, g: gray, b: gray };
+  }
+
+  const hue2rgb = (p: number, q: number, t: number) => {
+    let temp = t;
+    if (temp < 0) temp += 1;
+    if (temp > 1) temp -= 1;
+    if (temp < 1 / 6) return p + (q - p) * 6 * temp;
+    if (temp < 1 / 2) return q;
+    if (temp < 2 / 3) return p + (q - p) * (2 / 3 - temp) * 6;
+    return p;
+  };
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+
+  return {
+    r: hue2rgb(p, q, h + 1 / 3) * 255,
+    g: hue2rgb(p, q, h) * 255,
+    b: hue2rgb(p, q, h - 1 / 3) * 255,
+  };
+};
+
+export const applyThemeVibrance = (color: string, factor: number = THEME_VIBRANCE_FACTOR): string => {
+  const parsed = parseHexColor(color);
+  if (!parsed) return color;
+
+  const { h, s, l } = rgbToHsl(parsed.r, parsed.g, parsed.b);
+  const boosted = hslToRgb(h, clamp(s * factor, 0, 1), l);
+  return `#${toHex(boosted.r)}${toHex(boosted.g)}${toHex(boosted.b)}${parsed.a}`;
+};
+
 export const getFamilyColor = (
   family: MetricFamily,
   variant: "base" | "muted" | "faint" = "base"
-) => familyPalette[family]?.[variant] ?? familyPalette.system.base;
+) => applyThemeVibrance(familyPalette[family]?.[variant] ?? familyPalette.system.base);
 
 export const getMetricColor = (
   key: string,

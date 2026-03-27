@@ -3,6 +3,7 @@ import { useApi } from "../../hooks/useApi";
 import { Link, useNavigate } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { getFamilyColor, getMetricColor } from "../../theme/metricColors";
+import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import {
   buildTechnicalProjections,
   type TechnicalProjection,
@@ -499,22 +500,22 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                   <XAxis 
                     dataKey="date" 
-                    stroke="#9ca3af" 
+                    stroke={CHART_NEUTRAL.tick}
                     tick={{ fontSize: 10 }}
                     interval={Math.floor(Math.max(0, chartData.length / 4))}
                   />
                   <YAxis 
-                    stroke="#9ca3af" 
+                    stroke={CHART_NEUTRAL.tick}
                     tick={{ fontSize: 10 }}
                   />
-                  <YAxis yAxisId="right" orientation="right" stroke="#9ca3af" tick={{ fontSize: 10 }} domain={[0, 100]} />
+                  <YAxis yAxisId="right" orientation="right" stroke={CHART_NEUTRAL.tick} tick={{ fontSize: 10 }} domain={[0, 100]} />
                   <Tooltip 
                     contentStyle={{ 
-                      backgroundColor: '#1f2937', 
-                      border: '1px solid #374151',
+                      backgroundColor: CHART_NEUTRAL.tooltipBg,
+                      border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
                       borderRadius: '0.5rem',
                       fontSize: '12px'
                     }}

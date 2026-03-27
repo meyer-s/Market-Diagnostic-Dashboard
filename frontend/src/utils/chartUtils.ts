@@ -1,5 +1,5 @@
 import { formatDateTime } from "./styleUtils";
-import { getFamilyColor } from "../theme/metricColors";
+import { applyThemeVibrance, getFamilyColor } from "../theme/metricColors";
 
 /**
  * Chart Configuration Utilities
@@ -11,13 +11,13 @@ import { getFamilyColor } from "../theme/metricColors";
  * Common chart colors
  */
 export const CHART_NEUTRAL = {
-  grid: "#374151",
-  axis: "#555560",
-  tick: "#9ca3af",
-  label: "#a4a4b0",
-  text: "#e5e7eb",
-  tooltipBg: "#161619",
-  tooltipBorder: "#374151",
+  grid: applyThemeVibrance("#374151"),
+  axis: applyThemeVibrance("#555560"),
+  tick: applyThemeVibrance("#9ca3af"),
+  label: applyThemeVibrance("#a4a4b0"),
+  text: applyThemeVibrance("#e5e7eb"),
+  tooltipBg: applyThemeVibrance("#161619"),
+  tooltipBorder: applyThemeVibrance("#374151"),
   benchmark: getFamilyColor("benchmark"),
 } as const;
 
