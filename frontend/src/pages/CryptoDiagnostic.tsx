@@ -370,7 +370,7 @@ export default function CryptoDiagnostic({
         </>
       )}
 
-      <div className="mb-6 bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+      <div className="mb-6 primary-card p-4 md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg md:text-xl font-bold mb-1 text-white">Crypto Regime Snapshot</h2>
@@ -382,21 +382,21 @@ export default function CryptoDiagnostic({
         </div>
 
         <div className="mt-5 grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <div className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+          <div className="secondary-card p-4">
             <div className="text-xs text-stealth-400 mb-1">Total Crypto Market Cap</div>
             <div className="text-lg font-bold text-blue-300">{formatCurrency(marketData.summary.total_market_cap, true)}</div>
           </div>
-          <div className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+          <div className="secondary-card p-4">
             <div className="text-xs text-stealth-400 mb-1">BTC Dominance</div>
             <div className="text-lg font-bold text-amber-300">{marketData.summary.btc_dominance?.toFixed(2) ?? "n/a"}%</div>
           </div>
-          <div className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+          <div className="secondary-card p-4">
             <div className="text-xs text-stealth-400 mb-1">24H Breadth</div>
             <div className="text-lg font-bold text-emerald-300">
               {marketData.summary.advancing_assets_24h}/{marketData.summary.monitored_assets} advancing
             </div>
           </div>
-          <div className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+          <div className="secondary-card p-4">
             <div className="text-xs text-stealth-400 mb-1">Global MCAP Change</div>
             <div className={`text-lg font-bold ${getPercentColor(marketData.summary.market_cap_change_24h)}`}>
               {formatPercent(marketData.summary.market_cap_change_24h)}
@@ -453,7 +453,7 @@ export default function CryptoDiagnostic({
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {cryptoProjections.map((asset) => (
-                <div key={`${asset.symbol}-detail`} className="rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+                <div key={`${asset.symbol}-detail`} className="secondary-card p-4">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                       <h4 className="text-base font-semibold text-stealth-100">
@@ -586,7 +586,7 @@ export default function CryptoDiagnostic({
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+              <div className="min-w-0 secondary-card p-4">
                 <div className="mb-3">
                   <h4 className="text-sm font-semibold text-stealth-100">BTC vs ETH</h4>
                   <p className="text-xs text-stealth-500">BTC stays on the left axis and ETH on the right so institutional leadership and smart-contract beta can diverge cleanly.</p>
@@ -637,7 +637,7 @@ export default function CryptoDiagnostic({
                 </div>
               </div>
 
-              <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/60 p-4">
+              <div className="min-w-0 secondary-card p-4">
                 <div className="mb-3">
                   <h4 className="text-sm font-semibold text-stealth-100">SOL vs XRP</h4>
                   <p className="text-xs text-stealth-500">The higher-beta pair sits in a separate panel so alt rotation is visible without flattening the larger-cap leaders.</p>

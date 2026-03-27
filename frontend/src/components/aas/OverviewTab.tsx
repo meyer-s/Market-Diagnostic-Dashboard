@@ -148,7 +148,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
       {/* Key Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         {/* Stability Score */}
-        <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+        <div className="primary-card p-4 md:p-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-stealth-400 text-xs md:text-sm font-medium">Stability Score</span>
             <svg className="w-5 h-5 text-stealth-500" fill="currentColor" viewBox="0 0 20 20">
@@ -175,7 +175,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
         </div>
 
         {/* Regime */}
-        <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+        <div className="primary-card p-4 md:p-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-stealth-400 text-xs md:text-sm font-medium">Current Regime</span>
           </div>
@@ -191,7 +191,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
         </div>
 
         {/* Component Status */}
-        <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+        <div className="primary-card p-4 md:p-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-stealth-400 text-xs md:text-sm font-medium">Component Status</span>
           </div>
@@ -208,7 +208,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
         </div>
 
         {/* Subsystem Balance */}
-        <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+        <div className="primary-card p-4 md:p-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-stealth-400 text-xs md:text-sm font-medium">Subsystem Balance</span>
           </div>
@@ -227,7 +227,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
       </div>
 
       {/* Historical Chart */}
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
           <h2 className="text-lg md:text-xl font-semibold text-stealth-100">Stability Score History</h2>
           <div className="flex gap-2">
@@ -342,7 +342,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
       </div>
 
       {/* Quick Interpretation */}
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <h3 className="text-lg font-semibold text-stealth-100 mb-3">Quick Interpretation</h3>
         <div className="space-y-3 text-sm text-stealth-300">
           <p>
@@ -366,7 +366,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
       </div>
 
       {/* Expandable Component Health Section */}
-      <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg">
+      <div className="primary-card">
         <button
           onClick={() => setShowComponentHealth(!showComponentHealth)}
           className="w-full flex justify-between items-center p-4 md:p-6 hover:bg-stealth-700/30 transition-colors text-left"

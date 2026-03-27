@@ -278,7 +278,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
       )}
 
       {/* SECTION 1: REGIME CLASSIFICATION PANEL (PINNED TOP) */}
-      <div className="mb-6 bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+      <div className="mb-6 primary-card p-4 md:p-6">
         <h2 className="text-lg md:text-xl font-bold mb-4 text-white">Regime Classification</h2>
         
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
@@ -452,7 +452,7 @@ function MethodologyPanel() {
   };
 
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700">
+    <div className="primary-card">
       <div className="p-4 border-b border-stealth-700">
         <h3 className="text-lg font-bold text-white">Technical Methodology & Calculations</h3>
         <p className="text-xs text-stealth-400 mt-1">Detailed explanations of scoring, regime classification, and derived indicators</p>
@@ -684,7 +684,7 @@ function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] 
     ? Math.min(Math.abs((smb / 100) * 100), 100)
     : 0;
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+    <div className="primary-card p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Government Gold Buying Pressure</h3>
       <p className="text-xs text-stealth-400 mb-4">Shows whether central banks are aggressively accumulating gold, consistent with inflation concerns or de-dollarization themes</p>
 
@@ -788,7 +788,7 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
   const corrAuDxy = correlations?.au_dxy;
   const corrAuVix = correlations?.au_vix;
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+    <div className="primary-card p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Where Prices Tend to Bounce or Break</h3>
       <p className="text-xs text-stealth-400 mb-4">Shows if metals are expensive/cheap vs currencies, interest rates, and inflation</p>
 
@@ -876,7 +876,7 @@ function RelativeValuePanel({ indicators }: { indicators: MetalIndicators }) {
   const pdAu = rv.pd_au_ratio;
   const pdAuZ = rv.pd_au_ratio_zscore;
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+    <div className="primary-card p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Which Metal Is Cheap vs Others</h3>
       <p className="text-xs text-stealth-400 mb-4">When ratios stretch beyond normal ranges, one metal is likely oversold or overbought</p>
 
@@ -989,7 +989,7 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
     ? `${backwardation.toFixed(0)}`
     : "n/a";
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+    <div className="primary-card p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Is There a Physical Squeeze Brewing?</h3>
       <p className="text-xs text-stealth-400 mb-4">Shows if paper contracts are overwhelming physical supply (precursor to price spikes)</p>
 
@@ -1086,7 +1086,7 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
 
 function SupplyPanel({ supply_data }: { supply_data: SupplyData[] | null }) {
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+    <div className="primary-card p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Are Miners Profitable or Squeezed?</h3>
       <p className="text-xs text-stealth-400 mb-4">Low margins = production cuts ahead = tighter supply = bullish</p>
 
@@ -1160,7 +1160,7 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
   };
 
   return (
-      <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <h3 className="text-lg font-bold mb-4 text-white">Who's Buying and Why</h3>
         <p className="text-xs text-stealth-400 mb-4">Industrial demand = economy strong, Investment demand = fear rising, Jewelry = wealth in Asia</p>
 
@@ -1241,7 +1241,7 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
 function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: MarketCapsResponse | null; market_caps_history: MarketCapsHistoryResponse | null }) {
   if (!market_caps || !market_caps_history) {
     return (
-      <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <h3 className="text-lg font-bold mb-4 text-white">How Big Is This Asset Class?</h3>
         <p className="text-sm text-stealth-400">Loading market cap data...</p>
       </div>
@@ -1317,7 +1317,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
   };
 
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+    <div className="primary-card p-4 md:p-6">
         <h3 className="text-lg font-bold mb-4 text-white">How Big Is This Asset Class?</h3>
         <p className="text-xs text-stealth-400 mb-1">Tiny markets = easier to move = more volatility = bigger % gains possible</p>
         <p className="text-xs text-stealth-500 mb-4">Tracked holdings use ETF assets plus central bank gold.</p>
@@ -1420,7 +1420,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
 function CorrelationPanel({ correlations }: { correlations: CorrelationMatrix | null }) {
   if (!correlations) {
     return (
-      <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <h3 className="text-lg font-bold mb-4 text-white">Volatility & Correlation</h3>
         <p className="text-sm text-stealth-400">Correlation data loading...</p>
       </div>
@@ -1430,7 +1430,7 @@ function CorrelationPanel({ correlations }: { correlations: CorrelationMatrix | 
     isNumber(value) ? value.toFixed(2) : "n/a";
 
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+    <div className="primary-card p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Does Gold Zig When Stocks Zag?</h3>
       <p className="text-xs text-stealth-400 mb-4">Negative correlation to stocks/dollar = working as a hedge. Positive = riding the same wave.</p>
       
@@ -1736,7 +1736,7 @@ function PriceHistoryChart() {
 
   if (loading) {
     return (
-      <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+      <div className="primary-card p-4 md:p-6">
         <h3 className="text-lg font-bold mb-4 text-white">Price History (1 Year)</h3>
         <div className="text-stealth-400">Loading price history...</div>
       </div>
@@ -1744,7 +1744,7 @@ function PriceHistoryChart() {
   }
 
   return (
-    <div className="bg-stealth-800 rounded-lg border border-stealth-700 p-4 md:p-6">
+    <div className="primary-card p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Price History (1 Year)</h3>
       
       <ResponsiveContainer width="100%" height={350}>
