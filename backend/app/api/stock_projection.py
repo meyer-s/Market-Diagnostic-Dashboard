@@ -612,6 +612,186 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
                 }
             )
 
+    # ── Annual data (5-year view) ──────────────────────────────────────────────
+    max_ann = 5
+    ann_income_df = _get_quarterly_df(
+        stock,
+        [
+            lambda: stock.income_stmt,
+            lambda: stock.get_income_stmt(freq="yearly"),
+        ],
+    )
+    ann_balance_df = _get_quarterly_df(
+        stock,
+        [
+            lambda: stock.balance_sheet,
+            lambda: stock.get_balance_sheet(freq="yearly"),
+        ],
+    )
+    ann_cashflow_df = _get_quarterly_df(
+        stock,
+        [
+            lambda: stock.cashflow,
+            lambda: stock.get_cashflow(freq="yearly"),
+        ],
+    )
+    ann_income_df = _normalize_quarter_columns(ann_income_df)
+    ann_balance_df = _normalize_quarter_columns(ann_balance_df)
+    ann_cashflow_df = _normalize_quarter_columns(ann_cashflow_df)
+
+    revenue_ann = _series_from_row(
+        ann_income_df,
+        [
+            "Total Revenue", "TotalRevenue", "Revenue", "Total Revenue As Reported",
+            "Revenue From Contract With Customer Excluding Assessed Tax",
+        ],
+        max_points=max_ann,
+    )
+    net_income_ann = _series_from_row(
+        ann_income_df,
+        [
+            "Net Income", "Net Income Applicable To Common Shares",
+            "Net Income Common Stockholders", "Net Income Continuous Operations",
+            "Net Income From Continuing Operations",
+        ],
+        max_points=max_ann,
+    )
+    equity_ann = _series_from_row(
+        ann_balance_df,
+        ["Total Stockholder Equity", "Total Equity Gross Minority Interest", "Total Equity"],
+        max_points=max_ann,
+    )
+    eps_ann = _series_from_row(
+        ann_income_df,
+        [
+            "Diluted EPS", "Basic EPS", "Diluted EPS Continued Operations",
+            "Basic EPS Continued Operations", "Diluted EPS Continuing Operations",
+            "Basic EPS Continuing Operations", "EPS",
+        ],
+        max_points=max_ann,
+    )
+    share_count_ann = _series_from_row(
+        ann_balance_df,
+        [
+            "Ordinary Shares Number", "Share Issued", "Common Stock Shares Outstanding",
+            "Common Stock Shares Issued", "Common Shares Outstanding", "Shares Outstanding",
+        ],
+        max_points=max_ann,
+    )
+    if not share_count_ann:
+        share_count_ann = _series_from_row(
+            ann_income_df,
+            [
+                "Diluted Average Shares", "Basic Average Shares",
+                "Diluted Weighted Average Shares", "Basic Weighted Average Shares",
+                "Weighted Average Shares",
+            ],
+            max_points=max_ann,
+        )
+
+    if not eps_ann and net_income_ann:
+        sc_by_date_a = {p["date"]: p["value"] for p in share_count_ann}
+        if sc_by_date_a:
+            for p in net_income_ann:
+                sc = sc_by_date_a.get(p["date"])
+                if sc and sc != 0:
+                    eps_ann.append({"date": p["date"], "value": float(p["value"]) / float(sc)})
+        elif shares_outstanding:
+            for p in net_income_ann:
+                eps_ann.append({"date": p["date"], "value": float(p["value"]) / float(shares_outstanding)})
+    eps_ann = _limit(eps_ann, max_ann)
+
+    roe_ann = []
+    if net_income_ann and equity_ann:
+        eq_by_date_a = {p["date"]: p["value"] for p in equity_ann}
+        for p in net_income_ann:
+            eq = eq_by_date_a.get(p["date"])
+            if eq and eq != 0:
+                roe_ann.append({"date": p["date"], "value": float(p["value"]) / float(eq) * 100})
+    roe_ann = _limit(roe_ann, max_ann)
+
+    fcf_ann = []
+    if not ann_cashflow_df.empty:
+        free_cash_ann = _row_series(ann_cashflow_df, ["Free Cash Flow"])
+        if free_cash_ann is not None and not free_cash_ann.empty:
+            for col, value in free_cash_ann.items():
+                if pd.isna(value):
+                    continue
+                date = pd.to_datetime(col, errors="coerce")
+                if pd.isna(date):
+                    continue
+                fcf_ann.append({"date": date.date().isoformat(), "value": float(value)})
+        else:
+            op_ann = _row_series(
+                ann_cashflow_df,
+                [
+                    "Total Cash From Operating Activities", "Operating Cash Flow",
+                    "Total Cash From Operating Activities Continued Operations",
+                ],
+            )
+            cap_ann = _row_series(
+                ann_cashflow_df,
+                ["Capital Expenditures", "CapitalExpenditures", "Capital Expenditure"],
+            )
+            if op_ann is not None and cap_ann is not None:
+                for col, op_val in op_ann.items():
+                    cap_val = cap_ann.get(col)
+                    if pd.isna(op_val) or cap_val is None or pd.isna(cap_val):
+                        continue
+                    date = pd.to_datetime(col, errors="coerce")
+                    if pd.isna(date):
+                        continue
+                    fcf_ann.append({"date": date.date().isoformat(), "value": float(op_val) + float(cap_val)})
+    fcf_ann = _limit(fcf_ann, max_ann)
+
+    mcap_ann = []
+    sc_by_date_ann = {p["date"]: p["value"] for p in share_count_ann}
+    if sc_by_date_ann:
+        for ds, shares in sc_by_date_ann.items():
+            date = pd.to_datetime(ds, errors="coerce")
+            if pd.isna(date):
+                continue
+            price = _price_on_or_before(price_df, date)
+            if price is None or not shares or shares == 0:
+                continue
+            mcap_ann.append({"date": ds, "value": float(price) * float(shares)})
+    elif shares_outstanding:
+        for p in (eps_ann or revenue_ann or []):
+            date = pd.to_datetime(p["date"], errors="coerce")
+            if pd.isna(date):
+                continue
+            price = _price_on_or_before(price_df, date)
+            if price is None:
+                continue
+            mcap_ann.append({"date": p["date"], "value": float(price) * float(shares_outstanding)})
+    mcap_ann = _limit(mcap_ann, max_ann)
+
+    pe_ann = []
+    for p in eps_ann:
+        if p["value"] <= 0:
+            continue
+        date = pd.to_datetime(p["date"], errors="coerce")
+        if pd.isna(date):
+            continue
+        price = _price_on_or_before(price_df, date)
+        if price is None:
+            continue
+        pe_ann.append({"date": p["date"], "value": float(price) / float(p["value"])})
+    pe_ann = _limit(pe_ann, max_ann)
+
+    rev_yoy_ann = []
+    if revenue_ann:
+        rev_ann_sorted = sorted(revenue_ann, key=lambda x: x["date"])
+        for idx in range(1, len(rev_ann_sorted)):
+            cur = rev_ann_sorted[idx]
+            prev = rev_ann_sorted[idx - 1]
+            if prev["value"] == 0:
+                continue
+            rev_yoy_ann.append({
+                "date": cur["date"],
+                "value": (float(cur["value"]) - float(prev["value"])) / float(prev["value"]) * 100,
+            })
+
     return {
         "as_of": datetime.utcnow().isoformat(),
         "eps": {"series": _limit(eps_series, max_points), "derived": eps_derived},
@@ -621,6 +801,13 @@ def compute_fundamentals(stock: yf.Ticker, price_df: pd.DataFrame) -> dict:
         "pe_ratio": {"series": _limit(pe_series, max_points), "derived": True},
         "revenue": {"series": _limit(revenue_series, max_points), "derived": False},
         "revenue_yoy": {"series": _limit(revenue_yoy_series, max_points), "derived": True},
+        "eps_annual": {"series": eps_ann, "derived": False},
+        "roe_annual": {"series": roe_ann, "derived": True},
+        "free_cash_flow_annual": {"series": fcf_ann, "derived": False},
+        "market_cap_annual": {"series": mcap_ann, "derived": True},
+        "pe_ratio_annual": {"series": pe_ann, "derived": True},
+        "revenue_annual": {"series": _limit(revenue_ann, max_ann), "derived": False},
+        "revenue_yoy_annual": {"series": rev_yoy_ann, "derived": True},
     }
 
 def _is_yahoo_rate_limit_message(message: str) -> bool:

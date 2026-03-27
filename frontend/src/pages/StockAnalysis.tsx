@@ -117,6 +117,13 @@ interface FundamentalsPayload {
   pe_ratio: FundamentalSeries;
   revenue?: FundamentalSeries;
   revenue_yoy?: FundamentalSeries;
+  eps_annual?: FundamentalSeries;
+  roe_annual?: FundamentalSeries;
+  free_cash_flow_annual?: FundamentalSeries;
+  market_cap_annual?: FundamentalSeries;
+  pe_ratio_annual?: FundamentalSeries;
+  revenue_annual?: FundamentalSeries;
+  revenue_yoy_annual?: FundamentalSeries;
 }
 
 interface PriceHistoryPoint {
@@ -562,6 +569,7 @@ export default function StockAnalysis() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [dataAsOf, setDataAsOf] = useState<string | null>(null);
   const [showSummaryDebug, setShowSummaryDebug] = useState(false);
+  const [fundView, setFundView] = useState<"1Y" | "5Y">("1Y");
 
   const runSearch = useCallback(async (rawTicker: string) => {
     const normalizedTicker = rawTicker.trim().toUpperCase();
@@ -1052,13 +1060,14 @@ export default function StockAnalysis() {
 
           {/* Fundamental Analysis — consolidated */}
           {fundamentals && (() => {
-            const epsSeries = fundamentals.eps?.series || [];
-            const roeSeries = fundamentals.roe?.series || [];
-            const fcfSeries = fundamentals.free_cash_flow?.series || [];
-            const revSeries = fundamentals.revenue?.series || [];
-            const mcapSeries = fundamentals.market_cap?.series || [];
-            const peSeries = fundamentals.pe_ratio?.series || [];
-            const yoySeries = fundamentals.revenue_yoy?.series || [];
+            const isAnnual = fundView === "5Y";
+            const epsSeries = (isAnnual ? fundamentals.eps_annual?.series : fundamentals.eps?.series) || [];
+            const roeSeries = (isAnnual ? fundamentals.roe_annual?.series : fundamentals.roe?.series) || [];
+            const fcfSeries = (isAnnual ? fundamentals.free_cash_flow_annual?.series : fundamentals.free_cash_flow?.series) || [];
+            const revSeries = (isAnnual ? fundamentals.revenue_annual?.series : fundamentals.revenue?.series) || [];
+            const mcapSeries = (isAnnual ? fundamentals.market_cap_annual?.series : fundamentals.market_cap?.series) || [];
+            const peSeries = (isAnnual ? fundamentals.pe_ratio_annual?.series : fundamentals.pe_ratio?.series) || [];
+            const yoySeries = (isAnnual ? fundamentals.revenue_yoy_annual?.series : fundamentals.revenue_yoy?.series) || [];
 
             // Latest values + QoQ deltas
             const latest = (series: FundamentalPoint[]) =>
@@ -1116,7 +1125,17 @@ export default function StockAnalysis() {
               <div className="surface-card p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
-                  <span className="text-[10px] sm:text-xs text-gray-500">Up to 3 years (quarterly)</span>
+                  <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/60 p-0.5">
+                    {(["1Y", "5Y"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setFundView(v)}
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors ${fundView === v ? "bg-stealth-600 text-stealth-100" : "text-stealth-400 hover:text-stealth-200"}`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* ── Snapshot Strip ── */}
@@ -1129,7 +1148,7 @@ export default function StockAnalysis() {
                       </div>
                       {m.delta !== null && (
                         <div className={`text-[10px] mt-0.5 ${m.delta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                          {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta).toFixed(1)}% QoQ
+                          {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta).toFixed(1)}% {isAnnual ? "YoY" : "QoQ"}
                         </div>
                       )}
                     </div>
@@ -1137,7 +1156,7 @@ export default function StockAnalysis() {
                 </div>
 
                 <div className="text-[11px] text-gray-500 mb-4">
-                  Source: Yahoo Finance filings via yfinance. Cadence: quarterly.
+                  Source: Yahoo Finance filings via yfinance. Cadence: {isAnnual ? "annual" : "quarterly"}.
                 </div>
 
                 {/* ── Dual-Axis Charts ── */}
@@ -1166,7 +1185,7 @@ export default function StockAnalysis() {
                               formatter={(value: number, name: string) =>
                                 name === "revenue" ? [`$${formatCompact(value, 2)}`, "Revenue"] : [formatDollars(value, 2), "EPS"]
                               }
-                              labelFormatter={(l) => `Quarter: ${formatDateLabel(String(l))}`}
+                              labelFormatter={(l) => `${isAnnual ? "Year" : "Quarter"}: ${formatDateLabel(String(l))}`}
                               contentStyle={tooltipStyle}
                             />
                             <Bar yAxisId="left" dataKey="revenue" fill={getFamilyColor("equity")} fillOpacity={0.35} radius={[3, 3, 0, 0]} />
@@ -1200,7 +1219,7 @@ export default function StockAnalysis() {
                               formatter={(value: number, name: string) =>
                                 name === "roe" ? [formatPercent(value, 1), "ROE"] : [`$${formatCompact(value, 2)}`, "FCF"]
                               }
-                              labelFormatter={(l) => `Quarter: ${formatDateLabel(String(l))}`}
+                              labelFormatter={(l) => `${isAnnual ? "Year" : "Quarter"}: ${formatDateLabel(String(l))}`}
                               contentStyle={tooltipStyle}
                             />
                             <Line yAxisId="left" type="monotone" dataKey="roe" stroke={getFamilyColor("growth")} strokeWidth={2} dot={{ r: 2.5 }} />
@@ -1234,7 +1253,7 @@ export default function StockAnalysis() {
                               formatter={(value: number, name: string) =>
                                 name === "pe" ? [value.toFixed(1), "P/E"] : [`$${formatCompact(value, 2)}`, "Market Cap"]
                               }
-                              labelFormatter={(l) => `Quarter: ${formatDateLabel(String(l))}`}
+                              labelFormatter={(l) => `${isAnnual ? "Year" : "Quarter"}: ${formatDateLabel(String(l))}`}
                               contentStyle={tooltipStyle}
                             />
                             <Area yAxisId="right" type="monotone" dataKey="mcap" fill={getFamilyColor("financials")} fillOpacity={0.12} stroke={getFamilyColor("financials")} strokeOpacity={0.3} strokeWidth={1} />
@@ -1261,7 +1280,7 @@ export default function StockAnalysis() {
                             <YAxis tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
                             <Tooltip
                               formatter={(value: number) => [formatPercent(value, 1), "YoY Growth"]}
-                              labelFormatter={(l) => `Quarter: ${formatDateLabel(String(l))}`}
+                              labelFormatter={(l) => `${isAnnual ? "Year" : "Quarter"}: ${formatDateLabel(String(l))}`}
                               contentStyle={tooltipStyle}
                             />
                             <Bar
