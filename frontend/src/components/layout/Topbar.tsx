@@ -43,7 +43,7 @@ export default function Topbar() {
                 className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${
                   isActive
                     ? "border border-stealth-600 bg-stealth-800 text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)]"
-                    : "text-stealth-300 hover:bg-stealth-800/90 hover:text-stealth-100"
+                    : "border border-transparent text-stealth-300 hover:border-sky-300/85 hover:bg-stealth-800/90 hover:text-stealth-100 hover:shadow-[0_0_0_1px_rgba(147,197,253,0.22)]"
                 }`}
               >
                 {item.label}
@@ -61,7 +61,7 @@ export default function Topbar() {
               className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all ${
                 isToolsActive
                   ? "border border-stealth-600 bg-stealth-800 text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)]"
-                  : "text-stealth-300 hover:bg-stealth-800/90 hover:text-stealth-100"
+                  : "border border-transparent text-stealth-300 hover:border-sky-300/85 hover:bg-stealth-800/90 hover:text-stealth-100 hover:shadow-[0_0_0_1px_rgba(147,197,253,0.22)]"
               }`}
               aria-haspopup="true"
               aria-expanded={toolsOpen}
