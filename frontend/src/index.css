@@ -135,8 +135,8 @@ body {
   }
 
   .primary-card-hover:hover {
-    border-color: rgba(112, 123, 141, 0.9);
-    box-shadow: 0 24px 58px -32px rgba(0, 0, 0, 0.9);
+    border-color: rgba(147, 197, 253, 0.95);
+    box-shadow: 0 24px 58px -32px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(147, 197, 253, 0.35);
     transform: translateY(-1px);
   }
 
@@ -152,8 +152,9 @@ body {
   }
 
   .secondary-card-hover:hover {
-    border-color: rgba(112, 123, 141, 0.82);
-    background-color: rgba(34, 38, 51, 0.96);
+    border-color: rgba(147, 197, 253, 0.9);
+    background-color: rgba(36, 42, 58, 0.98);
+    box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 
   .collapsible-section {
