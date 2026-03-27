@@ -16,12 +16,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import {
-  LineChart,
   Line,
   ResponsiveContainer,
   XAxis,
   YAxis,
   Tooltip,
+  ComposedChart,
+  Bar,
+  Area,
+  Cell,
 } from "recharts";
 import { PriceAnalysisChart } from "../components/widgets/PriceAnalysisChart";
 import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
@@ -748,12 +751,6 @@ export default function StockAnalysis() {
     [summaryInput]
   );
 
-  const derivedBadge = (
-    <span className="ml-1 text-[10px] text-amber-300/90" title="Derived from reported filings">
-      *
-    </span>
-  );
-
   return (
     <div className="page-shell-narrow page-stack">
       <div className="flex flex-col">
@@ -1022,174 +1019,237 @@ export default function StockAnalysis() {
             </div>
           )}
 
-          {/* Fundamental Analysis */}
-          {fundamentals && (
-            <div className="surface-card p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
-                <span className="text-[10px] sm:text-xs text-gray-500">Up to 3 years (quarterly)</span>
-              </div>
-              <div className="text-[11px] text-gray-400 mb-4">
-                Source: Yahoo Finance filings via yfinance. Cadence: quarterly. Coverage varies by metric.
-                {" "}
-                {[
-                { label: "EPS", series: fundamentals.eps?.series },
-                { label: "ROE", series: fundamentals.roe?.series },
-                { label: "FCF", series: fundamentals.free_cash_flow?.series },
-                { label: "Revenue", series: fundamentals.revenue?.series },
-                { label: "MCap", series: fundamentals.market_cap?.series },
-                { label: "P/E", series: fundamentals.pe_ratio?.series },
-              ]
-                  .map((item) => `${item.label}: ${item.series?.length ?? 0}q`)
-                  .join(" · ")}
-                .
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  {
-                    key: "eps",
-                    title: "EPS",
-                    series: fundamentals.eps?.series || [],
-                    derived: fundamentals.eps?.derived,
-                    color: getFamilyColor("equity"),
-                    format: (value: number) => formatDollars(value, 2),
-                    axis: (value: number) => formatDollars(value, 0),
-                  },
-                  {
-                    key: "roe",
-                    title: "ROE",
-                    series: fundamentals.roe?.series || [],
-                    derived: fundamentals.roe?.derived,
-                    color: getFamilyColor("growth"),
-                    format: (value: number) => formatPercent(value, 1),
-                    axis: (value: number) => `${value.toFixed(0)}%`,
-                  },
-                  {
-                    key: "free_cash_flow",
-                    title: "Free Cash Flow",
-                    series: fundamentals.free_cash_flow?.series || [],
-                    derived: fundamentals.free_cash_flow?.derived,
-                    color: getFamilyColor("liquidity"),
-                    format: (value: number) => `$${formatCompact(value, 2)}`,
-                    axis: (value: number) => formatCompact(value, 0),
-                  },
-                  {
-                    key: "revenue",
-                    title: "Revenue (Quarterly)",
-                    series: fundamentals.revenue?.series || [],
-                    derived: fundamentals.revenue?.derived,
-                    color: getFamilyColor("equity"),
-                    format: (value: number) => `$${formatCompact(value, 2)}`,
-                    axis: (value: number) => formatCompact(value, 0),
-                  },
-                  {
-                    key: "market_cap",
-                    title: "Market Cap",
-                    series: fundamentals.market_cap?.series || [],
-                    derived: fundamentals.market_cap?.derived,
-                    color: getFamilyColor("financials"),
-                    format: (value: number) => `$${formatCompact(value, 2)}`,
-                    axis: (value: number) => formatCompact(value, 0),
-                  },
-                  {
-                    key: "pe_ratio",
-                    title: "PE Ratio",
-                    series: fundamentals.pe_ratio?.series || [],
-                    derived: fundamentals.pe_ratio?.derived,
-                    color: getFamilyColor("sentiment"),
-                    format: (value: number) => value.toFixed(1),
-                    axis: (value: number) => value.toFixed(0),
-                  },
-                ].map((card) => (
-                  <div key={card.key} className="bg-gray-900 rounded-lg border border-gray-700 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-sm font-semibold text-gray-100">
-                        <div className="flex items-center">
-                          <span>{card.title}</span>
-                          {card.derived ? derivedBadge : null}
-                          <InfoTooltip
-                            id={`fund-tooltip-${card.key}`}
-                            text={
-                              card.key === "eps"
-                                ? "Earnings per share reported for the quarter"
-                                : card.key === "roe"
-                                ? "Return on equity for the quarter"
-                                : card.key === "free_cash_flow"
-                                ? "Free cash flow (operating cash minus capital expenditures)"
-                                : card.key === "revenue"
-                                ? "Quarterly revenue (reported)"
-                                : card.key === "market_cap"
-                                ? "Market capitalization (total market value of equity)"
-                                : card.key === "pe_ratio"
-                                ? "Price-to-Earnings ratio (typically trailing P/E)"
-                                : card.title
-                            }
-                          />
-                        </div>
-                        {card.derived ? derivedBadge : null}
+          {/* Fundamental Analysis — consolidated */}
+          {fundamentals && (() => {
+            const epsSeries = fundamentals.eps?.series || [];
+            const roeSeries = fundamentals.roe?.series || [];
+            const fcfSeries = fundamentals.free_cash_flow?.series || [];
+            const revSeries = fundamentals.revenue?.series || [];
+            const mcapSeries = fundamentals.market_cap?.series || [];
+            const peSeries = fundamentals.pe_ratio?.series || [];
+            const yoySeries = fundamentals.revenue_yoy?.series || [];
+
+            // Latest values + QoQ deltas
+            const latest = (series: FundamentalPoint[]) =>
+              series.length > 0 ? series[series.length - 1].value : null;
+            const qoqDelta = (series: FundamentalPoint[]) => {
+              if (series.length < 2) return null;
+              const cur = series[series.length - 1].value;
+              const prev = series[series.length - 2].value;
+              if (prev === 0) return null;
+              return ((cur - prev) / Math.abs(prev)) * 100;
+            };
+
+            const snapMetrics = [
+              { label: "EPS", value: latest(epsSeries), fmt: (v: number) => formatDollars(v, 2), delta: qoqDelta(epsSeries), color: getFamilyColor("equity") },
+              { label: "ROE", value: latest(roeSeries), fmt: (v: number) => formatPercent(v, 1), delta: qoqDelta(roeSeries), color: getFamilyColor("growth") },
+              { label: "FCF", value: latest(fcfSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(fcfSeries), color: getFamilyColor("liquidity") },
+              { label: "Rev", value: latest(revSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(revSeries), color: getFamilyColor("equity") },
+              { label: "P/E", value: latest(peSeries), fmt: (v: number) => v.toFixed(1), delta: qoqDelta(peSeries), color: getFamilyColor("sentiment") },
+              { label: "MCap", value: latest(mcapSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(mcapSeries), color: getFamilyColor("financials") },
+            ];
+
+            // Merge series by date for dual-axis charts
+            const mergeSeries = (
+              a: FundamentalPoint[],
+              aKey: string,
+              b: FundamentalPoint[],
+              bKey: string
+            ) => {
+              const map = new Map<string, Record<string, number | string>>();
+              for (const p of a) {
+                map.set(p.date, { date: p.date, [aKey]: p.value });
+              }
+              for (const p of b) {
+                const existing = map.get(p.date) || { date: p.date };
+                existing[bKey] = p.value;
+                map.set(p.date, existing);
+              }
+              return Array.from(map.values()).sort(
+                (x, y) => new Date(x.date as string).getTime() - new Date(y.date as string).getTime()
+              );
+            };
+
+            const revEpsData = mergeSeries(revSeries, "revenue", epsSeries, "eps");
+            const roeFcfData = mergeSeries(roeSeries, "roe", fcfSeries, "fcf");
+            const peMcapData = mergeSeries(peSeries, "pe", mcapSeries, "mcap");
+
+            const tooltipStyle = {
+              background: "#111827",
+              border: "1px solid #374151",
+              borderRadius: "8px",
+              fontSize: "12px",
+            };
+
+            return (
+              <div className="surface-card p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
+                  <span className="text-[10px] sm:text-xs text-gray-500">Up to 3 years (quarterly)</span>
+                </div>
+
+                {/* ── Snapshot Strip ── */}
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-5">
+                  {snapMetrics.map((m) => (
+                    <div key={m.label} className="bg-gray-900 rounded-lg border border-gray-700/60 px-3 py-2 text-center">
+                      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{m.label}</div>
+                      <div className="text-sm font-semibold" style={{ color: m.color }}>
+                        {m.value !== null ? m.fmt(m.value) : "—"}
                       </div>
-                      {card.series.length > 0 && (
-                        <span className="text-[10px] text-gray-500">
-                          {formatDateLabel(card.series[0].date)} → {formatDateLabel(card.series[card.series.length - 1].date)}
-                        </span>
+                      {m.delta !== null && (
+                        <div className={`text-[10px] mt-0.5 ${m.delta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta).toFixed(1)}% QoQ
+                        </div>
                       )}
                     </div>
-                    {card.series.length > 0 ? (
-                      <>
-                        <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={card.series}>
-                              <XAxis
-                                dataKey="date"
-                                tickFormatter={(value) => formatDateLabel(String(value))}
-                                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                                tickLine={false}
-                                axisLine={false}
-                              />
-                              <YAxis
-                                tickFormatter={card.axis}
-                                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                                tickLine={false}
-                                axisLine={false}
-                              />
-                              <Tooltip
-                                formatter={(value) => card.format(Number(value))}
-                                labelFormatter={(label) => `Quarter: ${formatDateLabel(String(label))}`}
-                                contentStyle={{
-                                  background: "#111827",
-                                  border: "1px solid #374151",
-                                  borderRadius: "8px",
-                                  fontSize: "12px",
-                                }}
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="value"
-                                stroke={card.color}
-                                strokeWidth={2}
-                                dot={{ r: 2 }}
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
+                  ))}
+                </div>
+
+                <div className="text-[11px] text-gray-500 mb-4">
+                  Source: Yahoo Finance filings via yfinance. Cadence: quarterly.
+                </div>
+
+                {/* ── Dual-Axis Charts ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+                  {/* Revenue & Earnings */}
+                  {revEpsData.length > 0 && (
+                    <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3 text-sm font-semibold text-gray-100">
+                          <span>Revenue &amp; Earnings</span>
+                          <InfoTooltip id="fund-rev-eps" text="Revenue bars (left axis) overlaid with EPS line (right axis) to show top-line growth alongside per-share profitability." />
                         </div>
-                        {card.key === "revenue" && card.series.length === 1 && (
-                          <div className="mt-2 text-[11px] text-gray-500">
-                            Limited quarterly history from provider; showing a single revenue point.
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="text-xs text-gray-500">
-                        {card.key === "revenue"
-                          ? "Quarterly revenue history not available from provider."
-                          : "No data available for this metric."}
+                        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("equity"), opacity: 0.35 }} /> Rev</span>
+                          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("growth") }} /> EPS</span>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={revEpsData}>
+                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="left" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatDollars(v, 0)} tick={{ fill: getFamilyColor("growth"), fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <Tooltip
+                              formatter={(value: number, name: string) =>
+                                name === "revenue" ? [`$${formatCompact(value, 2)}`, "Revenue"] : [formatDollars(value, 2), "EPS"]
+                              }
+                              labelFormatter={(l) => `Quarter: ${formatDateLabel(String(l))}`}
+                              contentStyle={tooltipStyle}
+                            />
+                            <Bar yAxisId="left" dataKey="revenue" fill={getFamilyColor("equity")} fillOpacity={0.35} radius={[3, 3, 0, 0]} />
+                            <Line yAxisId="right" type="monotone" dataKey="eps" stroke={getFamilyColor("growth")} strokeWidth={2} dot={{ r: 2.5 }} />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Profitability — ROE & FCF */}
+                  {roeFcfData.length > 0 && (
+                    <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3 text-sm font-semibold text-gray-100">
+                          <span>Profitability</span>
+                          <InfoTooltip id="fund-roe-fcf" text="ROE line (left axis, %) and FCF bars (right axis, $) show how efficiently equity is deployed and how much cash the business generates." />
+                        </div>
+                        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("growth") }} /> ROE</span>
+                          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("liquidity"), opacity: 0.35 }} /> FCF</span>
+                        </div>
+                      </div>
+                      <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={roeFcfData}>
+                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="left" tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: getFamilyColor("growth"), fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <Tooltip
+                              formatter={(value: number, name: string) =>
+                                name === "roe" ? [formatPercent(value, 1), "ROE"] : [`$${formatCompact(value, 2)}`, "FCF"]
+                              }
+                              labelFormatter={(l) => `Quarter: ${formatDateLabel(String(l))}`}
+                              contentStyle={tooltipStyle}
+                            />
+                            <Line yAxisId="left" type="monotone" dataKey="roe" stroke={getFamilyColor("growth")} strokeWidth={2} dot={{ r: 2.5 }} />
+                            <Bar yAxisId="right" dataKey="fcf" fill={getFamilyColor("liquidity")} fillOpacity={0.35} radius={[3, 3, 0, 0]} />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Valuation — P/E & Market Cap */}
+                  {peMcapData.length > 0 && (
+                    <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3 text-sm font-semibold text-gray-100">
+                          <span>Valuation &amp; Scale</span>
+                          <InfoTooltip id="fund-pe-mcap" text="P/E ratio (left axis) over market cap area (right axis) shows how valuation multiples move against total company size." />
+                        </div>
+                        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("sentiment") }} /> P/E</span>
+                          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("financials"), opacity: 0.2 }} /> MCap</span>
+                        </div>
+                      </div>
+                      <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={peMcapData}>
+                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="left" tickFormatter={(v) => v.toFixed(0)} tick={{ fill: getFamilyColor("sentiment"), fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <Tooltip
+                              formatter={(value: number, name: string) =>
+                                name === "pe" ? [value.toFixed(1), "P/E"] : [`$${formatCompact(value, 2)}`, "Market Cap"]
+                              }
+                              labelFormatter={(l) => `Quarter: ${formatDateLabel(String(l))}`}
+                              contentStyle={tooltipStyle}
+                            />
+                            <Area yAxisId="right" type="monotone" dataKey="mcap" fill={getFamilyColor("financials")} fillOpacity={0.12} stroke={getFamilyColor("financials")} strokeOpacity={0.3} strokeWidth={1} />
+                            <Line yAxisId="left" type="monotone" dataKey="pe" stroke={getFamilyColor("sentiment")} strokeWidth={2} dot={{ r: 2.5 }} />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Revenue YoY Growth */}
+                  {yoySeries.length > 0 && (
+                    <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3 text-sm font-semibold text-gray-100">
+                          <span>Revenue Growth (YoY)</span>
+                          <InfoTooltip id="fund-yoy" text="Year-over-year revenue growth comparing each quarter to the same quarter one year prior. Green bars indicate growth, red bars indicate contraction." />
+                        </div>
+                      </div>
+                      <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={yoySeries}>
+                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <YAxis tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                            <Tooltip
+                              formatter={(value: number) => [formatPercent(value, 1), "YoY Growth"]}
+                              labelFormatter={(l) => `Quarter: ${formatDateLabel(String(l))}`}
+                              contentStyle={tooltipStyle}
+                            />
+                            <Bar
+                              dataKey="value"
+                              radius={[3, 3, 0, 0]}
+                            >
+                              {yoySeries.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.value >= 0 ? "#10b981" : "#ef4444"} fillOpacity={0.65} />
+                              ))}
+                            </Bar>
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Holistic Summary */}
           {holisticSummary && (
