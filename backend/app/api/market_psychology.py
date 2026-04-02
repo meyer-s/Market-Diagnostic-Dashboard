@@ -29,6 +29,16 @@ async def rates_spread(
     try:
         return await get_rates_spread_dashboard(days=days, allow_proxies=allow_proxies, force_refresh=force_refresh)
     except FredClientError as exc:
-        raise HTTPException(status_code=503, detail=f"Rates spread data unavailable: {exc}") from exc
+        return {
+            "days": days,
+            "allow_proxies": allow_proxies,
+            "status": "unavailable",
+            "reason": str(exc),
+            "series_meta": None,
+            "latest": None,
+            "history": [],
+            "radar_snapshot": [],
+            "from_cache": False,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Rates spread calculation failed: {exc}") from exc

@@ -35,6 +35,8 @@ interface RadarPoint {
 }
 
 interface RatesSpreadPayload {
+  status?: "ok" | "unavailable";
+  reason?: string;
   latest: RatesHistoryPoint | null;
   history: RatesHistoryPoint[];
   radar_snapshot: RadarPoint[];
@@ -42,7 +44,7 @@ interface RatesSpreadPayload {
     fed_rate: RateSeriesMeta;
     cd_proxy: RateSeriesMeta;
     muni_proxy: RateSeriesMeta;
-  };
+  } | null;
 }
 
 interface Props {
@@ -68,6 +70,18 @@ export default function RatesSpreadWidget({ days = 180 }: Props) {
       <div className="primary-card p-4 md:p-6">
         <h3 className="text-sm font-semibold text-stealth-100">Rates Spread Monitor</h3>
         <p className="mt-2 text-xs text-red-300">Data unavailable right now.</p>
+      </div>
+    );
+  }
+
+  if (data.status === "unavailable" || !data.series_meta) {
+    return (
+      <div className="primary-card p-4 md:p-6">
+        <h3 className="text-sm font-semibold text-stealth-100">Rates Spread Monitor</h3>
+        <p className="mt-2 text-xs text-stealth-300">
+          Direct Fed/CD/Muni series are unavailable for the selected range. Proxy fallback series remain hidden by policy.
+        </p>
+        {data.reason && <p className="mt-1 text-[11px] text-stealth-500">Reason: {data.reason}</p>}
       </div>
     );
   }
