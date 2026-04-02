@@ -13,6 +13,7 @@ export default function Topbar() {
   ];
 
   const toolsItems = [
+    { path: "/tools/experiments", label: "Experiments" },
     { path: "/tools/recap", label: "Recap" },
     { path: "/market-map", label: "Market Map" },
     { path: "/sector-projections", label: "Sector Projections" },
@@ -22,7 +23,9 @@ export default function Topbar() {
     { path: "/news", label: "News" },
   ];
 
-  const isToolsActive = toolsItems.some((item) => location.pathname === item.path);
+  const isToolsActive = toolsItems.some((item) =>
+    location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+  );
 
   return (
     <div className="sticky top-0 z-50 w-full border-b border-stealth-700/80 bg-stealth-950/78 backdrop-blur-xl">
@@ -80,7 +83,8 @@ export default function Topbar() {
               <div className="absolute right-0 top-full pt-2">
                 <div className="w-56 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/95 shadow-[0_24px_80px_-40px_rgba(0,0,0,0.95)] backdrop-blur-xl">
                   {toolsItems.map((item) => {
-                    const isActive = location.pathname === item.path;
+                    const isActive =
+                      location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
                     return (
                       <Link
                         key={item.path}
@@ -122,7 +126,8 @@ export default function Topbar() {
       {mobileMenuOpen && (
         <nav className="border-t border-stealth-700 bg-stealth-900/96 backdrop-blur-xl lg:hidden">
           {navItems.map((item) => {
-            const isActive = location.pathname === item.path;
+            const isActive =
+              location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
             return (
               <Link
                 key={item.path}
