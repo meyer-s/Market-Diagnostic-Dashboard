@@ -672,10 +672,31 @@ def _resolve_weather_analysis_window(
     days: int,
     window: int,
     calendar_year: Optional[int],
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     today: Optional[date] = None,
 ) -> Tuple[date, date, date]:
     resolved_today = today or datetime.utcnow().date()
     warmup_days = max(window, 120)
+
+    if start_date is not None or end_date is not None:
+        if not start_date or not end_date:
+            raise ValueError("start_date and end_date must both be provided")
+
+        parsed_start = _parse_iso_date(start_date)
+        parsed_end = _parse_iso_date(end_date)
+        if parsed_start is None or parsed_end is None:
+            raise ValueError("start_date and end_date must be valid ISO dates")
+
+        analysis_start = parsed_start.date()
+        analysis_end = parsed_end.date()
+        if analysis_start > analysis_end:
+            raise ValueError("start_date must be on or before end_date")
+        if analysis_end > resolved_today:
+            raise ValueError("end_date cannot be in the future")
+
+        fetch_start = analysis_start - timedelta(days=warmup_days)
+        return analysis_start, analysis_end, fetch_start
 
     if calendar_year is not None:
         if calendar_year < 2000:
@@ -698,11 +719,19 @@ async def get_weather_market_correlation(
     days: int = 365,
     window: int = 30,
     calendar_year: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     granularity: str = "auto",
     force_refresh: bool = False,
 ) -> Dict[str, Any]:
     resolved_granularity = _resolve_weather_granularity(days, granularity)
-    analysis_start, analysis_end, fetch_start = _resolve_weather_analysis_window(days, window, calendar_year)
+    analysis_start, analysis_end, fetch_start = _resolve_weather_analysis_window(
+        days,
+        window,
+        calendar_year,
+        start_date=start_date,
+        end_date=end_date,
+    )
     cache_key = f"weather:{days}:{window}:{resolved_granularity}:{analysis_start.isoformat()}:{analysis_end.isoformat()}"
     if not force_refresh:
         cached = _cache_get(cache_key)

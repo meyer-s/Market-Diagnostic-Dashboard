@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   Brush,
   CartesianGrid,
@@ -15,6 +15,21 @@ import { useApi } from "../../hooks/useApi";
 
 type DaysPreset = 365 | 1825 | 9490;
 type WindowPreset = 1 | 5 | 10 | 30 | 60 | 80 | 150;
+type WeatherGranularity = "day" | "week" | "month";
+type DetailOverride = {
+  startDate: string;
+  endDate: string;
+  granularity: WeatherGranularity;
+};
+type ChartPoint = {
+  date: string;
+  corr: number | null;
+  rollingSignificant: boolean;
+  returnScaled: number | null;
+  returnRaw: number;
+  signalScaled: number | null;
+  signalRaw: number | null | undefined;
+};
 const DEFAULT_YEAR_SELECTION = new Date().getUTCFullYear() - 1;
 const YEAR_OPTIONS = Array.from({ length: 26 }, (_, index) => DEFAULT_YEAR_SELECTION - index);
 
@@ -23,6 +38,8 @@ const WINDOW_OPTIONS_BY_DAYS: Record<DaysPreset, WindowPreset[]> = {
   1825: [10, 30, 60],
   9490: [60, 80, 150],
 };
+
+const DAYS_PRESET_ORDER: DaysPreset[] = [365, 1825, 9490];
 
 type WeatherHistoryPoint = {
   date: string;
@@ -76,7 +93,7 @@ type WeatherPayload = {
   calendar_year?: number | null;
   period_start?: string;
   period_end?: string;
-  display_granularity: "day" | "week" | "month";
+  display_granularity: WeatherGranularity;
   raw_history_points: number;
   display_history_points: number;
   source: {
@@ -138,57 +155,6 @@ const weatherSignalOptions: Array<{
     color: "#a78bfa",
   },
 ];
-
-const getRelationshipTone = (label: string, corr: number | null | undefined, significant: boolean | undefined) => {
-  if (corr === null || corr === undefined) {
-    return {
-      title: "Not enough signal yet",
-      body: `This window does not show a stable relationship between ${label.toLowerCase()} and market direction.`,
-    };
-  }
-  if (!significant || Math.abs(corr) < 0.15) {
-    return {
-      title: "Mostly noise right now",
-      body: `${label} and market direction are brushing past each other, but not in a durable way.`,
-    };
-  }
-  if (corr > 0) {
-    return {
-      title: `${label} has lined up with greener sessions`,
-      body: `In the recent window, higher ${label.toLowerCase()} readings have been showing up alongside more positive S&P days.`,
-    };
-  }
-  return {
-    title: `Lower ${label.toLowerCase()} has lined up with greener sessions`,
-    body: `In the recent window, lower ${label.toLowerCase()} readings have been showing up alongside more positive S&P days.`,
-  };
-};
-
-const getSignalContext = (label: string, normalizedValue: number | null | undefined) => {
-  if (normalizedValue === null || normalizedValue === undefined) {
-    return `${label} is unavailable in the current view.`;
-  }
-  if (normalizedValue >= 75) {
-    return `${label} is running near the top of its recent range.`;
-  }
-  if (normalizedValue <= 25) {
-    return `${label} is sitting near the low end of its recent range.`;
-  }
-  return `${label} is sitting near the middle of its recent range.`;
-};
-
-const getHistoricalContext = (label: string, corr: CorrelationSummary) => {
-  if (corr.pearson_r === null || corr.p_value === null) {
-    return "There is not enough overlap yet to say much about the broader pattern.";
-  }
-  if (!corr.significant || Math.abs(corr.pearson_r) < 0.15) {
-    return "Across the selected history, the broader pattern still looks weak and inconsistent.";
-  }
-  if (corr.pearson_r > 0) {
-    return `Across the selected history, higher ${label.toLowerCase()} readings have tended to coincide with more positive same-session returns.`;
-  }
-  return `Across the selected history, lower ${label.toLowerCase()} readings have tended to coincide with more positive same-session returns.`;
-};
 
 const buildCorrelationZones = (
   points: Array<{ date: string; corr: number | null; rollingSignificant: boolean }>
@@ -261,6 +227,87 @@ const getBucketLabel = (granularity: WeatherPayload["display_granularity"] | und
   return "Monthly buckets";
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const getRangeDays = (startDate: string, endDate: string) => {
+  const startMs = new Date(`${startDate}T00:00:00Z`).getTime();
+  const endMs = new Date(`${endDate}T00:00:00Z`).getTime();
+  return Math.max(1, Math.round((endMs - startMs) / DAY_MS) + 1);
+};
+
+const getOverrideGranularity = (rangeDays: number): WeatherGranularity => {
+  if (rangeDays <= 540) return "day";
+  if (rangeDays <= 1825) return "week";
+  return "month";
+};
+
+const getHorizonPreset = (rangeDays: number): DaysPreset => {
+  if (rangeDays <= 365) return 365;
+  if (rangeDays <= 1825) return 1825;
+  return 9490;
+};
+
+const getHorizonLabel = (daysPreset: DaysPreset) => {
+  if (daysPreset === 365) return "1y";
+  if (daysPreset === 1825) return "5y";
+  return "26y";
+};
+
+const getClosestWindowOption = (currentWindow: WindowPreset, options: WindowPreset[]) => {
+  return options.reduce((closest, candidate) => {
+    return Math.abs(candidate - currentWindow) < Math.abs(closest - currentWindow) ? candidate : closest;
+  }, options[0]);
+};
+
+const formatRangeLabel = (startDate: string, endDate: string) => {
+  const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return `${formatter.format(new Date(`${startDate}T00:00:00Z`))} - ${formatter.format(new Date(`${endDate}T00:00:00Z`))}`;
+};
+
+type WeatherBrushTravellerProps = {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+};
+
+const WeatherBrushTraveller = ({
+  x = 0,
+  y = 0,
+  width = 14,
+  height = 34,
+}: WeatherBrushTravellerProps) => {
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y + 2}
+        width={width}
+        height={Math.max(0, height - 4)}
+        rx={height / 2}
+        fill="rgba(15, 23, 42, 0.94)"
+        stroke="rgba(51, 65, 85, 0.95)"
+      />
+      <circle
+        cx={centerX}
+        cy={centerY}
+        r={Math.max(6, width * 0.66)}
+        fill="rgba(226, 232, 240, 0.08)"
+      />
+      <circle
+        cx={centerX}
+        cy={centerY}
+        r={Math.max(4, width * 0.32)}
+        fill="rgba(241, 245, 249, 0.9)"
+        stroke="rgba(255, 255, 255, 0.44)"
+      />
+    </g>
+  );
+};
+
 const selectorRailClass = "rounded-2xl border border-stealth-800 bg-stealth-950/55 p-1 shadow-[inset_0_1px_0_rgba(148,163,184,0.04)]";
 
 const getSelectorButtonClass = (active: boolean) =>
@@ -270,12 +317,29 @@ const getSelectorButtonClass = (active: boolean) =>
       : "border-transparent bg-transparent text-stealth-500 hover:border-stealth-800 hover:bg-stealth-900/45 hover:text-stealth-200"
   }`;
 
+const buildChartData = (payload: WeatherPayload | null | undefined, selectedSignal: WeatherSignalOption): ChartPoint[] => {
+  const history = payload?.history ?? [];
+  const returnScaled = normalizeCenteredSeries(history.map((point) => point.sp500_return_pct));
+  const signalScaled = normalizeSeries(history.map((point) => point[selectedSignal] as number | null | undefined));
+
+  return history.map((point, index) => ({
+    date: point.date,
+    corr: point.signal_correlations?.[selectedSignal]?.rolling_corr ?? null,
+    rollingSignificant: Boolean(point.signal_correlations?.[selectedSignal]?.rolling_significant),
+    returnScaled: returnScaled[index],
+    returnRaw: point.sp500_return_pct,
+    signalScaled: signalScaled[index],
+    signalRaw: point[selectedSignal] as number | null | undefined,
+  }));
+};
+
 export default function WeatherResearch() {
   const [days, setDays] = useState<DaysPreset>(9490);
   const [window, setWindow] = useState<WindowPreset>(60);
   const [selectedYear, setSelectedYear] = useState<number>(DEFAULT_YEAR_SELECTION);
   const [selectedSignal, setSelectedSignal] = useState<WeatherSignalOption>("weather_stress_score");
-  const windowOptions = WINDOW_OPTIONS_BY_DAYS[days];
+  const [brushSelection, setBrushSelection] = useState<{ startIndex: number; endIndex: number } | null>(null);
+  const [detailOverride, setDetailOverride] = useState<DetailOverride | null>(null);
 
   const handleDaysChange = (nextDays: DaysPreset) => {
     setDays(nextDays);
@@ -284,42 +348,117 @@ export default function WeatherResearch() {
         ? currentWindow
         : WINDOW_OPTIONS_BY_DAYS[nextDays][0]
     ));
+    setBrushSelection(null);
+    setDetailOverride(null);
   };
 
-  const endpoint = `/research/weather-market?days=${days}&window=${window}&granularity=${days === 365 ? "day" : "auto"}${days === 365 ? `&calendar_year=${selectedYear}` : ""}`;
-  const { data, loading, error } = useApi<WeatherPayload>(endpoint);
+  const baseEndpoint = `/research/weather-market?days=${days}&window=${window}&granularity=${days === 365 ? "day" : "auto"}${days === 365 ? `&calendar_year=${selectedYear}` : ""}`;
+  const { data: baseData, loading: baseLoading, error: baseError } = useApi<WeatherPayload>(baseEndpoint);
+  const detailDays = detailOverride ? getRangeDays(detailOverride.startDate, detailOverride.endDate) : null;
+  const detailEndpoint = detailOverride
+    ? `/research/weather-market?days=${detailDays}&window=${window}&granularity=${detailOverride.granularity}&start_date=${detailOverride.startDate}&end_date=${detailOverride.endDate}`
+    : "";
+  const { data: detailData, loading: detailLoading, error: detailError } = useApi<WeatherPayload>(detailEndpoint);
+  const data = detailData ?? baseData;
+  const loading = baseLoading && !baseData;
+  const error = baseError;
+  const activeRangeDays = data?.period_start && data?.period_end ? getRangeDays(data.period_start, data.period_end) : days;
+  const activeDaysPreset = getHorizonPreset(activeRangeDays);
+  const activeHorizonLabel = getHorizonLabel(activeDaysPreset);
+  const baseHorizonLabel = getHorizonLabel(days);
+  const zoomedView = Boolean(detailOverride);
+  const windowOptions = WINDOW_OPTIONS_BY_DAYS[activeDaysPreset];
 
-  const chartData = useMemo(
-    () => {
-      const history = data?.history ?? [];
-      const returnScaled = normalizeCenteredSeries(history.map((point) => point.sp500_return_pct));
-      const signalScaled = normalizeSeries(history.map((point) => point[selectedSignal] as number | null | undefined));
+  useEffect(() => {
+    setBrushSelection(null);
+    setDetailOverride(null);
+  }, [selectedYear]);
 
-      return history.map((point, index) => ({
-        date: point.date,
-        corr: point.signal_correlations?.[selectedSignal]?.rolling_corr ?? null,
-        rollingSignificant: Boolean(point.signal_correlations?.[selectedSignal]?.rolling_significant),
-        returnScaled: returnScaled[index],
-        returnRaw: point.sp500_return_pct,
-        signalScaled: signalScaled[index],
-        signalRaw: point[selectedSignal] as number | null | undefined,
-      }));
-    },
-    [data, selectedSignal]
-  );
+  useEffect(() => {
+    setWindow((currentWindow) => (
+      windowOptions.includes(currentWindow)
+        ? currentWindow
+        : getClosestWindowOption(currentWindow, windowOptions)
+    ));
+  }, [windowOptions]);
+
+  useEffect(() => {
+    if (!brushSelection || !baseData?.history?.length) return;
+
+    const timer = globalThis.setTimeout(() => {
+      const history = baseData.history;
+      const startIndex = Math.max(0, Math.min(brushSelection.startIndex, history.length - 1));
+      const endIndex = Math.max(startIndex, Math.min(brushSelection.endIndex, history.length - 1));
+
+      if (startIndex === 0 && endIndex >= history.length - 1) {
+        if (detailOverride) {
+          setDetailOverride(null);
+        }
+        setBrushSelection(null);
+        return;
+      }
+
+      const startDate = history[startIndex]?.date;
+      const endDate = history[endIndex]?.date;
+      if (!startDate || !endDate) {
+        setBrushSelection(null);
+        return;
+      }
+
+      const rangeDays = getRangeDays(startDate, endDate);
+      const nextGranularity = getOverrideGranularity(rangeDays);
+      const currentStart = detailOverride?.startDate ?? baseData.period_start ?? history[0]?.date;
+      const currentEnd = detailOverride?.endDate ?? baseData.period_end ?? history[history.length - 1]?.date;
+
+      if (startDate === currentStart && endDate === currentEnd) {
+        if (detailOverride) {
+          setDetailOverride(null);
+        }
+        setBrushSelection(null);
+        return;
+      }
+
+      if (!detailOverride && data?.display_granularity === nextGranularity) {
+        setBrushSelection(null);
+        return;
+      }
+
+      if (
+        detailOverride &&
+        detailOverride.startDate === startDate &&
+        detailOverride.endDate === endDate &&
+        detailOverride.granularity === nextGranularity
+      ) {
+        setBrushSelection(null);
+        return;
+      }
+
+      setDetailOverride({ startDate, endDate, granularity: nextGranularity });
+      setBrushSelection(null);
+    }, 250);
+
+    return () => globalThis.clearTimeout(timer);
+  }, [baseData, brushSelection, data, detailOverride]);
+
+  const chartData = useMemo(() => buildChartData(data, selectedSignal), [data, selectedSignal]);
+  const baseChartData = useMemo(() => buildChartData(baseData, selectedSignal), [baseData, selectedSignal]);
   const deferredChartData = useDeferredValue(chartData);
+  const deferredBaseChartData = useDeferredValue(baseChartData);
   const selectedSignalMeta = weatherSignalOptions.find((option) => option.key === selectedSignal) ?? weatherSignalOptions[0];
-  const latestSignalNormalized = deferredChartData.length ? deferredChartData[deferredChartData.length - 1]?.signalScaled : null;
-  const latestSelectedCorrelation = data?.latest?.signal_correlations?.[selectedSignal];
-  const relationshipTone = getRelationshipTone(selectedSignalMeta.label, latestSelectedCorrelation?.rolling_corr ?? null, latestSelectedCorrelation?.rolling_significant);
   const correlationZones = useMemo(() => buildCorrelationZones(deferredChartData), [deferredChartData]);
   const bucketLabel = getBucketLabel(data?.display_granularity);
-  const historicalCorrelation = data?.signal_correlations?.[selectedSignal]?.same_day_direction ?? {
-    pearson_r: null,
-    p_value: null,
-    samples: 0,
-    significant: false,
-  };
+  const brushRange = useMemo(() => {
+    if (!baseData?.history?.length) return { startIndex: 0, endIndex: 0 };
+
+    const history = baseData.history;
+    const startDate = detailOverride?.startDate ?? baseData.period_start ?? history[0]?.date;
+    const endDate = detailOverride?.endDate ?? baseData.period_end ?? history[history.length - 1]?.date;
+    const startIndex = Math.max(0, history.findIndex((point) => point.date === startDate));
+    const endIndexRaw = history.findIndex((point) => point.date === endDate);
+    const endIndex = endIndexRaw >= 0 ? endIndexRaw : history.length - 1;
+
+    return { startIndex, endIndex };
+  }, [baseData, detailOverride]);
 
   return (
     <div className="space-y-4 p-4 text-stealth-100 md:space-y-6 md:p-6">
@@ -331,19 +470,42 @@ export default function WeatherResearch() {
           </p>
           {data && (
             <p className="mt-2 text-xs text-stealth-500">
-              Weather: {data.source.weather} | Market: {data.source.market} | View: {bucketLabel}{days === 365 ? ` | Year: ${selectedYear}` : ""}
+              Weather: {data.source.weather} | Market: {data.source.market} | View: {bucketLabel}{days === 365 ? ` | Year: ${selectedYear}` : ""}{zoomedView ? ` | Zoom horizon: ${activeHorizonLabel}` : ""}
             </p>
+          )}
+          {detailOverride && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-stealth-400">
+              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1">
+                Auto detail: {getBucketLabel(detailOverride.granularity)} | {formatRangeLabel(detailOverride.startDate, detailOverride.endDate)}
+              </span>
+              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1">
+                Viewing {activeHorizonLabel} inside {baseHorizonLabel}
+              </span>
+              {detailLoading && <span className="text-stealth-500">Refreshing detail slice...</span>}
+              <button
+                onClick={() => {
+                  setBrushSelection(null);
+                  setDetailOverride(null);
+                }}
+                className="text-stealth-400 transition hover:text-stealth-200"
+              >
+                Reset detail
+              </button>
+            </div>
+          )}
+          {!detailOverride && detailError && (
+            <div className="mt-2 text-xs text-amber-300">Detail override unavailable. Showing the base view instead.</div>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
           <div className={selectorRailClass}>
-            {[365, 1825, 9490].map((p) => (
+            {DAYS_PRESET_ORDER.map((p) => (
               <button
                 key={p}
                 onClick={() => handleDaysChange(p as DaysPreset)}
-                className={getSelectorButtonClass(days === p)}
+                className={getSelectorButtonClass(activeDaysPreset === p)}
               >
-                {p === 365 ? "1y" : p === 1825 ? "5y" : "26y"}
+                {getHorizonLabel(p)}
               </button>
             ))}
           </div>
@@ -399,29 +561,11 @@ export default function WeatherResearch() {
 
       {data && (
         <>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-4 text-sm text-stealth-200">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Current read</div>
-              <div className="mt-2 text-base font-medium text-stealth-100">{relationshipTone.title}</div>
-              <div className="mt-2 leading-relaxed text-stealth-400">{relationshipTone.body}</div>
-            </div>
-            <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-4 text-sm text-stealth-200">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Weather context</div>
-              <div className="mt-2 text-base font-medium text-stealth-100">{selectedSignalMeta.label}</div>
-              <div className="mt-2 leading-relaxed text-stealth-400">{getSignalContext(selectedSignalMeta.label, latestSignalNormalized)}</div>
-            </div>
-            <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-4 text-sm text-stealth-200">
-              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Bigger picture</div>
-              <div className="mt-2 text-base font-medium text-stealth-100">Selected window</div>
-              <div className="mt-2 leading-relaxed text-stealth-400">{getHistoricalContext(selectedSignalMeta.label, historicalCorrelation)}</div>
-            </div>
-          </div>
-
           <div className="rounded-2xl border border-stealth-700 bg-stealth-900/50 p-4">
             <div className="mb-2 text-xs text-stealth-400">
-              Drag the lower brush handles to zoom. Green shading marks windows where lower {selectedSignalMeta.label.toLowerCase()} readings have been lining up with greener sessions; red shading marks windows where higher {selectedSignalMeta.label.toLowerCase()} readings have been lining up with greener sessions.
+              The main chart tracks the active zoom slice while the lower overview strip keeps the full horizon in view. The rolling window presets now adapt to the visible horizon automatically. Green shading marks windows where lower {selectedSignalMeta.label.toLowerCase()} readings have been lining up with greener sessions; red shading marks windows where higher {selectedSignalMeta.label.toLowerCase()} readings have been lining up with greener sessions.
             </div>
-            <div className="h-[520px]">
+            <div className="weather-research-chart h-[520px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={deferredChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.22)" />
@@ -487,12 +631,49 @@ export default function WeatherResearch() {
                     isAnimationActive={false}
                     connectNulls
                   />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="weather-research-chart mt-4 h-[120px] rounded-2xl border border-stealth-800 bg-stealth-950/45 px-2 py-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={deferredBaseChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.12)" vertical={false} />
+                  <XAxis dataKey="date" hide />
+                  <YAxis hide domain={[-100, 100]} />
+                  <Line
+                    type="monotone"
+                    dataKey="returnScaled"
+                    stroke="rgba(34,197,94,0.55)"
+                    dot={false}
+                    strokeWidth={1.1}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="signalScaled"
+                    stroke={selectedSignalMeta.color}
+                    strokeOpacity={0.55}
+                    dot={false}
+                    strokeWidth={1.05}
+                    strokeDasharray={selectedSignalMeta.strokeDasharray}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
                   <Brush
                     dataKey="date"
-                    height={26}
-                    stroke="#64748b"
-                    travellerWidth={8}
+                    height={34}
+                    fill="rgba(2, 6, 23, 0.92)"
+                    stroke="rgba(148, 163, 184, 0.78)"
+                    travellerWidth={14}
+                    traveller={<WeatherBrushTraveller />}
+                    startIndex={brushRange.startIndex}
+                    endIndex={brushRange.endIndex}
                     tickFormatter={(value: string) => value.slice(0, 7)}
+                    onChange={(range) => {
+                      if (typeof range?.startIndex === "number" && typeof range?.endIndex === "number") {
+                        setBrushSelection({ startIndex: range.startIndex, endIndex: range.endIndex });
+                      }
+                    }}
                   />
                 </LineChart>
               </ResponsiveContainer>

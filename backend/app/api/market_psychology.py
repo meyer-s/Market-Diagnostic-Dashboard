@@ -11,8 +11,10 @@ router = APIRouter(prefix="/research", tags=["Research"])
 @router.get("/weather-market")
 async def weather_market(
     days: int = Query(365, ge=90, le=12000),
-    window: int = Query(30, ge=20, le=120),
+    window: int = Query(30, ge=1, le=180),
     calendar_year: int | None = Query(None, ge=2000, le=datetime.utcnow().year),
+    start_date: str | None = Query(None, description="Optional ISO start date override for an exact visible-range fetch."),
+    end_date: str | None = Query(None, description="Optional ISO end date override for an exact visible-range fetch."),
     granularity: str = Query("auto", description="History granularity: auto, day, week, or month."),
     force_refresh: bool = Query(False, description="Bypass cache and recompute payload."),
 ):
@@ -21,6 +23,8 @@ async def weather_market(
             days=days,
             window=window,
             calendar_year=calendar_year,
+            start_date=start_date,
+            end_date=end_date,
             granularity=granularity,
             force_refresh=force_refresh,
         )

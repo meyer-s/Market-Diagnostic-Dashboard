@@ -170,3 +170,18 @@ def test_resolve_weather_analysis_window_for_calendar_year():
     assert analysis_start == date(2024, 1, 1)
     assert analysis_end == date(2024, 12, 31)
     assert fetch_start == date(2023, 9, 3)
+
+
+def test_resolve_weather_analysis_window_for_explicit_dates():
+    analysis_start, analysis_end, fetch_start = mp._resolve_weather_analysis_window(
+        days=365,
+        window=5,
+        calendar_year=None,
+        start_date="2024-03-01",
+        end_date="2024-05-15",
+        today=date(2026, 4, 2),
+    )
+
+    assert analysis_start == date(2024, 3, 1)
+    assert analysis_end == date(2024, 5, 15)
+    assert fetch_start == date(2023, 11, 2)

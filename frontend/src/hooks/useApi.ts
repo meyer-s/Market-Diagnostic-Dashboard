@@ -29,7 +29,12 @@ export function useApi<T>(endpoint: string) {
   useEffect(() => {
     if (endpoint) {
       fetchData();
+      return;
     }
+
+    setData(null);
+    setLoading(false);
+    setError(null);
   }, [endpoint, refetchTrigger]);
 
   const refetch = () => {
