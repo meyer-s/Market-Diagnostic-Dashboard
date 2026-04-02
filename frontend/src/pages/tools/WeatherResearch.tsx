@@ -14,6 +14,13 @@ import {
 import { useApi } from "../../hooks/useApi";
 
 type DaysPreset = 365 | 1825 | 9490;
+type WindowPreset = 1 | 5 | 10 | 30 | 60 | 80 | 150;
+
+const WINDOW_OPTIONS_BY_DAYS: Record<DaysPreset, WindowPreset[]> = {
+  365: [1, 5, 10],
+  1825: [10, 30, 60],
+  9490: [60, 80, 150],
+};
 
 type WeatherHistoryPoint = {
   date: string;
@@ -260,8 +267,18 @@ const getSelectorButtonClass = (active: boolean) =>
 
 export default function WeatherResearch() {
   const [days, setDays] = useState<DaysPreset>(9490);
-  const [window, setWindow] = useState<30 | 60 | 90>(60);
+  const [window, setWindow] = useState<WindowPreset>(60);
   const [selectedSignal, setSelectedSignal] = useState<WeatherSignalOption>("weather_stress_score");
+  const windowOptions = WINDOW_OPTIONS_BY_DAYS[days];
+
+  const handleDaysChange = (nextDays: DaysPreset) => {
+    setDays(nextDays);
+    setWindow((currentWindow) => (
+      WINDOW_OPTIONS_BY_DAYS[nextDays].includes(currentWindow)
+        ? currentWindow
+        : WINDOW_OPTIONS_BY_DAYS[nextDays][0]
+    ));
+  };
 
   const endpoint = `/research/weather-market?days=${days}&window=${window}&granularity=auto`;
   const { data, loading, error } = useApi<WeatherPayload>(endpoint);
@@ -317,7 +334,7 @@ export default function WeatherResearch() {
             {[365, 1825, 9490].map((p) => (
               <button
                 key={p}
-                onClick={() => setDays(p as DaysPreset)}
+                onClick={() => handleDaysChange(p as DaysPreset)}
                 className={getSelectorButtonClass(days === p)}
               >
                 {p === 365 ? "1y" : p === 1825 ? "5y" : "26y"}
@@ -325,10 +342,10 @@ export default function WeatherResearch() {
             ))}
           </div>
           <div className={selectorRailClass}>
-            {[30, 60, 90].map((w) => (
+            {windowOptions.map((w) => (
               <button
                 key={w}
-                onClick={() => setWindow(w as 30 | 60 | 90)}
+                onClick={() => setWindow(w)}
                 className={getSelectorButtonClass(window === w)}
               >
                 {w}d window

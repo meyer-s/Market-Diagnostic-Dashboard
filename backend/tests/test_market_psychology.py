@@ -143,3 +143,15 @@ def test_pearson_summary_optional_ignores_missing_points():
 
     assert summary["pearson_r"] == 1.0
     assert summary["samples"] == 3
+
+
+def test_rolling_correlation_allows_small_valid_windows():
+    points = mp._rolling_correlation(
+        ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+        [1.0, 2.0, 3.0, 4.0, 5.0],
+        [2.0, 4.0, 6.0, 8.0, 10.0],
+        window=5,
+    )
+
+    assert points[-1]["rolling_corr"] == 1.0
+    assert points[-1]["significant"] is True

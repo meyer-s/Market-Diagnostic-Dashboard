@@ -250,6 +250,7 @@ def _rolling_correlation(
     points: List[Dict[str, Any]] = []
     if len(dates) != len(x) or len(dates) != len(y):
         return points
+    effective_min_samples = min(min_samples, max(window, 3))
 
     for idx in range(len(dates)):
         if idx + 1 < window:
@@ -265,7 +266,7 @@ def _rolling_correlation(
 
         x_window = x[idx - window + 1 : idx + 1]
         y_window = y[idx - window + 1 : idx + 1]
-        corr = _pearson_summary(x_window, y_window, min_samples=min_samples)
+        corr = _pearson_summary(x_window, y_window, min_samples=effective_min_samples)
 
         points.append(
             {
@@ -289,6 +290,7 @@ def _rolling_correlation_optional(
     points: List[Dict[str, Any]] = []
     if len(dates) != len(x) or len(dates) != len(y):
         return points
+    effective_min_samples = min(min_samples, max(window, 3))
 
     for idx in range(len(dates)):
         if idx + 1 < window:
@@ -304,7 +306,7 @@ def _rolling_correlation_optional(
 
         x_window = x[idx - window + 1 : idx + 1]
         y_window = y[idx - window + 1 : idx + 1]
-        corr = _pearson_summary_optional(x_window, y_window, min_samples=min_samples)
+        corr = _pearson_summary_optional(x_window, y_window, min_samples=effective_min_samples)
 
         points.append(
             {
