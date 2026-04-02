@@ -194,6 +194,20 @@ def _forward_fill_lookup(dates: Sequence[str], raw: Dict[str, float]) -> List[Op
     return filled
 
 
+def _chunk_date_ranges(start_date: str, end_date: str, chunk_days: int = 1825) -> List[Tuple[str, str]]:
+    start = datetime.fromisoformat(start_date).date()
+    end = datetime.fromisoformat(end_date).date()
+    ranges: List[Tuple[str, str]] = []
+
+    cursor = start
+    while cursor <= end:
+        chunk_end = min(end, cursor + timedelta(days=chunk_days - 1))
+        ranges.append((cursor.isoformat(), chunk_end.isoformat()))
+        cursor = chunk_end + timedelta(days=1)
+
+    return ranges
+
+
 async def _fetch_sp500_series(start_date: str, end_date: str) -> Tuple[Dict[str, float], str]:
     fred = FredClient()
     source = "FRED SP500"
@@ -255,39 +269,61 @@ async def _fetch_sp500_series(start_date: str, end_date: str) -> Tuple[Dict[str,
 
 
 async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dict[str, Any]]:
-    params = {
-        "latitude": NYC_LAT,
-        "longitude": NYC_LON,
-        "start_date": start_date,
-        "end_date": end_date,
-        "daily": "pressure_msl_mean,temperature_2m_mean,precipitation_sum,wind_speed_10m_max",
-        "timezone": "America/New_York",
-    }
+    all_rows: List[Dict[str, Any]] = []
 
-    async with httpx.AsyncClient(timeout=45) as client:
-        response = await client.get(OPEN_METEO_ARCHIVE_URL, params=params)
-        response.raise_for_status()
-        payload = response.json()
+    async with httpx.AsyncClient(timeout=60) as client:
+        for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, chunk_days=1825):
+            params = {
+                "latitude": NYC_LAT,
+                "longitude": NYC_LON,
+                "start_date": chunk_start,
+                "end_date": chunk_end,
+                "daily": "pressure_msl_mean,temperature_2m_mean,precipitation_sum,wind_speed_10m_max",
+                "timezone": "America/New_York",
+            }
+            response = await client.get(OPEN_METEO_ARCHIVE_URL, params=params)
+            response.raise_for_status()
+            payload = response.json()
 
-    daily = payload.get("daily") or {}
-    dates = daily.get("time") or []
-    pressure_series = daily.get("pressure_msl_mean") or []
-    temp_series = daily.get("temperature_2m_mean") or []
-    precip_series = daily.get("precipitation_sum") or []
-    wind_series = daily.get("wind_speed_10m_max") or []
+            daily = payload.get("daily") or {}
+            dates = daily.get("time") or []
+            pressure_series = daily.get("pressure_msl_mean") or []
+            temp_series = daily.get("temperature_2m_mean") or []
+            precip_series = daily.get("precipitation_sum") or []
+            wind_series = daily.get("wind_speed_10m_max") or []
+
+            for idx, day in enumerate(dates):
+                avg_pressure = _safe_float(pressure_series[idx]) if idx < len(pressure_series) else None
+                avg_temp = _safe_float(temp_series[idx]) if idx < len(temp_series) else None
+                total_precip = _safe_float(precip_series[idx]) if idx < len(precip_series) else 0.0
+                peak_wind = _safe_float(wind_series[idx]) if idx < len(wind_series) else 0.0
+                if total_precip is None:
+                    total_precip = 0.0
+                if peak_wind is None:
+                    peak_wind = 0.0
+
+                all_rows.append(
+                    {
+                        "date": day,
+                        "pressure_hpa": round(avg_pressure, 3) if avg_pressure is not None else None,
+                        "temp_c": round(avg_temp, 3) if avg_temp is not None else None,
+                        "precip_mm": round(total_precip, 3),
+                        "wind_kmh": round(peak_wind, 3),
+                    }
+                )
+
+    deduped_by_date = {row["date"]: row for row in all_rows}
+    ordered_rows = [deduped_by_date[date] for date in sorted(deduped_by_date.keys())]
 
     rows: List[Dict[str, Any]] = []
     temps: List[float] = []
 
-    for idx, day in enumerate(dates):
-        avg_pressure = _safe_float(pressure_series[idx]) if idx < len(pressure_series) else None
-        avg_temp = _safe_float(temp_series[idx]) if idx < len(temp_series) else None
-        total_precip = _safe_float(precip_series[idx]) if idx < len(precip_series) else 0.0
-        peak_wind = _safe_float(wind_series[idx]) if idx < len(wind_series) else 0.0
-        if total_precip is None:
-            total_precip = 0.0
-        if peak_wind is None:
-            peak_wind = 0.0
+    for row in ordered_rows:
+        day = row["date"]
+        avg_pressure = row["pressure_hpa"]
+        avg_temp = row["temp_c"]
+        total_precip = row["precip_mm"]
+        peak_wind = row["wind_kmh"]
 
         if avg_temp is not None:
             temps.append(avg_temp)
