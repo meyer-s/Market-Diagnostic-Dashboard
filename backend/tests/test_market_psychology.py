@@ -42,6 +42,14 @@ def test_resolve_weather_granularity_auto_thresholds():
     assert mp._resolve_weather_granularity(365 * 10, "auto") == "month"
 
 
+def test_percentile_rank_is_bounded_and_ordered():
+    values = [10.0, 20.0, 30.0, 40.0]
+
+    assert mp._percentile_rank(values, 10.0) == 0.0
+    assert mp._percentile_rank(values, 30.0) > mp._percentile_rank(values, 20.0)
+    assert mp._percentile_rank(values, 40.0) == 100.0
+
+
 def test_aggregate_weather_history_monthly_compacts_points():
     history = [
         {
@@ -49,9 +57,15 @@ def test_aggregate_weather_history_monthly_compacts_points():
             "sp500_return_pct": 1.0,
             "sp500_abs_return_pct": 1.0,
             "pressure_hpa": 1000.0,
+            "pressure_change_hpa": 3.0,
             "temp_anomaly_c": 2.0,
             "precip_mm": 1.0,
             "wind_kmh": 10.0,
+            "pressure_shift_score": 0.5,
+            "precipitation_stress_score": 0.1,
+            "wind_stress_score": 0.2,
+            "temperature_stress_score": 0.3,
+            "weather_stress_score": 0.1,
             "weather_disruption_index": 0.1,
             "rolling_corr": 0.2,
             "rolling_p_value": 0.04,
@@ -62,9 +76,15 @@ def test_aggregate_weather_history_monthly_compacts_points():
             "sp500_return_pct": -1.0,
             "sp500_abs_return_pct": 1.0,
             "pressure_hpa": 1010.0,
+            "pressure_change_hpa": 5.0,
             "temp_anomaly_c": 4.0,
             "precip_mm": 2.0,
             "wind_kmh": 20.0,
+            "pressure_shift_score": 0.7,
+            "precipitation_stress_score": 0.2,
+            "wind_stress_score": 0.3,
+            "temperature_stress_score": 0.4,
+            "weather_stress_score": 0.3,
             "weather_disruption_index": 0.3,
             "rolling_corr": 0.4,
             "rolling_p_value": 0.03,
@@ -75,9 +95,15 @@ def test_aggregate_weather_history_monthly_compacts_points():
             "sp500_return_pct": 0.5,
             "sp500_abs_return_pct": 0.5,
             "pressure_hpa": 1020.0,
+            "pressure_change_hpa": 2.0,
             "temp_anomaly_c": 3.0,
             "precip_mm": 0.5,
             "wind_kmh": 5.0,
+            "pressure_shift_score": 0.3,
+            "precipitation_stress_score": 0.1,
+            "wind_stress_score": 0.1,
+            "temperature_stress_score": 0.2,
+            "weather_stress_score": 0.2,
             "weather_disruption_index": 0.2,
             "rolling_corr": 0.1,
             "rolling_p_value": 0.2,
@@ -92,4 +118,7 @@ def test_aggregate_weather_history_monthly_compacts_points():
     assert aggregated[0]["period_label"] == "2024-01"
     assert aggregated[0]["precip_mm"] == 3.0
     assert aggregated[0]["wind_kmh"] == 20.0
+    assert aggregated[0]["pressure_change_hpa"] == 4.0
+    assert aggregated[0]["pressure_shift_score"] == 0.6
+    assert aggregated[0]["weather_stress_score"] == 0.2
     assert aggregated[0]["rolling_corr"] == 0.4

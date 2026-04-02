@@ -20,6 +20,74 @@ NYC_LON = -74.0060
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 WEATHER_CACHE_TTL_SECONDS = 15 * 60
 RATES_CACHE_TTL_SECONDS = 15 * 60
+WEATHER_SCORE_COMPONENTS = (
+    {
+        "key": "pressure_shift",
+        "label": "Pressure swing",
+        "description": "Absolute day-over-day move in mean sea-level pressure.",
+        "weight": 0.35,
+        "raw_field": "pressure_change_hpa",
+        "score_field": "pressure_shift_score",
+        "unit": "hPa",
+    },
+    {
+        "key": "precipitation_shock",
+        "label": "Rainfall shock",
+        "description": "Rainfall relative to the full sample history.",
+        "weight": 0.30,
+        "raw_field": "precip_mm",
+        "score_field": "precipitation_stress_score",
+        "unit": "mm",
+    },
+    {
+        "key": "wind_stress",
+        "label": "Wind stress",
+        "description": "Peak daily wind speed relative to the full sample history.",
+        "weight": 0.20,
+        "raw_field": "wind_kmh",
+        "score_field": "wind_stress_score",
+        "unit": "km/h",
+    },
+    {
+        "key": "temperature_departure",
+        "label": "Temperature departure",
+        "description": "Absolute difference versus the seasonal average for the same calendar day.",
+        "weight": 0.15,
+        "raw_field": "temp_anomaly_c",
+        "score_field": "temperature_stress_score",
+        "unit": "C",
+    },
+)
+RATES_SCORE_COMPONENTS = (
+    {
+        "key": "policy_vs_bank_gap",
+        "label": "Policy vs bank CD gap",
+        "description": "Effective fed funds rate minus the bank CD leg used in this study.",
+        "field": "spread_fed_minus_cd",
+        "unit": "pct",
+    },
+    {
+        "key": "bank_vs_muni_gap",
+        "label": "Bank CD vs municipal gap",
+        "description": "Bank CD leg minus the municipal bond leg used in this study.",
+        "field": "spread_cd_minus_muni",
+        "unit": "pct",
+    },
+    {
+        "key": "policy_vs_muni_gap",
+        "label": "Policy vs municipal gap",
+        "description": "Effective fed funds rate minus the municipal bond leg used in this study.",
+        "field": "spread_fed_minus_muni",
+        "unit": "pct",
+    },
+    {
+        "key": "cross_market_dispersion",
+        "label": "Cross-market dispersion percentile",
+        "description": "Percentile rank of the combined adjacent gaps over the selected lookback window.",
+        "field": "spread_regime_score",
+        "unit": "score",
+    },
+)
 
 
 @dataclass
@@ -39,6 +107,7 @@ class SeriesResult:
     source: str
     is_proxy: bool
     values: Dict[str, float]
+    last_observation_date: Optional[str] = None
 
 
 def _cache_get(key: str) -> Optional[Dict[str, Any]]:
@@ -80,6 +149,13 @@ def _resolve_weather_granularity(days: int, granularity: str) -> str:
     return "day"
 
 
+def _calendar_key(date_str: str) -> str:
+    parsed = _parse_iso_date(date_str)
+    if not parsed:
+        return date_str
+    return parsed.strftime("%m-%d")
+
+
 def _safe_float(value: Any) -> Optional[float]:
     if value is None:
         return None
@@ -98,6 +174,16 @@ def _zscore(values: Sequence[float]) -> List[float]:
     if sigma == 0:
         return [0.0 for _ in values]
     return [(x - mu) / sigma for x in values]
+
+
+def _percentile_rank(values: Sequence[float], current_value: float) -> float:
+    if not values or len(values) == 1:
+        return 50.0
+
+    below = sum(1 for value in values if value < current_value)
+    equal = sum(1 for value in values if value == current_value)
+    percentile = ((below + max(equal - 1, 0) * 0.5) / (len(values) - 1)) * 100.0
+    return max(0.0, min(100.0, percentile))
 
 
 def _pearson_summary(x: Sequence[float], y: Sequence[float], min_samples: int = 20) -> Dict[str, Any]:
@@ -196,9 +282,15 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
             "sp500_return_pct": round(bucket["sum_return"] / count, 4),
             "sp500_abs_return_pct": round(bucket["sum_abs_return"] / count, 4),
             "pressure_hpa": round(bucket["sum_pressure"] / pressure_count, 3) if bucket["pressure_count"] else None,
+            "pressure_change_hpa": round(bucket["sum_pressure_change"] / count, 3),
             "temp_anomaly_c": round(bucket["sum_temp_anomaly"] / temp_count, 3) if bucket["temp_count"] else 0.0,
             "precip_mm": round(bucket["sum_precip"], 3) if granularity == "month" else round(bucket["sum_precip"] / count, 3),
             "wind_kmh": round(bucket["max_wind"], 3),
+            "pressure_shift_score": round(bucket["sum_pressure_score"] / count, 4),
+            "precipitation_stress_score": round(bucket["sum_precip_score"] / count, 4),
+            "wind_stress_score": round(bucket["sum_wind_score"] / count, 4),
+            "temperature_stress_score": round(bucket["sum_temp_score"] / count, 4),
+            "weather_stress_score": round(bucket["sum_stress"] / count, 4),
             "weather_disruption_index": round(bucket["sum_disruption"] / count, 4),
             "rolling_corr": bucket["last_rolling_corr"],
             "rolling_p_value": bucket["last_rolling_p_value"],
@@ -217,11 +309,17 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
                 "sum_return": 0.0,
                 "sum_abs_return": 0.0,
                 "sum_pressure": 0.0,
+                "sum_pressure_change": 0.0,
                 "pressure_count": 0,
                 "sum_temp_anomaly": 0.0,
                 "temp_count": 0,
                 "sum_precip": 0.0,
                 "max_wind": 0.0,
+                "sum_pressure_score": 0.0,
+                "sum_precip_score": 0.0,
+                "sum_wind_score": 0.0,
+                "sum_temp_score": 0.0,
+                "sum_stress": 0.0,
                 "sum_disruption": 0.0,
                 "last_rolling_corr": None,
                 "last_rolling_p_value": None,
@@ -236,12 +334,18 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
         if pressure is not None:
             current["sum_pressure"] += pressure
             current["pressure_count"] += 1
+        current["sum_pressure_change"] += point.get("pressure_change_hpa", 0.0) or 0.0
         temp_anomaly = point.get("temp_anomaly_c")
         if temp_anomaly is not None:
             current["sum_temp_anomaly"] += temp_anomaly
             current["temp_count"] += 1
         current["sum_precip"] += point.get("precip_mm", 0.0)
         current["max_wind"] = max(current["max_wind"], point.get("wind_kmh", 0.0) or 0.0)
+        current["sum_pressure_score"] += point.get("pressure_shift_score", 0.0) or 0.0
+        current["sum_precip_score"] += point.get("precipitation_stress_score", 0.0) or 0.0
+        current["sum_wind_score"] += point.get("wind_stress_score", 0.0) or 0.0
+        current["sum_temp_score"] += point.get("temperature_stress_score", 0.0) or 0.0
+        current["sum_stress"] += point.get("weather_stress_score", point.get("weather_disruption_index", 0.0)) or 0.0
         current["sum_disruption"] += point.get("weather_disruption_index", 0.0)
         if point.get("rolling_corr") is not None:
             current["last_rolling_corr"] = point.get("rolling_corr")
@@ -260,18 +364,27 @@ async def _fetch_first_available_fred_series(
     label: str,
     candidates: Sequence[Tuple[str, str, bool]],
     start_date: str,
+    end_date: Optional[str] = None,
+    max_staleness_days: Optional[int] = None,
 ) -> SeriesResult:
     for series_id, source_label, is_proxy in candidates:
         try:
             rows = await fred.fetch_series(series_id, start_date=start_date)
             values = series_to_dict(rows)
             if values:
+                last_observation_date = max(values.keys())
+                if max_staleness_days is not None:
+                    reference = datetime.fromisoformat(end_date).date() if end_date else datetime.utcnow().date()
+                    latest = _parse_iso_date(last_observation_date)
+                    if latest is None or (reference - latest.date()).days > max_staleness_days:
+                        continue
                 return SeriesResult(
                     key=key,
                     label=label,
                     source=source_label,
                     is_proxy=is_proxy,
                     values=values,
+                    last_observation_date=last_observation_date,
                 )
         except FredClientError:
             continue
@@ -416,8 +529,18 @@ async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dic
     deduped_by_date = {row["date"]: row for row in all_rows}
     ordered_rows = [deduped_by_date[date] for date in sorted(deduped_by_date.keys())]
 
+    temp_climatology: Dict[str, float] = {}
+    climatology_buckets: Dict[str, List[float]] = {}
+    for row in ordered_rows:
+        avg_temp = row.get("temp_c")
+        if avg_temp is None:
+            continue
+        climatology_buckets.setdefault(_calendar_key(row["date"]), []).append(avg_temp)
+    for key, values in climatology_buckets.items():
+        temp_climatology[key] = mean(values)
+
     rows: List[Dict[str, Any]] = []
-    temps: List[float] = []
+    previous_pressure: Optional[float] = None
 
     for row in ordered_rows:
         day = row["date"]
@@ -426,16 +549,17 @@ async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dic
         total_precip = row["precip_mm"]
         peak_wind = row["wind_kmh"]
 
-        if avg_temp is not None:
-            temps.append(avg_temp)
-        trailing = temps[-30:] if temps else []
-        temp_baseline = mean(trailing) if trailing else avg_temp
+        temp_baseline = temp_climatology.get(_calendar_key(day), avg_temp)
         temp_anomaly = (avg_temp - temp_baseline) if (avg_temp is not None and temp_baseline is not None) else 0.0
+        pressure_change = abs(avg_pressure - previous_pressure) if (avg_pressure is not None and previous_pressure is not None) else 0.0
+        if avg_pressure is not None:
+            previous_pressure = avg_pressure
 
         rows.append(
             {
                 "date": day,
                 "pressure_hpa": round(avg_pressure, 3) if avg_pressure is not None else None,
+                "pressure_change_hpa": round(float(pressure_change), 3),
                 "temp_c": round(avg_temp, 3) if avg_temp is not None else None,
                 "temp_anomaly_c": round(float(temp_anomaly), 3),
                 "precip_mm": round(total_precip, 3),
@@ -443,12 +567,23 @@ async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dic
             }
         )
 
+    pressure_z = _zscore([row["pressure_change_hpa"] for row in rows])
     precip_z = _zscore([row["precip_mm"] for row in rows])
     wind_z = _zscore([row["wind_kmh"] for row in rows])
     temp_z = _zscore([abs(row["temp_anomaly_c"]) for row in rows])
 
-    for row, z_precip, z_wind, z_temp in zip(rows, precip_z, wind_z, temp_z):
-        disruption = 0.45 * z_precip + 0.35 * z_wind + 0.20 * z_temp
+    for row, z_pressure, z_precip, z_wind, z_temp in zip(rows, pressure_z, precip_z, wind_z, temp_z):
+        disruption = (
+            WEATHER_SCORE_COMPONENTS[0]["weight"] * z_pressure
+            + WEATHER_SCORE_COMPONENTS[1]["weight"] * z_precip
+            + WEATHER_SCORE_COMPONENTS[2]["weight"] * z_wind
+            + WEATHER_SCORE_COMPONENTS[3]["weight"] * z_temp
+        )
+        row["pressure_shift_score"] = round(float(z_pressure), 4)
+        row["precipitation_stress_score"] = round(float(z_precip), 4)
+        row["wind_stress_score"] = round(float(z_wind), 4)
+        row["temperature_stress_score"] = round(float(z_temp), 4)
+        row["weather_stress_score"] = round(disruption, 4)
         row["weather_disruption_index"] = round(disruption, 4)
 
     return rows
@@ -497,7 +632,7 @@ async def get_weather_market_correlation(
         valid_dates.append(common_dates[idx])
         valid_disruptions.append(disruptions[idx])
 
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = today - timedelta(days=days)
     filtered_dates: List[str] = []
     filtered_disruptions: List[float] = []
     filtered_returns: List[float] = []
@@ -505,7 +640,7 @@ async def get_weather_market_correlation(
 
     for date, disruption, ret, abs_ret in zip(valid_dates, valid_disruptions, returns, abs_returns):
         parsed = _parse_iso_date(date)
-        if parsed and parsed >= cutoff:
+        if parsed and parsed.date() >= cutoff:
             filtered_dates.append(date)
             filtered_disruptions.append(disruption)
             filtered_returns.append(ret)
@@ -555,9 +690,15 @@ async def get_weather_market_correlation(
                 "sp500_return_pct": round(ret, 4),
                 "sp500_abs_return_pct": round(abs_ret, 4),
                 "pressure_hpa": row["pressure_hpa"],
+                "pressure_change_hpa": row["pressure_change_hpa"],
                 "temp_anomaly_c": row["temp_anomaly_c"],
                 "precip_mm": row["precip_mm"],
                 "wind_kmh": row["wind_kmh"],
+                "pressure_shift_score": row["pressure_shift_score"],
+                "precipitation_stress_score": row["precipitation_stress_score"],
+                "wind_stress_score": row["wind_stress_score"],
+                "temperature_stress_score": row["temperature_stress_score"],
+                "weather_stress_score": row["weather_stress_score"],
                 "weather_disruption_index": disruption,
                 "rolling_corr": roll.get("rolling_corr"),
                 "rolling_p_value": roll.get("rolling_p_value"),
@@ -579,6 +720,7 @@ async def get_weather_market_correlation(
         "display_granularity": resolved_granularity,
         "raw_history_points": len(history),
         "display_history_points": len(display_history),
+        "score_components": WEATHER_SCORE_COMPONENTS,
         "generated_at": datetime.utcnow().isoformat(),
         "from_cache": False,
         "latest": latest,
@@ -606,39 +748,47 @@ async def get_rates_spread_dashboard(
 
     today = datetime.utcnow().date()
     start_date = (today - timedelta(days=days + 180)).isoformat()
+    end_date = today.isoformat()
 
     fred = FredClient()
     fed_series = await _fetch_first_available_fred_series(
         fred,
         key="fed_rate",
-        label="Fed Policy Rate",
+        label="Effective Fed Funds Rate",
         candidates=_filter_candidates([
             ("DFF", "FRED DFF", False),
         ], allow_proxies=allow_proxies),
         start_date=start_date,
+        end_date=end_date,
+        max_staleness_days=7,
     )
 
     cd_series = await _fetch_first_available_fred_series(
         fred,
         key="cd_proxy",
-        label="CD Yield Proxy",
+        label="3-Month Bank CD Yield",
         candidates=_filter_candidates([
             ("IR3TCD01USM156N", "FRED IR3TCD01USM156N", False),
-            ("TB3MS", "FRED TB3MS (proxy)", True),
+            ("DGS3MO", "FRED DGS3MO (Treasury proxy)", True),
+            ("TB3MS", "FRED TB3MS (Treasury proxy)", True),
         ], allow_proxies=allow_proxies),
         start_date=start_date,
+        end_date=end_date,
+        max_staleness_days=45,
     )
 
     muni_series = await _fetch_first_available_fred_series(
         fred,
         key="muni_proxy",
-        label="Municipal Yield Proxy",
+        label="Long Municipal Bond Yield",
         candidates=_filter_candidates([
-            ("MUNI20Y", "FRED MUNI20Y", False),
-            ("MUNI10Y", "FRED MUNI10Y (proxy)", True),
+            ("M13050USM156NNBR", "FRED M13050USM156NNBR", False),
+            ("M13043USM156NNBR", "FRED M13043USM156NNBR (proxy)", True),
             ("AAA", "FRED AAA (corporate proxy)", True),
         ], allow_proxies=allow_proxies),
         start_date=start_date,
+        end_date=end_date,
+        max_staleness_days=45,
     )
 
     all_dates = sorted(
@@ -651,19 +801,20 @@ async def get_rates_spread_dashboard(
     cd_filled = _forward_fill_lookup(all_dates, cd_series.values)
     muni_filled = _forward_fill_lookup(all_dates, muni_series.values)
 
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = today - timedelta(days=days)
     history: List[Dict[str, Any]] = []
 
     for date, fed, cd, muni in zip(all_dates, fed_filled, cd_filled, muni_filled):
         if fed is None or cd is None or muni is None:
             continue
         parsed = _parse_iso_date(date)
-        if not parsed or parsed < cutoff:
+        if not parsed or parsed.date() < cutoff:
             continue
 
         fed_cd_spread = fed - cd
         cd_muni_spread = cd - muni
         fed_muni_spread = fed - muni
+        adjacent_dispersion_bps = (abs(fed_cd_spread) + abs(cd_muni_spread)) * 100.0
 
         history.append(
             {
@@ -674,11 +825,13 @@ async def get_rates_spread_dashboard(
                 "spread_fed_minus_cd": round(fed_cd_spread, 4),
                 "spread_cd_minus_muni": round(cd_muni_spread, 4),
                 "spread_fed_minus_muni": round(fed_muni_spread, 4),
+                "adjacent_dispersion_bps": round(adjacent_dispersion_bps, 2),
             }
         )
 
     if not history:
         payload = {
+            "status": "unavailable",
             "days": days,
             "allow_proxies": allow_proxies,
             "generated_at": datetime.utcnow().isoformat(),
@@ -688,32 +841,39 @@ async def get_rates_spread_dashboard(
                     "label": fed_series.label,
                     "source": fed_series.source,
                     "is_proxy": fed_series.is_proxy,
+                    "last_observation_date": fed_series.last_observation_date,
                 },
                 "cd_proxy": {
                     "label": cd_series.label,
                     "source": cd_series.source,
                     "is_proxy": cd_series.is_proxy,
+                    "last_observation_date": cd_series.last_observation_date,
                 },
                 "muni_proxy": {
                     "label": muni_series.label,
                     "source": muni_series.source,
                     "is_proxy": muni_series.is_proxy,
+                    "last_observation_date": muni_series.last_observation_date,
                 },
             },
             "latest": None,
             "history": [],
             "radar_snapshot": [],
+            "score_components": RATES_SCORE_COMPONENTS,
         }
         return _cache_set(cache_key, payload, RATES_CACHE_TTL_SECONDS)
 
-    spread_strength = [
-        abs(point["spread_fed_minus_cd"]) + abs(point["spread_cd_minus_muni"]) + abs(point["spread_fed_minus_muni"])
-        for point in history
-    ]
-    spread_z = _zscore(spread_strength)
+    dispersion_series = [point["adjacent_dispersion_bps"] for point in history]
 
-    for point, z_value in zip(history, spread_z):
-        point["spread_regime_score"] = round(50 + z_value * 15, 2)
+    for point in history:
+        point["spread_regime_score"] = round(_percentile_rank(dispersion_series, point["adjacent_dispersion_bps"]), 2)
+        point["regime_label"] = (
+            "Wide dispersion"
+            if point["spread_regime_score"] >= 67
+            else "Compressed dispersion"
+            if point["spread_regime_score"] <= 33
+            else "Typical dispersion"
+        )
 
     latest = history[-1]
 
@@ -721,33 +881,26 @@ async def get_rates_spread_dashboard(
     cd_values = [point["cd_proxy_rate"] for point in history]
     muni_values = [point["muni_proxy_rate"] for point in history]
 
-    def _min_max_norm(value: float, values: Iterable[float]) -> float:
-        values_list = list(values)
-        lo = min(values_list)
-        hi = max(values_list)
-        if hi == lo:
-            return 50.0
-        return ((value - lo) / (hi - lo)) * 100.0
-
     radar_snapshot = [
         {
-            "metric": "Fed",
-            "value": round(_min_max_norm(latest["fed_rate"], fed_values), 2),
+            "metric": "Policy rate",
+            "value": round(_percentile_rank(fed_values, latest["fed_rate"]), 2),
             "raw_value": latest["fed_rate"],
         },
         {
-            "metric": "CD Proxy",
-            "value": round(_min_max_norm(latest["cd_proxy_rate"], cd_values), 2),
+            "metric": "Bank CD yield",
+            "value": round(_percentile_rank(cd_values, latest["cd_proxy_rate"]), 2),
             "raw_value": latest["cd_proxy_rate"],
         },
         {
-            "metric": "Muni Proxy",
-            "value": round(_min_max_norm(latest["muni_proxy_rate"], muni_values), 2),
+            "metric": "Municipal yield",
+            "value": round(_percentile_rank(muni_values, latest["muni_proxy_rate"]), 2),
             "raw_value": latest["muni_proxy_rate"],
         },
     ]
 
     payload = {
+        "status": "ok",
         "days": days,
         "allow_proxies": allow_proxies,
         "generated_at": datetime.utcnow().isoformat(),
@@ -757,18 +910,22 @@ async def get_rates_spread_dashboard(
                 "label": fed_series.label,
                 "source": fed_series.source,
                 "is_proxy": fed_series.is_proxy,
+                "last_observation_date": fed_series.last_observation_date,
             },
             "cd_proxy": {
                 "label": cd_series.label,
                 "source": cd_series.source,
                 "is_proxy": cd_series.is_proxy,
+                "last_observation_date": cd_series.last_observation_date,
             },
             "muni_proxy": {
                 "label": muni_series.label,
                 "source": muni_series.source,
                 "is_proxy": muni_series.is_proxy,
+                "last_observation_date": muni_series.last_observation_date,
             },
         },
+        "score_components": RATES_SCORE_COMPONENTS,
         "latest": latest,
         "history": history,
         "radar_snapshot": radar_snapshot,
