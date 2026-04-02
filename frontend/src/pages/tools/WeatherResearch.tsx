@@ -5,6 +5,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -74,29 +75,6 @@ type WeatherPayload = {
   };
 };
 
-const correlationCards = [
-  {
-    key: "same_day_direction" as const,
-    title: "Same-session direction",
-    description: "Weather stress versus the signed S&P 500 move.",
-  },
-  {
-    key: "same_day_sensitivity" as const,
-    title: "Same-session move size",
-    description: "Weather stress versus the absolute S&P 500 move.",
-  },
-  {
-    key: "lag_1d" as const,
-    title: "Next-session move size",
-    description: "Whether today’s weather stress lines up with tomorrow’s move size.",
-  },
-  {
-    key: "lag_2d" as const,
-    title: "Two-session move size",
-    description: "Whether today’s weather stress lines up with the move size two sessions later.",
-  },
-];
-
 const weatherSignalOptions: Array<{
   key: WeatherSignalOption;
   label: string;
@@ -137,9 +115,83 @@ const weatherSignalOptions: Array<{
   },
 ];
 
-const fmtCorr = (corr: CorrelationSummary) => {
-  if (corr.pearson_r === null || corr.p_value === null) return "n/a";
-  return `r ${corr.pearson_r.toFixed(2)} | p ${corr.p_value.toFixed(3)} | n ${corr.samples}`;
+const getRelationshipTone = (corr: number | null | undefined, significant: boolean | undefined) => {
+  if (corr === null || corr === undefined) {
+    return {
+      title: "Not enough signal yet",
+      body: "This window does not show a stable relationship between weather stress and market movement.",
+    };
+  }
+  if (!significant || Math.abs(corr) < 0.15) {
+    return {
+      title: "Mostly noise right now",
+      body: "Weather and market movement are brushing past each other, but not in a durable way.",
+    };
+  }
+  if (corr > 0) {
+    return {
+      title: "Weather stress is lining up with bigger moves",
+      body: "When the composite stress backdrop rises, the market has recently been more reactive rather than calmer.",
+    };
+  }
+  return {
+    title: "Higher stress has recently lined up with calmer moves",
+    body: "The recent window is showing an inverse relationship, which can happen when messy weather is not the dominant market driver.",
+  };
+};
+
+const getSignalContext = (label: string, normalizedValue: number | null | undefined) => {
+  if (normalizedValue === null || normalizedValue === undefined) {
+    return `${label} is unavailable in the current view.`;
+  }
+  if (normalizedValue >= 75) {
+    return `${label} is running near the top of its recent range.`;
+  }
+  if (normalizedValue <= 25) {
+    return `${label} is sitting near the low end of its recent range.`;
+  }
+  return `${label} is sitting near the middle of its recent range.`;
+};
+
+const getHistoricalContext = (corr: CorrelationSummary) => {
+  if (corr.pearson_r === null || corr.p_value === null) {
+    return "There is not enough overlap yet to say much about the broader pattern.";
+  }
+  if (!corr.significant || Math.abs(corr.pearson_r) < 0.15) {
+    return "Across the selected history, the broader pattern still looks weak and inconsistent.";
+  }
+  if (corr.pearson_r > 0) {
+    return "Across the selected history, higher weather stress has tended to coincide with larger same-session moves.";
+  }
+  return "Across the selected history, higher weather stress has tended to coincide with smaller same-session moves.";
+};
+
+const buildCorrelationZones = (
+  points: Array<{ date: string; corr: number | null; rollingSignificant: boolean }>
+) => {
+  const zones: Array<{ start: string; end: string; fill: string }> = [];
+  let current: { start: string; end: string; fill: string } | null = null;
+
+  for (const point of points) {
+    if (!point.rollingSignificant || point.corr === null || Math.abs(point.corr) < 0.15) {
+      if (current) {
+        zones.push(current);
+        current = null;
+      }
+      continue;
+    }
+
+    const fill = point.corr > 0 ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.10)";
+    if (!current || current.fill !== fill) {
+      if (current) zones.push(current);
+      current = { start: point.date, end: point.date, fill };
+      continue;
+    }
+    current.end = point.date;
+  }
+
+  if (current) zones.push(current);
+  return zones;
 };
 
 const normalizeSeries = (values: Array<number | null | undefined>) => {
@@ -182,6 +234,7 @@ export default function WeatherResearch() {
       return history.map((point, index) => ({
         date: point.date,
         corr: point.rolling_corr,
+        rollingSignificant: Boolean(point.rolling_p_value !== null && point.rolling_p_value !== undefined && point.rolling_p_value < 0.05),
         absReturnScaled: absReturnScaled[index],
         absReturnRaw: point.sp500_abs_return_pct,
         signalScaled: signalScaled[index],
@@ -191,8 +244,10 @@ export default function WeatherResearch() {
     [data, selectedSignal]
   );
   const deferredChartData = useDeferredValue(chartData);
-  const latestPoint = data?.latest as Record<string, number | null | undefined> | null;
   const selectedSignalMeta = weatherSignalOptions.find((option) => option.key === selectedSignal) ?? weatherSignalOptions[0];
+  const latestSignalNormalized = deferredChartData.length ? deferredChartData[deferredChartData.length - 1]?.signalScaled : null;
+  const relationshipTone = getRelationshipTone(data?.latest?.rolling_corr ?? null, Boolean(data?.latest?.rolling_p_value !== null && data?.latest?.rolling_p_value !== undefined && (data.latest?.rolling_p_value ?? 1) < 0.05));
+  const correlationZones = useMemo(() => buildCorrelationZones(deferredChartData), [deferredChartData]);
 
   return (
     <div className="space-y-4 p-4 text-stealth-100 md:space-y-6 md:p-6">
@@ -263,45 +318,35 @@ export default function WeatherResearch() {
 
       {data && (
         <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {correlationCards.map((card) => (
-              <div key={card.key} className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-3 text-xs text-stealth-300">
-                <div className="text-stealth-500">{card.title}</div>
-                <div className="mt-1 font-medium">{fmtCorr(data.correlations[card.key])}</div>
-                <div className="mt-1 leading-relaxed text-stealth-500">{card.description}</div>
-              </div>
-            ))}
-            <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-3 text-xs text-stealth-300">
-              <div className="text-stealth-500">Rendered view</div>
-              <div className="mt-1 font-medium capitalize">
-                {data.display_granularity} view, {data.display_history_points} plotted points
-              </div>
-              <div className="mt-1 leading-relaxed text-stealth-500">
-                Summarized from {data.raw_history_points} underlying daily observations.
-              </div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-4 text-sm text-stealth-200">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Current read</div>
+              <div className="mt-2 text-base font-medium text-stealth-100">{relationshipTone.title}</div>
+              <div className="mt-2 leading-relaxed text-stealth-400">{relationshipTone.body}</div>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {data.score_components.map((component) => (
-              <div key={component.key} className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-3 text-xs text-stealth-300">
-                <div className="text-stealth-500">{component.label}</div>
-                <div className="mt-1 font-medium text-stealth-100">
-                  {formatComponentRaw(latestPoint?.[component.raw_field] as number | null | undefined, component.unit)}
-                </div>
-                <div className="mt-1 leading-relaxed text-stealth-500">{component.description}</div>
-              </div>
-            ))}
+            <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-4 text-sm text-stealth-200">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Weather context</div>
+              <div className="mt-2 text-base font-medium text-stealth-100">{selectedSignalMeta.label}</div>
+              <div className="mt-2 leading-relaxed text-stealth-400">{getSignalContext(selectedSignalMeta.label, latestSignalNormalized)}</div>
+            </div>
+            <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-4 text-sm text-stealth-200">
+              <div className="text-[11px] uppercase tracking-wide text-stealth-500">Bigger picture</div>
+              <div className="mt-2 text-base font-medium text-stealth-100">Selected window</div>
+              <div className="mt-2 leading-relaxed text-stealth-400">{getHistoricalContext(data.correlations.same_day_sensitivity)}</div>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-stealth-700 bg-stealth-900/50 p-4">
             <div className="mb-2 text-xs text-stealth-400">
-              Drag the lower brush handles to zoom. Hover points for exact values within the current summarized view. The signal toggle swaps the weather line between five underlying measures.
+              Drag the lower brush handles to zoom. Soft red shading marks windows where the composite weather score has been positively linked to larger moves; green shading marks inverse windows.
             </div>
             <div className="h-[520px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={deferredChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.22)" />
+                  {correlationZones.map((zone) => (
+                    <ReferenceArea key={`${zone.start}-${zone.end}-${zone.fill}`} x1={zone.start} x2={zone.end} yAxisId="corr" fill={zone.fill} ifOverflow="extendDomain" />
+                  ))}
                   <XAxis
                     dataKey="date"
                     minTickGap={30}
@@ -331,10 +376,11 @@ export default function WeatherResearch() {
                     yAxisId="corr"
                     type="monotone"
                     dataKey="corr"
-                    name={`${window}d rolling composite-score relationship`}
+                    name={`${window}d rolling composite relationship`}
                     stroke="#f43f5e"
                     dot={false}
-                    strokeWidth={2}
+                    strokeWidth={1.2}
+                    strokeOpacity={0.45}
                     connectNulls
                     isAnimationActive={false}
                   />
@@ -373,7 +419,7 @@ export default function WeatherResearch() {
           </div>
 
           <div className="rounded-2xl border border-stealth-700 bg-stealth-800/60 p-4 text-xs leading-relaxed text-stealth-300">
-            The right axis is normalized from 0 to 100 within the active window so the selected weather signal and S&P move magnitude remain visually comparable. The red line always uses the composite weather stress score, so any scoring changes directly change that line even when the selectable weather line is pressure, rain, temperature, or wind.
+            The chart now uses the red line as a quiet guide rather than the main story. What matters most is the background shading: it marks stretches where the composite weather score actually moves in step with market sensitivity. The selectable weather line is there for context, not for scoring.
           </div>
         </>
       )}
