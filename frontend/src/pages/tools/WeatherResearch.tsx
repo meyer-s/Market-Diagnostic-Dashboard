@@ -27,10 +27,13 @@ type WeatherHistoryPoint = {
   rolling_corr: number | null;
   rolling_p_value: number | null;
   pressure_hpa: number | null;
+  temp_c: number | null;
   temp_anomaly_c: number;
   precip_mm: number;
   wind_kmh: number;
 };
+
+type WeatherSignalOption = "weather_stress_score" | "pressure_hpa" | "precip_mm" | "temp_c" | "wind_kmh";
 
 type CorrelationSummary = {
   pearson_r: number | null;
@@ -94,6 +97,46 @@ const correlationCards = [
   },
 ];
 
+const weatherSignalOptions: Array<{
+  key: WeatherSignalOption;
+  label: string;
+  chartLabel: string;
+  color: string;
+  strokeDasharray?: string;
+}> = [
+  {
+    key: "weather_stress_score",
+    label: "Weather stress",
+    chartLabel: "Weather stress score",
+    color: "#38bdf8",
+    strokeDasharray: "4 4",
+  },
+  {
+    key: "pressure_hpa",
+    label: "Barometric pressure",
+    chartLabel: "Barometric pressure",
+    color: "#f59e0b",
+  },
+  {
+    key: "precip_mm",
+    label: "Total precipitation",
+    chartLabel: "Total precipitation",
+    color: "#60a5fa",
+  },
+  {
+    key: "temp_c",
+    label: "Temperature",
+    chartLabel: "Average temperature",
+    color: "#fb7185",
+  },
+  {
+    key: "wind_kmh",
+    label: "Wind speed",
+    chartLabel: "Peak wind speed",
+    color: "#a78bfa",
+  },
+];
+
 const fmtCorr = (corr: CorrelationSummary) => {
   if (corr.pearson_r === null || corr.p_value === null) return "n/a";
   return `r ${corr.pearson_r.toFixed(2)} | p ${corr.p_value.toFixed(3)} | n ${corr.samples}`;
@@ -110,6 +153,7 @@ const formatComponentRaw = (value: number | null | undefined, unit: string) => {
 export default function WeatherResearch() {
   const [days, setDays] = useState<DaysPreset>(9490);
   const [window, setWindow] = useState<30 | 60 | 90>(60);
+  const [selectedSignal, setSelectedSignal] = useState<WeatherSignalOption>("weather_stress_score");
 
   const endpoint = `/research/weather-market?days=${days}&window=${window}&granularity=auto`;
   const { data, loading, error } = useApi<WeatherPayload>(endpoint);
@@ -120,12 +164,17 @@ export default function WeatherResearch() {
         date: point.date,
         corr: point.rolling_corr,
         absReturn: point.sp500_abs_return_pct,
-        stress: point.weather_stress_score,
+        weather_stress_score: point.weather_stress_score,
+        pressure_hpa: point.pressure_hpa,
+        precip_mm: point.precip_mm,
+        temp_c: point.temp_c,
+        wind_kmh: point.wind_kmh,
       })),
     [data]
   );
   const deferredChartData = useDeferredValue(chartData);
   const latestPoint = data?.latest as Record<string, number | null | undefined> | null;
+  const selectedSignalMeta = weatherSignalOptions.find((option) => option.key === selectedSignal) ?? weatherSignalOptions[0];
 
   return (
     <div className="space-y-4 p-4 text-stealth-100 md:space-y-6 md:p-6">
@@ -165,6 +214,19 @@ export default function WeatherResearch() {
                 }`}
               >
                 {w}d window
+              </button>
+            ))}
+          </div>
+          <div className="control-strip flex-wrap">
+            {weatherSignalOptions.map((option) => (
+              <button
+                key={option.key}
+                onClick={() => setSelectedSignal(option.key)}
+                className={`rounded-full px-3 py-1 text-sm font-medium transition ${
+                  selectedSignal === option.key ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-stealth-200"
+                }`}
+              >
+                {option.label}
               </button>
             ))}
           </div>
@@ -216,7 +278,7 @@ export default function WeatherResearch() {
 
           <div className="rounded-2xl border border-stealth-700 bg-stealth-900/50 p-4">
             <div className="mb-2 text-xs text-stealth-400">
-              Drag the lower brush handles to zoom. Hover points for exact values within the current summarized view.
+              Drag the lower brush handles to zoom. Hover points for exact values within the current summarized view. The signal toggle swaps the weather line between five underlying measures.
             </div>
             <div className="h-[520px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -260,13 +322,14 @@ export default function WeatherResearch() {
                   <Line
                     yAxisId="signal"
                     type="monotone"
-                    dataKey="stress"
-                    name="Weather stress score"
-                    stroke="#38bdf8"
+                    dataKey={selectedSignal}
+                    name={selectedSignalMeta.chartLabel}
+                    stroke={selectedSignalMeta.color}
                     dot={false}
                     strokeWidth={1.4}
-                    strokeDasharray="4 4"
+                    strokeDasharray={selectedSignalMeta.strokeDasharray}
                     isAnimationActive={false}
+                    connectNulls
                   />
                   <Brush
                     dataKey="date"
@@ -281,7 +344,7 @@ export default function WeatherResearch() {
           </div>
 
           <div className="rounded-2xl border border-stealth-700 bg-stealth-800/60 p-4 text-xs leading-relaxed text-stealth-300">
-            The weather stress score blends pressure swing, rainfall shock, wind stress, and temperature departure from the seasonal norm. Correlation is descriptive and non-causal. A relationship should remain stable across windows and hold statistical significance before it is treated as decision-useful.
+            The weather line is switchable between the composite weather stress score, barometric pressure, total precipitation, temperature, and wind speed. Correlation is descriptive and non-causal. A relationship should remain stable across windows and hold statistical significance before it is treated as decision-useful.
           </div>
         </>
       )}

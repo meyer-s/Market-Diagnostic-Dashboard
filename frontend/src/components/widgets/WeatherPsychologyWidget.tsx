@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
 import { useApi } from "../../hooks/useApi";
 
@@ -20,7 +21,13 @@ interface WeatherHistoryPoint {
   weather_stress_score: number;
   weather_disruption_index: number;
   rolling_corr: number | null;
+  pressure_hpa?: number | null;
+  temp_c?: number | null;
+  precip_mm?: number;
+  wind_kmh?: number;
 }
+
+type WeatherSignalOption = "weather_stress_score" | "pressure_hpa" | "precip_mm" | "temp_c" | "wind_kmh";
 
 interface ScoreComponent {
   key: string;
@@ -91,6 +98,46 @@ const correlationCards = [
   },
 ];
 
+const weatherSignalOptions: Array<{
+  key: WeatherSignalOption;
+  label: string;
+  chartLabel: string;
+  color: string;
+  strokeDasharray?: string;
+}> = [
+  {
+    key: "weather_stress_score",
+    label: "Weather stress",
+    chartLabel: "Weather stress score",
+    color: "#38bdf8",
+    strokeDasharray: "4 4",
+  },
+  {
+    key: "pressure_hpa",
+    label: "Pressure",
+    chartLabel: "Barometric pressure",
+    color: "#f59e0b",
+  },
+  {
+    key: "precip_mm",
+    label: "Precip",
+    chartLabel: "Total precipitation",
+    color: "#60a5fa",
+  },
+  {
+    key: "temp_c",
+    label: "Temp",
+    chartLabel: "Average temperature",
+    color: "#fb7185",
+  },
+  {
+    key: "wind_kmh",
+    label: "Wind",
+    chartLabel: "Peak wind speed",
+    color: "#a78bfa",
+  },
+];
+
 const formatComponentRaw = (value: number | null | undefined, unit: string) => {
   if (value === null || value === undefined) return "n/a";
   if (unit === "hPa") return `${value.toFixed(1)} hPa`;
@@ -100,6 +147,7 @@ const formatComponentRaw = (value: number | null | undefined, unit: string) => {
 };
 
 export default function WeatherPsychologyWidget({ days = 180 }: Props) {
+  const [selectedSignal, setSelectedSignal] = useState<WeatherSignalOption>("weather_stress_score");
   const { data, loading, error } = useApi<WeatherMarketPayload>(`/research/weather-market?days=${days}&window=30`);
 
   if (loading) {
@@ -126,9 +174,14 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
     date: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     rolling_corr: point.rolling_corr,
     abs_return: point.sp500_abs_return_pct,
-    stress: point.weather_stress_score,
+    weather_stress_score: point.weather_stress_score,
+    pressure_hpa: point.pressure_hpa,
+    precip_mm: point.precip_mm,
+    temp_c: point.temp_c,
+    wind_kmh: point.wind_kmh,
   }));
   const latestPoint = data.latest as Record<string, number | null | undefined> | null;
+  const selectedSignalMeta = weatherSignalOptions.find((option) => option.key === selectedSignal) ?? weatherSignalOptions[0];
 
   return (
     <div className="primary-card p-4 md:p-6">
@@ -173,6 +226,20 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
         ))}
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+        {weatherSignalOptions.map((option) => (
+          <button
+            key={option.key}
+            onClick={() => setSelectedSignal(option.key)}
+            className={`rounded-full px-3 py-1 transition ${
+              selectedSignal === option.key ? "bg-stealth-700 text-white" : "bg-stealth-900/40 text-stealth-400 hover:text-stealth-200"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <div className="mt-4 h-52">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData}>
@@ -185,12 +252,12 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
             />
             <Line yAxisId="corr" type="monotone" dataKey="rolling_corr" name="Rolling weather/volatility relationship" stroke="#f43f5e" dot={false} strokeWidth={2} connectNulls />
             <Line yAxisId="signal" type="monotone" dataKey="abs_return" name="S&P daily move magnitude" stroke="#22c55e" dot={false} strokeWidth={1.8} />
-            <Line yAxisId="signal" type="monotone" dataKey="stress" name="Weather stress score" stroke="#38bdf8" dot={false} strokeWidth={1.4} strokeDasharray="4 4" />
+            <Line yAxisId="signal" type="monotone" dataKey={selectedSignal} name={selectedSignalMeta.chartLabel} stroke={selectedSignalMeta.color} dot={false} strokeWidth={1.4} strokeDasharray={selectedSignalMeta.strokeDasharray} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </div>
       <p className="mt-2 text-[11px] text-stealth-500">
-        The weather stress score blends pressure swing, rainfall shock, wind stress, and temperature departure from the seasonal norm.
+        Toggle the weather line between the composite stress score, barometric pressure, total precipitation, temperature, and wind speed.
       </p>
       <p className="mt-1 text-[11px] text-stealth-500">
         Correlation is descriptive only and should be treated as non-causal unless persistent and statistically significant.

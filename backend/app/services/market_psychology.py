@@ -275,6 +275,7 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
     def _flush(bucket: Dict[str, Any]) -> Dict[str, Any]:
         count = bucket["count"] or 1
         pressure_count = bucket["pressure_count"] or 1
+        avg_temp_count = bucket["avg_temp_count"] or 1
         temp_count = bucket["temp_count"] or 1
         return {
             "date": bucket["last_date"],
@@ -283,8 +284,9 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
             "sp500_abs_return_pct": round(bucket["sum_abs_return"] / count, 4),
             "pressure_hpa": round(bucket["sum_pressure"] / pressure_count, 3) if bucket["pressure_count"] else None,
             "pressure_change_hpa": round(bucket["sum_pressure_change"] / count, 3),
+            "temp_c": round(bucket["sum_temp"] / avg_temp_count, 3) if bucket["avg_temp_count"] else None,
             "temp_anomaly_c": round(bucket["sum_temp_anomaly"] / temp_count, 3) if bucket["temp_count"] else 0.0,
-            "precip_mm": round(bucket["sum_precip"], 3) if granularity == "month" else round(bucket["sum_precip"] / count, 3),
+            "precip_mm": round(bucket["sum_precip"], 3) if granularity in {"week", "month"} else round(bucket["sum_precip"] / count, 3),
             "wind_kmh": round(bucket["max_wind"], 3),
             "pressure_shift_score": round(bucket["sum_pressure_score"] / count, 4),
             "precipitation_stress_score": round(bucket["sum_precip_score"] / count, 4),
@@ -311,6 +313,8 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
                 "sum_pressure": 0.0,
                 "sum_pressure_change": 0.0,
                 "pressure_count": 0,
+                "sum_temp": 0.0,
+                "avg_temp_count": 0,
                 "sum_temp_anomaly": 0.0,
                 "temp_count": 0,
                 "sum_precip": 0.0,
@@ -335,6 +339,10 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
             current["sum_pressure"] += pressure
             current["pressure_count"] += 1
         current["sum_pressure_change"] += point.get("pressure_change_hpa", 0.0) or 0.0
+        temp_c = point.get("temp_c")
+        if temp_c is not None:
+            current["sum_temp"] += temp_c
+            current["avg_temp_count"] += 1
         temp_anomaly = point.get("temp_anomaly_c")
         if temp_anomaly is not None:
             current["sum_temp_anomaly"] += temp_anomaly
@@ -691,6 +699,7 @@ async def get_weather_market_correlation(
                 "sp500_abs_return_pct": round(abs_ret, 4),
                 "pressure_hpa": row["pressure_hpa"],
                 "pressure_change_hpa": row["pressure_change_hpa"],
+                "temp_c": row["temp_c"],
                 "temp_anomaly_c": row["temp_anomaly_c"],
                 "precip_mm": row["precip_mm"],
                 "wind_kmh": row["wind_kmh"],
