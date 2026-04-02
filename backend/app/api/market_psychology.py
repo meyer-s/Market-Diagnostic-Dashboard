@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.ingestion.fred_client import FredClientError
@@ -10,6 +12,7 @@ router = APIRouter(prefix="/research", tags=["Research"])
 async def weather_market(
     days: int = Query(365, ge=90, le=12000),
     window: int = Query(30, ge=20, le=120),
+    calendar_year: int | None = Query(None, ge=2000, le=datetime.utcnow().year),
     granularity: str = Query("auto", description="History granularity: auto, day, week, or month."),
     force_refresh: bool = Query(False, description="Bypass cache and recompute payload."),
 ):
@@ -17,9 +20,12 @@ async def weather_market(
         return await get_weather_market_correlation(
             days=days,
             window=window,
+            calendar_year=calendar_year,
             granularity=granularity,
             force_refresh=force_refresh,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FredClientError as exc:
         raise HTTPException(status_code=503, detail=f"Weather-market data unavailable: {exc}") from exc
     except Exception as exc:

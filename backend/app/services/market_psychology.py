@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from math import sqrt
 from statistics import mean
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -668,22 +668,49 @@ async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dic
     return rows
 
 
+def _resolve_weather_analysis_window(
+    days: int,
+    window: int,
+    calendar_year: Optional[int],
+    today: Optional[date] = None,
+) -> Tuple[date, date, date]:
+    resolved_today = today or datetime.utcnow().date()
+    warmup_days = max(window, 120)
+
+    if calendar_year is not None:
+        if calendar_year < 2000:
+            raise ValueError("calendar_year must be 2000 or later")
+        if calendar_year > resolved_today.year:
+            raise ValueError("calendar_year cannot be in the future")
+
+        analysis_start = date(calendar_year, 1, 1)
+        analysis_end = resolved_today if calendar_year == resolved_today.year else date(calendar_year, 12, 31)
+        fetch_start = analysis_start - timedelta(days=warmup_days)
+        return analysis_start, analysis_end, fetch_start
+
+    analysis_end = resolved_today
+    analysis_start = resolved_today - timedelta(days=days)
+    fetch_start = analysis_start - timedelta(days=warmup_days)
+    return analysis_start, analysis_end, fetch_start
+
+
 async def get_weather_market_correlation(
     days: int = 365,
     window: int = 30,
+    calendar_year: Optional[int] = None,
     granularity: str = "auto",
     force_refresh: bool = False,
 ) -> Dict[str, Any]:
     resolved_granularity = _resolve_weather_granularity(days, granularity)
-    cache_key = f"weather:{days}:{window}:{resolved_granularity}"
+    analysis_start, analysis_end, fetch_start = _resolve_weather_analysis_window(days, window, calendar_year)
+    cache_key = f"weather:{days}:{window}:{resolved_granularity}:{analysis_start.isoformat()}:{analysis_end.isoformat()}"
     if not force_refresh:
         cached = _cache_get(cache_key)
         if cached is not None:
             return {**cached, "from_cache": True}
 
-    today = datetime.utcnow().date()
-    start_date = (today - timedelta(days=days + 120)).isoformat()
-    end_date = today.isoformat()
+    start_date = fetch_start.isoformat()
+    end_date = analysis_end.isoformat()
 
     weather_rows = await _fetch_nyc_weather_history(start_date=start_date, end_date=end_date)
 
@@ -711,7 +738,6 @@ async def get_weather_market_correlation(
         valid_dates.append(common_dates[idx])
         valid_disruptions.append(disruptions[idx])
 
-    cutoff = today - timedelta(days=days)
     filtered_dates: List[str] = []
     filtered_disruptions: List[float] = []
     filtered_returns: List[float] = []
@@ -723,7 +749,7 @@ async def get_weather_market_correlation(
 
     for date, disruption, ret, abs_ret in zip(valid_dates, valid_disruptions, returns, abs_returns):
         parsed = _parse_iso_date(date)
-        if parsed and parsed.date() >= cutoff:
+        if parsed and analysis_start <= parsed.date() <= analysis_end:
             filtered_dates.append(date)
             filtered_disruptions.append(disruption)
             filtered_returns.append(ret)
@@ -857,6 +883,9 @@ async def get_weather_market_correlation(
         },
         "window_days": window,
         "days": days,
+        "calendar_year": calendar_year,
+        "period_start": analysis_start.isoformat(),
+        "period_end": analysis_end.isoformat(),
         "display_granularity": resolved_granularity,
         "raw_history_points": len(history),
         "display_history_points": len(display_history),

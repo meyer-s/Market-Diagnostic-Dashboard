@@ -15,6 +15,8 @@ import { useApi } from "../../hooks/useApi";
 
 type DaysPreset = 365 | 1825 | 9490;
 type WindowPreset = 1 | 5 | 10 | 30 | 60 | 80 | 150;
+const DEFAULT_YEAR_SELECTION = new Date().getUTCFullYear() - 1;
+const YEAR_OPTIONS = Array.from({ length: 26 }, (_, index) => DEFAULT_YEAR_SELECTION - index);
 
 const WINDOW_OPTIONS_BY_DAYS: Record<DaysPreset, WindowPreset[]> = {
   365: [1, 5, 10],
@@ -71,6 +73,9 @@ type WeatherPayload = {
   location: string;
   days: number;
   window_days: number;
+  calendar_year?: number | null;
+  period_start?: string;
+  period_end?: string;
   display_granularity: "day" | "week" | "month";
   raw_history_points: number;
   display_history_points: number;
@@ -268,6 +273,7 @@ const getSelectorButtonClass = (active: boolean) =>
 export default function WeatherResearch() {
   const [days, setDays] = useState<DaysPreset>(9490);
   const [window, setWindow] = useState<WindowPreset>(60);
+  const [selectedYear, setSelectedYear] = useState<number>(DEFAULT_YEAR_SELECTION);
   const [selectedSignal, setSelectedSignal] = useState<WeatherSignalOption>("weather_stress_score");
   const windowOptions = WINDOW_OPTIONS_BY_DAYS[days];
 
@@ -280,7 +286,7 @@ export default function WeatherResearch() {
     ));
   };
 
-  const endpoint = `/research/weather-market?days=${days}&window=${window}&granularity=auto`;
+  const endpoint = `/research/weather-market?days=${days}&window=${window}&granularity=${days === 365 ? "day" : "auto"}${days === 365 ? `&calendar_year=${selectedYear}` : ""}`;
   const { data, loading, error } = useApi<WeatherPayload>(endpoint);
 
   const chartData = useMemo(
@@ -325,7 +331,7 @@ export default function WeatherResearch() {
           </p>
           {data && (
             <p className="mt-2 text-xs text-stealth-500">
-              Weather: {data.source.weather} | Market: {data.source.market} | View: {bucketLabel}
+              Weather: {data.source.weather} | Market: {data.source.market} | View: {bucketLabel}{days === 365 ? ` | Year: ${selectedYear}` : ""}
             </p>
           )}
         </div>
@@ -352,6 +358,21 @@ export default function WeatherResearch() {
               </button>
             ))}
           </div>
+          {days === 365 && (
+            <div className={selectorRailClass}>
+              <select
+                value={selectedYear}
+                onChange={(event) => setSelectedYear(Number(event.target.value))}
+                className="rounded-xl border border-stealth-700 bg-stealth-900/80 px-3 py-1.5 text-sm font-medium text-stealth-50 outline-none transition hover:border-stealth-600"
+              >
+                {YEAR_OPTIONS.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className={`${selectorRailClass} flex-wrap`}>
             {weatherSignalOptions.map((option) => (
               <button

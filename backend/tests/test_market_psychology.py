@@ -1,3 +1,5 @@
+from datetime import date
+
 from app.services import market_psychology as mp
 
 
@@ -155,3 +157,16 @@ def test_rolling_correlation_allows_small_valid_windows():
 
     assert points[-1]["rolling_corr"] == 1.0
     assert points[-1]["significant"] is True
+
+
+def test_resolve_weather_analysis_window_for_calendar_year():
+    analysis_start, analysis_end, fetch_start = mp._resolve_weather_analysis_window(
+        days=365,
+        window=10,
+        calendar_year=2024,
+        today=date(2026, 4, 2),
+    )
+
+    assert analysis_start == date(2024, 1, 1)
+    assert analysis_end == date(2024, 12, 31)
+    assert fetch_start == date(2023, 9, 3)
