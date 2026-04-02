@@ -29,6 +29,7 @@ class CacheEntry:
 
 
 _CACHE: Dict[str, CacheEntry] = {}
+WEATHER_GRANULARITIES = {"day", "week", "month", "auto"}
 
 
 @dataclass
@@ -64,6 +65,19 @@ def _parse_iso_date(date_str: str) -> Optional[datetime]:
         return datetime.fromisoformat(date_str)
     except ValueError:
         return None
+
+
+def _resolve_weather_granularity(days: int, granularity: str) -> str:
+    normalized = (granularity or "auto").lower()
+    if normalized not in WEATHER_GRANULARITIES:
+        normalized = "auto"
+    if normalized != "auto":
+        return normalized
+    if days >= 365 * 8:
+        return "month"
+    if days >= 365 * 2:
+        return "week"
+    return "day"
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -151,6 +165,93 @@ def _rolling_correlation(
         )
 
     return points
+
+
+def _bucket_label(date_str: str, granularity: str) -> str:
+    parsed = _parse_iso_date(date_str)
+    if not parsed:
+        return date_str
+    if granularity == "month":
+        return parsed.strftime("%Y-%m")
+    if granularity == "week":
+        iso_year, iso_week, _ = parsed.isocalendar()
+        return f"{iso_year}-W{iso_week:02d}"
+    return parsed.date().isoformat()
+
+
+def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) -> List[Dict[str, Any]]:
+    if granularity == "day":
+        return history
+
+    buckets: List[Dict[str, Any]] = []
+    current: Optional[Dict[str, Any]] = None
+
+    def _flush(bucket: Dict[str, Any]) -> Dict[str, Any]:
+        count = bucket["count"] or 1
+        pressure_count = bucket["pressure_count"] or 1
+        temp_count = bucket["temp_count"] or 1
+        return {
+            "date": bucket["last_date"],
+            "period_label": bucket["period_label"],
+            "sp500_return_pct": round(bucket["sum_return"] / count, 4),
+            "sp500_abs_return_pct": round(bucket["sum_abs_return"] / count, 4),
+            "pressure_hpa": round(bucket["sum_pressure"] / pressure_count, 3) if bucket["pressure_count"] else None,
+            "temp_anomaly_c": round(bucket["sum_temp_anomaly"] / temp_count, 3) if bucket["temp_count"] else 0.0,
+            "precip_mm": round(bucket["sum_precip"], 3) if granularity == "month" else round(bucket["sum_precip"] / count, 3),
+            "wind_kmh": round(bucket["max_wind"], 3),
+            "weather_disruption_index": round(bucket["sum_disruption"] / count, 4),
+            "rolling_corr": bucket["last_rolling_corr"],
+            "rolling_p_value": bucket["last_rolling_p_value"],
+            "rolling_significant": bucket["last_rolling_significant"],
+        }
+
+    for point in history:
+        label = _bucket_label(point["date"], granularity)
+        if current is None or current["period_label"] != label:
+            if current is not None:
+                buckets.append(_flush(current))
+            current = {
+                "period_label": label,
+                "last_date": point["date"],
+                "count": 0,
+                "sum_return": 0.0,
+                "sum_abs_return": 0.0,
+                "sum_pressure": 0.0,
+                "pressure_count": 0,
+                "sum_temp_anomaly": 0.0,
+                "temp_count": 0,
+                "sum_precip": 0.0,
+                "max_wind": 0.0,
+                "sum_disruption": 0.0,
+                "last_rolling_corr": None,
+                "last_rolling_p_value": None,
+                "last_rolling_significant": False,
+            }
+
+        current["last_date"] = point["date"]
+        current["count"] += 1
+        current["sum_return"] += point.get("sp500_return_pct", 0.0)
+        current["sum_abs_return"] += point.get("sp500_abs_return_pct", 0.0)
+        pressure = point.get("pressure_hpa")
+        if pressure is not None:
+            current["sum_pressure"] += pressure
+            current["pressure_count"] += 1
+        temp_anomaly = point.get("temp_anomaly_c")
+        if temp_anomaly is not None:
+            current["sum_temp_anomaly"] += temp_anomaly
+            current["temp_count"] += 1
+        current["sum_precip"] += point.get("precip_mm", 0.0)
+        current["max_wind"] = max(current["max_wind"], point.get("wind_kmh", 0.0) or 0.0)
+        current["sum_disruption"] += point.get("weather_disruption_index", 0.0)
+        if point.get("rolling_corr") is not None:
+            current["last_rolling_corr"] = point.get("rolling_corr")
+            current["last_rolling_p_value"] = point.get("rolling_p_value")
+            current["last_rolling_significant"] = point.get("rolling_significant", False)
+
+    if current is not None:
+        buckets.append(_flush(current))
+
+    return buckets
 
 
 async def _fetch_first_available_fred_series(
@@ -353,8 +454,14 @@ async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dic
     return rows
 
 
-async def get_weather_market_correlation(days: int = 365, window: int = 30, force_refresh: bool = False) -> Dict[str, Any]:
-    cache_key = f"weather:{days}:{window}"
+async def get_weather_market_correlation(
+    days: int = 365,
+    window: int = 30,
+    granularity: str = "auto",
+    force_refresh: bool = False,
+) -> Dict[str, Any]:
+    resolved_granularity = _resolve_weather_granularity(days, granularity)
+    cache_key = f"weather:{days}:{window}:{resolved_granularity}"
     if not force_refresh:
         cached = _cache_get(cache_key)
         if cached is not None:
@@ -458,7 +565,8 @@ async def get_weather_market_correlation(days: int = 365, window: int = 30, forc
             }
         )
 
-    latest = history[-1] if history else None
+    display_history = _aggregate_weather_history(history, resolved_granularity)
+    latest = display_history[-1] if display_history else None
 
     payload = {
         "location": "NYC Metro Proxy",
@@ -468,6 +576,9 @@ async def get_weather_market_correlation(days: int = 365, window: int = 30, forc
         },
         "window_days": window,
         "days": days,
+        "display_granularity": resolved_granularity,
+        "raw_history_points": len(history),
+        "display_history_points": len(display_history),
         "generated_at": datetime.utcnow().isoformat(),
         "from_cache": False,
         "latest": latest,
@@ -476,7 +587,7 @@ async def get_weather_market_correlation(days: int = 365, window: int = 30, forc
             "same_day_sensitivity": same_day_sensitivity,
             **lag_results,
         },
-        "history": history,
+        "history": display_history,
     }
 
     return _cache_set(cache_key, payload, WEATHER_CACHE_TTL_SECONDS)

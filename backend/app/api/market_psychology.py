@@ -10,10 +10,16 @@ router = APIRouter(prefix="/research", tags=["Research"])
 async def weather_market(
     days: int = Query(365, ge=90, le=12000),
     window: int = Query(30, ge=20, le=120),
+    granularity: str = Query("auto", description="History granularity: auto, day, week, or month."),
     force_refresh: bool = Query(False, description="Bypass cache and recompute payload."),
 ):
     try:
-        return await get_weather_market_correlation(days=days, window=window, force_refresh=force_refresh)
+        return await get_weather_market_correlation(
+            days=days,
+            window=window,
+            granularity=granularity,
+            force_refresh=force_refresh,
+        )
     except FredClientError as exc:
         raise HTTPException(status_code=503, detail=f"Weather-market data unavailable: {exc}") from exc
     except Exception as exc:

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import {
   Brush,
   CartesianGrid,
@@ -37,6 +37,9 @@ type WeatherPayload = {
   location: string;
   days: number;
   window_days: number;
+  display_granularity: "day" | "week" | "month";
+  raw_history_points: number;
+  display_history_points: number;
   latest: WeatherHistoryPoint | null;
   history: WeatherHistoryPoint[];
   correlations: {
@@ -56,7 +59,7 @@ export default function WeatherResearch() {
   const [days, setDays] = useState<DaysPreset>(9490);
   const [window, setWindow] = useState<30 | 60 | 90>(60);
 
-  const endpoint = `/research/weather-market?days=${days}&window=${window}`;
+  const endpoint = `/research/weather-market?days=${days}&window=${window}&granularity=auto`;
   const { data, loading, error } = useApi<WeatherPayload>(endpoint);
 
   const chartData = useMemo(
@@ -70,6 +73,7 @@ export default function WeatherResearch() {
       })),
     [data]
   );
+  const deferredChartData = useDeferredValue(chartData);
 
   return (
     <div className="space-y-4 p-4 text-stealth-100 md:space-y-6 md:p-6">
@@ -141,13 +145,20 @@ export default function WeatherResearch() {
             </div>
           </div>
 
+            <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-3 text-xs text-stealth-300">
+              <div className="text-stealth-500">Display abstraction</div>
+              <div className="mt-1 font-medium capitalize">
+                {data.display_granularity} view, {data.display_history_points} rendered from {data.raw_history_points} raw points
+              </div>
+            </div>
+
           <div className="rounded-2xl border border-stealth-700 bg-stealth-900/50 p-4">
             <div className="mb-2 text-xs text-stealth-400">
-              Drag the lower brush handles to zoom. Hover points for exact daily values.
+                Drag the lower brush handles to zoom. Hover points for exact values within the current abstracted view.
             </div>
             <div className="h-[520px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
+                  <LineChart data={deferredChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.22)" />
                   <XAxis
                     dataKey="date"
@@ -163,9 +174,9 @@ export default function WeatherResearch() {
                     contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Line yAxisId="corr" type="monotone" dataKey="corr" name={`${window}d rolling corr`} stroke="#f43f5e" dot={false} strokeWidth={2} connectNulls />
-                  <Line yAxisId="signal" type="monotone" dataKey="absReturn" name="S&P abs return %" stroke="#22c55e" dot={false} strokeWidth={1.6} />
-                  <Line yAxisId="signal" type="monotone" dataKey="disruption" name="Weather disruption" stroke="#38bdf8" dot={false} strokeWidth={1.4} strokeDasharray="4 4" />
+                  <Line yAxisId="corr" type="monotone" dataKey="corr" name={`${window}d rolling corr`} stroke="#f43f5e" dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />
+                  <Line yAxisId="signal" type="monotone" dataKey="absReturn" name="S&P abs return %" stroke="#22c55e" dot={false} strokeWidth={1.6} isAnimationActive={false} />
+                  <Line yAxisId="signal" type="monotone" dataKey="disruption" name="Weather disruption" stroke="#38bdf8" dot={false} strokeWidth={1.4} strokeDasharray="4 4" isAnimationActive={false} />
                   <Brush
                     dataKey="date"
                     height={26}
