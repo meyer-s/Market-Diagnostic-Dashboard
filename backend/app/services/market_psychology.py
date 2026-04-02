@@ -98,6 +98,13 @@ class CacheEntry:
 
 _CACHE: Dict[str, CacheEntry] = {}
 WEATHER_GRANULARITIES = {"day", "week", "month", "auto"}
+WEATHER_SIGNAL_KEYS = (
+    "weather_stress_score",
+    "pressure_hpa",
+    "precip_mm",
+    "temp_c",
+    "wind_kmh",
+)
 
 
 @dataclass
@@ -142,11 +149,11 @@ def _resolve_weather_granularity(days: int, granularity: str) -> str:
         normalized = "auto"
     if normalized != "auto":
         return normalized
-    if days >= 365 * 8:
-        return "month"
-    if days >= 365 * 2:
+    if days <= 31:
+        return "day"
+    if days <= 366:
         return "week"
-    return "day"
+    return "month"
 
 
 def _calendar_key(date_str: str) -> str:
@@ -214,6 +221,25 @@ def _pearson_summary(x: Sequence[float], y: Sequence[float], min_samples: int = 
     }
 
 
+def _pearson_summary_optional(
+    x: Sequence[Optional[float]],
+    y: Sequence[float],
+    min_samples: int = 20,
+) -> Dict[str, Any]:
+    pairs = [(x_value, y_value) for x_value, y_value in zip(x, y) if x_value is not None]
+    if len(pairs) < min_samples:
+        return {
+            "pearson_r": None,
+            "p_value": None,
+            "samples": len(pairs),
+            "significant": False,
+        }
+
+    filtered_x = [x_value for x_value, _ in pairs]
+    filtered_y = [y_value for _, y_value in pairs]
+    return _pearson_summary(filtered_x, filtered_y, min_samples=min_samples)
+
+
 def _rolling_correlation(
     dates: Sequence[str],
     x: Sequence[float],
@@ -240,6 +266,45 @@ def _rolling_correlation(
         x_window = x[idx - window + 1 : idx + 1]
         y_window = y[idx - window + 1 : idx + 1]
         corr = _pearson_summary(x_window, y_window, min_samples=min_samples)
+
+        points.append(
+            {
+                "date": dates[idx],
+                "rolling_corr": corr["pearson_r"],
+                "rolling_p_value": corr["p_value"],
+                "significant": corr["significant"],
+            }
+        )
+
+    return points
+
+
+def _rolling_correlation_optional(
+    dates: Sequence[str],
+    x: Sequence[Optional[float]],
+    y: Sequence[float],
+    window: int,
+    min_samples: int = 20,
+) -> List[Dict[str, Any]]:
+    points: List[Dict[str, Any]] = []
+    if len(dates) != len(x) or len(dates) != len(y):
+        return points
+
+    for idx in range(len(dates)):
+        if idx + 1 < window:
+            points.append(
+                {
+                    "date": dates[idx],
+                    "rolling_corr": None,
+                    "rolling_p_value": None,
+                    "significant": False,
+                }
+            )
+            continue
+
+        x_window = x[idx - window + 1 : idx + 1]
+        y_window = y[idx - window + 1 : idx + 1]
+        corr = _pearson_summary_optional(x_window, y_window, min_samples=min_samples)
 
         points.append(
             {
@@ -297,6 +362,7 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
             "rolling_corr": bucket["last_rolling_corr"],
             "rolling_p_value": bucket["last_rolling_p_value"],
             "rolling_significant": bucket["last_rolling_significant"],
+            "signal_correlations": bucket["last_signal_correlations"],
         }
 
     for point in history:
@@ -328,6 +394,7 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
                 "last_rolling_corr": None,
                 "last_rolling_p_value": None,
                 "last_rolling_significant": False,
+                "last_signal_correlations": {},
             }
 
         current["last_date"] = point["date"]
@@ -355,6 +422,8 @@ def _aggregate_weather_history(history: List[Dict[str, Any]], granularity: str) 
         current["sum_temp_score"] += point.get("temperature_stress_score", 0.0) or 0.0
         current["sum_stress"] += point.get("weather_stress_score", point.get("weather_disruption_index", 0.0)) or 0.0
         current["sum_disruption"] += point.get("weather_disruption_index", 0.0)
+        if point.get("signal_correlations"):
+            current["last_signal_correlations"] = point.get("signal_correlations") or {}
         if point.get("rolling_corr") is not None:
             current["last_rolling_corr"] = point.get("rolling_corr")
             current["last_rolling_p_value"] = point.get("rolling_p_value")
@@ -645,6 +714,10 @@ async def get_weather_market_correlation(
     filtered_disruptions: List[float] = []
     filtered_returns: List[float] = []
     filtered_abs_returns: List[float] = []
+    filtered_pressure: List[Optional[float]] = []
+    filtered_precip: List[Optional[float]] = []
+    filtered_temp: List[Optional[float]] = []
+    filtered_wind: List[Optional[float]] = []
 
     for date, disruption, ret, abs_ret in zip(valid_dates, valid_disruptions, returns, abs_returns):
         parsed = _parse_iso_date(date)
@@ -653,6 +726,11 @@ async def get_weather_market_correlation(
             filtered_disruptions.append(disruption)
             filtered_returns.append(ret)
             filtered_abs_returns.append(abs_ret)
+            weather_row = weather_by_date.get(date) or {}
+            filtered_pressure.append(weather_row.get("pressure_hpa"))
+            filtered_precip.append(weather_row.get("precip_mm"))
+            filtered_temp.append(weather_row.get("temp_c"))
+            filtered_wind.append(weather_row.get("wind_kmh"))
 
     rolling = _rolling_correlation(
         filtered_dates,
@@ -661,8 +739,34 @@ async def get_weather_market_correlation(
         window=window,
     )
 
+    rolling_by_signal = {
+        "weather_stress_score": rolling,
+        "pressure_hpa": _rolling_correlation_optional(filtered_dates, filtered_pressure, filtered_returns, window=window),
+        "precip_mm": _rolling_correlation_optional(filtered_dates, filtered_precip, filtered_returns, window=window),
+        "temp_c": _rolling_correlation_optional(filtered_dates, filtered_temp, filtered_returns, window=window),
+        "wind_kmh": _rolling_correlation_optional(filtered_dates, filtered_wind, filtered_returns, window=window),
+    }
+
     same_day_direction = _pearson_summary(filtered_disruptions, filtered_returns)
     same_day_sensitivity = _pearson_summary(filtered_disruptions, filtered_abs_returns)
+
+    signal_correlations = {
+        "weather_stress_score": {
+            "same_day_direction": same_day_direction,
+        },
+        "pressure_hpa": {
+            "same_day_direction": _pearson_summary_optional(filtered_pressure, filtered_returns),
+        },
+        "precip_mm": {
+            "same_day_direction": _pearson_summary_optional(filtered_precip, filtered_returns),
+        },
+        "temp_c": {
+            "same_day_direction": _pearson_summary_optional(filtered_temp, filtered_returns),
+        },
+        "wind_kmh": {
+            "same_day_direction": _pearson_summary_optional(filtered_wind, filtered_returns),
+        },
+    }
 
     lag_results: Dict[str, Dict[str, Any]] = {}
     for lag in (1, 2):
@@ -673,14 +777,30 @@ async def get_weather_market_correlation(
                 "samples": 0,
                 "significant": False,
             }
+            for signal_key in WEATHER_SIGNAL_KEYS:
+                signal_correlations[signal_key][f"lag_{lag}d"] = {
+                    "pearson_r": None,
+                    "p_value": None,
+                    "samples": 0,
+                    "significant": False,
+                }
             continue
 
         lead_x = filtered_disruptions[:-lag]
         lead_y = filtered_returns[lag:]
         lag_results[f"lag_{lag}d"] = _pearson_summary(lead_x, lead_y)
+        signal_correlations["weather_stress_score"][f"lag_{lag}d"] = lag_results[f"lag_{lag}d"]
+        signal_correlations["pressure_hpa"][f"lag_{lag}d"] = _pearson_summary_optional(filtered_pressure[:-lag], lead_y)
+        signal_correlations["precip_mm"][f"lag_{lag}d"] = _pearson_summary_optional(filtered_precip[:-lag], lead_y)
+        signal_correlations["temp_c"][f"lag_{lag}d"] = _pearson_summary_optional(filtered_temp[:-lag], lead_y)
+        signal_correlations["wind_kmh"][f"lag_{lag}d"] = _pearson_summary_optional(filtered_wind[:-lag], lead_y)
 
     history: List[Dict[str, Any]] = []
     rolling_by_date = {point["date"]: point for point in rolling}
+    rolling_by_signal_and_date = {
+        signal_key: {point["date"]: point for point in signal_points}
+        for signal_key, signal_points in rolling_by_signal.items()
+    }
 
     for date, disruption, ret, abs_ret in zip(
         filtered_dates,
@@ -692,6 +812,14 @@ async def get_weather_market_correlation(
         if not row:
             continue
         roll = rolling_by_date.get(date, {})
+        signal_rolls = {
+            signal_key: {
+                "rolling_corr": rolling_by_signal_and_date.get(signal_key, {}).get(date, {}).get("rolling_corr"),
+                "rolling_p_value": rolling_by_signal_and_date.get(signal_key, {}).get(date, {}).get("rolling_p_value"),
+                "rolling_significant": rolling_by_signal_and_date.get(signal_key, {}).get(date, {}).get("significant", False),
+            }
+            for signal_key in WEATHER_SIGNAL_KEYS
+        }
         history.append(
             {
                 "date": date,
@@ -712,6 +840,7 @@ async def get_weather_market_correlation(
                 "rolling_corr": roll.get("rolling_corr"),
                 "rolling_p_value": roll.get("rolling_p_value"),
                 "rolling_significant": roll.get("significant", False),
+                "signal_correlations": signal_rolls,
             }
         )
 
@@ -738,6 +867,7 @@ async def get_weather_market_correlation(
             "same_day_sensitivity": same_day_sensitivity,
             **lag_results,
         },
+        "signal_correlations": signal_correlations,
         "history": display_history,
     }
 

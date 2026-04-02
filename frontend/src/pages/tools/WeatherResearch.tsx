@@ -33,6 +33,12 @@ type WeatherHistoryPoint = {
   temp_anomaly_c: number;
   precip_mm: number;
   wind_kmh: number;
+  rolling_significant?: boolean;
+  signal_correlations?: Partial<Record<WeatherSignalOption, {
+    rolling_corr: number | null;
+    rolling_p_value: number | null;
+    rolling_significant: boolean;
+  }>>;
 };
 
 type WeatherSignalOption = "weather_stress_score" | "pressure_hpa" | "precip_mm" | "temp_c" | "wind_kmh";
@@ -74,6 +80,11 @@ type WeatherPayload = {
     lag_1d: CorrelationSummary;
     lag_2d: CorrelationSummary;
   };
+  signal_correlations: Record<WeatherSignalOption, {
+    same_day_direction: CorrelationSummary;
+    lag_1d: CorrelationSummary;
+    lag_2d: CorrelationSummary;
+  }>;
 };
 
 const weatherSignalOptions: Array<{
@@ -116,28 +127,28 @@ const weatherSignalOptions: Array<{
   },
 ];
 
-const getRelationshipTone = (corr: number | null | undefined, significant: boolean | undefined) => {
+const getRelationshipTone = (label: string, corr: number | null | undefined, significant: boolean | undefined) => {
   if (corr === null || corr === undefined) {
     return {
       title: "Not enough signal yet",
-      body: "This window does not show a stable relationship between weather stress and market direction.",
+      body: `This window does not show a stable relationship between ${label.toLowerCase()} and market direction.`,
     };
   }
   if (!significant || Math.abs(corr) < 0.15) {
     return {
       title: "Mostly noise right now",
-      body: "Weather and market direction are brushing past each other, but not in a durable way.",
+      body: `${label} and market direction are brushing past each other, but not in a durable way.`,
     };
   }
   if (corr > 0) {
     return {
-      title: "Stressier weather has lined up with greener sessions",
-      body: "In the recent window, higher weather stress has been showing up alongside more positive S&P days.",
+      title: `${label} has lined up with greener sessions`,
+      body: `In the recent window, higher ${label.toLowerCase()} readings have been showing up alongside more positive S&P days.`,
     };
   }
   return {
-    title: "Calmer weather has lined up with greener sessions",
-    body: "In the recent window, calmer conditions have been showing up alongside more positive S&P days.",
+    title: `Lower ${label.toLowerCase()} has lined up with greener sessions`,
+    body: `In the recent window, lower ${label.toLowerCase()} readings have been showing up alongside more positive S&P days.`,
   };
 };
 
@@ -154,7 +165,7 @@ const getSignalContext = (label: string, normalizedValue: number | null | undefi
   return `${label} is sitting near the middle of its recent range.`;
 };
 
-const getHistoricalContext = (corr: CorrelationSummary) => {
+const getHistoricalContext = (label: string, corr: CorrelationSummary) => {
   if (corr.pearson_r === null || corr.p_value === null) {
     return "There is not enough overlap yet to say much about the broader pattern.";
   }
@@ -162,9 +173,9 @@ const getHistoricalContext = (corr: CorrelationSummary) => {
     return "Across the selected history, the broader pattern still looks weak and inconsistent.";
   }
   if (corr.pearson_r > 0) {
-    return "Across the selected history, higher weather stress has tended to coincide with more positive same-session returns.";
+    return `Across the selected history, higher ${label.toLowerCase()} readings have tended to coincide with more positive same-session returns.`;
   }
-  return "Across the selected history, calmer weather has tended to coincide with more positive same-session returns.";
+  return `Across the selected history, lower ${label.toLowerCase()} readings have tended to coincide with more positive same-session returns.`;
 };
 
 const buildCorrelationZones = (
@@ -232,6 +243,21 @@ const formatComponentRaw = (value: number | null | undefined, unit: string) => {
   return `${value.toFixed(1)} C`;
 };
 
+const getBucketLabel = (granularity: WeatherPayload["display_granularity"] | undefined) => {
+  if (granularity === "day") return "Daily buckets";
+  if (granularity === "week") return "Weekly buckets";
+  return "Monthly buckets";
+};
+
+const selectorRailClass = "rounded-2xl border border-stealth-800 bg-stealth-950/55 p-1 shadow-[inset_0_1px_0_rgba(148,163,184,0.04)]";
+
+const getSelectorButtonClass = (active: boolean) =>
+  `rounded-xl border px-3 py-1.5 text-sm font-medium transition ${
+    active
+      ? "border-stealth-700 bg-stealth-900/80 text-stealth-50"
+      : "border-transparent bg-transparent text-stealth-500 hover:border-stealth-800 hover:bg-stealth-900/45 hover:text-stealth-200"
+  }`;
+
 export default function WeatherResearch() {
   const [days, setDays] = useState<DaysPreset>(9490);
   const [window, setWindow] = useState<30 | 60 | 90>(60);
@@ -248,8 +274,8 @@ export default function WeatherResearch() {
 
       return history.map((point, index) => ({
         date: point.date,
-        corr: point.rolling_corr,
-        rollingSignificant: Boolean(point.rolling_p_value !== null && point.rolling_p_value !== undefined && point.rolling_p_value < 0.05),
+        corr: point.signal_correlations?.[selectedSignal]?.rolling_corr ?? null,
+        rollingSignificant: Boolean(point.signal_correlations?.[selectedSignal]?.rolling_significant),
         returnScaled: returnScaled[index],
         returnRaw: point.sp500_return_pct,
         signalScaled: signalScaled[index],
@@ -261,8 +287,16 @@ export default function WeatherResearch() {
   const deferredChartData = useDeferredValue(chartData);
   const selectedSignalMeta = weatherSignalOptions.find((option) => option.key === selectedSignal) ?? weatherSignalOptions[0];
   const latestSignalNormalized = deferredChartData.length ? deferredChartData[deferredChartData.length - 1]?.signalScaled : null;
-  const relationshipTone = getRelationshipTone(data?.latest?.rolling_corr ?? null, Boolean(data?.latest?.rolling_p_value !== null && data?.latest?.rolling_p_value !== undefined && (data.latest?.rolling_p_value ?? 1) < 0.05));
+  const latestSelectedCorrelation = data?.latest?.signal_correlations?.[selectedSignal];
+  const relationshipTone = getRelationshipTone(selectedSignalMeta.label, latestSelectedCorrelation?.rolling_corr ?? null, latestSelectedCorrelation?.rolling_significant);
   const correlationZones = useMemo(() => buildCorrelationZones(deferredChartData), [deferredChartData]);
+  const bucketLabel = getBucketLabel(data?.display_granularity);
+  const historicalCorrelation = data?.signal_correlations?.[selectedSignal]?.same_day_direction ?? {
+    pearson_r: null,
+    p_value: null,
+    samples: 0,
+    significant: false,
+  };
 
   return (
     <div className="space-y-4 p-4 text-stealth-100 md:space-y-6 md:p-6">
@@ -274,45 +308,39 @@ export default function WeatherResearch() {
           </p>
           {data && (
             <p className="mt-2 text-xs text-stealth-500">
-              Weather: {data.source.weather} | Market: {data.source.market}
+              Weather: {data.source.weather} | Market: {data.source.market} | View: {bucketLabel}
             </p>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <div className="control-strip">
+          <div className={selectorRailClass}>
             {[365, 1825, 9490].map((p) => (
               <button
                 key={p}
                 onClick={() => setDays(p as DaysPreset)}
-                className={`rounded-full px-3 py-1 text-sm font-medium transition ${
-                  days === p ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-stealth-200"
-                }`}
+                className={getSelectorButtonClass(days === p)}
               >
                 {p === 365 ? "1y" : p === 1825 ? "5y" : "26y"}
               </button>
             ))}
           </div>
-          <div className="control-strip">
+          <div className={selectorRailClass}>
             {[30, 60, 90].map((w) => (
               <button
                 key={w}
                 onClick={() => setWindow(w as 30 | 60 | 90)}
-                className={`rounded-full px-3 py-1 text-sm font-medium transition ${
-                  window === w ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-stealth-200"
-                }`}
+                className={getSelectorButtonClass(window === w)}
               >
                 {w}d window
               </button>
             ))}
           </div>
-          <div className="control-strip flex-wrap">
+          <div className={`${selectorRailClass} flex-wrap`}>
             {weatherSignalOptions.map((option) => (
               <button
                 key={option.key}
                 onClick={() => setSelectedSignal(option.key)}
-                className={`rounded-full px-3 py-1 text-sm font-medium transition ${
-                  selectedSignal === option.key ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-stealth-200"
-                }`}
+                className={getSelectorButtonClass(selectedSignal === option.key)}
               >
                 {option.label}
               </button>
@@ -347,13 +375,13 @@ export default function WeatherResearch() {
             <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-4 text-sm text-stealth-200">
               <div className="text-[11px] uppercase tracking-wide text-stealth-500">Bigger picture</div>
               <div className="mt-2 text-base font-medium text-stealth-100">Selected window</div>
-              <div className="mt-2 leading-relaxed text-stealth-400">{getHistoricalContext(data.correlations.same_day_direction)}</div>
+              <div className="mt-2 leading-relaxed text-stealth-400">{getHistoricalContext(selectedSignalMeta.label, historicalCorrelation)}</div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-stealth-700 bg-stealth-900/50 p-4">
             <div className="mb-2 text-xs text-stealth-400">
-              Drag the lower brush handles to zoom. Green shading marks windows where calmer conditions have been lining up with greener sessions; red shading marks windows where higher weather stress has been lining up with greener sessions.
+              Drag the lower brush handles to zoom. Green shading marks windows where lower {selectedSignalMeta.label.toLowerCase()} readings have been lining up with greener sessions; red shading marks windows where higher {selectedSignalMeta.label.toLowerCase()} readings have been lining up with greener sessions.
             </div>
             <div className="h-[520px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -377,12 +405,12 @@ export default function WeatherResearch() {
                       const numericValue = typeof value === "number" ? value : Array.isArray(value) ? Number(value[0]) : Number(value);
                       const normalizedValue = Number.isFinite(numericValue) ? numericValue.toFixed(1) : "n/a";
                       if (item.dataKey === "returnScaled") {
-                        return [`${item.payload?.returnRaw?.toFixed(2) ?? "n/a"}% raw | ${normalizedValue} directional index`, "S&P daily return"];
+                        return [`${item.payload?.returnRaw?.toFixed(2) ?? "n/a"}% bucket avg | ${normalizedValue} directional index`, "S&P directional path"];
                       }
                       if (item.dataKey === "signalScaled") {
                         return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | ${normalizedValue} relative level`, selectedSignalMeta.chartLabel];
                       }
-                      return [Number.isFinite(numericValue) ? numericValue.toFixed(2) : "n/a", "Rolling composite-score relationship"];
+                      return [Number.isFinite(numericValue) ? numericValue.toFixed(2) : "n/a", `${selectedSignalMeta.chartLabel} rolling relationship`];
                     }}
                     contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
                   />
@@ -391,7 +419,7 @@ export default function WeatherResearch() {
                     yAxisId="corr"
                     type="monotone"
                     dataKey="corr"
-                    name={`${window}d rolling composite relationship`}
+                    name={`${window}d rolling ${selectedSignalMeta.chartLabel.toLowerCase()} relationship`}
                     stroke="#f43f5e"
                     dot={false}
                     strokeWidth={1.2}
@@ -403,7 +431,7 @@ export default function WeatherResearch() {
                     yAxisId="signal"
                     type="monotone"
                     dataKey="returnScaled"
-                    name="S&P daily return (directional)"
+                    name="S&P directional path"
                     stroke="#22c55e"
                     dot={false}
                     strokeWidth={1.6}
@@ -436,6 +464,9 @@ export default function WeatherResearch() {
           <div className="rounded-2xl border border-stealth-700 bg-stealth-800/60 p-4 text-xs leading-relaxed text-stealth-300">
             The chart now leans into direction, not just move size. The green market line is the signed S&P return, the weather line is contextual, and the quiet red line still shows rolling correlation between the composite weather score and directional returns.
           </div>
+          <p className="mt-3 text-[11px] text-stealth-500">
+            The red line and the background shading now track the selected weather signal directly, while the green line reflects signed S&P direction.
+          </p>
         </>
       )}
     </div>

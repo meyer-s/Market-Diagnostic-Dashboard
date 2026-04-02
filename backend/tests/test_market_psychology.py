@@ -37,9 +37,10 @@ def test_cache_entry_expires(monkeypatch):
 
 
 def test_resolve_weather_granularity_auto_thresholds():
-    assert mp._resolve_weather_granularity(180, "auto") == "day"
-    assert mp._resolve_weather_granularity(365 * 3, "auto") == "week"
-    assert mp._resolve_weather_granularity(365 * 10, "auto") == "month"
+    assert mp._resolve_weather_granularity(30, "auto") == "day"
+    assert mp._resolve_weather_granularity(180, "auto") == "week"
+    assert mp._resolve_weather_granularity(365, "auto") == "week"
+    assert mp._resolve_weather_granularity(365 * 3, "auto") == "month"
 
 
 def test_percentile_rank_is_bounded_and_ordered():
@@ -70,6 +71,10 @@ def test_aggregate_weather_history_monthly_compacts_points():
             "rolling_corr": 0.2,
             "rolling_p_value": 0.04,
             "rolling_significant": True,
+            "signal_correlations": {
+                "weather_stress_score": {"rolling_corr": 0.2, "rolling_p_value": 0.04, "rolling_significant": True},
+                "pressure_hpa": {"rolling_corr": -0.1, "rolling_p_value": 0.2, "rolling_significant": False},
+            },
         },
         {
             "date": "2024-01-15",
@@ -89,6 +94,10 @@ def test_aggregate_weather_history_monthly_compacts_points():
             "rolling_corr": 0.4,
             "rolling_p_value": 0.03,
             "rolling_significant": True,
+            "signal_correlations": {
+                "weather_stress_score": {"rolling_corr": 0.4, "rolling_p_value": 0.03, "rolling_significant": True},
+                "pressure_hpa": {"rolling_corr": -0.25, "rolling_p_value": 0.04, "rolling_significant": True},
+            },
         },
         {
             "date": "2024-02-01",
@@ -108,6 +117,10 @@ def test_aggregate_weather_history_monthly_compacts_points():
             "rolling_corr": 0.1,
             "rolling_p_value": 0.2,
             "rolling_significant": False,
+            "signal_correlations": {
+                "weather_stress_score": {"rolling_corr": 0.1, "rolling_p_value": 0.2, "rolling_significant": False},
+                "pressure_hpa": {"rolling_corr": -0.05, "rolling_p_value": 0.7, "rolling_significant": False},
+            },
         },
     ]
 
@@ -122,3 +135,11 @@ def test_aggregate_weather_history_monthly_compacts_points():
     assert aggregated[0]["pressure_shift_score"] == 0.6
     assert aggregated[0]["weather_stress_score"] == 0.2
     assert aggregated[0]["rolling_corr"] == 0.4
+    assert aggregated[0]["signal_correlations"]["pressure_hpa"]["rolling_corr"] == -0.25
+
+
+def test_pearson_summary_optional_ignores_missing_points():
+    summary = mp._pearson_summary_optional([1.0, None, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0], min_samples=3)
+
+    assert summary["pearson_r"] == 1.0
+    assert summary["samples"] == 3
