@@ -14,6 +14,7 @@ export default function Topbar() {
 
   const toolsItems = [
     { path: "/tools/experiments", label: "Experiments" },
+    { path: "/tools/weather-research", label: "Weather Research" },
     { path: "/tools/recap", label: "Recap" },
     { path: "/market-map", label: "Market Map" },
     { path: "/sector-projections", label: "Sector Projections" },

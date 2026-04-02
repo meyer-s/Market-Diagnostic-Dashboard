@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import WeatherPsychologyWidget from "../../components/widgets/WeatherPsychologyWidget";
 import RatesSpreadWidget from "../../components/widgets/RatesSpreadWidget";
 
@@ -64,6 +65,11 @@ export default function Experiments() {
 
       <div className="rounded-2xl border border-stealth-700 bg-stealth-800/70 p-4 text-xs leading-relaxed text-stealth-300">
         Guardrails: correlations are shown with significance context, and proxy fallback series are suppressed by default to avoid accidental over-reading of synthetic substitutes.
+        <div className="mt-2">
+          <Link className="text-sky-300 hover:text-sky-200" to="/tools/weather-research">
+            Open full weather explorer (granular + long-history)
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">

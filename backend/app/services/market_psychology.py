@@ -198,7 +198,7 @@ async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dic
         "longitude": NYC_LON,
         "start_date": start_date,
         "end_date": end_date,
-        "hourly": "surface_pressure,temperature_2m,precipitation,windspeed_10m",
+        "daily": "pressure_msl_mean,temperature_2m_mean,precipitation_sum,wind_speed_10m_max",
         "timezone": "America/New_York",
     }
 
@@ -207,52 +207,25 @@ async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dic
         response.raise_for_status()
         payload = response.json()
 
-    hourly = payload.get("hourly") or {}
-    timestamps = hourly.get("time") or []
-    pressures = hourly.get("surface_pressure") or []
-    temperatures = hourly.get("temperature_2m") or []
-    precip = hourly.get("precipitation") or []
-    winds = hourly.get("windspeed_10m") or []
+    daily = payload.get("daily") or {}
+    dates = daily.get("time") or []
+    pressure_series = daily.get("pressure_msl_mean") or []
+    temp_series = daily.get("temperature_2m_mean") or []
+    precip_series = daily.get("precipitation_sum") or []
+    wind_series = daily.get("wind_speed_10m_max") or []
 
-    bucket: Dict[str, Dict[str, List[float]]] = {}
-
-    for ts, pressure, temp, rain, wind in zip(timestamps, pressures, temperatures, precip, winds):
-        day = str(ts).split("T")[0]
-        if day not in bucket:
-            bucket[day] = {
-                "pressure": [],
-                "temp": [],
-                "precip": [],
-                "wind": [],
-            }
-
-        p = _safe_float(pressure)
-        t = _safe_float(temp)
-        r = _safe_float(rain)
-        w = _safe_float(wind)
-
-        if p is not None:
-            bucket[day]["pressure"].append(p)
-        if t is not None:
-            bucket[day]["temp"].append(t)
-        if r is not None:
-            bucket[day]["precip"].append(r)
-        if w is not None:
-            bucket[day]["wind"].append(w)
-
-    sorted_days = sorted(bucket.keys())
     rows: List[Dict[str, Any]] = []
     temps: List[float] = []
 
-    for day in sorted_days:
-        day_bucket = bucket[day]
-        if not day_bucket["pressure"]:
-            continue
-
-        avg_pressure = mean(day_bucket["pressure"])
-        avg_temp = mean(day_bucket["temp"]) if day_bucket["temp"] else None
-        total_precip = sum(day_bucket["precip"]) if day_bucket["precip"] else 0.0
-        peak_wind = max(day_bucket["wind"]) if day_bucket["wind"] else 0.0
+    for idx, day in enumerate(dates):
+        avg_pressure = _safe_float(pressure_series[idx]) if idx < len(pressure_series) else None
+        avg_temp = _safe_float(temp_series[idx]) if idx < len(temp_series) else None
+        total_precip = _safe_float(precip_series[idx]) if idx < len(precip_series) else 0.0
+        peak_wind = _safe_float(wind_series[idx]) if idx < len(wind_series) else 0.0
+        if total_precip is None:
+            total_precip = 0.0
+        if peak_wind is None:
+            peak_wind = 0.0
 
         if avg_temp is not None:
             temps.append(avg_temp)
@@ -263,7 +236,7 @@ async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dic
         rows.append(
             {
                 "date": day,
-                "pressure_hpa": round(avg_pressure, 3),
+                "pressure_hpa": round(avg_pressure, 3) if avg_pressure is not None else None,
                 "temp_c": round(avg_temp, 3) if avg_temp is not None else None,
                 "temp_anomaly_c": round(float(temp_anomaly), 3),
                 "precip_mm": round(total_precip, 3),
@@ -290,7 +263,7 @@ async def get_weather_market_correlation(days: int = 365, window: int = 30, forc
             return {**cached, "from_cache": True}
 
     today = datetime.utcnow().date()
-    start_date = (today - timedelta(days=days + 90)).isoformat()
+    start_date = (today - timedelta(days=days + 120)).isoformat()
     end_date = today.isoformat()
 
     weather_rows = await _fetch_nyc_weather_history(start_date=start_date, end_date=end_date)

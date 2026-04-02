@@ -8,7 +8,7 @@ router = APIRouter(prefix="/research", tags=["Research"])
 
 @router.get("/weather-market")
 async def weather_market(
-    days: int = Query(365, ge=90, le=1825),
+    days: int = Query(365, ge=90, le=12000),
     window: int = Query(30, ge=20, le=120),
     force_refresh: bool = Query(False, description="Bypass cache and recompute payload."),
 ):
