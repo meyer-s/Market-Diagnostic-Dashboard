@@ -6,9 +6,11 @@ from math import sqrt
 from statistics import mean
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import time
+import asyncio
 
 import httpx
 from scipy.stats import pearsonr
+import yfinance as yf
 
 from app.services.ingestion.fred_client import FredClient, FredClientError
 from app.utils.data_helpers import series_to_dict
@@ -192,6 +194,57 @@ def _forward_fill_lookup(dates: Sequence[str], raw: Dict[str, float]) -> List[Op
     return filled
 
 
+async def _fetch_sp500_series(start_date: str, end_date: str) -> Tuple[Dict[str, float], str]:
+    fred = FredClient()
+    source = "FRED SP500"
+    series: Dict[str, float] = {}
+
+    try:
+        fred_rows = await fred.fetch_series("SP500", start_date=start_date, end_date=end_date)
+        series = series_to_dict(fred_rows)
+    except Exception:
+        series = {}
+
+    desired_start = _parse_iso_date(start_date)
+    oldest = _parse_iso_date(min(series.keys())) if series else None
+    needs_long_history = bool(desired_start and (oldest is None or oldest > desired_start + timedelta(days=60)))
+
+    if not needs_long_history:
+        return series, source
+
+    def _download_yahoo() -> Dict[str, float]:
+        hist = yf.download(
+            "^GSPC",
+            start=start_date,
+            end=(datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat(),
+            interval="1d",
+            progress=False,
+            auto_adjust=False,
+            threads=False,
+        )
+        if hist is None or hist.empty:
+            return {}
+        closes = hist.get("Close")
+        if closes is None:
+            return {}
+        result: Dict[str, float] = {}
+        for idx, value in closes.items():
+            if value is None:
+                continue
+            try:
+                dt = idx.to_pydatetime().date().isoformat()
+                result[dt] = float(value)
+            except Exception:
+                continue
+        return result
+
+    yahoo_series = await asyncio.to_thread(_download_yahoo)
+    if yahoo_series:
+        return yahoo_series, "Yahoo Finance ^GSPC"
+
+    return series, source
+
+
 async def _fetch_nyc_weather_history(start_date: str, end_date: str) -> List[Dict[str, Any]]:
     params = {
         "latitude": NYC_LAT,
@@ -268,9 +321,7 @@ async def get_weather_market_correlation(days: int = 365, window: int = 30, forc
 
     weather_rows = await _fetch_nyc_weather_history(start_date=start_date, end_date=end_date)
 
-    fred = FredClient()
-    sp500_series = await fred.fetch_series("SP500", start_date=start_date, end_date=end_date)
-    sp500_dict = series_to_dict(sp500_series)
+    sp500_dict, market_source = await _fetch_sp500_series(start_date=start_date, end_date=end_date)
 
     weather_by_date = {row["date"]: row for row in weather_rows}
     common_dates = sorted(set(weather_by_date.keys()) & set(sp500_dict.keys()))
@@ -368,7 +419,7 @@ async def get_weather_market_correlation(days: int = 365, window: int = 30, forc
         "location": "NYC Metro Proxy",
         "source": {
             "weather": "Open-Meteo Archive (free public)",
-            "market": "FRED SP500",
+            "market": market_source,
         },
         "window_days": window,
         "days": days,
