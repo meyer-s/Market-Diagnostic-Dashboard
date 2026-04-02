@@ -24,6 +24,7 @@ type WeatherHistoryPoint = {
   precipitation_stress_score: number;
   wind_stress_score: number;
   temperature_stress_score: number;
+  sp500_return_pct: number;
   sp500_abs_return_pct: number;
   rolling_corr: number | null;
   rolling_p_value: number | null;
@@ -119,24 +120,24 @@ const getRelationshipTone = (corr: number | null | undefined, significant: boole
   if (corr === null || corr === undefined) {
     return {
       title: "Not enough signal yet",
-      body: "This window does not show a stable relationship between weather stress and market movement.",
+      body: "This window does not show a stable relationship between weather stress and market direction.",
     };
   }
   if (!significant || Math.abs(corr) < 0.15) {
     return {
       title: "Mostly noise right now",
-      body: "Weather and market movement are brushing past each other, but not in a durable way.",
+      body: "Weather and market direction are brushing past each other, but not in a durable way.",
     };
   }
   if (corr > 0) {
     return {
-      title: "Weather stress is lining up with bigger moves",
-      body: "When the composite stress backdrop rises, the market has recently been more reactive rather than calmer.",
+      title: "Stressier weather has lined up with greener sessions",
+      body: "In the recent window, higher weather stress has been showing up alongside more positive S&P days.",
     };
   }
   return {
-    title: "Higher stress has recently lined up with calmer moves",
-    body: "The recent window is showing an inverse relationship, which can happen when messy weather is not the dominant market driver.",
+    title: "Calmer weather has lined up with greener sessions",
+    body: "In the recent window, calmer conditions have been showing up alongside more positive S&P days.",
   };
 };
 
@@ -161,9 +162,9 @@ const getHistoricalContext = (corr: CorrelationSummary) => {
     return "Across the selected history, the broader pattern still looks weak and inconsistent.";
   }
   if (corr.pearson_r > 0) {
-    return "Across the selected history, higher weather stress has tended to coincide with larger same-session moves.";
+    return "Across the selected history, higher weather stress has tended to coincide with more positive same-session returns.";
   }
-  return "Across the selected history, higher weather stress has tended to coincide with smaller same-session moves.";
+  return "Across the selected history, calmer weather has tended to coincide with more positive same-session returns.";
 };
 
 const buildCorrelationZones = (
@@ -181,7 +182,7 @@ const buildCorrelationZones = (
       continue;
     }
 
-    const fill = point.corr > 0 ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.10)";
+    const fill = point.corr < 0 ? "rgba(34,197,94,0.10)" : "rgba(239,68,68,0.10)";
     if (!current || current.fill !== fill) {
       if (current) zones.push(current);
       current = { start: point.date, end: point.date, fill };
@@ -208,6 +209,19 @@ const normalizeSeries = (values: Array<number | null | undefined>) => {
   });
 };
 
+const normalizeCenteredSeries = (values: Array<number | null | undefined>) => {
+  const numeric = values.filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
+  if (!numeric.length) return values.map(() => null);
+
+  const maxAbs = Math.max(...numeric.map((value) => Math.abs(value)));
+  if (maxAbs === 0) return values.map((value) => (value === null || value === undefined ? null : 0));
+
+  return values.map((value) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return null;
+    return (value / maxAbs) * 100;
+  });
+};
+
 const formatComponentRaw = (value: number | null | undefined, unit: string) => {
   if (value === null || value === undefined) return "n/a";
   if (unit === "score") return value.toFixed(2);
@@ -228,15 +242,15 @@ export default function WeatherResearch() {
   const chartData = useMemo(
     () => {
       const history = data?.history ?? [];
-      const absReturnScaled = normalizeSeries(history.map((point) => point.sp500_abs_return_pct));
+      const returnScaled = normalizeCenteredSeries(history.map((point) => point.sp500_return_pct));
       const signalScaled = normalizeSeries(history.map((point) => point[selectedSignal] as number | null | undefined));
 
       return history.map((point, index) => ({
         date: point.date,
         corr: point.rolling_corr,
         rollingSignificant: Boolean(point.rolling_p_value !== null && point.rolling_p_value !== undefined && point.rolling_p_value < 0.05),
-        absReturnScaled: absReturnScaled[index],
-        absReturnRaw: point.sp500_abs_return_pct,
+        returnScaled: returnScaled[index],
+        returnRaw: point.sp500_return_pct,
         signalScaled: signalScaled[index],
         signalRaw: point[selectedSignal] as number | null | undefined,
       }));
@@ -332,13 +346,13 @@ export default function WeatherResearch() {
             <div className="rounded-xl border border-stealth-700 bg-stealth-800/70 p-4 text-sm text-stealth-200">
               <div className="text-[11px] uppercase tracking-wide text-stealth-500">Bigger picture</div>
               <div className="mt-2 text-base font-medium text-stealth-100">Selected window</div>
-              <div className="mt-2 leading-relaxed text-stealth-400">{getHistoricalContext(data.correlations.same_day_sensitivity)}</div>
+              <div className="mt-2 leading-relaxed text-stealth-400">{getHistoricalContext(data.correlations.same_day_direction)}</div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-stealth-700 bg-stealth-900/50 p-4">
             <div className="mb-2 text-xs text-stealth-400">
-              Drag the lower brush handles to zoom. Soft red shading marks windows where the composite weather score has been positively linked to larger moves; green shading marks inverse windows.
+              Drag the lower brush handles to zoom. Green shading marks windows where calmer conditions have been lining up with greener sessions; red shading marks windows where higher weather stress has been lining up with greener sessions.
             </div>
             <div className="h-[520px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -355,17 +369,17 @@ export default function WeatherResearch() {
                     tickFormatter={(value: string) => value.slice(0, 7)}
                   />
                   <YAxis yAxisId="corr" domain={[-1, 1]} stroke="#f43f5e" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="signal" orientation="right" domain={[0, 100]} stroke="#94a3b8" tick={{ fontSize: 11 }} tickFormatter={(value: number) => `${Math.round(value)}`} />
+                  <YAxis yAxisId="signal" orientation="right" domain={[-100, 100]} stroke="#94a3b8" tick={{ fontSize: 11 }} tickFormatter={(value: number) => `${Math.round(value)}`} />
                   <Tooltip
                     labelFormatter={(label: string) => `Date: ${label}`}
-                    formatter={(value: string | number | readonly (string | number)[] | null | undefined, _name: string, item: { dataKey?: unknown; payload?: { absReturnRaw?: number; signalRaw?: number | null } }) => {
+                    formatter={(value: string | number | readonly (string | number)[] | null | undefined, _name: string, item: { dataKey?: unknown; payload?: { returnRaw?: number; signalRaw?: number | null } }) => {
                       const numericValue = typeof value === "number" ? value : Array.isArray(value) ? Number(value[0]) : Number(value);
                       const normalizedValue = Number.isFinite(numericValue) ? numericValue.toFixed(1) : "n/a";
-                      if (item.dataKey === "absReturnScaled") {
-                        return [`${item.payload?.absReturnRaw?.toFixed(2) ?? "n/a"}% raw | ${normalizedValue} normalized`, "S&P move magnitude"];
+                      if (item.dataKey === "returnScaled") {
+                        return [`${item.payload?.returnRaw?.toFixed(2) ?? "n/a"}% raw | ${normalizedValue} directional index`, "S&P daily return"];
                       }
                       if (item.dataKey === "signalScaled") {
-                        return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | ${normalizedValue} normalized`, selectedSignalMeta.chartLabel];
+                        return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | ${normalizedValue} relative level`, selectedSignalMeta.chartLabel];
                       }
                       return [Number.isFinite(numericValue) ? numericValue.toFixed(2) : "n/a", "Rolling composite-score relationship"];
                     }}
@@ -387,8 +401,8 @@ export default function WeatherResearch() {
                   <Line
                     yAxisId="signal"
                     type="monotone"
-                    dataKey="absReturnScaled"
-                    name="S&P move magnitude (normalized)"
+                    dataKey="returnScaled"
+                    name="S&P daily return (directional)"
                     stroke="#22c55e"
                     dot={false}
                     strokeWidth={1.6}
@@ -419,7 +433,7 @@ export default function WeatherResearch() {
           </div>
 
           <div className="rounded-2xl border border-stealth-700 bg-stealth-800/60 p-4 text-xs leading-relaxed text-stealth-300">
-            The chart now uses the red line as a quiet guide rather than the main story. What matters most is the background shading: it marks stretches where the composite weather score actually moves in step with market sensitivity. The selectable weather line is there for context, not for scoring.
+            The chart now leans into direction, not just move size. The green market line is the signed S&P return, the weather line is contextual, and the quiet red line still shows rolling correlation between the composite weather score and directional returns.
           </div>
         </>
       )}

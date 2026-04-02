@@ -125,11 +125,24 @@ const normalizeSeries = (values: Array<number | null | undefined>) => {
   });
 };
 
+const normalizeCenteredSeries = (values: Array<number | null | undefined>) => {
+  const numeric = values.filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
+  if (!numeric.length) return values.map(() => null);
+
+  const maxAbs = Math.max(...numeric.map((value) => Math.abs(value)));
+  if (maxAbs === 0) return values.map((value) => (value === null || value === undefined ? null : 0));
+
+  return values.map((value) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return null;
+    return (value / maxAbs) * 100;
+  });
+};
+
 const getRelationshipTone = (corr: number | null | undefined, significant: boolean | undefined) => {
   if (corr === null || corr === undefined) return "No stable relationship yet.";
   if (!significant || Math.abs(corr) < 0.15) return "The relationship looks weak and noisy right now.";
-  if (corr > 0) return "Recent weather stress has lined up with bigger market moves.";
-  return "Recent weather stress has lined up with calmer market moves.";
+  if (corr > 0) return "Stressier weather has lined up with greener sessions.";
+  return "Calmer weather has lined up with greener sessions.";
 };
 
 const getSignalContext = (label: string, normalizedValue: number | null | undefined) => {
@@ -154,7 +167,7 @@ const buildCorrelationZones = (
       continue;
     }
 
-    const fill = point.rolling_corr > 0 ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.10)";
+    const fill = point.rolling_corr < 0 ? "rgba(34,197,94,0.10)" : "rgba(239,68,68,0.10)";
     if (!current || current.fill !== fill) {
       if (current) zones.push(current);
       current = { start: point.date, end: point.date, fill };
@@ -191,14 +204,14 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
     );
   }
 
-  const absReturnScaled = normalizeSeries(data.history.map((point) => point.sp500_abs_return_pct));
+  const returnScaled = normalizeCenteredSeries(data.history.map((point) => point.sp500_return_pct));
   const signalScaled = normalizeSeries(data.history.map((point) => point[selectedSignal] as number | null | undefined));
   const chartData = data.history.map((point, index) => ({
     date: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     rolling_corr: point.rolling_corr,
     rollingSignificant: point.rolling_corr !== null,
-    absReturnScaled: absReturnScaled[index],
-    absReturnRaw: point.sp500_abs_return_pct,
+    returnScaled: returnScaled[index],
+    returnRaw: point.sp500_return_pct,
     signalScaled: signalScaled[index],
     signalRaw: point[selectedSignal] as number | null | undefined,
   }));
@@ -229,7 +242,7 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
         </div>
         <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 px-3 py-3">
           <div className="text-stealth-500">Background view</div>
-          <div className="mt-1 text-stealth-200">Soft red shading marks periods when the composite weather score lined up with larger moves.</div>
+          <div className="mt-1 text-stealth-200">Green shading marks periods where calmer conditions have been lining up with greener sessions.</div>
         </div>
       </div>
 
@@ -256,23 +269,23 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
             ))}
             <XAxis dataKey="date" stroke="#94a3b8" tick={{ fontSize: 11 }} minTickGap={22} />
             <YAxis yAxisId="corr" domain={[-1, 1]} stroke="#fda4af" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="signal" orientation="right" domain={[0, 100]} stroke="#94a3b8" tick={{ fontSize: 11 }} tickFormatter={(value: number) => `${Math.round(value)}`} />
+            <YAxis yAxisId="signal" orientation="right" domain={[-100, 100]} stroke="#94a3b8" tick={{ fontSize: 11 }} tickFormatter={(value: number) => `${Math.round(value)}`} />
             <Tooltip
-              formatter={(value: string | number | readonly (string | number)[] | null | undefined, _name: string, item: { dataKey?: unknown; payload?: { absReturnRaw?: number; signalRaw?: number | null } }) => {
+              formatter={(value: string | number | readonly (string | number)[] | null | undefined, _name: string, item: { dataKey?: unknown; payload?: { returnRaw?: number; signalRaw?: number | null } }) => {
                 const numericValue = typeof value === "number" ? value : Array.isArray(value) ? Number(value[0]) : Number(value);
                 const normalizedValue = Number.isFinite(numericValue) ? numericValue.toFixed(1) : "n/a";
-                if (item.dataKey === "absReturnScaled") {
-                  return [`${item.payload?.absReturnRaw?.toFixed(2) ?? "n/a"}% raw | ${normalizedValue} normalized`, "S&P move magnitude"];
+                if (item.dataKey === "returnScaled") {
+                  return [`${item.payload?.returnRaw?.toFixed(2) ?? "n/a"}% raw | ${normalizedValue} directional index`, "S&P daily return"];
                 }
                 if (item.dataKey === "signalScaled") {
-                  return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | ${normalizedValue} normalized`, selectedSignalMeta.chartLabel];
+                  return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | ${normalizedValue} relative level`, selectedSignalMeta.chartLabel];
                 }
                 return [Number.isFinite(numericValue) ? numericValue.toFixed(2) : "n/a", "Rolling composite-score relationship"];
               }}
               contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
             />
             <Line yAxisId="corr" type="monotone" dataKey="rolling_corr" name="Rolling composite relationship" stroke="#f43f5e" dot={false} strokeWidth={1.2} strokeOpacity={0.45} connectNulls />
-            <Line yAxisId="signal" type="monotone" dataKey="absReturnScaled" name="S&P move magnitude (normalized)" stroke="#22c55e" dot={false} strokeWidth={1.8} />
+            <Line yAxisId="signal" type="monotone" dataKey="returnScaled" name="S&P daily return (directional)" stroke="#22c55e" dot={false} strokeWidth={1.8} />
             <Line yAxisId="signal" type="monotone" dataKey="signalScaled" name={`${selectedSignalMeta.chartLabel} (normalized)`} stroke={selectedSignalMeta.color} dot={false} strokeWidth={1.4} strokeDasharray={selectedSignalMeta.strokeDasharray} connectNulls />
           </LineChart>
         </ResponsiveContainer>
@@ -281,7 +294,7 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
         The right axis is normalized from 0 to 100 within the active window so the selected weather signal and S&P move magnitude remain visually comparable.
       </p>
       <p className="mt-1 text-[11px] text-stealth-500">
-        The red line is still the composite relationship, but the shading is meant to carry most of the story.
+        The red line is still the composite relationship, but the shading is meant to carry most of the story and the green line now reflects signed S&P direction rather than absolute move size.
       </p>
     </div>
   );

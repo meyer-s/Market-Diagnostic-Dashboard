@@ -657,7 +657,7 @@ async def get_weather_market_correlation(
     rolling = _rolling_correlation(
         filtered_dates,
         filtered_disruptions,
-        filtered_abs_returns,
+        filtered_returns,
         window=window,
     )
 
@@ -676,7 +676,7 @@ async def get_weather_market_correlation(
             continue
 
         lead_x = filtered_disruptions[:-lag]
-        lead_y = filtered_abs_returns[lag:]
+        lead_y = filtered_returns[lag:]
         lag_results[f"lag_{lag}d"] = _pearson_summary(lead_x, lead_y)
 
     history: List[Dict[str, Any]] = []
