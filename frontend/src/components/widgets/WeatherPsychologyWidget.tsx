@@ -155,8 +155,8 @@ const getSignalContext = (label: string, normalizedValue: number | null | undefi
 const buildCorrelationZones = (
   points: Array<{ date: string; rolling_corr: number | null; rollingSignificant: boolean }>
 ) => {
-  const zones: Array<{ start: string; end: string; fill: string }> = [];
-  let current: { start: string; end: string; fill: string } | null = null;
+  const zones: Array<{ start: string; end: string; fill: string; stroke: string }> = [];
+  let current: { start: string; end: string; fill: string; stroke: string } | null = null;
 
   for (const point of points) {
     if (!point.rollingSignificant || point.rolling_corr === null || Math.abs(point.rolling_corr) < 0.15) {
@@ -167,10 +167,11 @@ const buildCorrelationZones = (
       continue;
     }
 
-    const fill = point.rolling_corr < 0 ? "rgba(34,197,94,0.10)" : "rgba(239,68,68,0.10)";
+    const fill = point.rolling_corr < 0 ? "rgba(34,197,94,0.22)" : "rgba(239,68,68,0.22)";
+    const stroke = point.rolling_corr < 0 ? "rgba(34,197,94,0.45)" : "rgba(239,68,68,0.45)";
     if (!current || current.fill !== fill) {
       if (current) zones.push(current);
-      current = { start: point.date, end: point.date, fill };
+      current = { start: point.date, end: point.date, fill, stroke };
       continue;
     }
     current.end = point.date;
@@ -265,7 +266,7 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.2)" />
             {correlationZones.map((zone) => (
-              <ReferenceArea key={`${zone.start}-${zone.end}-${zone.fill}`} x1={zone.start} x2={zone.end} yAxisId="corr" fill={zone.fill} ifOverflow="extendDomain" />
+              <ReferenceArea key={`${zone.start}-${zone.end}-${zone.fill}`} x1={zone.start} x2={zone.end} yAxisId="corr" fill={zone.fill} stroke={zone.stroke} strokeOpacity={0.9} ifOverflow="extendDomain" />
             ))}
             <XAxis dataKey="date" stroke="#94a3b8" tick={{ fontSize: 11 }} minTickGap={22} />
             <YAxis yAxisId="corr" domain={[-1, 1]} stroke="#fda4af" tick={{ fontSize: 11 }} />
