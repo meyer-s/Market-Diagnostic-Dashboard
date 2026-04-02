@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from math import sqrt
+from math import isfinite, sqrt
 from statistics import mean
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import time
@@ -172,6 +172,13 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+def _safe_finite_round(value: Any, digits: int) -> Optional[float]:
+    numeric = _safe_float(value)
+    if numeric is None or not isfinite(numeric):
+        return None
+    return round(numeric, digits)
+
+
 def _zscore(values: Sequence[float]) -> List[float]:
     if len(values) < 2:
         return [0.0 for _ in values]
@@ -213,11 +220,21 @@ def _pearson_summary(x: Sequence[float], y: Sequence[float], min_samples: int = 
             "significant": False,
         }
 
+    r_rounded = _safe_finite_round(r_value, 4)
+    p_rounded = _safe_finite_round(p_value, 6)
+    if r_rounded is None or p_rounded is None:
+        return {
+            "pearson_r": None,
+            "p_value": None,
+            "samples": len(x),
+            "significant": False,
+        }
+
     return {
-        "pearson_r": round(float(r_value), 4),
-        "p_value": round(float(p_value), 6),
+        "pearson_r": r_rounded,
+        "p_value": p_rounded,
         "samples": len(x),
-        "significant": bool(p_value < 0.05),
+        "significant": bool(p_rounded < 0.05),
     }
 
 

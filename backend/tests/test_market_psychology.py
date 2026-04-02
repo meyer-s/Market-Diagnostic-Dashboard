@@ -147,6 +147,14 @@ def test_pearson_summary_optional_ignores_missing_points():
     assert summary["samples"] == 3
 
 
+def test_pearson_summary_rejects_non_finite_results():
+    summary = mp._pearson_summary([1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 2.0, 3.0, 4.0, 5.0], min_samples=3)
+
+    assert summary["pearson_r"] is None
+    assert summary["p_value"] is None
+    assert summary["significant"] is False
+
+
 def test_rolling_correlation_allows_small_valid_windows():
     points = mp._rolling_correlation(
         ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],

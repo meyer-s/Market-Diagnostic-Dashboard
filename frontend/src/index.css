@@ -48,8 +48,16 @@ body {
 }
 
 .weather-research-chart .recharts-brush-slide {
+  rx: 17px;
+  ry: 17px;
   fill: rgba(148, 163, 184, 0.18);
+  stroke: rgba(148, 163, 184, 0.26);
+  stroke-width: 1px;
   filter: drop-shadow(0 0 14px rgba(148, 163, 184, 0.1));
+}
+
+.weather-research-chart .recharts-brush-traveller {
+  filter: drop-shadow(0 0 10px rgba(148, 163, 184, 0.18));
 }
 
 .weather-research-chart .recharts-brush-texts text {

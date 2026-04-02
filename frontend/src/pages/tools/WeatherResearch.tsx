@@ -287,25 +287,16 @@ const WeatherBrushTraveller = ({
 
   return (
     <g>
-      <rect
-        x={x}
-        y={y + 2}
-        width={width}
-        height={Math.max(0, height - 4)}
-        rx={height / 2}
-        fill="rgba(15, 23, 42, 0.94)"
-        stroke="rgba(51, 65, 85, 0.95)"
+      <circle
+        cx={centerX}
+        cy={centerY}
+        r={Math.max(7, width * 0.72)}
+        fill="rgba(226, 232, 240, 0.12)"
       />
       <circle
         cx={centerX}
         cy={centerY}
-        r={Math.max(6, width * 0.66)}
-        fill="rgba(226, 232, 240, 0.08)"
-      />
-      <circle
-        cx={centerX}
-        cy={centerY}
-        r={Math.max(4, width * 0.32)}
+        r={Math.max(5, width * 0.42)}
         fill="rgba(241, 245, 249, 0.9)"
         stroke="rgba(255, 255, 255, 0.44)"
       />
@@ -346,6 +337,8 @@ export default function WeatherResearch() {
   const [brushSelection, setBrushSelection] = useState<{ startIndex: number; endIndex: number } | null>(null);
   const [detailOverride, setDetailOverride] = useState<DetailOverride | null>(null);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
+  const baseWindowOptions = WINDOW_OPTIONS_BY_DAYS[days];
+  const baseWindow = baseWindowOptions.includes(window) ? window : getClosestWindowOption(window, baseWindowOptions);
 
   const handleDaysChange = (nextDays: DaysPreset) => {
     setDays(nextDays);
@@ -358,7 +351,7 @@ export default function WeatherResearch() {
     setDetailOverride(null);
   };
 
-  const baseEndpoint = `/research/weather-market?days=${days}&window=${window}&granularity=${days === 365 ? "day" : "auto"}${days === 365 ? `&calendar_year=${selectedYear}` : ""}`;
+  const baseEndpoint = `/research/weather-market?days=${days}&window=${baseWindow}&granularity=${days === 365 ? "day" : "auto"}${days === 365 ? `&calendar_year=${selectedYear}` : ""}`;
   const { data: baseData, loading: baseLoading, error: baseError } = useApi<WeatherPayload>(baseEndpoint);
   const detailDays = detailOverride ? getRangeDays(detailOverride.startDate, detailOverride.endDate) : null;
   const detailEndpoint = detailOverride
@@ -572,7 +565,7 @@ export default function WeatherResearch() {
               The main chart tracks the active zoom slice while the lower overview strip keeps the full horizon in view. The rolling window presets now adapt to the visible horizon automatically. Green shading marks windows where lower {selectedSignalMeta.label.toLowerCase()} readings have been lining up with greener sessions; red shading marks windows where higher {selectedSignalMeta.label.toLowerCase()} readings have been lining up with greener sessions.
             </div>
             <div className="weather-research-chart h-[520px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={520}>
                 <LineChart data={deferredChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.22)" />
                   {correlationZones.map((zone) => (
@@ -641,7 +634,7 @@ export default function WeatherResearch() {
               </ResponsiveContainer>
             </div>
             <div className="weather-research-chart mt-4 h-[120px] rounded-2xl border border-stealth-800 bg-stealth-950/45 px-2 py-3">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={120}>
                 <LineChart data={deferredBaseChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.12)" vertical={false} />
                   <XAxis dataKey="date" hide />
@@ -670,7 +663,7 @@ export default function WeatherResearch() {
                     height={34}
                     fill="rgba(2, 6, 23, 0.92)"
                     stroke="rgba(148, 163, 184, 0.78)"
-                    travellerWidth={14}
+                    travellerWidth={16}
                     traveller={<WeatherBrushTraveller />}
                     startIndex={brushRange.startIndex}
                     endIndex={brushRange.endIndex}
