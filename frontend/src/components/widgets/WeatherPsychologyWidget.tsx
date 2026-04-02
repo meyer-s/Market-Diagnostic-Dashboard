@@ -43,6 +43,7 @@ interface WeatherMarketPayload {
   location: string;
   days: number;
   window_days: number;
+  display_granularity: "day" | "week" | "month";
   source: {
     weather: string;
     market: string;
@@ -109,6 +110,12 @@ const formatComponentRaw = (value: number | null | undefined, unit: string) => {
   if (unit === "mm") return `${value.toFixed(1)} mm`;
   if (unit === "km/h") return `${value.toFixed(1)} km/h`;
   return `${value.toFixed(1)} C`;
+};
+
+const getBucketLabel = (granularity: WeatherMarketPayload["display_granularity"]) => {
+  if (granularity === "day") return "Daily buckets";
+  if (granularity === "week") return "Weekly buckets";
+  return "Monthly buckets";
 };
 
 const normalizeSeries = (values: Array<number | null | undefined>) => {
@@ -183,7 +190,7 @@ const buildCorrelationZones = (
 
 export default function WeatherPsychologyWidget({ days = 180 }: Props) {
   const [selectedSignal, setSelectedSignal] = useState<WeatherSignalOption>("weather_stress_score");
-  const { data, loading, error } = useApi<WeatherMarketPayload>(`/research/weather-market?days=${days}&window=30`);
+  const { data, loading, error } = useApi<WeatherMarketPayload>(`/research/weather-market?days=${days}&window=30&granularity=auto`);
 
   if (loading) {
     return (
@@ -220,6 +227,7 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
   const latestSignalNormalized = chartData.length ? chartData[chartData.length - 1]?.signalScaled : null;
   const relationshipTone = getRelationshipTone(data.latest?.rolling_corr, data.latest?.rolling_corr !== null && data.latest?.rolling_corr !== undefined);
   const correlationZones = buildCorrelationZones(chartData);
+  const bucketLabel = getBucketLabel(data.display_granularity);
 
   return (
     <div className="primary-card p-4 md:p-6">
@@ -228,7 +236,7 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
           <div className="text-[11px] uppercase tracking-wide text-stealth-400">Research Prototype</div>
           <h3 className="text-sm font-semibold text-stealth-100">Weather Sensitivity</h3>
           <p className="text-xs text-stealth-400">{data.location}</p>
-          <p className="mt-1 text-[11px] text-stealth-500">Weather: {data.source.weather} | Market: {data.source.market}</p>
+          <p className="mt-1 text-[11px] text-stealth-500">Weather: {data.source.weather} | Market: {data.source.market} | View: {bucketLabel}</p>
         </div>
         <div className="text-right">
           <div className="text-[11px] uppercase tracking-wide text-stealth-500">Current read</div>
@@ -276,7 +284,7 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
                 const numericValue = typeof value === "number" ? value : Array.isArray(value) ? Number(value[0]) : Number(value);
                 const normalizedValue = Number.isFinite(numericValue) ? numericValue.toFixed(1) : "n/a";
                 if (item.dataKey === "returnScaled") {
-                  return [`${item.payload?.returnRaw?.toFixed(2) ?? "n/a"}% raw | ${normalizedValue} directional index`, "S&P daily return"];
+                  return [`${item.payload?.returnRaw?.toFixed(2) ?? "n/a"}% bucket avg | ${normalizedValue} directional index`, "S&P directional path"];
                 }
                 if (item.dataKey === "signalScaled") {
                   return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | ${normalizedValue} relative level`, selectedSignalMeta.chartLabel];
@@ -286,7 +294,7 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
               contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
             />
             <Line yAxisId="corr" type="monotone" dataKey="rolling_corr" name="Rolling composite relationship" stroke="#f43f5e" dot={false} strokeWidth={1.2} strokeOpacity={0.45} connectNulls />
-            <Line yAxisId="signal" type="monotone" dataKey="returnScaled" name="S&P daily return (directional)" stroke="#22c55e" dot={false} strokeWidth={1.8} />
+            <Line yAxisId="signal" type="monotone" dataKey="returnScaled" name="S&P directional path" stroke="#22c55e" dot={false} strokeWidth={1.8} />
             <Line yAxisId="signal" type="monotone" dataKey="signalScaled" name={`${selectedSignalMeta.chartLabel} (normalized)`} stroke={selectedSignalMeta.color} dot={false} strokeWidth={1.4} strokeDasharray={selectedSignalMeta.strokeDasharray} connectNulls />
           </LineChart>
         </ResponsiveContainer>
