@@ -140,10 +140,25 @@ const weatherSignalOptions: Array<{
 
 const formatComponentRaw = (value: number | null | undefined, unit: string) => {
   if (value === null || value === undefined) return "n/a";
+  if (unit === "score") return value.toFixed(2);
   if (unit === "hPa") return `${value.toFixed(1)} hPa`;
   if (unit === "mm") return `${value.toFixed(1)} mm`;
   if (unit === "km/h") return `${value.toFixed(1)} km/h`;
   return `${value.toFixed(1)} C`;
+};
+
+const normalizeSeries = (values: Array<number | null | undefined>) => {
+  const numeric = values.filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
+  if (!numeric.length) return values.map(() => null);
+
+  const min = Math.min(...numeric);
+  const max = Math.max(...numeric);
+  if (min === max) return values.map((value) => (value === null || value === undefined ? null : 50));
+
+  return values.map((value) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return null;
+    return ((value - min) / (max - min)) * 100;
+  });
 };
 
 export default function WeatherPsychologyWidget({ days = 180 }: Props) {
@@ -170,15 +185,15 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
     );
   }
 
-  const chartData = data.history.map((point) => ({
+  const absReturnScaled = normalizeSeries(data.history.map((point) => point.sp500_abs_return_pct));
+  const signalScaled = normalizeSeries(data.history.map((point) => point[selectedSignal] as number | null | undefined));
+  const chartData = data.history.map((point, index) => ({
     date: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     rolling_corr: point.rolling_corr,
-    abs_return: point.sp500_abs_return_pct,
-    weather_stress_score: point.weather_stress_score,
-    pressure_hpa: point.pressure_hpa,
-    precip_mm: point.precip_mm,
-    temp_c: point.temp_c,
-    wind_kmh: point.wind_kmh,
+    absReturnScaled: absReturnScaled[index],
+    absReturnRaw: point.sp500_abs_return_pct,
+    signalScaled: signalScaled[index],
+    signalRaw: point[selectedSignal] as number | null | undefined,
   }));
   const latestPoint = data.latest as Record<string, number | null | undefined> | null;
   const selectedSignalMeta = weatherSignalOptions.find((option) => option.key === selectedSignal) ?? weatherSignalOptions[0];
@@ -246,21 +261,32 @@ export default function WeatherPsychologyWidget({ days = 180 }: Props) {
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.2)" />
             <XAxis dataKey="date" stroke="#94a3b8" tick={{ fontSize: 11 }} minTickGap={22} />
             <YAxis yAxisId="corr" domain={[-1, 1]} stroke="#fda4af" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="signal" orientation="right" stroke="#86efac" tick={{ fontSize: 11 }} />
+            <YAxis yAxisId="signal" orientation="right" domain={[0, 100]} stroke="#94a3b8" tick={{ fontSize: 11 }} tickFormatter={(value: number) => `${Math.round(value)}`} />
             <Tooltip
+              formatter={(value: string | number | readonly (string | number)[] | null | undefined, _name: string, item: { dataKey?: unknown; payload?: { absReturnRaw?: number; signalRaw?: number | null } }) => {
+                const numericValue = typeof value === "number" ? value : Array.isArray(value) ? Number(value[0]) : Number(value);
+                const normalizedValue = Number.isFinite(numericValue) ? numericValue.toFixed(1) : "n/a";
+                if (item.dataKey === "absReturnScaled") {
+                  return [`${item.payload?.absReturnRaw?.toFixed(2) ?? "n/a"}% raw | ${normalizedValue} normalized`, "S&P move magnitude"];
+                }
+                if (item.dataKey === "signalScaled") {
+                  return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | ${normalizedValue} normalized`, selectedSignalMeta.chartLabel];
+                }
+                return [Number.isFinite(numericValue) ? numericValue.toFixed(2) : "n/a", "Rolling composite-score relationship"];
+              }}
               contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
             />
-            <Line yAxisId="corr" type="monotone" dataKey="rolling_corr" name="Rolling weather/volatility relationship" stroke="#f43f5e" dot={false} strokeWidth={2} connectNulls />
-            <Line yAxisId="signal" type="monotone" dataKey="abs_return" name="S&P daily move magnitude" stroke="#22c55e" dot={false} strokeWidth={1.8} />
-            <Line yAxisId="signal" type="monotone" dataKey={selectedSignal} name={selectedSignalMeta.chartLabel} stroke={selectedSignalMeta.color} dot={false} strokeWidth={1.4} strokeDasharray={selectedSignalMeta.strokeDasharray} connectNulls />
+            <Line yAxisId="corr" type="monotone" dataKey="rolling_corr" name="Rolling composite-score relationship" stroke="#f43f5e" dot={false} strokeWidth={2} connectNulls />
+            <Line yAxisId="signal" type="monotone" dataKey="absReturnScaled" name="S&P move magnitude (normalized)" stroke="#22c55e" dot={false} strokeWidth={1.8} />
+            <Line yAxisId="signal" type="monotone" dataKey="signalScaled" name={`${selectedSignalMeta.chartLabel} (normalized)`} stroke={selectedSignalMeta.color} dot={false} strokeWidth={1.4} strokeDasharray={selectedSignalMeta.strokeDasharray} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </div>
       <p className="mt-2 text-[11px] text-stealth-500">
-        Toggle the weather line between the composite stress score, barometric pressure, total precipitation, temperature, and wind speed.
+        The right axis is normalized from 0 to 100 within the active window so the selected weather signal and S&P move magnitude remain visually comparable.
       </p>
       <p className="mt-1 text-[11px] text-stealth-500">
-        Correlation is descriptive only and should be treated as non-causal unless persistent and statistically significant.
+        The red line always uses the composite weather stress score, so scoring changes affect that line even when the selectable weather line is pressure, rain, temperature, or wind.
       </p>
     </div>
   );
