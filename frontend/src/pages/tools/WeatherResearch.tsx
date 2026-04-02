@@ -221,6 +221,11 @@ const formatComponentRaw = (value: number | null | undefined, unit: string) => {
   return `${value.toFixed(1)} C`;
 };
 
+const formatSignedValue = (value: number | null | undefined, digits = 2) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "n/a";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
+};
+
 const getBucketLabel = (granularity: WeatherPayload["display_granularity"] | undefined) => {
   if (granularity === "day") return "Daily buckets";
   if (granularity === "week") return "Weekly buckets";
@@ -340,6 +345,7 @@ export default function WeatherResearch() {
   const [selectedSignal, setSelectedSignal] = useState<WeatherSignalOption>("weather_stress_score");
   const [brushSelection, setBrushSelection] = useState<{ startIndex: number; endIndex: number } | null>(null);
   const [detailOverride, setDetailOverride] = useState<DetailOverride | null>(null);
+  const [methodologyOpen, setMethodologyOpen] = useState(false);
 
   const handleDaysChange = (nextDays: DaysPreset) => {
     setDays(nextDays);
@@ -582,17 +588,17 @@ export default function WeatherResearch() {
                   <YAxis yAxisId="corr" domain={[-1, 1]} stroke="#f43f5e" tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="signal" orientation="right" domain={[-100, 100]} stroke="#94a3b8" tick={{ fontSize: 11 }} tickFormatter={(value: number) => `${Math.round(value)}`} />
                   <Tooltip
-                    labelFormatter={(label: string) => `Date: ${label}`}
+                    labelFormatter={(label: string) => label}
                     formatter={(value: string | number | readonly (string | number)[] | null | undefined, _name: string, item: { dataKey?: unknown; payload?: { returnRaw?: number; signalRaw?: number | null } }) => {
                       const numericValue = typeof value === "number" ? value : Array.isArray(value) ? Number(value[0]) : Number(value);
                       const normalizedValue = Number.isFinite(numericValue) ? numericValue.toFixed(1) : "n/a";
                       if (item.dataKey === "returnScaled") {
-                        return [`${item.payload?.returnRaw?.toFixed(2) ?? "n/a"}% bucket avg | ${normalizedValue} directional index`, "S&P directional path"];
+                        return [`${formatSignedValue(item.payload?.returnRaw, 2)}% avg | idx ${normalizedValue}`, "S&P"];
                       }
                       if (item.dataKey === "signalScaled") {
-                        return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | ${normalizedValue} relative level`, selectedSignalMeta.chartLabel];
+                        return [`${formatComponentRaw(item.payload?.signalRaw, selectedSignalMeta.key === "weather_stress_score" ? "score" : selectedSignalMeta.key === "pressure_hpa" ? "hPa" : selectedSignalMeta.key === "precip_mm" ? "mm" : selectedSignalMeta.key === "temp_c" ? "C" : "km/h")} | lvl ${normalizedValue}`, selectedSignalMeta.label];
                       }
-                      return [Number.isFinite(numericValue) ? numericValue.toFixed(2) : "n/a", `${selectedSignalMeta.chartLabel} rolling relationship`];
+                      return [formatSignedValue(Number.isFinite(numericValue) ? numericValue : null, 2), "Rolling corr"];
                     }}
                     contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
                   />
@@ -686,6 +692,57 @@ export default function WeatherResearch() {
           <p className="mt-3 text-[11px] text-stealth-500">
             The red line and the background shading now track the selected weather signal directly, while the green line reflects signed S&P direction.
           </p>
+
+          <div className="mt-6 surface-card-strong">
+            <button
+              onClick={() => setMethodologyOpen(!methodologyOpen)}
+              className="flex w-full items-center justify-between rounded-lg px-6 py-4 text-left transition-colors hover:bg-stealth-800/40"
+              aria-expanded={methodologyOpen}
+            >
+              <div>
+                <h2 className="text-lg font-semibold">Methodology & Scoring Details</h2>
+                <p className="mt-1 text-xs text-stealth-400">How to read the study without overstating what the data means.</p>
+              </div>
+              <span className={`collapsible-icon ${methodologyOpen ? "collapsible-icon-open" : ""}`} aria-hidden="true">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </span>
+            </button>
+            <div className={`collapsible-panel ${methodologyOpen ? "collapsible-panel-open" : ""}`}>
+              <div className="collapsible-panel-inner">
+                <div className="space-y-4 px-6 pb-6 text-sm text-stealth-200">
+                  <p>
+                    This page is a research surface, not a proof engine. The point is to test whether specific weather conditions line up with market direction in a stable way, and just as importantly, to make it obvious when they do not.
+                  </p>
+                  <div className="secondary-card p-4">
+                    <h4 className="mb-2 font-semibold">Methodology</h4>
+                    <ul className="space-y-2 text-xs text-stealth-300">
+                      <li><strong>Scope:</strong> NYC-area weather is used as a proxy and matched to S&amp;P daily returns over the selected history.</li>
+                      <li><strong>View logic:</strong> The top chart shows the active zoom slice, while the lower strip keeps the full parent horizon visible for context.</li>
+                      <li><strong>Signal test:</strong> Each weather signal gets its own rolling correlation line, so pressure, precipitation, temperature, wind, and composite stress can diverge.</li>
+                      <li><strong>Negative result matters:</strong> Weak, unstable, or insignificant relationships are still useful because they argue against a durable weather-market effect in that slice.</li>
+                    </ul>
+                  </div>
+                  <div className="secondary-card p-4">
+                    <h4 className="mb-2 font-semibold">Scoring & Interpretation</h4>
+                    <ul className="space-y-2 text-xs text-stealth-300">
+                      <li><strong>Weather stress:</strong> A composite score built from pressure shifts, precipitation, temperature stress, and wind stress.</li>
+                      <li><strong>Relative level:</strong> The weather line is normalized to its visible range, so it shows local position, not an absolute forecast value.</li>
+                      <li><strong>Rolling correlation:</strong> The red line measures whether the selected weather signal and signed S&amp;P direction have been moving together or against each other over the current rolling window.</li>
+                      <li><strong>Shading:</strong> Green zones indicate windows where lower readings aligned with greener sessions; red zones indicate windows where higher readings aligned with greener sessions.</li>
+                    </ul>
+                  </div>
+                  <div className="secondary-card p-4">
+                    <h4 className="mb-2 font-semibold">How to Use It</h4>
+                    <p className="text-xs text-stealth-300">
+                      Start wide to look for broad structure, then zoom down into narrower slices. From far out, the chart should read like shape and regime. Close in, it should answer whether a specific weather pattern is actually carrying signal or just producing noise.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </>
       )}
     </div>
