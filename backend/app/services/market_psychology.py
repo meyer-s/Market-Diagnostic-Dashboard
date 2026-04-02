@@ -224,9 +224,18 @@ async def _fetch_sp500_series(start_date: str, end_date: str) -> Tuple[Dict[str,
         )
         if hist is None or hist.empty:
             return {}
-        closes = hist.get("Close")
-        if closes is None:
+        close_data = hist.get("Close")
+        if close_data is None:
             return {}
+        closes = close_data
+        if hasattr(close_data, "columns"):
+            columns = list(getattr(close_data, "columns", []))
+            if not columns:
+                return {}
+            if "^GSPC" in columns:
+                closes = close_data["^GSPC"]
+            else:
+                closes = close_data[columns[0]]
         result: Dict[str, float] = {}
         for idx, value in closes.items():
             if value is None:
