@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timedelta
+from math import sqrt
 from typing import Optional
 from urllib.parse import quote
 
@@ -266,6 +267,93 @@ def _format_value(value: Optional[float], digits: int = 1) -> str:
     return f"{value:.{digits}f}" if value is not None else "n/a"
 
 
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _build_training_trade_lines(
+    direction: str,
+    iv_percentile: Optional[float],
+    iv30: Optional[float],
+    hv30: Optional[float],
+    avg_edr: Optional[float],
+    threshold: Optional[float],
+    horizon_returns: Optional[dict[str, Optional[float]]],
+    history: Optional[pd.DataFrame],
+) -> list[str]:
+    close = history.get("Close") if history is not None else None
+    price = None
+    if close is not None:
+        close = close.dropna()
+        if not close.empty:
+            price = float(close.iloc[-1])
+
+    trend_return = None
+    if horizon_returns:
+        trend_return = horizon_returns.get("1m")
+        if trend_return is None:
+            trend_return = horizon_returns.get("3m")
+
+    if trend_return is not None and abs(trend_return) >= 8:
+        hold_days = 10
+    elif trend_return is not None and abs(trend_return) >= 3:
+        hold_days = 14
+    else:
+        hold_days = 21
+
+    hv_move_pct = float(hv30) * sqrt(hold_days / 252.0) if hv30 is not None else None
+    edr_move_pct = float(avg_edr) * sqrt(float(hold_days)) if avg_edr is not None else None
+    move_candidates = [value for value in [hv_move_pct, edr_move_pct] if value is not None]
+    expected_underlying_move = _clamp(
+        (sum(move_candidates) / len(move_candidates)) if move_candidates else 4.0,
+        2.0,
+        14.0,
+    )
+
+    target_move = expected_underlying_move
+    stop_move = _clamp(expected_underlying_move * 0.55, 1.2, 8.0)
+
+    contract_side = "CALL"
+    if direction.lower() == "puts":
+        contract_side = "PUT"
+
+    if price is None:
+        stop_target_text = "n/a"
+    elif contract_side == "CALL":
+        stop_price = price * (1 - stop_move / 100.0)
+        target_price = price * (1 + target_move / 100.0)
+        stop_target_text = f"{stop_price:.2f} / {target_price:.2f}"
+    else:
+        stop_price = price * (1 + stop_move / 100.0)
+        target_price = price * (1 - target_move / 100.0)
+        stop_target_text = f"{stop_price:.2f} / {target_price:.2f}"
+
+    if price is None:
+        est_premium = 2.5
+    else:
+        iv_scale = _clamp((float(iv30) / 30.0) if iv30 is not None else 1.0, 0.65, 1.9)
+        est_premium = _clamp(price * 0.012 * iv_scale, 0.35, 18.0)
+
+    effective_threshold = threshold if threshold is not None else 20.0
+    cheapness_edge = (
+        max(0.0, float(effective_threshold) - float(iv_percentile))
+        if iv_percentile is not None
+        else 0.0
+    )
+    target_premium_pct = _clamp(35.0 + cheapness_edge * 1.2, 28.0, 90.0)
+    stop_premium_pct = _clamp(24.0 + (12.0 - min(12.0, cheapness_edge)) * 1.4, 25.0, 55.0)
+    est_profit = est_premium * 100.0 * (target_premium_pct / 100.0)
+    est_loss = est_premium * 100.0 * (stop_premium_pct / 100.0)
+
+    return [
+        f"  Setup     : 1x ATM {contract_side} (training example)",
+        f"  Est Prem  : ${est_premium:.2f}",
+        f"  Est G/L   : +${est_profit:.0f} / -${est_loss:.0f}",
+        f"  Stop/Tgt  : {stop_target_text}",
+        f"  Hold      : {hold_days} trading days",
+    ]
+
+
 def _ansi(text: str, color: int, fmt: int = 1) -> str:
     return f"{ESC}[{fmt};{color}m{text}{ANSI_RESET}"
 
@@ -483,6 +571,16 @@ def _format_alert_message(
     headline = f"{symbol} - {label}"
     horizons = _horizon_compact_text(horizon_returns)
     direction_lines = _wrap_text(direction_reason, width=66, indent="    ")
+    training_lines = _build_training_trade_lines(
+        direction=direction,
+        iv_percentile=iv_percentile,
+        iv30=iv30,
+        hv30=hv30,
+        avg_edr=avg_edr,
+        threshold=threshold,
+        horizon_returns=horizon_returns,
+        history=history,
+    )
     section_title_color = 97 if exceptional else 37
     separator_line = (
         "════════════════════════════════════════════════════════"
@@ -514,6 +612,9 @@ def _format_alert_message(
         "",
         _ansi("HORIZONS", section_title_color),
         f"  {horizons}",
+        "",
+        _ansi("EXAMPLE TRADE (TRAINING)", section_title_color),
+        *training_lines,
         *([accent_line] if accent_line else []),
     ]
 

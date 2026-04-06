@@ -1,6 +1,6 @@
 import argparse
 import time
-from typing import Iterable, List, Optional
+from typing import Any, Iterable, List, Optional
 
 import pandas as pd
 import yfinance as yf
@@ -60,10 +60,12 @@ def _scan_tickers(
     max_count: Optional[int],
     pause_seconds: float,
     capture_hit_symbols: bool = False,
-) -> int | tuple[int, list[str]]:
+    capture_hit_details: bool = False,
+) -> int | tuple[int, list[str]] | tuple[int, list[dict[str, Any]]] | tuple[int, list[str], list[dict[str, Any]]]:
     hits = 0
     total = 0
     hit_symbols: list[str] = []
+    hit_details: list[dict[str, Any]] = []
 
     for symbol in tickers:
         if max_count and total >= max_count:
@@ -143,6 +145,21 @@ def _scan_tickers(
                 db.commit()
             hits += 1
             hit_symbols.append(symbol)
+            hit_details.append(
+                {
+                    "symbol": symbol,
+                    "price": current_price,
+                    "iv30": iv30,
+                    "hv30": metrics.get("hv30"),
+                    "iv_percentile": iv_percentile,
+                    "avg_edr": metrics.get("avg_edr"),
+                    "direction": direction,
+                    "direction_reason": direction_reason,
+                    "horizon_labels": horizon_labels,
+                    "horizon_returns": horizon_returns,
+                    "votes": votes,
+                }
+            )
         except Exception:
             continue
         finally:
@@ -150,8 +167,12 @@ def _scan_tickers(
                 time.sleep(pause_seconds)
 
     print(f"{label} scan finished: {hits} hits over {total} symbols.")
+    if capture_hit_symbols and capture_hit_details:
+        return hits, hit_symbols, hit_details
     if capture_hit_symbols:
         return hits, hit_symbols
+    if capture_hit_details:
+        return hits, hit_details
     return hits
 
 

@@ -2,6 +2,7 @@
 Discord sweep - reuses existing sweep scripts
 """
 import os
+from typing import Any
 
 import requests
 import httpx
@@ -69,10 +70,12 @@ async def execute_sweep(
         pause_seconds=pause_seconds,
         capture_hit_symbols=True,
     )
+    hits = 0
+    hit_symbols: list[str] = []
     if isinstance(hits_result, tuple):
         hits, hit_symbols = hits_result
     else:
-        hits, hit_symbols = hits_result, []
+        hits = hits_result
     print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
 
     total = len(tickers)
