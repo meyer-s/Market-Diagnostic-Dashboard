@@ -1,0 +1,12 @@
+[Unit]
+Description=Market Diagnostic Dashboard Docker Maintenance
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/Market-Diagnostic-Dashboard
+ExecStart=/home/ubuntu/Market-Diagnostic-Dashboard/devops/scripts/docker-maintenance.sh
+
+[Install]
+WantedBy=multi-user.target

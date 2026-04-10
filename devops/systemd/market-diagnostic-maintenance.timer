@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Docker maintenance for Market Diagnostic Dashboard
+
+[Timer]
+OnBootSec=15m
+OnUnitActiveSec=7d
+Persistent=true
+Unit=market-diagnostic-maintenance.service
+
+[Install]
+WantedBy=timers.target

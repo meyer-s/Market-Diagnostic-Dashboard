@@ -2,12 +2,18 @@ services:
   backend:
     build: ./backend
     container_name: market_backend
+    restart: unless-stopped
     env_file:
       - ./devops/env/backend.env
     volumes:
       - ./backend:/app
     ports:
       - "0.0.0.0:8000:8000"  # Bind to all interfaces for external access
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     depends_on:
       - db
     command: /app/startup.sh
@@ -16,6 +22,7 @@ services:
     build: 
       context: ./frontend
     container_name: market_frontend
+    restart: unless-stopped
     env_file:
       - ./devops/env/frontend.env
     volumes:
@@ -27,17 +34,28 @@ services:
       - ./frontend/postcss.config.js:/app/postcss.config.js
     ports:
       - "0.0.0.0:5173:5173"  # Bind to all interfaces for external access
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     command: ["pnpm", "preview", "--host", "0.0.0.0", "--port", "5173"]
 
   db:
     image: postgres:16
     container_name: market_postgres
+    restart: unless-stopped
     env_file:
       - ./devops/env/db.env
     ports:
       - "127.0.0.1:5432:5432"  # Only bind to localhost for security
     volumes:
       - market_db:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   market_db:
