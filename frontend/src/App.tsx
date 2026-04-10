@@ -17,7 +17,6 @@ import InstitutionalFlow from "./pages/InstitutionalFlow";
 import Vision from "./pages/Vision";
 import RecapIndex from "./pages/tools/RecapIndex";
 import RecapPost from "./pages/tools/RecapPost";
-import WeatherResearch from "./pages/tools/WeatherResearch";
 import { trackPageView } from "./utils/analytics";
 
 function LegacyRecapSlugRedirect() {
@@ -45,8 +44,6 @@ function AppWithAnalytics() {
       location.pathname.includes("/secret/options") ? "Secret Options" :
       location.pathname.includes("/precious-metals") ? "Precious Metals" :
       location.pathname.includes("/alternative-assets") ? "Alternative Assets" :
-      location.pathname.includes("/tools/experiments") ? "Weather Research" :
-      location.pathname.includes("/tools/weather-research") ? "Weather Research" :
       location.pathname.includes("/tools/recap") || location.pathname.includes("/tools/updates") ? "Recap" :
       location.pathname.includes("/aas-breakdown") ? "AAS Breakdown" :
       "Unknown";
@@ -75,8 +72,8 @@ function AppWithAnalytics() {
           <Route path="/secret/options" element={<SecretOptions />} />
           <Route path="/tools/recap" element={<RecapIndex />} />
           <Route path="/tools/recap/:slug" element={<RecapPost />} />
-          <Route path="/tools/experiments" element={<Navigate to="/tools/weather-research" replace />} />
-          <Route path="/tools/weather-research" element={<WeatherResearch />} />
+          <Route path="/tools/experiments" element={<Navigate to="/tools/recap" replace />} />
+          <Route path="/tools/weather-research" element={<Navigate to="/tools/recap" replace />} />
           <Route path="/tools/updates" element={<Navigate to="/tools/recap" replace />} />
           <Route path="/tools/updates/:slug" element={<LegacyRecapSlugRedirect />} />
           <Route path="/precious-metals" element={<Navigate to="/alternative-assets?tab=metals" replace />} />
