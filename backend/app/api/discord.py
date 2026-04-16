@@ -128,17 +128,23 @@ async def discord_interactions(request: Request):
             # Start the sweep in a dedicated background thread so the
             # interaction response is returned immediately and any
             # long-running work runs independently.
-            def _start_sweep_thread(sym, thr, token, app_id):
+            def _start_sweep_thread(sym, thr, token, app_id, channel_id):
                 def _runner():
                     try:
-                        asyncio.run(execute_sweep(sym, thr, token, app_id))
+                        asyncio.run(execute_sweep(sym, thr, token, app_id, channel_id))
                     except Exception as e:
                         print(f"[Discord Sweep] Background exception: {e}")
 
                 t = threading.Thread(target=_runner, daemon=True)
                 t.start()
 
-            _start_sweep_thread(canonical, threshold, interaction.token, interaction.application_id)
+            _start_sweep_thread(
+                canonical,
+                threshold,
+                interaction.token,
+                interaction.application_id,
+                interaction.channel_id,
+            )
             return response
 
         return {

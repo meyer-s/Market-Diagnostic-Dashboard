@@ -679,7 +679,7 @@ export default function SecretOptions() {
   const loadClosedPositions = async () => {
     try {
       const data = await apiFetch<{ closed_positions: ClosedPositionRow[] }>(
-        "/secret/options/closed-positions"
+        "/secret/options/closed-positions?limit=500"
       );
       setClosedPositions(data.closed_positions || []);
     } catch (err: unknown) {
@@ -722,6 +722,7 @@ export default function SecretOptions() {
 
   useEffect(() => {
     loadPositions();
+    loadClosedPositions();
   }, []);
 
   useEffect(() => {
@@ -2072,8 +2073,11 @@ export default function SecretOptions() {
 
       {/* P/L History Modal */}
       {showClosedLog && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed left-0 top-0 z-50 flex h-screen w-screen items-center justify-center overflow-y-auto bg-black/70 p-4"
+          style={{ height: "100dvh" }}
+        >
+          <div className="my-auto w-full max-w-5xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Closed Positions History</h2>
               <button

@@ -2,6 +2,7 @@
 Discord sweep - reuses existing sweep scripts
 """
 import os
+import time
 from typing import Any
 
 import requests
@@ -19,7 +20,8 @@ async def execute_sweep(
     symbol: str,
     threshold: float,
     interaction_token: str,
-    application_id: str
+    application_id: str,
+    channel_id: str | None = None,
 ):
     """
     Execute sweep using existing script logic.
@@ -59,6 +61,31 @@ async def execute_sweep(
     elif len(tickers) > 1000:
         default_pause = 0.05
     pause_seconds = float(os.getenv("DISCORD_SWEEP_PAUSE_SECONDS", default_pause))
+    status_every = int(os.getenv("DISCORD_SWEEP_STATUS_EVERY_TICKERS", "100"))
+    status_min_seconds = float(os.getenv("DISCORD_SWEEP_STATUS_MIN_SECONDS", "60"))
+
+    start_content = (
+        f"Options sweep started. {label} "
+        f"Tickers: {len(tickers)} Threshold: {threshold:.1f}% "
+        f"Pause: {pause_seconds:.2f}s"
+    )
+    await _send_followup_message(
+        application_id=application_id,
+        interaction_token=interaction_token,
+        content=start_content,
+        bot_token=bot_token,
+        channel_id=channel_id,
+    )
+
+    progress_callback = _build_progress_callback(
+        application_id=application_id,
+        interaction_token=interaction_token,
+        bot_token=bot_token,
+        channel_id=channel_id,
+        status_every=status_every,
+        status_min_seconds=status_min_seconds,
+        pause_seconds=pause_seconds,
+    )
 
     # Run the existing scan function (scans all tickers, sends webhooks).
     print(f"[Discord Sweep] Starting scan of {len(tickers)} {label} tickers...")
@@ -69,6 +96,7 @@ async def execute_sweep(
         None,
         pause_seconds=pause_seconds,
         capture_hit_symbols=True,
+        progress_callback=progress_callback,
     )
     hits = 0
     hit_symbols: list[str] = []
@@ -92,6 +120,8 @@ async def execute_sweep(
         application_id=application_id,
         interaction_token=interaction_token,
         content=content,
+        bot_token=bot_token,
+        channel_id=channel_id,
     )
     if not sent:
         await _edit_original_response(
@@ -102,7 +132,95 @@ async def execute_sweep(
         )
 
 
-async def _send_followup_message(application_id: str, interaction_token: str, content: str) -> bool:
+def _build_progress_callback(
+    application_id: str,
+    interaction_token: str,
+    bot_token: str,
+    channel_id: str | None,
+    status_every: int,
+    status_min_seconds: float,
+    pause_seconds: float,
+):
+    started_at = time.monotonic()
+    state = {
+        "last_status_at": started_at,
+        "last_status_scanned": 0,
+        "last_rate_limit_at": 0.0,
+        "last_rate_limit_count": 0,
+    }
+
+    def _callback(payload: dict[str, Any]) -> None:
+        event = payload.get("event")
+        scanned = int(payload.get("scanned") or 0)
+        total_expected = int(payload.get("total_expected") or 0)
+        hits = int(payload.get("hits") or 0)
+        errors = int(payload.get("errors") or 0)
+        rate_limit_errors = int(payload.get("rate_limit_errors") or 0)
+        now = time.monotonic()
+
+        if event == "rate_limit":
+            should_send = (
+                rate_limit_errors == 1
+                or rate_limit_errors - state["last_rate_limit_count"] >= 5
+                or now - state["last_rate_limit_at"] >= 120
+            )
+            if not should_send:
+                return
+            state["last_rate_limit_at"] = now
+            state["last_rate_limit_count"] = rate_limit_errors
+            symbol = payload.get("symbol") or "unknown"
+            content = (
+                "Options sweep status: Yahoo Finance may be throttling requests. "
+                f"Last symbol: {symbol}. "
+                f"Scanned {scanned}/{total_expected}; hits {hits}; "
+                f"errors {errors}; rate-limit warnings {rate_limit_errors}. "
+                f"Current pause: {pause_seconds:.2f}s."
+            )
+            _send_followup_message_sync(
+                application_id,
+                interaction_token,
+                content,
+                bot_token=bot_token,
+                channel_id=channel_id,
+            )
+            return
+
+        if event != "progress" or scanned <= 0 or status_every <= 0:
+            return
+
+        scanned_delta = scanned - state["last_status_scanned"]
+        time_delta = now - state["last_status_at"]
+        if scanned_delta < status_every and time_delta < status_min_seconds:
+            return
+
+        state["last_status_at"] = now
+        state["last_status_scanned"] = scanned
+        percent = (scanned / total_expected * 100) if total_expected else 0
+        content = (
+            f"Options sweep progress: {payload.get('label', 'Universe')} "
+            f"{scanned}/{total_expected} ({percent:.0f}%). "
+            f"Hits: {hits}. Errors: {errors}."
+        )
+        if rate_limit_errors:
+            content += f" Yahoo/rate-limit warnings: {rate_limit_errors}."
+        _send_followup_message_sync(
+            application_id,
+            interaction_token,
+            content,
+            bot_token=bot_token,
+            channel_id=channel_id,
+        )
+
+    return _callback
+
+
+async def _send_followup_message(
+    application_id: str,
+    interaction_token: str,
+    content: str,
+    bot_token: str | None = None,
+    channel_id: str | None = None,
+) -> bool:
     """Send a follow-up message to the interaction (creates a new message)."""
     url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}"
 
@@ -115,12 +233,95 @@ async def _send_followup_message(application_id: str, interaction_token: str, co
                     f"✗ Follow-up status={response.status_code} "
                     f"url={url} body={snippet}"
                 )
-                return False
+                return await _send_channel_message(
+                    client,
+                    channel_id=channel_id,
+                    bot_token=bot_token,
+                    content=content,
+                )
             print(f"✓ Sent follow-up message: {content[:50]}...")
             return True
         except Exception as e:
             print(f"✗ Failed to send follow-up message: {e}")
+            return await _send_channel_message(
+                client,
+                channel_id=channel_id,
+                bot_token=bot_token,
+                content=content,
+            )
+
+
+def _send_followup_message_sync(
+    application_id: str,
+    interaction_token: str,
+    content: str,
+    bot_token: str | None = None,
+    channel_id: str | None = None,
+) -> bool:
+    """Sync follow-up sender for scanner progress callbacks."""
+    url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{interaction_token}"
+    try:
+        response = requests.post(url, json={"content": content}, timeout=10)
+        if response.status_code < 400:
+            print(f"✓ Sent sweep status: {content[:50]}...")
+            return True
+        snippet = response.text[:300].replace("\n", " ")
+        print(f"✗ Sweep status follow-up status={response.status_code} body={snippet}")
+    except Exception as exc:
+        print(f"✗ Failed to send sweep status follow-up: {exc}")
+
+    return _send_channel_message_sync(
+        channel_id=channel_id,
+        bot_token=bot_token,
+        content=content,
+    )
+
+
+async def _send_channel_message(
+    client: httpx.AsyncClient,
+    channel_id: str | None,
+    bot_token: str | None,
+    content: str,
+) -> bool:
+    """Fallback to a normal bot channel message when the interaction webhook fails."""
+    if not channel_id or not bot_token:
+        return False
+    url = f"{DISCORD_API_BASE}/channels/{channel_id}/messages"
+    headers = {"Authorization": f"Bot {bot_token}"}
+    try:
+        response = await client.post(url, json={"content": content}, headers=headers)
+        if response.status_code >= 400:
+            snippet = response.text[:300].replace("\n", " ")
+            print(f"✗ Channel message status={response.status_code} body={snippet}")
             return False
+        print(f"✓ Sent channel fallback message: {content[:50]}...")
+        return True
+    except Exception as exc:
+        print(f"✗ Failed to send channel fallback message: {exc}")
+        return False
+
+
+def _send_channel_message_sync(
+    channel_id: str | None,
+    bot_token: str | None,
+    content: str,
+) -> bool:
+    """Sync fallback to a normal bot channel message."""
+    if not channel_id or not bot_token:
+        return False
+    url = f"{DISCORD_API_BASE}/channels/{channel_id}/messages"
+    headers = {"Authorization": f"Bot {bot_token}"}
+    try:
+        response = requests.post(url, json={"content": content}, headers=headers, timeout=10)
+        if response.status_code >= 400:
+            snippet = response.text[:300].replace("\n", " ")
+            print(f"✗ Channel status message status={response.status_code} body={snippet}")
+            return False
+        print(f"✓ Sent channel status message: {content[:50]}...")
+        return True
+    except Exception as exc:
+        print(f"✗ Failed to send channel status message: {exc}")
+        return False
 
 
 async def _edit_original_response(

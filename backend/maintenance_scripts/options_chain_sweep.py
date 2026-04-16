@@ -1,6 +1,6 @@
 import argparse
 import time
-from typing import Any, Iterable, List, Optional
+from typing import Any, Callable, Iterable, List, Optional
 
 import pandas as pd
 import yfinance as yf
@@ -61,11 +61,34 @@ def _scan_tickers(
     pause_seconds: float,
     capture_hit_symbols: bool = False,
     capture_hit_details: bool = False,
+    progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> int | tuple[int, list[str]] | tuple[int, list[dict[str, Any]]] | tuple[int, list[str], list[dict[str, Any]]]:
     hits = 0
     total = 0
     hit_symbols: list[str] = []
     hit_details: list[dict[str, Any]] = []
+    errors = 0
+    rate_limit_errors = 0
+    total_expected = min(len(tickers), max_count) if max_count else len(tickers)
+
+    def _emit_progress(event: dict[str, Any]) -> None:
+        if not progress_callback:
+            return
+        payload = {
+            "label": label,
+            "scanned": total,
+            "total_expected": total_expected,
+            "hits": hits,
+            "errors": errors,
+            "rate_limit_errors": rate_limit_errors,
+        }
+        payload.update(event)
+        try:
+            progress_callback(payload)
+        except Exception as exc:
+            print(f"[Sweep Progress] callback failed: {exc}")
+
+    _emit_progress({"event": "started"})
 
     for symbol in tickers:
         if max_count and total >= max_count:
@@ -160,12 +183,32 @@ def _scan_tickers(
                     "votes": votes,
                 }
             )
-        except Exception:
+        except Exception as exc:
+            errors += 1
+            if _is_yahoo_rate_limit_error(exc):
+                rate_limit_errors += 1
+                _emit_progress(
+                    {
+                        "event": "rate_limit",
+                        "symbol": symbol,
+                        "error": str(exc),
+                    }
+                )
+            else:
+                _emit_progress(
+                    {
+                        "event": "error",
+                        "symbol": symbol,
+                        "error": str(exc),
+                    }
+                )
             continue
         finally:
+            _emit_progress({"event": "progress", "symbol": symbol})
             if pause_seconds:
                 time.sleep(pause_seconds)
 
+    _emit_progress({"event": "finished"})
     print(f"{label} scan finished: {hits} hits over {total} symbols.")
     if capture_hit_symbols and capture_hit_details:
         return hits, hit_symbols, hit_details
@@ -174,6 +217,17 @@ def _scan_tickers(
     if capture_hit_details:
         return hits, hit_details
     return hits
+
+
+def _is_yahoo_rate_limit_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "rate limit" in message
+        or "rate limited" in message
+        or "too many requests" in message
+        or "429" in message
+        or "yfratelimiterror" in message
+    )
 
 
 def main() -> None:

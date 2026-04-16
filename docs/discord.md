@@ -30,6 +30,9 @@ Environment variables:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_PUBLIC_KEY`
+- `DISCORD_SWEEP_STATUS_EVERY_TICKERS` optional, default `100`
+- `DISCORD_SWEEP_STATUS_MIN_SECONDS` optional, default `60`
+- `DISCORD_SWEEP_PAUSE_SECONDS` optional, overrides the scanner pause between yfinance ticker requests
 
 The token is used for follow-up messages. The public key is used to verify Discord signatures.
 
@@ -69,9 +72,11 @@ The request path is straightforward:
 2. Discord sends an interaction payload to `POST /discord/interactions`.
 3. The backend verifies the request and returns a deferred response.
 4. A background job runs the options sweep.
-5. The backend posts a follow-up message through the Discord API.
+5. The backend posts sweep-start, periodic progress, rate-limit warning, and final follow-up messages through the Discord API.
 
-The sweep logic lives in `backend/app/services/discord_sweep.py`.
+The active sweep logic lives in `backend/app/services/discord_sweep_simple.py` and reuses `backend/maintenance_scripts/options_chain_sweep.py`.
+
+Progress updates are emitted every `DISCORD_SWEEP_STATUS_EVERY_TICKERS` scanned symbols or after `DISCORD_SWEEP_STATUS_MIN_SECONDS`, whichever threshold is reached first. If yfinance raises repeated rate-limit-style errors, the bot posts a separate warning with the current scan count, hit count, error count, and configured pause.
 
 ## Operational Notes
 
