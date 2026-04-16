@@ -10,6 +10,7 @@ import {
   ReferenceLine,
   usePlotArea,
 } from "recharts";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
@@ -736,6 +737,9 @@ export default function SecretOptions() {
     [positions, selectedId]
   );
   const selectedSymbol = selected?.position.symbol?.trim().toUpperCase() ?? null;
+  const selectedStockAnalysisPath = selectedSymbol
+    ? `/stock-analysis/${encodeURIComponent(selectedSymbol)}?symbol=${encodeURIComponent(selectedSymbol)}`
+    : null;
 
   const greekSummary = useMemo(() => {
     const greeks = greeksData?.current_greeks ?? selected?.metrics.greeks ?? null;
@@ -1468,14 +1472,226 @@ export default function SecretOptions() {
               Based on current underlying and implied or historical volatility.
             </p>
           </div>
-          {selected && (
-            <div className="text-xs text-gray-400 text-right">
-              <div>
-                Vol source: {selected.metrics.volatility_source || "n/a"}{" "}
-                {selected.metrics.volatility ? `(${formatPercent(selected.metrics.volatility * 100, 1)})` : ""}
+          <div className="flex flex-col items-end gap-2">
+            {selectedStockAnalysisPath && selectedSymbol && (
+              <Link
+                to={selectedStockAnalysisPath}
+                className="rounded-md bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-600"
+              >
+                View {selectedSymbol} Analysis
+              </Link>
+            )}
+            {selected && (
+              <div className="text-xs text-gray-400 text-right">
+                <div>
+                  Vol source: {selected.metrics.volatility_source || "n/a"}{" "}
+                  {selected.metrics.volatility ? `(${formatPercent(selected.metrics.volatility * 100, 1)})` : ""}
+                </div>
+                <div>Option price: {selected.metrics.option_price_source || "n/a"}</div>
               </div>
-              <div>Option price: {selected.metrics.option_price_source || "n/a"}</div>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          {loadingGreeks ? (
+            <div className="text-sm text-gray-400">Loading Greeks...</div>
+          ) : greeksData && greeksData.price_curve.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="bg-gray-900 rounded-lg border border-gray-700 p-3">
+                <h3 className="text-sm font-semibold mb-2">Delta vs Price</h3>
+                <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={greeksData.price_curve}>
+                      <XAxis
+                        dataKey="price"
+                        type="number"
+                        domain={["dataMin", "dataMax"]}
+                        tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip
+                        formatter={(value) => formatNumber(Number(value), 3)}
+                        labelFormatter={(label) => `Price: $${label}`}
+                        contentStyle={{
+                          background: "#111827",
+                          border: "1px solid #374151",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                      />
+                      {chartPriceDomain && selectedLossCut !== null && (
+                        <ReferenceArea
+                          x1={chartPriceDomain.min}
+                          x2={selectedLossCut}
+                          fill="#ef4444"
+                          fillOpacity={0.1}
+                        />
+                      )}
+                      {chartPriceDomain && selectedStrike !== null && (
+                        <ReferenceArea
+                          x1={selectedStrike}
+                          x2={chartPriceDomain.max}
+                          fill="#f59e0b"
+                          fillOpacity={0.08}
+                        />
+                      )}
+                      {chartPriceDomain && selectedProfitTake !== null && (
+                        <ReferenceArea
+                          x1={selectedProfitTake}
+                          x2={chartPriceDomain.max}
+                          fill="#22c55e"
+                          fillOpacity={0.12}
+                        />
+                      )}
+                      <ProjectionBezierOverlay
+                        selectedSpotPrice={selectedSpotPrice}
+                        chartPriceDomain={chartPriceDomain}
+                        technicalStrength={technicalGap}
+                        fundamentalStrength={fundamentalGap}
+                      />
+                      {selectedSpotPrice !== null && (
+                        <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
+                      )}
+                      {selectedStrike !== null && (
+                        <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
+                      )}
+                      <Line
+                        type="monotone"
+                        dataKey="delta"
+                        stroke={getFamilyColor("equity")}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 rounded-lg border border-gray-700 p-3">
+                <h3 className="text-sm font-semibold mb-2">Gamma vs Price</h3>
+                <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={greeksData.price_curve}>
+                      <XAxis
+                        dataKey="price"
+                        type="number"
+                        domain={["dataMin", "dataMax"]}
+                        tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip
+                        formatter={(value) => formatNumber(Number(value), 4)}
+                        labelFormatter={(label) => `Price: $${label}`}
+                        contentStyle={{
+                          background: "#111827",
+                          border: "1px solid #374151",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                      />
+                      {chartPriceDomain && selectedLossCut !== null && (
+                        <ReferenceArea
+                          x1={chartPriceDomain.min}
+                          x2={selectedLossCut}
+                          fill="#ef4444"
+                          fillOpacity={0.1}
+                        />
+                      )}
+                      {chartPriceDomain && selectedStrike !== null && (
+                        <ReferenceArea
+                          x1={selectedStrike}
+                          x2={chartPriceDomain.max}
+                          fill="#f59e0b"
+                          fillOpacity={0.08}
+                        />
+                      )}
+                      {chartPriceDomain && selectedProfitTake !== null && (
+                        <ReferenceArea
+                          x1={selectedProfitTake}
+                          x2={chartPriceDomain.max}
+                          fill="#22c55e"
+                          fillOpacity={0.12}
+                        />
+                      )}
+                      <ProjectionBezierOverlay
+                        selectedSpotPrice={selectedSpotPrice}
+                        chartPriceDomain={chartPriceDomain}
+                        technicalStrength={technicalGap}
+                        fundamentalStrength={fundamentalGap}
+                      />
+                      {selectedSpotPrice !== null && (
+                        <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
+                      )}
+                      {selectedStrike !== null && (
+                        <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
+                      )}
+                      <Line
+                        type="monotone"
+                        dataKey="gamma"
+                        stroke={getFamilyColor("growth")}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 rounded-lg border border-gray-700 p-3 lg:col-span-2">
+                <h3 className="text-sm font-semibold mb-2">Theta vs Time</h3>
+                <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={greeksData.theta_curve}>
+                      <XAxis
+                        dataKey="days"
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip
+                        formatter={(value) => formatNumber(Number(value), 4)}
+                        labelFormatter={(label) => `${label} days to expiry`}
+                        contentStyle={{
+                          background: "#111827",
+                          border: "1px solid #374151",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="theta"
+                        stroke={getFamilyColor("sentiment")}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
+          ) : (
+            <div className="text-sm text-gray-500">No Greeks data available for the selected position.</div>
           )}
         </div>
 
@@ -1627,205 +1843,6 @@ export default function SecretOptions() {
           </div>
         )}
 
-        {loadingGreeks ? (
-          <div className="text-sm text-gray-400">Loading Greeks...</div>
-        ) : greeksData && greeksData.price_curve.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-gray-900 rounded-lg border border-gray-700 p-3">
-              <h3 className="text-sm font-semibold mb-2">Delta vs Price</h3>
-              <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={greeksData.price_curve}>
-                    <XAxis
-                      dataKey="price"
-                      type="number"
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      formatter={(value) => formatNumber(Number(value), 3)}
-                      labelFormatter={(label) => `Price: $${label}`}
-                      contentStyle={{
-                        background: "#111827",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                    />
-                    {chartPriceDomain && selectedLossCut !== null && (
-                      <ReferenceArea
-                        x1={chartPriceDomain.min}
-                        x2={selectedLossCut}
-                        fill="#ef4444"
-                        fillOpacity={0.1}
-                      />
-                    )}
-                    {chartPriceDomain && selectedStrike !== null && (
-                      <ReferenceArea
-                        x1={selectedStrike}
-                        x2={chartPriceDomain.max}
-                        fill="#f59e0b"
-                        fillOpacity={0.08}
-                      />
-                    )}
-                    {chartPriceDomain && selectedProfitTake !== null && (
-                      <ReferenceArea
-                        x1={selectedProfitTake}
-                        x2={chartPriceDomain.max}
-                        fill="#22c55e"
-                        fillOpacity={0.12}
-                      />
-                    )}
-                    <ProjectionBezierOverlay
-                      selectedSpotPrice={selectedSpotPrice}
-                      chartPriceDomain={chartPriceDomain}
-                      technicalStrength={technicalGap}
-                      fundamentalStrength={fundamentalGap}
-                    />
-                    {selectedSpotPrice !== null && (
-                      <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
-                    )}
-                    {selectedStrike !== null && (
-                      <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
-                    )}
-                    <Line
-                      type="monotone"
-                      dataKey="delta"
-                      stroke={getFamilyColor("equity")}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 rounded-lg border border-gray-700 p-3">
-              <h3 className="text-sm font-semibold mb-2">Gamma vs Price</h3>
-              <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={greeksData.price_curve}>
-                    <XAxis
-                      dataKey="price"
-                      type="number"
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      formatter={(value) => formatNumber(Number(value), 4)}
-                      labelFormatter={(label) => `Price: $${label}`}
-                      contentStyle={{
-                        background: "#111827",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                    />
-                    {chartPriceDomain && selectedLossCut !== null && (
-                      <ReferenceArea
-                        x1={chartPriceDomain.min}
-                        x2={selectedLossCut}
-                        fill="#ef4444"
-                        fillOpacity={0.1}
-                      />
-                    )}
-                    {chartPriceDomain && selectedStrike !== null && (
-                      <ReferenceArea
-                        x1={selectedStrike}
-                        x2={chartPriceDomain.max}
-                        fill="#f59e0b"
-                        fillOpacity={0.08}
-                      />
-                    )}
-                    {chartPriceDomain && selectedProfitTake !== null && (
-                      <ReferenceArea
-                        x1={selectedProfitTake}
-                        x2={chartPriceDomain.max}
-                        fill="#22c55e"
-                        fillOpacity={0.12}
-                      />
-                    )}
-                    <ProjectionBezierOverlay
-                      selectedSpotPrice={selectedSpotPrice}
-                      chartPriceDomain={chartPriceDomain}
-                      technicalStrength={technicalGap}
-                      fundamentalStrength={fundamentalGap}
-                    />
-                    {selectedSpotPrice !== null && (
-                      <ReferenceLine x={selectedSpotPrice} stroke="#7dd3fc" strokeDasharray="4 4" />
-                    )}
-                    {selectedStrike !== null && (
-                      <ReferenceLine x={selectedStrike} stroke="#f59e0b" strokeDasharray="3 3" />
-                    )}
-                    <Line
-                      type="monotone"
-                      dataKey="gamma"
-                      stroke={getFamilyColor("growth")}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 rounded-lg border border-gray-700 p-3 lg:col-span-2">
-              <h3 className="text-sm font-semibold mb-2">Theta vs Time</h3>
-              <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={greeksData.theta_curve}>
-                    <XAxis
-                      dataKey="days"
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      formatter={(value) => formatNumber(Number(value), 4)}
-                      labelFormatter={(label) => `${label} days to expiry`}
-                      contentStyle={{
-                        background: "#111827",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="theta"
-                      stroke={getFamilyColor("sentiment")}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-sm text-gray-500">No Greeks data available for the selected position.</div>
-        )}
       </div>
 
       {/* Trade Modal */}
