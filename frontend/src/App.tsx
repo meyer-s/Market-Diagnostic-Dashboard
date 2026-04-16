@@ -48,8 +48,8 @@ function AppWithAnalytics() {
       location.pathname.includes("/aas-breakdown") ? "AAS Breakdown" :
       "Unknown";
 
-    trackPageView(location.pathname, pageName);
-  }, [location]);
+    trackPageView(`${location.pathname}${location.search}${location.hash}`, pageName);
+  }, [location.pathname, location.search, location.hash]);
 
   return (
     <div className="app-shell flex min-h-screen flex-col">
