@@ -63,6 +63,7 @@ def _scan_tickers(
     capture_hit_symbols: bool = False,
     capture_hit_details: bool = False,
     progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
     rate_limit_backoff_seconds: Optional[float] = None,
     rate_limit_backoff_multiplier: Optional[float] = None,
     rate_limit_backoff_max_seconds: Optional[float] = None,
@@ -115,6 +116,25 @@ def _scan_tickers(
             print(f"[Sweep Progress] callback failed: {exc}")
 
     _emit_progress({"event": "started"})
+
+    def _should_stop() -> bool:
+        if not should_stop:
+            return False
+        try:
+            return bool(should_stop())
+        except Exception as exc:
+            print(f"[Sweep Progress] stop callback failed: {exc}")
+            return False
+
+    def _sleep_interruptibly(seconds: float) -> bool:
+        deadline = time.monotonic() + max(seconds, 0)
+        while True:
+            if _should_stop():
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(remaining, 1.0))
 
     def _scan_symbol(symbol: str) -> None:
         nonlocal hits
@@ -206,6 +226,9 @@ def _scan_tickers(
         )
 
     for symbol in tickers:
+        if _should_stop():
+            _emit_progress({"event": "cancelled"})
+            break
         if max_count and total >= max_count:
             break
         symbol = _normalize_symbol(symbol)
@@ -242,7 +265,15 @@ def _scan_tickers(
                     )
                     if will_retry:
                         retry_count += 1
-                        time.sleep(wait_seconds)
+                        if _sleep_interruptibly(wait_seconds):
+                            _emit_progress(
+                                {
+                                    "event": "cancelled",
+                                    "symbol": symbol,
+                                    "during": "rate_limit_backoff",
+                                }
+                            )
+                            break
                         continue
                     break
                 consecutive_rate_limits = 0
@@ -257,7 +288,9 @@ def _scan_tickers(
 
         _emit_progress({"event": "progress", "symbol": symbol})
         if pause_seconds:
-            time.sleep(pause_seconds)
+            if _sleep_interruptibly(pause_seconds):
+                _emit_progress({"event": "cancelled", "symbol": symbol, "during": "pause"})
+                break
 
     _emit_progress({"event": "finished"})
     print(f"{label} scan finished: {hits} hits over {total} symbols.")

@@ -15,7 +15,7 @@ The router is included in `backend/app/main.py`.
 
 ## What The Bot Does
 
-The bot is designed around a `/sweep` workflow that triggers the existing options scanning logic and responds asynchronously in Discord.
+The bot is designed around a `/sweep` workflow that triggers the existing options scanning logic and responds asynchronously in Discord. It also supports `/stop` to cancel an active sweep in the same Discord channel.
 
 Current behavior:
 
@@ -23,6 +23,7 @@ Current behavior:
 - acknowledges quickly so it stays within Discord's response window
 - runs the sweep in a background task
 - posts formatted follow-up results back to Discord
+- cancels an in-flight sweep when `/stop` is used in the same channel
 
 ## Required Configuration
 
@@ -77,6 +78,7 @@ The request path is straightforward:
 3. The backend verifies the request and returns a deferred response.
 4. A background job runs the options sweep.
 5. The backend posts sweep-start, periodic progress, rate-limit warning, and final follow-up messages through the Discord API.
+6. If a user runs `/stop` in the same channel, the active sweep stops before the next ticker or during the next interruptible wait.
 
 The active sweep logic lives in `backend/app/services/discord_sweep_simple.py` and reuses `backend/maintenance_scripts/options_chain_sweep.py`.
 

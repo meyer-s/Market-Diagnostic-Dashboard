@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Register Discord slash commands.
-Run this once to register the /sweep command with Discord.
+Run this whenever slash command definitions change.
 """
 import os
 import sys
@@ -39,47 +39,53 @@ universe_choices = [
     for key, label in SUPPORTED_SWEEP_UNIVERSES.items()
 ]
 
-# Define the /sweep command
-command = {
-    "name": "sweep",
-    "description": "Scan options for cheap IV opportunities",
-    "options": [
-        {
-            "name": "symbol",
-            "description": "Universe key to sweep",
-            "type": 3,  # STRING type
-            "required": True,
-            "choices": universe_choices,
-        },
-        {
-            "name": "threshold",
-            "description": "IV percentile threshold (default: 30%)",
-            "type": 10,  # NUMBER type
-            "required": False,
-            "min_value": 5.0,
-            "max_value": 50.0,
-        },
-    ],
-}
+commands = [
+    {
+        "name": "sweep",
+        "description": "Scan options for cheap IV opportunities",
+        "options": [
+            {
+                "name": "symbol",
+                "description": "Universe key to sweep",
+                "type": 3,  # STRING type
+                "required": True,
+                "choices": universe_choices,
+            },
+            {
+                "name": "threshold",
+                "description": "IV percentile threshold (default: 30%)",
+                "type": 10,  # NUMBER type
+                "required": False,
+                "min_value": 5.0,
+                "max_value": 50.0,
+            },
+        ],
+    },
+    {
+        "name": "stop",
+        "description": "Stop the active options sweep in this channel",
+    },
+]
 
-print("Registering slash command with Discord...")
+print("Registering slash commands with Discord...")
 print(f"Application ID: {APPLICATION_ID}")
-print("Command: /sweep")
+print("Commands: " + ", ".join(f"/{command['name']}" for command in commands))
 
 try:
-    response = requests.post(url, json=command, headers=headers, timeout=10)
+    response = requests.put(url, json=commands, headers=headers, timeout=10)
     response.raise_for_status()
+    registered = response.json()
 
-    print("\n✅ Successfully registered /sweep command!")
+    print("\n✅ Successfully registered Discord commands!")
     print("\nCommand details:")
-    print(f"  Name: {command['name']}")
-    print(f"  Description: {command['description']}")
-    print(f"  Options: {len(command['options'])} parameters")
-    print("\nYou can now use /sweep in your Discord server!")
+    for command in registered:
+        print(f"  /{command.get('name')}: {command.get('description')}")
+    print("\nYou can now use /sweep and /stop in your Discord server!")
     print("\nExample usage:")
     print("  /sweep symbol:SP500")
     print("  /sweep symbol:ALL threshold:25")
     print("  /sweep symbol:TOP_OPT_VOL_200 threshold:25")
+    print("  /stop")
 
 except requests.exceptions.HTTPError as e:
     print("\n❌ Failed to register command")

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from nacl.signing import VerifyKey
 from nacl.exceptions import BadSignatureError
 
-from app.services.discord_sweep_simple import execute_sweep
+from app.services.discord_sweep_simple import execute_sweep, request_stop_sweep
 from app.services.discord_sweep_universe import (
     SUPPORTED_SWEEP_UNIVERSES,
     canonical_universe_key,
@@ -146,6 +146,19 @@ async def discord_interactions(request: Request):
                 interaction.channel_id,
             )
             return response
+
+        if command_name == "stop":
+            stopped = request_stop_sweep(interaction.channel_id)
+            return {
+                "type": 4,
+                "data": {
+                    "content": (
+                        "Stopping the active options sweep in this channel..."
+                        if stopped
+                        else "No active options sweep found in this channel."
+                    )
+                },
+            }
 
         return {
             "type": 4,
