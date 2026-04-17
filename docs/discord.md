@@ -33,6 +33,10 @@ Environment variables:
 - `DISCORD_SWEEP_STATUS_EVERY_TICKERS` optional, default `100`
 - `DISCORD_SWEEP_STATUS_MIN_SECONDS` optional, default `60`
 - `DISCORD_SWEEP_PAUSE_SECONDS` optional, overrides the scanner pause between yfinance ticker requests
+- `DISCORD_SWEEP_RATE_LIMIT_BACKOFF_SECONDS` optional, default `90`
+- `DISCORD_SWEEP_RATE_LIMIT_BACKOFF_MULTIPLIER` optional, default `2`
+- `DISCORD_SWEEP_RATE_LIMIT_BACKOFF_MAX_SECONDS` optional, default `600`
+- `DISCORD_SWEEP_RATE_LIMIT_MAX_RETRIES` optional, default `3`
 
 The token is used for follow-up messages. The public key is used to verify Discord signatures.
 
@@ -76,7 +80,7 @@ The request path is straightforward:
 
 The active sweep logic lives in `backend/app/services/discord_sweep_simple.py` and reuses `backend/maintenance_scripts/options_chain_sweep.py`.
 
-Progress updates are emitted every `DISCORD_SWEEP_STATUS_EVERY_TICKERS` scanned symbols or after `DISCORD_SWEEP_STATUS_MIN_SECONDS`, whichever threshold is reached first. If yfinance raises repeated rate-limit-style errors, the bot posts a separate warning with the current scan count, hit count, error count, and configured pause.
+Progress updates are emitted every `DISCORD_SWEEP_STATUS_EVERY_TICKERS` scanned symbols or after `DISCORD_SWEEP_STATUS_MIN_SECONDS`, whichever threshold is reached first. If yfinance raises repeated rate-limit-style errors, the scanner waits before retrying the same ticker instead of immediately skipping ahead. The wait starts at `DISCORD_SWEEP_RATE_LIMIT_BACKOFF_SECONDS`, grows by `DISCORD_SWEEP_RATE_LIMIT_BACKOFF_MULTIPLIER` across consecutive throttle responses, caps at `DISCORD_SWEEP_RATE_LIMIT_BACKOFF_MAX_SECONDS`, and skips the ticker only after `DISCORD_SWEEP_RATE_LIMIT_MAX_RETRIES` retries.
 
 ## Operational Notes
 

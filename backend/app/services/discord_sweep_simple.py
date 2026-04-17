@@ -63,11 +63,16 @@ async def execute_sweep(
     pause_seconds = float(os.getenv("DISCORD_SWEEP_PAUSE_SECONDS", default_pause))
     status_every = int(os.getenv("DISCORD_SWEEP_STATUS_EVERY_TICKERS", "100"))
     status_min_seconds = float(os.getenv("DISCORD_SWEEP_STATUS_MIN_SECONDS", "60"))
+    rate_limit_backoff_seconds = float(os.getenv("DISCORD_SWEEP_RATE_LIMIT_BACKOFF_SECONDS", "90"))
+    rate_limit_backoff_multiplier = float(os.getenv("DISCORD_SWEEP_RATE_LIMIT_BACKOFF_MULTIPLIER", "2"))
+    rate_limit_backoff_max_seconds = float(os.getenv("DISCORD_SWEEP_RATE_LIMIT_BACKOFF_MAX_SECONDS", "600"))
+    rate_limit_max_retries = int(os.getenv("DISCORD_SWEEP_RATE_LIMIT_MAX_RETRIES", "3"))
 
     start_content = (
         f"Options sweep started. {label} "
         f"Tickers: {len(tickers)} Threshold: {threshold:.1f}% "
-        f"Pause: {pause_seconds:.2f}s"
+        f"Pause: {pause_seconds:.2f}s "
+        f"Rate-limit backoff: {rate_limit_backoff_seconds:.0f}s"
     )
     await _send_followup_message(
         application_id=application_id,
@@ -97,6 +102,10 @@ async def execute_sweep(
         pause_seconds=pause_seconds,
         capture_hit_symbols=True,
         progress_callback=progress_callback,
+        rate_limit_backoff_seconds=rate_limit_backoff_seconds,
+        rate_limit_backoff_multiplier=rate_limit_backoff_multiplier,
+        rate_limit_backoff_max_seconds=rate_limit_backoff_max_seconds,
+        rate_limit_max_retries=rate_limit_max_retries,
     )
     hits = 0
     hit_symbols: list[str] = []
@@ -169,12 +178,21 @@ def _build_progress_callback(
             state["last_rate_limit_at"] = now
             state["last_rate_limit_count"] = rate_limit_errors
             symbol = payload.get("symbol") or "unknown"
+            retry_after = float(payload.get("retry_after_seconds") or 0)
+            retry_count = int(payload.get("retry_count") or 0)
+            max_retries = int(payload.get("max_retries") or 0)
+            action = (
+                f"Waiting {retry_after:.0f}s, then retrying the same ticker "
+                f"({retry_count + 1}/{max_retries})."
+                if payload.get("will_retry")
+                else "Retry budget exhausted for this ticker; moving on."
+            )
             content = (
                 "Options sweep status: Yahoo Finance may be throttling requests. "
                 f"Last symbol: {symbol}. "
                 f"Scanned {scanned}/{total_expected}; hits {hits}; "
                 f"errors {errors}; rate-limit warnings {rate_limit_errors}. "
-                f"Current pause: {pause_seconds:.2f}s."
+                f"Current pause: {pause_seconds:.2f}s. {action}"
             )
             _send_followup_message_sync(
                 application_id,

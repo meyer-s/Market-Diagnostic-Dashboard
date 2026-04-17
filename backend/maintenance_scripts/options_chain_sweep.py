@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from typing import Any, Callable, Iterable, List, Optional
 
@@ -62,6 +63,10 @@ def _scan_tickers(
     capture_hit_symbols: bool = False,
     capture_hit_details: bool = False,
     progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+    rate_limit_backoff_seconds: Optional[float] = None,
+    rate_limit_backoff_multiplier: Optional[float] = None,
+    rate_limit_backoff_max_seconds: Optional[float] = None,
+    rate_limit_max_retries: Optional[int] = None,
 ) -> int | tuple[int, list[str]] | tuple[int, list[dict[str, Any]]] | tuple[int, list[str], list[dict[str, Any]]]:
     hits = 0
     total = 0
@@ -69,7 +74,28 @@ def _scan_tickers(
     hit_details: list[dict[str, Any]] = []
     errors = 0
     rate_limit_errors = 0
+    consecutive_rate_limits = 0
     total_expected = min(len(tickers), max_count) if max_count else len(tickers)
+    rate_limit_backoff_seconds = (
+        rate_limit_backoff_seconds
+        if rate_limit_backoff_seconds is not None
+        else float(os.getenv("SWEEP_RATE_LIMIT_BACKOFF_SECONDS", "90"))
+    )
+    rate_limit_backoff_multiplier = (
+        rate_limit_backoff_multiplier
+        if rate_limit_backoff_multiplier is not None
+        else float(os.getenv("SWEEP_RATE_LIMIT_BACKOFF_MULTIPLIER", "2"))
+    )
+    rate_limit_backoff_max_seconds = (
+        rate_limit_backoff_max_seconds
+        if rate_limit_backoff_max_seconds is not None
+        else float(os.getenv("SWEEP_RATE_LIMIT_BACKOFF_MAX_SECONDS", "600"))
+    )
+    rate_limit_max_retries = (
+        rate_limit_max_retries
+        if rate_limit_max_retries is not None
+        else int(os.getenv("SWEEP_RATE_LIMIT_MAX_RETRIES", "3"))
+    )
 
     def _emit_progress(event: dict[str, Any]) -> None:
         if not progress_callback:
@@ -90,6 +116,95 @@ def _scan_tickers(
 
     _emit_progress({"event": "started"})
 
+    def _scan_symbol(symbol: str) -> None:
+        nonlocal hits
+
+        stock = yf.Ticker(symbol)
+        if not stock.options:
+            return
+
+        current_price = _get_current_price(stock)
+        if current_price is None:
+            return
+
+        history = stock.history(period="1y")
+        hv30 = compute_historical_volatility(history, 30) if history is not None else None
+        metrics = compute_optionality_metrics(stock, current_price, hv30)
+        iv_percentile = metrics.get("iv_percentile")
+        iv30 = metrics.get("iv30")
+
+        if not _is_iv_data_valid(iv30, hv30, iv_percentile):
+            return
+
+        bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, metrics.get("avg_edr"))
+        if iv_percentile is None or iv_percentile > threshold or bias != "CHEAP":
+            return
+
+        reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold, bias, votes)
+        direction, direction_reason = _direction_hint(history)
+        horizon_labels, horizon_returns = _compute_horizon_bias(history)
+        analyzer_url = _build_stock_analyzer_url(symbol)
+        message = _format_alert_message(
+            label,
+            symbol,
+            iv_percentile,
+            iv30,
+            metrics.get("hv30"),
+            metrics.get("avg_edr"),
+            bias,
+            votes,
+            reason,
+            direction,
+            direction_reason,
+            threshold,
+            horizon_labels,
+            horizon_returns,
+            history,
+            analyzer_url=analyzer_url,
+        )
+        delivered, channel, error = _send_webhook(
+            message,
+            embed_url=analyzer_url,
+            button_label=symbol,
+        )
+        if not delivered:
+            print(
+                f"[Sweep Delivery] {symbol} failed delivery: "
+                f"channel={channel or 'n/a'} error={error or 'unknown'}"
+            )
+        with get_db_session() as db:
+            db.add(
+                OptionAlertEvent(
+                    symbol=symbol,
+                    iv30=iv30,
+                    hv30=metrics.get("hv30"),
+                    iv_percentile=iv_percentile,
+                    avg_edr=metrics.get("avg_edr"),
+                    message=message,
+                    delivered=delivered,
+                    delivery_channel=channel,
+                    delivery_error=error,
+                )
+            )
+            db.commit()
+        hits += 1
+        hit_symbols.append(symbol)
+        hit_details.append(
+            {
+                "symbol": symbol,
+                "price": current_price,
+                "iv30": iv30,
+                "hv30": metrics.get("hv30"),
+                "iv_percentile": iv_percentile,
+                "avg_edr": metrics.get("avg_edr"),
+                "direction": direction,
+                "direction_reason": direction_reason,
+                "horizon_labels": horizon_labels,
+                "horizon_returns": horizon_returns,
+                "votes": votes,
+            }
+        )
+
     for symbol in tickers:
         if max_count and total >= max_count:
             break
@@ -97,104 +212,40 @@ def _scan_tickers(
         if not symbol or symbol == "NAN":
             continue
         total += 1
-        try:
-            stock = yf.Ticker(symbol)
-            if not stock.options:
-                continue
-
-            current_price = _get_current_price(stock)
-            if current_price is None:
-                continue
-
-            history = stock.history(period="1y")
-            hv30 = compute_historical_volatility(history, 30) if history is not None else None
-            metrics = compute_optionality_metrics(stock, current_price, hv30)
-            iv_percentile = metrics.get("iv_percentile")
-            iv30 = metrics.get("iv30")
-
-            if not _is_iv_data_valid(iv30, hv30, iv_percentile):
-                continue
-
-            bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, metrics.get("avg_edr"))
-            if iv_percentile is None or iv_percentile > threshold or bias != "CHEAP":
-                continue
-
-            reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold, bias, votes)
-            direction, direction_reason = _direction_hint(history)
-            horizon_labels, horizon_returns = _compute_horizon_bias(history)
-            analyzer_url = _build_stock_analyzer_url(symbol)
-            message = _format_alert_message(
-                label,
-                symbol,
-                iv_percentile,
-                iv30,
-                metrics.get("hv30"),
-                metrics.get("avg_edr"),
-                bias,
-                votes,
-                reason,
-                direction,
-                direction_reason,
-                threshold,
-                horizon_labels,
-                horizon_returns,
-                history,
-                analyzer_url=analyzer_url,
-            )
-            delivered, channel, error = _send_webhook(
-                message,
-                embed_url=analyzer_url,
-                button_label=symbol,
-            )
-            if not delivered:
-                print(
-                    f"[Sweep Delivery] {symbol} failed delivery: "
-                    f"channel={channel or 'n/a'} error={error or 'unknown'}"
-                )
-            with get_db_session() as db:
-                db.add(
-                    OptionAlertEvent(
-                        symbol=symbol,
-                        iv30=iv30,
-                        hv30=metrics.get("hv30"),
-                        iv_percentile=iv_percentile,
-                        avg_edr=metrics.get("avg_edr"),
-                        message=message,
-                        delivered=delivered,
-                        delivery_channel=channel,
-                        delivery_error=error,
+        retry_count = 0
+        while True:
+            try:
+                _scan_symbol(symbol)
+                consecutive_rate_limits = 0
+                break
+            except Exception as exc:
+                errors += 1
+                if _is_yahoo_rate_limit_error(exc):
+                    rate_limit_errors += 1
+                    consecutive_rate_limits += 1
+                    wait_seconds = min(
+                        rate_limit_backoff_seconds
+                        * (rate_limit_backoff_multiplier ** max(consecutive_rate_limits - 1, 0)),
+                        rate_limit_backoff_max_seconds,
                     )
-                )
-                db.commit()
-            hits += 1
-            hit_symbols.append(symbol)
-            hit_details.append(
-                {
-                    "symbol": symbol,
-                    "price": current_price,
-                    "iv30": iv30,
-                    "hv30": metrics.get("hv30"),
-                    "iv_percentile": iv_percentile,
-                    "avg_edr": metrics.get("avg_edr"),
-                    "direction": direction,
-                    "direction_reason": direction_reason,
-                    "horizon_labels": horizon_labels,
-                    "horizon_returns": horizon_returns,
-                    "votes": votes,
-                }
-            )
-        except Exception as exc:
-            errors += 1
-            if _is_yahoo_rate_limit_error(exc):
-                rate_limit_errors += 1
-                _emit_progress(
-                    {
-                        "event": "rate_limit",
-                        "symbol": symbol,
-                        "error": str(exc),
-                    }
-                )
-            else:
+                    will_retry = retry_count < rate_limit_max_retries
+                    _emit_progress(
+                        {
+                            "event": "rate_limit",
+                            "symbol": symbol,
+                            "error": str(exc),
+                            "retry_count": retry_count,
+                            "max_retries": rate_limit_max_retries,
+                            "retry_after_seconds": wait_seconds,
+                            "will_retry": will_retry,
+                        }
+                    )
+                    if will_retry:
+                        retry_count += 1
+                        time.sleep(wait_seconds)
+                        continue
+                    break
+                consecutive_rate_limits = 0
                 _emit_progress(
                     {
                         "event": "error",
@@ -202,11 +253,11 @@ def _scan_tickers(
                         "error": str(exc),
                     }
                 )
-            continue
-        finally:
-            _emit_progress({"event": "progress", "symbol": symbol})
-            if pause_seconds:
-                time.sleep(pause_seconds)
+                break
+
+        _emit_progress({"event": "progress", "symbol": symbol})
+        if pause_seconds:
+            time.sleep(pause_seconds)
 
     _emit_progress({"event": "finished"})
     print(f"{label} scan finished: {hits} hits over {total} symbols.")
