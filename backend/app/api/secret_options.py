@@ -243,9 +243,19 @@ def _resolve_option_row(stock: yf.Ticker, expiration: date, option_type: str, st
     return row
 
 
-def _market_data_for_symbol(symbol: str) -> Dict[str, Optional[float]]:
+def _market_data_for_symbol(symbol: str) -> Dict[str, object]:
     stock = yf.Ticker(symbol)
-    history = stock.history(period="5d")
+    try:
+        history = stock.history(period="5d")
+    except Exception as exc:
+        return {
+            "current_price": None,
+            "previous_close": None,
+            "change": None,
+            "change_percent": None,
+            "last_updated": datetime.utcnow().isoformat(),
+            "error": str(exc),
+        }
     if history is None or history.empty or "Close" not in history.columns:
         return {
             "current_price": None,
@@ -333,8 +343,14 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
             option_price_source = "last"
 
     # Get historical volatility as fallback
-    hist = stock.history(period="6mo")
-    hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
+    try:
+        hist = stock.history(period="6mo")
+    except Exception:
+        hist = None
+    try:
+        hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
+    except Exception:
+        hv30 = None
     
     # Determine spot price
     spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
@@ -578,7 +594,10 @@ def get_position_greeks(
         if not position:
             raise HTTPException(status_code=404, detail="Position not found")
 
-        metrics = _compute_position_metrics(position)
+        try:
+            metrics = _compute_position_metrics(position)
+        except Exception as exc:
+            metrics = _empty_position_metrics(str(exc))
         spot = metrics["market"].get("current_price") or position.underlying_reference or position.underlying_at_entry
         volatility = metrics.get("volatility")
         dte = metrics.get("dte") or 0
@@ -589,7 +608,10 @@ def get_position_greeks(
                 "theta_curve": [],
                 "current_greeks": None,
                 "model_info": {
-                    "error": "Insufficient data for Greeks calculation"
+                    "error": metrics.get("error") or "Insufficient data for Greeks calculation",
+                    "spot_price": spot,
+                    "volatility": volatility,
+                    "dte": dte,
                 }
             }
 

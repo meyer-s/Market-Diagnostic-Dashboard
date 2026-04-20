@@ -1029,7 +1029,16 @@ def compute_optionality_metrics(
     hv30: Optional[float],
 ) -> dict:
     """Compute IV/HV spread, IV percentile, and extrinsic density ratio."""
-    expiries = stock.options or []
+    try:
+        expiries = stock.options or []
+    except Exception as exc:
+        return {
+            "iv30": None,
+            "hv30": hv30,
+            "iv_percentile": None,
+            "avg_edr": None,
+            "error": str(exc),
+        }
     if not expiries:
         return {
             "iv30": None,
@@ -1448,8 +1457,38 @@ def get_stock_projections(
     except Exception:
         analyst_count = None
 
-    options_flow = compute_options_flow(stock)
-    optionality = compute_optionality_metrics(stock, current_price, hv30)
+    try:
+        options_flow = compute_options_flow(stock)
+    except Exception as exc:
+        options_flow = None
+        data_warnings.append({
+            "type": "upstream_options_unavailable",
+            "details": {
+                "symbol": ticker,
+                "source": "Yahoo Finance",
+                "message": str(exc),
+            },
+        })
+
+    try:
+        optionality = compute_optionality_metrics(stock, current_price, hv30)
+    except Exception as exc:
+        optionality = {
+            "iv30": None,
+            "hv30": hv30,
+            "iv_percentile": None,
+            "avg_edr": None,
+            "error": str(exc),
+        }
+    if optionality.get("error"):
+        data_warnings.append({
+            "type": "upstream_options_unavailable",
+            "details": {
+                "symbol": ticker,
+                "source": "Yahoo Finance",
+                "message": optionality["error"],
+            },
+        })
     
     # Compute projections for each horizon
     projections = {}
@@ -1464,7 +1503,14 @@ def get_stock_projections(
             })
             projections[horizon_name] = projection
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error computing {horizon_name} projection: {str(e)}")
+            data_warnings.append({
+                "type": "projection_unavailable",
+                "details": {
+                    "symbol": ticker,
+                    "horizon": horizon_name,
+                    "message": str(e),
+                },
+            })
     
     # Compute HISTORICAL score from 3 months ago (for chart visualization)
     historical_score = None
@@ -1486,9 +1532,30 @@ def get_stock_projections(
         print(f"Warning: Could not compute historical score for {ticker}: {str(e)}")
     
     # Calculate technical indicators for 252-day lookback
-    technical_data = calculate_technical_indicators(df, lookback_days=252)
+    try:
+        technical_data = calculate_technical_indicators(df, lookback_days=252)
+    except Exception as exc:
+        technical_data = None
+        data_warnings.append({
+            "type": "technical_unavailable",
+            "details": {
+                "symbol": ticker,
+                "message": str(exc),
+            },
+        })
 
-    fundamentals = compute_fundamentals(stock, df)
+    try:
+        fundamentals = compute_fundamentals(stock, df)
+    except Exception as exc:
+        fundamentals = {}
+        data_warnings.append({
+            "type": "fundamentals_unavailable",
+            "details": {
+                "symbol": ticker,
+                "source": "Yahoo Finance",
+                "message": str(exc),
+            },
+        })
     
     result = {
         "ticker": ticker,
