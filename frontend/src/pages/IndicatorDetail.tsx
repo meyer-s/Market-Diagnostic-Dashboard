@@ -1444,8 +1444,8 @@ export default function IndicatorDetail() {
               daysBack.setDate(today.getDate() - 365);
               const historyChartData = (history ?? [])
                 .map((item) => ({
-                  date: item.timestamp,
-                  dateNum: new Date(item.timestamp).getTime(),
+                  date: item.timestamp.slice(0, 10),
+                  dateNum: new Date(item.timestamp.slice(0, 10)).getTime(),
                   composite: {
                     stability_score: Number(item.score),
                   },

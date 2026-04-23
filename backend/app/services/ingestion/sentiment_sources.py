@@ -138,6 +138,8 @@ async def _scrape_michigan_latest() -> Optional[dict]:
     from datetime import datetime as _dt
 
     _URLS = [
+        "https://www.sca.isr.umich.edu/",
+        "https://www.sca.isr.umich.edu/tables.html",
         "http://www.sca.isr.umich.edu/",
         "http://www.sca.isr.umich.edu/tables.html",
     ]
