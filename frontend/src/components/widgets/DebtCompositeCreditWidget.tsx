@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import {
-  Bar,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -10,6 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import { useApi } from "../../hooks/useApi";
+import BondStressAttributionChart from "../bonds/BondStressAttributionChart";
 import { CHART_MARGIN } from "../../utils/chartUtils";
 
 interface BondComponentPoint {
@@ -118,15 +118,6 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
   const latest = recent[recent.length - 1];
   const prior = recent.length > 1 ? recent[recent.length - 2] : latest;
 
-  const chartData = recent.map((point) => ({
-    date: point.date,
-    label: point.date.slice(5),
-    credit: Number(point.credit_spread_stress?.contribution ?? 0),
-    curve: Number(point.yield_curve_stress?.contribution ?? 0),
-    momentum: Number(point.rates_momentum_stress?.contribution ?? 0),
-    vol: Number(point.treasury_volatility_stress?.contribution ?? 0),
-  }));
-
   const hy = Number(latest.credit_spread_stress?.hy_oas ?? 0);
   const ig = Number(latest.credit_spread_stress?.ig_oas ?? 0);
   const spreadGap = hy - ig;
@@ -164,7 +155,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
   })();
 
   return (
-    <Link to="/tools/debt" className="block">
+    <Link to="/bond_health_stability" className="block">
       <div className="primary-card primary-card-hover p-3 sm:p-6 cursor-pointer">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
@@ -201,7 +192,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
                     borderRadius: 8,
                     color: "#cbd5e1",
                   }}
-                  formatter={(value: number | null) =>
+                  formatter={(value) =>
                     value === null ? "--" : `${Number(value).toFixed(2)}%`
                   }
                 />
@@ -215,37 +206,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
         )}
 
         <div className="h-32 mb-3">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={CHART_MARGIN}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis
-                dataKey="label"
-                minTickGap={24}
-                tick={{ fill: "#94a3b8", fontSize: 10 }}
-                axisLine={{ stroke: "#475569" }}
-                tickLine={{ stroke: "#475569" }}
-              />
-              <YAxis
-                tick={{ fill: "#94a3b8", fontSize: 10 }}
-                axisLine={{ stroke: "#475569" }}
-                tickLine={{ stroke: "#475569" }}
-                width={30}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#0f172a",
-                  border: "1px solid #334155",
-                  borderRadius: 8,
-                  color: "#cbd5e1",
-                }}
-                formatter={(value: number, name: string) => [Number(value).toFixed(2), name]}
-              />
-              <Bar dataKey="credit" stackId="stress" fill="#f97316" fillOpacity={0.9} name="Credit spreads" />
-              <Bar dataKey="curve" stackId="stress" fill="#38bdf8" fillOpacity={0.85} name="Yield curve" />
-              <Bar dataKey="momentum" stackId="stress" fill="#a78bfa" fillOpacity={0.85} name="Rates momentum" />
-              <Bar dataKey="vol" stackId="stress" fill="#facc15" fillOpacity={0.85} name="Treasury vol" />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <BondStressAttributionChart data={recent} />
         </div>
 
         <div className="mb-3 flex flex-wrap gap-2 text-[11px]">

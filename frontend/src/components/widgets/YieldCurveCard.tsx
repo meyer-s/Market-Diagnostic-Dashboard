@@ -117,7 +117,7 @@ export default function YieldCurveCard() {
               <XAxis dataKey="maturity" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} />
               <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} domain={["dataMin - 0.25", "dataMax + 0.25"]} />
               <Tooltip
-                formatter={(value: number | null) => (value === null ? "--" : `${Number(value).toFixed(2)}%`)}
+                formatter={(value) => (value === null ? "--" : `${Number(value).toFixed(2)}%`)}
                 contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
                 labelStyle={{ color: "#cbd5e1" }}
               />

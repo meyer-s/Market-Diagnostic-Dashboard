@@ -29,6 +29,10 @@ function LegacyRecapSlugRedirect() {
   return <Navigate to={`/tools/recap/${slug}`} replace />;
 }
 
+function BondHealthStabilityPage() {
+  return <IndicatorDetail forcedCode="BOND_MARKET_STABILITY" />;
+}
+
 function AppWithAnalytics() {
   const location = useLocation();
 
@@ -47,6 +51,7 @@ function AppWithAnalytics() {
       location.pathname.includes("/precious-metals") ? "Precious Metals" :
       location.pathname.includes("/tools/volume-breadth") ? "Volume & Breadth" :
       location.pathname.includes("/tools/debt") ? "Debt Diagnostics" :
+      location.pathname.includes("/bond_health_stability") ? "Bond Health Stability" :
       location.pathname.includes("/alternative-assets") ? "Alternative Assets" :
       location.pathname.includes("/tools/recap") || location.pathname.includes("/tools/updates") ? "Recap" :
       location.pathname.includes("/aas-breakdown") ? "AAS Breakdown" :
@@ -64,6 +69,7 @@ function AppWithAnalytics() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/indicators" element={<Indicators />} />
           <Route path="/indicators/:code" element={<IndicatorDetail />} />
+          <Route path="/bond_health_stability" element={<BondHealthStabilityPage />} />
           <Route path="/news" element={<MarketNews />} />
           <Route path="/system-breakdown" element={<SystemBreakdown />} />
           <Route path="/vision" element={<Vision />} />

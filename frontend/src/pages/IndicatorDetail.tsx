@@ -4,6 +4,7 @@ import { useApi } from "../hooks/useApi";
 import { IndicatorHistoryPoint } from "../types";
 import StateSparkline from "../components/widgets/StateSparkline";
 import { ComponentChart } from "../components/widgets/ComponentChart";
+import BondStressAttributionChart from "../components/bonds/BondStressAttributionChart";
 import { processComponentData } from "../utils/chartDataUtils";
 import { prepareExtendedComponentData } from "../utils/indicatorDetailHelpers";
 import { formatDateTime } from "../utils/styleUtils";
@@ -296,10 +297,14 @@ interface MuniSubsystemResponse {
   curve?: MuniCurve | null;
 }
 
-export default function IndicatorDetail() {
+interface IndicatorDetailProps {
+  forcedCode?: string;
+}
+
+export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
   const { code: routeCode } = useParams();
   const navigate = useNavigate();
-  const normalizedCode = routeCode?.toUpperCase();
+  const normalizedCode = (forcedCode ?? routeCode)?.toUpperCase();
   const apiCode =
     normalizedCode === "ANALYST_CONFIDENCE" ? "ANALYST_ANXIETY" : normalizedCode;
   const isAnalystConfidence = apiCode === "ANALYST_ANXIETY";
@@ -397,6 +402,17 @@ export default function IndicatorDetail() {
   };
   
   const chartRange = getChartRange();
+  const bondStressAttributionData =
+    apiCode === "BOND_MARKET_STABILITY" && bondComponents
+      ? (() => {
+          const today = new Date();
+          today.setHours(23, 59, 59, 999);
+          const daysBack = new Date(today);
+          daysBack.setDate(today.getDate() - chartRange.days);
+          daysBack.setHours(0, 0, 0, 0);
+          return bondComponents.filter((point) => new Date(point.date).getTime() >= daysBack.getTime());
+        })()
+      : [];
   const indicatorsWithDedicatedFinalHistory = new Set([
     "CONSUMER_HEALTH",
     "BOND_MARKET_STABILITY",
@@ -801,6 +817,25 @@ export default function IndicatorDetail() {
               </div>
             );
           })()}
+
+          {/* Component Stability Levels Chart */}
+          <div className="mb-6">
+            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Stress Attribution Mix</h4>
+            <p className="text-xs text-stealth-400 mb-2">
+              Stacked bars show which subsystem is driving the composite stress score through time.
+            </p>
+            <div className="h-80">
+              <BondStressAttributionChart
+                data={bondStressAttributionData}
+                labelFormatter={(date) =>
+                  new Date(date).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                  })
+                }
+              />
+            </div>
+          </div>
 
           {/* Component Stability Levels Chart */}
           <div className="h-80 mb-6">
