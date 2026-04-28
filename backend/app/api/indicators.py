@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, HTTPException, Query
 from typing import List
 
@@ -17,6 +18,7 @@ from app.models.system_status import SystemStatus
 from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Sector classifications for virtual indicator
 DEFENSIVE_SECTORS = ["XLU", "XLP", "XLV"]
@@ -221,27 +223,35 @@ async def get_bond_composite_components(days: int = Query(365, ge=1, le=1095)):
     cutoff = datetime.utcnow() - timedelta(days=days)
     start_date = cutoff.strftime("%Y-%m-%d")
     
-    # Fetch all sub-indicators
+    # Fetch all sub-indicators with retry and graceful fallback for transient FRED errors.
     async def fetch_all_components():
         fred = FredClient()
-        
-        # Fetch in parallel
-        hy_oas_data = await fred.fetch_series("BAMLH0A0HYM2", start_date=start_date)
-        ig_oas_data = await fred.fetch_series("BAMLC0A0CM", start_date=start_date)
-        dgs10_data = await fred.fetch_series("DGS10", start_date=start_date)
-        dgs2_data = await fred.fetch_series("DGS2", start_date=start_date)
-        dgs3mo_data = await fred.fetch_series("DGS3MO", start_date=start_date)
-        dgs30_data = await fred.fetch_series("DGS30", start_date=start_date)
-        dgs5_data = await fred.fetch_series("DGS5", start_date=start_date)
-        
+
+        async def fetch_with_retry(series_id: str, attempts: int = 3):
+            last_error = None
+            for attempt in range(1, attempts + 1):
+                try:
+                    return await fred.fetch_series(series_id, start_date=start_date)
+                except Exception as exc:  # noqa: BLE001 - keep endpoint resilient to upstream failures
+                    last_error = exc
+                    logger.warning(
+                        "FRED fetch failed for %s (attempt %s/%s): %s",
+                        series_id,
+                        attempt,
+                        attempts,
+                        exc,
+                    )
+            logger.error("FRED fetch exhausted for %s: %s", series_id, last_error)
+            return []
+
         return {
-            'hy_oas': hy_oas_data,
-            'ig_oas': ig_oas_data,
-            'dgs10': dgs10_data,
-            'dgs2': dgs2_data,
-            'dgs3mo': dgs3mo_data,
-            'dgs30': dgs30_data,
-            'dgs5': dgs5_data,
+            'hy_oas': await fetch_with_retry("BAMLH0A0HYM2"),
+            'ig_oas': await fetch_with_retry("BAMLC0A0CM"),
+            'dgs10': await fetch_with_retry("DGS10"),
+            'dgs2': await fetch_with_retry("DGS2"),
+            'dgs3mo': await fetch_with_retry("DGS3MO"),
+            'dgs30': await fetch_with_retry("DGS30"),
+            'dgs5': await fetch_with_retry("DGS5"),
         }
     
     components = await fetch_all_components()
@@ -254,9 +264,27 @@ async def get_bond_composite_components(days: int = Query(365, ge=1, le=1095)):
     dgs3mo = series_to_dict(components['dgs3mo'])
     dgs30 = series_to_dict(components['dgs30'])
     dgs5 = series_to_dict(components['dgs5'])
+
+    if not dgs10 or not dgs2 or not dgs3mo or not dgs30 or not dgs5:
+        logger.warning("Bond components unavailable: missing required Treasury series")
+        return []
     
     # Find common dates using helper
     common_dates = find_common_dates(hy_oas, ig_oas, dgs10, dgs2, dgs3mo, dgs30, dgs5)
+    if not common_dates:
+        common_dates = find_common_dates(dgs10, dgs2, dgs3mo, dgs30, dgs5)
+    if not common_dates:
+        logger.warning("Bond components unavailable: no common dates across required series")
+        return []
+
+    def align_series(values_by_date, dates, fallback):
+        aligned = []
+        current = fallback
+        for day in dates:
+            if day in values_by_date and values_by_date[day] is not None:
+                current = values_by_date[day]
+            aligned.append(float(current))
+        return aligned
     
     # Helper: z-score to 0-100
     def calc_scores(vals, invert=False):
@@ -272,8 +300,11 @@ async def get_bond_composite_components(days: int = Query(365, ge=1, le=1095)):
         return np.clip(scores, 0, 100).tolist()
     
     # Extract values for each date
-    hy_vals = [hy_oas[d] for d in common_dates]
-    ig_vals = [ig_oas[d] for d in common_dates]
+    hy_fallback = float(next(iter(hy_oas.values()))) if hy_oas else 3.5
+    ig_fallback = float(next(iter(ig_oas.values()))) if ig_oas else 1.5
+
+    hy_vals = align_series(hy_oas, common_dates, hy_fallback)
+    ig_vals = align_series(ig_oas, common_dates, ig_fallback)
     dgs10_vals = np.array([dgs10[d] for d in common_dates])
     dgs2_vals = [dgs2[d] for d in common_dates]
     dgs3mo_vals = [dgs3mo[d] for d in common_dates]
