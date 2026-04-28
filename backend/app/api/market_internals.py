@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, List, Tuple
 
+import httpx
 import pandas as pd
 import yfinance as yf
 from fastapi import APIRouter, Query
@@ -11,24 +12,12 @@ router = APIRouter()
 
 _CACHE_TTL_SECONDS = 4 * 60 * 60
 _cached_by_days: dict[int, dict[str, object]] = {}
+_LISTING_CACHE_TTL_SECONDS = 24 * 60 * 60
+_listing_cache: dict[str, object] = {"fetched_at": None, "data": None}
 
-AMEX_PROXY = [
-    "SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLV", "XLI", "XLP",
-    "XLY", "XLU", "XLB", "XLRE", "XLC", "ARKK", "ARKG", "SMH", "SOXX", "GDX",
-    "SLV", "GLD", "USO", "UNG", "TLT", "HYG", "LQD", "EEM", "EFA", "KWEB",
-]
-
-NASDAQ_PROXY = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "NFLX", "AMD",
-    "CSCO", "ADBE", "PEP", "COST", "TMUS", "INTC", "QCOM", "AMGN", "INTU", "TXN",
-    "AMAT", "MU", "ADI", "LRCX", "PANW", "CRWD", "MELI", "ASML", "KLAC", "MAR",
-]
-
-NYSE_PROXY = [
-    "JPM", "BAC", "WFC", "GS", "MS", "XOM", "CVX", "JNJ", "PG", "KO",
-    "MCD", "HD", "CAT", "GE", "IBM", "BA", "UNH", "PFE", "VZ", "T",
-    "DIS", "NKE", "MMM", "HON", "RTX", "LOW", "BK", "BLK", "SPGI", "CB",
-]
+AMEX_FALLBACK = ["SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLV", "XLI", "XLP"]
+NASDAQ_FALLBACK = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "NFLX", "AMD"]
+NYSE_FALLBACK = ["JPM", "BAC", "WFC", "GS", "MS", "XOM", "CVX", "JNJ", "PG", "KO"]
 
 BREADTH_SYMBOL_CANDIDATES = {
     "nyse": {
@@ -80,6 +69,135 @@ def _extract_close_volume(downloaded: pd.DataFrame) -> Tuple[pd.DataFrame | None
     close = pd.DataFrame({"SINGLE": downloaded["Close"]})
     volume = pd.DataFrame({"SINGLE": downloaded["Volume"]})
     return close, volume
+
+
+def _chunked(symbols: List[str], chunk_size: int) -> List[List[str]]:
+    return [symbols[i:i + chunk_size] for i in range(0, len(symbols), chunk_size)]
+
+
+def _normalize_symbol(symbol: str) -> str:
+    value = (symbol or "").strip().upper()
+    if not value:
+        return ""
+    value = value.replace("$", "")
+    value = value.replace(".", "-")
+    return value
+
+
+def _parse_pipe_table(text: str) -> List[Dict[str, str]]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return []
+    headers = [h.strip() for h in lines[0].split("|")]
+    rows: List[Dict[str, str]] = []
+    for line in lines[1:]:
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) != len(headers):
+            continue
+        row = dict(zip(headers, parts))
+        if row.get(headers[0], "").startswith("File Creation Time"):
+            continue
+        rows.append(row)
+    return rows
+
+
+def _fetch_exchange_universe() -> Dict[str, List[str]]:
+    now = datetime.utcnow()
+    cached_at = _listing_cache.get("fetched_at")
+    cached_data = _listing_cache.get("data")
+    if isinstance(cached_at, datetime) and isinstance(cached_data, dict):
+        if (now - cached_at).total_seconds() < _LISTING_CACHE_TTL_SECONDS:
+            return cached_data  # type: ignore[return-value]
+
+    nasdaq: set[str] = set()
+    nyse: set[str] = set()
+    amex: set[str] = set()
+
+    try:
+        with httpx.Client(timeout=20) as client:
+            nasdaq_text = client.get("https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt").text
+            other_text = client.get("https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt").text
+
+        nasdaq_rows = _parse_pipe_table(nasdaq_text)
+        for row in nasdaq_rows:
+            if row.get("Test Issue", "N") == "Y":
+                continue
+            symbol = _normalize_symbol(row.get("Symbol", ""))
+            if symbol:
+                nasdaq.add(symbol)
+
+        other_rows = _parse_pipe_table(other_text)
+        for row in other_rows:
+            if row.get("Test Issue", "N") == "Y":
+                continue
+            raw_symbol = row.get("ACT Symbol") or row.get("NASDAQ Symbol") or row.get("CQS Symbol") or ""
+            symbol = _normalize_symbol(raw_symbol)
+            if not symbol:
+                continue
+
+            exch = (row.get("Exchange") or "").upper()
+            if exch == "N":
+                nyse.add(symbol)
+            elif exch in {"A", "P"}:
+                amex.add(symbol)
+            elif exch == "Q":
+                nasdaq.add(symbol)
+
+    except Exception:
+        return {
+            "amex": AMEX_FALLBACK,
+            "nyse": NYSE_FALLBACK,
+            "nsdq": NASDAQ_FALLBACK,
+        }
+
+    payload = {
+        "amex": sorted(amex) if amex else AMEX_FALLBACK,
+        "nyse": sorted(nyse) if nyse else NYSE_FALLBACK,
+        "nsdq": sorted(nasdaq) if nasdaq else NASDAQ_FALLBACK,
+    }
+    _listing_cache["fetched_at"] = now
+    _listing_cache["data"] = payload
+    return payload
+
+
+def _download_price_volume(symbols: List[str], period: str = "1y") -> Tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    close_frames: List[pd.DataFrame] = []
+    volume_frames: List[pd.DataFrame] = []
+
+    for chunk in _chunked(symbols, 200):
+        try:
+            frame = yf.download(
+                tickers=" ".join(chunk),
+                period=period,
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+                threads=True,
+                group_by="column",
+            )
+        except Exception:
+            continue
+
+        close_frame, volume_frame = _extract_close_volume(frame)
+        if close_frame is None or volume_frame is None:
+            continue
+
+        if "SINGLE" in close_frame.columns and len(chunk) == 1:
+            close_frame = close_frame.rename(columns={"SINGLE": chunk[0]})
+        if "SINGLE" in volume_frame.columns and len(chunk) == 1:
+            volume_frame = volume_frame.rename(columns={"SINGLE": chunk[0]})
+
+        close_frames.append(close_frame)
+        volume_frames.append(volume_frame)
+
+    if not close_frames or not volume_frames:
+        return None, None
+
+    close_all = pd.concat(close_frames, axis=1)
+    volume_all = pd.concat(volume_frames, axis=1)
+    close_all = close_all.loc[:, ~close_all.columns.duplicated()]
+    volume_all = volume_all.loc[:, ~volume_all.columns.duplicated()]
+    return close_all, volume_all
 
 
 def _fetch_breadth_metric_series(candidates: List[str]) -> Dict[str, float]:
@@ -301,18 +419,7 @@ def _build_bucket_history(
 
 
 def _compute_bucket(symbols: List[str], label: str, lookback_days: int) -> Dict[str, object]:
-    tickers = " ".join(symbols)
-    data = yf.download(
-        tickers=tickers,
-        period="1y",
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-        threads=True,
-        group_by="column",
-    )
-
-    close_frame, volume_frame = _extract_close_volume(data)
+    close_frame, volume_frame = _download_price_volume(symbols, period="1y")
     if close_frame is None or volume_frame is None:
         return {
             "label": label,
@@ -411,9 +518,10 @@ def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> Dict[
         if isinstance(cached_at, datetime) and payload and (now - cached_at).total_seconds() < _CACHE_TTL_SECONDS:
             return payload  # type: ignore[return-value]
 
-    amex = _resolve_exchange_bucket("amex", "AMEX", AMEX_PROXY, lookback_days=days)
-    nasdaq = _resolve_exchange_bucket("nsdq", "NSDQ", NASDAQ_PROXY, lookback_days=days)
-    nyse = _resolve_exchange_bucket("nyse", "NYSE", NYSE_PROXY, lookback_days=days)
+    exchange_universe = _fetch_exchange_universe()
+    amex = _resolve_exchange_bucket("amex", "AMEX", exchange_universe["amex"], lookback_days=days)
+    nasdaq = _resolve_exchange_bucket("nsdq", "NSDQ", exchange_universe["nsdq"], lookback_days=days)
+    nyse = _resolve_exchange_bucket("nyse", "NYSE", exchange_universe["nyse"], lookback_days=days)
 
     combined_adv = amex["advancing"] + nasdaq["advancing"] + nyse["advancing"]
     combined_dec = amex["declining"] + nasdaq["declining"] + nyse["declining"]
@@ -498,7 +606,7 @@ def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> Dict[
             "new_highs_pct": (combined_highs / hl_total) * 100.0,
             "new_lows_pct": (combined_lows / hl_total) * 100.0,
             "participation_pct": composite_participation_pct,
-            "universe_size": len(AMEX_PROXY) + len(NASDAQ_PROXY) + len(NYSE_PROXY),
+            "universe_size": len(exchange_universe["amex"]) + len(exchange_universe["nsdq"]) + len(exchange_universe["nyse"]),
         },
         "days": days,
         "history": combined_history,
