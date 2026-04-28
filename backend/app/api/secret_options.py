@@ -143,13 +143,14 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
     entry_idx = daily.index.get_loc(entry_date)
     entry_price = float(daily.iloc[entry_idx]["close"])
 
-    target_exit_idx = entry_idx + hold_days
+    recommended_exit_date = entry_date.date() + timedelta(days=hold_days)
     elapsed_calendar_days = (date.today() - entry_date.date()).days
 
-    if target_exit_idx < len(daily):
-        exit_idx = target_exit_idx
-        realized_hold_days = hold_days
-    else:
+    # Real-world exit model for the training modal:
+    # once the hold window has passed, settle on the most recent trading close
+    # on or before the recommended calendar exit date. This is deterministic
+    # and does not change on subsequent refreshes.
+    if date.today() < recommended_exit_date:
         return {
             "event_id": event.id,
             "symbol": event.symbol,
@@ -165,12 +166,40 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
             "exit_option_price_est": None,
             "option_return_pct_est": None,
             "option_pnl_per_contract_est": None,
-            "recommended_exit_date": (entry_date.date() + timedelta(days=hold_days)).isoformat(),
+            "recommended_exit_date": recommended_exit_date.isoformat(),
             "days_elapsed_calendar": elapsed_calendar_days,
             "status": "pending",
         }
 
-    exit_date = daily.index[exit_idx]
+    eligible_exit_dates = daily.index[
+        (daily.index.date >= entry_date.date())
+        & (daily.index.date <= recommended_exit_date)
+    ]
+    if len(eligible_exit_dates) == 0:
+        return {
+            "event_id": event.id,
+            "symbol": event.symbol,
+            "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
+            "option_type": option_type,
+            "hold_days": hold_days,
+            "entry_date": entry_date.date().isoformat(),
+            "exit_date": None,
+            "entry_underlying": entry_price,
+            "exit_underlying": None,
+            "underlying_directional_return_pct": None,
+            "entry_option_price_est": recipe.get("est_premium"),
+            "exit_option_price_est": None,
+            "option_return_pct_est": None,
+            "option_pnl_per_contract_est": None,
+            "recommended_exit_date": recommended_exit_date.isoformat(),
+            "days_elapsed_calendar": elapsed_calendar_days,
+            "status": "pending",
+        }
+
+    exit_date = eligible_exit_dates[-1]
+    exit_idx = daily.index.get_loc(exit_date)
+    realized_hold_days = (exit_date.date() - entry_date.date()).days
+
     exit_price = float(daily.iloc[exit_idx]["close"])
 
     directional_multiplier = 1.0 if option_type == "call" else -1.0
@@ -215,7 +244,7 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
         "exit_option_price_est": exit_option_price,
         "option_return_pct_est": option_return_pct,
         "option_pnl_per_contract_est": option_pnl_contract,
-        "recommended_exit_date": (entry_date.date() + timedelta(days=hold_days)).isoformat(),
+        "recommended_exit_date": recommended_exit_date.isoformat(),
         "hold_days_realized": realized_hold_days,
         "days_elapsed_calendar": elapsed_calendar_days,
         "status": "matured",
