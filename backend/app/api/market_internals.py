@@ -161,7 +161,7 @@ def _download_price_volume(symbols: List[str], period: str = "1y") -> Tuple[pd.D
     close_frames: List[pd.DataFrame] = []
     volume_frames: List[pd.DataFrame] = []
 
-    for chunk in _chunked(symbols, 200):
+    for chunk in _chunked(symbols, 500):
         try:
             frame = yf.download(
                 tickers=" ".join(chunk),
@@ -382,6 +382,8 @@ def _build_bucket_history(
 
     dates = close.index.tolist()
     start_idx = max(1, len(dates) - lookback_days)
+    rolling_max = close.rolling(window=252, min_periods=20).max()
+    rolling_min = close.rolling(window=252, min_periods=20).min()
 
     for idx in range(start_idx, len(dates)):
         current_close = close.iloc[idx]
@@ -398,23 +400,12 @@ def _build_bucket_history(
         up_vol = float(current_volume[up_mask].sum()) if not current_volume.empty else 0.0
         down_vol = float(current_volume[down_mask].sum()) if not current_volume.empty else 0.0
 
-        new_highs = 0
-        new_lows = 0
-        for symbol in symbols:
-            series = close[symbol].dropna()
-            if len(series) < 20:
-                continue
-            current_date = dates[idx]
-            if current_date not in series.index:
-                continue
-            window = series.loc[:current_date].tail(252)
-            if window.empty:
-                continue
-            current_price = float(series.loc[current_date])
-            if current_price >= float(window.max()) * 0.999:
-                new_highs += 1
-            if current_price <= float(window.min()) * 1.001:
-                new_lows += 1
+        current_roll_max = rolling_max.iloc[idx]
+        current_roll_min = rolling_min.iloc[idx]
+        high_mask = valid_mask & current_roll_max.notna() & (current_close >= (current_roll_max * 0.999))
+        low_mask = valid_mask & current_roll_min.notna() & (current_close <= (current_roll_min * 1.001))
+        new_highs = int(high_mask.sum())
+        new_lows = int(low_mask.sum())
 
         breadth_total = max(advancing + declining, 1)
         volume_total = max(up_vol + down_vol, 1.0)
@@ -448,45 +439,33 @@ def _compute_bucket(symbols: List[str], label: str, lookback_days: int) -> Dict[
     if close_frame is None or volume_frame is None:
         return _empty_bucket(label, len(symbols), "unavailable")
 
-    advancing = 0
-    declining = 0
-    volume_adv = 0.0
-    volume_dec = 0.0
-    new_highs = 0
-    new_lows = 0
+    close = close_frame.copy().sort_index()
+    volume = volume_frame.copy().sort_index()
+    close = close[[c for c in close.columns if c in symbols]]
+    volume = volume[[c for c in volume.columns if c in symbols]]
+    if close.shape[0] < 2 or close.shape[1] == 0:
+        return _empty_bucket(label, len(symbols), "unavailable")
 
-    def _get_series(frame: pd.DataFrame, symbol: str) -> pd.Series:
-        if symbol in frame.columns:
-            return frame[symbol]
-        if "SINGLE" in frame.columns and len(symbols) == 1:
-            return frame["SINGLE"]
-        return pd.Series(dtype=float)
+    current_close = close.iloc[-1]
+    previous_close = close.iloc[-2]
+    current_volume = volume.iloc[-1] if volume.shape[0] else pd.Series(dtype=float)
 
-    for symbol in symbols:
-        close_series = _get_series(close_frame, symbol).dropna()
-        volume_series = _get_series(volume_frame, symbol).dropna()
-        if len(close_series) < 3:
-            continue
+    valid_mask = current_close.notna() & previous_close.notna()
+    up_mask = valid_mask & (current_close > previous_close)
+    down_mask = valid_mask & (current_close < previous_close)
 
-        current = float(close_series.iloc[-1])
-        previous = float(close_series.iloc[-2])
-        latest_volume = float(volume_series.iloc[-1]) if len(volume_series) else 0.0
+    advancing = int(up_mask.sum())
+    declining = int(down_mask.sum())
+    volume_adv = float(current_volume[up_mask].sum()) if not current_volume.empty else 0.0
+    volume_dec = float(current_volume[down_mask].sum()) if not current_volume.empty else 0.0
 
-        if current > previous:
-            advancing += 1
-            volume_adv += max(latest_volume, 0.0)
-        elif current < previous:
-            declining += 1
-            volume_dec += max(latest_volume, 0.0)
-
-        lookback = close_series.tail(252)
-        if len(lookback) >= 20:
-            max_52w = float(lookback.max())
-            min_52w = float(lookback.min())
-            if current >= max_52w * 0.999:
-                new_highs += 1
-            if current <= min_52w * 1.001:
-                new_lows += 1
+    lookback_close = close.tail(252)
+    max_52w = lookback_close.max(axis=0)
+    min_52w = lookback_close.min(axis=0)
+    high_mask = valid_mask & max_52w.notna() & (current_close >= (max_52w * 0.999))
+    low_mask = valid_mask & min_52w.notna() & (current_close <= (min_52w * 1.001))
+    new_highs = int(high_mask.sum())
+    new_lows = int(low_mask.sum())
 
     active = max(advancing + declining, 1)
     volume_total = max(volume_adv + volume_dec, 1.0)
