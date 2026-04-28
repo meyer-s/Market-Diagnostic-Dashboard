@@ -1,26 +1,33 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Tuple
 
 import pandas as pd
 import yfinance as yf
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 router = APIRouter()
 
-_CACHE_TTL_SECONDS = 300
-_cached_payload: dict | None = None
-_cached_at: datetime | None = None
+_CACHE_TTL_SECONDS = 4 * 60 * 60
+_cached_by_days: dict[int, dict[str, object]] = {}
+
+AMEX_PROXY = [
+    "SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLV", "XLI", "XLP",
+    "XLY", "XLU", "XLB", "XLRE", "XLC", "ARKK", "ARKG", "SMH", "SOXX", "GDX",
+    "SLV", "GLD", "USO", "UNG", "TLT", "HYG", "LQD", "EEM", "EFA", "KWEB",
+]
 
 NASDAQ_PROXY = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "NFLX", "AMD",
     "CSCO", "ADBE", "PEP", "COST", "TMUS", "INTC", "QCOM", "AMGN", "INTU", "TXN",
+    "AMAT", "MU", "ADI", "LRCX", "PANW", "CRWD", "MELI", "ASML", "KLAC", "MAR",
 ]
 
 NYSE_PROXY = [
     "JPM", "BAC", "WFC", "GS", "MS", "XOM", "CVX", "JNJ", "PG", "KO",
     "MCD", "HD", "CAT", "GE", "IBM", "BA", "UNH", "PFE", "VZ", "T",
+    "DIS", "NKE", "MMM", "HON", "RTX", "LOW", "BK", "BLK", "SPGI", "CB",
 ]
 
 
@@ -122,13 +129,14 @@ def _build_bucket_history(
                 "new_lows": new_lows,
                 "new_highs_pct": float((new_highs / hl_total) * 100.0),
                 "new_lows_pct": float((new_lows / hl_total) * 100.0),
+                "participation_pct": float((advancing + declining) / max(len(symbols), 1) * 100.0),
             }
         )
 
     return history
 
 
-def _compute_bucket(symbols: List[str], label: str) -> Dict[str, object]:
+def _compute_bucket(symbols: List[str], label: str, lookback_days: int) -> Dict[str, object]:
     tickers = " ".join(symbols)
     data = yf.download(
         tickers=tickers,
@@ -156,6 +164,7 @@ def _compute_bucket(symbols: List[str], label: str) -> Dict[str, object]:
             "new_lows": 0,
             "new_highs_pct": 0.0,
             "new_lows_pct": 0.0,
+            "participation_pct": 0.0,
             "universe_size": len(symbols),
             "history": [],
         }
@@ -204,7 +213,9 @@ def _compute_bucket(symbols: List[str], label: str) -> Dict[str, object]:
     volume_total = max(volume_adv + volume_dec, 1.0)
     hl_total = max(new_highs + new_lows, 1)
 
-    history = _build_bucket_history(close_frame, volume_frame, symbols)
+    history = _build_bucket_history(close_frame, volume_frame, symbols, lookback_days=lookback_days)
+
+    participation_pct = (advancing + declining) / max(len(symbols), 1) * 100.0
 
     return {
         "label": label,
@@ -220,48 +231,62 @@ def _compute_bucket(symbols: List[str], label: str) -> Dict[str, object]:
         "new_lows": new_lows,
         "new_highs_pct": (new_highs / hl_total) * 100.0,
         "new_lows_pct": (new_lows / hl_total) * 100.0,
+        "participation_pct": participation_pct,
         "universe_size": len(symbols),
         "history": history,
     }
 
 
 @router.get("/market-internals/overview")
-def get_market_internals_overview() -> Dict[str, object]:
-    global _cached_payload, _cached_at
-
+def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> Dict[str, object]:
     now = datetime.utcnow()
-    if _cached_payload and _cached_at and (now - _cached_at).total_seconds() < _CACHE_TTL_SECONDS:
-        return _cached_payload
+    cached = _cached_by_days.get(days)
+    if cached:
+        cached_at = cached.get("cached_at")
+        payload = cached.get("payload")
+        if isinstance(cached_at, datetime) and payload and (now - cached_at).total_seconds() < _CACHE_TTL_SECONDS:
+            return payload  # type: ignore[return-value]
 
-    nasdaq = _compute_bucket(NASDAQ_PROXY, "NASDAQ Proxy")
-    nyse = _compute_bucket(NYSE_PROXY, "NYSE Proxy")
+    amex = _compute_bucket(AMEX_PROXY, "AMEX", lookback_days=days)
+    nasdaq = _compute_bucket(NASDAQ_PROXY, "NSDQ", lookback_days=days)
+    nyse = _compute_bucket(NYSE_PROXY, "NYSE", lookback_days=days)
 
-    combined_adv = nasdaq["advancing"] + nyse["advancing"]
-    combined_dec = nasdaq["declining"] + nyse["declining"]
-    combined_volume_adv = nasdaq["volume_advancing"] + nyse["volume_advancing"]
-    combined_volume_dec = nasdaq["volume_declining"] + nyse["volume_declining"]
-    combined_highs = nasdaq["new_highs"] + nyse["new_highs"]
-    combined_lows = nasdaq["new_lows"] + nyse["new_lows"]
+    combined_adv = amex["advancing"] + nasdaq["advancing"] + nyse["advancing"]
+    combined_dec = amex["declining"] + nasdaq["declining"] + nyse["declining"]
+    combined_volume_adv = amex["volume_advancing"] + nasdaq["volume_advancing"] + nyse["volume_advancing"]
+    combined_volume_dec = amex["volume_declining"] + nasdaq["volume_declining"] + nyse["volume_declining"]
+    combined_highs = amex["new_highs"] + nasdaq["new_highs"] + nyse["new_highs"]
+    combined_lows = amex["new_lows"] + nasdaq["new_lows"] + nyse["new_lows"]
 
     breadth_total = max(combined_adv + combined_dec, 1)
     volume_total = max(combined_volume_adv + combined_volume_dec, 1.0)
     hl_total = max(combined_highs + combined_lows, 1)
 
+    amex_history = {entry["date"]: entry for entry in amex.get("history", [])}
     nasdaq_history = {entry["date"]: entry for entry in nasdaq.get("history", [])}
     nyse_history = {entry["date"]: entry for entry in nyse.get("history", [])}
-    combined_dates = sorted(set(nasdaq_history.keys()) & set(nyse_history.keys()))
+    combined_dates = sorted(set(amex_history.keys()) & set(nasdaq_history.keys()) & set(nyse_history.keys()))
     combined_history = []
 
     for date_key in combined_dates:
+        amx = amex_history[date_key]
         ndx = nasdaq_history[date_key]
         ny = nyse_history[date_key]
 
-        adv = int(ndx["advancing"] + ny["advancing"])
-        dec = int(ndx["declining"] + ny["declining"])
-        vol_adv = float(ndx["volume_advancing"] + ny["volume_advancing"])
-        vol_dec = float(ndx["volume_declining"] + ny["volume_declining"])
-        highs = int(ndx["new_highs"] + ny["new_highs"])
-        lows = int(ndx["new_lows"] + ny["new_lows"])
+        adv = int(amx["advancing"] + ndx["advancing"] + ny["advancing"])
+        dec = int(amx["declining"] + ndx["declining"] + ny["declining"])
+        vol_adv = float(amx["volume_advancing"] + ndx["volume_advancing"] + ny["volume_advancing"])
+        vol_dec = float(amx["volume_declining"] + ndx["volume_declining"] + ny["volume_declining"])
+        highs = int(amx["new_highs"] + ndx["new_highs"] + ny["new_highs"])
+        lows = int(amx["new_lows"] + ndx["new_lows"] + ny["new_lows"])
+        participation_pct = float(
+            (
+                float(amx.get("participation_pct", 0.0))
+                + float(ndx.get("participation_pct", 0.0))
+                + float(ny.get("participation_pct", 0.0))
+            )
+            / 3.0
+        )
 
         breadth_total_hist = max(adv + dec, 1)
         volume_total_hist = max(vol_adv + vol_dec, 1.0)
@@ -283,8 +308,15 @@ def get_market_internals_overview() -> Dict[str, object]:
                 "new_lows": lows,
                 "new_highs_pct": float((highs / hl_total_hist) * 100.0),
                 "new_lows_pct": float((lows / hl_total_hist) * 100.0),
+                "participation_pct": participation_pct,
             }
         )
+
+    composite_participation_pct = (
+        float(amex.get("participation_pct", 0.0))
+        + float(nasdaq.get("participation_pct", 0.0))
+        + float(nyse.get("participation_pct", 0.0))
+    ) / 3.0
 
     payload = {
         "as_of": now.isoformat(),
@@ -301,15 +333,18 @@ def get_market_internals_overview() -> Dict[str, object]:
             "new_lows": combined_lows,
             "new_highs_pct": (combined_highs / hl_total) * 100.0,
             "new_lows_pct": (combined_lows / hl_total) * 100.0,
-            "universe_size": len(NASDAQ_PROXY) + len(NYSE_PROXY),
+            "participation_pct": composite_participation_pct,
+            "universe_size": len(AMEX_PROXY) + len(NASDAQ_PROXY) + len(NYSE_PROXY),
         },
+        "days": days,
         "history": combined_history,
         "exchanges": {
+            "amex": amex,
+            "nsdq": nasdaq,
             "nasdaq": nasdaq,
             "nyse": nyse,
         },
     }
 
-    _cached_payload = payload
-    _cached_at = now
+    _cached_by_days[days] = {"cached_at": now, "payload": payload}
     return payload

@@ -373,8 +373,8 @@ export default function Dashboard() {
           timeframe={trendPeriod === 90 ? '90d' : trendPeriod === 180 ? '180d' : '365d'}
           onInsight={handleInsight}
         />
-        <AdvanceDeclineCard />
-        <DebtCompositeCreditWidget />
+        <AdvanceDeclineCard trendPeriod={trendPeriod} />
+        <DebtCompositeCreditWidget trendPeriod={trendPeriod} />
       </div>
 
       <div className="flex items-end justify-between gap-3">
