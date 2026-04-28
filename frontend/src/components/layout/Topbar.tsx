@@ -13,6 +13,8 @@ export default function Topbar() {
   ];
 
   const toolsItems = [
+    { path: "/tools/volume-breadth", label: "Volume & Breadth" },
+    { path: "/tools/debt", label: "Debt Diagnostics" },
     { path: "/tools/recap", label: "Recap" },
     { path: "/market-map", label: "Market Map" },
     { path: "/sector-projections", label: "Sector Projections" },

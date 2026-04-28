@@ -17,6 +17,8 @@ import InstitutionalFlow from "./pages/InstitutionalFlow";
 import Vision from "./pages/Vision";
 import RecapIndex from "./pages/tools/RecapIndex";
 import RecapPost from "./pages/tools/RecapPost";
+import VolumeBreadthTools from "./pages/tools/VolumeBreadthTools";
+import DebtTools from "./pages/tools/DebtTools";
 import { trackPageView } from "./utils/analytics";
 
 function LegacyRecapSlugRedirect() {
@@ -43,6 +45,8 @@ function AppWithAnalytics() {
       location.pathname.includes("/institutional-flow") ? "Institutional Flow" :
       location.pathname.includes("/secret/options") ? "Secret Options" :
       location.pathname.includes("/precious-metals") ? "Precious Metals" :
+      location.pathname.includes("/tools/volume-breadth") ? "Volume & Breadth" :
+      location.pathname.includes("/tools/debt") ? "Debt Diagnostics" :
       location.pathname.includes("/alternative-assets") ? "Alternative Assets" :
       location.pathname.includes("/tools/recap") || location.pathname.includes("/tools/updates") ? "Recap" :
       location.pathname.includes("/aas-breakdown") ? "AAS Breakdown" :
@@ -72,6 +76,8 @@ function AppWithAnalytics() {
           <Route path="/secret/options" element={<SecretOptions />} />
           <Route path="/tools/recap" element={<RecapIndex />} />
           <Route path="/tools/recap/:slug" element={<RecapPost />} />
+          <Route path="/tools/volume-breadth" element={<VolumeBreadthTools />} />
+          <Route path="/tools/debt" element={<DebtTools />} />
           <Route path="/tools/experiments" element={<Navigate to="/tools/recap" replace />} />
           <Route path="/tools/weather-research" element={<Navigate to="/tools/recap" replace />} />
           <Route path="/tools/updates" element={<Navigate to="/tools/recap" replace />} />

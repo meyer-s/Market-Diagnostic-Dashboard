@@ -164,7 +164,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
   })();
 
   return (
-    <Link to="/indicator/BOND_MARKET_STABILITY" className="block">
+    <Link to="/tools/debt" className="block">
       <div className="primary-card primary-card-hover p-3 sm:p-6 cursor-pointer">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>

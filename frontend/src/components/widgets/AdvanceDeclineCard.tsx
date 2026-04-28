@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useApi } from "../../hooks/useApi";
 import {
   Bar,
@@ -156,6 +157,14 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
             Advance / Decline + Volume
           </h3>
           <div className="text-xs text-stealth-400 mt-1">{exchangeName} · {exchangeSubtitle}</div>
+          <div className="mt-2">
+            <Link
+              to="/tools/volume-breadth"
+              className="inline-flex items-center rounded-full border border-stealth-700 px-2.5 py-1 text-[11px] text-stealth-300 hover:border-stealth-500 hover:text-stealth-100"
+            >
+              Open Full Volume/Breadth Page
+            </Link>
+          </div>
         </div>
         <div className="text-right">
           <div className="text-[11px] text-stealth-500">As of {asOfLabel}</div>
