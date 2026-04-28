@@ -536,6 +536,17 @@ export default function SecretOptions() {
   const [zoneInputsByPosition, setZoneInputsByPosition] = useState<Record<number, ZoneInputs>>({});
   const [spotWeightBySymbol, setSpotWeightBySymbol] = useState<Record<string, SpotWeighting>>({});
 
+  const anyModalOpen = showAddModal || showCloseModal || showTrainingOutcomes;
+
+  useEffect(() => {
+    if (!anyModalOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [anyModalOpen]);
+
   const loadPositions = async () => {
     setLoading(true);
     setError(null);
@@ -1909,8 +1920,14 @@ export default function SecretOptions() {
 
       {/* Trade Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={closeTradeModal}
+        >
+          <div
+            className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">
                 {editingPositionId ? "Edit Trade" : "Add New Trade"}
@@ -2084,8 +2101,19 @@ export default function SecretOptions() {
 
       {/* Close Position Modal */}
       {showCloseModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md w-full">
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setShowCloseModal(false);
+            setExitPrice("");
+            setCloseNotes("");
+            setClosingPositionId(null);
+          }}
+        >
+          <div
+            className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md w-full"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Close Position</h2>
               <button
@@ -2360,10 +2388,14 @@ export default function SecretOptions() {
       {/* Scanner Training Outcomes Modal */}
       {showTrainingOutcomes && (
         <div
-          className="fixed left-0 top-0 z-50 flex h-screen w-screen items-center justify-center overflow-y-auto bg-black/70 p-4"
+          className="fixed left-0 top-0 z-50 flex h-screen w-screen items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
           style={{ height: "100dvh" }}
+          onClick={() => setShowTrainingOutcomes(false)}
         >
-          <div className="my-auto w-full max-w-6xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto">
+          <div
+            className="my-auto w-full max-w-6xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-xl font-semibold">Exceptional Scanner Training Outcomes</h2>

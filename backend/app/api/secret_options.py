@@ -141,9 +141,19 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
     entry_idx = daily.index.get_loc(entry_date)
     entry_price = float(daily.iloc[entry_idx]["close"])
 
-    exit_idx = entry_idx + hold_days
-    matured = exit_idx < len(daily)
-    if not matured:
+    target_exit_idx = entry_idx + hold_days
+    today_idx = len(daily) - 1
+    elapsed_calendar_days = (date.today() - entry_date.date()).days
+
+    if target_exit_idx < len(daily):
+        exit_idx = target_exit_idx
+        realized_hold_days = hold_days
+    elif elapsed_calendar_days >= hold_days and today_idx > entry_idx:
+        # If the suggested hold window has passed but we don't have enough
+        # trading sessions in-range yet, settle against the latest available close.
+        exit_idx = today_idx
+        realized_hold_days = today_idx - entry_idx
+    else:
         return {
             "event_id": event.id,
             "symbol": event.symbol,
@@ -159,6 +169,8 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
             "exit_option_price_est": None,
             "option_return_pct_est": None,
             "option_pnl_per_contract_est": None,
+            "recommended_exit_date": (entry_date.date() + timedelta(days=hold_days)).isoformat(),
+            "days_elapsed_calendar": elapsed_calendar_days,
             "status": "pending",
         }
 
@@ -207,6 +219,9 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
         "exit_option_price_est": exit_option_price,
         "option_return_pct_est": option_return_pct,
         "option_pnl_per_contract_est": option_pnl_contract,
+        "recommended_exit_date": (entry_date.date() + timedelta(days=hold_days)).isoformat(),
+        "hold_days_realized": realized_hold_days,
+        "days_elapsed_calendar": elapsed_calendar_days,
         "status": "matured",
     }
 
