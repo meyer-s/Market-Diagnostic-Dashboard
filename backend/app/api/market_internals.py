@@ -15,10 +15,6 @@ _cached_by_days: dict[int, dict[str, object]] = {}
 _LISTING_CACHE_TTL_SECONDS = 24 * 60 * 60
 _listing_cache: dict[str, object] = {"fetched_at": None, "data": None}
 
-AMEX_FALLBACK = ["SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLV", "XLI", "XLP"]
-NASDAQ_FALLBACK = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "NFLX", "AMD"]
-NYSE_FALLBACK = ["JPM", "BAC", "WFC", "GS", "MS", "XOM", "CVX", "JNJ", "PG", "KO"]
-
 BREADTH_SYMBOL_CANDIDATES = {
     "nyse": {
         "advancing": ["^ADVN"],
@@ -105,6 +101,7 @@ def _fetch_exchange_universe() -> Dict[str, List[str]]:
     now = datetime.utcnow()
     cached_at = _listing_cache.get("fetched_at")
     cached_data = _listing_cache.get("data")
+    stale_data = cached_data if isinstance(cached_data, dict) else {"amex": [], "nyse": [], "nsdq": []}
     if isinstance(cached_at, datetime) and isinstance(cached_data, dict):
         if (now - cached_at).total_seconds() < _LISTING_CACHE_TTL_SECONDS:
             return cached_data  # type: ignore[return-value]
@@ -145,15 +142,15 @@ def _fetch_exchange_universe() -> Dict[str, List[str]]:
 
     except Exception:
         return {
-            "amex": AMEX_FALLBACK,
-            "nyse": NYSE_FALLBACK,
-            "nsdq": NASDAQ_FALLBACK,
+            "amex": list(stale_data.get("amex", [])),
+            "nyse": list(stale_data.get("nyse", [])),
+            "nsdq": list(stale_data.get("nsdq", [])),
         }
 
     payload = {
-        "amex": sorted(amex) if amex else AMEX_FALLBACK,
-        "nyse": sorted(nyse) if nyse else NYSE_FALLBACK,
-        "nsdq": sorted(nasdaq) if nasdaq else NASDAQ_FALLBACK,
+        "amex": sorted(amex) if amex else list(stale_data.get("amex", [])),
+        "nyse": sorted(nyse) if nyse else list(stale_data.get("nyse", [])),
+        "nsdq": sorted(nasdaq) if nasdaq else list(stale_data.get("nsdq", [])),
     }
     _listing_cache["fetched_at"] = now
     _listing_cache["data"] = payload
@@ -327,14 +324,42 @@ def _build_bucket_from_breadth_symbols(exchange_key: str, label: str, lookback_d
     }
 
 
-def _resolve_exchange_bucket(exchange_key: str, label: str, proxy_symbols: List[str], lookback_days: int) -> Dict[str, object]:
+def _empty_bucket(label: str, universe_size: int, source: str) -> Dict[str, object]:
+    return {
+        "label": label,
+        "advancing": 0,
+        "declining": 0,
+        "advancing_pct": 0.0,
+        "declining_pct": 0.0,
+        "volume_advancing": 0.0,
+        "volume_declining": 0.0,
+        "volume_advancing_pct": 0.0,
+        "volume_declining_pct": 0.0,
+        "new_highs": 0,
+        "new_lows": 0,
+        "new_highs_pct": 0.0,
+        "new_lows_pct": 0.0,
+        "participation_pct": 0.0,
+        "universe_size": universe_size,
+        "history": [],
+        "source": source,
+    }
+
+
+def _resolve_exchange_bucket(exchange_key: str, label: str, symbols: List[str], lookback_days: int) -> Dict[str, object]:
     direct = _build_bucket_from_breadth_symbols(exchange_key, label, lookback_days)
     if direct:
         return direct
 
-    fallback = _compute_bucket(proxy_symbols, f"{label} Proxy", lookback_days=lookback_days)
-    fallback["source"] = "proxy-fallback"
-    return fallback
+    if not symbols:
+        return _empty_bucket(label, 0, "unavailable")
+
+    full_universe = _compute_bucket(symbols, label, lookback_days=lookback_days)
+    if not full_universe.get("history"):
+        return _empty_bucket(label, len(symbols), "unavailable")
+
+    full_universe["source"] = "exchange-universe-full"
+    return full_universe
 
 
 def _build_bucket_history(
@@ -421,24 +446,7 @@ def _build_bucket_history(
 def _compute_bucket(symbols: List[str], label: str, lookback_days: int) -> Dict[str, object]:
     close_frame, volume_frame = _download_price_volume(symbols, period="1y")
     if close_frame is None or volume_frame is None:
-        return {
-            "label": label,
-            "advancing": 0,
-            "declining": 0,
-            "advancing_pct": 0.0,
-            "declining_pct": 0.0,
-            "volume_advancing": 0.0,
-            "volume_declining": 0.0,
-            "volume_advancing_pct": 0.0,
-            "volume_declining_pct": 0.0,
-            "new_highs": 0,
-            "new_lows": 0,
-            "new_highs_pct": 0.0,
-            "new_lows_pct": 0.0,
-            "participation_pct": 0.0,
-            "universe_size": len(symbols),
-            "history": [],
-        }
+        return _empty_bucket(label, len(symbols), "unavailable")
 
     advancing = 0
     declining = 0
