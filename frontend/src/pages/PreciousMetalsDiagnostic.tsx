@@ -41,6 +41,13 @@ interface MetalProjection {
     take_profit: number;
     stop_loss: number;
   };
+  relative_confirmation?: {
+    pl_gc_ratio_momentum_5d: number | null;
+    pl_gc_ratio_momentum_20d: number | null;
+    ratio_momentum_confirmed: boolean;
+    leadership_divergence_confirmed: boolean;
+    rotation_confirmed: boolean;
+  };
   as_of: string;
 }
 
@@ -1652,6 +1659,41 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
                 <span className="font-semibold">{proj.score_momentum}/100</span>
               </div>
             </div>
+
+            {proj.relative_confirmation && (
+              <div className="mt-3 pt-3 border-t border-stealth-600">
+                <div className="flex items-center justify-between text-xs mb-2">
+                  <span className="text-stealth-400">Platinum Relative Confirmation</span>
+                  <span
+                    className={`px-2 py-0.5 rounded font-semibold ${
+                      proj.relative_confirmation.rotation_confirmed
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                        : "bg-stealth-700 text-stealth-300 border border-stealth-600"
+                    }`}
+                  >
+                    {proj.relative_confirmation.rotation_confirmed ? "Rotation Confirmed" : "Awaiting Confirmation"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-stealth-400">PL/GC 5d:</span>
+                    <span className={`ml-1 font-semibold ${(proj.relative_confirmation.pl_gc_ratio_momentum_5d ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {proj.relative_confirmation.pl_gc_ratio_momentum_5d !== null
+                        ? `${proj.relative_confirmation.pl_gc_ratio_momentum_5d > 0 ? "+" : ""}${proj.relative_confirmation.pl_gc_ratio_momentum_5d.toFixed(2)}%`
+                        : "n/a"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-stealth-400">PL/GC 20d:</span>
+                    <span className={`ml-1 font-semibold ${(proj.relative_confirmation.pl_gc_ratio_momentum_20d ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {proj.relative_confirmation.pl_gc_ratio_momentum_20d !== null
+                        ? `${proj.relative_confirmation.pl_gc_ratio_momentum_20d > 0 ? "+" : ""}${proj.relative_confirmation.pl_gc_ratio_momentum_20d.toFixed(2)}%`
+                        : "n/a"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -62,6 +62,11 @@ export default function AlternativeAssetStability() {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
+    const toStabilityLine = (contribution: number) => {
+      const contributionPct = contribution * 100;
+      return Math.max(0, Math.min(100, 100 - contributionPct));
+    };
+
     return historyData.data
       .filter((point: AASHistoryPoint) => new Date(point.date) >= cutoffDate)
       .map((point: AASHistoryPoint) => ({
@@ -70,8 +75,8 @@ export default function AlternativeAssetStability() {
         regime: point.regime || "",
         sma20: point.sma_20 || 0,
         sma200: point.sma_200 || 0,
-        metals_contribution: (point.metals_contribution || 0) * 100,
-        crypto_contribution: (point.crypto_contribution || 0) * 100,
+        metals_stability: toStabilityLine(point.metals_contribution || 0),
+        crypto_stability: toStabilityLine(point.crypto_contribution || 0),
       }));
   }, [historyData, timeframe]);
 

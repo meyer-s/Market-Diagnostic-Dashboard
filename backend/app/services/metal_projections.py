@@ -230,6 +230,63 @@ def compute_all_metal_projections() -> Dict[str, Any]:
         proj = compute_metal_projection(metal, name, etf)
         if "error" not in proj:
             projections.append(proj)
+
+    def _compute_ratio_momentum(numerator_df: pd.DataFrame, denominator_df: pd.DataFrame, periods: int) -> float | None:
+        if numerator_df.empty or denominator_df.empty:
+            return None
+        ratio_df = pd.DataFrame(index=numerator_df.index.union(denominator_df.index)).sort_index()
+        ratio_df["num"] = numerator_df["price"].reindex(ratio_df.index).ffill()
+        ratio_df["den"] = denominator_df["price"].reindex(ratio_df.index).ffill()
+        ratio_df = ratio_df.dropna()
+        ratio_df = ratio_df[ratio_df["den"] != 0]
+        if len(ratio_df) <= periods:
+            return None
+        ratio = ratio_df["num"] / ratio_df["den"]
+        current = float(ratio.iloc[-1])
+        prior = float(ratio.iloc[-1 - periods])
+        if prior == 0:
+            return None
+        return ((current - prior) / prior) * 100.0
+
+    # Relative confirmation trigger for platinum: improving Pt/Au momentum or
+    # platinum improving while gold/silver flatten or deteriorate.
+    pt_df = fetch_metal_price_history("PT", days=365)
+    au_df = fetch_metal_price_history("AU", days=365)
+    pl_gc_mom_5d = _compute_ratio_momentum(pt_df, au_df, periods=5)
+    pl_gc_mom_20d = _compute_ratio_momentum(pt_df, au_df, periods=20)
+
+    proj_by_metal = {proj["metal"]: proj for proj in projections}
+    pt_proj = proj_by_metal.get("PT")
+    au_proj = proj_by_metal.get("AU")
+    ag_proj = proj_by_metal.get("AG")
+
+    if pt_proj:
+        pt_mom_20 = pt_proj.get("technicals", {}).get("momentum_20d")
+        au_mom_20 = au_proj.get("technicals", {}).get("momentum_20d") if au_proj else None
+        ag_mom_20 = ag_proj.get("technicals", {}).get("momentum_20d") if ag_proj else None
+
+        ratio_momentum_confirmed = (
+            pl_gc_mom_5d is not None
+            and pl_gc_mom_20d is not None
+            and pl_gc_mom_5d > 0
+            and pl_gc_mom_20d > 0
+        )
+        leadership_divergence_confirmed = (
+            pt_mom_20 is not None
+            and pt_mom_20 > 0
+            and (
+                (au_mom_20 is not None and au_mom_20 <= 0)
+                or (ag_mom_20 is not None and ag_mom_20 <= 0)
+            )
+        )
+
+        pt_proj["relative_confirmation"] = {
+            "pl_gc_ratio_momentum_5d": round(pl_gc_mom_5d, 2) if pl_gc_mom_5d is not None else None,
+            "pl_gc_ratio_momentum_20d": round(pl_gc_mom_20d, 2) if pl_gc_mom_20d is not None else None,
+            "ratio_momentum_confirmed": ratio_momentum_confirmed,
+            "leadership_divergence_confirmed": leadership_divergence_confirmed,
+            "rotation_confirmed": ratio_momentum_confirmed or leadership_divergence_confirmed,
+        }
     
     # Sort by score to determine winners/losers
     projections.sort(key=lambda x: x['score_total'], reverse=True)
@@ -247,5 +304,5 @@ def compute_all_metal_projections() -> Dict[str, Any]:
     return {
         "projections": projections,
         "as_of": datetime.utcnow().isoformat(),
-        "model_version": "1.0"
+        "model_version": "1.1"
     }

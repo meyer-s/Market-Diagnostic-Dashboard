@@ -12,6 +12,8 @@ interface HistoricalData {
   regime: string;
   sma20?: number;
   sma200?: number;
+  metals_stability?: number;
+  crypto_stability?: number;
 }
 
 interface AASComponent {
@@ -271,23 +273,23 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
               />
               <Area 
                 type="monotone" 
-                dataKey="metals_contribution" 
+                dataKey="metals_stability" 
                 stackId="1" 
                 fill={metalsFill} 
                 stroke={metalsColor}
                 strokeWidth={2}
                 fillOpacity={0.3}
-                name="Metals"
+                name="Metals Stability"
               />
               <Area 
                 type="monotone" 
-                dataKey="crypto_contribution" 
+                dataKey="crypto_stability" 
                 stackId="1" 
                 fill={cryptoFill} 
                 stroke={cryptoColor}
                 strokeWidth={2}
                 fillOpacity={0.3}
-                name="Crypto"
+                name="Crypto Stability"
               />
               <Line 
                 type="monotone" 
