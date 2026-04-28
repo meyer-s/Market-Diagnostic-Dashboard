@@ -62,22 +62,26 @@ export default function AlternativeAssetStability() {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    const toStabilityLine = (contribution: number) => {
-      const contributionPct = contribution * 100;
-      return Math.max(0, Math.min(100, 100 - contributionPct));
-    };
-
     return historyData.data
       .filter((point: AASHistoryPoint) => new Date(point.date) >= cutoffDate)
-      .map((point: AASHistoryPoint) => ({
-        date: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        score: point.stability_score || 0,
+      .map((point: AASHistoryPoint) => {
+        const score = Math.max(0, Math.min(100, point.stability_score || 0));
+        const metalsContribution = Math.max(0, point.metals_contribution || 0);
+        const cryptoContribution = Math.max(0, point.crypto_contribution || 0);
+        const totalContribution = metalsContribution + cryptoContribution;
+        const metalsShare = totalContribution > 0 ? metalsContribution / totalContribution : 0.5;
+        const cryptoShare = totalContribution > 0 ? cryptoContribution / totalContribution : 0.5;
+
+        return {
+          date: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          score,
         regime: point.regime || "",
         sma20: point.sma_20 || 0,
         sma200: point.sma_200 || 0,
-        metals_stability: toStabilityLine(point.metals_contribution || 0),
-        crypto_stability: toStabilityLine(point.crypto_contribution || 0),
-      }));
+          metals_component_score: score * metalsShare,
+          crypto_component_score: score * cryptoShare,
+        };
+      });
   }, [historyData, timeframe]);
 
   if (loading || !aasData) {

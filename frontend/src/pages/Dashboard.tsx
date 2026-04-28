@@ -5,6 +5,8 @@ import DowTheoryWidget from "../components/widgets/DowTheoryWidget";
 import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
 import AASWidget from "../components/widgets/AASWidget";
+import AdvanceDeclineCard from "../components/widgets/AdvanceDeclineCard";
+import YieldCurveCard from "../components/widgets/YieldCurveCard";
 import MarketLoading from "../components/ui/MarketLoading";
 import { getLegacyApiUrl } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
@@ -363,7 +365,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:gap-6 lg:grid-cols-2 xl:grid-cols-3">
         <SystemOverviewWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
         <DowTheoryWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
         <SectorDivergenceWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
@@ -371,6 +373,8 @@ export default function Dashboard() {
           timeframe={trendPeriod === 90 ? '90d' : trendPeriod === 180 ? '180d' : '365d'}
           onInsight={handleInsight}
         />
+        <AdvanceDeclineCard />
+        <YieldCurveCard />
       </div>
 
       <div className="flex items-end justify-between gap-3">

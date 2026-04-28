@@ -100,6 +100,38 @@ interface ClosedPositionRow {
   source_match_notes: string | null;
 }
 
+interface TrainingOutcomeRow {
+  event_id: number;
+  symbol: string;
+  triggered_at: string | null;
+  option_type: string;
+  hold_days: number;
+  entry_date: string;
+  exit_date: string | null;
+  entry_underlying: number;
+  exit_underlying: number | null;
+  underlying_directional_return_pct: number | null;
+  entry_option_price_est: number | null;
+  exit_option_price_est: number | null;
+  option_return_pct_est: number | null;
+  option_pnl_per_contract_est: number | null;
+  status: "matured" | "pending";
+}
+
+interface TrainingOutcomeSummary {
+  sample_size: number;
+  matured: number;
+  pending: number;
+  win_rate_pct: number | null;
+  avg_option_return_pct: number | null;
+  total_option_pnl_per_contract: number | null;
+}
+
+interface TrainingOutcomeResponse {
+  outcomes: TrainingOutcomeRow[];
+  summary: TrainingOutcomeSummary;
+}
+
 interface RawPositionPayload {
   position: OptionPosition;
   metrics?: Partial<PositionMetrics> | null;
@@ -489,6 +521,10 @@ export default function SecretOptions() {
   const [closeNotes, setCloseNotes] = useState("");
   const [closedPositions, setClosedPositions] = useState<ClosedPositionRow[]>([]);
   const [showClosedLog, setShowClosedLog] = useState(false);
+  const [showTrainingOutcomes, setShowTrainingOutcomes] = useState(false);
+  const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
+  const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
+  const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: SortDirection }>({
     key: "symbol",
     direction: "asc",
@@ -685,6 +721,23 @@ export default function SecretOptions() {
       setClosedPositions(data.closed_positions || []);
     } catch (err: unknown) {
       console.error("Failed to load closed positions:", err);
+    }
+  };
+
+  const loadTrainingOutcomes = async () => {
+    setLoadingTrainingOutcomes(true);
+    try {
+      const data = await apiFetch<TrainingOutcomeResponse>(
+        "/secret/options/training-outcomes?lookback_days=365&limit=300"
+      );
+      setTrainingOutcomes(data.outcomes || []);
+      setTrainingSummary(data.summary || null);
+    } catch (err: unknown) {
+      console.error("Failed to load training outcomes:", err);
+      setTrainingOutcomes([]);
+      setTrainingSummary(null);
+    } finally {
+      setLoadingTrainingOutcomes(false);
     }
   };
 
@@ -1186,6 +1239,15 @@ export default function SecretOptions() {
               className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
             >
               P/L History
+            </button>
+            <button
+              onClick={() => {
+                loadTrainingOutcomes();
+                setShowTrainingOutcomes(true);
+              }}
+              className="bg-indigo-700 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+            >
+              Scanner Outcomes
             </button>
           </div>
         </div>
@@ -2287,6 +2349,135 @@ export default function SecretOptions() {
                         <td className="px-3 py-2 text-xs text-gray-400">{pos.notes || "—"}</td>
                       </tr>
                     )})}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Scanner Training Outcomes Modal */}
+      {showTrainingOutcomes && (
+        <div
+          className="fixed left-0 top-0 z-50 flex h-screen w-screen items-center justify-center overflow-y-auto bg-black/70 p-4"
+          style={{ height: "100dvh" }}
+        >
+          <div className="my-auto w-full max-w-6xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-semibold">Exceptional Scanner Training Outcomes</h2>
+                <p className="text-xs text-gray-400 mt-1">
+                  Backtest view of exceptional optionality setups held for their suggested window.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowTrainingOutcomes(false)}
+                className="text-gray-400 hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4">
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Examples</div>
+                <div className="text-base font-semibold text-gray-100">{trainingSummary?.sample_size ?? 0}</div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Matured</div>
+                <div className="text-base font-semibold text-gray-100">{trainingSummary?.matured ?? 0}</div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Pending</div>
+                <div className="text-base font-semibold text-gray-100">{trainingSummary?.pending ?? 0}</div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Win Rate</div>
+                <div className="text-base font-semibold text-gray-100">
+                  {trainingSummary?.win_rate_pct !== null && trainingSummary?.win_rate_pct !== undefined
+                    ? formatPercent(trainingSummary.win_rate_pct, 1)
+                    : "—"}
+                </div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Avg Return</div>
+                <div className={`text-base font-semibold ${(trainingSummary?.avg_option_return_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  {trainingSummary?.avg_option_return_pct !== null && trainingSummary?.avg_option_return_pct !== undefined
+                    ? formatSigned(trainingSummary.avg_option_return_pct, 1) + "%"
+                    : "—"}
+                </div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                <div className="text-[11px] text-gray-500">Total P/L (1 lot)</div>
+                <div className={`text-base font-semibold ${(trainingSummary?.total_option_pnl_per_contract ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  {trainingSummary?.total_option_pnl_per_contract !== null && trainingSummary?.total_option_pnl_per_contract !== undefined
+                    ? formatCurrency(trainingSummary.total_option_pnl_per_contract, 0)
+                    : "—"}
+                </div>
+              </div>
+            </div>
+
+            {loadingTrainingOutcomes ? (
+              <div className="text-sm text-gray-400 text-center py-8">Loading scanner outcomes...</div>
+            ) : trainingOutcomes.length === 0 ? (
+              <div className="text-sm text-gray-400 text-center py-8">No exceptional scanner examples found in lookback window.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm text-gray-300">
+                  <thead className="text-xs uppercase text-gray-500 border-b border-gray-700">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Symbol</th>
+                      <th className="px-3 py-2 text-left">Type</th>
+                      <th className="px-3 py-2 text-left">Hold</th>
+                      <th className="px-3 py-2 text-left">Entry</th>
+                      <th className="px-3 py-2 text-left">Exit</th>
+                      <th className="px-3 py-2 text-left">Underlying Dir %</th>
+                      <th className="px-3 py-2 text-left">Entry Prem</th>
+                      <th className="px-3 py-2 text-left">Exit Prem</th>
+                      <th className="px-3 py-2 text-left">Option Return %</th>
+                      <th className="px-3 py-2 text-left">P/L (1 contract)</th>
+                      <th className="px-3 py-2 text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {trainingOutcomes.map((row) => (
+                      <tr key={row.event_id} className="hover:bg-gray-900/40">
+                        <td className="px-3 py-2 font-semibold text-gray-100">{row.symbol}</td>
+                        <td className="px-3 py-2 uppercase">{row.option_type}</td>
+                        <td className="px-3 py-2">{row.hold_days}d</td>
+                        <td className="px-3 py-2">{formatDate(row.entry_date)}</td>
+                        <td className="px-3 py-2">{row.exit_date ? formatDate(row.exit_date) : "—"}</td>
+                        <td className={`px-3 py-2 ${(row.underlying_directional_return_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                          {row.underlying_directional_return_pct !== null && row.underlying_directional_return_pct !== undefined
+                            ? `${formatSigned(row.underlying_directional_return_pct, 1)}%`
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2">{row.entry_option_price_est !== null && row.entry_option_price_est !== undefined ? formatCurrency(row.entry_option_price_est, 2) : "—"}</td>
+                        <td className="px-3 py-2">{row.exit_option_price_est !== null && row.exit_option_price_est !== undefined ? formatCurrency(row.exit_option_price_est, 2) : "—"}</td>
+                        <td className={`px-3 py-2 ${(row.option_return_pct_est ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                          {row.option_return_pct_est !== null && row.option_return_pct_est !== undefined
+                            ? `${formatSigned(row.option_return_pct_est, 1)}%`
+                            : "—"}
+                        </td>
+                        <td className={`px-3 py-2 ${(row.option_pnl_per_contract_est ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                          {row.option_pnl_per_contract_est !== null && row.option_pnl_per_contract_est !== undefined
+                            ? formatCurrency(row.option_pnl_per_contract_est, 0)
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex items-center rounded px-2 py-1 text-xs font-semibold ${
+                              row.status === "matured"
+                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-600/50"
+                                : "bg-amber-500/20 text-amber-300 border border-amber-600/50"
+                            }`}
+                          >
+                            {row.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

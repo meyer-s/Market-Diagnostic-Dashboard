@@ -69,8 +69,8 @@ interface RelativeCryptoRanking extends CryptoAsset {
 interface HistoricalData {
   date: string;
   stability_score: number;
-  metals_contribution: number;
-  crypto_contribution: number;
+  metals_component_score: number;
+  crypto_component_score: number;
   sma20?: number;
   sma200?: number;
 }
@@ -159,14 +159,23 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
       
       const processed = historyData.data
         .filter((d: AASHistoryPoint) => new Date(d.date) >= cutoffDate)
-        .map((d: AASHistoryPoint) => ({
-          date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          stability_score: d.stability_score || 0,
-          metals_contribution: (d.metals_contribution || 0) * 100,
-          crypto_contribution: (d.crypto_contribution || 0) * 100,
-          sma20: d.sma_20 || 0,
-          sma200: d.sma_200 || 0
-        }));
+        .map((d: AASHistoryPoint) => {
+          const score = Math.max(0, Math.min(100, d.stability_score || 0));
+          const metalsContribution = Math.max(0, d.metals_contribution || 0);
+          const cryptoContribution = Math.max(0, d.crypto_contribution || 0);
+          const totalContribution = metalsContribution + cryptoContribution;
+          const metalsShare = totalContribution > 0 ? metalsContribution / totalContribution : 0.5;
+          const cryptoShare = totalContribution > 0 ? cryptoContribution / totalContribution : 0.5;
+
+          return {
+            date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            stability_score: score,
+            metals_component_score: score * metalsShare,
+            crypto_component_score: score * cryptoShare,
+            sma20: d.sma_20 || 0,
+            sma200: d.sma_200 || 0
+          };
+        });
       setChartData(processed);
     }
   }, [historyData, timeframe]);
@@ -209,24 +218,28 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
     const sum = points.reduce((total, point) => total + (Number(point[key]) || 0), 0);
     return sum / points.length;
   };
-  const fallbackMetals = aasData?.metals_contribution ?? 0;
-  const fallbackCrypto = aasData?.crypto_contribution ?? 0;
+  const fallbackScore = aasData?.stability_score ?? 0;
+  const fallbackContributionTotal = (aasData?.metals_contribution ?? 0) + (aasData?.crypto_contribution ?? 0);
+  const fallbackMetalsShare = fallbackContributionTotal > 0 ? (aasData?.metals_contribution ?? 0) / fallbackContributionTotal : 0.5;
+  const fallbackCryptoShare = fallbackContributionTotal > 0 ? (aasData?.crypto_contribution ?? 0) / fallbackContributionTotal : 0.5;
+  const fallbackMetals = fallbackScore * fallbackMetalsShare;
+  const fallbackCrypto = fallbackScore * fallbackCryptoShare;
   const lastWindow = chartData.slice(-trendWindows.secondary.recent);
   const prevWindow = chartData.slice(
     -(trendWindows.secondary.recent + trendWindows.secondary.prior),
     -trendWindows.secondary.recent
   );
   const recentMetals = lastWindow.length
-    ? averageValue(lastWindow, "metals_contribution")
+    ? averageValue(lastWindow, "metals_component_score")
     : fallbackMetals;
   const recentCrypto = lastWindow.length
-    ? averageValue(lastWindow, "crypto_contribution")
+    ? averageValue(lastWindow, "crypto_component_score")
     : fallbackCrypto;
   const priorMetals = prevWindow.length
-    ? averageValue(prevWindow, "metals_contribution")
+    ? averageValue(prevWindow, "metals_component_score")
     : recentMetals;
   const priorCrypto = prevWindow.length
-    ? averageValue(prevWindow, "crypto_contribution")
+    ? averageValue(prevWindow, "crypto_component_score")
     : recentCrypto;
   const recentLeader = recentMetals >= recentCrypto ? "metals" : "crypto";
   const priorLeader = prevWindow.length ? (priorMetals >= priorCrypto ? "metals" : "crypto") : recentLeader;
@@ -507,11 +520,11 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                     tick={{ fontSize: 10 }}
                     interval={Math.floor(Math.max(0, chartData.length / 4))}
                   />
-                  <YAxis 
+                  <YAxis
                     stroke={CHART_NEUTRAL.tick}
                     tick={{ fontSize: 10 }}
+                    domain={[0, 100]}
                   />
-                  <YAxis yAxisId="right" orientation="right" stroke={CHART_NEUTRAL.tick} tick={{ fontSize: 10 }} domain={[0, 100]} />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: CHART_NEUTRAL.tooltipBg,
@@ -523,32 +536,40 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                   />
                   <Area 
                     type="monotone" 
-                    dataKey="metals_contribution" 
+                    dataKey="metals_component_score" 
                     stackId="1" 
                     fill={metalsFill}
                     stroke={metalsColor}
                     strokeWidth={1.5}
                     fillOpacity={0.3}
-                    name="Metals"
+                    name="Metals Component"
                   />
                   <Area 
                     type="monotone" 
-                    dataKey="crypto_contribution" 
+                    dataKey="crypto_component_score" 
                     stackId="1" 
                     fill={cryptoFill}
                     stroke={cryptoColor}
                     strokeWidth={1.5}
                     fillOpacity={0.3}
-                    name="Crypto"
+                    name="Crypto Component"
                   />
                   <Line 
-                    yAxisId="right"
+                    type="monotone" 
+                    dataKey="stability_score" 
+                    stroke="#34d399"
+                    strokeWidth={2}
+                    dot={false}
+                    name="Derived Stability"
+                  />
+                  <Line 
                     type="monotone" 
                     dataKey="sma20" 
                     stroke={benchmarkColor}
                     strokeWidth={3}
                     dot={false}
                     name="20-Day SMA"
+                    strokeDasharray="4 3"
                   />
                 </AreaChart>
               </ResponsiveContainer>

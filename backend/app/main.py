@@ -25,6 +25,7 @@ from app.api.discord import router as discord_router
 from app.api.update_posts import router as update_posts_router
 from app.api.actions import router as actions_router
 from app.api.institutional_flow import router as institutional_flow_router
+from app.api.market_internals import router as market_internals_router
 
 # Set up logging
 logging.basicConfig(
@@ -124,6 +125,9 @@ app.include_router(crypto_router, tags=["Crypto"])
 
 # Institutional Flow Proxy (dark-pool style clustered volume levels)
 app.include_router(institutional_flow_router, tags=["InstitutionalFlow"])
+
+# Market internals breadth/volume overview
+app.include_router(market_internals_router, tags=["MarketInternals"])
 
 # Metal Projections
 from app.api.metal_projections import router as metal_projections_router

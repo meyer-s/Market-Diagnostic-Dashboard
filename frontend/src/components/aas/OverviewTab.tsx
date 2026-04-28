@@ -12,8 +12,8 @@ interface HistoricalData {
   regime: string;
   sma20?: number;
   sma200?: number;
-  metals_stability?: number;
-  crypto_stability?: number;
+  metals_component_score?: number;
+  crypto_component_score?: number;
 }
 
 interface AASComponent {
@@ -273,23 +273,31 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
               />
               <Area 
                 type="monotone" 
-                dataKey="metals_stability" 
+                dataKey="metals_component_score" 
                 stackId="1" 
                 fill={metalsFill} 
                 stroke={metalsColor}
                 strokeWidth={2}
                 fillOpacity={0.3}
-                name="Metals Stability"
+                name="Metals Component"
               />
               <Area 
                 type="monotone" 
-                dataKey="crypto_stability" 
+                dataKey="crypto_component_score" 
                 stackId="1" 
                 fill={cryptoFill} 
                 stroke={cryptoColor}
                 strokeWidth={2}
                 fillOpacity={0.3}
-                name="Crypto Stability"
+                name="Crypto Component"
+              />
+              <Line
+                type="monotone"
+                dataKey="score"
+                stroke={statePalette.green}
+                strokeWidth={2}
+                dot={false}
+                name="Derived Stability"
               />
               <Line 
                 type="monotone" 
@@ -300,6 +308,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
                 name="20-Day SMA"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                strokeDasharray="4 3"
               />
             </AreaChart>
           </ResponsiveContainer>

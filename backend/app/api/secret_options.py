@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+import math
+import re
 from typing import Dict, Optional
 
 import pandas as pd
@@ -15,6 +17,7 @@ from app.models.closed_positions import ClosedPosition
 from app.models.options_alerts import OptionAlertEvent
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
+    black_scholes_price,
     calculate_greeks,
     implied_volatility,
     generate_delta_gamma_curve,
@@ -59,6 +62,153 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
     if not value:
         return None
     return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_SETUP_RE = re.compile(r"Setup\s*:\s*1x ATM\s+(CALL|PUT)", re.IGNORECASE)
+_HOLD_RE = re.compile(r"Hold\s*:\s*(\d+)\s*trading\s*days", re.IGNORECASE)
+_PREMIUM_RE = re.compile(r"Est\s+Prem\s*:\s*\$\s*([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
+
+
+def _strip_ansi(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return _ANSI_RE.sub("", value)
+
+
+def _is_exceptional_training_event(event: OptionAlertEvent) -> bool:
+    if event.iv_percentile is None:
+        return False
+    iv_percentile = float(event.iv_percentile)
+    spread_ok = (
+        event.iv30 is not None
+        and event.hv30 is not None
+        and float(event.iv30) - float(event.hv30) <= -4.0
+    )
+    edr_ok = event.avg_edr is not None and float(event.avg_edr) <= 35.0
+    return iv_percentile <= 5.0 or (iv_percentile <= 10.0 and (spread_ok or edr_ok))
+
+
+def _extract_training_recipe(message: Optional[str]) -> Dict[str, Optional[float | int | str]]:
+    plain = _strip_ansi(message)
+    setup_match = _SETUP_RE.search(plain)
+    hold_match = _HOLD_RE.search(plain)
+    premium_match = _PREMIUM_RE.search(plain)
+
+    option_type = setup_match.group(1).lower() if setup_match else None
+    hold_days = int(hold_match.group(1)) if hold_match else None
+    est_premium = float(premium_match.group(1)) if premium_match else None
+
+    return {
+        "option_type": option_type,
+        "hold_days": hold_days,
+        "est_premium": est_premium,
+    }
+
+
+def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, object]]:
+    recipe = _extract_training_recipe(event.message)
+    option_type = recipe.get("option_type")
+    hold_days = recipe.get("hold_days")
+
+    if not option_type or not isinstance(hold_days, int) or hold_days <= 0:
+        return None
+
+    trigger_day = event.triggered_at.date() if event.triggered_at else date.today()
+    start_day = trigger_day - timedelta(days=7)
+    end_day = date.today() + timedelta(days=2)
+
+    stock = yf.Ticker(event.symbol)
+    history = stock.history(start=start_day.isoformat(), end=end_day.isoformat())
+    if history is None or history.empty or "Close" not in history.columns:
+        return None
+
+    close = history["Close"].dropna()
+    if close.empty:
+        return None
+
+    index = pd.to_datetime(close.index)
+    if getattr(index, "tz", None) is not None:
+        index = index.tz_localize(None)
+    daily = pd.DataFrame({"close": close.to_numpy()}, index=index.normalize())
+    daily = daily[~daily.index.duplicated(keep="last")]
+
+    entry_candidates = daily.index[daily.index.date >= trigger_day]
+    if len(entry_candidates) == 0:
+        return None
+
+    entry_date = entry_candidates[0]
+    entry_idx = daily.index.get_loc(entry_date)
+    entry_price = float(daily.iloc[entry_idx]["close"])
+
+    exit_idx = entry_idx + hold_days
+    matured = exit_idx < len(daily)
+    if not matured:
+        return {
+            "event_id": event.id,
+            "symbol": event.symbol,
+            "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
+            "option_type": option_type,
+            "hold_days": hold_days,
+            "entry_date": entry_date.date().isoformat(),
+            "exit_date": None,
+            "entry_underlying": entry_price,
+            "exit_underlying": None,
+            "underlying_directional_return_pct": None,
+            "entry_option_price_est": recipe.get("est_premium"),
+            "exit_option_price_est": None,
+            "option_return_pct_est": None,
+            "option_pnl_per_contract_est": None,
+            "status": "pending",
+        }
+
+    exit_date = daily.index[exit_idx]
+    exit_price = float(daily.iloc[exit_idx]["close"])
+
+    directional_multiplier = 1.0 if option_type == "call" else -1.0
+    underlying_directional_return_pct = ((exit_price - entry_price) / entry_price) * 100.0 * directional_multiplier
+
+    sigma = float(event.iv30) / 100.0 if event.iv30 is not None else None
+    if sigma is None or sigma <= 0:
+        sigma = float(event.hv30) / 100.0 if event.hv30 is not None else 0.30
+    sigma = max(0.08, min(2.0, sigma))
+
+    est_premium_raw = recipe.get("est_premium")
+    if isinstance(est_premium_raw, (int, float)) and est_premium_raw > 0:
+        entry_option_price = float(est_premium_raw)
+    else:
+        entry_option_price = max(0.35, entry_price * 0.012)
+
+    initial_dte = max(30, hold_days + 14)
+    remaining_dte = max(1, initial_dte - hold_days)
+    exit_option_price = black_scholes_price(
+        S=exit_price,
+        K=entry_price,
+        T=remaining_dte / 252.0,
+        r=RISK_FREE_RATE,
+        sigma=sigma,
+        option_type=option_type,
+    )
+    option_return_pct = ((exit_option_price - entry_option_price) / entry_option_price) * 100.0 if entry_option_price else None
+    option_pnl_contract = (exit_option_price - entry_option_price) * 100.0
+
+    return {
+        "event_id": event.id,
+        "symbol": event.symbol,
+        "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
+        "option_type": option_type,
+        "hold_days": hold_days,
+        "entry_date": entry_date.date().isoformat(),
+        "exit_date": exit_date.date().isoformat(),
+        "entry_underlying": entry_price,
+        "exit_underlying": exit_price,
+        "underlying_directional_return_pct": underlying_directional_return_pct,
+        "entry_option_price_est": entry_option_price,
+        "exit_option_price_est": exit_option_price,
+        "option_return_pct_est": option_return_pct,
+        "option_pnl_per_contract_est": option_pnl_contract,
+        "status": "matured",
+    }
 
 
 def _event_confidence_for_trade(trade_date: date, triggered_at: datetime) -> float:
@@ -851,3 +1001,61 @@ def backfill_signal_attribution(limit: int = Query(1000, ge=1, le=10000)):
             "closed_positions_checked": len(closed_positions),
             "closed_positions_linked": closed_linked,
         }
+
+
+@router.get("/training-outcomes")
+def get_training_outcomes(
+    lookback_days: int = Query(365, ge=30, le=1825),
+    limit: int = Query(200, ge=1, le=1000),
+):
+    """
+    Evaluate exceptional scanner training examples by holding for the
+    suggested horizon and estimating option outcomes.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+    with get_db_session() as db:
+        events = (
+            db.query(OptionAlertEvent)
+            .filter(OptionAlertEvent.triggered_at >= cutoff)
+            .order_by(OptionAlertEvent.triggered_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    exceptional_events = [event for event in events if _is_exceptional_training_event(event)]
+    outcomes: list[Dict[str, object]] = []
+
+    for event in exceptional_events:
+        try:
+            outcome = _compute_training_outcome(event)
+            if outcome:
+                outcomes.append(outcome)
+        except Exception:
+            continue
+
+    matured = [row for row in outcomes if row.get("status") == "matured"]
+    matured_option_returns = [
+        float(row["option_return_pct_est"])
+        for row in matured
+        if row.get("option_return_pct_est") is not None
+    ]
+    matured_option_pnl = [
+        float(row["option_pnl_per_contract_est"])
+        for row in matured
+        if row.get("option_pnl_per_contract_est") is not None
+    ]
+    winners = [value for value in matured_option_returns if value > 0]
+
+    summary = {
+        "sample_size": len(outcomes),
+        "matured": len(matured),
+        "pending": len(outcomes) - len(matured),
+        "win_rate_pct": (len(winners) / len(matured_option_returns) * 100.0) if matured_option_returns else None,
+        "avg_option_return_pct": (sum(matured_option_returns) / len(matured_option_returns)) if matured_option_returns else None,
+        "total_option_pnl_per_contract": sum(matured_option_pnl) if matured_option_pnl else None,
+    }
+
+    return {
+        "outcomes": outcomes,
+        "summary": summary,
+    }
