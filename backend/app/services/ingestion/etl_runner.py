@@ -74,6 +74,11 @@ class ETLRunner:
             db.close()
             return await self._ingest_aas(backfill_days)
 
+        # Temporarily disabled: heavy FRED fetching slows down the ETL run
+        if code == "BOND_MARKET_STABILITY":
+            db.close()
+            return {"code": code, "status": "skipped", "reason": "temporarily disabled"}
+
         # Pull enough data for normalization + backfill
         lookback_days = max(800, backfill_days + ind.lookback_days_for_z)
         start_date = (datetime.utcnow() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")

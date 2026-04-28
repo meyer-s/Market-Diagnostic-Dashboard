@@ -5,8 +5,6 @@ import DowTheoryWidget from "../components/widgets/DowTheoryWidget";
 import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
 import AASWidget from "../components/widgets/AASWidget";
-import AdvanceDeclineCard from "../components/widgets/AdvanceDeclineCard";
-import DebtCompositeCreditWidget from "../components/widgets/DebtCompositeCreditWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import { getLegacyApiUrl } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
@@ -373,8 +371,6 @@ export default function Dashboard() {
           timeframe={trendPeriod === 90 ? '90d' : trendPeriod === 180 ? '180d' : '365d'}
           onInsight={handleInsight}
         />
-        <AdvanceDeclineCard trendPeriod={trendPeriod} />
-        <DebtCompositeCreditWidget trendPeriod={trendPeriod} />
       </div>
 
       <div className="flex items-end justify-between gap-3">
