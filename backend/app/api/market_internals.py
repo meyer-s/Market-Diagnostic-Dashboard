@@ -30,6 +30,33 @@ NYSE_PROXY = [
     "DIS", "NKE", "MMM", "HON", "RTX", "LOW", "BK", "BLK", "SPGI", "CB",
 ]
 
+BREADTH_SYMBOL_CANDIDATES = {
+    "nyse": {
+        "advancing": ["^ADVN"],
+        "declining": ["^DECL"],
+        "volume_advancing": ["^UVOL"],
+        "volume_declining": ["^DVOL"],
+        "new_highs": ["^NYHGH", "^NYSH"],
+        "new_lows": ["^NYLOW", "^NYL"],
+    },
+    "nsdq": {
+        "advancing": ["^ADVNQ", "^ADVD"],
+        "declining": ["^DECLQ", "^DECD"],
+        "volume_advancing": ["^UVOLQ"],
+        "volume_declining": ["^DVOLQ"],
+        "new_highs": ["^NAHGH", "^NAH"],
+        "new_lows": ["^NALOW", "^NAL"],
+    },
+    "amex": {
+        "advancing": ["^ADVA"],
+        "declining": ["^DECA"],
+        "volume_advancing": ["^UVOLA"],
+        "volume_declining": ["^DVOLA"],
+        "new_highs": ["^AMEXH", "^AEHGH"],
+        "new_lows": ["^AMEXL", "^AELOW"],
+    },
+}
+
 
 def _extract_close_volume(downloaded: pd.DataFrame) -> Tuple[pd.DataFrame | None, pd.DataFrame | None]:
     if downloaded is None or downloaded.empty:
@@ -53,6 +80,143 @@ def _extract_close_volume(downloaded: pd.DataFrame) -> Tuple[pd.DataFrame | None
     close = pd.DataFrame({"SINGLE": downloaded["Close"]})
     volume = pd.DataFrame({"SINGLE": downloaded["Volume"]})
     return close, volume
+
+
+def _fetch_breadth_metric_series(candidates: List[str]) -> Dict[str, float]:
+    for symbol in candidates:
+        try:
+            frame = yf.download(
+                tickers=symbol,
+                period="1y",
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+                threads=True,
+            )
+        except Exception:
+            continue
+
+        if frame is None or frame.empty:
+            continue
+
+        series = None
+        if isinstance(frame.columns, pd.MultiIndex):
+            if "Close" in frame.columns.get_level_values(0):
+                series = frame["Close"]
+            elif "Adj Close" in frame.columns.get_level_values(0):
+                series = frame["Adj Close"]
+        else:
+            if "Close" in frame.columns:
+                series = frame["Close"]
+            elif "Adj Close" in frame.columns:
+                series = frame["Adj Close"]
+
+        if series is None:
+            continue
+
+        if isinstance(series, pd.DataFrame):
+            if series.empty:
+                continue
+            series = series.iloc[:, 0]
+
+        clean = series.dropna()
+        if clean.empty:
+            continue
+
+        mapped: Dict[str, float] = {}
+        for idx, value in clean.items():
+            mapped[pd.Timestamp(idx).strftime("%Y-%m-%d")] = float(value)
+
+        if mapped:
+            return mapped
+
+    return {}
+
+
+def _build_bucket_from_breadth_symbols(exchange_key: str, label: str, lookback_days: int) -> Dict[str, object] | None:
+    candidates = BREADTH_SYMBOL_CANDIDATES.get(exchange_key)
+    if not candidates:
+        return None
+
+    adv = _fetch_breadth_metric_series(candidates["advancing"])
+    dec = _fetch_breadth_metric_series(candidates["declining"])
+    uvol = _fetch_breadth_metric_series(candidates["volume_advancing"])
+    dvol = _fetch_breadth_metric_series(candidates["volume_declining"])
+    highs = _fetch_breadth_metric_series(candidates["new_highs"])
+    lows = _fetch_breadth_metric_series(candidates["new_lows"])
+
+    if not adv or not dec or not uvol or not dvol:
+        return None
+
+    common_dates = sorted(set(adv.keys()) & set(dec.keys()) & set(uvol.keys()) & set(dvol.keys()))
+    if len(common_dates) < 20:
+        return None
+
+    common_dates = common_dates[-lookback_days:]
+    history: List[Dict[str, float | int | str]] = []
+
+    for date_key in common_dates:
+        adv_val = max(float(adv.get(date_key, 0.0)), 0.0)
+        dec_val = max(float(dec.get(date_key, 0.0)), 0.0)
+        uvol_val = max(float(uvol.get(date_key, 0.0)), 0.0)
+        dvol_val = max(float(dvol.get(date_key, 0.0)), 0.0)
+        high_val = max(float(highs.get(date_key, 0.0)), 0.0)
+        low_val = max(float(lows.get(date_key, 0.0)), 0.0)
+
+        breadth_total = max(adv_val + dec_val, 1.0)
+        volume_total = max(uvol_val + dvol_val, 1.0)
+        hl_total = max(high_val + low_val, 1.0)
+
+        history.append(
+            {
+                "date": date_key,
+                "advancing": int(round(adv_val)),
+                "declining": int(round(dec_val)),
+                "advancing_pct": (adv_val / breadth_total) * 100.0,
+                "declining_pct": (dec_val / breadth_total) * 100.0,
+                "ad_rate": adv_val - dec_val,
+                "volume_advancing": uvol_val,
+                "volume_declining": dvol_val,
+                "volume_advancing_pct": (uvol_val / volume_total) * 100.0,
+                "volume_declining_pct": (dvol_val / volume_total) * 100.0,
+                "new_highs": int(round(high_val)),
+                "new_lows": int(round(low_val)),
+                "new_highs_pct": (high_val / hl_total) * 100.0,
+                "new_lows_pct": (low_val / hl_total) * 100.0,
+                "participation_pct": 100.0,
+            }
+        )
+
+    latest = history[-1]
+    return {
+        "label": label,
+        "advancing": latest["advancing"],
+        "declining": latest["declining"],
+        "advancing_pct": latest["advancing_pct"],
+        "declining_pct": latest["declining_pct"],
+        "volume_advancing": latest["volume_advancing"],
+        "volume_declining": latest["volume_declining"],
+        "volume_advancing_pct": latest["volume_advancing_pct"],
+        "volume_declining_pct": latest["volume_declining_pct"],
+        "new_highs": latest["new_highs"],
+        "new_lows": latest["new_lows"],
+        "new_highs_pct": latest["new_highs_pct"],
+        "new_lows_pct": latest["new_lows_pct"],
+        "participation_pct": 100.0,
+        "universe_size": int(max(1, latest["advancing"] + latest["declining"])),
+        "history": history,
+        "source": "breadth-symbols",
+    }
+
+
+def _resolve_exchange_bucket(exchange_key: str, label: str, proxy_symbols: List[str], lookback_days: int) -> Dict[str, object]:
+    direct = _build_bucket_from_breadth_symbols(exchange_key, label, lookback_days)
+    if direct:
+        return direct
+
+    fallback = _compute_bucket(proxy_symbols, f"{label} Proxy", lookback_days=lookback_days)
+    fallback["source"] = "proxy-fallback"
+    return fallback
 
 
 def _build_bucket_history(
@@ -247,9 +411,9 @@ def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> Dict[
         if isinstance(cached_at, datetime) and payload and (now - cached_at).total_seconds() < _CACHE_TTL_SECONDS:
             return payload  # type: ignore[return-value]
 
-    amex = _compute_bucket(AMEX_PROXY, "AMEX", lookback_days=days)
-    nasdaq = _compute_bucket(NASDAQ_PROXY, "NSDQ", lookback_days=days)
-    nyse = _compute_bucket(NYSE_PROXY, "NYSE", lookback_days=days)
+    amex = _resolve_exchange_bucket("amex", "AMEX", AMEX_PROXY, lookback_days=days)
+    nasdaq = _resolve_exchange_bucket("nsdq", "NSDQ", NASDAQ_PROXY, lookback_days=days)
+    nyse = _resolve_exchange_bucket("nyse", "NYSE", NYSE_PROXY, lookback_days=days)
 
     combined_adv = amex["advancing"] + nasdaq["advancing"] + nyse["advancing"]
     combined_dec = amex["declining"] + nasdaq["declining"] + nyse["declining"]
