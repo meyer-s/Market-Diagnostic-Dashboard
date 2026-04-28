@@ -48,6 +48,86 @@ def _extract_close_volume(downloaded: pd.DataFrame) -> Tuple[pd.DataFrame | None
     return close, volume
 
 
+def _build_bucket_history(
+    close_frame: pd.DataFrame,
+    volume_frame: pd.DataFrame,
+    symbols: List[str],
+    lookback_days: int = 90,
+) -> List[Dict[str, float | int | str]]:
+    history: List[Dict[str, float | int | str]] = []
+    if close_frame is None or close_frame.empty:
+        return history
+
+    close = close_frame.copy().sort_index()
+    volume = volume_frame.copy().sort_index()
+    close = close[[c for c in close.columns if c in symbols]]
+    volume = volume[[c for c in volume.columns if c in symbols]]
+
+    if close.empty:
+        return history
+
+    dates = close.index.tolist()
+    start_idx = max(1, len(dates) - lookback_days)
+
+    for idx in range(start_idx, len(dates)):
+        current_close = close.iloc[idx]
+        previous_close = close.iloc[idx - 1]
+        current_volume = volume.iloc[idx] if idx < len(volume.index) else pd.Series(dtype=float)
+
+        valid_mask = current_close.notna() & previous_close.notna()
+        up_mask = valid_mask & (current_close > previous_close)
+        down_mask = valid_mask & (current_close < previous_close)
+
+        advancing = int(up_mask.sum())
+        declining = int(down_mask.sum())
+
+        up_vol = float(current_volume[up_mask].sum()) if not current_volume.empty else 0.0
+        down_vol = float(current_volume[down_mask].sum()) if not current_volume.empty else 0.0
+
+        new_highs = 0
+        new_lows = 0
+        for symbol in symbols:
+            series = close[symbol].dropna()
+            if len(series) < 20:
+                continue
+            current_date = dates[idx]
+            if current_date not in series.index:
+                continue
+            window = series.loc[:current_date].tail(252)
+            if window.empty:
+                continue
+            current_price = float(series.loc[current_date])
+            if current_price >= float(window.max()) * 0.999:
+                new_highs += 1
+            if current_price <= float(window.min()) * 1.001:
+                new_lows += 1
+
+        breadth_total = max(advancing + declining, 1)
+        volume_total = max(up_vol + down_vol, 1.0)
+        hl_total = max(new_highs + new_lows, 1)
+
+        history.append(
+            {
+                "date": pd.Timestamp(dates[idx]).strftime("%Y-%m-%d"),
+                "advancing": advancing,
+                "declining": declining,
+                "advancing_pct": float((advancing / breadth_total) * 100.0),
+                "declining_pct": float((declining / breadth_total) * 100.0),
+                "ad_rate": float(advancing - declining),
+                "volume_advancing": up_vol,
+                "volume_declining": down_vol,
+                "volume_advancing_pct": float((up_vol / volume_total) * 100.0),
+                "volume_declining_pct": float((down_vol / volume_total) * 100.0),
+                "new_highs": new_highs,
+                "new_lows": new_lows,
+                "new_highs_pct": float((new_highs / hl_total) * 100.0),
+                "new_lows_pct": float((new_lows / hl_total) * 100.0),
+            }
+        )
+
+    return history
+
+
 def _compute_bucket(symbols: List[str], label: str) -> Dict[str, object]:
     tickers = " ".join(symbols)
     data = yf.download(
@@ -77,6 +157,7 @@ def _compute_bucket(symbols: List[str], label: str) -> Dict[str, object]:
             "new_highs_pct": 0.0,
             "new_lows_pct": 0.0,
             "universe_size": len(symbols),
+            "history": [],
         }
 
     advancing = 0
@@ -123,6 +204,8 @@ def _compute_bucket(symbols: List[str], label: str) -> Dict[str, object]:
     volume_total = max(volume_adv + volume_dec, 1.0)
     hl_total = max(new_highs + new_lows, 1)
 
+    history = _build_bucket_history(close_frame, volume_frame, symbols)
+
     return {
         "label": label,
         "advancing": advancing,
@@ -138,6 +221,7 @@ def _compute_bucket(symbols: List[str], label: str) -> Dict[str, object]:
         "new_highs_pct": (new_highs / hl_total) * 100.0,
         "new_lows_pct": (new_lows / hl_total) * 100.0,
         "universe_size": len(symbols),
+        "history": history,
     }
 
 
@@ -163,6 +247,45 @@ def get_market_internals_overview() -> Dict[str, object]:
     volume_total = max(combined_volume_adv + combined_volume_dec, 1.0)
     hl_total = max(combined_highs + combined_lows, 1)
 
+    nasdaq_history = {entry["date"]: entry for entry in nasdaq.get("history", [])}
+    nyse_history = {entry["date"]: entry for entry in nyse.get("history", [])}
+    combined_dates = sorted(set(nasdaq_history.keys()) & set(nyse_history.keys()))
+    combined_history = []
+
+    for date_key in combined_dates:
+        ndx = nasdaq_history[date_key]
+        ny = nyse_history[date_key]
+
+        adv = int(ndx["advancing"] + ny["advancing"])
+        dec = int(ndx["declining"] + ny["declining"])
+        vol_adv = float(ndx["volume_advancing"] + ny["volume_advancing"])
+        vol_dec = float(ndx["volume_declining"] + ny["volume_declining"])
+        highs = int(ndx["new_highs"] + ny["new_highs"])
+        lows = int(ndx["new_lows"] + ny["new_lows"])
+
+        breadth_total_hist = max(adv + dec, 1)
+        volume_total_hist = max(vol_adv + vol_dec, 1.0)
+        hl_total_hist = max(highs + lows, 1)
+
+        combined_history.append(
+            {
+                "date": date_key,
+                "advancing": adv,
+                "declining": dec,
+                "advancing_pct": float((adv / breadth_total_hist) * 100.0),
+                "declining_pct": float((dec / breadth_total_hist) * 100.0),
+                "ad_rate": float(adv - dec),
+                "volume_advancing": vol_adv,
+                "volume_declining": vol_dec,
+                "volume_advancing_pct": float((vol_adv / volume_total_hist) * 100.0),
+                "volume_declining_pct": float((vol_dec / volume_total_hist) * 100.0),
+                "new_highs": highs,
+                "new_lows": lows,
+                "new_highs_pct": float((highs / hl_total_hist) * 100.0),
+                "new_lows_pct": float((lows / hl_total_hist) * 100.0),
+            }
+        )
+
     payload = {
         "as_of": now.isoformat(),
         "composite": {
@@ -180,6 +303,7 @@ def get_market_internals_overview() -> Dict[str, object]:
             "new_lows_pct": (combined_lows / hl_total) * 100.0,
             "universe_size": len(NASDAQ_PROXY) + len(NYSE_PROXY),
         },
+        "history": combined_history,
         "exchanges": {
             "nasdaq": nasdaq,
             "nyse": nyse,

@@ -1,5 +1,16 @@
 import { useMemo } from "react";
 import { useApi } from "../../hooks/useApi";
+import {
+  Bar,
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { CHART_MARGIN } from "../../utils/chartUtils";
 
 interface BreadthBucket {
   label: string;
@@ -21,6 +32,12 @@ interface BreadthBucket {
 interface MarketInternalsResponse {
   as_of: string;
   composite: BreadthBucket;
+  history: Array<{
+    date: string;
+    advancing_pct: number;
+    declining_pct: number;
+    ad_rate: number;
+  }>;
   exchanges: {
     nasdaq: BreadthBucket;
     nyse: BreadthBucket;
@@ -57,12 +74,25 @@ export default function AdvanceDeclineCard() {
     return new Date(data.as_of).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }, [data?.as_of]);
 
+  const history = useMemo(() => {
+    if (!data?.history?.length) return [];
+    return data.history.slice(-45).map((d) => ({
+      ...d,
+      dateLabel: d.date.slice(5),
+    }));
+  }, [data?.history]);
+
+  const adRateDelta = useMemo(() => {
+    if (history.length < 2) return 0;
+    return history[history.length - 1].ad_rate - history[history.length - 2].ad_rate;
+  }, [history]);
+
   if (loading) {
     return (
-      <div className="surface-card-strong p-4 sm:p-5">
+      <div className="primary-card p-3 sm:p-6">
         <div className="animate-pulse space-y-3">
           <div className="h-4 w-40 rounded bg-stealth-700" />
-          <div className="h-8 w-full rounded bg-stealth-800" />
+          <div className="h-28 w-full rounded bg-stealth-800" />
           <div className="h-8 w-full rounded bg-stealth-800" />
           <div className="h-8 w-full rounded bg-stealth-800" />
         </div>
@@ -72,7 +102,7 @@ export default function AdvanceDeclineCard() {
 
   if (error || !data) {
     return (
-      <div className="surface-card-strong p-4 sm:p-5">
+      <div className="primary-card p-3 sm:p-6">
         <div className="text-sm text-red-400">Market internals unavailable.</div>
       </div>
     );
@@ -83,16 +113,64 @@ export default function AdvanceDeclineCard() {
   const nyse = data.exchanges.nyse;
 
   return (
-    <div className="surface-card-strong p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3">
+    <div className="primary-card p-3 sm:p-6">
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">Breadth Pulse</div>
-          <h3 className="text-base font-semibold text-stealth-100 sm:text-lg">Advance / Decline + Volume</h3>
+          <h3 className="text-base sm:text-lg font-semibold text-stealth-100 whitespace-nowrap">
+            Advance / Decline + Volume
+          </h3>
+          <div className="text-xs text-stealth-400 mt-1">Breadth participation and pace</div>
         </div>
-        <div className="text-[11px] text-stealth-500">As of {asOfLabel}</div>
+        <div className="text-right">
+          <div className="text-[11px] text-stealth-500">As of {asOfLabel}</div>
+          <div className={`text-xs ${adRateDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
+            A/D pace {adRateDelta >= 0 ? "+" : ""}{adRateDelta.toFixed(0)}
+          </div>
+        </div>
       </div>
 
-      <div className="mt-4 space-y-3">
+      {history.length > 0 && (
+        <div className="h-32 mb-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={history} margin={CHART_MARGIN}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis
+                dataKey="dateLabel"
+                minTickGap={24}
+                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                axisLine={{ stroke: "#475569" }}
+                tickLine={{ stroke: "#475569" }}
+              />
+              <YAxis
+                yAxisId="pct"
+                domain={[0, 100]}
+                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                axisLine={{ stroke: "#475569" }}
+                tickLine={{ stroke: "#475569" }}
+                width={30}
+              />
+              <YAxis yAxisId="rate" orientation="right" hide domain={["dataMin - 2", "dataMax + 2"]} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#0f172a",
+                  border: "1px solid #334155",
+                  borderRadius: 8,
+                  color: "#cbd5e1",
+                }}
+                formatter={(value: number, name: string) => {
+                  if (name === "A/D pace") return [Number(value).toFixed(0), name];
+                  return [`${Number(value).toFixed(1)}%`, name];
+                }}
+              />
+              <Bar yAxisId="pct" dataKey="advancing_pct" stackId="breadth" fill="#4ade80" fillOpacity={0.9} name="Advancing" />
+              <Bar yAxisId="pct" dataKey="declining_pct" stackId="breadth" fill="#f87171" fillOpacity={0.85} name="Declining" />
+              <Line yAxisId="rate" type="monotone" dataKey="ad_rate" stroke="#facc15" strokeWidth={1.8} dot={false} name="A/D pace" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div className="space-y-3">
         <div>
           <div className="mb-1 flex items-center justify-between text-xs text-stealth-300">
             <span>Advancing vs Declining</span>
