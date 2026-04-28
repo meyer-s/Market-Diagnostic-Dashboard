@@ -13,7 +13,6 @@ export default function Topbar() {
   ];
 
   const toolsItems = [
-    { path: "/tools/volume-breadth", label: "Volume & Breadth" },
     { path: "/tools/recap", label: "Recap" },
     { path: "/market-map", label: "Market Map" },
     { path: "/sector-projections", label: "Sector Projections" },

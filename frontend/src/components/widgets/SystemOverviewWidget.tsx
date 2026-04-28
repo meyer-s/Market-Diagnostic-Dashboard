@@ -505,9 +505,9 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                     <>
                       <defs>
                         {stabilityBandData.map((item, index) => {
-                          const redStop = clampPercent(item.red_pct ?? 0);
+                          const greenStop = clampPercent(item.green_pct ?? 0);
                           const yellowStop = clampPercent(
-                            (item.red_pct ?? 0) + (item.yellow_pct ?? 0)
+                            (item.green_pct ?? 0) + (item.yellow_pct ?? 0)
                           );
                           return (
                             <linearGradient
@@ -518,12 +518,12 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                               x2="0"
                               y2="0"
                             >
-                              <stop offset="0%" stopColor="#ef4444" stopOpacity={0.5} />
-                              <stop offset={`${redStop}%`} stopColor="#ef4444" stopOpacity={0.5} />
-                              <stop offset={`${redStop}%`} stopColor="#eab308" stopOpacity={0.5} />
+                              <stop offset="0%" stopColor="#10b981" stopOpacity={0.5} />
+                              <stop offset={`${greenStop}%`} stopColor="#10b981" stopOpacity={0.5} />
+                              <stop offset={`${greenStop}%`} stopColor="#eab308" stopOpacity={0.5} />
                               <stop offset={`${yellowStop}%`} stopColor="#eab308" stopOpacity={0.5} />
-                              <stop offset={`${yellowStop}%`} stopColor="#10b981" stopOpacity={0.5} />
-                              <stop offset="100%" stopColor="#10b981" stopOpacity={0.5} />
+                              <stop offset={`${yellowStop}%`} stopColor="#ef4444" stopOpacity={0.5} />
+                              <stop offset="100%" stopColor="#ef4444" stopOpacity={0.5} />
                             </linearGradient>
                           );
                         })}
