@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Bar,
@@ -67,6 +66,34 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
   const yieldMonths = toMonths(trendPeriod);
   const { data: yieldData } = useApi<YieldCurveResponse>(`/indicators/BOND_MARKET_STABILITY/yield-curve?months=${yieldMonths}`);
 
+  const latestCurve = yieldData?.curves?.[0];
+  const priorCurves = yieldData?.curves?.slice(1, 4) ?? [];
+
+  const yieldChartData = latestCurve
+    ? (() => {
+        const latestMap = new Map(latestCurve.curve.map((p) => [p.maturity, p.yield]));
+        const priorMaps = priorCurves.map((entry) => new Map(entry.curve.map((p) => [p.maturity, p.yield])));
+
+        return MATURITY_ORDER.map((maturity) => ({
+          maturity,
+          latest: latestMap.get(maturity) ?? null,
+          prior_1: priorMaps[0]?.get(maturity) ?? null,
+          prior_2: priorMaps[1]?.get(maturity) ?? null,
+          prior_3: priorMaps[2]?.get(maturity) ?? null,
+        }));
+      })()
+    : [];
+
+  const spread10y2y = latestCurve
+    ? (() => {
+        const map = new Map(latestCurve.curve.map((p) => [p.maturity, p.yield]));
+        const y2 = map.get("2Y");
+        const y10 = map.get("10Y");
+        if (y2 === undefined || y10 === undefined) return null;
+        return y10 - y2;
+      })()
+    : null;
+
   if (loading) {
     return (
       <div className="primary-card p-3 sm:p-6">
@@ -112,32 +139,6 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
 
   const stabilityTone =
     stability >= 65 ? "text-green-300" : stability >= 45 ? "text-yellow-300" : "text-red-300";
-
-  const latestCurve = yieldData?.curves?.[0];
-  const priorCurves = yieldData?.curves?.slice(1, 4) ?? [];
-
-  const yieldChartData = useMemo(() => {
-    if (!latestCurve) return [];
-    const latestMap = new Map(latestCurve.curve.map((p) => [p.maturity, p.yield]));
-    const priorMaps = priorCurves.map((entry) => new Map(entry.curve.map((p) => [p.maturity, p.yield])));
-
-    return MATURITY_ORDER.map((maturity) => ({
-      maturity,
-      latest: latestMap.get(maturity) ?? null,
-      prior_1: priorMaps[0]?.get(maturity) ?? null,
-      prior_2: priorMaps[1]?.get(maturity) ?? null,
-      prior_3: priorMaps[2]?.get(maturity) ?? null,
-    }));
-  }, [latestCurve, priorCurves]);
-
-  const spread10y2y = useMemo(() => {
-    if (!latestCurve) return null;
-    const map = new Map(latestCurve.curve.map((p) => [p.maturity, p.yield]));
-    const y2 = map.get("2Y");
-    const y10 = map.get("10Y");
-    if (y2 === undefined || y10 === undefined) return null;
-    return y10 - y2;
-  }, [latestCurve]);
 
   const curveInsight =
     spread10y2y === null
