@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Dict, List, Tuple
+import logging
+from datetime import datetime, timezone
 
 import httpx
 import pandas as pd
 import yfinance as yf
 from fastapi import APIRouter, Query
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _CACHE_TTL_SECONDS = 4 * 60 * 60
@@ -43,7 +44,37 @@ BREADTH_SYMBOL_CANDIDATES = {
 }
 
 
-def _extract_close_volume(downloaded: pd.DataFrame) -> Tuple[pd.DataFrame | None, pd.DataFrame | None]:
+def _make_snapshot(
+    adv: int,
+    dec: int,
+    vol_adv: float,
+    vol_dec: float,
+    highs: int,
+    lows: int,
+    participation_pct: float,
+) -> dict[str, object]:
+    breadth_total = max(adv + dec, 1)
+    vol_total = max(vol_adv + vol_dec, 1.0)
+    hl_total = max(highs + lows, 1)
+    return {
+        "advancing": adv,
+        "declining": dec,
+        "advancing_pct": adv / breadth_total * 100.0,
+        "declining_pct": dec / breadth_total * 100.0,
+        "ad_rate": float(adv - dec),
+        "volume_advancing": vol_adv,
+        "volume_declining": vol_dec,
+        "volume_advancing_pct": vol_adv / vol_total * 100.0,
+        "volume_declining_pct": vol_dec / vol_total * 100.0,
+        "new_highs": highs,
+        "new_lows": lows,
+        "new_highs_pct": highs / hl_total * 100.0,
+        "new_lows_pct": lows / hl_total * 100.0,
+        "participation_pct": participation_pct,
+    }
+
+
+def _extract_close_volume(downloaded: pd.DataFrame) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
     if downloaded is None or downloaded.empty:
         return None, None
 
@@ -67,7 +98,7 @@ def _extract_close_volume(downloaded: pd.DataFrame) -> Tuple[pd.DataFrame | None
     return close, volume
 
 
-def _chunked(symbols: List[str], chunk_size: int) -> List[List[str]]:
+def _chunked(symbols: list[str], chunk_size: int) -> list[list[str]]:
     return [symbols[i:i + chunk_size] for i in range(0, len(symbols), chunk_size)]
 
 
@@ -80,12 +111,12 @@ def _normalize_symbol(symbol: str) -> str:
     return value
 
 
-def _parse_pipe_table(text: str) -> List[Dict[str, str]]:
+def _parse_pipe_table(text: str) -> list[dict[str, str]]:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if len(lines) < 2:
         return []
     headers = [h.strip() for h in lines[0].split("|")]
-    rows: List[Dict[str, str]] = []
+    rows: list[dict[str, str]] = []
     for line in lines[1:]:
         parts = [p.strip() for p in line.split("|")]
         if len(parts) != len(headers):
@@ -97,8 +128,8 @@ def _parse_pipe_table(text: str) -> List[Dict[str, str]]:
     return rows
 
 
-def _fetch_exchange_universe() -> Dict[str, List[str]]:
-    now = datetime.utcnow()
+def _fetch_exchange_universe() -> dict[str, list[str]]:
+    now = datetime.now(timezone.utc)
     cached_at = _listing_cache.get("fetched_at")
     cached_data = _listing_cache.get("data")
     stale_data = cached_data if isinstance(cached_data, dict) else {"amex": [], "nyse": [], "nsdq": []}
@@ -140,7 +171,8 @@ def _fetch_exchange_universe() -> Dict[str, List[str]]:
             elif exch == "Q":
                 nasdaq.add(symbol)
 
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to fetch exchange universe listings: %s", exc)
         return {
             "amex": list(stale_data.get("amex", [])),
             "nyse": list(stale_data.get("nyse", [])),
@@ -157,9 +189,9 @@ def _fetch_exchange_universe() -> Dict[str, List[str]]:
     return payload
 
 
-def _download_price_volume(symbols: List[str], period: str = "1y") -> Tuple[pd.DataFrame | None, pd.DataFrame | None]:
-    close_frames: List[pd.DataFrame] = []
-    volume_frames: List[pd.DataFrame] = []
+def _download_price_volume(symbols: list[str], period: str = "1y") -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    close_frames: list[pd.DataFrame] = []
+    volume_frames: list[pd.DataFrame] = []
 
     for chunk in _chunked(symbols, 500):
         try:
@@ -172,7 +204,8 @@ def _download_price_volume(symbols: List[str], period: str = "1y") -> Tuple[pd.D
                 threads=True,
                 group_by="column",
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("yf.download failed for chunk of %d symbols: %s", len(chunk), exc)
             continue
 
         close_frame, volume_frame = _extract_close_volume(frame)
@@ -197,7 +230,7 @@ def _download_price_volume(symbols: List[str], period: str = "1y") -> Tuple[pd.D
     return close_all, volume_all
 
 
-def _fetch_breadth_metric_series(candidates: List[str]) -> Dict[str, float]:
+def _fetch_breadth_metric_series(candidates: list[str]) -> dict[str, float]:
     for symbol in candidates:
         try:
             frame = yf.download(
@@ -208,7 +241,8 @@ def _fetch_breadth_metric_series(candidates: List[str]) -> Dict[str, float]:
                 progress=False,
                 threads=True,
             )
-        except Exception:
+        except Exception as exc:
+            logger.debug("yf.download failed for breadth symbol %s: %s", symbol, exc)
             continue
 
         if frame is None or frame.empty:
@@ -238,7 +272,7 @@ def _fetch_breadth_metric_series(candidates: List[str]) -> Dict[str, float]:
         if clean.empty:
             continue
 
-        mapped: Dict[str, float] = {}
+        mapped: dict[str, float] = {}
         for idx, value in clean.items():
             mapped[pd.Timestamp(idx).strftime("%Y-%m-%d")] = float(value)
 
@@ -248,7 +282,9 @@ def _fetch_breadth_metric_series(candidates: List[str]) -> Dict[str, float]:
     return {}
 
 
-def _build_bucket_from_breadth_symbols(exchange_key: str, label: str, lookback_days: int) -> Dict[str, object] | None:
+def _build_bucket_from_breadth_symbols(
+    exchange_key: str, label: str, lookback_days: int, universe_size: int = 0
+) -> dict[str, object] | None:
     candidates = BREADTH_SYMBOL_CANDIDATES.get(exchange_key)
     if not candidates:
         return None
@@ -268,7 +304,7 @@ def _build_bucket_from_breadth_symbols(exchange_key: str, label: str, lookback_d
         return None
 
     common_dates = common_dates[-lookback_days:]
-    history: List[Dict[str, float | int | str]] = []
+    history: list[dict[str, object]] = []
 
     for date_key in common_dates:
         adv_val = max(float(adv.get(date_key, 0.0)), 0.0)
@@ -278,59 +314,38 @@ def _build_bucket_from_breadth_symbols(exchange_key: str, label: str, lookback_d
         high_val = max(float(highs.get(date_key, 0.0)), 0.0)
         low_val = max(float(lows.get(date_key, 0.0)), 0.0)
 
-        breadth_total = max(adv_val + dec_val, 1.0)
-        volume_total = max(uvol_val + dvol_val, 1.0)
-        hl_total = max(high_val + low_val, 1.0)
+        effective_universe = max(universe_size, int(adv_val + dec_val))
+        participation_pct = float((adv_val + dec_val) / max(effective_universe, 1) * 100.0)
 
-        history.append(
-            {
-                "date": date_key,
-                "advancing": int(round(adv_val)),
-                "declining": int(round(dec_val)),
-                "advancing_pct": (adv_val / breadth_total) * 100.0,
-                "declining_pct": (dec_val / breadth_total) * 100.0,
-                "ad_rate": adv_val - dec_val,
-                "volume_advancing": uvol_val,
-                "volume_declining": dvol_val,
-                "volume_advancing_pct": (uvol_val / volume_total) * 100.0,
-                "volume_declining_pct": (dvol_val / volume_total) * 100.0,
-                "new_highs": int(round(high_val)),
-                "new_lows": int(round(low_val)),
-                "new_highs_pct": (high_val / hl_total) * 100.0,
-                "new_lows_pct": (low_val / hl_total) * 100.0,
-                "participation_pct": 100.0,
-            }
+        snap = _make_snapshot(
+            int(round(adv_val)),
+            int(round(dec_val)),
+            uvol_val,
+            dvol_val,
+            int(round(high_val)),
+            int(round(low_val)),
+            participation_pct,
         )
+        history.append({"date": date_key, **snap})
 
     latest = history[-1]
     return {
         "label": label,
-        "advancing": latest["advancing"],
-        "declining": latest["declining"],
-        "advancing_pct": latest["advancing_pct"],
-        "declining_pct": latest["declining_pct"],
-        "volume_advancing": latest["volume_advancing"],
-        "volume_declining": latest["volume_declining"],
-        "volume_advancing_pct": latest["volume_advancing_pct"],
-        "volume_declining_pct": latest["volume_declining_pct"],
-        "new_highs": latest["new_highs"],
-        "new_lows": latest["new_lows"],
-        "new_highs_pct": latest["new_highs_pct"],
-        "new_lows_pct": latest["new_lows_pct"],
-        "participation_pct": 100.0,
-        "universe_size": int(max(1, latest["advancing"] + latest["declining"])),
+        **{k: v for k, v in latest.items() if k != "date"},
+        "universe_size": max(universe_size, int(latest["advancing"]) + int(latest["declining"])),
         "history": history,
         "source": "breadth-symbols",
     }
 
 
-def _empty_bucket(label: str, universe_size: int, source: str) -> Dict[str, object]:
+def _empty_bucket(label: str, universe_size: int, source: str) -> dict[str, object]:
     return {
         "label": label,
         "advancing": 0,
         "declining": 0,
         "advancing_pct": 0.0,
         "declining_pct": 0.0,
+        "ad_rate": 0.0,
         "volume_advancing": 0.0,
         "volume_declining": 0.0,
         "volume_advancing_pct": 0.0,
@@ -346,8 +361,8 @@ def _empty_bucket(label: str, universe_size: int, source: str) -> Dict[str, obje
     }
 
 
-def _resolve_exchange_bucket(exchange_key: str, label: str, symbols: List[str], lookback_days: int) -> Dict[str, object]:
-    direct = _build_bucket_from_breadth_symbols(exchange_key, label, lookback_days)
+def _resolve_exchange_bucket(exchange_key: str, label: str, symbols: list[str], lookback_days: int) -> dict[str, object]:
+    direct = _build_bucket_from_breadth_symbols(exchange_key, label, lookback_days, universe_size=len(symbols))
     if direct:
         return direct
 
@@ -365,10 +380,10 @@ def _resolve_exchange_bucket(exchange_key: str, label: str, symbols: List[str], 
 def _build_bucket_history(
     close_frame: pd.DataFrame,
     volume_frame: pd.DataFrame,
-    symbols: List[str],
+    symbols: list[str],
     lookback_days: int = 90,
-) -> List[Dict[str, float | int | str]]:
-    history: List[Dict[str, float | int | str]] = []
+) -> list[dict[str, object]]:
+    history: list[dict[str, object]] = []
     if close_frame is None or close_frame.empty:
         return history
 
@@ -396,7 +411,6 @@ def _build_bucket_history(
 
         advancing = int(up_mask.sum())
         declining = int(down_mask.sum())
-
         up_vol = float(current_volume[up_mask].sum()) if not current_volume.empty else 0.0
         down_vol = float(current_volume[down_mask].sum()) if not current_volume.empty else 0.0
 
@@ -407,97 +421,34 @@ def _build_bucket_history(
         new_highs = int(high_mask.sum())
         new_lows = int(low_mask.sum())
 
-        breadth_total = max(advancing + declining, 1)
-        volume_total = max(up_vol + down_vol, 1.0)
-        hl_total = max(new_highs + new_lows, 1)
-
-        history.append(
-            {
-                "date": pd.Timestamp(dates[idx]).strftime("%Y-%m-%d"),
-                "advancing": advancing,
-                "declining": declining,
-                "advancing_pct": float((advancing / breadth_total) * 100.0),
-                "declining_pct": float((declining / breadth_total) * 100.0),
-                "ad_rate": float(advancing - declining),
-                "volume_advancing": up_vol,
-                "volume_declining": down_vol,
-                "volume_advancing_pct": float((up_vol / volume_total) * 100.0),
-                "volume_declining_pct": float((down_vol / volume_total) * 100.0),
-                "new_highs": new_highs,
-                "new_lows": new_lows,
-                "new_highs_pct": float((new_highs / hl_total) * 100.0),
-                "new_lows_pct": float((new_lows / hl_total) * 100.0),
-                "participation_pct": float((advancing + declining) / max(len(symbols), 1) * 100.0),
-            }
-        )
+        participation_pct = float((advancing + declining) / max(len(symbols), 1) * 100.0)
+        snap = _make_snapshot(advancing, declining, up_vol, down_vol, new_highs, new_lows, participation_pct)
+        history.append({"date": pd.Timestamp(dates[idx]).strftime("%Y-%m-%d"), **snap})
 
     return history
 
 
-def _compute_bucket(symbols: List[str], label: str, lookback_days: int) -> Dict[str, object]:
+def _compute_bucket(symbols: list[str], label: str, lookback_days: int) -> dict[str, object]:
     close_frame, volume_frame = _download_price_volume(symbols, period="1y")
     if close_frame is None or volume_frame is None:
         return _empty_bucket(label, len(symbols), "unavailable")
 
-    close = close_frame.copy().sort_index()
-    volume = volume_frame.copy().sort_index()
-    close = close[[c for c in close.columns if c in symbols]]
-    volume = volume[[c for c in volume.columns if c in symbols]]
-    if close.shape[0] < 2 or close.shape[1] == 0:
+    history = _build_bucket_history(close_frame, volume_frame, symbols, lookback_days=lookback_days)
+    if not history:
         return _empty_bucket(label, len(symbols), "unavailable")
 
-    current_close = close.iloc[-1]
-    previous_close = close.iloc[-2]
-    current_volume = volume.iloc[-1] if volume.shape[0] else pd.Series(dtype=float)
-
-    valid_mask = current_close.notna() & previous_close.notna()
-    up_mask = valid_mask & (current_close > previous_close)
-    down_mask = valid_mask & (current_close < previous_close)
-
-    advancing = int(up_mask.sum())
-    declining = int(down_mask.sum())
-    volume_adv = float(current_volume[up_mask].sum()) if not current_volume.empty else 0.0
-    volume_dec = float(current_volume[down_mask].sum()) if not current_volume.empty else 0.0
-
-    lookback_close = close.tail(252)
-    max_52w = lookback_close.max(axis=0)
-    min_52w = lookback_close.min(axis=0)
-    high_mask = valid_mask & max_52w.notna() & (current_close >= (max_52w * 0.999))
-    low_mask = valid_mask & min_52w.notna() & (current_close <= (min_52w * 1.001))
-    new_highs = int(high_mask.sum())
-    new_lows = int(low_mask.sum())
-
-    active = max(advancing + declining, 1)
-    volume_total = max(volume_adv + volume_dec, 1.0)
-    hl_total = max(new_highs + new_lows, 1)
-
-    history = _build_bucket_history(close_frame, volume_frame, symbols, lookback_days=lookback_days)
-
-    participation_pct = (advancing + declining) / max(len(symbols), 1) * 100.0
-
+    latest = history[-1]
     return {
         "label": label,
-        "advancing": advancing,
-        "declining": declining,
-        "advancing_pct": (advancing / active) * 100.0,
-        "declining_pct": (declining / active) * 100.0,
-        "volume_advancing": volume_adv,
-        "volume_declining": volume_dec,
-        "volume_advancing_pct": (volume_adv / volume_total) * 100.0,
-        "volume_declining_pct": (volume_dec / volume_total) * 100.0,
-        "new_highs": new_highs,
-        "new_lows": new_lows,
-        "new_highs_pct": (new_highs / hl_total) * 100.0,
-        "new_lows_pct": (new_lows / hl_total) * 100.0,
-        "participation_pct": participation_pct,
+        **{k: v for k, v in latest.items() if k != "date"},
         "universe_size": len(symbols),
         "history": history,
     }
 
 
 @router.get("/market-internals/overview")
-def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> Dict[str, object]:
-    now = datetime.utcnow()
+def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> dict[str, object]:
+    now = datetime.now(timezone.utc)
     cached = _cached_by_days.get(days)
     if cached:
         cached_at = cached.get("cached_at")
@@ -510,22 +461,22 @@ def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> Dict[
     nasdaq = _resolve_exchange_bucket("nsdq", "NSDQ", exchange_universe["nsdq"], lookback_days=days)
     nyse = _resolve_exchange_bucket("nyse", "NYSE", exchange_universe["nyse"], lookback_days=days)
 
-    combined_adv = amex["advancing"] + nasdaq["advancing"] + nyse["advancing"]
-    combined_dec = amex["declining"] + nasdaq["declining"] + nyse["declining"]
-    combined_volume_adv = amex["volume_advancing"] + nasdaq["volume_advancing"] + nyse["volume_advancing"]
-    combined_volume_dec = amex["volume_declining"] + nasdaq["volume_declining"] + nyse["volume_declining"]
-    combined_highs = amex["new_highs"] + nasdaq["new_highs"] + nyse["new_highs"]
-    combined_lows = amex["new_lows"] + nasdaq["new_lows"] + nyse["new_lows"]
-
-    breadth_total = max(combined_adv + combined_dec, 1)
-    volume_total = max(combined_volume_adv + combined_volume_dec, 1.0)
-    hl_total = max(combined_highs + combined_lows, 1)
+    combined_adv = int(amex["advancing"] + nasdaq["advancing"] + nyse["advancing"])
+    combined_dec = int(amex["declining"] + nasdaq["declining"] + nyse["declining"])
+    combined_vol_adv = float(amex["volume_advancing"] + nasdaq["volume_advancing"] + nyse["volume_advancing"])
+    combined_vol_dec = float(amex["volume_declining"] + nasdaq["volume_declining"] + nyse["volume_declining"])
+    combined_highs = int(amex["new_highs"] + nasdaq["new_highs"] + nyse["new_highs"])
+    combined_lows = int(amex["new_lows"] + nasdaq["new_lows"] + nyse["new_lows"])
+    total_universe = len(exchange_universe["amex"]) + len(exchange_universe["nsdq"]) + len(exchange_universe["nyse"])
 
     amex_history = {entry["date"]: entry for entry in amex.get("history", [])}
     nasdaq_history = {entry["date"]: entry for entry in nasdaq.get("history", [])}
     nyse_history = {entry["date"]: entry for entry in nyse.get("history", [])}
     combined_dates = sorted(set(amex_history.keys()) & set(nasdaq_history.keys()) & set(nyse_history.keys()))
     combined_history = []
+
+    if not combined_dates:
+        logger.warning("Combined market internals history is empty — exchange date ranges do not overlap")
 
     for date_key in combined_dates:
         amx = amex_history[date_key]
@@ -538,69 +489,28 @@ def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> Dict[
         vol_dec = float(amx["volume_declining"] + ndx["volume_declining"] + ny["volume_declining"])
         highs = int(amx["new_highs"] + ndx["new_highs"] + ny["new_highs"])
         lows = int(amx["new_lows"] + ndx["new_lows"] + ny["new_lows"])
-        participation_pct = float(
-            (
-                float(amx.get("participation_pct", 0.0))
-                + float(ndx.get("participation_pct", 0.0))
-                + float(ny.get("participation_pct", 0.0))
-            )
-            / 3.0
-        )
+        participation_pct = float((adv + dec) / max(total_universe, 1) * 100.0)
 
-        breadth_total_hist = max(adv + dec, 1)
-        volume_total_hist = max(vol_adv + vol_dec, 1.0)
-        hl_total_hist = max(highs + lows, 1)
+        snap = _make_snapshot(adv, dec, vol_adv, vol_dec, highs, lows, participation_pct)
+        combined_history.append({"date": date_key, **snap})
 
-        combined_history.append(
-            {
-                "date": date_key,
-                "advancing": adv,
-                "declining": dec,
-                "advancing_pct": float((adv / breadth_total_hist) * 100.0),
-                "declining_pct": float((dec / breadth_total_hist) * 100.0),
-                "ad_rate": float(adv - dec),
-                "volume_advancing": vol_adv,
-                "volume_declining": vol_dec,
-                "volume_advancing_pct": float((vol_adv / volume_total_hist) * 100.0),
-                "volume_declining_pct": float((vol_dec / volume_total_hist) * 100.0),
-                "new_highs": highs,
-                "new_lows": lows,
-                "new_highs_pct": float((highs / hl_total_hist) * 100.0),
-                "new_lows_pct": float((lows / hl_total_hist) * 100.0),
-                "participation_pct": participation_pct,
-            }
-        )
-
-    composite_participation_pct = (
-        float(amex.get("participation_pct", 0.0))
-        + float(nasdaq.get("participation_pct", 0.0))
-        + float(nyse.get("participation_pct", 0.0))
-    ) / 3.0
+    composite_participation_pct = float((combined_adv + combined_dec) / max(total_universe, 1) * 100.0)
+    composite = _make_snapshot(
+        combined_adv, combined_dec,
+        combined_vol_adv, combined_vol_dec,
+        combined_highs, combined_lows,
+        composite_participation_pct,
+    )
+    composite["universe_size"] = total_universe
 
     payload = {
         "as_of": now.isoformat(),
-        "composite": {
-            "advancing": combined_adv,
-            "declining": combined_dec,
-            "advancing_pct": (combined_adv / breadth_total) * 100.0,
-            "declining_pct": (combined_dec / breadth_total) * 100.0,
-            "volume_advancing": combined_volume_adv,
-            "volume_declining": combined_volume_dec,
-            "volume_advancing_pct": (combined_volume_adv / volume_total) * 100.0,
-            "volume_declining_pct": (combined_volume_dec / volume_total) * 100.0,
-            "new_highs": combined_highs,
-            "new_lows": combined_lows,
-            "new_highs_pct": (combined_highs / hl_total) * 100.0,
-            "new_lows_pct": (combined_lows / hl_total) * 100.0,
-            "participation_pct": composite_participation_pct,
-            "universe_size": len(exchange_universe["amex"]) + len(exchange_universe["nsdq"]) + len(exchange_universe["nyse"]),
-        },
+        "composite": composite,
         "days": days,
         "history": combined_history,
         "exchanges": {
             "amex": amex,
             "nsdq": nasdaq,
-            "nasdaq": nasdaq,
             "nyse": nyse,
         },
     }
