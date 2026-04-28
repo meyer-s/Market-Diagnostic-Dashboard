@@ -1,6 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException, Query
 from typing import List
+import pandas as pd
 
 from app.models.indicator import Indicator
 from app.models.indicator_value import IndicatorValue
@@ -1191,6 +1192,207 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
     cutoff_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
     result = [r for r in result if r["date"] >= cutoff_date]
     
+    return result
+
+
+_SECTOR_NAMES = {
+    "XLB": "Materials",
+    "XLC": "Comm Svcs",
+    "XLE": "Energy",
+    "XLF": "Financials",
+    "XLI": "Industrials",
+    "XLK": "Technology",
+    "XLP": "Staples",
+    "XLRE": "Real Estate",
+    "XLV": "Health Care",
+    "XLY": "Discretionary",
+    "XLU": "Utilities",
+}
+_BREADTH_PROXY_TICKERS = ["RSP", "SPY", "IWM"] + list(_SECTOR_NAMES.keys())
+_BREADTH_HEALTH_COMP_CACHE: dict = {"fetched_at": None, "data": None, "days": None}
+_BREADTH_HEALTH_COMP_CACHE_TTL = 4 * 60 * 60
+
+
+@router.get("/indicators/BREADTH_HEALTH/components")
+def get_breadth_health_components(days: int = Query(90, ge=1, le=365)):
+    """
+    Return proxy-based breadth component breakdown for BREADTH_HEALTH.
+
+    Uses ~14 ETF tickers (no full-exchange scan) to compute:
+    - RSP/SPY indexed ratio (equal-weight vs cap-weight participation)
+    - IWM/SPY indexed ratio (small-cap breadth)
+    - % of 11 SPDR sectors above their 20-day simple moving average
+    - % of 11 SPDR sectors with a positive 20-day price return
+    - Per-sector status for the most recent date
+    """
+    import math
+    from datetime import datetime, timedelta
+
+    import numpy as np
+    import yfinance as yf
+
+    now = datetime.utcnow()
+    cached = _BREADTH_HEALTH_COMP_CACHE
+    if (
+        cached["fetched_at"] is not None
+        and cached["days"] == days
+        and (now - cached["fetched_at"]).total_seconds() < _BREADTH_HEALTH_COMP_CACHE_TTL
+    ):
+        return cached["data"]
+
+    # Extra buffer so 20-day MA is valid from the first day we want to return
+    fetch_days = days + 60
+    start_date = (now - timedelta(days=fetch_days)).strftime("%Y-%m-%d")
+
+    try:
+        raw = yf.download(
+            tickers=_BREADTH_PROXY_TICKERS,
+            start=start_date,
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"yfinance download failed: {exc}")
+
+    if raw is None or raw.empty:
+        raise HTTPException(status_code=502, detail="No data returned from yfinance")
+
+    # Extract Close prices — handle multi-level columns
+    if isinstance(raw.columns, pd.MultiIndex):
+        level0 = raw.columns.get_level_values(0)
+        level1 = raw.columns.get_level_values(1)
+        if "Close" in level0:
+            close_df = raw["Close"]
+        elif "Close" in level1:
+            close_df = raw.swaplevel(axis=1)["Close"]
+        else:
+            raise HTTPException(status_code=502, detail="Unexpected yfinance column structure")
+    else:
+        close_df = raw[["Close"]] if "Close" in raw.columns else raw
+
+    close_df = close_df.dropna(how="all")
+
+    def safe_col(ticker: str) -> "pd.Series | None":
+        if ticker in close_df.columns:
+            return close_df[ticker].dropna()
+        return None
+
+    rsp_s = safe_col("RSP")
+    spy_s = safe_col("SPY")
+    iwm_s = safe_col("IWM")
+
+    if rsp_s is None or spy_s is None or iwm_s is None:
+        raise HTTPException(status_code=502, detail="Missing RSP, SPY, or IWM price data")
+
+    # Align RSP/SPY and IWM/SPY on common dates
+    ratio_df = pd.DataFrame({"rsp": rsp_s, "spy": spy_s, "iwm": iwm_s}).dropna()
+    ratio_df["rsp_spy"] = ratio_df["rsp"] / ratio_df["spy"]
+    ratio_df["iwm_spy"] = ratio_df["iwm"] / ratio_df["spy"]
+
+    # Build per-date sector metrics (20-day MA and 20-day return)
+    sector_series: dict[str, "pd.Series"] = {}
+    for ticker in _SECTOR_NAMES:
+        s = safe_col(ticker)
+        if s is not None and len(s) >= 21:
+            sector_series[ticker] = s
+
+    # Compute sector participation per date aligned to ratio_df index
+    sector_above_ma20: list[float] = []
+    sector_positive_20d: list[float] = []
+
+    all_dates = ratio_df.index
+    for date in all_dates:
+        above = 0
+        pos = 0
+        counted_ma = 0
+        counted_ret = 0
+        for ticker, s in sector_series.items():
+            s_up_to = s[s.index <= date]
+            if len(s_up_to) < 2:
+                continue
+            current_price = float(s_up_to.iloc[-1])
+            # 20-day MA
+            ma_window = s_up_to.iloc[-20:] if len(s_up_to) >= 20 else s_up_to
+            ma20 = float(ma_window.mean())
+            if current_price > ma20:
+                above += 1
+            counted_ma += 1
+            # 20-day return
+            if len(s_up_to) >= 21:
+                past_price = float(s_up_to.iloc[-21])
+                if past_price > 0:
+                    if current_price > past_price:
+                        pos += 1
+                    counted_ret += 1
+        sector_above_ma20.append(above / counted_ma * 100.0 if counted_ma > 0 else 50.0)
+        sector_positive_20d.append(pos / counted_ret * 100.0 if counted_ret > 0 else 50.0)
+
+    ratio_df["sectors_above_ma20_pct"] = sector_above_ma20
+    ratio_df["sectors_positive_20d_pct"] = sector_positive_20d
+
+    # Cut to the requested window and index RSP/SPY + IWM/SPY to 100
+    cutoff = now - timedelta(days=days)
+    window_df = ratio_df[ratio_df.index >= cutoff].copy()
+
+    if window_df.empty:
+        raise HTTPException(status_code=404, detail="No data in the requested window")
+
+    base_rsp_spy = float(window_df["rsp_spy"].iloc[0])
+    base_iwm_spy = float(window_df["iwm_spy"].iloc[0])
+
+    def safe_float(v: float) -> float:
+        if math.isnan(v) or math.isinf(v):
+            return 0.0
+        return round(v, 4)
+
+    history = []
+    for idx_ts, row in window_df.iterrows():
+        rsp_spy_norm = safe_float((row["rsp_spy"] / base_rsp_spy * 100.0) if base_rsp_spy else 0.0)
+        iwm_spy_norm = safe_float((row["iwm_spy"] / base_iwm_spy * 100.0) if base_iwm_spy else 0.0)
+        history.append({
+            "date": idx_ts.strftime("%Y-%m-%d"),
+            "rsp_spy_norm": rsp_spy_norm,
+            "iwm_spy_norm": iwm_spy_norm,
+            "sectors_above_ma20_pct": safe_float(row["sectors_above_ma20_pct"]),
+            "sectors_positive_20d_pct": safe_float(row["sectors_positive_20d_pct"]),
+        })
+
+    # Per-sector detail for the most recent date
+    latest_date = window_df.index[-1]
+    latest_sectors = []
+    for ticker, name in _SECTOR_NAMES.items():
+        s = sector_series.get(ticker)
+        if s is None:
+            continue
+        s_up_to = s[s.index <= latest_date]
+        if len(s_up_to) < 2:
+            continue
+        current_price = float(s_up_to.iloc[-1])
+        ma_window = s_up_to.iloc[-20:] if len(s_up_to) >= 20 else s_up_to
+        ma20 = float(ma_window.mean())
+        above_ma20 = current_price > ma20
+        if len(s_up_to) >= 21:
+            past_price = float(s_up_to.iloc[-21])
+            return_20d_pct = safe_float(((current_price - past_price) / past_price * 100.0) if past_price > 0 else 0.0)
+        else:
+            return_20d_pct = 0.0
+        latest_sectors.append({
+            "ticker": ticker,
+            "name": name,
+            "above_ma20": above_ma20,
+            "return_20d_pct": return_20d_pct,
+        })
+
+    result = {
+        "as_of": latest_date.strftime("%Y-%m-%d"),
+        "history": history,
+        "latest_sectors": latest_sectors,
+    }
+
+    _BREADTH_HEALTH_COMP_CACHE["fetched_at"] = now
+    _BREADTH_HEALTH_COMP_CACHE["days"] = days
+    _BREADTH_HEALTH_COMP_CACHE["data"] = result
     return result
 
 

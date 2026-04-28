@@ -297,6 +297,27 @@ interface MuniSubsystemResponse {
   curve?: MuniCurve | null;
 }
 
+interface BreadthHealthSector {
+  ticker: string;
+  name: string;
+  above_ma20: boolean;
+  return_20d_pct: number;
+}
+
+interface BreadthHealthHistoryPoint {
+  date: string;
+  rsp_spy_norm: number;
+  iwm_spy_norm: number;
+  sectors_above_ma20_pct: number;
+  sectors_positive_20d_pct: number;
+}
+
+interface BreadthHealthComponentsData {
+  as_of: string;
+  history: BreadthHealthHistoryPoint[];
+  latest_sectors: BreadthHealthSector[];
+}
+
 interface IndicatorDetailProps {
   forcedCode?: string;
 }
@@ -353,6 +374,11 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
   const { data: sentimentCompositeComponents } = useApi<SentimentCompositeComponentData[]>(
     apiCode === "SENTIMENT_COMPOSITE"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
+      : ""
+  );
+  const { data: breadthHealthComponents } = useApi<BreadthHealthComponentsData>(
+    apiCode === "BREADTH_HEALTH"
+      ? `/indicators/BREADTH_HEALTH/components?days=90`
       : ""
   );
   const { data: muniSubsystem, loading: muniLoading, error: muniError } = useApi<MuniSubsystemResponse>(
@@ -919,6 +945,184 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             <li>- Combines level stability (z-score) and 30-day change stability, weighted 65%/35%.</li>
             <li>- Proxy-based breadth signal; higher scores reflect broader participation.</li>
           </ul>
+        </div>
+      )}
+
+      {/* Proxy Breadth Panel for BREADTH_HEALTH */}
+      {apiCode === "BREADTH_HEALTH" && breadthHealthComponents && (
+        <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-lg font-semibold text-stealth-100">Participation &amp; Breadth Proxies</h3>
+            <span className="text-xs text-stealth-500">as of {breadthHealthComponents.as_of}</span>
+          </div>
+          <p className="text-xs text-stealth-500 mb-4">
+            Indexed to 100 at window start · 14 ETF proxies, no full-universe scan
+          </p>
+
+          {/* Trend chart */}
+          {breadthHealthComponents.history.length > 0 && (
+            <div className="h-52 mb-5">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={breadthHealthComponents.history}
+                  margin={CHART_MARGIN}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    axisLine={{ stroke: "#475569" }}
+                    tickLine={{ stroke: "#475569" }}
+                    minTickGap={28}
+                    tickFormatter={(v: string) => v.slice(5)}
+                  />
+                  <YAxis
+                    yAxisId="idx"
+                    domain={["auto", "auto"]}
+                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    axisLine={{ stroke: "#475569" }}
+                    tickLine={{ stroke: "#475569" }}
+                    width={36}
+                    tickFormatter={(v: number) => v.toFixed(0)}
+                  />
+                  <YAxis
+                    yAxisId="pct"
+                    orientation="right"
+                    domain={[0, 100]}
+                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    axisLine={{ stroke: "#475569" }}
+                    tickLine={{ stroke: "#475569" }}
+                    width={34}
+                    tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#0f172a",
+                      border: "1px solid #334155",
+                      borderRadius: 8,
+                      color: "#cbd5e1",
+                      fontSize: 12,
+                    }}
+                    formatter={(value: number, name: string) => {
+                      if (name === "RSP/SPY" || name === "IWM/SPY") return [`${value.toFixed(1)}`, name];
+                      return [`${value.toFixed(1)}%`, name];
+                    }}
+                    labelFormatter={(label: string) => label}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: 11, color: "#94a3b8", paddingTop: 4 }}
+                  />
+                  <Line
+                    yAxisId="idx"
+                    type="monotone"
+                    dataKey="rsp_spy_norm"
+                    stroke="#22d3ee"
+                    strokeWidth={1.8}
+                    dot={false}
+                    name="RSP/SPY"
+                    {...CHART_ANIMATION}
+                  />
+                  <Line
+                    yAxisId="idx"
+                    type="monotone"
+                    dataKey="iwm_spy_norm"
+                    stroke="#a78bfa"
+                    strokeWidth={1.8}
+                    dot={false}
+                    name="IWM/SPY"
+                    {...CHART_ANIMATION}
+                  />
+                  <Line
+                    yAxisId="pct"
+                    type="monotone"
+                    dataKey="sectors_above_ma20_pct"
+                    stroke="#4ade80"
+                    strokeWidth={1.6}
+                    dot={false}
+                    name="Sectors > 20d MA"
+                    {...CHART_ANIMATION}
+                  />
+                  <ReferenceLine
+                    yAxisId="idx"
+                    y={100}
+                    stroke="#475569"
+                    strokeDasharray="4 4"
+                    strokeWidth={1}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Summary stats */}
+          {breadthHealthComponents.history.length > 0 && (() => {
+            const latest = breadthHealthComponents.history[breadthHealthComponents.history.length - 1];
+            const first = breadthHealthComponents.history[0];
+            const rspDelta = latest.rsp_spy_norm - first.rsp_spy_norm;
+            const iwmDelta = latest.iwm_spy_norm - first.iwm_spy_norm;
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-3">
+                  <div className="text-[10px] uppercase text-stealth-500 mb-1">RSP/SPY (90d Δ)</div>
+                  <div className={`text-base font-semibold ${rspDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
+                    {rspDelta >= 0 ? "+" : ""}{rspDelta.toFixed(1)}
+                  </div>
+                  <div className="text-[10px] text-stealth-500 mt-0.5">Equal-wt vs cap-wt</div>
+                </div>
+                <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-3">
+                  <div className="text-[10px] uppercase text-stealth-500 mb-1">IWM/SPY (90d Δ)</div>
+                  <div className={`text-base font-semibold ${iwmDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
+                    {iwmDelta >= 0 ? "+" : ""}{iwmDelta.toFixed(1)}
+                  </div>
+                  <div className="text-[10px] text-stealth-500 mt-0.5">Small-cap breadth</div>
+                </div>
+                <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-3">
+                  <div className="text-[10px] uppercase text-stealth-500 mb-1">Sectors &gt; 20d MA</div>
+                  <div className={`text-base font-semibold ${latest.sectors_above_ma20_pct >= 55 ? "text-green-300" : latest.sectors_above_ma20_pct >= 36 ? "text-yellow-300" : "text-red-300"}`}>
+                    {latest.sectors_above_ma20_pct.toFixed(0)}%
+                  </div>
+                  <div className="text-[10px] text-stealth-500 mt-0.5">of 11 SPDR sectors</div>
+                </div>
+                <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-3">
+                  <div className="text-[10px] uppercase text-stealth-500 mb-1">Positive 20d Return</div>
+                  <div className={`text-base font-semibold ${latest.sectors_positive_20d_pct >= 55 ? "text-green-300" : latest.sectors_positive_20d_pct >= 36 ? "text-yellow-300" : "text-red-300"}`}>
+                    {latest.sectors_positive_20d_pct.toFixed(0)}%
+                  </div>
+                  <div className="text-[10px] text-stealth-500 mt-0.5">of 11 SPDR sectors</div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Sector heatmap grid */}
+          {breadthHealthComponents.latest_sectors.length > 0 && (
+            <div>
+              <div className="text-xs text-stealth-400 mb-2 font-medium">Sector Detail — {breadthHealthComponents.as_of}</div>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                {breadthHealthComponents.latest_sectors.map((sector) => (
+                  <div
+                    key={sector.ticker}
+                    className={`rounded-md border p-2 text-center ${
+                      sector.above_ma20
+                        ? "border-green-600/50 bg-green-500/10"
+                        : "border-red-600/50 bg-red-500/10"
+                    }`}
+                  >
+                    <div className="text-[11px] font-semibold text-stealth-100">{sector.ticker}</div>
+                    <div className="text-[10px] text-stealth-400 mb-1">{sector.name}</div>
+                    <div
+                      className={`text-xs font-medium ${sector.return_20d_pct >= 0 ? "text-green-300" : "text-red-300"}`}
+                    >
+                      {sector.return_20d_pct >= 0 ? "+" : ""}{sector.return_20d_pct.toFixed(1)}%
+                    </div>
+                    <div className={`text-[9px] mt-0.5 ${sector.above_ma20 ? "text-green-500" : "text-red-500"}`}>
+                      {sector.above_ma20 ? "▲ above MA" : "▼ below MA"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
