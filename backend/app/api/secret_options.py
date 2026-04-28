@@ -116,7 +116,9 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
 
     trigger_day = event.triggered_at.date() if event.triggered_at else date.today()
     start_day = trigger_day - timedelta(days=7)
-    end_day = date.today() + timedelta(days=2)
+    # Use completed sessions only so outcomes do not drift intraday.
+    # yfinance `end` is exclusive, so `end=today` includes up to yesterday.
+    end_day = date.today()
 
     stock = yf.Ticker(event.symbol)
     history = stock.history(start=start_day.isoformat(), end=end_day.isoformat())
@@ -142,17 +144,11 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
     entry_price = float(daily.iloc[entry_idx]["close"])
 
     target_exit_idx = entry_idx + hold_days
-    today_idx = len(daily) - 1
     elapsed_calendar_days = (date.today() - entry_date.date()).days
 
     if target_exit_idx < len(daily):
         exit_idx = target_exit_idx
         realized_hold_days = hold_days
-    elif elapsed_calendar_days >= hold_days and today_idx > entry_idx:
-        # If the suggested hold window has passed but we don't have enough
-        # trading sessions in-range yet, settle against the latest available close.
-        exit_idx = today_idx
-        realized_hold_days = today_idx - entry_idx
     else:
         return {
             "event_id": event.id,
