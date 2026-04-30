@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal, Sequence
 
@@ -17,7 +18,7 @@ from app.schemas.market_diagnostic_payload import (
     MarketDiagnosticRunResult,
 )
 from app.services.market_diagnostic_publisher import publish_market_diagnostic_for_date
-from app.services.market_diagnostic_validation import validate_slug
+from app.services.market_diagnostic_validation import validate_citations_match_sources, validate_slug
 from app.services.update_posts import create_update_post_if_absent
 from app.utils.db_helpers import get_db_session
 
@@ -40,6 +41,12 @@ class OpenAIRequestError(RuntimeError):
         self.status_code = status_code
         self.error_code = error_code
         self.error_type = error_type
+
+
+@dataclass(frozen=True)
+class OpenAIJsonResult:
+    payload: dict[str, Any]
+    source_urls: tuple[str, ...] = ()
 
 
 def _now_utc_iso() -> str:
@@ -92,7 +99,7 @@ def _openai_chat_completion_json(
     timeout_seconds: int = 25,
     max_retries: int = 1,
     overall_deadline_seconds: int = 30,
-) -> dict[str, Any]:
+) -> OpenAIJsonResult:
     api_key = (settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
@@ -245,15 +252,39 @@ def _openai_chat_completion_json(
                     return part.get("text", "")
         raise RuntimeError("OpenAI response did not include output text.")
 
+    def _extract_source_urls(response: dict[str, Any]) -> tuple[str, ...]:
+        collected: list[str] = []
+        for item in response.get("output", []):
+            if item.get("type") == "web_search_call":
+                for source in ((item.get("action") or {}).get("sources") or []):
+                    url = (source or {}).get("url")
+                    if isinstance(url, str) and url.strip():
+                        collected.append(url.strip())
+            if item.get("type") == "message":
+                for part in item.get("content", []):
+                    for annotation in part.get("annotations", []) or []:
+                        url = annotation.get("url")
+                        if isinstance(url, str) and url.strip():
+                            collected.append(url.strip())
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for url in collected:
+            if url not in seen:
+                seen.add(url)
+                deduped.append(url)
+        return tuple(deduped)
+
     try:
         content = _extract_output_text(data)
     except Exception as exc:
         raise RuntimeError(f"OpenAI response parse error: {exc}")
 
     try:
-        return json.loads(content)
+        parsed_payload = json.loads(content)
     except Exception as exc:
         raise RuntimeError(f"OpenAI did not return valid JSON: {exc}; content={content[:400]}")
+
+    return OpenAIJsonResult(payload=parsed_payload, source_urls=_extract_source_urls(data))
 
 
 def _build_prompts(
@@ -579,7 +610,7 @@ def run_market_diagnostic(
         for attempt in range(2):
             validation_attempts = attempt + 1
             if attempt == 0:
-                model_json = _openai_chat_completion_json(system_prompt=system_prompt, user_prompt=user_prompt)
+                model_result = _openai_chat_completion_json(system_prompt=system_prompt, user_prompt=user_prompt)
             else:
                 repair_system, repair_user = _build_repair_prompts(
                     run_date_utc=run_date_utc,
@@ -589,8 +620,9 @@ def run_market_diagnostic(
                     previous_output=previous_output,
                     recent_titles=recent_titles,
                 )
-                model_json = _openai_chat_completion_json(system_prompt=repair_system, user_prompt=repair_user)
+                model_result = _openai_chat_completion_json(system_prompt=repair_system, user_prompt=repair_user)
 
+            model_json = model_result.payload
             previous_output = model_json
 
             try:
@@ -602,6 +634,7 @@ def run_market_diagnostic(
                     raise ValueError("published must be true")
                 if payload.pinned is not False:
                     raise ValueError("pinned must be false")
+                validate_citations_match_sources(payload.content_markdown, model_result.source_urls)
                 payload.title = _ensure_non_reused_title(payload.title, recent_titles, run_date_utc)
                 generation_mode = "model"
                 last_validation_error = None

@@ -27,7 +27,8 @@ def test_openai_chat_completions_json_smoke():
         overall_deadline_seconds=25,
     )
 
-    assert isinstance(data, dict)
-    assert data.get("ok") in {True, False}
-    assert isinstance(data.get("note", ""), str)
+    assert isinstance(data.payload, dict)
+    assert data.payload.get("ok") in {True, False}
+    assert isinstance(data.payload.get("note", ""), str)
+    assert isinstance(data.source_urls, tuple)
 

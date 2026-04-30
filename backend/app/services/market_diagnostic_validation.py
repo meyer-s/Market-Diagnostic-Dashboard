@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 
 REQUIRED_H2_HEADINGS: tuple[str, ...] = (
@@ -15,6 +15,7 @@ REQUIRED_H2_HEADINGS: tuple[str, ...] = (
 )
 
 SLUG_RE = re.compile(r"^market-diagnostic-\d{4}-\d{2}-\d{2}$")
+SOURCE_CITATION_RE = re.compile(r"\(Source:\s*([^)]+)\)\s*$")
 
 
 def validate_required_tags(tags: list[str]) -> None:
@@ -59,6 +60,51 @@ def _is_valid_http_url(value: str) -> bool:
         return False
 
     return True
+
+
+def normalize_http_url(value: str) -> str:
+    parsed = urlparse((value or "").strip())
+    filtered_query = [
+        (key, item_value)
+        for key, item_value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_")
+    ]
+    normalized_path = parsed.path.rstrip("/") or "/"
+    return urlunparse(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            normalized_path,
+            parsed.params,
+            urlencode(filtered_query, doseq=True),
+            "",
+        )
+    )
+
+
+def extract_citation_urls(content_markdown: str) -> list[str]:
+    citations: list[str] = []
+    for line in (content_markdown or "").splitlines():
+        match = SOURCE_CITATION_RE.search(line.strip())
+        if match:
+            citations.append((match.group(1) or "").strip())
+    return citations
+
+
+def validate_citations_match_sources(content_markdown: str, source_urls: list[str] | tuple[str, ...]) -> None:
+    allowed = {
+        normalize_http_url(url)
+        for url in (source_urls or [])
+        if isinstance(url, str) and _is_valid_http_url(url)
+    }
+    if not allowed:
+        raise ValueError("OpenAI response must include web search source URLs")
+
+    for cited_url in extract_citation_urls(content_markdown):
+        if not _is_valid_http_url(cited_url):
+            continue
+        if normalize_http_url(cited_url) not in allowed:
+            raise ValueError(f"citation URL must match a returned web search source: {cited_url}")
 
 
 def validate_chart_urls(chart_urls: list[str]) -> None:
@@ -151,7 +197,7 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
             # Allow explicit no-change sections without fresh bullet points.
             if len(bullets) > 0:
                 for bullet in bullets:
-                    match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)
+                    match = SOURCE_CITATION_RE.search(bullet)
                     if match is None:
                         raise ValueError(f"{heading} bullets must end with a citation '(Source: ...)'")
                     source_value = (match.group(1) or "").strip()
@@ -163,7 +209,7 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
             raise ValueError(f"{heading} must include 3-7 bullet points or an explicit No Change line")
 
         for bullet in bullets:
-            match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)
+            match = SOURCE_CITATION_RE.search(bullet)
             if match is None:
                 raise ValueError(f"{heading} bullets must end with a citation '(Source: ...)'")
             source_value = (match.group(1) or "").strip()
@@ -198,7 +244,7 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
         raise ValueError("Risk Regime Assessment must include 4-7 bullet points")
 
     for bullet in regime_bullets:
-        match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)
+        match = SOURCE_CITATION_RE.search(bullet)
         if match is None:
             raise ValueError("Risk Regime Assessment bullets must end with a citation '(Source: ...)'")
         source_value = (match.group(1) or "").strip()

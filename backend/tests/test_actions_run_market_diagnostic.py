@@ -13,8 +13,9 @@ from sqlalchemy.pool import StaticPool
 from app.api.actions import router as actions_router
 from app.core.config import settings
 from app.core.db import Base
+from app.services.market_diagnostic_runner import OpenAIJsonResult
 from app.services.market_diagnostic_runner import _build_prompts
-from app.services.market_diagnostic_validation import validate_market_diagnostic_structure
+from app.services.market_diagnostic_validation import validate_citations_match_sources, validate_market_diagnostic_structure
 
 def _valid_generated_payload(*, run_date_utc: str) -> dict:
     return {
@@ -97,7 +98,17 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         import json as _json
 
         parsed = _json.loads(user_prompt)
-        return _valid_generated_payload(run_date_utc=parsed["run_date_utc"])
+        return OpenAIJsonResult(
+            payload=_valid_generated_payload(run_date_utc=parsed["run_date_utc"]),
+            source_urls=(
+                "https://example.com/earnings",
+                "https://example.com/credit",
+                "https://example.com/growth",
+                "https://example.com/conditions",
+                "https://example.com/policy",
+                "https://example.com/regime",
+            ),
+        )
 
     monkeypatch.setattr(runner, "_openai_chat_completion_json", fake_openai, raising=True)
 
@@ -319,3 +330,58 @@ Confidence: Medium
 
     with pytest.raises(ValueError, match="valid http"):
         validate_market_diagnostic_structure(content_markdown)
+
+
+def test_citations_must_match_returned_source_urls():
+    content_markdown = """Date: 2026-04-30 (UTC)
+
+## Earnings / EPS Revisions (S&P 500)
+Trend: Earnings tone improved on fresh mega-cap reports.
+- Item 1. (Source: https://example.com/not-in-sources)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟢 Supportive
+
+## Credit Stress (HY OAS, IG Spreads, Bank CDS)
+Trend: Stable.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Growth (Nowcasts/PMIs + Sahm Rule Proximity)
+Trend: Moderating.
+No Change: No material change since the prior weekly recap.
+Signal: 🟡 Mixed
+
+## Financial Conditions Indexes
+Trend: Neutral.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Policy / Geopolitical Headlines
+Trend: Watchful.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Risk Regime Assessment
+Risk Regime: 🟡 Fragile but improving
+Correction risk elevated?: No
+Recession risk elevated?: No
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+- Item 4. (Source: https://example.com/4)
+Final Regime: 🟡 Stay selective
+Confidence: Medium
+"""
+
+    with pytest.raises(ValueError, match="must match a returned web search source"):
+        validate_citations_match_sources(
+            content_markdown,
+            ["https://example.com/1", "https://example.com/2", "https://example.com/3", "https://example.com/4"],
+        )
