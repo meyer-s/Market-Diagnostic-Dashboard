@@ -460,6 +460,8 @@ def _build_repair_prompts(
         "The JSON MUST contain exactly these top-level keys: "
         "title, summary, status, tags, slug, content_markdown, chart_urls, published, pinned.\n"
         "The summary is shown as an 'AI Summary' block at the top of the post, so it must read like a plain-English synthesis, not a subtitle.\n"
+        "Preserve the required post structure exactly during repair: keep every required heading, keep every required Trend/Signal line, and keep the Risk Regime fields exactly named.\n"
+        "If the previous output used placeholders, malformed citations, or dropped required lines, replace them with fully valid content rather than paraphrasing around the problem.\n"
         "Only use the emojis 🟢🟡🔴 in Signal/Risk Regime lines.\n"
         "Fix validation issues by adjusting content_markdown (and other fields if necessary) so it passes strict validation.\n"
     )
@@ -476,6 +478,17 @@ def _build_repair_prompts(
             "recent_titles_to_avoid_repeating_verbatim": list(recent_titles),
             "validation_error": error_snippet,
             "previous_output": previous_output,
+            "schema": {
+                "title": "specific recap headline",
+                "summary": "plain-English AI summary in short readable paragraphs",
+                "status": "GREEN|YELLOW|RED",
+                "tags": ["market-diagnostic", "macro", "example-topic"],
+                "slug": f"market-diagnostic-{run_date_utc}",
+                "content_markdown": "Must follow the exact section template below.",
+                "chart_urls": [],
+                "published": True,
+                "pinned": False,
+            },
             "rules": [
                 "Output JSON only (no markdown fences, no commentary).",
                 f"slug MUST equal market-diagnostic-{run_date_utc}.",
@@ -486,17 +499,61 @@ def _build_repair_prompts(
                 "Do not reuse any recent title verbatim; pick a new headline framing.",
                 "tags MUST include market-diagnostic and macro, plus additional topical tags.",
                 "content_markdown MUST include required headings in order and exactly once each.",
+                "Do not add freeform paragraphs inside content_markdown other than the top date line.",
                 "Each of the first 5 sections must include a Trend line and a Signal line.",
+                "Do not omit Trend or Signal lines during repair.",
                 "For each of the first 5 sections, use either 3-7 sourced bullets OR a single 'No Change:' line.",
                 "When there are material updates, prefer 4-6 short, specific bullets rather than the bare minimum.",
                 "Include recent notable earnings, major market moves, and standout highlights whenever they materially changed the backdrop.",
                 "Strongly prefer sources from the last 72 hours for earnings, major moves, and headlines when available.",
                 "Each bullet must end with '(Source: https://full.real.url/path)' using a full real http(s) URL. No citations on separate lines.",
+                "Every citation URL must match one of the web search source URLs you actually used.",
                 "Never use placeholder citations or template text such as https://..., https://example.com, example.com, REAL_URL, SOURCE_URL, or ellipses.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
                 "Prefer citations from the last 7 days whenever possible.",
                 "If there is no material update in a section, use: 'No Change: No material change since the prior weekly recap.'",
             ],
+            "format_template": (
+                "Date: YYYY-MM-DD (UTC)\n\n"
+                "## Earnings / EPS Revisions (S&P 500)\n"
+                "Trend: 1-2 short sentences.\n"
+                "- **Earnings:** ... (Source: full real http(s) URL)\n"
+                "- **Revisions:** ... (Source: full real http(s) URL)\n"
+                "- **Leadership:** ... (Source: full real http(s) URL)\n"
+                "Signal: 🟡 One short line.\n\n"
+                "## Credit Stress (HY OAS, IG Spreads, Bank CDS)\n"
+                "Trend: 1-2 short sentences.\n"
+                "- **Spreads:** ... (Source: full real http(s) URL)\n"
+                "- **Banks/Funding:** ... (Source: full real http(s) URL)\n"
+                "- **Cross-asset read-through:** ... (Source: full real http(s) URL)\n"
+                "Signal: 🟡 One short line.\n\n"
+                "## Growth (Nowcasts/PMIs + Sahm Rule Proximity)\n"
+                "Trend: 1-2 short sentences.\n"
+                "No Change: No material change since the prior weekly recap.\n"
+                "Signal: 🟡 One short line.\n\n"
+                "## Financial Conditions Indexes\n"
+                "Trend: 1-2 short sentences.\n"
+                "- **Rates/vol:** ... (Source: full real http(s) URL)\n"
+                "- **Liquidity:** ... (Source: full real http(s) URL)\n"
+                "- **Market impact:** ... (Source: full real http(s) URL)\n"
+                "Signal: 🟡 One short line.\n\n"
+                "## Policy / Geopolitical Headlines\n"
+                "Trend: 1-2 short sentences.\n"
+                "- **Policy:** ... (Source: full real http(s) URL)\n"
+                "- **Geopolitics:** ... (Source: full real http(s) URL)\n"
+                "- **Market reaction:** ... (Source: full real http(s) URL)\n"
+                "Signal: 🟡 One short line.\n\n"
+                "## Risk Regime Assessment\n"
+                "Risk Regime: 🟡 One short line.\n"
+                "Correction risk elevated?: Yes/No\n"
+                "Recession risk elevated?: Yes/No\n"
+                "- **What improved:** ... (Source: full real http(s) URL)\n"
+                "- **What worsened:** ... (Source: full real http(s) URL)\n"
+                "- **Best recent evidence:** ... (Source: full real http(s) URL)\n"
+                "- **Biggest unresolved risk:** ... (Source: full real http(s) URL)\n"
+                "Final Regime: 🟡 One short line.\n"
+                "Confidence: Medium"
+            ),
         },
         separators=(",", ":"),
         sort_keys=True,
