@@ -336,10 +336,11 @@ def _build_prompts(
                 "In the Earnings / EPS Revisions section, include recent notable earnings beats/misses, guidance changes, revisions, or margin commentary when available.",
                 "Across the recap, include major market moves and highlights when they materially changed the backdrop: leadership, laggards, outsized sector moves, rates/credit shifts, FX or commodity moves, and policy-driven reactions.",
                 "At least one bullet in the recap should capture a clear market highlight or standout move from the last 1-2 trading days when such a move exists.",
-                "Each bullet must end with a citation in the format '(Source: https://...)' using a real http(s) URL.",
+                "Each bullet must end with a citation in the format '(Source: https://full.real.url/path)' using a full real http(s) URL.",
                 "Do not put citations on separate lines; the citation must be at the end of the bullet line.",
                 "If you cannot find a source URL for a bullet, do not include that bullet.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
+                "Never use placeholder citations or template text such as https://..., https://example.com, example.com, REAL_URL, SOURCE_URL, or ellipses.",
                 "Prioritize sources published within the last 7 days relative to run_date_utc; avoid stale sources whenever fresher sources exist.",
                 "Strongly prefer sources from the last 72 hours for earnings, major moves, and headlines when available.",
                 "If a section has no material change versus last recap, do not add fresh bullets there; use 'No Change: No material change since the prior weekly recap.' instead.",
@@ -366,16 +367,16 @@ def _build_prompts(
                 "Date: YYYY-MM-DD (UTC)\n\n"
                 "## Earnings / EPS Revisions (S&P 500)\n"
                 "Trend: 1-2 short sentences on earnings tone, estimate direction, and why it matters now.\n"
-                "- **Earnings:** Company/result/guidance takeaway with the market implication. (Source: https://...)\n"
-                "- **Revisions:** Estimate, margin, or sector breadth shift with context. (Source: https://...)\n"
-                "- **Leadership:** Market highlight tied to winners/laggards or post-earnings reaction. (Source: https://...)\n"
-                "- **Watch item:** Fresh risk or support level from management commentary or estimates. (Source: https://...)\n"
+                "- **Earnings:** Company/result/guidance takeaway with the market implication. (Source: full real http(s) URL)\n"
+                "- **Revisions:** Estimate, margin, or sector breadth shift with context. (Source: full real http(s) URL)\n"
+                "- **Leadership:** Market highlight tied to winners/laggards or post-earnings reaction. (Source: full real http(s) URL)\n"
+                "- **Watch item:** Fresh risk or support level from management commentary or estimates. (Source: full real http(s) URL)\n"
                 "Signal: 🟢 One short line on whether earnings are adding to or subtracting from risk appetite.\n\n"
                 "## Credit Stress (HY OAS, IG Spreads, Bank CDS)\n"
                 "Trend: 1-2 short sentences on spreads, funding stress, and whether conditions tightened or eased.\n"
-                "- **Spreads:** HY/IG/CDS move with size and direction. (Source: https://...)\n"
-                "- **Banks/Funding:** Bank CDS, lending, or funding-market highlight. (Source: https://...)\n"
-                "- **Cross-asset read-through:** How credit confirms or diverges from equities/rates. (Source: https://...)\n"
+                "- **Spreads:** HY/IG/CDS move with size and direction. (Source: full real http(s) URL)\n"
+                "- **Banks/Funding:** Bank CDS, lending, or funding-market highlight. (Source: full real http(s) URL)\n"
+                "- **Cross-asset read-through:** How credit confirms or diverges from equities/rates. (Source: full real http(s) URL)\n"
                 "Signal: 🟡 One short line on whether credit is confirming risk-on or flashing caution.\n\n"
                 "## Growth (Nowcasts/PMIs + Sahm Rule Proximity)\n"
                 "Trend: 1-2 short sentences on growth momentum, PMIs/nowcasts, and labor deterioration risk.\n"
@@ -383,25 +384,25 @@ def _build_prompts(
                 "Signal: 🟡 One short line on whether growth data are stabilizing, reaccelerating, or slowing.\n\n"
                 "## Financial Conditions Indexes\n"
                 "Trend: 1-2 short sentences on whether overall conditions are easing, stable, or tightening.\n"
-                "- **Rates/vol:** Treasury, MOVE, or equity vol move affecting conditions. (Source: https://...)\n"
-                "- **Liquidity:** FCI, funding, or reserve/liquidity signal. (Source: https://...)\n"
-                "- **Market impact:** The standout move changing the tactical backdrop. (Source: https://...)\n"
+                "- **Rates/vol:** Treasury, MOVE, or equity vol move affecting conditions. (Source: full real http(s) URL)\n"
+                "- **Liquidity:** FCI, funding, or reserve/liquidity signal. (Source: full real http(s) URL)\n"
+                "- **Market impact:** The standout move changing the tactical backdrop. (Source: full real http(s) URL)\n"
                 "Signal: 🟡 One short line on whether conditions support adding risk or staying selective.\n\n"
                 "## Policy / Geopolitical Headlines\n"
                 "Trend: 1-2 short sentences on the dominant policy or geopolitical catalyst and market sensitivity to it.\n"
-                "- **Policy:** Central bank, Treasury, fiscal, or regulatory headline. (Source: https://...)\n"
-                "- **Geopolitics:** Event risk or escalation/de-escalation that matters for markets. (Source: https://...)\n"
-                "- **Market reaction:** Major move or sector highlight tied to the headline. (Source: https://...)\n"
+                "- **Policy:** Central bank, Treasury, fiscal, or regulatory headline. (Source: full real http(s) URL)\n"
+                "- **Geopolitics:** Event risk or escalation/de-escalation that matters for markets. (Source: full real http(s) URL)\n"
+                "- **Market reaction:** Major move or sector highlight tied to the headline. (Source: full real http(s) URL)\n"
                 "Signal: 🟡 One short line on whether headlines are increasing tail risk or fading.\n\n"
                 "## Risk Regime Assessment\n"
                 "Risk Regime: 🟡 One short line naming the current regime.\n"
                 "Correction risk elevated?: Yes/No\n"
                 "Recession risk elevated?: Yes/No\n"
-                "- **What improved:** ... (Source: https://...)\n"
-                "- **What worsened:** ... (Source: https://...)\n"
-                "- **Best recent evidence:** ... (Source: https://...)\n"
-                "- **Biggest unresolved risk:** ... (Source: https://...)\n"
-                "- **Tactical implication:** ... (Source: https://...)\n"
+                "- **What improved:** ... (Source: full real http(s) URL)\n"
+                "- **What worsened:** ... (Source: full real http(s) URL)\n"
+                "- **Best recent evidence:** ... (Source: full real http(s) URL)\n"
+                "- **Biggest unresolved risk:** ... (Source: full real http(s) URL)\n"
+                "- **Tactical implication:** ... (Source: full real http(s) URL)\n"
                 "Final Regime: 🟡 One short line on positioning posture.\n"
                 "Confidence: Medium"
             ),
@@ -459,7 +460,8 @@ def _build_repair_prompts(
                 "When there are material updates, prefer 4-6 short, specific bullets rather than the bare minimum.",
                 "Include recent notable earnings, major market moves, and standout highlights whenever they materially changed the backdrop.",
                 "Strongly prefer sources from the last 72 hours for earnings, major moves, and headlines when available.",
-                "Each bullet must end with '(Source: https://...)' using a real http(s) URL. No citations on separate lines.",
+                "Each bullet must end with '(Source: https://full.real.url/path)' using a full real http(s) URL. No citations on separate lines.",
+                "Never use placeholder citations or template text such as https://..., https://example.com, example.com, REAL_URL, SOURCE_URL, or ellipses.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
                 "Prefer citations from the last 7 days whenever possible.",
                 "If there is no material update in a section, use: 'No Change: No material change since the prior weekly recap.'",

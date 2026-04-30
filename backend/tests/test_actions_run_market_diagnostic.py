@@ -206,6 +206,7 @@ def test_prompt_instructions_emphasize_recent_readable_recaps():
     assert "Favor the freshest material possible" in combined
     assert "recent notable earnings" in combined
     assert "major market moves" in combined
+    assert "Never use placeholder citations" in combined
     assert '"coverage_targets"' in user_prompt
     assert "3-7 bullets" in combined
 
@@ -266,3 +267,55 @@ Confidence: Medium
 """
 
     validate_market_diagnostic_structure(content_markdown)
+
+
+def test_validation_rejects_placeholder_source_urls():
+    content_markdown = """Date: 2026-04-30 (UTC)
+
+## Earnings / EPS Revisions (S&P 500)
+Trend: Earnings tone improved on fresh mega-cap reports.
+- Item 1. (Source: https://...)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟢 Supportive
+
+## Credit Stress (HY OAS, IG Spreads, Bank CDS)
+Trend: Stable.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Growth (Nowcasts/PMIs + Sahm Rule Proximity)
+Trend: Moderating.
+No Change: No material change since the prior weekly recap.
+Signal: 🟡 Mixed
+
+## Financial Conditions Indexes
+Trend: Neutral.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Policy / Geopolitical Headlines
+Trend: Watchful.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Risk Regime Assessment
+Risk Regime: 🟡 Fragile but improving
+Correction risk elevated?: No
+Recession risk elevated?: No
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+- Item 4. (Source: https://example.com/4)
+Final Regime: 🟡 Stay selective
+Confidence: Medium
+"""
+
+    with pytest.raises(ValueError, match="valid http"):
+        validate_market_diagnostic_structure(content_markdown)

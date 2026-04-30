@@ -44,11 +44,21 @@ def validate_slug(slug: str, *, run_date_utc: str | None = None) -> None:
 
 
 def _is_valid_http_url(value: str) -> bool:
+    candidate = (value or "").strip()
+    if not candidate or "..." in candidate:
+        return False
     try:
-        parsed = urlparse((value or "").strip())
+        parsed = urlparse(candidate)
     except Exception:
         return False
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+
+    host = parsed.hostname or ""
+    if not host or "." not in host or not any(ch.isalpha() for ch in host):
+        return False
+
+    return True
 
 
 def validate_chart_urls(chart_urls: list[str]) -> None:
