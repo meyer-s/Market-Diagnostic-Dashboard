@@ -128,38 +128,55 @@ def postprocess_citations(content_markdown: str, source_urls: tuple[str, ...] | 
 
 def postprocess_missing_section_content(content_markdown: str) -> str:
     """
-    For each of the first 5 required sections: if the section has no bullets and no No Change line,
-    insert a No Change line before the Signal line so the section passes structural validation.
+    For each of the first 5 required sections:
+    - If a Trend: line is missing, insert a generic one.
+    - If there are no bullets and no No Change line, insert a No Change line before Signal.
+    - If a Signal: line is missing, insert a generic one.
+    This keeps structural validation passing even when the model drops a required element.
     """
     text = content_markdown or ""
-    signal_re = re.compile(r"(?m)^(Signal:\s+.+)$")
-    no_change_re = re.compile(r"(?m)^No Change:\s+.+")
-    bullet_re = re.compile(r"(?m)^- .+")
+
+    _SECTION_HEADING_RE = re.compile(r"(?m)^(## .+)$")
+    _SIGNAL_RE = re.compile(r"(?m)^(Signal:\s+.+)$")
+    _TREND_RE = re.compile(r"(?m)^Trend:\s+.+")
+    _NO_CHANGE_RE = re.compile(r"(?m)^No Change:\s+.+")
+    _BULLET_RE = re.compile(r"(?m)^- .+")
 
     sections_to_fix = set(REQUIRED_H2_HEADINGS[:5])
-    result = text
-    section_matches = list(re.finditer(r"(?m)^(## .+)$", text))
+    section_matches = list(_SECTION_HEADING_RE.finditer(text))
 
-    for idx, match in enumerate(section_matches):
+    # Process in reverse order so insertions don't shift earlier positions.
+    for idx in range(len(section_matches) - 1, -1, -1):
+        match = section_matches[idx]
         heading = match.group(1).strip()
         if heading not in sections_to_fix:
             continue
         start = match.start()
         end = section_matches[idx + 1].start() if idx + 1 < len(section_matches) else len(text)
         section_text = text[start:end]
-        if bullet_re.search(section_text) or no_change_re.search(section_text):
-            continue
-        # Section has neither bullets nor No Change — insert one before Signal.
-        signal_m = signal_re.search(section_text)
-        if not signal_m:
-            continue
-        insert_pos = start + signal_m.start()
-        no_change_line = "No Change: No material change since the prior weekly recap.\n"
-        result = result[:insert_pos] + no_change_line + result[insert_pos:]
-        # Adjust subsequent match positions (we only process forward, so update text reference).
-        text = result
 
-    return result
+        # Fix missing Signal: line (append before next heading).
+        if not _SIGNAL_RE.search(section_text):
+            section_end_abs = start + len(section_text)
+            text = text[:section_end_abs].rstrip() + "\nSignal: 🟡 No updated signal.\n" + text[section_end_abs:]
+            section_text = text[start : start + len(section_text) + len("\nSignal: \U0001f7e1 No updated signal.\n")]
+
+        # Fix missing bullets + No Change.
+        if not _BULLET_RE.search(section_text) and not _NO_CHANGE_RE.search(section_text):
+            signal_m = _SIGNAL_RE.search(section_text)
+            if signal_m:
+                insert_abs = start + signal_m.start()
+                no_change_line = "No Change: No material change since the prior weekly recap.\n"
+                text = text[:insert_abs] + no_change_line + text[insert_abs:]
+                section_text = text[start : start + len(section_text) + len(no_change_line)]
+
+        # Fix missing Trend: line — insert right after heading.
+        if not _TREND_RE.search(section_text):
+            heading_end = section_text.index("\n") + 1 if "\n" in section_text else len(section_text)
+            insert_abs = start + heading_end
+            text = text[:insert_abs] + "Trend: No material update from the prior week.\n" + text[insert_abs:]
+
+    return text
 
 
 def validate_citations_match_sources(content_markdown: str, source_urls: list[str] | tuple[str, ...]) -> None:
