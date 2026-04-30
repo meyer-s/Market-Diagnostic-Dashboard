@@ -96,9 +96,9 @@ def _openai_chat_completion_json(
     *,
     system_prompt: str,
     user_prompt: str,
-    timeout_seconds: int = 25,
+    timeout_seconds: int = 45,
     max_retries: int = 1,
-    overall_deadline_seconds: int = 30,
+    overall_deadline_seconds: int = 75,
 ) -> OpenAIJsonResult:
     api_key = (settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
