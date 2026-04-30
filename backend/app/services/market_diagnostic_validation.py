@@ -123,7 +123,7 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
     if len(sections) < len(REQUIRED_H2_HEADINGS):
         raise ValueError("content_markdown must include all required Market Diagnostic sections")
 
-    # First 5 sections require Trend + Signal lines and either 3-6 bullets or an explicit No Change line.
+    # First 5 sections require Trend + Signal lines and either 3-7 bullets or an explicit No Change line.
     for heading, section in sections[:5]:
         trend_ok = re.search(r"(?m)^Trend:\s+.+", section) is not None
         if not trend_ok:
@@ -149,8 +149,8 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
                         raise ValueError(f"{heading} citations must be valid http(s) URLs")
             continue
 
-        if not (3 <= len(bullets) <= 6):
-            raise ValueError(f"{heading} must include 3-6 bullet points or an explicit No Change line")
+        if not (3 <= len(bullets) <= 7):
+            raise ValueError(f"{heading} must include 3-7 bullet points or an explicit No Change line")
 
         for bullet in bullets:
             match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)
@@ -184,8 +184,8 @@ def validate_market_diagnostic_structure(content_markdown: str) -> None:
             raise ValueError("Confidence must be Low, Medium, or High when provided")
 
     regime_bullets = re.findall(r"(?m)^- .+$", regime_section)
-    if not (4 <= len(regime_bullets) <= 6):
-        raise ValueError("Risk Regime Assessment must include 4-6 bullet points")
+    if not (4 <= len(regime_bullets) <= 7):
+        raise ValueError("Risk Regime Assessment must include 4-7 bullet points")
 
     for bullet in regime_bullets:
         match = re.search(r"\(Source:\s*([^)]+)\)\s*$", bullet)

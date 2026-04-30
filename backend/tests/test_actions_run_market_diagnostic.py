@@ -13,6 +13,8 @@ from sqlalchemy.pool import StaticPool
 from app.api.actions import router as actions_router
 from app.core.config import settings
 from app.core.db import Base
+from app.services.market_diagnostic_runner import _build_prompts
+from app.services.market_diagnostic_validation import validate_market_diagnostic_structure
 
 def _valid_generated_payload(*, run_date_utc: str) -> dict:
     return {
@@ -189,3 +191,78 @@ def test_openai_failure_returns_error_and_logs_error_code(
     assert log_json["slug"] == f"market-diagnostic-{safe_date}"
     assert log_json["generation_mode"] == "model"
     assert log_json["openai_error_code"] == "insufficient_quota"
+
+
+def test_prompt_instructions_emphasize_recent_readable_recaps():
+    system_prompt, user_prompt = _build_prompts(
+        run_date_utc="2026-04-30",
+        day_of_week="Wednesday",
+        mode="manual",
+        recent_titles=["Prior title"],
+    )
+
+    combined = system_prompt + "\n" + user_prompt
+    assert "Write for fast human scanning" in combined
+    assert "Favor the freshest material possible" in combined
+    assert "recent notable earnings" in combined
+    assert "major market moves" in combined
+    assert '"coverage_targets"' in user_prompt
+    assert "3-7 bullets" in combined
+
+
+def test_validation_allows_richer_sections_with_seven_bullets():
+    content_markdown = """Date: 2026-04-30 (UTC)
+
+## Earnings / EPS Revisions (S&P 500)
+Trend: Earnings tone improved on fresh mega-cap reports.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+- Item 4. (Source: https://example.com/4)
+- Item 5. (Source: https://example.com/5)
+- Item 6. (Source: https://example.com/6)
+- Item 7. (Source: https://example.com/7)
+Signal: 🟢 Supportive
+
+## Credit Stress (HY OAS, IG Spreads, Bank CDS)
+Trend: Stable.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Growth (Nowcasts/PMIs + Sahm Rule Proximity)
+Trend: Moderating.
+No Change: No material change since the prior weekly recap.
+Signal: 🟡 Mixed
+
+## Financial Conditions Indexes
+Trend: Neutral.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Policy / Geopolitical Headlines
+Trend: Watchful.
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+Signal: 🟡 Mixed
+
+## Risk Regime Assessment
+Risk Regime: 🟡 Fragile but improving
+Correction risk elevated?: No
+Recession risk elevated?: No
+- Item 1. (Source: https://example.com/1)
+- Item 2. (Source: https://example.com/2)
+- Item 3. (Source: https://example.com/3)
+- Item 4. (Source: https://example.com/4)
+- Item 5. (Source: https://example.com/5)
+- Item 6. (Source: https://example.com/6)
+- Item 7. (Source: https://example.com/7)
+Final Regime: 🟡 Stay selective
+Confidence: Medium
+"""
+
+    validate_market_diagnostic_structure(content_markdown)

@@ -270,6 +270,10 @@ def _build_prompts(
         "The JSON MUST contain exactly these top-level keys: "
         "title, summary, status, tags, slug, content_markdown, chart_urls, published, pinned.\n"
         "The summary is shown as an 'AI Summary' block at the top of the post, so it must read like a plain-English synthesis, not a subtitle.\n"
+        "Write for fast human scanning: short paragraphs, short bullets, direct verbs, and concrete numbers.\n"
+        "Favor the freshest material possible, especially notable earnings, major cross-asset moves, leadership/laggard moves, and policy headlines from the last 1-5 trading days.\n"
+        "When material updates exist, prefer richer coverage over generic filler. Name the companies, indexes, sectors, yields, spreads, commodities, or currencies that actually moved.\n"
+        "Make bullets readable by leading with the takeaway, then the evidence, then the market implication.\n"
         "Only use the emojis 🟢🟡🔴 in Signal/Risk Regime lines.\n"
     )
 
@@ -296,13 +300,13 @@ def _build_prompts(
                     "## Risk Regime Assessment. "
                     "Each of the first 5 sections must include: "
                     "a 'Trend:' line, a 'Signal:' line with 🟢🟡🔴, and either "
-                    "(A) 3-6 bullets ending with '(Source: ...)' OR "
+                    "(A) 3-7 bullets ending with '(Source: ...)' OR "
                     "(B) a single 'No Change:' line stating no material change since last recap. "
                     "The Risk Regime Assessment must include: "
                     "'Risk Regime:' (with 🟢🟡🔴), "
                     "'Correction risk elevated?: Yes/No', "
                     "'Recession risk elevated?: Yes/No', "
-                    "4-6 bullets ending with '(Source: ...)', "
+                    "4-7 bullets ending with '(Source: ...)', "
                     "and 'Final Regime:' with 🟢🟡🔴. "
                     "Optional: 'Confidence: Low|Medium|High'."
                 ),
@@ -320,58 +324,85 @@ def _build_prompts(
                 "summary should be concise but flexible: a few short sentences is fine, and a slightly longer paragraph is fine when it adds clarity.",
                 "summary MUST read like a plain-language AI synthesis for a human reader, not a subtitle or bullet list.",
                 "summary should explain the current backdrop and what that means for conviction, caution, or risk-taking.",
+                "summary should be highly readable: 2 short paragraphs is preferred when it improves clarity; avoid long dense blocks.",
                 "tags MUST include market-diagnostic and macro, plus 1-4 additional lowercase hyphenated topical tags.",
                 "chart_urls MUST be an empty array unless you have real http(s) URLs from sources (otherwise keep []).",
                 "content_markdown MUST include the required headings in order and exactly once each.",
                 "Include a date/time stamp line at the top (e.g., 'Date: YYYY-MM-DD (UTC)').",
                 "Every section must include exactly one line starting with 'Trend:' and one line starting with 'Signal:'.",
+                "When a section has active news flow, prefer 4-6 bullets instead of the bare minimum so the recap captures the most important developments.",
+                "Use short bullets that are easy to scan. Start with the main takeaway, then add the supporting stat or event, then the implication when useful.",
+                "Bullets should be specific, not generic. Name the companies, sectors, indexes, yields, spreads, commodities, or currencies involved.",
+                "In the Earnings / EPS Revisions section, include recent notable earnings beats/misses, guidance changes, revisions, or margin commentary when available.",
+                "Across the recap, include major market moves and highlights when they materially changed the backdrop: leadership, laggards, outsized sector moves, rates/credit shifts, FX or commodity moves, and policy-driven reactions.",
+                "At least one bullet in the recap should capture a clear market highlight or standout move from the last 1-2 trading days when such a move exists.",
                 "Each bullet must end with a citation in the format '(Source: https://...)' using a real http(s) URL.",
                 "Do not put citations on separate lines; the citation must be at the end of the bullet line.",
                 "If you cannot find a source URL for a bullet, do not include that bullet.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
                 "Prioritize sources published within the last 7 days relative to run_date_utc; avoid stale sources whenever fresher sources exist.",
+                "Strongly prefer sources from the last 72 hours for earnings, major moves, and headlines when available.",
                 "If a section has no material change versus last recap, do not add fresh bullets there; use 'No Change: No material change since the prior weekly recap.' instead.",
                 "Use only 🟢🟡🔴 for Signal/Risk Regime lines. No other emojis.",
             ],
+            "coverage_targets": {
+                "earnings_examples": [
+                    "fresh beats/misses or guidance cuts/raises from major index weights",
+                    "EPS revision breadth or sector-level estimate changes",
+                    "management commentary that changed market leadership or risk appetite"
+                ],
+                "major_moves_examples": [
+                    "outsized moves in SPX, Nasdaq, Russell 2000, regional banks, semis, energy, defensives, or other leadership groups",
+                    "sharp Treasury yield, credit spread, dollar, gold, oil, or FX moves that changed conditions",
+                    "post-event reactions to Fed, Treasury, payrolls, CPI, PMI, or geopolitical headlines"
+                ],
+                "readability_examples": [
+                    "prefer 1-2 sentence Trend and Signal lines",
+                    "prefer bullets under roughly 28 words when possible",
+                    "avoid repeating the same source or the same point in different wording"
+                ]
+            },
             "format_template": (
                 "Date: YYYY-MM-DD (UTC)\n\n"
                 "## Earnings / EPS Revisions (S&P 500)\n"
-                "Trend: ...\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "Signal: 🟢 ...\n\n"
+                "Trend: 1-2 short sentences on earnings tone, estimate direction, and why it matters now.\n"
+                "- **Earnings:** Company/result/guidance takeaway with the market implication. (Source: https://...)\n"
+                "- **Revisions:** Estimate, margin, or sector breadth shift with context. (Source: https://...)\n"
+                "- **Leadership:** Market highlight tied to winners/laggards or post-earnings reaction. (Source: https://...)\n"
+                "- **Watch item:** Fresh risk or support level from management commentary or estimates. (Source: https://...)\n"
+                "Signal: 🟢 One short line on whether earnings are adding to or subtracting from risk appetite.\n\n"
                 "## Credit Stress (HY OAS, IG Spreads, Bank CDS)\n"
-                "Trend: ...\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "Signal: 🟡 ...\n\n"
+                "Trend: 1-2 short sentences on spreads, funding stress, and whether conditions tightened or eased.\n"
+                "- **Spreads:** HY/IG/CDS move with size and direction. (Source: https://...)\n"
+                "- **Banks/Funding:** Bank CDS, lending, or funding-market highlight. (Source: https://...)\n"
+                "- **Cross-asset read-through:** How credit confirms or diverges from equities/rates. (Source: https://...)\n"
+                "Signal: 🟡 One short line on whether credit is confirming risk-on or flashing caution.\n\n"
                 "## Growth (Nowcasts/PMIs + Sahm Rule Proximity)\n"
-                "Trend: ...\n"
+                "Trend: 1-2 short sentences on growth momentum, PMIs/nowcasts, and labor deterioration risk.\n"
                 "No Change: No material change since the prior weekly recap.\n"
-                "Signal: 🟡 ...\n\n"
+                "Signal: 🟡 One short line on whether growth data are stabilizing, reaccelerating, or slowing.\n\n"
                 "## Financial Conditions Indexes\n"
-                "Trend: ...\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "Signal: 🟡 ...\n\n"
+                "Trend: 1-2 short sentences on whether overall conditions are easing, stable, or tightening.\n"
+                "- **Rates/vol:** Treasury, MOVE, or equity vol move affecting conditions. (Source: https://...)\n"
+                "- **Liquidity:** FCI, funding, or reserve/liquidity signal. (Source: https://...)\n"
+                "- **Market impact:** The standout move changing the tactical backdrop. (Source: https://...)\n"
+                "Signal: 🟡 One short line on whether conditions support adding risk or staying selective.\n\n"
                 "## Policy / Geopolitical Headlines\n"
-                "Trend: ...\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "Signal: 🟡 ...\n\n"
+                "Trend: 1-2 short sentences on the dominant policy or geopolitical catalyst and market sensitivity to it.\n"
+                "- **Policy:** Central bank, Treasury, fiscal, or regulatory headline. (Source: https://...)\n"
+                "- **Geopolitics:** Event risk or escalation/de-escalation that matters for markets. (Source: https://...)\n"
+                "- **Market reaction:** Major move or sector highlight tied to the headline. (Source: https://...)\n"
+                "Signal: 🟡 One short line on whether headlines are increasing tail risk or fading.\n\n"
                 "## Risk Regime Assessment\n"
-                "Risk Regime: 🟡 ...\n"
+                "Risk Regime: 🟡 One short line naming the current regime.\n"
                 "Correction risk elevated?: Yes/No\n"
                 "Recession risk elevated?: Yes/No\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "- ... (Source: https://...)\n"
-                "Final Regime: 🟡 ...\n"
+                "- **What improved:** ... (Source: https://...)\n"
+                "- **What worsened:** ... (Source: https://...)\n"
+                "- **Best recent evidence:** ... (Source: https://...)\n"
+                "- **Biggest unresolved risk:** ... (Source: https://...)\n"
+                "- **Tactical implication:** ... (Source: https://...)\n"
+                "Final Regime: 🟡 One short line on positioning posture.\n"
                 "Confidence: Medium"
             ),
         },
@@ -419,11 +450,15 @@ def _build_repair_prompts(
                 "title and summary must be specific and non-boilerplate.",
                 "summary should be concise but flexible: a few short sentences is fine, and a slightly longer paragraph is fine when it adds clarity.",
                 "summary MUST read like a plain-language AI synthesis for a human reader, not a subtitle or bullet list.",
+                "summary should be highly readable; prefer short paragraphs over one dense block.",
                 "Do not reuse any recent title verbatim; pick a new headline framing.",
                 "tags MUST include market-diagnostic and macro, plus additional topical tags.",
                 "content_markdown MUST include required headings in order and exactly once each.",
                 "Each of the first 5 sections must include a Trend line and a Signal line.",
-                "For each of the first 5 sections, use either 3-6 sourced bullets OR a single 'No Change:' line.",
+                "For each of the first 5 sections, use either 3-7 sourced bullets OR a single 'No Change:' line.",
+                "When there are material updates, prefer 4-6 short, specific bullets rather than the bare minimum.",
+                "Include recent notable earnings, major market moves, and standout highlights whenever they materially changed the backdrop.",
+                "Strongly prefer sources from the last 72 hours for earnings, major moves, and headlines when available.",
                 "Each bullet must end with '(Source: https://...)' using a real http(s) URL. No citations on separate lines.",
                 "Do not invent citations; only cite URLs you actually found via web search.",
                 "Prefer citations from the last 7 days whenever possible.",
