@@ -409,10 +409,12 @@ def test_postprocess_citations_injects_real_urls():
         assert m is not None, f"Missing citation on: {bl}"
         assert _is_valid_http_url(m.group(1).strip()), f"Invalid URL on: {bl}"
 
-    # The bullet that already had a valid URL must be unchanged
-    assert "https://real.example.org/article" in result
+    # A valid URL that was not in returned sources should be replaced.
+    assert "https://real.example.org/article" not in result
     # The placeholder bullet must have been replaced with a real URL
     assert "https://..." not in result
+    # Any non-source citation must be replaced with one of the returned sources.
+    assert "https://www.example.com/xyz-earnings" not in result
     # The no-citation bullet must have gotten a URL appended
     assert "No citation here" not in result or any(
         "reuters.com" in l or "bloomberg.com" in l

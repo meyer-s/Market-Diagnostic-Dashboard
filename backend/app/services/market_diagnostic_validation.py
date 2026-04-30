@@ -101,6 +101,8 @@ def postprocess_citations(content_markdown: str, source_urls: tuple[str, ...] | 
     if not valid_sources:
         return content_markdown
 
+    allowed_normalized = {normalize_http_url(u) for u in valid_sources}
+
     lines = (content_markdown or "").splitlines()
     source_idx = 0
     result: list[str] = []
@@ -111,8 +113,9 @@ def postprocess_citations(content_markdown: str, source_urls: tuple[str, ...] | 
             citation_match = SOURCE_CITATION_RE.search(stripped)
             if citation_match:
                 cited = (citation_match.group(1) or "").strip()
-                if not _is_valid_http_url(cited):
-                    # Replace placeholder/invalid URL with a real one.
+                cited_ok = _is_valid_http_url(cited) and normalize_http_url(cited) in allowed_normalized
+                if not cited_ok:
+                    # Replace placeholder/invalid/non-source URL with a real returned source URL.
                     real_url = valid_sources[source_idx % len(valid_sources)]
                     source_idx += 1
                     line = SOURCE_CITATION_RE.sub(f"(Source: {real_url})", stripped)
