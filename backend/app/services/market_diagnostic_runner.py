@@ -18,7 +18,7 @@ from app.schemas.market_diagnostic_payload import (
     MarketDiagnosticRunResult,
 )
 from app.services.market_diagnostic_publisher import publish_market_diagnostic_for_date
-from app.services.market_diagnostic_validation import validate_citations_match_sources, validate_slug
+from app.services.market_diagnostic_validation import postprocess_citations, validate_citations_match_sources, validate_slug
 from app.services.update_posts import create_update_post_if_absent
 from app.utils.db_helpers import get_db_session
 
@@ -681,6 +681,15 @@ def run_market_diagnostic(
 
             model_json = model_result.payload
             previous_output = model_json
+
+            # Post-process: inject real source URLs into any bullet missing or having a bad citation.
+            # This avoids asking the model to get citation URLs exactly right — it already searched the web
+            # and we have the real source URLs from the API response.
+            if model_result.source_urls and isinstance(model_json.get("content_markdown"), str):
+                model_json = dict(model_json)
+                model_json["content_markdown"] = postprocess_citations(
+                    model_json["content_markdown"], model_result.source_urls
+                )
 
             try:
                 payload = MarketDiagnosticPublishPayload.model_validate(model_json)

@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.db import Base
 from app.services.market_diagnostic_runner import OpenAIJsonResult
 from app.services.market_diagnostic_runner import _build_prompts
-from app.services.market_diagnostic_validation import validate_citations_match_sources, validate_market_diagnostic_structure
+from app.services.market_diagnostic_validation import postprocess_citations, validate_citations_match_sources, validate_market_diagnostic_structure
 
 def _valid_generated_payload(*, run_date_utc: str) -> dict:
     return {
@@ -385,3 +385,38 @@ Confidence: Medium
             content_markdown,
             ["https://example.com/1", "https://example.com/2", "https://example.com/3", "https://example.com/4"],
         )
+
+
+def test_postprocess_citations_injects_real_urls():
+    raw_markdown = (
+        "Date: 2026-04-30 (UTC)\n\n"
+        "## Earnings / EPS Revisions (S&P 500)\n"
+        "Trend: Strong beats from mega-caps.\n"
+        "- **Earnings:** Meta beat by 12%. No citation here\n"
+        "- **Revisions:** EPS estimates rising. (Source: https://...)\n"
+        "- **Leadership:** Tech led gains. (Source: https://real.example.org/article)\n"
+        "Signal: 🟢 Supportive\n"
+    )
+    real_urls = ("https://reuters.com/article1", "https://bloomberg.com/article2")
+    result = postprocess_citations(raw_markdown, real_urls)
+
+    lines = result.splitlines()
+    bullet_lines = [l for l in lines if l.strip().startswith("- ")]
+    # All three bullets must now end with (Source: <valid url>)
+    from app.services.market_diagnostic_validation import SOURCE_CITATION_RE, _is_valid_http_url
+    for bl in bullet_lines:
+        m = SOURCE_CITATION_RE.search(bl.strip())
+        assert m is not None, f"Missing citation on: {bl}"
+        assert _is_valid_http_url(m.group(1).strip()), f"Invalid URL on: {bl}"
+
+    # The bullet that already had a valid URL must be unchanged
+    assert "https://real.example.org/article" in result
+    # The placeholder bullet must have been replaced with a real URL
+    assert "https://..." not in result
+    # The no-citation bullet must have gotten a URL appended
+    assert "No citation here" not in result or any(
+        "reuters.com" in l or "bloomberg.com" in l
+        for l in result.splitlines()
+        if "Meta beat" in l
+    )
+

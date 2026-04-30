@@ -91,6 +91,41 @@ def extract_citation_urls(content_markdown: str) -> list[str]:
     return citations
 
 
+def postprocess_citations(content_markdown: str, source_urls: tuple[str, ...] | list[str]) -> str:
+    """
+    For every bullet line that is missing a valid `(Source: ...)` citation, inject a real URL
+    from source_urls (cycling through them).  Lines that already have a valid citation are untouched.
+    Returns the original markdown unchanged if source_urls is empty.
+    """
+    valid_sources = [u for u in (source_urls or []) if isinstance(u, str) and _is_valid_http_url(u)]
+    if not valid_sources:
+        return content_markdown
+
+    lines = (content_markdown or "").splitlines()
+    source_idx = 0
+    result: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            citation_match = SOURCE_CITATION_RE.search(stripped)
+            if citation_match:
+                cited = (citation_match.group(1) or "").strip()
+                if not _is_valid_http_url(cited):
+                    # Replace placeholder/invalid URL with a real one.
+                    real_url = valid_sources[source_idx % len(valid_sources)]
+                    source_idx += 1
+                    line = SOURCE_CITATION_RE.sub(f"(Source: {real_url})", stripped)
+            else:
+                # No citation at all — append one.
+                real_url = valid_sources[source_idx % len(valid_sources)]
+                source_idx += 1
+                line = f"{stripped} (Source: {real_url})"
+        result.append(line)
+
+    return "\n".join(result)
+
+
 def validate_citations_match_sources(content_markdown: str, source_urls: list[str] | tuple[str, ...]) -> None:
     allowed = {
         normalize_http_url(url)
