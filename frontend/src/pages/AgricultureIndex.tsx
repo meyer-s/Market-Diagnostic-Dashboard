@@ -178,8 +178,8 @@ function StabilityTooltip({ active, payload, label }: { active?: boolean; payloa
   if (!active || !payload || payload.length === 0) return null;
 
   return (
-    <div className="max-w-xs rounded-lg border border-stealth-700 bg-stealth-950/95 p-3 text-xs shadow-xl">
-      <p className="font-semibold text-stealth-100">{label}</p>
+    <div className="max-w-xs rounded-xl border border-stealth-200/25 bg-stealth-950/45 p-3 text-xs shadow-[0_10px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl">
+      <p className="font-semibold text-white">{label}</p>
       <div className="mt-2 space-y-2">
         {payload.map((entry) => {
           const key = entry.dataKey as keyof typeof STABILITY_COMPONENT_META;
@@ -190,7 +190,7 @@ function StabilityTooltip({ active, payload, label }: { active?: boolean; payloa
               <p className="font-medium" style={{ color: entry.color ?? "#cbd5e1" }}>
                 {meta.label}: {formatTooltipValue(entry.value, 1)}
               </p>
-              <p className="text-[11px] leading-4 text-stealth-400">{meta.description}</p>
+              <p className="text-[11px] leading-4 text-stealth-200">{meta.description}</p>
             </div>
           );
         })}
