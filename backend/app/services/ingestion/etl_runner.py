@@ -153,6 +153,10 @@ class ETLRunner:
                 # This indicator fetches its data in the processing section below
                 # Just create placeholder series for now
                 series = [{"date": start_date, "value": 0.0}]
+            elif code == "SECTOR_REGIME_ALIGNMENT":
+                # This indicator fetches its data in the processing section below
+                # Just create placeholder series for now
+                series = [{"date": start_date, "value": 0.0}]
             elif code == "BREADTH_HEALTH":
                 # This indicator fetches its data in the processing section below
                 # Just create placeholder series for now
@@ -978,6 +982,73 @@ class ETLRunner:
                 lookback=ind.lookback_days_for_z,
                 trend_window=30,
                 direction=ind.direction,
+            )
+        elif code == "SECTOR_REGIME_ALIGNMENT":
+            # Regime-alignment score from sector leadership:
+            # in RED regimes defensives should lead; in GREEN regimes cyclicals should lead.
+            from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
+
+            defensive_sectors = {"XLU", "XLP", "XLV"}
+            cyclical_sectors = {"XLE", "XLF", "XLK", "XLY"}
+
+            # Keep latest projection run for each date in case there were multiple intraday reruns.
+            runs = (
+                db.query(SectorProjectionRun)
+                .order_by(SectorProjectionRun.as_of_date.asc(), SectorProjectionRun.created_at.asc())
+                .all()
+            )
+
+            runs_by_date = {}
+            for run in runs:
+                runs_by_date[run.as_of_date] = run
+
+            alignment_points = []
+            for run_date in sorted(runs_by_date.keys()):
+                run = runs_by_date[run_date]
+                values_3m = (
+                    db.query(SectorProjectionValue)
+                    .filter(
+                        SectorProjectionValue.run_id == run.id,
+                        SectorProjectionValue.horizon == "3m",
+                    )
+                    .all()
+                )
+
+                defensive_scores = [v.score_total for v in values_3m if v.sector_symbol in defensive_sectors]
+                cyclical_scores = [v.score_total for v in values_3m if v.sector_symbol in cyclical_sectors]
+
+                if not defensive_scores or not cyclical_scores:
+                    continue
+
+                defensive_avg = sum(defensive_scores) / len(defensive_scores)
+                cyclical_avg = sum(cyclical_scores) / len(cyclical_scores)
+                spread = defensive_avg - cyclical_avg
+
+                if run.system_state == "RED":
+                    alignment_score = 50 + (spread * 2.5)
+                elif run.system_state == "GREEN":
+                    alignment_score = 50 - (spread * 2.5)
+                else:
+                    alignment_score = 100 - abs(spread * 2)
+
+                alignment_score = max(0.0, min(100.0, alignment_score))
+                alignment_points.append({"date": run_date.isoformat(), "value": alignment_score})
+
+            if len(alignment_points) < 20:
+                db.close()
+                raise ValueError(
+                    f"Insufficient sector projection history for {code}: only {len(alignment_points)} points"
+                )
+
+            series = alignment_points
+            clean_values = series
+            raw_series = [point["value"] for point in series]
+
+            # Already a 0-100 stability score; map to z-space before applying direction adjustment.
+            score_to_z = lambda score: (score / 100.0) * 4 - 2
+            normalized_series = direction_adjusted(
+                [score_to_z(val) for val in raw_series],
+                ind.direction,
             )
         elif code == "UNRATE":
             # CRITICAL: For UNRATE, we store ABSOLUTE RATE but score based on 6-MONTH CHANGE

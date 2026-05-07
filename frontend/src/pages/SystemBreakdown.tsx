@@ -288,16 +288,16 @@ export default function SystemBreakdown() {
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
             <div className="invisible group-hover:visible absolute left-6 top-0 w-80 bg-stealth-850 border border-stealth-500 rounded-lg p-3 text-xs text-stealth-100 shadow-2xl z-10">
-              Several indicators capture overlapping aspects of risk appetite (e.g., equity prices, breadth, liquidity). This redundancy is intentional, reflecting the empirical tendency for equity stress to propagate rapidly across financial conditions. Weights are capped to prevent any single domain from dominating the composite.
+              Indicators are intentionally grouped by domain, but overlap is now constrained with conservative de-overlap weighting. Core composites (Bond, Liquidity, Analyst, Sentiment, Breadth) carry more influence, while overlapping standalone proxies (e.g., VIX, T10Y2Y) are retained for interpretability with reduced composite impact.
             </div>
           </div>
         </div>
         <p className="text-xs sm:text-sm text-stealth-300 leading-relaxed mb-3 md:mb-4">
           This Market Diagnostic Dashboard provides a comprehensive, real-time assessment of market stability by monitoring 
-          and analyzing <strong>{indicatorCount} critical indicators</strong> across seven domains: <strong>volatility</strong> (VIX),
-          <strong>equities</strong> (SPY, Breadth Health), <strong>interest rates</strong> (T10Y2Y), <strong>employment</strong> (UNRATE),
+          and analyzing <strong>{indicatorCount} critical indicators</strong> across domain groups: <strong>volatility and trend</strong> (VIX, SPY),
+          <strong>participation</strong> (Breadth Health), <strong>rates and labor</strong> (T10Y2Y, UNRATE),
           <strong>bonds</strong> (Bond Market Stability), <strong>liquidity</strong> (Liquidity Proxy), <strong>consumers</strong> (Consumer Health),
-          <strong>sentiment</strong> (Analyst Confidence, Consumer & Corporate Sentiment), and <strong>sector positioning</strong> (Sector Regime Alignment).
+          <strong>sentiment</strong> (Analyst Confidence, Consumer & Corporate Sentiment), and <strong>hidden confirmation layers</strong> (AAS plus Sector Regime Alignment in composite weighting).
           Each indicator is independently scored on a 0-100 scale using statistical normalization techniques, then combined into 
           a weighted composite score that reflects overall market health.
         </p>
@@ -339,8 +339,12 @@ export default function SystemBreakdown() {
             <div className="text-xs text-stealth-400">Michigan + NFIB + ISM + CapEx</div>
           </div>
           <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
+            <div className="text-xs font-semibold text-stealth-200">AAS (Composite Input)</div>
+            <div className="text-xs text-stealth-400">Hidden from cards, included in system weighting</div>
+          </div>
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
             <div className="text-xs font-semibold text-stealth-200">Sector Regime</div>
-            <div className="text-xs text-stealth-400">Defensive vs Cyclical Alignment</div>
+            <div className="text-xs text-stealth-400">Defensive vs Cyclical alignment (hidden composite input)</div>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">

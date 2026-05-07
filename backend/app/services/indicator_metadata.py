@@ -182,7 +182,7 @@ INDICATOR_METADATA = {
     
     "BOND_MARKET_STABILITY": {
         "name": "Bond Market Stability Composite",
-        "description": "Comprehensive bond market health index aggregating five critical fixed-income signals: credit spreads, yield curve shape, rate momentum, Treasury volatility, and term premium. Provides a holistic 0-100 stability score for bond market conditions. Public-sector stress subpanel uses public, derived proxies rather than proprietary municipal curve feeds.",
+        "description": "Comprehensive bond market health index aggregating four critical fixed-income signals: credit spreads, yield curve shape, rate momentum, and Treasury volatility. Provides a holistic 0-100 stability score for bond market conditions. Public-sector stress subpanel uses public, derived proxies rather than proprietary municipal curve feeds.",
         "relevance": "The bond market often reflects shifts in financial conditions before equities. This composite captures multiple dimensions of fixed-income market health, from credit risk to rate volatility.",
         "scoring": "Final output is a stability score (0-100) where HIGHER = MORE STABLE. Backend computes weighted composite stress from sub-indicators, then inverts to stability score. Thresholds: ≥70 = GREEN (stable), 40-69 = YELLOW (caution), <40 = RED (stress).",
         "direction": 1,
@@ -416,6 +416,29 @@ INDICATOR_METADATA = {
         ],
         "directional_interpretation": "7-day delta provides context: Improving (+3 or more) = Anxiety declining. Deteriorating (-3 or less) = Anxiety rising. Stable (within ±3) = No material change.",
         "correlation_note": "High correlation with overall market stress. Inverse correlation with risk assets and positive correlation with safe-haven demand."
+    },
+
+    "SECTOR_REGIME_ALIGNMENT": {
+        "name": "Sector Regime Alignment",
+        "description": "Measures whether defensive-versus-cyclical sector leadership matches the currently inferred market regime.",
+        "relevance": "Leadership alignment tends to confirm regime durability. Persistent misalignment can signal a fragile or transitioning regime.",
+        "scoring": "For each sector projection run, compute defensive minus cyclical spread. In RED regimes, defensive leadership raises score; in GREEN regimes, cyclical leadership raises score; in YELLOW, extreme divergence is penalized. Output is a 0-100 alignment stability score.",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "High score = sector leadership confirms current regime. Low score = leadership/regime divergence warning.",
+        "derived_from": ["Sector Projection Engine", "XLU", "XLP", "XLV", "XLE", "XLF", "XLK", "XLY"],
+        "calculation": "spread = avg(defensive scores) - avg(cyclical scores). RED: 50 + 2.5*spread. GREEN: 50 - 2.5*spread. YELLOW: 100 - 2*abs(spread). Then clamp to [0, 100].",
+        "thresholds": {
+            "green_below": 40,
+            "yellow_below": 70
+        },
+        "typical_range": "GREEN (70-100): leadership and regime aligned. YELLOW (40-69): mixed confirmation. RED (0-39): meaningful leadership/regime divergence.",
+        "impact": "Moderate impact by design. This is a confirmation layer, not a dominant macro driver.",
+        "use_cases": [
+            "Regime confirmation and rotation monitoring",
+            "Detecting early divergence between narrative and market internals",
+            "Cross-checking sector leadership against macro state classification"
+        ]
     }
 }
 

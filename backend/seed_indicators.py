@@ -1,7 +1,7 @@
 """
 Seed Indicators Script
 ----------------------
-Creates/updates all 11 indicator metadata entries in the database.
+Creates/updates all 12 indicator metadata entries in the database.
 This script is automatically run on container startup via startup.sh.
 
 Indicators:
@@ -16,6 +16,7 @@ Indicators:
 - ANALYST_ANXIETY: Composite from VIX, MOVE, HY OAS, ERP (high = stress)
 - SENTIMENT_COMPOSITE: Consumer & corporate confidence from Michigan, NFIB, ISM, CapEx
 - AAS: Alternative Asset Stability from crypto and precious metals (low = pressure/distrust)
+- SECTOR_REGIME_ALIGNMENT: Defensive vs cyclical leadership alignment with current system regime
 
 DFF (Federal Funds Rate) was removed — its signal is redundant given T10Y2Y,
 LIQUIDITY_PROXY, and BOND_MARKET_STABILITY, and it provides no incremental information
@@ -44,7 +45,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.5,
+        "weight": 1.0,
     },
     {
         "code": "SPY",
@@ -56,7 +57,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.4,
+        "weight": 1.3,
     },
     {
         "code": "BREADTH_HEALTH",
@@ -68,7 +69,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.6,  # Upgraded: now a 3-component composite (RSP/SPY + sector participation + return breadth)
+        "weight": 1.8,  # Elevated: primary equity participation confirmation signal
     },
     {
         "code": "T10Y2Y",
@@ -80,7 +81,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.7,  # +0.1 — takes on more of the rates signal vacated by DFF
+        "weight": 1.0,  # Reduced to limit overlap with BOND_MARKET_STABILITY curve component
     },
     {
         "code": "UNRATE",
@@ -116,7 +117,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.9,  # +0.1 — comprehensive bonds, primary rates stress proxy
+        "weight": 2.0,  # Primary fixed-income stress anchor
     },
     {
         "code": "LIQUIDITY_PROXY",
@@ -128,7 +129,7 @@ INDICATORS = [
         "lookback_days_for_z": 252,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.7,  # +0.1 — monetary policy proxy, absorbs some DFF signal
+        "weight": 1.8,  # Elevated: system-level liquidity regime signal
     },
     {
         "code": "ANALYST_ANXIETY",
@@ -140,7 +141,7 @@ INDICATORS = [
         "lookback_days_for_z": 520,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.8,  # +0.1 — forward-looking composite
+        "weight": 1.9,  # Elevated: institutional risk sentiment composite
     },
     {
         "code": "SENTIMENT_COMPOSITE",
@@ -152,7 +153,19 @@ INDICATORS = [
         "lookback_days_for_z": 520,
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
-        "weight": 1.7,  # +0.1 — consumer/corporate sentiment
+        "weight": 1.8,  # Elevated: demand-confidence composite
+    },
+    {
+        "code": "SECTOR_REGIME_ALIGNMENT",
+        "name": "Sector Regime Alignment",
+        "source": "DERIVED",
+        "source_symbol": "SECTOR_REGIME_ALIGNMENT",
+        "category": "equity",
+        "direction": -1,  # Backend outputs a stability-alignment score directly (higher = better)
+        "lookback_days_for_z": 252,
+        "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
+        "threshold_yellow_max": 70,
+        "weight": 0.8,  # Deliberately light: additive signal for leadership/regime confirmation
     },
     {
         "code": "AAS",

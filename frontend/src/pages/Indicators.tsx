@@ -19,8 +19,9 @@ function resolveIndicatorDisplay(code: string, name: string) {
 export default function Indicators() {
   const { data, loading, error } = useApi<IndicatorStatus[]>("/indicators");
 
-  // Filter out AAS (Alternative Asset Stability) since it has its own dedicated page
-  const filteredData = data?.filter(i => i.code !== "AAS" && i.code !== "AAP") || [];
+  // Keep internal-only composite contributors off the public indicator table.
+  const hiddenCodes = new Set(["AAS", "AAP", "SECTOR_REGIME_ALIGNMENT"]);
+  const filteredData = data?.filter(i => !hiddenCodes.has(i.code)) || [];
 
   if (loading) {
     return (
