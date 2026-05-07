@@ -15,6 +15,7 @@ import AlternativeAssetStability from "./pages/AlternativeAssetStability";
 import AASComponentBreakdown from "./pages/AASComponentBreakdown";
 import InstitutionalFlow from "./pages/InstitutionalFlow";
 import Vision from "./pages/Vision";
+import AgricultureIndex from "./pages/AgricultureIndex";
 import RecapIndex from "./pages/tools/RecapIndex";
 import RecapPost from "./pages/tools/RecapPost";
 import VolumeBreadthTools from "./pages/tools/VolumeBreadthTools";
@@ -46,6 +47,7 @@ function AppWithAnalytics() {
       location.pathname.includes("/sector-projections") ? "Sector Projections" :
       location.pathname.includes("/stock-analysis") ? "Stock Analysis" :
       location.pathname.includes("/institutional-flow") ? "Institutional Flow" :
+      location.pathname.includes("/agriculture") ? "Agriculture Index" :
       location.pathname.includes("/secret/options") ? "Secret Options" :
       location.pathname.includes("/precious-metals") ? "Precious Metals" :
       location.pathname.includes("/tools/volume-breadth") ? "Volume & Breadth" :
@@ -87,6 +89,7 @@ function AppWithAnalytics() {
           <Route path="/tools/updates/:slug" element={<LegacyRecapSlugRedirect />} />
           <Route path="/precious-metals" element={<Navigate to="/alternative-assets?tab=metals" replace />} />
           <Route path="/alternative-assets" element={<AlternativeAssetStability />} />
+          <Route path="/agriculture" element={<AgricultureIndex />} />
           <Route path="/aas-breakdown" element={<AASComponentBreakdown />} />
         </Routes>
       </main>
