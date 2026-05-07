@@ -260,25 +260,23 @@ export default function AgricultureIndex() {
         <p className="text-sm text-stealth-200">{overview.summary}</p>
       </div>
 
-      <div className="surface-card p-2">
-        <div className="flex gap-2">
-          {([
-            { key: "overview", label: "Overview" },
-            { key: "deepdive", label: "Deep Dive" },
-          ] as Array<{ key: TabKey; label: string }>).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                activeTab === tab.key
-                  ? "bg-stealth-700 text-stealth-100"
-                  : "text-stealth-400 hover:bg-stealth-800 hover:text-stealth-200"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+      <div className="mb-2 border-b border-stealth-700 flex gap-4">
+        {([
+          { key: "overview", label: "Overview" },
+          { key: "deepdive", label: "Deep Dive" },
+        ] as Array<{ key: TabKey; label: string }>).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+              activeTab === tab.key
+                ? "border-emerald-500 text-emerald-300"
+                : "border-transparent text-stealth-400 hover:text-gray-300"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {activeTab === "overview" ? (
