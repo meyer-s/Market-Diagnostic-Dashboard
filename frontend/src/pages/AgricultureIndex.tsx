@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Area,
-  AreaChart,
+  Legend,
   Line,
   LineChart,
   CartesianGrid,
@@ -109,6 +108,97 @@ type AgricultureMacro = {
 type Timeframe = "30d" | "90d" | "180d" | "365d";
 type TabKey = "overview" | "deepdive";
 
+type StabilityPoint = {
+  date: string;
+  trend_agreement: number;
+  volatility_stability: number;
+  correlation_stability: number;
+  breadth: number;
+  momentum_consistency: number;
+  divergence_penalty: number;
+  stability_score: number;
+};
+
+const STABILITY_COMPONENT_META: Record<
+  "trend_agreement" | "volatility_stability" | "correlation_stability" | "breadth" | "momentum_consistency" | "divergence_penalty",
+  { label: string; description: string }
+> = {
+  trend_agreement: {
+    label: "Trend",
+    description: "How consistently sectors move in the same direction as the composite trend.",
+  },
+  volatility_stability: {
+    label: "Volatility",
+    description: "A calmer market (lower realized volatility) scores higher.",
+  },
+  correlation_stability: {
+    label: "Correlation",
+    description: "Stable inter-sector relationships with lower dispersion score higher.",
+  },
+  breadth: {
+    label: "Breadth",
+    description: "Share of components participating positively in the prevailing move.",
+  },
+  momentum_consistency: {
+    label: "Momentum",
+    description: "Agreement of 5d/20d/60d/120d directional momentum across symbols.",
+  },
+  divergence_penalty: {
+    label: "Divergence Penalty",
+    description: "Penalty for sharp cross-sector disagreement; lower is better.",
+  },
+};
+
+function smoothSeries<T extends Record<string, unknown>>(rows: T[], keys: string[], window = 7): T[] {
+  if (!rows.length || window <= 1) return rows;
+
+  return rows.map((row, index) => {
+    const start = Math.max(0, index - window + 1);
+    const slice = rows.slice(start, index + 1);
+    const next: Record<string, unknown> = { ...row };
+
+    for (const key of keys) {
+      const values = slice
+        .map((item) => {
+          const value = item[key];
+          return typeof value === "number" ? value : null;
+        })
+        .filter((value): value is number => value !== null);
+
+      if (values.length) {
+        next[key] = values.reduce((sum, value) => sum + value, 0) / values.length;
+      }
+    }
+
+    return next as T;
+  });
+}
+
+function StabilityTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey?: string; value?: number; color?: string }>; label?: string }) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  return (
+    <div className="max-w-xs rounded-lg border border-stealth-700 bg-stealth-950/95 p-3 text-xs shadow-xl">
+      <p className="font-semibold text-stealth-100">{label}</p>
+      <div className="mt-2 space-y-2">
+        {payload.map((entry) => {
+          const key = entry.dataKey as keyof typeof STABILITY_COMPONENT_META;
+          const meta = STABILITY_COMPONENT_META[key];
+          if (!meta || typeof entry.value !== "number") return null;
+          return (
+            <div key={String(entry.dataKey)}>
+              <p className="font-medium" style={{ color: entry.color ?? "#cbd5e1" }}>
+                {meta.label}: {formatTooltipValue(entry.value, 1)}
+              </p>
+              <p className="text-[11px] leading-4 text-stealth-400">{meta.description}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function getRegimeTone(regime: string): string {
   if (regime.includes("Stable Expansion")) return "text-emerald-300";
   if (regime.includes("Unstable Expansion")) return "text-amber-300";
@@ -170,6 +260,11 @@ export default function AgricultureIndex() {
     return clampedScoreHistory.slice(-days);
   }, [clampedScoreHistory, timeframe]);
 
+  const smoothedCompositeHistory = useMemo(
+    () => smoothSeries(filteredHistory, ["score"], 7),
+    [filteredHistory]
+  );
+
   const matrix60 = correlations?.correlations.group_matrix?.["60"] ?? [];
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
   const groups = overview?.groups ?? [];
@@ -180,6 +275,23 @@ export default function AgricultureIndex() {
     if (rows.length <= days) return rows;
     return rows.slice(-days);
   }, [overview, timeframe]);
+
+  const smoothedComponentHistory = useMemo(
+    () =>
+      smoothSeries<StabilityPoint>(
+        componentHistory,
+        [
+          "trend_agreement",
+          "volatility_stability",
+          "correlation_stability",
+          "breadth",
+          "momentum_consistency",
+          "divergence_penalty",
+        ],
+        10
+      ),
+    [componentHistory]
+  );
 
   if (loading) {
     return (
@@ -293,7 +405,7 @@ export default function AgricultureIndex() {
             </div>
             <div className="mt-4 h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={filteredHistory} margin={CHART_MARGIN}>
+                <LineChart data={smoothedCompositeHistory} margin={CHART_MARGIN}>
                   <CartesianGrid {...commonGridProps} />
                   <XAxis dataKey="date" {...commonXAxisProps} />
                   <YAxis {...commonYAxisProps} domain={[0, 100]} />
@@ -302,15 +414,15 @@ export default function AgricultureIndex() {
                     formatter={(value: number) => [formatTooltipValue(value, 2), "Score"]}
                   />
                   <ReferenceLine y={50} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" />
-                  <Area
+                  <Line
                     type="monotone"
                     dataKey="score"
                     stroke={getFamilyColor("materials")}
-                    fill={getFamilyColor("materials", "faint")}
-                    strokeWidth={2.2}
+                    strokeWidth={2.6}
+                    dot={false}
                     isAnimationActive={false}
                   />
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
@@ -320,20 +432,25 @@ export default function AgricultureIndex() {
               <h2 className="text-base font-semibold text-stealth-100">Stability Components (History)</h2>
               <div className="mt-4 h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={componentHistory} margin={CHART_MARGIN}>
+                  <LineChart data={smoothedComponentHistory} margin={CHART_MARGIN}>
                     <CartesianGrid {...commonGridProps} />
                     <XAxis dataKey="date" {...commonXAxisProps} />
                     <YAxis {...commonYAxisProps} domain={[0, 100]} />
-                    <Tooltip
-                      contentStyle={commonTooltipStyle}
-                      formatter={(value: number) => [formatTooltipValue(value, 1), "Score"]}
+                    <Tooltip content={<StabilityTooltip />} />
+                    <Legend
+                      verticalAlign="top"
+                      height={30}
+                      formatter={(value: string) => {
+                        const key = value as keyof typeof STABILITY_COMPONENT_META;
+                        return STABILITY_COMPONENT_META[key]?.label ?? value;
+                      }}
                     />
-                    <Line type="monotone" dataKey="trend_agreement" stroke={getFamilyColor("growth")} strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="volatility_stability" stroke={getFamilyColor("volatility")} strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="correlation_stability" stroke={getFamilyColor("equity")} strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="breadth" stroke={getFamilyColor("liquidity")} strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="momentum_consistency" stroke={getFamilyColor("tech")} strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="divergence_penalty" stroke="#f87171" strokeWidth={1.8} strokeDasharray="4 3" dot={{ r: 2 }} />
+                    <Line type="monotone" dataKey="trend_agreement" name="trend_agreement" stroke={getFamilyColor("growth")} strokeWidth={2.2} dot={false} />
+                    <Line type="monotone" dataKey="volatility_stability" name="volatility_stability" stroke={getFamilyColor("volatility")} strokeWidth={2.2} dot={false} />
+                    <Line type="monotone" dataKey="correlation_stability" name="correlation_stability" stroke={getFamilyColor("equity")} strokeWidth={2.2} dot={false} />
+                    <Line type="monotone" dataKey="breadth" name="breadth" stroke={getFamilyColor("liquidity")} strokeWidth={2.2} dot={false} />
+                    <Line type="monotone" dataKey="momentum_consistency" name="momentum_consistency" stroke={getFamilyColor("tech")} strokeWidth={2.2} dot={false} />
+                    <Line type="monotone" dataKey="divergence_penalty" name="divergence_penalty" stroke="#f87171" strokeWidth={1.8} strokeDasharray="4 3" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
