@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 
-from app.services.agriculture_index import calculate_composite_index
+from app.services.agriculture_index import build_agriculture_long_view, calculate_composite_index
 
 
 router = APIRouter(prefix="/agriculture")
@@ -55,6 +55,13 @@ def get_agriculture_correlations(days: int = Query(365, ge=90, le=1095)):
         "correlations": data["correlations"],
         "special_signals": data["special_signals"],
     }
+
+
+@router.get("/long-view")
+def get_agriculture_long_view():
+    """Monthly stability history for 30-year lookback."""
+    history = build_agriculture_long_view(years=30)
+    return {"history": history}
 
 
 @router.get("/macro")

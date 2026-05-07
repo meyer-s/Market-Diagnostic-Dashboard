@@ -1045,3 +1045,133 @@ def calculate_composite_index(days: int = 365) -> Dict[str, Any]:
         _CACHE[days] = {"timestamp": datetime.utcnow(), "payload": payload}
 
     return payload
+
+
+_LONG_VIEW_SYMBOLS: Dict[str, Tuple[str, str]] = {
+    "ZS": ("ZS=F", "grains"),
+    "ZC": ("ZC=F", "grains"),
+    "ZW": ("ZW=F", "grains"),
+    "ZL": ("ZL=F", "grains"),
+    "ZM": ("ZM=F", "grains"),
+    "LE": ("LE=F", "livestock"),
+    "HE": ("HE=F", "livestock"),
+    "KC": ("KC=F", "softs"),
+    "CC": ("CC=F", "softs"),
+    "SB": ("SB=F", "softs"),
+    "CT": ("CT=F", "softs"),
+}
+_LONG_VIEW_GROUP_WEIGHTS: Dict[str, float] = {
+    "grains": 0.50,
+    "livestock": 0.25,
+    "softs": 0.25,
+}
+_LONG_VIEW_CACHE: Dict[str, Any] = {}
+_LONG_VIEW_CACHE_LOCK = Lock()
+
+
+def build_agriculture_long_view(years: int = 30) -> List[Dict[str, Any]]:
+    """Monthly agriculture stability history for long-horizon views.
+
+    Uses a vectorized, simplified stability model on monthly data — suitable
+    for identifying multi-year regime parallels.  Not directly comparable to
+    the daily stability score but shares the same conceptual structure.
+    """
+    with _LONG_VIEW_CACHE_LOCK:
+        cached = _LONG_VIEW_CACHE.get("data")
+        if cached and (datetime.utcnow() - cached["timestamp"]).total_seconds() <= 3600:
+            return cached["payload"]
+
+    start = (datetime.utcnow() - timedelta(days=years * 365 + 90)).strftime("%Y-%m-%d")
+    end = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    client = YahooClient()
+    series_map: Dict[str, pd.Series] = {}
+    symbol_groups: Dict[str, str] = {}
+
+    for code, (ticker, grp) in _LONG_VIEW_SYMBOLS.items():
+        try:
+            rows = client.fetch_series(ticker=ticker, start_date=start, end_date=end, interval="1mo")
+            s = pd.Series(
+                {pd.Timestamp(r["date"]): r["value"] for r in rows if r.get("value") is not None}
+            ).sort_index()
+            if len(s) >= 24:
+                series_map[code] = s
+                symbol_groups[code] = grp
+        except Exception:
+            pass
+
+    if not series_map:
+        return []
+
+    df = pd.DataFrame(series_map).sort_index().ffill().dropna(how="all")
+    returns = df.pct_change().dropna(how="all")
+
+    # Group return series (equal-weight within group)
+    group_returns: Dict[str, pd.Series] = {}
+    for grp in _LONG_VIEW_GROUP_WEIGHTS:
+        members = [c for c in returns.columns if symbol_groups.get(c) == grp]
+        if members:
+            group_returns[grp] = returns[members].mean(axis=1)
+
+    # Composite monthly return (group-weighted)
+    composite_ret = pd.Series(0.0, index=returns.index, dtype=float)
+    total_w = 0.0
+    for grp, w in _LONG_VIEW_GROUP_WEIGHTS.items():
+        gs = group_returns.get(grp)
+        if gs is not None and not gs.empty:
+            composite_ret = composite_ret.add(gs * w, fill_value=0.0)
+            total_w += w
+    if total_w > 0:
+        composite_ret = composite_ret / total_w
+
+    composite_idx = (1.0 + composite_ret).cumprod() * 100.0
+    comp12 = (composite_idx / composite_idx.shift(12) - 1.0) * 100.0
+
+    # Volatility score: 12-month rolling std; ~5% monthly std → score 0
+    vol_12m = composite_ret.rolling(12).std(ddof=0)
+    vol_score = (100.0 - (vol_12m / 0.05) * 100.0).clip(0.0, 100.0).fillna(50.0)
+
+    # Breadth: fraction of symbols positive this month
+    breadth = (returns > 0).mean(axis=1) * 100.0
+
+    # Trend agreement: fraction of groups aligned with composite 12m direction
+    group_12m: Dict[str, pd.Series] = {}
+    for grp, gs in group_returns.items():
+        g_idx = (1.0 + gs).cumprod()
+        group_12m[grp] = (g_idx / g_idx.shift(12) - 1.0) * 100.0
+
+    comp_sign = comp12.apply(lambda v: 0 if pd.isna(v) or abs(v) < 0.5 else (1 if v > 0 else -1))
+
+    trend_frames: List[pd.Series] = []
+    for grp, g12 in group_12m.items():
+        g_sign = g12.apply(lambda v: 0 if pd.isna(v) or abs(v) < 0.5 else (1 if v > 0 else -1))
+        trend_frames.append((g_sign == comp_sign).where(comp_sign != 0).astype(float))
+
+    if trend_frames:
+        trend_agreement = pd.concat(trend_frames, axis=1).mean(axis=1) * 100.0
+        trend_agreement = trend_agreement.where(comp_sign != 0, other=55.0).fillna(55.0).clip(0.0, 100.0)
+    else:
+        trend_agreement = pd.Series(55.0, index=returns.index)
+
+    stability = (
+        0.35 * trend_agreement
+        + 0.35 * vol_score
+        + 0.30 * breadth
+    ).clip(0.0, 100.0)
+
+    result: List[Dict[str, Any]] = []
+    for ts in composite_ret.index:
+        stab = stability.get(ts)
+        comp = composite_idx.get(ts)
+        if stab is None or pd.isna(stab) or comp is None or pd.isna(comp):
+            continue
+        result.append({
+            "date": ts.strftime("%Y-%m-%d"),
+            "stability_score": round(float(stab), 2),
+            "composite_value": round(float(comp), 2),
+        })
+
+    with _LONG_VIEW_CACHE_LOCK:
+        _LONG_VIEW_CACHE["data"] = {"timestamp": datetime.utcnow(), "payload": result}
+
+    return result

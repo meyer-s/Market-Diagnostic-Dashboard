@@ -107,7 +107,10 @@ type AgricultureMacro = {
   availability: { missing_macro_series: string[] };
 };
 
-type Timeframe = "30d" | "90d" | "180d" | "365d";
+type Timeframe = "30d" | "90d" | "180d" | "365d" | "30y";
+
+type LongViewPoint = { date: string; stability_score: number; composite_value: number };
+type LongViewData = { history: LongViewPoint[] };
 type TabKey = "overview" | "deepdive";
 
 type StabilityPoint = {
@@ -305,6 +308,7 @@ function daysForTimeframe(timeframe: Timeframe): number {
   if (timeframe === "30d") return 30;
   if (timeframe === "90d") return 90;
   if (timeframe === "180d") return 180;
+  if (timeframe === "30y") return 10950;
   return 365;
 }
 
@@ -312,6 +316,7 @@ export default function AgricultureIndex() {
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
   const { data: macro } = useApi<AgricultureMacro>("/agriculture/macro?days=365");
+  const { data: longViewData } = useApi<LongViewData>("/agriculture/long-view");
 
   const [timeframe, setTimeframe] = useState<Timeframe>("90d");
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
@@ -368,6 +373,28 @@ export default function AgricultureIndex() {
       };
     });
   }, [smoothedComponentHistory]);
+
+  const longViewMacdHistory = useMemo((): MacdPoint[] => {
+    const pts = longViewData?.history ?? [];
+    if (!pts.length) return [];
+    const vals = pts.map((p) => p.stability_score);
+    const fast = calculateEma(vals, 12);
+    const slow = calculateEma(vals, 26);
+    const macdVals = vals.map((_, i) => fast[i] - slow[i]);
+    const signalVals = calculateEma(macdVals, 9);
+    return pts.map((p, i) => ({
+      date: p.date,
+      macd: macdVals[i],
+      signal: signalVals[i],
+      histogram: macdVals[i] - signalVals[i],
+      breadth_centered: null,
+      trend_centered: null,
+    }));
+  }, [longViewData]);
+
+  const activeMacdData = timeframe === "30y" ? longViewMacdHistory : macdHistory;
+  const activeStabilityData: Array<{ date: string; stability_score: number }> =
+    timeframe === "30y" ? (longViewData?.history ?? []) : smoothedComponentHistory;
 
   if (loading) {
     return (
@@ -465,11 +492,13 @@ export default function AgricultureIndex() {
               <div>
                 <h2 className="text-base font-semibold text-stealth-100">Stability Momentum (MACD-style)</h2>
                 <p className="mt-1 text-xs text-stealth-400">
-                  Regime quality momentum centered around zero — positive histogram means stability is improving. Breadth and trend overlaid for context.
+                  {timeframe === "30y"
+                    ? "Monthly data — 30-year lookback. EMA(12,26,9) on monthly stability."
+                    : "Regime quality momentum centered around zero — positive histogram means stability is improving. Breadth and trend overlaid for context."}
                 </p>
               </div>
               <div className="flex gap-2">
-                {(["30d", "90d", "180d", "365d"] as Timeframe[]).map((tf) => (
+                {(["30d", "90d", "180d", "365d", "30y"] as Timeframe[]).map((tf) => (
                   <button
                     key={tf}
                     onClick={() => setTimeframe(tf)}
@@ -486,7 +515,7 @@ export default function AgricultureIndex() {
             </div>
             <div className="mt-4 h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={macdHistory} margin={CHART_MARGIN}>
+                <ComposedChart data={activeMacdData} margin={CHART_MARGIN}>
                   <CartesianGrid {...commonGridProps} />
                   <XAxis dataKey="date" {...commonXAxisProps} />
                   {/* Left axis: MACD/histogram scale */}
@@ -533,29 +562,33 @@ export default function AgricultureIndex() {
                     dot={false}
                     isAnimationActive={false}
                   />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="breadth_centered"
-                    name="breadth_centered"
-                    stroke={getFamilyColor("liquidity")}
-                    strokeWidth={1.5}
-                    strokeOpacity={0.6}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="trend_centered"
-                    name="trend_centered"
-                    stroke={getFamilyColor("growth")}
-                    strokeWidth={1.5}
-                    strokeOpacity={0.6}
-                    dot={false}
-                    strokeDasharray="4 3"
-                    isAnimationActive={false}
-                  />
+                  {timeframe !== "30y" && (
+                    <>
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="breadth_centered"
+                        name="breadth_centered"
+                        stroke={getFamilyColor("liquidity")}
+                        strokeWidth={1.5}
+                        strokeOpacity={0.6}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="trend_centered"
+                        name="trend_centered"
+                        stroke={getFamilyColor("growth")}
+                        strokeWidth={1.5}
+                        strokeOpacity={0.6}
+                        dot={false}
+                        strokeDasharray="4 3"
+                        isAnimationActive={false}
+                      />
+                    </>
+                  )}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -565,7 +598,7 @@ export default function AgricultureIndex() {
             <h2 className="text-base font-semibold text-stealth-100">Stability Score</h2>
             <div className="mt-4 h-48">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={smoothedComponentHistory} margin={CHART_MARGIN}>
+                <LineChart data={activeStabilityData} margin={CHART_MARGIN}>
                   <CartesianGrid {...commonGridProps} />
                   <XAxis dataKey="date" {...commonXAxisProps} />
                   <YAxis {...commonYAxisProps} domain={[0, 100]} />
