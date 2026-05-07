@@ -13,134 +13,25 @@ from app.utils.response_helpers import (
     format_indicator_history,
 )
 from app.services.muni_data import get_muni_subsystem
-from app.models.virtual_indicator import VirtualIndicator
-from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
-from app.models.system_status import SystemStatus
 from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Sector classifications for virtual indicator
-DEFENSIVE_SECTORS = ["XLU", "XLP", "XLV"]
-CYCLICAL_SECTORS = ["XLE", "XLF", "XLK", "XLY"]
-
-
-def compute_sector_regime_alignment():
-    """
-    Compute a virtual indicator score for sector regime alignment.
-    Returns (score, raw_value, state) tuple.
-    
-    Logic:
-    - In RED market: Defensives should outperform cyclicals (score increases with spread)
-    - In GREEN market: Cyclicals should outperform defensives (score increases with negative spread)
-    - Score ranges 0-100, thresholds: RED<45, YELLOW 45-65, GREEN>65
-    """
-    with get_db_session() as db:
-        # Get latest projection run and system state
-        run = db.query(SectorProjectionRun).order_by(SectorProjectionRun.as_of_date.desc()).first()
-        if not run:
-            return (50.0, 0.0, "YELLOW")  # Default if no data
-        
-        # Get 3m projections (most recent)
-        values_3m = db.query(SectorProjectionValue).filter_by(
-            run_id=run.id, 
-            horizon="3m"
-        ).all()
-        
-        # Calculate defensive vs cyclical averages
-        defensive_scores = [v.score_total for v in values_3m if v.sector_symbol in DEFENSIVE_SECTORS]
-        cyclical_scores = [v.score_total for v in values_3m if v.sector_symbol in CYCLICAL_SECTORS]
-        
-        if not defensive_scores or not cyclical_scores:
-            return (50.0, 0.0, "YELLOW")
-        
-        defensive_avg = sum(defensive_scores) / len(defensive_scores)
-        cyclical_avg = sum(cyclical_scores) / len(cyclical_scores)
-        spread = defensive_avg - cyclical_avg  # Positive = defensives leading
-        
-        # Get system state
-        system_state = run.system_state  # Stored in projection run
-        
-        # Score calculation
-        if system_state == "RED":
-            # RED market: Want defensives to lead (positive spread is good)
-            # spread range typically -20 to +20
-            # Map +20 → 100, 0 → 50, -20 → 0
-            alignment_score = 50 + (spread * 2.5)
-        elif system_state == "GREEN":
-            # GREEN market: Want cyclicals to lead (negative spread is good)
-            # Map -20 → 100, 0 → 50, +20 → 0
-            alignment_score = 50 - (spread * 2.5)
-        else:  # YELLOW
-            # YELLOW market: Balanced is fine, penalize extreme divergence
-            # Map small spreads to higher scores
-            alignment_score = 100 - abs(spread * 2)
-        
-        # Clamp to 0-100
-        alignment_score = max(0, min(100, alignment_score))
-        
-        # Determine state
-        if alignment_score >= 65:
-            state = "GREEN"
-        elif alignment_score >= 45:
-            state = "YELLOW"
-        else:
-            state = "RED"
-        
-        return (alignment_score, spread, state)
-
-
-# Register virtual indicator
-SECTOR_REGIME_ALIGNMENT = VirtualIndicator(
-    code="SECTOR_REGIME_ALIGNMENT",
-    name="Sector Regime Alignment",
-    description="Measures whether sector leadership (defensive vs cyclical) matches expected market regime patterns",
-    compute_fn=compute_sector_regime_alignment,
-    weight=1.5,
-)
-
 
 @router.get("/indicators/metadata")
 def list_indicators():
-    """Return basic metadata for all indicators (including virtual ones)."""
+    """Return basic metadata for all indicators."""
     with get_db_session() as db:
         # Get database indicators
         indicators: List[Indicator] = db.query(Indicator).all()
-        result = [format_indicator_basic(ind) for ind in indicators]
-        
-        # Add virtual indicator
-        virtual_data = SECTOR_REGIME_ALIGNMENT.compute()
-        result.append({
-            "code": virtual_data["code"],
-            "name": virtual_data["name"],
-            "state": virtual_data["state"],
-            "description": virtual_data["description"],
-            "weight": virtual_data["weight"],
-            "is_virtual": True,
-        })
-        
-        return result
+        return [format_indicator_basic(ind) for ind in indicators]
 
 
 @router.get("/indicators/{code}")
 def get_indicator_detail(code: str):
-    """Return metadata + latest value for a single indicator (including virtual ones)."""
-    # Check if it's a virtual indicator
-    if code == "SECTOR_REGIME_ALIGNMENT":
-        virtual_data = SECTOR_REGIME_ALIGNMENT.compute()
-        return {
-            "code": virtual_data["code"],
-            "name": virtual_data["name"],
-            "description": virtual_data["description"],
-            "weight": virtual_data["weight"],
-            "latest_value": virtual_data["score"],
-            "latest_timestamp": virtual_data["timestamp"],
-            "state": virtual_data["state"],
-            "raw_value": virtual_data["raw_value"],
-            "is_virtual": True,
-        }
-    
+    """Return metadata + latest value for a single indicator."""
+
     canonical_code = normalize_indicator_code(code)
     with get_db_session() as db:
         ind: Indicator | None = (
@@ -167,17 +58,7 @@ def get_indicator_detail(code: str):
 @router.get("/indicators/{code}/history")
 def get_indicator_history(code: str, days: int = Query(365, ge=1, le=1095)):
     """Return time-series history for a single indicator (raw + score + state)."""
-    # Virtual indicators don't have historical data yet
-    if code == "SECTOR_REGIME_ALIGNMENT":
-        # Return current value as single-point history
-        virtual_data = SECTOR_REGIME_ALIGNMENT.compute()
-        return [{
-            "timestamp": virtual_data["timestamp"],
-            "score": virtual_data["score"],
-            "raw_value": virtual_data["raw_value"],
-            "state": virtual_data["state"],
-        }]
-    
+
     from datetime import datetime, timedelta
 
     canonical_code = normalize_indicator_code(code)
