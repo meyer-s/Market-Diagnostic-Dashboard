@@ -29,9 +29,22 @@ export default function StateSparkline({ history, height = 24, width = 200 }: Pr
     );
   }
 
+  const collapseSameDayPoints = (data: IndicatorHistoryPoint[]): IndicatorHistoryPoint[] => {
+    const pointsByDate = new Map<string, IndicatorHistoryPoint>();
+
+    data.forEach((point) => {
+      const dateKey = point.timestamp.slice(0, 10);
+      pointsByDate.set(dateKey, point);
+    });
+
+    return Array.from(pointsByDate.values());
+  };
+
+  const dailyHistory = collapseSameDayPoints(history);
+
   // Sample data for display: show last 60 points for dense data (daily indicators),
   // or all points for sparse data (monthly indicators)
-  const displayData = history.length > 90 ? history.slice(-60) : history;
+  const displayData = dailyHistory.length > 90 ? dailyHistory.slice(-60) : dailyHistory;
   
   if (displayData.length === 0) {
     return (

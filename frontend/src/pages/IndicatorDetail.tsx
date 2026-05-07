@@ -503,6 +503,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
     "LIQUIDITY_PROXY",
     "ANALYST_ANXIETY",
     "SENTIMENT_COMPOSITE",
+    "SECTOR_REGIME_ALIGNMENT",
   ]);
   const showGenericStabilityHistory = !indicatorsWithDedicatedFinalHistory.has(apiCode);
 
