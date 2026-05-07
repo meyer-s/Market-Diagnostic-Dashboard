@@ -322,6 +322,25 @@ interface IndicatorDetailProps {
   forcedCode?: string;
 }
 
+const parseDateKeyUtc = (dateKey: string): number => {
+  const [year, month, day] = dateKey.split("-").map((part) => parseInt(part, 10));
+  if (!year || !month || !day) {
+    return Number.NaN;
+  }
+  // Use midday UTC to avoid local-timezone month/day rollback for YYYY-MM-DD keys.
+  return Date.UTC(year, month - 1, day, 12, 0, 0);
+};
+
+const formatMonthYearUtc = (epochMs: number): string =>
+  new Date(epochMs).toLocaleDateString(undefined, {
+    month: "short",
+    year: "2-digit",
+    timeZone: "UTC",
+  });
+
+const formatDateUtc = (epochMs: number): string =>
+  new Date(epochMs).toLocaleDateString(undefined, { timeZone: "UTC" });
+
 export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
   const { code: routeCode } = useParams();
   const navigate = useNavigate();
@@ -1578,7 +1597,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               const chartData = sentimentCompositeComponents
                 .map(item => ({
                   ...item,
-                  dateNum: new Date(item.date).getTime()
+                  dateNum: parseDateKeyUtc(item.date)
                 }))
                 .filter(item => item.dateNum >= daysBack.getTime());
               
@@ -1598,12 +1617,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                       type="number"
                       domain={[daysBack.getTime(), maxDate]}
                       scale="time"
-                      tickFormatter={(v: number) =>
-                        new Date(v).toLocaleDateString(undefined, {
-                          month: "short",
-                          year: "2-digit",
-                        })
-                      }
+                      tickFormatter={formatMonthYearUtc}
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                       stroke={CHART_NEUTRAL.axis}
                     />
@@ -1624,9 +1638,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                       }}
                       labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
                       formatter={(value: number) => value.toFixed(2)}
-                      labelFormatter={(label: number) =>
-                        new Date(label).toLocaleDateString()
-                      }
+                      labelFormatter={formatDateUtc}
                     />
                     <Line
                       type="monotone"
@@ -1684,7 +1696,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               const historyChartData = (history ?? [])
                 .map((item) => ({
                   date: item.timestamp.slice(0, 10),
-                  dateNum: new Date(item.timestamp.slice(0, 10)).getTime(),
+                  dateNum: parseDateKeyUtc(item.timestamp.slice(0, 10)),
                   composite: {
                     stability_score: Number(item.score),
                   },
@@ -1694,7 +1706,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               const fallbackComponentData = sentimentCompositeComponents
                 .map((item) => ({
                   date: item.date,
-                  dateNum: new Date(item.date).getTime(),
+                  dateNum: parseDateKeyUtc(item.date),
                   composite: {
                     stability_score:
                       item.composite?.stability_score ??
@@ -1723,12 +1735,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                       type="number"
                       domain={[daysBack.getTime(), maxDate]}
                       scale="time"
-                      tickFormatter={(v: number) =>
-                        new Date(v).toLocaleDateString(undefined, {
-                          month: "short",
-                          year: "2-digit",
-                        })
-                      }
+                      tickFormatter={formatMonthYearUtc}
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                       stroke={CHART_NEUTRAL.axis}
                     />
@@ -1749,9 +1756,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                       }}
                       labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
                       formatter={(value: number) => value.toFixed(2)}
-                      labelFormatter={(label: number) =>
-                        new Date(label).toLocaleDateString()
-                      }
+                      labelFormatter={formatDateUtc}
                     />
                     <Line
                       type="monotone"
