@@ -14,55 +14,55 @@ type VisionHighlightId = "vision" | "goal" | "advantage";
 
 const principles = [
   {
-    title: "Shorten The Learning Curve",
+    title: "Learn In Public",
     body:
-      "Experience still matters, but much of that experience is really repetition: seeing the same intermarket shifts enough times to know what they usually imply. The goal here is to shorten that learning curve by making the structure legible earlier.",
+      "This started as a way to sharpen my own macro process: collect the signals I kept checking, put them in one place, and make the relationships easier to review without rebuilding the same context every day.",
     motif: "curve",
   },
   {
-    title: "See The Full Board",
+    title: "Keep The Whole Board Visible",
     body:
-      "Professionals rarely look at one chart in isolation. They compare breadth, rates, credit, leadership, volatility, commodities, and alternative assets together. This dashboard brings those relationships into one place so you can read the market in context instead of in fragments.",
+      "The dashboard is meant to keep rates, credit, breadth, leadership, volatility, commodities, and alternative assets in view together. It is a personal research surface first, built around the belief that macro context is easier to reason about when the moving parts are not scattered across tabs.",
     motif: "board",
   },
   {
-    title: "Support Better Decisions",
+    title: "Invite Useful Feedback",
     body:
-      "This tool is not here to pretend every move is obvious or to remove uncertainty. It is here to improve the quality of your questions, clarify the backdrop, and help you act with more evidence than instinct alone.",
+      "Sharing the project is part of the process. I am looking for thoughtful feedback on the framework, the data choices, the scoring logic, and the way the tool explains market conditions before I think about anything broader.",
     motif: "decision",
   },
 ] satisfies PrincipleCard[];
 
 const audience = [
-  "Investors who know they should care about macro conditions but do not want to piece them together across ten tabs.",
-  "Traders who want a faster read on whether the tape is confirming or fighting their thesis.",
-  "Curious learners who want to think more like a professional without pretending to already be one.",
+  "Macro-curious investors who want to see how different market signals can be organized into a coherent daily read.",
+  "Traders and analysts who are willing to challenge the framework, point out blind spots, and suggest better inputs.",
+  "Builders and data-minded users who can help pressure test the methodology, presentation, and assumptions.",
 ];
 
 const heroHighlights = [
   {
     id: "vision" as const,
-    eyebrow: "Vision",
-    title: "Market context should not be exclusive.",
-    summary: "Capital markets shape everyday life, not just corporate strategy.",
+    eyebrow: "Current State",
+    title: "A passion project, not a polished product.",
+    summary: "This is a working macro dashboard built around my own research process.",
     detail:
-      "Markets do not exist only to serve institutions and corporations. They shape the lives of everyone who works, saves, invests, borrows, or spends. A system this important should be more legible to the people living inside it.",
+      "Market Diagnostic Dashboard is currently a personal tool for macroeconomic analysis. I use it to organize cross-asset signals, think through regime changes, and make the broader market backdrop easier to review in one place.",
   },
   {
     id: "goal" as const,
-    eyebrow: "Goal",
-    title: "Reduce mental clutter. Centralize context.",
-    summary: "Replace scattered signals with one readable backdrop.",
+    eyebrow: "Why Share It",
+    title: "Open the work to better questions.",
+    summary: "The project improves when thoughtful people can inspect it and respond to it.",
     detail:
-      "The practical purpose of this platform is to lower the cognitive load of juggling macro indicators while trying to make a decision. Instead of holding every moving part in your head, you can read the broader backdrop in one place.",
+      "I am sharing the tool because feedback is more useful while the framework is still flexible. The goal is to learn what is clear, what is confusing, what is missing, and which assumptions deserve more scrutiny.",
   },
   {
     id: "advantage" as const,
-    eyebrow: "Why It Matters",
-    title: "Narrow the knowledge gap.",
-    summary: "Turn hidden structure into clearer judgment for everyday participants.",
+    eyebrow: "Longer View",
+    title: "Build toward something more useful.",
+    summary: "The near-term goal is learning; the long-term goal is a stronger analytical framework.",
     detail:
-      "People who understand the underlying mechanics of the market hold a real advantage over those who only feel its effects. By making that structure more reliable and human-readable, this tool helps more people act with context rather than confusion.",
+      "This may eventually become more product-like, but it is not ready for go-to-market positioning yet. For now, the priority is improving the data model, methodology, explanations, and user experience through real use and grounded feedback.",
   },
 ];
 
@@ -436,13 +436,13 @@ export default function Vision() {
               Vision
             </div>
             <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold leading-tight text-white">
-              Less Guesswork. More Context.
+              A Personal Macro Workbench, Shared In Public.
             </h1>
             <p className="mt-6 max-w-3xl text-lg sm:text-xl leading-8 text-stealth-200">
-              A market framework should be readable by the people who live inside the system, not only by the people paid to interpret it.
+              Market Diagnostic Dashboard is a passion project and personal tool for organizing macroeconomic context, cross-asset signals, and market regime notes.
             </p>
             <p className="mt-4 max-w-3xl text-base sm:text-lg leading-8 text-stealth-300">
-              The aim is simple: reduce mental clutter, centralize context, and make the broader market backdrop easier to understand before you act inside it.
+              I am sharing it before it is a finished product because the most useful next step is feedback: what is clear, what is missing, and what would make the framework more trustworthy.
             </p>
           </div>
         </div>
@@ -564,16 +564,16 @@ export default function Vision() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16 grid gap-10 lg:grid-cols-[1.1fr_0.9fr] items-start">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
-              The Humble Case
+              The Honest Case
             </div>
             <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
-              You should not have to play detective to read market conditions.
+              This is not pretending to be a finished platform.
             </h2>
             <p className="mt-5 text-lg leading-8 text-stealth-200">
-              Right now, understanding the market often means chasing clues across disconnected charts, headlines, and indicators, then trying to infer how they relate and which signals actually matter. This tool does not replace expertise, but it does reduce the penalty for not having years of pattern memory by organizing those moving parts into one readable view.
+              The current version exists because I wanted a better way to read macro conditions without rebuilding the same context from scratch. It pulls together the indicators I care about, exposes the scoring logic, and gives me a more consistent place to evaluate whether market behavior is improving, deteriorating, or simply mixed.
             </p>
             <p className="mt-4 text-lg leading-8 text-stealth-200">
-              That matters because better decisions are usually less about finding a perfect prediction and more about reading the environment clearly. When rates, breadth, leadership, and defensive behavior all point in the same direction, that should strengthen your conviction. When they conflict, that should sharpen your caution.
+              It is still evolving. Some pieces are more mature than others, and I expect the methodology to keep changing as better data, clearer explanations, and sharper critiques come in. That is why the project is being shared now: not as a sales pitch, but as an open invitation to make the tool more useful.
             </p>
           </div>
 
@@ -604,13 +604,13 @@ export default function Vision() {
           <div className="relative z-10 max-w-3xl lg:max-w-[60%]">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
-                What The Tool Actually Offers
+                Follow The Work
               </div>
               <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
-                A better framework.
+                Read the methodology, then tell me what breaks.
               </h2>
               <p className="mt-5 text-lg leading-8 text-stealth-200">
-                The practical value proposition is simple: fewer blind spots, faster context, and a more disciplined read of the market regime. Instead of asking, "What is one chart doing today?" you can ask, "What is the broader market structure telling me, and does my idea fit inside it?"
+                The dashboard is useful to me because it turns scattered macro inputs into a repeatable review process. The next step is making that process easier for other people to inspect, question, and improve.
               </p>
             </div>
 
@@ -621,12 +621,14 @@ export default function Vision() {
               >
                 Explore The Dashboard
               </Link>
-              <Link
-                to="/system-breakdown"
+              <a
+                href="https://github.com/meyer-s/Market-Diagnostic-Dashboard/wiki"
+                target="_blank"
+                rel="noreferrer"
                 className="inline-flex items-center justify-center rounded-xl border border-stealth-600 px-5 py-3 text-sm font-semibold text-stealth-100 transition-colors hover:border-stealth-400 hover:bg-white/[0.03]"
               >
-                Review The Methodology
-              </Link>
+                Read The Wiki
+              </a>
             </div>
           </div>
 
