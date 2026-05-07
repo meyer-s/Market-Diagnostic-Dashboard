@@ -1232,79 +1232,79 @@ def get_breadth_health_components(days: int = Query(90, ge=1, le=365)):
     return result
 
 
-    @router.get("/indicators/SECTOR_REGIME_ALIGNMENT/components")
-    def get_sector_divergence_alignment_components(days: int = Query(365, ge=30, le=1095)):
-        """Return rich sector divergence alignment diagnostics and history."""
-        from datetime import datetime, timedelta
-        from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
+@router.get("/indicators/SECTOR_REGIME_ALIGNMENT/components")
+def get_sector_divergence_alignment_components(days: int = Query(365, ge=30, le=1095)):
+    """Return rich sector divergence alignment diagnostics and history."""
+    from datetime import datetime, timedelta
+    from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 
-        cutoff = datetime.utcnow().date() - timedelta(days=days)
+    cutoff = datetime.utcnow().date() - timedelta(days=days)
 
-        with get_db_session() as db:
-            runs = (
-                db.query(SectorProjectionRun)
-                .filter(SectorProjectionRun.as_of_date >= cutoff)
-                .order_by(SectorProjectionRun.as_of_date.asc(), SectorProjectionRun.created_at.asc())
-                .all()
-            )
+    with get_db_session() as db:
+        runs = (
+            db.query(SectorProjectionRun)
+            .filter(SectorProjectionRun.as_of_date >= cutoff)
+            .order_by(SectorProjectionRun.as_of_date.asc(), SectorProjectionRun.created_at.asc())
+            .all()
+        )
 
-            if not runs:
-                raise HTTPException(status_code=404, detail="No sector projection history available")
+        if not runs:
+            raise HTTPException(status_code=404, detail="No sector projection history available")
 
-            history = []
-            latest_payload = None
+        history = []
+        latest_payload = None
 
-            for run in runs:
-                values = db.query(SectorProjectionValue).filter_by(run_id=run.id).all()
-                by_horizon = {"T": [], "3m": [], "6m": [], "12m": []}
-                for value in values:
-                    if value.horizon in by_horizon:
-                        by_horizon[value.horizon].append({
-                            "symbol": value.sector_symbol,
-                            "name": value.sector_name,
-                            "score": value.score_total,
-                            "rank": value.rank,
-                        })
+        for run in runs:
+            values = db.query(SectorProjectionValue).filter_by(run_id=run.id).all()
+            by_horizon = {"T": [], "3m": [], "6m": [], "12m": []}
+            for value in values:
+                if value.horizon in by_horizon:
+                    by_horizon[value.horizon].append({
+                        "symbol": value.sector_symbol,
+                        "name": value.sector_name,
+                        "score": value.score_total,
+                        "rank": value.rank,
+                    })
 
-                data_3m = by_horizon["3m"]
-                defensive = [entry for entry in data_3m if entry["symbol"] in DEFENSIVE_SECTORS]
-                cyclical = [entry for entry in data_3m if entry["symbol"] in CYCLICAL_SECTORS]
-                if not defensive or not cyclical:
-                    continue
+            data_3m = by_horizon["3m"]
+            defensive = [entry for entry in data_3m if entry["symbol"] in DEFENSIVE_SECTORS]
+            cyclical = [entry for entry in data_3m if entry["symbol"] in CYCLICAL_SECTORS]
+            if not defensive or not cyclical:
+                continue
 
-                defensive_avg = sum(entry["score"] for entry in defensive) / len(defensive)
-                cyclical_avg = sum(entry["score"] for entry in cyclical) / len(cyclical)
-                spread = defensive_avg - cyclical_avg
-                alignment_score = compute_alignment_score(run.system_state, spread)
-                breadth = compute_breadth_counts(by_horizon)
+            defensive_avg = sum(entry["score"] for entry in defensive) / len(defensive)
+            cyclical_avg = sum(entry["score"] for entry in cyclical) / len(cyclical)
+            spread = defensive_avg - cyclical_avg
+            alignment_score = compute_alignment_score(run.system_state, spread)
+            breadth = compute_breadth_counts(by_horizon)
 
-                point = {
-                    "date": str(run.as_of_date),
-                    "system_state": run.system_state,
-                    "defensive_avg": round(defensive_avg, 2),
-                    "cyclical_avg": round(cyclical_avg, 2),
-                    "spread": round(spread, 2),
-                    "alignment_score": round(alignment_score, 2),
-                    "sector_breadth": breadth,
-                }
-                history.append(point)
-                latest_payload = {
-                    **point,
-                    "top_defensive": sorted(defensive, key=lambda item: item["score"], reverse=True)[:3],
-                    "top_cyclical": sorted(cyclical, key=lambda item: item["score"], reverse=True)[:3],
-                    "updated_at": run.created_at.isoformat(),
-                }
-
-            if not history or latest_payload is None:
-                raise HTTPException(status_code=404, detail="Insufficient sector divergence component history")
-
-            return {
-                "as_of": latest_payload["date"],
-                "updated_at": latest_payload["updated_at"],
-                "refresh_cadence": "Updates whenever sector projection runs refresh, typically daily or on manual recompute.",
-                "latest": latest_payload,
-                "history": history,
+            point = {
+                "date": str(run.as_of_date),
+                "system_state": run.system_state,
+                "defensive_avg": round(defensive_avg, 2),
+                "cyclical_avg": round(cyclical_avg, 2),
+                "spread": round(spread, 2),
+                "alignment_score": round(alignment_score, 2),
+                "sector_breadth": breadth,
             }
+            history.append(point)
+            latest_payload = {
+                **point,
+                "top_defensive": sorted(defensive, key=lambda item: item["score"], reverse=True)[:3],
+                "top_cyclical": sorted(cyclical, key=lambda item: item["score"], reverse=True)[:3],
+                "updated_at": run.created_at.isoformat(),
+            }
+
+        if not history or latest_payload is None:
+            raise HTTPException(status_code=404, detail="Insufficient sector divergence component history")
+
+        return {
+            "as_of": latest_payload["date"],
+            "updated_at": latest_payload["updated_at"],
+            "refresh_cadence": "Updates whenever sector projection runs refresh, typically daily or on manual recompute.",
+            "latest": latest_payload,
+            "history": history,
+        }
 
 
 @router.get("/indicators/{code}/components")
@@ -1319,6 +1319,8 @@ async def get_indicator_components(code: str, days: int = Query(365, ge=1, le=10
     from app.services.analytics_stub import normalize_series, score_series
     
     canonical_code = normalize_indicator_code(code)
+    if canonical_code == "SECTOR_REGIME_ALIGNMENT":
+        return get_sector_divergence_alignment_components(days=days)
     if canonical_code != "CONSUMER_HEALTH":
         raise HTTPException(
             status_code=400, 
