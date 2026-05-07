@@ -297,7 +297,7 @@ export default function SystemBreakdown() {
           and analyzing <strong>{indicatorCount} critical indicators</strong> across domain groups: <strong>volatility and trend</strong> (VIX, SPY),
           <strong>participation</strong> (Breadth Health), <strong>rates and labor</strong> (T10Y2Y, UNRATE),
           <strong>bonds</strong> (Bond Market Stability), <strong>liquidity</strong> (Liquidity Proxy), <strong>consumers</strong> (Consumer Health),
-          <strong>sentiment</strong> (Analyst Confidence, Consumer & Corporate Sentiment), and <strong>hidden confirmation layers</strong> (AAS plus Sector Regime Alignment in composite weighting).
+          <strong>sentiment</strong> (Analyst Confidence, Consumer & Corporate Sentiment), and <strong>hidden confirmation layers</strong> (AAS plus Sector Divergence Alignment in composite weighting).
           Each indicator is independently scored on a 0-100 scale using statistical normalization techniques, then combined into 
           a weighted composite score that reflects overall market health.
         </p>
@@ -343,7 +343,7 @@ export default function SystemBreakdown() {
             <div className="text-xs text-stealth-400">Hidden from cards, included in system weighting</div>
           </div>
           <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
-            <div className="text-xs font-semibold text-stealth-200">Sector Regime</div>
+            <div className="text-xs font-semibold text-stealth-200">Sector Divergence</div>
             <div className="text-xs text-stealth-400">Defensive vs Cyclical alignment (hidden composite input)</div>
           </div>
         </div>
@@ -659,7 +659,7 @@ export default function SystemBreakdown() {
                   LIQUIDITY_PROXY: "Combines M2 money supply growth, Fed balance sheet changes, and overnight reverse repo usage. Measures systemic liquidity availability and tightness.",
                   ANALYST_ANXIETY: "Composite sentiment indicator aggregating VIX (equity vol), MOVE (rates vol), high-yield credit spreads, and equity risk premium. Captures institutional confidence.",
                   SENTIMENT_COMPOSITE: "Consumer & corporate confidence composite from Michigan Consumer Sentiment, business confidence, regional new-orders momentum, and CapEx commitments. Forward-looking demand indicator.",
-                  SECTOR_REGIME_ALIGNMENT: "Checks whether defensive versus cyclical sector leadership matches the current market regime. Alignment is supportive; divergence is a warning signal."
+                  SECTOR_REGIME_ALIGNMENT: "Checks whether defensive versus cyclical sector leadership aligns with the current market regime. Alignment is supportive; divergence is a warning signal."
                 };
                 
                 return (

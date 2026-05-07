@@ -984,27 +984,21 @@ class ETLRunner:
                 direction=ind.direction,
             )
         elif code == "SECTOR_REGIME_ALIGNMENT":
-            # Regime-alignment score from sector leadership:
-            # in RED regimes defensives should lead; in GREEN regimes cyclicals should lead.
+            # Sector divergence alignment score from the same data basis used by
+            # the Sector Divergence dashboard widget (3m projection leadership).
             from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 
             defensive_sectors = {"XLU", "XLP", "XLV"}
             cyclical_sectors = {"XLE", "XLF", "XLK", "XLY"}
 
-            # Keep latest projection run for each date in case there were multiple intraday reruns.
             runs = (
                 db.query(SectorProjectionRun)
                 .order_by(SectorProjectionRun.as_of_date.asc(), SectorProjectionRun.created_at.asc())
                 .all()
             )
 
-            runs_by_date = {}
-            for run in runs:
-                runs_by_date[run.as_of_date] = run
-
             alignment_points = []
-            for run_date in sorted(runs_by_date.keys()):
-                run = runs_by_date[run_date]
+            for run in runs:
                 values_3m = (
                     db.query(SectorProjectionValue)
                     .filter(
@@ -1024,15 +1018,17 @@ class ETLRunner:
                 cyclical_avg = sum(cyclical_scores) / len(cyclical_scores)
                 spread = defensive_avg - cyclical_avg
 
+                # Keep alignment math consistent with /sectors/summary so all UI
+                # surfaces report the same regime-alignment semantics.
                 if run.system_state == "RED":
-                    alignment_score = 50 + (spread * 2.5)
+                    alignment_score = 50 + spread
                 elif run.system_state == "GREEN":
-                    alignment_score = 50 - (spread * 2.5)
+                    alignment_score = 50 - spread
                 else:
-                    alignment_score = 100 - abs(spread * 2)
+                    alignment_score = 50
 
                 alignment_score = max(0.0, min(100.0, alignment_score))
-                alignment_points.append({"date": run_date.isoformat(), "value": alignment_score})
+                alignment_points.append({"date": run.as_of_date.isoformat(), "value": alignment_score})
 
             if len(alignment_points) < 20:
                 db.close()

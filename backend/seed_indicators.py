@@ -16,7 +16,7 @@ Indicators:
 - ANALYST_ANXIETY: Composite from VIX, MOVE, HY OAS, ERP (high = stress)
 - SENTIMENT_COMPOSITE: Consumer & corporate confidence from Michigan, NFIB, ISM, CapEx
 - AAS: Alternative Asset Stability from crypto and precious metals (low = pressure/distrust)
-- SECTOR_REGIME_ALIGNMENT: Defensive vs cyclical leadership alignment with current system regime
+- SECTOR_REGIME_ALIGNMENT: Sector divergence alignment versus current system regime
 
 DFF (Federal Funds Rate) was removed — its signal is redundant given T10Y2Y,
 LIQUIDITY_PROXY, and BOND_MARKET_STABILITY, and it provides no incremental information
@@ -157,7 +157,7 @@ INDICATORS = [
     },
     {
         "code": "SECTOR_REGIME_ALIGNMENT",
-        "name": "Sector Regime Alignment",
+        "name": "Sector Divergence Alignment",
         "source": "DERIVED",
         "source_symbol": "SECTOR_REGIME_ALIGNMENT",
         "category": "equity",

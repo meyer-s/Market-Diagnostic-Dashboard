@@ -536,7 +536,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
 
       {apiCode === "SECTOR_REGIME_ALIGNMENT" && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
-          <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Regime Alignment Methodology</h3>
+          <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Sector Divergence Alignment Methodology</h3>
           <p className="text-xs md:text-sm text-stealth-400 mb-3">
             This hidden composite contributor checks whether sector leadership confirms the active regime.
             In defensive regimes, defensives should lead. In risk-on regimes, cyclicals should lead.

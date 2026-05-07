@@ -419,8 +419,8 @@ INDICATOR_METADATA = {
     },
 
     "SECTOR_REGIME_ALIGNMENT": {
-        "name": "Sector Regime Alignment",
-        "description": "Measures whether defensive-versus-cyclical sector leadership matches the currently inferred market regime.",
+        "name": "Sector Divergence Alignment",
+        "description": "Measures whether defensive-versus-cyclical sector leadership aligns with the currently inferred market regime.",
         "relevance": "Leadership alignment tends to confirm regime durability. Persistent misalignment can signal a fragile or transitioning regime.",
         "scoring": "For each sector projection run, compute defensive minus cyclical spread. In RED regimes, defensive leadership raises score; in GREEN regimes, cyclical leadership raises score; in YELLOW, extreme divergence is penalized. Output is a 0-100 alignment stability score.",
         "direction": -1,
@@ -433,7 +433,7 @@ INDICATOR_METADATA = {
             "yellow_below": 70
         },
         "typical_range": "GREEN (70-100): leadership and regime aligned. YELLOW (40-69): mixed confirmation. RED (0-39): meaningful leadership/regime divergence.",
-        "impact": "Moderate impact by design. This is a confirmation layer, not a dominant macro driver.",
+        "impact": "Moderate impact by design. This is a divergence-confirmation layer, not a dominant macro driver.",
         "use_cases": [
             "Regime confirmation and rotation monitoring",
             "Detecting early divergence between narrative and market internals",
