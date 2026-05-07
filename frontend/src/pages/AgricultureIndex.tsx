@@ -561,6 +561,26 @@ export default function AgricultureIndex() {
             </div>
           </div>
 
+          <div className="surface-card p-4">
+            <h2 className="text-base font-semibold text-stealth-100">Stability Score</h2>
+            <div className="mt-4 h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={smoothedComponentHistory} margin={CHART_MARGIN}>
+                  <CartesianGrid {...commonGridProps} />
+                  <XAxis dataKey="date" {...commonXAxisProps} />
+                  <YAxis {...commonYAxisProps} domain={[0, 100]} />
+                  <Tooltip
+                    contentStyle={{ background: "rgba(2,6,23,0.85)", border: "1px solid rgba(148,163,184,0.15)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
+                    formatter={(value: number) => [value.toFixed(1), "Stability"]}
+                  />
+                  <ReferenceLine y={70} stroke="#34d399" strokeDasharray="3 3" strokeOpacity={0.4} />
+                  <ReferenceLine y={55} stroke="#fbbf24" strokeDasharray="3 3" strokeOpacity={0.4} />
+                  <Line type="monotone" dataKey="stability_score" stroke="#38bdf8" strokeWidth={2.4} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="surface-card p-4 xl:col-span-2">
               <h2 className="text-base font-semibold text-stealth-100">Stability Components (History)</h2>
