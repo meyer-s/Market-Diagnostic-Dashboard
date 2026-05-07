@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import {
+  Bar,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -16,7 +18,6 @@ import { useApi } from "../hooks/useApi";
 import {
   CHART_MARGIN,
   commonGridProps,
-  commonTooltipStyle,
   commonXAxisProps,
   commonYAxisProps,
   formatTooltipValue,
@@ -119,6 +120,15 @@ type StabilityPoint = {
   stability_score: number;
 };
 
+type MacdPoint = {
+  date: string;
+  macd: number;
+  signal: number;
+  histogram: number;
+  breadth_centered: number | null;
+  trend_centered: number | null;
+};
+
 const STABILITY_COMPONENT_META: Record<
   "trend_agreement" | "volatility_stability" | "correlation_stability" | "breadth" | "momentum_consistency" | "divergence_penalty",
   { label: string; description: string }
@@ -148,6 +158,39 @@ const STABILITY_COMPONENT_META: Record<
     description: "Penalty for sharp cross-sector disagreement; lower is better.",
   },
 };
+
+const MACD_META: Record<"macd" | "signal" | "histogram" | "breadth_centered" | "trend_centered", { label: string; description: string }> = {
+  macd: {
+    label: "MACD",
+    description: "Short-term composite momentum minus longer-term trend momentum.",
+  },
+  signal: {
+    label: "Signal",
+    description: "Smoothed MACD line used to spot momentum crossovers.",
+  },
+  histogram: {
+    label: "Histogram",
+    description: "Gap between MACD and signal; positive bars indicate improving momentum.",
+  },
+  breadth_centered: {
+    label: "Breadth vs 50",
+    description: "Breadth shifted around zero so positive values mean wider participation.",
+  },
+  trend_centered: {
+    label: "Trend vs 50",
+    description: "Trend agreement shifted around zero so positive values mean better internal alignment.",
+  },
+};
+
+function calculateEma(values: number[], period: number): number[] {
+  if (!values.length) return [];
+  const multiplier = 2 / (period + 1);
+  const ema: number[] = [values[0]];
+  for (let index = 1; index < values.length; index += 1) {
+    ema.push((values[index] - ema[index - 1]) * multiplier + ema[index - 1]);
+  }
+  return ema;
+}
 
 function smoothSeries<T extends Record<string, unknown>>(rows: T[], keys: string[], window = 7): T[] {
   if (!rows.length || window <= 1) return rows;
@@ -189,6 +232,31 @@ function StabilityTooltip({ active, payload, label }: { active?: boolean; payloa
             <div key={String(entry.dataKey)}>
               <p className="font-medium" style={{ color: entry.color ?? "#cbd5e1" }}>
                 {meta.label}: {formatTooltipValue(entry.value, 1)}
+              </p>
+              <p className="text-[11px] leading-4 text-stealth-200">{meta.description}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MacdTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey?: string; value?: number; color?: string }>; label?: string }) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  return (
+    <div className="max-w-xs rounded-xl border border-stealth-200/25 bg-stealth-950/45 p-3 text-xs shadow-[0_10px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl">
+      <p className="font-semibold text-white">{label}</p>
+      <div className="mt-2 space-y-2">
+        {payload.map((entry) => {
+          const key = entry.dataKey as keyof typeof MACD_META;
+          const meta = MACD_META[key];
+          if (!meta || typeof entry.value !== "number") return null;
+          return (
+            <div key={String(entry.dataKey)}>
+              <p className="font-medium" style={{ color: entry.color ?? "#cbd5e1" }}>
+                {meta.label}: {formatTooltipValue(entry.value, 2)}
               </p>
               <p className="text-[11px] leading-4 text-stealth-200">{meta.description}</p>
             </div>
@@ -293,6 +361,35 @@ export default function AgricultureIndex() {
     [componentHistory]
   );
 
+  const macdHistory = useMemo(() => {
+    if (!smoothedCompositeHistory.length) return [] as MacdPoint[];
+
+    const compositeValues = smoothedCompositeHistory.map((point) => point.score);
+    const fastEma = calculateEma(compositeValues, 12);
+    const slowEma = calculateEma(compositeValues, 26);
+    const macdValues = compositeValues.map((_, index) => fastEma[index] - slowEma[index]);
+    const signalValues = calculateEma(macdValues, 9);
+
+    const componentMap = new Map(
+      smoothedComponentHistory.map((point) => [point.date, point])
+    );
+
+    return smoothedCompositeHistory.map((point, index) => {
+      const componentPoint = componentMap.get(point.date);
+      const macd = macdValues[index];
+      const signal = signalValues[index];
+
+      return {
+        date: point.date,
+        macd,
+        signal,
+        histogram: macd - signal,
+        breadth_centered: componentPoint ? componentPoint.breadth - 50 : null,
+        trend_centered: componentPoint ? componentPoint.trend_agreement - 50 : null,
+      };
+    });
+  }, [smoothedCompositeHistory, smoothedComponentHistory]);
+
   if (loading) {
     return (
       <div className="page-shell-wide flex min-h-[60vh] items-center justify-center">
@@ -386,7 +483,12 @@ export default function AgricultureIndex() {
         <>
           <div className="surface-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-base font-semibold text-stealth-100">Composite History</h2>
+              <div>
+                <h2 className="text-base font-semibold text-stealth-100">Composite Momentum (MACD-style)</h2>
+                <p className="mt-1 text-xs text-stealth-400">
+                  Composite momentum centered around zero, with breadth and trend shifted to the same baseline for comparison.
+                </p>
+              </div>
               <div className="flex gap-2">
                 {(["30d", "90d", "180d", "365d"] as Timeframe[]).map((tf) => (
                   <button
@@ -405,24 +507,60 @@ export default function AgricultureIndex() {
             </div>
             <div className="mt-4 h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={smoothedCompositeHistory} margin={CHART_MARGIN}>
+                <ComposedChart data={macdHistory} margin={CHART_MARGIN}>
                   <CartesianGrid {...commonGridProps} />
                   <XAxis dataKey="date" {...commonXAxisProps} />
-                  <YAxis {...commonYAxisProps} domain={[0, 100]} />
-                  <Tooltip
-                    contentStyle={commonTooltipStyle}
-                    formatter={(value: number) => [formatTooltipValue(value, 2), "Score"]}
+                  <YAxis {...commonYAxisProps} />
+                  <Tooltip content={<MacdTooltip />} />
+                  <Legend
+                    verticalAlign="top"
+                    height={30}
+                    formatter={(value: string) => {
+                      const key = value as keyof typeof MACD_META;
+                      return MACD_META[key]?.label ?? value;
+                    }}
                   />
-                  <ReferenceLine y={50} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" />
+                  <ReferenceLine y={0} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" />
+                  <Bar dataKey="histogram" name="histogram" fill="rgba(251,146,60,0.35)" stroke="rgba(251,146,60,0.8)" barSize={10} />
                   <Line
                     type="monotone"
-                    dataKey="score"
+                    dataKey="macd"
+                    name="macd"
                     stroke={getFamilyColor("materials")}
                     strokeWidth={2.6}
                     dot={false}
                     isAnimationActive={false}
                   />
-                </LineChart>
+                  <Line
+                    type="monotone"
+                    dataKey="signal"
+                    name="signal"
+                    stroke="#f8fafc"
+                    strokeWidth={1.9}
+                    strokeDasharray="5 4"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="breadth_centered"
+                    name="breadth_centered"
+                    stroke={getFamilyColor("liquidity")}
+                    strokeWidth={1.8}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="trend_centered"
+                    name="trend_centered"
+                    stroke={getFamilyColor("growth")}
+                    strokeWidth={1.8}
+                    dot={false}
+                    strokeDasharray="4 3"
+                    isAnimationActive={false}
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>
