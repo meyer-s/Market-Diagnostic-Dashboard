@@ -206,6 +206,38 @@ interface AnalystAnxietyComponentData {
   };
 }
 
+interface SectorLeaderEntry {
+  symbol: string;
+  name: string;
+  score: number;
+  rank: number;
+}
+
+interface SectorDivergenceHistoryPoint {
+  date: string;
+  system_state: "GREEN" | "YELLOW" | "RED";
+  defensive_avg: number;
+  cyclical_avg: number;
+  spread: number;
+  alignment_score: number;
+  sector_breadth: {
+    improving: number;
+    deteriorating: number;
+    stable: number;
+  };
+}
+
+interface SectorDivergenceComponentsData {
+  as_of: string;
+  updated_at: string;
+  refresh_cadence: string;
+  latest: SectorDivergenceHistoryPoint & {
+    top_defensive: SectorLeaderEntry[];
+    top_cyclical: SectorLeaderEntry[];
+  };
+  history: SectorDivergenceHistoryPoint[];
+}
+
 interface MuniSeriesPoint {
   date: string;
   value: number | null;
@@ -402,6 +434,11 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       ? `/indicators/BREADTH_HEALTH/components?days=90`
       : ""
   );
+  const { data: sectorDivergenceComponents } = useApi<SectorDivergenceComponentsData>(
+    apiCode === "SECTOR_REGIME_ALIGNMENT"
+      ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
+      : ""
+  );
   const { data: muniSubsystem, loading: muniLoading, error: muniError } = useApi<MuniSubsystemResponse>(
     apiCode === "BOND_MARKET_STABILITY"
       ? `/indicators/${apiCode}/muni?days=${getHistoryDays()}`
@@ -544,18 +581,154 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 md:p-4 mb-3">
             <div className="text-xs font-mono text-stealth-300 space-y-1">
               <div>spread = avg(XLU, XLP, XLV) - avg(XLE, XLF, XLK, XLY)</div>
-              <div>RED regime score = 50 + 2.5 × spread</div>
-              <div>GREEN regime score = 50 - 2.5 × spread</div>
-              <div>YELLOW regime score = 100 - 2 × |spread|</div>
+              <div>RED regime score = 50 + spread</div>
+              <div>GREEN regime score = 50 - spread</div>
+              <div>YELLOW regime score = 70 - 1.2 × |spread|</div>
               <div>Final score is clamped to 0-100</div>
             </div>
           </div>
           <div className="text-xs text-stealth-400">
             High scores indicate leadership is aligned with the current regime classification.
-            Low scores indicate divergence, which is often an early transition warning.
+            Low scores indicate divergence, which is often an early transition warning. The series updates whenever sector projections refresh, usually daily.
           </div>
         </div>
       )}
+
+      {apiCode === "SECTOR_REGIME_ALIGNMENT" && sectorDivergenceComponents && (() => {
+        const cutoffMs = Date.now() - (chartRange.days * 24 * 60 * 60 * 1000);
+        const sectorHistory = sectorDivergenceComponents.history
+          .map((point) => ({ ...point, timestampNum: parseDateKeyUtc(point.date) }))
+          .filter((point) => Number.isFinite(point.timestampNum) && point.timestampNum >= cutoffMs);
+        const latest = sectorDivergenceComponents.latest;
+        const scoreColor = latest.alignment_score >= 65
+          ? "text-green-400"
+          : latest.alignment_score >= 45
+            ? "text-yellow-400"
+            : "text-red-400";
+        const spreadColor = latest.spread >= 0 ? "text-blue-400" : "text-orange-400";
+
+        return (
+          <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+            <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Sector Divergence Breakdown</h3>
+            <p className="text-xs md:text-sm text-stealth-400 mb-4">
+              {sectorDivergenceComponents.refresh_cadence} Latest projection snapshot: {formatDateTime(sectorDivergenceComponents.updated_at)}.
+            </p>
+
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-5">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs text-stealth-400 mb-1">Alignment Score</div>
+                <div className={`text-2xl font-bold ${scoreColor}`}>{latest.alignment_score.toFixed(1)}</div>
+                <div className="text-[11px] text-stealth-500 mt-1">0-100 composite</div>
+              </div>
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs text-stealth-400 mb-1">System State</div>
+                <div className={`text-2xl font-bold ${latest.system_state === "GREEN" ? "text-green-400" : latest.system_state === "RED" ? "text-red-400" : "text-yellow-400"}`}>{latest.system_state}</div>
+                <div className="text-[11px] text-stealth-500 mt-1">Active regime</div>
+              </div>
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs text-stealth-400 mb-1">Def vs Cyc Spread</div>
+                <div className={`text-2xl font-bold ${spreadColor}`}>{latest.spread > 0 ? "+" : ""}{latest.spread.toFixed(1)}</div>
+                <div className="text-[11px] text-stealth-500 mt-1">Positive = defensive lead</div>
+              </div>
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs text-stealth-400 mb-1">Defensive Avg</div>
+                <div className="text-2xl font-bold text-blue-400">{latest.defensive_avg.toFixed(1)}</div>
+                <div className="text-[11px] text-stealth-500 mt-1">XLU, XLP, XLV</div>
+              </div>
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs text-stealth-400 mb-1">Cyclical Avg</div>
+                <div className="text-2xl font-bold text-orange-400">{latest.cyclical_avg.toFixed(1)}</div>
+                <div className="text-[11px] text-stealth-500 mt-1">XLE, XLF, XLK, XLY</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs font-semibold text-stealth-200 mb-2">Leading Defensive Sectors</div>
+                <div className="space-y-2">
+                  {latest.top_defensive.map((leader) => (
+                    <div key={leader.symbol} className="flex items-center justify-between text-xs">
+                      <span className="text-stealth-300">{leader.symbol} · {leader.name}</span>
+                      <span className="font-semibold text-blue-400">{leader.score.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs font-semibold text-stealth-200 mb-2">Leading Cyclical Sectors</div>
+                <div className="space-y-2">
+                  {latest.top_cyclical.map((leader) => (
+                    <div key={leader.symbol} className="flex items-center justify-between text-xs">
+                      <span className="text-stealth-300">{leader.symbol} · {leader.name}</span>
+                      <span className="font-semibold text-orange-400">{leader.score.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-sm font-semibold text-stealth-200 mb-2">Defensive vs Cyclical Spread</div>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sectorHistory} margin={CHART_MARGIN}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                      <XAxis
+                        dataKey="timestampNum"
+                        type="number"
+                        domain={["dataMin", "dataMax"]}
+                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        stroke={CHART_NEUTRAL.axis}
+                        tickFormatter={(value: number) => formatDateUtc(value)}
+                      />
+                      <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} stroke={CHART_NEUTRAL.axis} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 10 }}
+                        labelFormatter={(value: number) => formatDateUtc(value)}
+                        formatter={(value: number) => [`${value.toFixed(2)}`, "Spread"]}
+                      />
+                      <ReferenceLine y={0} stroke={getFamilyColor("benchmark")} strokeDasharray="4 4" />
+                      <Line type="monotone" dataKey="spread" stroke="#60a5fa" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-sm font-semibold text-stealth-200 mb-2">Alignment Score History</div>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sectorHistory} margin={CHART_MARGIN}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                      <XAxis
+                        dataKey="timestampNum"
+                        type="number"
+                        domain={["dataMin", "dataMax"]}
+                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        stroke={CHART_NEUTRAL.axis}
+                        tickFormatter={(value: number) => formatDateUtc(value)}
+                      />
+                      <YAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 11 }} stroke={CHART_NEUTRAL.axis} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 10 }}
+                        labelFormatter={(value: number) => formatDateUtc(value)}
+                        formatter={(value: number) => [`${value.toFixed(2)}`, "Alignment Score"]}
+                      />
+                      <ReferenceLine y={65} stroke={statePalette.green} strokeDasharray="4 4" />
+                      <ReferenceLine y={45} stroke={statePalette.red} strokeDasharray="4 4" />
+                      <Line type="monotone" dataKey="alignment_score" stroke="#facc15" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 text-xs text-stealth-300">
+              Breadth context: {latest.sector_breadth.improving} improving, {latest.sector_breadth.stable} stable, {latest.sector_breadth.deteriorating} deteriorating sectors across the forward horizon stack.
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Component Breakdown for Consumer Health */}
       {apiCode === "CONSUMER_HEALTH" && components && components.length > 0 && (

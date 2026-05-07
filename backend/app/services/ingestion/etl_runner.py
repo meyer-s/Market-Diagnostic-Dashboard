@@ -28,6 +28,7 @@ from app.services.ingestion.breadth_utils import (
     SECTOR_TICKERS,
 )
 from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
+from app.services.sector_divergence import compute_alignment_score, split_defensive_cyclical_scores
 from app.utils.system_scoring import compute_weighted_composite
 
 logger = logging.getLogger(__name__)
@@ -988,9 +989,6 @@ class ETLRunner:
             # the Sector Divergence dashboard widget (3m projection leadership).
             from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 
-            defensive_sectors = {"XLU", "XLP", "XLV"}
-            cyclical_sectors = {"XLE", "XLF", "XLK", "XLY"}
-
             runs = (
                 db.query(SectorProjectionRun)
                 .order_by(SectorProjectionRun.as_of_date.asc(), SectorProjectionRun.created_at.asc())
@@ -1008,8 +1006,7 @@ class ETLRunner:
                     .all()
                 )
 
-                defensive_scores = [v.score_total for v in values_3m if v.sector_symbol in defensive_sectors]
-                cyclical_scores = [v.score_total for v in values_3m if v.sector_symbol in cyclical_sectors]
+                defensive_scores, cyclical_scores = split_defensive_cyclical_scores(values_3m)
 
                 if not defensive_scores or not cyclical_scores:
                     continue
@@ -1017,17 +1014,7 @@ class ETLRunner:
                 defensive_avg = sum(defensive_scores) / len(defensive_scores)
                 cyclical_avg = sum(cyclical_scores) / len(cyclical_scores)
                 spread = defensive_avg - cyclical_avg
-
-                # Keep alignment math consistent with /sectors/summary so all UI
-                # surfaces report the same regime-alignment semantics.
-                if run.system_state == "RED":
-                    alignment_score = 50 + spread
-                elif run.system_state == "GREEN":
-                    alignment_score = 50 - spread
-                else:
-                    alignment_score = 50
-
-                alignment_score = max(0.0, min(100.0, alignment_score))
+                alignment_score = compute_alignment_score(run.system_state, spread)
                 alignment_points.append({"date": run.as_of_date.isoformat(), "value": alignment_score})
 
             if len(alignment_points) < 20:

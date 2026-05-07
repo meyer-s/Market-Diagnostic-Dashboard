@@ -422,18 +422,18 @@ INDICATOR_METADATA = {
         "name": "Sector Divergence Alignment",
         "description": "Measures whether defensive-versus-cyclical sector leadership aligns with the currently inferred market regime.",
         "relevance": "Leadership alignment tends to confirm regime durability. Persistent misalignment can signal a fragile or transitioning regime.",
-        "scoring": "For each sector projection run, compute defensive minus cyclical spread. In RED regimes, defensive leadership raises score; in GREEN regimes, cyclical leadership raises score; in YELLOW, score is neutral by design. Output is a 0-100 alignment stability score.",
+        "scoring": "For each sector projection run, compute defensive minus cyclical spread. In RED regimes, defensive leadership raises score; in GREEN regimes, cyclical leadership raises score; in YELLOW regimes, balance is rewarded while extreme bias is penalized. Output is a 0-100 alignment stability score.",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "High score = sector leadership confirms current regime. Low score = leadership/regime divergence warning.",
         "derived_from": ["Sector Projection Engine", "XLU", "XLP", "XLV", "XLE", "XLF", "XLK", "XLY"],
-        "calculation": "spread = avg(defensive scores) - avg(cyclical scores). RED: 50 + spread. GREEN: 50 - spread. YELLOW: 50. Then clamp to [0, 100].",
+        "calculation": "spread = avg(defensive scores) - avg(cyclical scores). RED: 50 + spread. GREEN: 50 - spread. YELLOW: 70 - 1.2 x |spread|. Then clamp to [0, 100].",
         "thresholds": {
             "green_below": 40,
             "yellow_below": 70
         },
         "typical_range": "GREEN (70-100): leadership and regime aligned. YELLOW (40-69): mixed confirmation. RED (0-39): meaningful leadership/regime divergence.",
-        "impact": "Moderate impact by design. This is a divergence-confirmation layer, not a dominant macro driver.",
+        "impact": "Moderate impact by design. This is a divergence-confirmation layer, not a dominant macro driver. It typically refreshes whenever sector projections are recomputed, usually daily.",
         "use_cases": [
             "Regime confirmation and rotation monitoring",
             "Detecting early divergence between narrative and market internals",
