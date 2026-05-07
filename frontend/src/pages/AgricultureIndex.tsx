@@ -162,15 +162,15 @@ const STABILITY_COMPONENT_META: Record<
 const MACD_META: Record<"macd" | "signal" | "histogram" | "breadth_centered" | "trend_centered", { label: string; description: string }> = {
   macd: {
     label: "MACD",
-    description: "Short-term composite momentum minus longer-term trend momentum.",
+    description: "Short-term stability momentum minus longer-term stability trend.",
   },
   signal: {
     label: "Signal",
-    description: "Smoothed MACD line used to spot momentum crossovers.",
+    description: "Smoothed MACD line used to spot regime-quality momentum crossovers.",
   },
   histogram: {
     label: "Histogram",
-    description: "Gap between MACD and signal; positive bars indicate improving momentum.",
+    description: "Gap between MACD and signal; positive bars mean stability is improving.",
   },
   breadth_centered: {
     label: "Breadth vs 50",
@@ -315,24 +315,6 @@ export default function AgricultureIndex() {
   const [timeframe, setTimeframe] = useState<Timeframe>("90d");
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
 
-  const chartData = useMemo(() => overview?.composite.history ?? [], [overview]);
-
-  const clampedScoreHistory = useMemo(
-    () => chartData.map((point) => ({ ...point, score: Math.max(0, Math.min(100, point.value)) })),
-    [chartData]
-  );
-
-  const filteredHistory = useMemo(() => {
-    const days = daysForTimeframe(timeframe);
-    if (clampedScoreHistory.length <= days) return clampedScoreHistory;
-    return clampedScoreHistory.slice(-days);
-  }, [clampedScoreHistory, timeframe]);
-
-  const smoothedCompositeHistory = useMemo(
-    () => smoothSeries(filteredHistory, ["score"], 7),
-    [filteredHistory]
-  );
-
   const matrix60 = correlations?.correlations.group_matrix?.["60"] ?? [];
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
   const groups = overview?.groups ?? [];
@@ -362,33 +344,29 @@ export default function AgricultureIndex() {
   );
 
   const macdHistory = useMemo(() => {
-    if (!smoothedCompositeHistory.length) return [] as MacdPoint[];
+    if (!smoothedComponentHistory.length) return [] as MacdPoint[];
 
-    const compositeValues = smoothedCompositeHistory.map((point) => point.score);
-    const fastEma = calculateEma(compositeValues, 12);
-    const slowEma = calculateEma(compositeValues, 26);
-    const macdValues = compositeValues.map((_, index) => fastEma[index] - slowEma[index]);
+    // Use stability_score as MACD input — it has real regime variation (0-100).
+    // The composite level hugs near 100 so EMA(12)-EMA(26) stays ~0.
+    const stabilityValues = smoothedComponentHistory.map((point) => point.stability_score);
+    const fastEma = calculateEma(stabilityValues, 12);
+    const slowEma = calculateEma(stabilityValues, 26);
+    const macdValues = stabilityValues.map((_, index) => fastEma[index] - slowEma[index]);
     const signalValues = calculateEma(macdValues, 9);
 
-    const componentMap = new Map(
-      smoothedComponentHistory.map((point) => [point.date, point])
-    );
-
-    return smoothedCompositeHistory.map((point, index) => {
-      const componentPoint = componentMap.get(point.date);
+    return smoothedComponentHistory.map((point, index) => {
       const macd = macdValues[index];
       const signal = signalValues[index];
-
       return {
         date: point.date,
         macd,
         signal,
         histogram: macd - signal,
-        breadth_centered: componentPoint ? componentPoint.breadth - 50 : null,
-        trend_centered: componentPoint ? componentPoint.trend_agreement - 50 : null,
+        breadth_centered: point.breadth - 50,
+        trend_centered: point.trend_agreement - 50,
       };
     });
-  }, [smoothedCompositeHistory, smoothedComponentHistory]);
+  }, [smoothedComponentHistory]);
 
   if (loading) {
     return (
@@ -484,9 +462,9 @@ export default function AgricultureIndex() {
           <div className="surface-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-stealth-100">Composite Momentum (MACD-style)</h2>
+                <h2 className="text-base font-semibold text-stealth-100">Stability Momentum (MACD-style)</h2>
                 <p className="mt-1 text-xs text-stealth-400">
-                  Composite momentum centered around zero, with breadth and trend shifted to the same baseline for comparison.
+                  Regime quality momentum centered around zero — positive histogram means stability is improving. Breadth and trend overlaid for context.
                 </p>
               </div>
               <div className="flex gap-2">
