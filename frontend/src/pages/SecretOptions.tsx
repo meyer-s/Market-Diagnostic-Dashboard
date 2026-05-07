@@ -953,7 +953,7 @@ export default function SecretOptions() {
 
   const selectedZoneInputs = selected ? zoneInputsByPosition[selected.position.id] : null;
   const selectedSpotPrice =
-    greeksData?.model_info?.spot_price ?? selected?.metrics.market.current_price ?? null;
+    selected?.metrics.market.current_price ?? greeksData?.model_info?.spot_price ?? null;
   const selectedStrike = selected?.position.strike ?? null;
   const selectedProfitTake = asNumber(selectedZoneInputs?.profitTake);
   const selectedLossCut = asNumber(selectedZoneInputs?.lossCut);
@@ -1795,9 +1795,15 @@ export default function SecretOptions() {
                   <span className="text-gray-300">{greeksData.model_info.volatility_source}</span>
                 </div>
               )}
-              {greeksData.model_info.spot_price && (
+              {selectedSpotPrice !== null && (
                 <div>
-                  <span className="text-gray-500">Spot:</span>{" "}
+                  <span className="text-gray-500">Chart spot:</span>{" "}
+                  <span className="text-gray-300">{formatCurrency(selectedSpotPrice)}</span>
+                </div>
+              )}
+              {greeksData.model_info.spot_price !== undefined && greeksData.model_info.spot_price !== null && (
+                <div>
+                  <span className="text-gray-500">Model spot:</span>{" "}
                   <span className="text-gray-300">{formatCurrency(greeksData.model_info.spot_price)}</span>
                 </div>
               )}
