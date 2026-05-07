@@ -14,6 +14,7 @@ def get_agriculture_overview(days: int = Query(365, ge=90, le=1095)):
         "regime_label": data["regime_label"],
         "stability_score": data["stability_score"],
         "stability_components": data["stability_components"],
+        "component_history": data.get("component_history", []),
         "summary": data["summary"],
         "composite": data["composite"],
         "groups": data["groups"],

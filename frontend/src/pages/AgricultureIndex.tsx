@@ -3,6 +3,7 @@ import {
   Area,
   AreaChart,
   Line,
+  LineChart,
   CartesianGrid,
   ReferenceLine,
   ResponsiveContainer,
@@ -45,6 +46,16 @@ type AgricultureOverview = {
   regime_label: string;
   stability_score: number;
   stability_components: Record<string, number>;
+  component_history?: Array<{
+    date: string;
+    trend_agreement: number;
+    volatility_stability: number;
+    correlation_stability: number;
+    breadth: number;
+    momentum_consistency: number;
+    divergence_penalty: number;
+    stability_score: number;
+  }>;
   summary: string;
   composite: {
     group_weights: Record<string, number>;
@@ -140,9 +151,6 @@ function daysForTimeframe(timeframe: Timeframe): number {
 
 export default function AgricultureIndex() {
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
-  const { data: overview30 } = useApi<AgricultureOverview>("/agriculture/overview?days=30");
-  const { data: overview90 } = useApi<AgricultureOverview>("/agriculture/overview?days=90");
-  const { data: overview180 } = useApi<AgricultureOverview>("/agriculture/overview?days=180");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
   const { data: macro } = useApi<AgricultureMacro>("/agriculture/macro?days=365");
 
@@ -166,29 +174,12 @@ export default function AgricultureIndex() {
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
   const groups = overview?.groups ?? [];
 
-  const stabilityTrendSeries = useMemo(() => {
-    const snapshots = [
-      { label: "30d", data: overview30 },
-      { label: "90d", data: overview90 },
-      { label: "180d", data: overview180 },
-      { label: "365d", data: overview },
-    ];
-
-    return snapshots
-      .filter((item) => item.data?.stability_components)
-      .map((item) => {
-        const comp = item.data!.stability_components;
-        return {
-          horizon: item.label,
-          trend_agreement: comp.trend_agreement,
-          volatility_stability: comp.volatility_stability,
-          correlation_stability: comp.correlation_stability,
-          breadth: comp.breadth,
-          momentum_consistency: comp.momentum_consistency,
-          divergence_penalty: comp.divergence_penalty,
-        };
-      });
-  }, [overview30, overview90, overview180, overview]);
+  const componentHistory = useMemo(() => {
+    const rows = overview?.component_history ?? [];
+    const days = daysForTimeframe(timeframe);
+    if (rows.length <= days) return rows;
+    return rows.slice(-days);
+  }, [overview, timeframe]);
 
   if (loading) {
     return (
@@ -326,12 +317,12 @@ export default function AgricultureIndex() {
 
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="surface-card p-4 xl:col-span-2">
-              <h2 className="text-base font-semibold text-stealth-100">Stability Components by Horizon</h2>
+              <h2 className="text-base font-semibold text-stealth-100">Stability Components (History)</h2>
               <div className="mt-4 h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={stabilityTrendSeries} margin={CHART_MARGIN}>
+                  <LineChart data={componentHistory} margin={CHART_MARGIN}>
                     <CartesianGrid {...commonGridProps} />
-                    <XAxis dataKey="horizon" stroke={commonYAxisProps.stroke} tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                    <XAxis dataKey="date" {...commonXAxisProps} />
                     <YAxis {...commonYAxisProps} domain={[0, 100]} />
                     <Tooltip
                       contentStyle={commonTooltipStyle}
@@ -342,8 +333,8 @@ export default function AgricultureIndex() {
                     <Line type="monotone" dataKey="correlation_stability" stroke={getFamilyColor("equity")} strokeWidth={2} dot={{ r: 2 }} />
                     <Line type="monotone" dataKey="breadth" stroke={getFamilyColor("liquidity")} strokeWidth={2} dot={{ r: 2 }} />
                     <Line type="monotone" dataKey="momentum_consistency" stroke={getFamilyColor("tech")} strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="divergence_penalty" stroke="#f87171" strokeWidth={1.8} dot={{ r: 2 }} />
-                  </AreaChart>
+                    <Line type="monotone" dataKey="divergence_penalty" stroke="#f87171" strokeWidth={1.8} strokeDasharray="4 3" dot={{ r: 2 }} />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
               <div className="mt-3 flex flex-wrap gap-3 text-xs text-stealth-400">

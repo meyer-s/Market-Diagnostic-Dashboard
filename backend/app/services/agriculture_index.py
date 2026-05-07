@@ -742,6 +742,153 @@ def generate_agriculture_summary(
     )
 
 
+def _build_component_history(
+    series_map: Dict[str, pd.Series],
+    group_returns: Dict[str, pd.Series],
+    composite_returns: pd.Series,
+    days: int,
+) -> List[Dict[str, Any]]:
+    if composite_returns.empty:
+        return []
+
+    prices = pd.DataFrame(series_map).sort_index().ffill().dropna(how="all")
+    if prices.empty:
+        return []
+
+    composite_index = (1.0 + composite_returns).cumprod()
+    comp20 = (composite_index / composite_index.shift(20) - 1.0) * 100.0
+    comp_vol = composite_returns.rolling(60).std(ddof=0) * 100.0
+
+    group20: Dict[str, pd.Series] = {}
+    for group, returns in group_returns.items():
+        group_index = (1.0 + returns).cumprod()
+        group20[group] = (group_index / group_index.shift(20) - 1.0) * 100.0
+
+    ch5 = (prices / prices.shift(5) - 1.0) * 100.0
+    ch20 = (prices / prices.shift(20) - 1.0) * 100.0
+    ch60 = (prices / prices.shift(60) - 1.0) * 100.0
+    ch120 = (prices / prices.shift(120) - 1.0) * 100.0
+
+    group_frame = pd.DataFrame(group_returns).dropna(how="all")
+
+    points: List[Dict[str, Any]] = []
+    for timestamp in composite_returns.index:
+        vol = _safe_float(comp_vol.get(timestamp))
+        vol_score = _clamp(100.0 - ((vol or 0.0) / 3.0) * 100.0, 0.0, 100.0) if vol is not None else 50.0
+
+        comp20_value = _safe_float(comp20.get(timestamp))
+        comp_sign = 0 if comp20_value is None or abs(comp20_value) < 0.2 else (1 if comp20_value > 0 else -1)
+
+        trend_total = 0
+        trend_match = 0
+        group_changes_today: List[float] = []
+        if comp_sign != 0:
+            for series in group20.values():
+                gv = _safe_float(series.get(timestamp))
+                if gv is None:
+                    continue
+                group_changes_today.append(gv)
+                gsign = 0 if abs(gv) < 0.2 else (1 if gv > 0 else -1)
+                if gsign == 0:
+                    continue
+                trend_total += 1
+                if gsign == comp_sign:
+                    trend_match += 1
+            trend_score = _clamp((trend_match / trend_total) * 100.0, 0.0, 100.0) if trend_total else 50.0
+        else:
+            trend_score = 55.0
+            for series in group20.values():
+                gv = _safe_float(series.get(timestamp))
+                if gv is not None:
+                    group_changes_today.append(gv)
+
+        window = group_frame.loc[:timestamp].tail(60)
+        if window.shape[1] >= 2 and window.shape[0] >= 12:
+            corr = window.corr().values
+            upper = corr[np.triu_indices_from(corr, k=1)]
+            if upper.size > 0:
+                avg_corr = float(np.mean(upper))
+                dispersion = float(np.std(upper))
+                corr_score = _clamp(((avg_corr + 1.0) / 2.0) * 100.0 - dispersion * 25.0, 0.0, 100.0)
+            else:
+                corr_score = 50.0
+        else:
+            corr_score = 50.0
+
+        def sign_score(value: Optional[float]) -> Optional[float]:
+            if value is None:
+                return None
+            return 50.0 if value > 0 else 0.0
+
+        breadth_values: List[float] = []
+        for code in prices.columns:
+            v20 = _safe_float(ch20[code].get(timestamp)) if code in ch20.columns else None
+            v60 = _safe_float(ch60[code].get(timestamp)) if code in ch60.columns else None
+            if v20 is None and v60 is None:
+                continue
+            s = 0.0
+            if v20 is not None:
+                s += sign_score(v20) or 0.0
+            if v60 is not None:
+                s += sign_score(v60) or 0.0
+            breadth_values.append(s)
+        breadth_score = _clamp(float(mean(breadth_values)), 0.0, 100.0) if breadth_values else 50.0
+
+        momentum_values: List[float] = []
+        for code in prices.columns:
+            values = [
+                _safe_float(ch5[code].get(timestamp)) if code in ch5.columns else None,
+                _safe_float(ch20[code].get(timestamp)) if code in ch20.columns else None,
+                _safe_float(ch60[code].get(timestamp)) if code in ch60.columns else None,
+                _safe_float(ch120[code].get(timestamp)) if code in ch120.columns else None,
+            ]
+            signs: List[int] = []
+            for value in values:
+                if value is None:
+                    continue
+                signs.append(1 if value > 0 else -1 if value < 0 else 0)
+            if len(signs) < 2:
+                continue
+            agreement = max(signs.count(-1), signs.count(0), signs.count(1)) / len(signs)
+            momentum_values.append(agreement * 100.0)
+        momentum_score = _clamp(float(mean(momentum_values)), 0.0, 100.0) if momentum_values else 50.0
+
+        if len(group_changes_today) >= 2:
+            dispersion = float(np.std(group_changes_today))
+            opposed = any(v > 0 for v in group_changes_today) and any(v < 0 for v in group_changes_today)
+            divergence_penalty = _clamp(dispersion * 1.1 + (6.0 if opposed else 0.0), 0.0, 25.0)
+        else:
+            divergence_penalty = 0.0
+
+        stability_score = _clamp(
+            0.25 * trend_score
+            + 0.20 * vol_score
+            + 0.20 * corr_score
+            + 0.20 * breadth_score
+            + 0.15 * momentum_score
+            - divergence_penalty,
+            0.0,
+            100.0,
+        )
+
+        points.append(
+            {
+                "date": timestamp.strftime("%Y-%m-%d"),
+                "trend_agreement": round(trend_score, 2),
+                "volatility_stability": round(vol_score, 2),
+                "correlation_stability": round(corr_score, 2),
+                "breadth": round(breadth_score, 2),
+                "momentum_consistency": round(momentum_score, 2),
+                "divergence_penalty": round(divergence_penalty, 2),
+                "stability_score": round(stability_score, 2),
+            }
+        )
+
+    if len(points) > days:
+        return points[-days:]
+    return points
+
+
 def calculate_composite_index(days: int = 365) -> Dict[str, Any]:
     with _CACHE_LOCK:
         cached = _CACHE.get(days)
@@ -831,6 +978,13 @@ def calculate_composite_index(days: int = 365) -> Dict[str, Any]:
     special = _special_signals(symbol_data, groups)
     macro_pressure = _macro_pressure(macro_returns, special)
 
+    component_history = _build_component_history(
+        series_map=series_map,
+        group_returns=group_returns,
+        composite_returns=composite_returns,
+        days=days,
+    )
+
     index_history: List[Dict[str, Any]] = []
     if not composite_returns.empty:
         index_series = (1.0 + composite_returns).cumprod()
@@ -854,6 +1008,7 @@ def calculate_composite_index(days: int = 365) -> Dict[str, Any]:
         "regime_label": regime,
         "stability_score": stability_score,
         "stability_components": stability_components,
+        "component_history": component_history,
         "summary": summary,
         "composite": {
             "group_weights": {group: round(weight, 2) for group, weight in effective_weights.items()},
