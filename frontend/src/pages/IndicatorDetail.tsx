@@ -1703,7 +1703,9 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 }))
                 .filter((item) => item.dateNum >= daysBack.getTime());
 
-              const chartData = historyChartData.length > 0 ? historyChartData : fallbackComponentData;
+              const chartData = apiCode === "SENTIMENT_COMPOSITE"
+                ? fallbackComponentData
+                : (historyChartData.length > 0 ? historyChartData : fallbackComponentData);
 
               // Deduplicate by date
               const dateMap10 = new Map();

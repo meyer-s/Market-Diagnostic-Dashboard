@@ -978,7 +978,6 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
     Returns Michigan Consumer Sentiment, NFIB, ISM New Orders, CapEx proxy.
     """
     from datetime import datetime, timedelta
-    from bisect import bisect_right
     from app.services.ingestion.fred_client import FredClient
     import numpy as np
     
@@ -1092,57 +1091,7 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
     if has_capex:
         composite_conf = composite_conf + capex_conf * weights["capex"]
 
-    # Carry forward latest known monthly reading to today so this view
-    # stays aligned with the headline indicator freshness behavior.
-    today_key = datetime.utcnow().strftime("%Y-%m-%d")
-    if common_dates and common_dates[-1] < today_key:
-        common_dates.append(today_key)
-        umich_vals = np.append(umich_vals, umich_vals[-1])
-        umich_conf = np.append(umich_conf, umich_conf[-1])
-        composite_conf = np.append(composite_conf, composite_conf[-1])
-        if has_nfib:
-            nfib_vals = np.append(nfib_vals, nfib_vals[-1])
-            nfib_conf = np.append(nfib_conf, nfib_conf[-1])
-        if has_ism:
-            ism_vals = np.append(ism_vals, ism_vals[-1])
-            ism_conf = np.append(ism_conf, ism_conf[-1])
-        if has_capex:
-            capex_vals = np.append(capex_vals, capex_vals[-1])
-            capex_conf = np.append(capex_conf, capex_conf[-1])
-
-    # Align composite stability with the canonical indicator history so
-    # component chart values are consistent with headline score/state trend.
-    score_dates: list[str] = []
-    score_values: list[float] = []
-    with get_db_session() as db:
-        sentiment_indicator = db.query(Indicator).filter(Indicator.code == "SENTIMENT_COMPOSITE").first()
-        if sentiment_indicator:
-            score_cutoff = datetime.utcnow() - timedelta(days=fetch_days + 30)
-            indicator_values = (
-                db.query(IndicatorValue)
-                .filter(
-                    IndicatorValue.indicator_id == sentiment_indicator.id,
-                    IndicatorValue.timestamp >= score_cutoff,
-                )
-                .order_by(IndicatorValue.timestamp.asc())
-                .all()
-            )
-
-            by_day: dict[str, float] = {}
-            for row in indicator_values:
-                day_key = row.timestamp.date().isoformat()
-                if row.score is not None:
-                    by_day[day_key] = float(row.score)
-
-            if by_day:
-                score_dates = sorted(by_day.keys())
-                score_values = [by_day[day] for day in score_dates]
-
-    def resolve_aligned_stability_score(date_key: str, fallback_confidence: float) -> float:
-        if score_dates:
-            idx = bisect_right(score_dates, date_key) - 1
-            if idx >= 0:
-                return float(np.clip(score_values[idx], 0, 100))
+    def resolve_stability_score(fallback_confidence: float) -> float:
         return float(np.clip(fallback_confidence, 0, 100))
     
     # Build result
@@ -1158,7 +1107,7 @@ async def get_sentiment_composite_components(days: int = Query(365, ge=1, le=109
             },
             "composite": {
                 "confidence_score": float(composite_conf[i]),
-                "stability_score": resolve_aligned_stability_score(date, float(composite_conf[i])),
+                "stability_score": resolve_stability_score(float(composite_conf[i])),
             }
         }
         

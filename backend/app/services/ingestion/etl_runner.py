@@ -902,13 +902,6 @@ class ETLRunner:
             # With direction=-1 in config, this will be properly normalized
             # High confidence -> high final score (GREEN), low confidence -> low final score (RED)
 
-            # Carry forward the latest monthly sentiment reading to "today"
-            # so dashboard freshness reflects current known state between releases.
-            today_key = datetime.utcnow().strftime("%Y-%m-%d")
-            if common_dates and common_dates[-1] < today_key:
-                common_dates.append(today_key)
-                composite_conf = np.append(composite_conf, composite_conf[-1])
-            
             # Update series with actual dates and values
             series = [{"date": common_dates[i], "value": composite_conf[i]} for i in range(len(common_dates))]
             clean_values = series
