@@ -572,29 +572,6 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
         );
       })()}
 
-      {apiCode === "SECTOR_REGIME_ALIGNMENT" && (
-        <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
-          <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Sector Divergence Alignment Methodology</h3>
-          <p className="text-xs md:text-sm text-stealth-400 mb-3">
-            This hidden composite contributor checks whether sector leadership confirms the active regime.
-            In defensive regimes, defensives should lead. In risk-on regimes, cyclicals should lead.
-          </p>
-          <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 md:p-4 mb-3">
-            <div className="text-xs font-mono text-stealth-300 space-y-1">
-              <div>spread = avg(XLU, XLP, XLV) - avg(XLE, XLF, XLK, XLY)</div>
-              <div>RED regime score = 50 + spread</div>
-              <div>GREEN regime score = 50 - spread</div>
-              <div>YELLOW regime score = 70 - 1.2 × |spread|</div>
-              <div>Final score is clamped to 0-100</div>
-            </div>
-          </div>
-          <div className="text-xs text-stealth-400">
-            High scores indicate leadership is aligned with the current regime classification.
-            Low scores indicate divergence, which is often an early transition warning. The series updates whenever sector projections refresh, usually daily.
-          </div>
-        </div>
-      )}
-
       {apiCode === "SECTOR_REGIME_ALIGNMENT" && sectorDivergenceComponents && (() => {
         const cutoffMs = Date.now() - (chartRange.days * 24 * 60 * 60 * 1000);
         const sectorHistory = sectorDivergenceComponents.history
@@ -607,6 +584,26 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             ? "text-yellow-400"
             : "text-red-400";
         const spreadColor = latest.spread >= 0 ? "text-blue-400" : "text-orange-400";
+        const expectedLeadership = latest.system_state === "RED"
+          ? "Defensive leadership should dominate"
+          : latest.system_state === "GREEN"
+            ? "Cyclical leadership should dominate"
+            : "Leadership should stay relatively balanced";
+        const observedLeadership = latest.spread > 2
+          ? `Defensives are leading by ${latest.spread.toFixed(1)} points`
+          : latest.spread < -2
+            ? `Cyclicals are leading by ${Math.abs(latest.spread).toFixed(1)} points`
+            : "Leadership is roughly balanced";
+        const scoringFormula = latest.system_state === "RED"
+          ? `50 + ${latest.spread.toFixed(1)}`
+          : latest.system_state === "GREEN"
+            ? `50 - (${latest.spread.toFixed(1)})`
+            : `70 - 1.2 × ${Math.abs(latest.spread).toFixed(1)}`;
+        const scoreBand = latest.alignment_score >= 70
+          ? "GREEN band"
+          : latest.alignment_score >= 40
+            ? "YELLOW band"
+            : "RED band";
 
         return (
           <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
@@ -721,6 +718,24 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs font-semibold text-stealth-200 mb-2">Regime Expectation</div>
+                <div className="text-sm text-stealth-300 leading-6">{expectedLeadership}</div>
+                <div className="text-[11px] text-stealth-500 mt-2">Current regime: {latest.system_state}</div>
+              </div>
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs font-semibold text-stealth-200 mb-2">Observed Leadership</div>
+                <div className="text-sm text-stealth-300 leading-6">{observedLeadership}</div>
+                <div className="text-[11px] text-stealth-500 mt-2">Spread compares defensive basket versus cyclical basket</div>
+              </div>
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="text-xs font-semibold text-stealth-200 mb-2">Live Scoring Snapshot</div>
+                <div className="text-sm font-mono text-stealth-300">{scoringFormula}</div>
+                <div className="text-[11px] text-stealth-500 mt-2">Current score {latest.alignment_score.toFixed(1)} lands in the {scoreBand}</div>
               </div>
             </div>
 
@@ -2487,6 +2502,75 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             </div>
           </div>
         </div>
+
+        {apiCode === "SECTOR_REGIME_ALIGNMENT" && sectorDivergenceComponents && (() => {
+          const latest = sectorDivergenceComponents.latest;
+          const scoringFormula = latest.system_state === "RED"
+            ? `50 + spread = 50 + ${latest.spread.toFixed(1)} = ${latest.alignment_score.toFixed(1)}`
+            : latest.system_state === "GREEN"
+              ? `50 - spread = 50 - (${latest.spread.toFixed(1)}) = ${latest.alignment_score.toFixed(1)}`
+              : `70 - 1.2 × |spread| = 70 - 1.2 × ${Math.abs(latest.spread).toFixed(1)} = ${latest.alignment_score.toFixed(1)}`;
+          const interpretation = latest.alignment_score >= 70
+            ? "Leadership is strongly confirming the regime classification."
+            : latest.alignment_score >= 40
+              ? "Leadership is only partially confirming the regime classification."
+              : "Leadership is diverging materially from the current regime classification.";
+
+          return (
+            <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mt-4 md:mt-6">
+              <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Sector Divergence Alignment Methodology</h3>
+              <p className="text-xs md:text-sm text-stealth-400 mb-4">
+                This confirmation layer checks whether sector leadership matches the currently inferred macro regime. The score updates whenever sector projections refresh, typically daily.
+              </p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                  <div className="text-xs font-semibold text-stealth-200 mb-2">Input Baskets</div>
+                  <div className="text-xs font-mono text-stealth-300 space-y-1">
+                    <div>Defensive = XLU + XLP + XLV</div>
+                    <div>Cyclical = XLE + XLF + XLK + XLY</div>
+                    <div>spread = avg(defensive) - avg(cyclical)</div>
+                  </div>
+                </div>
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                  <div className="text-xs font-semibold text-stealth-200 mb-2">Current Scoring Pass</div>
+                  <div className="text-xs font-mono text-stealth-300 leading-6">{scoringFormula}</div>
+                  <div className="text-[11px] text-stealth-500 mt-2">Active regime: {latest.system_state}</div>
+                </div>
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                  <div className="text-xs font-semibold text-stealth-200 mb-2">Interpretation</div>
+                  <div className="text-sm text-stealth-300 leading-6">{interpretation}</div>
+                  <div className="text-[11px] text-stealth-500 mt-2">Latest snapshot: {formatDateTime(sectorDivergenceComponents.updated_at)}</div>
+                </div>
+              </div>
+
+              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-4">
+                <div className="text-xs font-semibold text-stealth-200 mb-2">Scoring Rules</div>
+                <div className="text-xs font-mono text-stealth-300 space-y-1">
+                  <div>RED regime score = 50 + spread</div>
+                  <div>GREEN regime score = 50 - spread</div>
+                  <div>YELLOW regime score = 70 - 1.2 × |spread|</div>
+                  <div>Final score is clamped to 0-100</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                  <div className="text-xs font-semibold text-green-400 mb-1">GREEN: 70-100</div>
+                  <div className="text-xs text-stealth-300">Leadership is strongly aligned with the inferred regime.</div>
+                </div>
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                  <div className="text-xs font-semibold text-yellow-400 mb-1">YELLOW: 40-69</div>
+                  <div className="text-xs text-stealth-300">Leadership is mixed, transitional, or only partially confirming the regime.</div>
+                </div>
+                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                  <div className="text-xs font-semibold text-red-400 mb-1">RED: 0-39</div>
+                  <div className="text-xs text-stealth-300">Leadership is materially diverging from the regime classification and may warn of transition.</div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

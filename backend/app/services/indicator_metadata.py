@@ -420,9 +420,9 @@ INDICATOR_METADATA = {
 
     "SECTOR_REGIME_ALIGNMENT": {
         "name": "Sector Divergence Alignment",
-        "description": "Measures whether defensive-versus-cyclical sector leadership aligns with the currently inferred market regime.",
-        "relevance": "Leadership alignment tends to confirm regime durability. Persistent misalignment can signal a fragile or transitioning regime.",
-        "scoring": "For each sector projection run, compute defensive minus cyclical spread. In RED regimes, defensive leadership raises score; in GREEN regimes, cyclical leadership raises score; in YELLOW regimes, balance is rewarded while extreme bias is penalized. Output is a 0-100 alignment stability score.",
+        "description": "Measures whether defensive-versus-cyclical sector leadership aligns with the currently inferred market regime. It acts as a confirmation layer rather than a primary regime driver.",
+        "relevance": "Leadership alignment tends to confirm regime durability. Persistent misalignment can signal a fragile, crowded, or transitioning regime before broader indicators fully adjust.",
+        "scoring": "Compute spread = avg(XLU, XLP, XLV) - avg(XLE, XLF, XLK, XLY). RED: 50 + spread. GREEN: 50 - spread. YELLOW: 70 - 1.2 x |spread|. Clamp the result to 0-100. Thresholds: GREEN 70+, YELLOW 40-69, RED below 40.",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "High score = sector leadership confirms current regime. Low score = leadership/regime divergence warning.",
@@ -432,8 +432,8 @@ INDICATOR_METADATA = {
             "green_below": 40,
             "yellow_below": 70
         },
-        "typical_range": "GREEN (70-100): leadership and regime aligned. YELLOW (40-69): mixed confirmation. RED (0-39): meaningful leadership/regime divergence.",
-        "impact": "Moderate impact by design. This is a divergence-confirmation layer, not a dominant macro driver. It typically refreshes whenever sector projections are recomputed, usually daily.",
+        "typical_range": "GREEN (70-100): leadership and regime strongly aligned. YELLOW (40-69): mixed confirmation, transitional leadership, or balanced tape. RED (0-39): meaningful leadership/regime divergence.",
+        "impact": "Moderate impact by design. This is a divergence-confirmation layer, not a dominant macro driver. It refreshes with the sector projection engine, typically daily or on manual recompute.",
         "use_cases": [
             "Regime confirmation and rotation monitoring",
             "Detecting early divergence between narrative and market internals",
