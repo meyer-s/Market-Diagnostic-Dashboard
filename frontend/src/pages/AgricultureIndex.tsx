@@ -2,15 +2,13 @@ import { useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
+  Line,
   CartesianGrid,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  Cell,
-  Bar,
-  BarChart,
 } from "recharts";
 
 import MarketLoading from "../components/ui/MarketLoading";
@@ -142,6 +140,9 @@ function daysForTimeframe(timeframe: Timeframe): number {
 
 export default function AgricultureIndex() {
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
+  const { data: overview30 } = useApi<AgricultureOverview>("/agriculture/overview?days=30");
+  const { data: overview90 } = useApi<AgricultureOverview>("/agriculture/overview?days=90");
+  const { data: overview180 } = useApi<AgricultureOverview>("/agriculture/overview?days=180");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
   const { data: macro } = useApi<AgricultureMacro>("/agriculture/macro?days=365");
 
@@ -150,25 +151,44 @@ export default function AgricultureIndex() {
 
   const chartData = useMemo(() => overview?.composite.history ?? [], [overview]);
 
+  const clampedScoreHistory = useMemo(
+    () => chartData.map((point) => ({ ...point, score: Math.max(0, Math.min(100, point.value)) })),
+    [chartData]
+  );
+
   const filteredHistory = useMemo(() => {
     const days = daysForTimeframe(timeframe);
-    if (chartData.length <= days) return chartData;
-    return chartData.slice(-days);
-  }, [chartData, timeframe]);
-
-  const stabilityComponents = useMemo(() => {
-    if (!overview?.stability_components) return [];
-    return Object.entries(overview.stability_components)
-      .filter(([key]) => key !== "stability_score")
-      .map(([key, value]) => ({
-        key: key.replace(/_/g, " "),
-        value,
-      }));
-  }, [overview]);
+    if (clampedScoreHistory.length <= days) return clampedScoreHistory;
+    return clampedScoreHistory.slice(-days);
+  }, [clampedScoreHistory, timeframe]);
 
   const matrix60 = correlations?.correlations.group_matrix?.["60"] ?? [];
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
   const groups = overview?.groups ?? [];
+
+  const stabilityTrendSeries = useMemo(() => {
+    const snapshots = [
+      { label: "30d", data: overview30 },
+      { label: "90d", data: overview90 },
+      { label: "180d", data: overview180 },
+      { label: "365d", data: overview },
+    ];
+
+    return snapshots
+      .filter((item) => item.data?.stability_components)
+      .map((item) => {
+        const comp = item.data!.stability_components;
+        return {
+          horizon: item.label,
+          trend_agreement: comp.trend_agreement,
+          volatility_stability: comp.volatility_stability,
+          correlation_stability: comp.correlation_stability,
+          breadth: comp.breadth,
+          momentum_consistency: comp.momentum_consistency,
+          divergence_penalty: comp.divergence_penalty,
+        };
+      });
+  }, [overview30, overview90, overview180, overview]);
 
   if (loading) {
     return (
@@ -202,36 +222,36 @@ export default function AgricultureIndex() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="surface-card-strong p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Stability Score</p>
-          <p className={`mt-2 text-3xl font-semibold ${getScoreTone(overview.stability_score)}`}>
-            {overview.stability_score.toFixed(1)}
-          </p>
-          <div className="mt-2 h-2 w-full rounded-full bg-stealth-700">
-            <div className={`h-2 rounded-full ${getScoreFill(overview.stability_score)}`} style={{ width: `${overview.stability_score}%` }}></div>
+      <div className="surface-card-strong p-4 md:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Stability Snapshot</p>
+            <p className={`mt-2 text-4xl font-semibold ${getScoreTone(overview.stability_score)}`}>{overview.stability_score.toFixed(1)}</p>
+            <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
+              <div className={`h-2 rounded-full ${getScoreFill(overview.stability_score)}`} style={{ width: `${overview.stability_score}%` }}></div>
+            </div>
+            <p className="mt-2 text-xs text-stealth-400">As of {new Date(overview.as_of).toLocaleString()}</p>
           </div>
-          <p className="mt-1 text-xs text-stealth-400">As of {new Date(overview.as_of).toLocaleString()}</p>
-        </div>
-        <div className="surface-card p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Regime</p>
-          <p className={`mt-2 text-2xl font-semibold ${getRegimeTone(overview.regime_label)}`}>{overview.regime_label}</p>
-          <p className="mt-1 text-xs text-stealth-400">Group coverage: {overview.availability.available_group_count} sectors</p>
-        </div>
-        <div className="surface-card p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Availability</p>
-          <p className="mt-2 text-2xl font-semibold text-stealth-100">
-            {overview.availability.available_symbol_count}/{overview.availability.total_configured_symbols}
-          </p>
-          <p className="mt-1 text-xs text-stealth-400">Symbols with sufficient history</p>
-        </div>
-        <div className="surface-card p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Composite Moves</p>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-            <p className="text-stealth-400">5d: <span className="text-stealth-200">{overview.composite.changes["5d"]?.toFixed(2) ?? "—"}%</span></p>
-            <p className="text-stealth-400">20d: <span className="text-stealth-200">{overview.composite.changes["20d"]?.toFixed(2) ?? "—"}%</span></p>
-            <p className="text-stealth-400">60d: <span className="text-stealth-200">{overview.composite.changes["60d"]?.toFixed(2) ?? "—"}%</span></p>
-            <p className="text-stealth-400">120d: <span className="text-stealth-200">{overview.composite.changes["120d"]?.toFixed(2) ?? "—"}%</span></p>
+          <div className="min-w-[220px] rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Regime</p>
+            <p className={`mt-1 text-xl font-semibold ${getRegimeTone(overview.regime_label)}`}>{overview.regime_label}</p>
+            <p className="mt-1 text-xs text-stealth-400">Coverage: {overview.availability.available_group_count} sectors</p>
+          </div>
+          <div className="min-w-[220px] rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Availability</p>
+            <p className="mt-1 text-xl font-semibold text-stealth-100">
+              {overview.availability.available_symbol_count}/{overview.availability.total_configured_symbols}
+            </p>
+            <p className="mt-1 text-xs text-stealth-400">Symbols with sufficient history</p>
+          </div>
+          <div className="min-w-[240px] rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Composite Moves</p>
+            <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <p className="text-stealth-400">5d: <span className="text-stealth-200">{overview.composite.changes["5d"]?.toFixed(2) ?? "—"}%</span></p>
+              <p className="text-stealth-400">20d: <span className="text-stealth-200">{overview.composite.changes["20d"]?.toFixed(2) ?? "—"}%</span></p>
+              <p className="text-stealth-400">60d: <span className="text-stealth-200">{overview.composite.changes["60d"]?.toFixed(2) ?? "—"}%</span></p>
+              <p className="text-stealth-400">120d: <span className="text-stealth-200">{overview.composite.changes["120d"]?.toFixed(2) ?? "—"}%</span></p>
+            </div>
           </div>
         </div>
       </div>
@@ -287,15 +307,15 @@ export default function AgricultureIndex() {
                 <AreaChart data={filteredHistory} margin={CHART_MARGIN}>
                   <CartesianGrid {...commonGridProps} />
                   <XAxis dataKey="date" {...commonXAxisProps} />
-                  <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
+                  <YAxis {...commonYAxisProps} domain={[0, 100]} />
                   <Tooltip
                     contentStyle={commonTooltipStyle}
-                    formatter={(value: number) => [formatTooltipValue(value, 2), "Index"]}
+                    formatter={(value: number) => [formatTooltipValue(value, 2), "Score"]}
                   />
-                  <ReferenceLine y={100} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" />
+                  <ReferenceLine y={50} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" />
                   <Area
                     type="monotone"
-                    dataKey="value"
+                    dataKey="score"
                     stroke={getFamilyColor("materials")}
                     fill={getFamilyColor("materials", "faint")}
                     strokeWidth={2.2}
@@ -308,27 +328,33 @@ export default function AgricultureIndex() {
 
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="surface-card p-4 xl:col-span-2">
-              <h2 className="text-base font-semibold text-stealth-100">Stability Components</h2>
+              <h2 className="text-base font-semibold text-stealth-100">Stability Components by Horizon</h2>
               <div className="mt-4 h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stabilityComponents} margin={CHART_MARGIN}>
+                  <AreaChart data={stabilityTrendSeries} margin={CHART_MARGIN}>
                     <CartesianGrid {...commonGridProps} />
-                    <XAxis dataKey="key" {...commonXAxisProps} tick={{ fill: "#9ca3af", fontSize: 10 }} interval={0} angle={-24} height={70} textAnchor="end" />
+                    <XAxis dataKey="horizon" stroke={commonYAxisProps.stroke} tick={{ fill: "#9ca3af", fontSize: 11 }} />
                     <YAxis {...commonYAxisProps} domain={[0, 100]} />
                     <Tooltip
                       contentStyle={commonTooltipStyle}
                       formatter={(value: number) => [formatTooltipValue(value, 1), "Score"]}
                     />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                      {stabilityComponents.map((entry) => (
-                        <Cell
-                          key={entry.key}
-                          fill={entry.key.includes("penalty") ? "#f87171" : getFamilyColor("growth")}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
+                    <Line type="monotone" dataKey="trend_agreement" stroke={getFamilyColor("growth")} strokeWidth={2} dot={{ r: 2 }} />
+                    <Line type="monotone" dataKey="volatility_stability" stroke={getFamilyColor("volatility")} strokeWidth={2} dot={{ r: 2 }} />
+                    <Line type="monotone" dataKey="correlation_stability" stroke={getFamilyColor("equity")} strokeWidth={2} dot={{ r: 2 }} />
+                    <Line type="monotone" dataKey="breadth" stroke={getFamilyColor("liquidity")} strokeWidth={2} dot={{ r: 2 }} />
+                    <Line type="monotone" dataKey="momentum_consistency" stroke={getFamilyColor("tech")} strokeWidth={2} dot={{ r: 2 }} />
+                    <Line type="monotone" dataKey="divergence_penalty" stroke="#f87171" strokeWidth={1.8} dot={{ r: 2 }} />
+                  </AreaChart>
                 </ResponsiveContainer>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-stealth-400">
+                <span>Trend</span>
+                <span>Volatility</span>
+                <span>Correlation</span>
+                <span>Breadth</span>
+                <span>Momentum</span>
+                <span className="text-rose-300">Divergence Penalty</span>
               </div>
             </div>
 
