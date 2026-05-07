@@ -14,6 +14,8 @@ import { muniPublicSectorThresholds, muniPublicSectorWeights } from "../theme/me
 import MarketLoading from "../components/ui/MarketLoading";
 import InfoTooltip from "../components/ui/InfoTooltip";
 import {
+  Area,
+  AreaChart,
   LineChart,
   Line,
   XAxis,
@@ -1543,7 +1545,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism && (
               <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                 <div className="text-xs text-stealth-400 mb-1">NFIB Business Confidence</div>
-                <div className="text-lg font-bold" style={{ color: getFamilyColor("sentiment", "muted") }}>
+                <div className="text-lg font-bold" style={{ color: getFamilyColor("growth", "muted") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism!.value.toFixed(1)}
                 </div>
                 <div className="text-xs text-stealth-500 mt-1">
@@ -1584,6 +1586,124 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Decoupling Insight (Business vs Consumer Confidence) */}
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-6">
+            <h4 className="text-sm font-semibold mb-2 text-stealth-200">Decoupling Insight: Business vs Consumer</h4>
+            {(() => {
+              const today = new Date();
+              const daysBack = new Date(today);
+              daysBack.setDate(today.getDate() - 365);
+
+              const cloudData = sentimentCompositeComponents
+                .map((item) => {
+                  const consumerConfidence = item.michigan_sentiment.confidence_score;
+                  const businessParts = [
+                    item.nfib_optimism
+                      ? {
+                          confidence: item.nfib_optimism.confidence_score,
+                          weight: item.nfib_optimism.weight,
+                        }
+                      : null,
+                    item.ism_new_orders
+                      ? {
+                          confidence: item.ism_new_orders.confidence_score,
+                          weight: item.ism_new_orders.weight,
+                        }
+                      : null,
+                    item.capex_proxy
+                      ? {
+                          confidence: item.capex_proxy.confidence_score,
+                          weight: item.capex_proxy.weight,
+                        }
+                      : null,
+                  ].filter((part): part is { confidence: number; weight: number } => Boolean(part));
+
+                  const businessWeight = businessParts.reduce((sum, part) => sum + part.weight, 0);
+                  const businessConfidence = businessWeight > 0
+                    ? businessParts.reduce((sum, part) => sum + part.confidence * part.weight, 0) / businessWeight
+                    : consumerConfidence;
+
+                  return {
+                    date: item.date,
+                    dateNum: parseDateKeyUtc(item.date),
+                    decoupling: businessConfidence - consumerConfidence,
+                  };
+                })
+                .filter((item) => item.dateNum >= daysBack.getTime());
+
+              const dedupMap = new Map();
+              cloudData.forEach((item) => dedupMap.set(item.date, item));
+              const deduplicatedCloudData = Array.from(dedupMap.values()).sort((a, b) => a.dateNum - b.dateNum);
+
+              if (deduplicatedCloudData.length === 0) {
+                return <p className="text-xs text-stealth-400">Decoupling insight unavailable (insufficient overlap).</p>;
+              }
+
+              const latest = deduplicatedCloudData[deduplicatedCloudData.length - 1];
+              const latestGap = latest.decoupling;
+              const gapDirection = latestGap > 0 ? "Business above consumers" : latestGap < 0 ? "Consumers above business" : "Aligned";
+              const gapMagnitude = Math.abs(latestGap);
+              const gapLabel = gapMagnitude >= 10 ? "high" : gapMagnitude >= 5 ? "moderate" : "low";
+              const maxDate = Math.max(...deduplicatedCloudData.map((d) => d.dateNum));
+              const maxAbs = Math.max(8, ...deduplicatedCloudData.map((d) => Math.abs(d.decoupling)));
+              const yPad = Math.ceil(maxAbs / 2) * 2;
+
+              return (
+                <>
+                  <p className="text-xs text-stealth-400 mb-3">
+                    Cloud tracks the confidence gap between business surveys (NFIB + orders + CapEx) and household sentiment.
+                    Current decoupling is <span className="text-stealth-200 font-semibold">{latestGap >= 0 ? "+" : ""}{latestGap.toFixed(1)}</span>
+                    &nbsp;points ({gapDirection}, {gapLabel} divergence).
+                  </p>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={deduplicatedCloudData} margin={CHART_MARGIN}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                        <XAxis
+                          dataKey="dateNum"
+                          type="number"
+                          domain={[daysBack.getTime(), maxDate]}
+                          scale="time"
+                          tickFormatter={formatMonthYearUtc}
+                          tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                          stroke={CHART_NEUTRAL.axis}
+                        />
+                        <YAxis
+                          domain={[-yPad, yPad]}
+                          tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                          stroke={CHART_NEUTRAL.axis}
+                          width={72}
+                          tickMargin={8}
+                          label={{ value: 'Gap (Business - Consumer)', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label, offset: 12 }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: CHART_NEUTRAL.tooltipBg,
+                            borderColor: CHART_NEUTRAL.tooltipBorder,
+                            borderRadius: "8px",
+                            padding: "12px",
+                          }}
+                          labelStyle={{ color: CHART_NEUTRAL.label, marginBottom: "8px" }}
+                          formatter={(value: number, name: string) => [`${value.toFixed(2)} pts`, name]}
+                          labelFormatter={formatDateUtc}
+                        />
+                        <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeDasharray="4 4" />
+                        <Area
+                          type="monotone"
+                          dataKey="decoupling"
+                          name="Decoupling Cloud"
+                          stroke={getFamilyColor("growth")}
+                          fill={getFamilyColor("growth")}
+                          fillOpacity={0.22}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           {/* Component Confidence Scores Chart (365-day for monthly data) */}
@@ -1653,7 +1773,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                         type="monotone"
                         dataKey="nfib_optimism.confidence_score"
                         name="NFIB Biz Conf."
-                        stroke={getFamilyColor("sentiment", "muted")}
+                        stroke={getFamilyColor("growth", "muted")}
                         strokeWidth={2}
                         dot={false}
                       />
