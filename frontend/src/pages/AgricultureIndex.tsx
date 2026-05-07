@@ -3,7 +3,6 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Line,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -99,7 +98,7 @@ type AgricultureMacro = {
 };
 
 type Timeframe = "30d" | "90d" | "180d" | "365d";
-type TabKey = "overview" | "sectors" | "relationships" | "coverage";
+type TabKey = "overview" | "deepdive";
 
 function getRegimeTone(regime: string): string {
   if (regime.includes("Stable Expansion")) return "text-emerald-300";
@@ -148,7 +147,6 @@ export default function AgricultureIndex() {
 
   const [timeframe, setTimeframe] = useState<Timeframe>("90d");
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
   const chartData = useMemo(() => overview?.composite.history ?? [], [overview]);
 
@@ -170,16 +168,7 @@ export default function AgricultureIndex() {
 
   const matrix60 = correlations?.correlations.group_matrix?.["60"] ?? [];
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
-
   const groups = overview?.groups ?? [];
-  const activeGroup = useMemo(() => {
-    if (!groups.length) return null;
-    if (selectedGroup) {
-      const found = groups.find((group) => group.group === selectedGroup);
-      if (found) return found;
-    }
-    return groups[0];
-  }, [groups, selectedGroup]);
 
   if (loading) {
     return (
@@ -239,10 +228,10 @@ export default function AgricultureIndex() {
         <div className="surface-card p-4">
           <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Composite Moves</p>
           <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-            <p className="text-stealth-400">5d: <span className="text-stealth-200">{overview.composite.changes["5d"]?.toFixed(2) ?? "-"}%</span></p>
-            <p className="text-stealth-400">20d: <span className="text-stealth-200">{overview.composite.changes["20d"]?.toFixed(2) ?? "-"}%</span></p>
-            <p className="text-stealth-400">60d: <span className="text-stealth-200">{overview.composite.changes["60d"]?.toFixed(2) ?? "-"}%</span></p>
-            <p className="text-stealth-400">120d: <span className="text-stealth-200">{overview.composite.changes["120d"]?.toFixed(2) ?? "-"}%</span></p>
+            <p className="text-stealth-400">5d: <span className="text-stealth-200">{overview.composite.changes["5d"]?.toFixed(2) ?? "—"}%</span></p>
+            <p className="text-stealth-400">20d: <span className="text-stealth-200">{overview.composite.changes["20d"]?.toFixed(2) ?? "—"}%</span></p>
+            <p className="text-stealth-400">60d: <span className="text-stealth-200">{overview.composite.changes["60d"]?.toFixed(2) ?? "—"}%</span></p>
+            <p className="text-stealth-400">120d: <span className="text-stealth-200">{overview.composite.changes["120d"]?.toFixed(2) ?? "—"}%</span></p>
           </div>
         </div>
       </div>
@@ -252,12 +241,10 @@ export default function AgricultureIndex() {
       </div>
 
       <div className="surface-card p-2">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex gap-2">
           {([
             { key: "overview", label: "Overview" },
-            { key: "sectors", label: "Sector Drilldown" },
-            { key: "relationships", label: "Relationships" },
-            { key: "coverage", label: "Coverage" },
+            { key: "deepdive", label: "Deep Dive" },
           ] as Array<{ key: TabKey; label: string }>).map((tab) => (
             <button
               key={tab.key}
@@ -314,14 +301,6 @@ export default function AgricultureIndex() {
                     strokeWidth={2.2}
                     isAnimationActive={false}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke={getFamilyColor("materials")}
-                    strokeWidth={1.6}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -376,254 +355,210 @@ export default function AgricultureIndex() {
         </>
       ) : null}
 
-      {activeTab === "sectors" ? (
-        <div className="grid gap-4 xl:grid-cols-12">
-          <div className="surface-card p-3 xl:col-span-4">
-            <h2 className="text-base font-semibold text-stealth-100">Sector Heatmap Selector</h2>
-            <div className="mt-3 space-y-2">
+      {activeTab === "deepdive" ? (
+        <>
+          <div>
+            <h2 className="text-base font-semibold text-stealth-100">Sector Analysis</h2>
+            <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {groups.map((group) => (
-                <button
-                  key={group.group}
-                  onClick={() => setSelectedGroup(group.group)}
-                  className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                    activeGroup?.group === group.group
-                      ? "border-stealth-500 bg-stealth-800"
-                      : "border-stealth-700 bg-stealth-900/55 hover:border-stealth-600"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-stealth-100">{group.label}</p>
-                    <p className={`text-sm font-semibold ${getScoreTone(group.group_composite)}`}>{group.group_composite.toFixed(1)}</p>
+                <div key={group.group} className="surface-card p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-stealth-100">{group.label}</h3>
+                    <span className="shrink-0 rounded bg-stealth-800 px-2 py-0.5 text-xs text-stealth-400">
+                      {group.effective_weight.toFixed(1)}%
+                    </span>
                   </div>
-                  <div className="mt-2 h-1.5 w-full rounded-full bg-stealth-700">
-                    <div className={`h-1.5 rounded-full ${getScoreFill(group.group_composite)}`} style={{ width: `${group.group_composite}%` }}></div>
+                  <div className="mt-2 flex items-center gap-3">
+                    <p className={`text-2xl font-semibold ${getScoreTone(group.group_composite)}`}>
+                      {group.group_composite.toFixed(1)}
+                    </p>
+                    <div className="flex-1">
+                      <div className="h-1.5 w-full rounded-full bg-stealth-700">
+                        <div
+                          className={`h-1.5 rounded-full ${getScoreFill(group.group_composite)}`}
+                          style={{ width: `${group.group_composite}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
-                </button>
+                  <div className="mt-3 grid grid-cols-4 gap-1 text-xs">
+                    {(["5d", "20d", "60d", "120d"] as const).map((k) => {
+                      const v = group.changes[k];
+                      return (
+                        <div key={k} className="rounded bg-stealth-900/55 px-1 py-1.5 text-center">
+                          <p className="text-stealth-500">{k}</p>
+                          <p className={v === null ? "text-stealth-500" : v >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                            {v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-1 text-xs">
+                    <div className="rounded bg-stealth-900/40 px-2 py-1">
+                      <p className="text-stealth-500">Vol</p>
+                      <p className="text-stealth-200">{group.volatility?.toFixed(1) ?? "—"}</p>
+                    </div>
+                    <div className="rounded bg-stealth-900/40 px-2 py-1">
+                      <p className="text-stealth-500">Breadth</p>
+                      <p className="text-stealth-200">{group.breadth_score?.toFixed(1) ?? "—"}</p>
+                    </div>
+                    <div className="rounded bg-stealth-900/40 px-2 py-1">
+                      <p className="text-stealth-500">vs Comp</p>
+                      <p className="text-stealth-200">{group.correlation_to_composite?.toFixed(2) ?? "—"}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="mb-1 text-xs uppercase tracking-[0.12em] text-emerald-400">Strong</p>
+                      {group.strongest.slice(0, 2).map((item) => (
+                        <div key={item.code} className="mb-1 flex items-center justify-between rounded bg-emerald-500/10 px-2 py-1 text-xs">
+                          <span className="text-emerald-200">{item.code}</span>
+                          <span className="text-stealth-400">{item.score.toFixed(1)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <p className="mb-1 text-xs uppercase tracking-[0.12em] text-rose-400">Weak</p>
+                      {group.weakest.slice(0, 2).map((item) => (
+                        <div key={item.code} className="mb-1 flex items-center justify-between rounded bg-rose-500/10 px-2 py-1 text-xs">
+                          <span className="text-rose-200">{item.code}</span>
+                          <span className="text-stealth-400">{item.score.toFixed(1)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
 
-          <div className="surface-card p-4 xl:col-span-8">
-            {activeGroup ? (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-base font-semibold text-stealth-100">{activeGroup.label} Detail Panel</h2>
-                  <span className="rounded bg-stealth-800 px-2 py-1 text-xs text-stealth-300">
-                    Weight {activeGroup.effective_weight.toFixed(1)}%
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                    <p className="text-xs text-stealth-500">Composite</p>
-                    <p className={`mt-1 text-2xl font-semibold ${getScoreTone(activeGroup.group_composite)}`}>{activeGroup.group_composite.toFixed(1)}</p>
-                  </div>
-                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                    <p className="text-xs text-stealth-500">Volatility</p>
-                    <p className="mt-1 text-2xl font-semibold text-stealth-100">{activeGroup.volatility?.toFixed(2) ?? "-"}</p>
-                  </div>
-                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                    <p className="text-xs text-stealth-500">Breadth</p>
-                    <p className="mt-1 text-2xl font-semibold text-stealth-100">{activeGroup.breadth_score?.toFixed(1) ?? "-"}</p>
-                  </div>
-                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                    <p className="text-xs text-stealth-500">Correlation to Composite</p>
-                    <p className="mt-1 text-2xl font-semibold text-stealth-100">{activeGroup.correlation_to_composite?.toFixed(2) ?? "-"}</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                    <p className="text-sm font-semibold text-stealth-100">Multi-Horizon Moves</p>
-                    <div className="mt-2 space-y-2 text-xs">
-                      {(["5d", "20d", "60d", "120d"] as Array<keyof GroupRow["changes"]>).map((key) => {
-                        const value = activeGroup.changes[key];
-                        const width = value === null ? 0 : Math.min(100, Math.abs(value) * 6);
-                        const color = value === null ? "bg-stealth-600" : value >= 0 ? "bg-emerald-500" : "bg-rose-500";
-                        return (
-                          <div key={key}>
-                            <div className="mb-1 flex items-center justify-between text-stealth-300">
-                              <span>{key}</span>
-                              <span>{value === null ? "-" : `${value.toFixed(2)}%`}</span>
-                            </div>
-                            <div className="h-1.5 rounded-full bg-stealth-700">
-                              <div className={`h-1.5 rounded-full ${color}`} style={{ width: `${width}%` }}></div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                    <p className="text-sm font-semibold text-stealth-100">Strength Table</p>
-                    <div className="mt-2 grid gap-2 md:grid-cols-2">
-                      <div>
-                        <p className="mb-1 text-xs uppercase tracking-[0.14em] text-emerald-400">Strongest</p>
-                        {activeGroup.strongest.map((item) => (
-                          <div key={item.code} className="mb-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-xs">
-                            <p className="text-emerald-200">{item.code}</p>
-                            <p className="text-stealth-400">{item.score.toFixed(1)}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div>
-                        <p className="mb-1 text-xs uppercase tracking-[0.14em] text-rose-400">Weakest</p>
-                        {activeGroup.weakest.map((item) => (
-                          <div key={item.code} className="mb-1 rounded border border-rose-500/20 bg-rose-500/10 px-2 py-1 text-xs">
-                            <p className="text-rose-200">{item.code}</p>
-                            <p className="text-stealth-400">{item.score.toFixed(1)}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {activeTab === "relationships" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <div className="surface-card p-4">
-            <h2 className="text-base font-semibold text-stealth-100">Rolling Correlation Matrix (60d)</h2>
-            <div className="mt-3 overflow-x-auto">
-              <table className="min-w-full border-collapse text-xs text-stealth-300">
-                <thead>
-                  <tr>
-                    <th className="border border-stealth-700 px-2 py-1 text-left text-stealth-400">Group</th>
-                    {matrix60[0] ? Object.keys(matrix60[0].values).map((col) => (
-                      <th key={col} className="border border-stealth-700 px-2 py-1 text-left text-stealth-400">{formatGroupCode(col)}</th>
-                    )) : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {matrix60.map((row) => (
-                    <tr key={row.row}>
-                      <td className="border border-stealth-700 px-2 py-1 font-medium text-stealth-200">{formatGroupCode(row.row)}</td>
-                      {Object.entries(row.values).map(([col, value]) => (
-                        <td key={col} className={`border border-stealth-700 px-2 py-1 ${getCorrCellStyle(value)}`}>
-                          {value === null ? "-" : value.toFixed(2)}
-                        </td>
-                      ))}
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="surface-card p-4">
+              <h2 className="text-base font-semibold text-stealth-100">Rolling Correlation Matrix (60d)</h2>
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full border-collapse text-xs text-stealth-300">
+                  <thead>
+                    <tr>
+                      <th className="border border-stealth-700 px-2 py-1 text-left text-stealth-400">Group</th>
+                      {matrix60[0] ? Object.keys(matrix60[0].values).map((col) => (
+                        <th key={col} className="border border-stealth-700 px-2 py-1 text-left text-stealth-400">{formatGroupCode(col)}</th>
+                      )) : null}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="surface-card p-4">
-              <h2 className="text-base font-semibold text-stealth-100">Special Signals</h2>
-              <div className="mt-3 space-y-3 text-sm text-stealth-300">
-                <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                  <p className="font-semibold text-stealth-100">Soybean Oil vs Grains</p>
-                  <p className="mt-1 text-xs text-stealth-400">Spread 20d: {correlations?.special_signals.soybean_oil_vs_grains.spread_20d ?? "-"}%</p>
-                  <p className="mt-1">{correlations?.special_signals.soybean_oil_vs_grains.interpretation ?? "insufficient data"}</p>
-                </div>
-                <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                  <p className="font-semibold text-stealth-100">Livestock Feed Margin Pressure</p>
-                  <p className="mt-1 text-xs text-stealth-400">Spread 20d: {correlations?.special_signals.livestock_feed_margin_pressure.spread_20d ?? "-"}%</p>
-                  <p className="mt-1">{correlations?.special_signals.livestock_feed_margin_pressure.interpretation ?? "insufficient data"}</p>
-                </div>
-                <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                  <p className="font-semibold text-stealth-100">Selected Pair Correlations (60d)</p>
-                  <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-stealth-400">
-                    {Object.entries(pair60).map(([key, value]) => (
-                      <p key={key}>{formatGroupCode(key)}: {value === null ? "-" : value.toFixed(2)}</p>
+                  </thead>
+                  <tbody>
+                    {matrix60.map((row) => (
+                      <tr key={row.row}>
+                        <td className="border border-stealth-700 px-2 py-1 font-medium text-stealth-200">{formatGroupCode(row.row)}</td>
+                        {Object.entries(row.values).map(([col, value]) => (
+                          <td key={col} className={`border border-stealth-700 px-2 py-1 ${getCorrCellStyle(value)}`}>
+                            {value === null ? "—" : value.toFixed(2)}
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </div>
-                </div>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="surface-card p-4">
-              <h2 className="text-base font-semibold text-stealth-100">Macro Pressure</h2>
-              <div className="mt-3 grid gap-2 md:grid-cols-2">
-                {macro?.macro_pressure
-                  ? Object.entries(macro.macro_pressure).map(([key, item]) => (
-                      <div key={key} className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                        <p className="text-sm font-semibold text-stealth-100">{item.name}</p>
-                        <p className="mt-1 text-xs text-stealth-400">{item.status}</p>
-                        <p className="mt-1 text-xs text-stealth-500">
-                          20d: {item.change_20d !== undefined && item.change_20d !== null ? `${item.change_20d.toFixed(2)}%` : item.spread_20d !== undefined && item.spread_20d !== null ? `${item.spread_20d.toFixed(2)}%` : "-"}
-                        </p>
+            <div className="space-y-4">
+              <div className="surface-card p-4">
+                <h2 className="text-base font-semibold text-stealth-100">Special Signals</h2>
+                <div className="mt-3 space-y-3 text-sm text-stealth-300">
+                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
+                    <p className="font-semibold text-stealth-100">Soybean Oil vs Grains</p>
+                    <p className="mt-1 text-xs text-stealth-400">
+                      Spread 20d: {correlations?.special_signals.soybean_oil_vs_grains.spread_20d ?? "—"}%
+                    </p>
+                    <p className="mt-1">{correlations?.special_signals.soybean_oil_vs_grains.interpretation ?? "insufficient data"}</p>
+                  </div>
+                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
+                    <p className="font-semibold text-stealth-100">Livestock Feed Margin Pressure</p>
+                    <p className="mt-1 text-xs text-stealth-400">
+                      Spread 20d: {correlations?.special_signals.livestock_feed_margin_pressure.spread_20d ?? "—"}%
+                    </p>
+                    <p className="mt-1">{correlations?.special_signals.livestock_feed_margin_pressure.interpretation ?? "insufficient data"}</p>
+                  </div>
+                  {Object.keys(pair60).length > 0 ? (
+                    <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
+                      <p className="font-semibold text-stealth-100">Pair Correlations (60d)</p>
+                      <div className="mt-2 grid grid-cols-2 gap-1 text-xs text-stealth-400">
+                        {Object.entries(pair60).map(([key, value]) => (
+                          <p key={key}>{formatGroupCode(key)}: {value === null ? "—" : value.toFixed(2)}</p>
+                        ))}
                       </div>
-                    ))
-                  : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="surface-card p-4">
+                <h2 className="text-base font-semibold text-stealth-100">Macro Pressure</h2>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {macro?.macro_pressure
+                    ? Object.entries(macro.macro_pressure).map(([key, item]) => (
+                        <div key={key} className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
+                          <p className="text-sm font-semibold text-stealth-100">{item.name}</p>
+                          <p className="mt-1 text-xs text-stealth-400">{item.status}</p>
+                          <p className="mt-1 text-xs text-stealth-500">
+                            20d:{" "}
+                            {item.change_20d !== undefined && item.change_20d !== null
+                              ? `${item.change_20d.toFixed(2)}%`
+                              : item.spread_20d !== undefined && item.spread_20d !== null
+                              ? `${item.spread_20d.toFixed(2)}%`
+                              : "—"}
+                          </p>
+                        </div>
+                      ))
+                    : null}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
 
-      {activeTab === "coverage" ? (
-        <div className="grid gap-4 xl:grid-cols-3">
-          <div className="surface-card p-4 xl:col-span-2">
-            <h2 className="text-base font-semibold text-stealth-100">Data Coverage & Warnings</h2>
-            <p className="mt-2 text-sm text-stealth-300">
-              Missing symbols are skipped and group weights are redistributed automatically across available sectors.
-            </p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Missing Symbols</p>
-                <div className="mt-2 space-y-1 text-xs text-stealth-400">
-                  {overview.availability.missing_symbols.length === 0 ? (
-                    <p>None</p>
-                  ) : (
-                    overview.availability.missing_symbols.map((item) => (
-                      <p key={item.code}>{item.code}: {item.attempted_tickers.join(", ")}</p>
-                    ))
-                  )}
-                </div>
-              </div>
-              <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
-                <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Missing Macro Series</p>
-                <div className="mt-2 space-y-1 text-xs text-stealth-400">
-                  {overview.availability.missing_macro_series.length === 0 ? (
-                    <p>None</p>
-                  ) : (
-                    overview.availability.missing_macro_series.map((item) => <p key={item}>{item}</p>)
-                  )}
-                </div>
+          <div className="surface-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-stealth-100">Data Coverage</h2>
+              <div className="flex gap-4 text-xs text-stealth-400">
+                <span>Symbols: {overview.availability.available_symbol_count}/{overview.availability.total_configured_symbols}</span>
+                <span>Groups: {overview.availability.available_group_count}/6</span>
+                {overview.availability.missing_symbols.length > 0 ? (
+                  <span className="text-amber-400">{overview.availability.missing_symbols.length} missing</span>
+                ) : null}
               </div>
             </div>
+            {(overview.availability.missing_symbols.length > 0 || overview.availability.missing_macro_series.length > 0) ? (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {overview.availability.missing_symbols.length > 0 ? (
+                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
+                    <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Missing Symbols</p>
+                    <div className="mt-2 space-y-1 text-xs text-stealth-400">
+                      {overview.availability.missing_symbols.map((item) => (
+                        <p key={item.code}>{item.code}: {item.attempted_tickers.join(", ")}</p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {overview.availability.missing_macro_series.length > 0 ? (
+                  <div className="rounded-lg border border-stealth-700 bg-stealth-900/55 p-3">
+                    <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Missing Macro</p>
+                    <div className="mt-2 space-y-1 text-xs text-stealth-400">
+                      {overview.availability.missing_macro_series.map((item) => (
+                        <p key={item}>{item}</p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-3 space-y-1 text-xs text-stealth-400">
               {overview.warnings.map((warning) => (
-                <p key={warning}>- {warning}</p>
+                <p key={warning}>— {warning}</p>
               ))}
             </div>
           </div>
-
-          <div className="surface-card p-4">
-            <h2 className="text-base font-semibold text-stealth-100">Coverage Snapshot</h2>
-            <div className="mt-3 space-y-3">
-              <div>
-                <div className="mb-1 flex items-center justify-between text-xs text-stealth-400">
-                  <span>Symbols Available</span>
-                  <span>{overview.availability.available_symbol_count}/{overview.availability.total_configured_symbols}</span>
-                </div>
-                <div className="h-2 rounded-full bg-stealth-700">
-                  <div
-                    className="h-2 rounded-full bg-sky-500"
-                    style={{ width: `${(overview.availability.available_symbol_count / Math.max(1, overview.availability.total_configured_symbols)) * 100}%` }}
-                  ></div>
-                </div>
-              </div>
-              <div>
-                <div className="mb-1 flex items-center justify-between text-xs text-stealth-400">
-                  <span>Groups Covered</span>
-                  <span>{overview.availability.available_group_count}/6</span>
-                </div>
-                <div className="h-2 rounded-full bg-stealth-700">
-                  <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${(overview.availability.available_group_count / 6) * 100}%` }}></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        </>
       ) : null}
     </div>
   );

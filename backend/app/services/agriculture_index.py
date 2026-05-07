@@ -64,7 +64,7 @@ AGRICULTURE_SYMBOLS: Tuple[AgricultureSymbol, ...] = (
     AgricultureSymbol("GF", "Feeder Cattle", "livestock", ("GF=F",)),
     AgricultureSymbol("HE", "Lean Hogs", "livestock", ("HE=F",)),
     AgricultureSymbol("DC", "Class III Milk", "dairy", ("DC=F",)),
-    AgricultureSymbol("DAIRY_CLASS_IV", "Class IV Milk", "dairy", ("DY=F", "GF=F")),
+    AgricultureSymbol("DAIRY_CLASS_IV", "Class IV Milk", "dairy", ("DY=F",)),
     AgricultureSymbol("LBR", "Lumber", "lumber", ("LBR=F",)),
     AgricultureSymbol("SYP", "Southern Yellow Pine", "lumber", ("SYP",)),
     AgricultureSymbol("KC", "Coffee", "softs", ("KC=F",)),
@@ -73,10 +73,9 @@ AGRICULTURE_SYMBOLS: Tuple[AgricultureSymbol, ...] = (
     AgricultureSymbol("CT", "Cotton", "softs", ("CT=F",)),
     AgricultureSymbol("OJ", "Orange Juice", "softs", ("OJ=F",)),
     AgricultureSymbol("RS", "Canola", "softs", ("RS=F",)),
-    AgricultureSymbol("UREA", "Urea (proxy)", "fertilizer_inputs", ("NTR", "MOS")),
-    AgricultureSymbol("UAN", "UAN", "fertilizer_inputs", ("UAN",)),
-    AgricultureSymbol("DAP", "DAP (proxy)", "fertilizer_inputs", ("CF", "MOS")),
-    AgricultureSymbol("MAP", "MAP (proxy)", "fertilizer_inputs", ("MOS", "CF")),
+    AgricultureSymbol("FERT_N", "Nitrogen Proxy (CF Industries)", "fertilizer_inputs", ("CF",)),
+    AgricultureSymbol("FERT_P", "Phosphate Proxy (Mosaic)", "fertilizer_inputs", ("MOS",)),
+    AgricultureSymbol("FERT_K", "Potash Proxy (Nutrien)", "fertilizer_inputs", ("NTR",)),
 )
 
 MACRO_SERIES = {
@@ -834,8 +833,10 @@ def calculate_composite_index(days: int = 365) -> Dict[str, Any]:
 
     index_history: List[Dict[str, Any]] = []
     if not composite_returns.empty:
-        index_series = (1.0 + composite_returns).cumprod() * 100.0
+        index_series = (1.0 + composite_returns).cumprod()
         index_series = index_series.tail(days)
+        if not index_series.empty:
+            index_series = (index_series / index_series.iloc[0]) * 100.0
         for timestamp, value in index_series.items():
             index_history.append({"date": timestamp.strftime("%Y-%m-%d"), "value": round(float(value), 2)})
 
