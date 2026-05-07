@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Bar,
+  Cell,
   ComposedChart,
   Legend,
   Line,
@@ -488,7 +489,10 @@ export default function AgricultureIndex() {
                 <ComposedChart data={macdHistory} margin={CHART_MARGIN}>
                   <CartesianGrid {...commonGridProps} />
                   <XAxis dataKey="date" {...commonXAxisProps} />
-                  <YAxis {...commonYAxisProps} />
+                  {/* Left axis: MACD/histogram scale */}
+                  <YAxis yAxisId="left" {...commonYAxisProps} />
+                  {/* Right axis: breadth/trend scale (hidden — just prevents them from squashing the left axis) */}
+                  <YAxis yAxisId="right" orientation="right" hide />
                   <Tooltip content={<MacdTooltip />} />
                   <Legend
                     verticalAlign="top"
@@ -498,42 +502,56 @@ export default function AgricultureIndex() {
                       return MACD_META[key]?.label ?? value;
                     }}
                   />
-                  <ReferenceLine y={0} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" />
-                  <Bar dataKey="histogram" name="histogram" fill="rgba(251,146,60,0.35)" stroke="rgba(251,146,60,0.8)" barSize={10} />
+                  <ReferenceLine yAxisId="left" y={0} stroke={getFamilyColor("benchmark")} strokeDasharray="3 3" />
+                  <Bar yAxisId="left" dataKey="histogram" name="histogram" barSize={10}>
+                    {macdHistory.map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={entry.histogram >= 0 ? "rgba(52,211,153,0.45)" : "rgba(251,113,133,0.45)"}
+                        stroke={entry.histogram >= 0 ? "rgba(52,211,153,0.9)" : "rgba(251,113,133,0.9)"}
+                      />
+                    ))}
+                  </Bar>
                   <Line
+                    yAxisId="left"
                     type="monotone"
                     dataKey="macd"
                     name="macd"
-                    stroke={getFamilyColor("materials")}
+                    stroke="#38bdf8"
                     strokeWidth={2.6}
                     dot={false}
                     isAnimationActive={false}
                   />
                   <Line
+                    yAxisId="left"
                     type="monotone"
                     dataKey="signal"
                     name="signal"
-                    stroke="#f8fafc"
-                    strokeWidth={1.9}
+                    stroke="#fb923c"
+                    strokeWidth={2}
                     strokeDasharray="5 4"
                     dot={false}
                     isAnimationActive={false}
                   />
                   <Line
+                    yAxisId="right"
                     type="monotone"
                     dataKey="breadth_centered"
                     name="breadth_centered"
                     stroke={getFamilyColor("liquidity")}
-                    strokeWidth={1.8}
+                    strokeWidth={1.5}
+                    strokeOpacity={0.6}
                     dot={false}
                     isAnimationActive={false}
                   />
                   <Line
+                    yAxisId="right"
                     type="monotone"
                     dataKey="trend_centered"
                     name="trend_centered"
                     stroke={getFamilyColor("growth")}
-                    strokeWidth={1.8}
+                    strokeWidth={1.5}
+                    strokeOpacity={0.6}
                     dot={false}
                     strokeDasharray="4 3"
                     isAnimationActive={false}
