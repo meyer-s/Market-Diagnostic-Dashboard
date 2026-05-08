@@ -25,6 +25,8 @@ export type MetricFamily =
   | "silver"
   | "platinum"
   | "palladium"
+  | "copper"
+  | "aluminum"
   | "benchmark"
   | "neutral";
 
@@ -58,6 +60,8 @@ export const familyPalette: Record<
   silver: { base: "#94a3b8", muted: "#cbd5f5", faint: "#f1f5f9ce" },
   platinum: { base: "#a855f7", muted: "#d8b4fe", faint: "#f3e8ffc0" },
   palladium: { base: "#f87171", muted: "#fca5a5", faint: "#fee2e2b7" },
+  copper: { base: "#ea580c", muted: "#fb923c", faint: "#ffedd5b5" },
+  aluminum: { base: "#6b7280", muted: "#9ca3af", faint: "#d1d5db95" },
   benchmark: { base: "#6b7280", muted: "#9ca3af", faint: "#d1d5db95" },
   neutral: { base: "#6b7280", muted: "#9ca3af", faint: "#d1d5dba0" },
 };
@@ -97,6 +101,8 @@ export const metricFamilyByKey: Record<string, MetricFamily> = {
   AG: "silver",
   PT: "platinum",
   PD: "palladium",
+  CU: "copper",
+  AL: "aluminum",
   PCE: "growth",
   PI: "growth",
   CPI: "inflation",
@@ -135,6 +141,8 @@ export const metricFamilyLabels: Record<MetricFamily, string> = {
   silver: "Silver",
   platinum: "Platinum",
   palladium: "Palladium",
+  copper: "Copper",
+  aluminum: "Aluminum",
   benchmark: "Benchmark",
   neutral: "Neutral",
 };

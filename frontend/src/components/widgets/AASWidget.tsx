@@ -431,7 +431,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
             to="/alternative-assets?tab=metals"
             onClick={(event) => event.stopPropagation()}
             className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
-            aria-label="Open Precious Metals detail"
+            aria-label="Open Metals detail"
           >
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: metalsColor }}>

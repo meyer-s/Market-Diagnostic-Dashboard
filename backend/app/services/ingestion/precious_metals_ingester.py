@@ -36,6 +36,8 @@ METAL_SYMBOLS = {
     "AG": {"fred": "SILVAMZNND", "yahoo": "SI=F", "etf": "SLV"},
     "PT": {"yahoo": "PL=F", "etf": "PPLT"},
     "PD": {"yahoo": "PA=F", "etf": "PALL"},
+    "CU": {"yahoo": "HG=F", "etf": "HG=F"},
+    "AL": {"yahoo": "ALI=F", "etf": "ALI=F"},
 }
 
 

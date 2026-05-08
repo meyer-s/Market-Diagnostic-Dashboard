@@ -217,12 +217,16 @@ def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Di
 
 
 def compute_all_metal_projections() -> Dict[str, Any]:
-    """Compute projections for all precious metals"""
+    """Compute projections for all metals (precious and industrial)"""
     metals = [
+        # Precious metals
         ("AU", "Gold", "GLD"),
         ("AG", "Silver", "SLV"),
         ("PT", "Platinum", "PPLT"),
+        # Industrial metals
         ("PD", "Palladium", "PALL"),
+        ("CU", "Copper", "HG=F"),
+        ("AL", "Aluminum", "ALI=F"),
     ]
     
     projections = []
@@ -248,30 +252,43 @@ def compute_all_metal_projections() -> Dict[str, Any]:
             return None
         return ((current - prior) / prior) * 100.0
 
-    # Relative confirmation trigger for platinum: improving Pt/Au momentum or
-    # platinum improving while gold/silver flatten or deteriorate.
+    # Fetch all metal price histories for rotation confirmation (precious metals only)
     pt_df = fetch_metal_price_history("PT", days=365)
     au_df = fetch_metal_price_history("AU", days=365)
-    pl_gc_mom_5d = _compute_ratio_momentum(pt_df, au_df, periods=5)
-    pl_gc_mom_20d = _compute_ratio_momentum(pt_df, au_df, periods=20)
+    ag_df = fetch_metal_price_history("AG", days=365)
+    pd_df = fetch_metal_price_history("PD", days=365)
 
     proj_by_metal = {proj["metal"]: proj for proj in projections}
     pt_proj = proj_by_metal.get("PT")
     au_proj = proj_by_metal.get("AU")
     ag_proj = proj_by_metal.get("AG")
+    pd_proj = proj_by_metal.get("PD")
+    cu_proj = proj_by_metal.get("CU")
+    al_proj = proj_by_metal.get("AL")
 
+    # Get momentum values for precious metals (20d)
+    pt_mom_20 = pt_proj.get("technicals", {}).get("momentum_20d") if pt_proj else None
+    au_mom_20 = au_proj.get("technicals", {}).get("momentum_20d") if au_proj else None
+    ag_mom_20 = ag_proj.get("technicals", {}).get("momentum_20d") if ag_proj else None
+    pd_mom_20 = pd_proj.get("technicals", {}).get("momentum_20d") if pd_proj else None
+
+    # Compute ratio momentums against gold for precious metals
+    pt_au_mom_5d = _compute_ratio_momentum(pt_df, au_df, periods=5)
+    pt_au_mom_20d = _compute_ratio_momentum(pt_df, au_df, periods=20)
+    ag_au_mom_5d = _compute_ratio_momentum(ag_df, au_df, periods=5)
+    ag_au_mom_20d = _compute_ratio_momentum(ag_df, au_df, periods=20)
+    pd_au_mom_5d = _compute_ratio_momentum(pd_df, au_df, periods=5)
+    pd_au_mom_20d = _compute_ratio_momentum(pd_df, au_df, periods=20)
+
+    # Platinum relative confirmation
     if pt_proj:
-        pt_mom_20 = pt_proj.get("technicals", {}).get("momentum_20d")
-        au_mom_20 = au_proj.get("technicals", {}).get("momentum_20d") if au_proj else None
-        ag_mom_20 = ag_proj.get("technicals", {}).get("momentum_20d") if ag_proj else None
-
-        ratio_momentum_confirmed = (
-            pl_gc_mom_5d is not None
-            and pl_gc_mom_20d is not None
-            and pl_gc_mom_5d > 0
-            and pl_gc_mom_20d > 0
+        pt_ratio_momentum_confirmed = (
+            pt_au_mom_5d is not None
+            and pt_au_mom_20d is not None
+            and pt_au_mom_5d > 0
+            and pt_au_mom_20d > 0
         )
-        leadership_divergence_confirmed = (
+        pt_leadership_divergence_confirmed = (
             pt_mom_20 is not None
             and pt_mom_20 > 0
             and (
@@ -281,12 +298,80 @@ def compute_all_metal_projections() -> Dict[str, Any]:
         )
 
         pt_proj["relative_confirmation"] = {
-            "pl_gc_ratio_momentum_5d": round(pl_gc_mom_5d, 2) if pl_gc_mom_5d is not None else None,
-            "pl_gc_ratio_momentum_20d": round(pl_gc_mom_20d, 2) if pl_gc_mom_20d is not None else None,
-            "ratio_momentum_confirmed": ratio_momentum_confirmed,
-            "leadership_divergence_confirmed": leadership_divergence_confirmed,
-            "rotation_confirmed": ratio_momentum_confirmed or leadership_divergence_confirmed,
+            "metal_ratio_momentum_5d": round(pt_au_mom_5d, 2) if pt_au_mom_5d is not None else None,
+            "metal_ratio_momentum_20d": round(pt_au_mom_20d, 2) if pt_au_mom_20d is not None else None,
+            "ratio_momentum_confirmed": pt_ratio_momentum_confirmed,
+            "leadership_divergence_confirmed": pt_leadership_divergence_confirmed,
+            "rotation_confirmed": pt_ratio_momentum_confirmed or pt_leadership_divergence_confirmed,
         }
+
+    # Silver relative confirmation: Ag/Au ratio momentum or Ag up while others down
+    if ag_proj:
+        ag_ratio_momentum_confirmed = (
+            ag_au_mom_5d is not None
+            and ag_au_mom_20d is not None
+            and ag_au_mom_5d > 0
+            and ag_au_mom_20d > 0
+        )
+        ag_leadership_divergence_confirmed = (
+            ag_mom_20 is not None
+            and ag_mom_20 > 0
+            and (
+                (au_mom_20 is not None and au_mom_20 <= 0)
+                or (pt_mom_20 is not None and pt_mom_20 <= 0)
+                or (pd_mom_20 is not None and pd_mom_20 <= 0)
+            )
+        )
+
+        ag_proj["relative_confirmation"] = {
+            "metal_ratio_momentum_5d": round(ag_au_mom_5d, 2) if ag_au_mom_5d is not None else None,
+            "metal_ratio_momentum_20d": round(ag_au_mom_20d, 2) if ag_au_mom_20d is not None else None,
+            "ratio_momentum_confirmed": ag_ratio_momentum_confirmed,
+            "leadership_divergence_confirmed": ag_leadership_divergence_confirmed,
+            "rotation_confirmed": ag_ratio_momentum_confirmed or ag_leadership_divergence_confirmed,
+        }
+
+    # Palladium relative confirmation: Pd/Au ratio momentum or Pd up while others down
+    if pd_proj:
+        pd_ratio_momentum_confirmed = (
+            pd_au_mom_5d is not None
+            and pd_au_mom_20d is not None
+            and pd_au_mom_5d > 0
+            and pd_au_mom_20d > 0
+        )
+        pd_leadership_divergence_confirmed = (
+            pd_mom_20 is not None
+            and pd_mom_20 > 0
+            and (
+                (au_mom_20 is not None and au_mom_20 <= 0)
+                or (pt_mom_20 is not None and pt_mom_20 <= 0)
+                or (ag_mom_20 is not None and ag_mom_20 <= 0)
+            )
+        )
+
+        pd_proj["relative_confirmation"] = {
+            "metal_ratio_momentum_5d": round(pd_au_mom_5d, 2) if pd_au_mom_5d is not None else None,
+            "metal_ratio_momentum_20d": round(pd_au_mom_20d, 2) if pd_au_mom_20d is not None else None,
+            "ratio_momentum_confirmed": pd_ratio_momentum_confirmed,
+            "leadership_divergence_confirmed": pd_leadership_divergence_confirmed,
+            "rotation_confirmed": pd_ratio_momentum_confirmed or pd_leadership_divergence_confirmed,
+        }
+
+    # Gold relative confirmation: all other precious metals down, gold up
+    if au_proj:
+        au_rotation_confirmed = (
+            au_mom_20 is not None
+            and au_mom_20 > 0
+            and (pt_mom_20 is None or pt_mom_20 <= 0)
+            and (ag_mom_20 is None or ag_mom_20 <= 0)
+            and (pd_mom_20 is None or pd_mom_20 <= 0)
+        )
+
+        au_proj["relative_confirmation"] = {
+            "rotation_confirmed": au_rotation_confirmed,
+        }
+    
+    # Industrial metals (CU, AL) don't have rotation confirmation - just basic projections
     
     # Sort by score to determine winners/losers
     projections.sort(key=lambda x: x['score_total'], reverse=True)

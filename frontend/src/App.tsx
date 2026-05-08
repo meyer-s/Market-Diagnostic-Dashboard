@@ -49,7 +49,7 @@ function AppWithAnalytics() {
       location.pathname.includes("/institutional-flow") ? "Institutional Flow" :
       location.pathname.includes("/agriculture") ? "Agriculture Index" :
       location.pathname.includes("/secret/options") ? "Secret Options" :
-      location.pathname.includes("/precious-metals") ? "Precious Metals" :
+      location.pathname.includes("/precious-metals") ? "Metals" :
       location.pathname.includes("/tools/volume-breadth") ? "Volume & Breadth" :
       location.pathname.includes("/bond_health_stability") ? "Bond Health Stability" :
       location.pathname.includes("/alternative-assets") ? "Alternative Assets" :

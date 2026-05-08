@@ -104,8 +104,8 @@ export default function AlternativeAssetStability() {
             </h1>
           </div>
           <p className="text-sm md:text-base text-stealth-400 max-w-4xl">
-            Comprehensive 18-component indicator measuring systemic stability through precious metals and cryptocurrency signals.
-            Tracks alternative asset adoption as a proxy for confidence in traditional financial assets and fiat currencies.
+            Comprehensive 18-component indicator measuring systemic stability through metals and cryptocurrency signals.
+            Tracks monetary metals alongside cyclical industrial metals as a proxy for confidence, growth sensitivity, and stress in traditional financial assets.
           </p>
         </div>
 
@@ -129,7 +129,7 @@ export default function AlternativeAssetStability() {
                 : "border-transparent text-stealth-400 hover:text-gray-300"
             }`}
           >
-            Precious Metals
+            Metals
           </button>
           <button
             onClick={() => setSelectedTab("crypto")}
