@@ -2057,40 +2057,40 @@ function PriceHistoryChart() {
             stroke={getMetalColor("AU")} 
             strokeWidth={2}
             dot={false}
-            name="Platinum"
+              name="Gold"
           />
           <Line 
+              yAxisId="right"
+              type="monotone" 
+              dataKey="AG" 
+              stroke={getMetalColor("AG")} 
+              strokeWidth={2}
+              dot={false}
+              name="Silver"
+            />
+            <Line 
+              yAxisId="left"
+              type="monotone" 
+              dataKey="PT" 
+              stroke={getMetalColor("PT")} 
+              strokeWidth={2}
+              dot={false}
+              name="Platinum"
+            />
+            <Line 
             yAxisId="left"
-          <p>Precious-metals history is shown in raw USD per troy ounce. Copper and aluminum are tracked in the ranking cards below because their contract units differ from the precious-metal sleeve.</p>
+              type="monotone" 
             dataKey="PD" 
             stroke={getMetalColor("PD")} 
             strokeWidth={2}
             dot={false}
             name="Palladium"
           />
-          <Line 
-            yAxisId="industrial"
-            type="monotone" 
-            dataKey="CU" 
-            stroke={getMetalColor("CU")} 
-            strokeWidth={2}
-            dot={false}
-            name="Copper"
-          />
-          <Line 
-            yAxisId="industrial"
-            type="monotone" 
-            dataKey="AL" 
-            stroke={getMetalColor("AL")} 
-            strokeWidth={2}
-            dot={false}
-            name="Aluminum"
-          />
         </LineChart>
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-stealth-400">
-        <p>All metals priced in USD per troy ounce. Gold, Platinum, and Palladium on left axis; Silver on right axis due to different price scale.</p>
+          <p>Precious-metals history is shown in raw USD per troy ounce. Copper and aluminum are tracked in the ranking cards below because their contract units differ from the precious-metal sleeve.</p>
       </div>
     </div>
   );
