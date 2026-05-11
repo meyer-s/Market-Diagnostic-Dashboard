@@ -149,6 +149,10 @@ type IndicatorContextEntry = {
   loading: boolean;
 };
 
+const USDA_WASDE_URL = "https://www.usda.gov/oce/commodity/wasde";
+const USDA_CROP_PROGRESS_URL = "https://www.nass.usda.gov/Charts_and_Maps/Crop_Progress_&_Condition/index.php";
+const NOAA_WEATHER_URL = "https://api.weather.gov/";
+
 const GROUP_COMPONENT_ORDER: Record<string, string[]> = {
   grains_oilseeds: ["ZC", "ZS", "ZW", "ZM", "ZL", "ZO", "KE", "MW", "ZR"],
   livestock: ["LE", "GF", "HE"],
@@ -419,6 +423,24 @@ function breadthLabel(value: number | null): string {
   return "Thin support";
 }
 
+function isHttpUrl(value?: string | null): value is string {
+  return Boolean(value && /^https?:\/\//i.test(value));
+}
+
+function buildFallbackSourceLinks(group: GroupRow, component: GroupRow["components"][number]): Array<{ label: string; url: string }> {
+  const links: Array<{ label: string; url: string }> = [];
+  if (isHttpUrl(component.ticker ? `https://finance.yahoo.com/quote/${encodeURIComponent(component.ticker)}` : null)) {
+    links.push({ label: "Current Price", url: `https://finance.yahoo.com/quote/${encodeURIComponent(component.ticker!)}` });
+  }
+
+  links.push({
+    label: group.group === "grains_oilseeds" ? "Crop Reports" : "USDA Reports",
+    url: group.group === "grains_oilseeds" ? USDA_CROP_PROGRESS_URL : USDA_WASDE_URL,
+  });
+  links.push({ label: "Weather Conditions", url: NOAA_WEATHER_URL });
+  return links;
+}
+
 function IndicatorFallbackDigest({
   group,
   component,
@@ -430,6 +452,7 @@ function IndicatorFallbackDigest({
 }) {
   const bias = fallbackBiasLabel(component.score);
   const move = dominantMove(component);
+  const sourceLinks = buildFallbackSourceLinks(group, component);
 
   return (
     <div className="rounded-2xl border border-white/8 bg-stealth-950/60 p-4">
@@ -463,6 +486,20 @@ function IndicatorFallbackDigest({
           <p className="mt-1 text-sm font-semibold text-white">{group.label}</p>
           <p className="mt-1 text-xs text-stealth-400">vs composite {group.correlation_to_composite?.toFixed(2) ?? "—"}</p>
         </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {sourceLinks.map((link) => (
+          <a
+            key={`${link.label}-${link.url}`}
+            href={link.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/15"
+          >
+            {link.label}
+          </a>
+        ))}
       </div>
 
       {error ? <p className="mt-4 text-xs text-stealth-500">{error}</p> : null}

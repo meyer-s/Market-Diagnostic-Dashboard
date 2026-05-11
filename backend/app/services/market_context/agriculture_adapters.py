@@ -483,6 +483,7 @@ def fetch_weather_source(symbol: str, as_of: datetime | None = None) -> Normaliz
                 {
                     "region_id": region.region_id,
                     "region_label": region.label,
+                    "forecast_url": forecast_url,
                     "avg_temp_f": round(avg_temp, 1),
                     "avg_precip_probability": round(avg_precip, 1),
                     "short_forecasts": [period.get("shortForecast") for period in daytime_periods],
@@ -505,6 +506,7 @@ def fetch_weather_source(symbol: str, as_of: datetime | None = None) -> Normaliz
         region_summaries=region_summaries,
         freshness_status=health.freshness_status,
     )
+    interpreted["forecast_url"] = region_summaries[0].get("forecast_url") if region_summaries else WEATHER_DESCRIPTOR.source_url
     return NormalizedSourcePayload(
         descriptor=WEATHER_DESCRIPTOR,
         source_health=health,

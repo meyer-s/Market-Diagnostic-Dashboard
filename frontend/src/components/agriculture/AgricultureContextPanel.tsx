@@ -4,6 +4,7 @@ type BiasValue = "bullish" | "bearish" | "neutral" | "mixed" | string;
 
 type SourceHealth = {
   source_name?: string;
+  source_url?: string | null;
   freshness_status?: string;
   confidence_level?: string;
   published_at?: string | null;
@@ -17,6 +18,9 @@ type ContextModule = {
   signal?: string;
   status?: string;
   confidence?: string;
+  report_url?: string | null;
+  report_link?: string | null;
+  forecast_url?: string | null;
   reasons?: string[];
   warnings?: string[];
   source_health?: SourceHealth;
@@ -25,6 +29,7 @@ type ContextModule = {
 type TechnicalModule = {
   bias?: BiasValue;
   confidence?: string;
+  ticker?: string;
   current_price?: number | null;
   change_20d?: number | null;
   change_60d?: number | null;
@@ -162,6 +167,88 @@ function compactSummary(context: AgricultureContextData): string {
   return `${context.commodity} is ${properCase(String(context.context_score.net_bias))} with ${context.context_score.confidence_score} confidence points ahead of ${catalyst}. Open a driver below to see what is carrying the read.`;
 }
 
+function isHttpUrl(value?: string | null): value is string {
+  return Boolean(value && /^https?:\/\//i.test(value));
+}
+
+function buildPriceUrl(ticker?: string | null): string | null {
+  if (!ticker) return null;
+  return `https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}`;
+}
+
+function getNextReportSource(context: AgricultureContextData): { label: string; url: string } | null {
+  const reportName = context.report_calendar.next_report?.report;
+  if (reportName === "Crop Progress" && isHttpUrl(context.crop_progress.report_url)) {
+    return { label: "Crop Report", url: context.crop_progress.report_url };
+  }
+  if (reportName === "WASDE" && isHttpUrl(context.wasde.report_link)) {
+    return { label: "WASDE Report", url: context.wasde.report_link };
+  }
+  if (reportName === "Export Inspections" && isHttpUrl(context.export_demand.source_health?.source_url)) {
+    return { label: "Export Report", url: context.export_demand.source_health.source_url };
+  }
+  if (reportName === "Export Sales" && isHttpUrl(context.report_calendar.source_health?.source_url)) {
+    return { label: "Export Sales", url: context.report_calendar.source_health.source_url };
+  }
+  if (isHttpUrl(context.crop_progress.report_url)) {
+    return { label: "Crop Report", url: context.crop_progress.report_url };
+  }
+  if (isHttpUrl(context.wasde.report_link)) {
+    return { label: "WASDE Report", url: context.wasde.report_link };
+  }
+  if (isHttpUrl(context.report_calendar.source_health?.source_url)) {
+    return { label: "Report Calendar", url: context.report_calendar.source_health.source_url };
+  }
+  return null;
+}
+
+function getSourceLinks(context: AgricultureContextData): Array<{ label: string; url: string }> {
+  const links: Array<{ label: string; url: string }> = [];
+
+  const priceUrl = buildPriceUrl(context.technical.ticker);
+  if (priceUrl) {
+    links.push({ label: "Current Price", url: priceUrl });
+  }
+
+  const weatherUrl = context.weather.forecast_url ?? context.weather.source_health?.source_url;
+  if (isHttpUrl(weatherUrl)) {
+    links.push({ label: "Weather Conditions", url: weatherUrl });
+  }
+
+  const nextReport = getNextReportSource(context);
+  if (nextReport) {
+    links.push(nextReport);
+  }
+
+  return links;
+}
+
+function SourceLinks({
+  links,
+  dense = false,
+}: {
+  links: Array<{ label: string; url: string }>;
+  dense?: boolean;
+}) {
+  if (!links.length) return null;
+
+  return (
+    <div className={dense ? "mt-4 flex flex-wrap gap-2" : "mt-5 flex flex-wrap gap-2"}>
+      {links.map((link) => (
+        <a
+          key={`${link.label}-${link.url}`}
+          href={link.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/15"
+        >
+          {link.label}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function getModuleMeta(context: AgricultureContextData) {
   return [
     { key: "weather", label: "Weather", breakdownKey: "weather", module: context.weather },
@@ -196,6 +283,7 @@ export function CompactContextDigest({
   const dense = variant === "indicator";
   const modules = getModuleMeta(context);
   const warning = context.thesis_validation.warnings?.[0] ?? context.context_score.warnings?.[0] ?? context.session.warnings?.[0];
+  const sourceLinks = getSourceLinks(context);
   const rankedDrivers = modules
     .map((entry) => ({
       label: entry.label,
@@ -252,6 +340,8 @@ export function CompactContextDigest({
             ))}
           </div>
         ) : null}
+
+        <SourceLinks links={sourceLinks} dense />
 
         {warning ? <p className="mt-4 text-xs text-amber-200">{warning}</p> : null}
       </div>
@@ -332,6 +422,8 @@ export function CompactContextDigest({
           );
         })}
       </div>
+
+      <SourceLinks links={sourceLinks} />
 
       {warning ? <p className="mt-4 text-xs text-amber-200">{warning}</p> : null}
     </div>
