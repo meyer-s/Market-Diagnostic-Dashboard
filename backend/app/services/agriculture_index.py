@@ -306,6 +306,20 @@ def calculate_sector_scores(
             }
             for code in sorted_members[-3:]
         ]
+        components = [
+            {
+                "code": code,
+                "name": symbol_data[code]["name"],
+                "score": round(float(symbol_data[code]["momentum_score"]), 2),
+                "ticker": symbol_data[code]["ticker"],
+                "changes": {
+                    key: (round(value, 2) if value is not None else None)
+                    for key, value in symbol_data[code]["changes"].items()
+                },
+                "volatility": round(float(symbol_data[code]["volatility"]), 2) if symbol_data[code]["volatility"] is not None else None,
+            }
+            for code in sorted_members
+        ]
 
         groups[group] = {
             "group": group,
@@ -318,6 +332,7 @@ def calculate_sector_scores(
             "breadth_score": round(float(mean(breadth_candidates)), 2) if breadth_candidates else None,
             "strongest": strongest,
             "weakest": weakest,
+            "components": components,
             "stability_contribution": 0.0,
         }
 

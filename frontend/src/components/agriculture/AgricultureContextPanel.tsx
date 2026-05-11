@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from "react";
+
 type BiasValue = "bullish" | "bearish" | "neutral" | "mixed" | string;
 
 type SourceHealth = {
@@ -18,6 +20,16 @@ type ContextModule = {
   reasons?: string[];
   warnings?: string[];
   source_health?: SourceHealth;
+};
+
+type TechnicalModule = {
+  bias?: BiasValue;
+  confidence?: string;
+  current_price?: number | null;
+  change_20d?: number | null;
+  change_60d?: number | null;
+  change_120d?: number | null;
+  warnings?: string[];
 };
 
 export type AgricultureContextData = {
@@ -54,15 +66,7 @@ export type AgricultureContextData = {
   export_demand: ContextModule;
   wasde: ContextModule;
   global_supply: ContextModule;
-  technical: {
-    bias?: BiasValue;
-    confidence?: string;
-    current_price?: number | null;
-    change_20d?: number | null;
-    change_60d?: number | null;
-    change_120d?: number | null;
-    warnings?: string[];
-  };
+  technical: TechnicalModule;
   context_score: {
     net_bias: BiasValue;
     confidence: string;
@@ -100,8 +104,36 @@ function formatChange(value?: number | null): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
-function titleize(value: string): string {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+function properCase(value: string): string {
+  const normalized = value.replace(/_/g, " ").trim();
+  const overrides: Record<string, string> = {
+    wasde: "WASDE",
+    cbot: "CBOT",
+    zc: "ZC",
+    zs: "ZS",
+    zw: "ZW",
+    zm: "ZM",
+    zl: "ZL",
+    zo: "ZO",
+    le: "LE",
+    he: "HE",
+    gf: "GF",
+    ke: "KE",
+    mw: "MW",
+    oj: "OJ",
+    vix: "VIX",
+    "soy meal": "Soy Meal",
+    "soy oil": "Soy Oil",
+  };
+
+  const direct = overrides[normalized.toLowerCase()];
+  if (direct) return direct;
+
+  return normalized
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => overrides[word.toLowerCase()] ?? `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
+    .join(" ");
 }
 
 function biasTone(value?: BiasValue): string {
@@ -119,38 +151,78 @@ function freshnessTone(value?: string): string {
   return "text-stealth-300";
 }
 
-function ModuleCard({ title, module }: { title: string; module: ContextModule }) {
-  const badgeText = module.signal ?? module.status ?? module.bias ?? "neutral";
-  const source = module.source_health;
+function compactSummary(context: AgricultureContextData): string {
+  const catalyst = context.report_calendar.next_report?.report ?? "the next report";
+  return `${context.commodity} is ${properCase(String(context.context_score.net_bias))} with ${context.context_score.confidence_score} confidence points ahead of ${catalyst}. Open a driver below to see what is carrying the read.`;
+}
+
+function getModuleMeta(context: AgricultureContextData) {
+  return [
+    { key: "weather", label: "Weather", module: context.weather },
+    { key: "cropProgress", label: "Crop Progress", module: context.crop_progress },
+    { key: "exportDemand", label: "Export Demand", module: context.export_demand },
+    { key: "wasde", label: "WASDE", module: context.wasde },
+    { key: "globalSupply", label: "Global Supply", module: context.global_supply },
+    { key: "technical", label: "Technical", module: context.technical },
+  ] as const;
+}
+
+function DriverPanel({
+  label,
+  module,
+}: {
+  label: string;
+  module: ContextModule | TechnicalModule;
+}) {
+  const source = "source_health" in module ? module.source_health : undefined;
+  const badgeText = ("signal" in module ? module.signal : undefined) ?? ("status" in module ? module.status : undefined) ?? module.bias ?? "neutral";
 
   return (
-    <div className="rounded-2xl border border-white/8 bg-stealth-950/45 p-4 shadow-[0_16px_50px_rgba(2,6,23,0.28)]">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-3xl border border-white/8 bg-stealth-950/45 p-5 shadow-[0_16px_50px_rgba(2,6,23,0.28)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">{title}</p>
+          <p className="text-sm font-semibold text-white">{label}</p>
           <div className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${biasTone(module.bias)}`}>
-            {titleize(String(badgeText))}
+            {properCase(String(badgeText))}
           </div>
         </div>
-        <div className="text-right text-[11px] text-stealth-400">
-          <p className={freshnessTone(source?.freshness_status)}>{titleize(source?.freshness_status ?? "unknown")}</p>
-          <p>{titleize(module.confidence ?? source?.confidence_level ?? "low")}</p>
+        <div className="text-right text-xs text-stealth-400">
+          <p className={freshnessTone(source?.freshness_status)}>{properCase(source?.freshness_status ?? "unknown")}</p>
+          <p>{properCase(module.confidence ?? source?.confidence_level ?? "low")}</p>
         </div>
       </div>
-      <p className="mt-3 text-sm leading-6 text-stealth-200">{module.reasons?.[0] ?? "No strong directional case was identified."}</p>
-      {module.warnings?.[0] ? <p className="mt-3 text-xs text-amber-200">{module.warnings[0]}</p> : null}
-      {source ? (
-        <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] text-stealth-400">
-          <div className="rounded-xl bg-stealth-900/65 px-3 py-2">
-            <p className="text-stealth-500">Source</p>
-            <p className="mt-1 text-stealth-200">{source.source_name ?? "Unavailable"}</p>
+
+      <p className="mt-4 text-sm leading-6 text-stealth-100">
+        {("reasons" in module ? module.reasons?.[0] : undefined) ?? "This module is neutral right now. Open the deeper panels below to inspect the structure in more detail."}
+      </p>
+
+      {"current_price" in module ? (
+        <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-2xl bg-stealth-900/65 px-3 py-2">
+            <p className="text-stealth-500">20d</p>
+            <p className="mt-1 text-stealth-100">{formatChange(module.change_20d)}</p>
           </div>
-          <div className="rounded-xl bg-stealth-900/65 px-3 py-2">
-            <p className="text-stealth-500">Published</p>
-            <p className="mt-1 text-stealth-200">{formatDateTime(source.published_at)}</p>
+          <div className="rounded-2xl bg-stealth-900/65 px-3 py-2">
+            <p className="text-stealth-500">60d</p>
+            <p className="mt-1 text-stealth-100">{formatChange(module.change_60d)}</p>
+          </div>
+          <div className="rounded-2xl bg-stealth-900/65 px-3 py-2">
+            <p className="text-stealth-500">120d</p>
+            <p className="mt-1 text-stealth-100">{formatChange(module.change_120d)}</p>
+          </div>
+          <div className="rounded-2xl bg-stealth-900/65 px-3 py-2">
+            <p className="text-stealth-500">Price</p>
+            <p className="mt-1 text-stealth-100">{module.current_price?.toFixed(2) ?? "—"}</p>
           </div>
         </div>
       ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2 text-xs text-stealth-300">
+        {source?.source_name ? <span className="rounded-full bg-stealth-900/70 px-3 py-1">{source.source_name}</span> : null}
+        {source?.published_at ? <span className="rounded-full bg-stealth-900/70 px-3 py-1">Updated {formatDateTime(source.published_at)}</span> : null}
+      </div>
+
+      {module.warnings?.[0] ? <p className="mt-4 text-xs text-amber-200">{module.warnings[0]}</p> : null}
     </div>
   );
 }
@@ -168,14 +240,25 @@ export default function AgricultureContextPanel({
   symbol: string;
   onSymbolChange: (symbolCode: string) => void;
 }) {
+  const modules = useMemo(() => (context ? getModuleMeta(context) : []), [context]);
+  const [activeDriver, setActiveDriver] = useState<string>("weather");
+
+  useEffect(() => {
+    if (modules[0]) {
+      setActiveDriver(modules[0].key);
+    }
+  }, [symbol, modules]);
+
+  const activeModule = modules.find((entry) => entry.key === activeDriver) ?? modules[0];
+
   return (
     <section className="overflow-hidden rounded-[28px] border border-white/8 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.18),transparent_36%),radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-5 shadow-[0_20px_80px_rgba(2,6,23,0.42)] md:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-3xl">
-          <span className="text-xs uppercase tracking-[0.2em] text-emerald-300/80">Agriculture Context</span>
+          <span className="text-xs tracking-[0.18em] text-emerald-300/80">Agriculture Context</span>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Live thesis and catalyst panel</h2>
           <p className="mt-2 text-sm leading-6 text-stealth-200">
-            Official-source context across weather, export demand, WASDE balance-sheet revisions, global supply pressure, and session risk.
+            A compact read built for scanning first, with the detail behind each driver one tab away.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -210,105 +293,82 @@ export default function AgricultureContextPanel({
 
       {!loading && !error && context ? (
         <div className="mt-6 space-y-5">
-          <div className="grid gap-4 xl:grid-cols-[1.5fr_0.9fr]">
+          <div className="grid gap-4 xl:grid-cols-[1.3fr_0.95fr]">
             <div className="rounded-3xl border border-white/8 bg-stealth-950/42 p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-stealth-500">{context.commodity}</p>
+                  <p className="text-sm font-semibold tracking-[0.12em] text-stealth-400">{properCase(context.commodity)}</p>
+                  <p className="mt-3 text-3xl font-semibold text-white">{properCase(context.setup_label)}</p>
                   <div className={`mt-3 inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${biasTone(context.context_score.net_bias)}`}>
-                    {titleize(String(context.context_score.net_bias))}
+                    {properCase(String(context.context_score.net_bias))}
                   </div>
-                  <p className="mt-3 text-3xl font-semibold text-white">{context.setup_label}</p>
                 </div>
-                <div className="min-w-[220px] rounded-2xl border border-white/8 bg-black/15 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Context Confidence</p>
-                  <p className="mt-2 text-4xl font-semibold text-white">{context.context_score.confidence_score}</p>
-                  <p className="mt-1 text-xs text-stealth-400">{titleize(context.context_score.confidence)} conviction</p>
-                  <div className="mt-3 h-2 rounded-full bg-stealth-800">
-                    <div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-amber-300" style={{ width: `${context.context_score.confidence_score}%` }} />
+                <div className="grid min-w-[220px] gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                  <div className="rounded-2xl border border-white/8 bg-black/15 p-4">
+                    <p className="text-xs text-stealth-500">Confidence</p>
+                    <p className="mt-2 text-4xl font-semibold text-white">{context.context_score.confidence_score}</p>
+                    <p className="mt-1 text-xs text-stealth-400">{properCase(context.context_score.confidence)} conviction</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/8 bg-black/15 p-4">
+                    <p className="text-xs text-stealth-500">Next catalyst</p>
+                    <p className="mt-2 text-lg font-semibold text-white">{context.report_calendar.next_report?.report ?? "No near-term report"}</p>
+                    <p className="mt-1 text-xs text-stealth-400">{formatDateTime(context.report_calendar.next_report?.release_at)}</p>
                   </div>
                 </div>
               </div>
-              <p className="mt-5 text-sm leading-7 text-stealth-100">{context.market_read}</p>
-              {context.context_score.warnings?.length ? (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {context.context_score.warnings.map((warning) => (
-                    <span key={warning} className="rounded-full border border-amber-400/25 bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
-                      {warning}
-                    </span>
-                  ))}
+
+              <p className="mt-5 max-w-3xl text-sm leading-6 text-stealth-100">{compactSummary(context)}</p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
+                  <p className="text-xs text-stealth-500">Session</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{properCase(context.session.status)}</p>
+                  <p className="mt-1 text-xs text-stealth-400">Closes {formatDateTime(context.session.next_close)}</p>
                 </div>
-              ) : null}
+                <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
+                  <p className="text-xs text-stealth-500">Crop stage</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{properCase(context.crop_stage.stage)}</p>
+                  <p className="mt-1 text-xs text-stealth-400">{properCase(context.crop_stage.weather_sensitivity)} sensitivity</p>
+                </div>
+                <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
+                  <p className="text-xs text-stealth-500">Validation</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{properCase(context.thesis_validation.validation_status)}</p>
+                  <p className="mt-1 text-xs text-stealth-400">{context.thesis_validation.confirmations?.length ?? 0} confirmations</p>
+                </div>
+              </div>
             </div>
 
-            <div className="grid gap-4">
-              <div className="rounded-2xl border border-white/8 bg-stealth-950/42 p-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Session</p>
-                <p className="mt-2 text-xl font-semibold text-white">{titleize(context.session.status)}</p>
-                <p className="mt-2 text-xs text-stealth-300">Next open: {formatDateTime(context.session.next_open)}</p>
-                <p className="mt-1 text-xs text-stealth-300">Next close: {formatDateTime(context.session.next_close)}</p>
+            <div className="rounded-3xl border border-white/8 bg-stealth-950/42 p-5">
+              <p className="text-sm font-semibold text-white">Driver tabs</p>
+              <p className="mt-2 text-sm leading-6 text-stealth-300">Pick one driver to inspect the signal without reading a wall of text.</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {modules.map((entry) => (
+                  <button
+                    key={entry.key}
+                    type="button"
+                    onClick={() => setActiveDriver(entry.key)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      activeDriver === entry.key
+                        ? "border-emerald-300 bg-emerald-300/12 text-emerald-100"
+                        : "border-stealth-700 bg-stealth-900/60 text-stealth-300 hover:border-stealth-500 hover:text-white"
+                    }`}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
               </div>
-              <div className="rounded-2xl border border-white/8 bg-stealth-950/42 p-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Crop Stage</p>
-                <p className="mt-2 text-xl font-semibold text-white">{titleize(context.crop_stage.stage)}</p>
-                <p className="mt-2 text-xs text-stealth-300">Weather sensitivity: {titleize(context.crop_stage.weather_sensitivity)}</p>
-                <p className="mt-2 text-xs leading-5 text-stealth-400">{context.crop_stage.stage_explanation}</p>
-              </div>
-              <div className="rounded-2xl border border-white/8 bg-stealth-950/42 p-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Next Catalyst</p>
-                <p className="mt-2 text-xl font-semibold text-white">{context.report_calendar.next_report?.report ?? "No near-term report"}</p>
-                <p className="mt-2 text-xs text-stealth-300">{formatDateTime(context.report_calendar.next_report?.release_at)}</p>
-                <p className="mt-2 text-xs text-stealth-400">Impact: {titleize(context.report_calendar.next_report?.impact ?? "unknown")}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <ModuleCard title="Weather" module={context.weather} />
-            <ModuleCard title="Crop Progress" module={context.crop_progress} />
-            <ModuleCard title="Export Demand" module={context.export_demand} />
-            <ModuleCard title="WASDE" module={context.wasde} />
-            <ModuleCard title="Global Supply" module={context.global_supply} />
-            <div className="rounded-2xl border border-white/8 bg-stealth-950/45 p-4 shadow-[0_16px_50px_rgba(2,6,23,0.28)]">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Technical</p>
-                  <div className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${biasTone(context.technical.bias)}`}>
-                    {titleize(String(context.technical.bias ?? "neutral"))}
-                  </div>
-                </div>
-                <p className="text-[11px] text-stealth-400">{titleize(context.technical.confidence ?? "low")}</p>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-xl bg-stealth-900/65 px-3 py-2">
-                  <p className="text-stealth-500">20d</p>
-                  <p className="mt-1 text-stealth-100">{formatChange(context.technical.change_20d)}</p>
-                </div>
-                <div className="rounded-xl bg-stealth-900/65 px-3 py-2">
-                  <p className="text-stealth-500">60d</p>
-                  <p className="mt-1 text-stealth-100">{formatChange(context.technical.change_60d)}</p>
-                </div>
-                <div className="rounded-xl bg-stealth-900/65 px-3 py-2">
-                  <p className="text-stealth-500">120d</p>
-                  <p className="mt-1 text-stealth-100">{formatChange(context.technical.change_120d)}</p>
-                </div>
-                <div className="rounded-xl bg-stealth-900/65 px-3 py-2">
-                  <p className="text-stealth-500">Price</p>
-                  <p className="mt-1 text-stealth-100">{context.technical.current_price?.toFixed(2) ?? "—"}</p>
-                </div>
-              </div>
-              {context.technical.warnings?.[0] ? <p className="mt-3 text-xs text-amber-200">{context.technical.warnings[0]}</p> : null}
+              {activeModule ? <div className="mt-4"><DriverPanel label={activeModule.label} module={activeModule.module} /></div> : null}
             </div>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-2xl border border-white/8 bg-stealth-950/42 p-4">
-              <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Score Breakdown</p>
+              <p className="text-sm font-semibold text-white">Score Breakdown</p>
               <div className="mt-4 space-y-3">
                 {Object.entries(context.context_score.component_breakdown).map(([key, value]) => (
                   <div key={key}>
                     <div className="flex items-center justify-between text-xs text-stealth-300">
-                      <span>{titleize(key)}</span>
+                      <span>{properCase(key)}</span>
                       <span>{value > 0 ? "+1" : value < 0 ? "-1" : "0"}</span>
                     </div>
                     <div className="mt-1 h-2 rounded-full bg-stealth-800">
@@ -323,13 +383,13 @@ export default function AgricultureContextPanel({
             </div>
 
             <div className="rounded-2xl border border-white/8 bg-stealth-950/42 p-4">
-              <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Thesis Validation</p>
+              <p className="text-sm font-semibold text-white">Thesis Validation</p>
               <div className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${biasTone(context.thesis_validation.validation_status.includes("confirm") ? "bullish" : "mixed")}`}>
-                {titleize(context.thesis_validation.validation_status)}
+                {properCase(context.thesis_validation.validation_status)}
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-emerald-400">Confirmed</p>
+                  <p className="text-xs text-emerald-400">Confirmed</p>
                   <div className="mt-2 space-y-2">
                     {(context.thesis_validation.confirmations?.slice(0, 3) ?? []).map((item) => (
                       <div key={item} className="rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
@@ -340,7 +400,7 @@ export default function AgricultureContextPanel({
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-amber-400">Warnings</p>
+                  <p className="text-xs text-amber-400">Warnings</p>
                   <div className="mt-2 space-y-2">
                     {(context.thesis_validation.warnings?.slice(0, 3) ?? []).map((item) => (
                       <div key={item} className="rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-100">

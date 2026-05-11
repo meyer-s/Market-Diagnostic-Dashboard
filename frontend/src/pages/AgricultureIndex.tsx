@@ -37,6 +37,14 @@ type GroupRow = {
   breadth_score: number | null;
   strongest: Array<{ code: string; name: string; score: number; ticker: string | null }>;
   weakest: Array<{ code: string; name: string; score: number; ticker: string | null }>;
+  components: Array<{
+    code: string;
+    name: string;
+    score: number;
+    ticker: string | null;
+    changes: Record<string, number | null>;
+    volatility: number | null;
+  }>;
   stability_contribution: number;
   correlation_to_composite: number | null;
 };
@@ -132,6 +140,15 @@ type MacdPoint = {
   histogram: number;
   breadth_centered: number | null;
   trend_centered: number | null;
+};
+
+const GROUP_COMPONENT_ORDER: Record<string, string[]> = {
+  grains_oilseeds: ["ZC", "ZS", "ZW", "ZM", "ZL", "ZO", "KE", "MW", "ZR"],
+  livestock: ["LE", "GF", "HE"],
+  dairy: ["DC", "DAIRY_CLASS_IV"],
+  softs: ["KC", "CC", "SB", "CT", "OJ", "RS"],
+  lumber: ["LBR", "SYP"],
+  fertilizer_inputs: ["FERT_N", "FERT_P", "FERT_K"],
 };
 
 const STABILITY_COMPONENT_META: Record<
@@ -305,6 +322,47 @@ function formatGroupCode(group: string): string {
   return group.replace(/_/g, " ");
 }
 
+function properCase(value: string): string {
+  const normalized = value.replace(/_/g, " ").trim();
+  const overrides: Record<string, string> = {
+    wasde: "WASDE",
+    cbot: "CBOT",
+    zc: "ZC",
+    zs: "ZS",
+    zw: "ZW",
+    zm: "ZM",
+    zl: "ZL",
+    zo: "ZO",
+    le: "LE",
+    he: "HE",
+    gf: "GF",
+    ke: "KE",
+    mw: "MW",
+    oj: "OJ",
+    syp: "SYP",
+    "soy meal": "Soy Meal",
+    "soy oil": "Soy Oil",
+  };
+  const direct = overrides[normalized.toLowerCase()];
+  if (direct) return direct;
+  return normalized
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => overrides[word.toLowerCase()] ?? `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function sortGroupComponents(group: GroupRow): GroupRow["components"] {
+  const preferredOrder = GROUP_COMPONENT_ORDER[group.group] ?? [];
+  const orderMap = new Map(preferredOrder.map((code, index) => [code, index]));
+  return [...group.components].sort((left, right) => {
+    const leftIndex = orderMap.get(left.code) ?? Number.MAX_SAFE_INTEGER;
+    const rightIndex = orderMap.get(right.code) ?? Number.MAX_SAFE_INTEGER;
+    if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+    return right.score - left.score;
+  });
+}
+
 function daysForTimeframe(timeframe: Timeframe): number {
   if (timeframe === "30d") return 30;
   if (timeframe === "90d") return 90;
@@ -315,6 +373,7 @@ function daysForTimeframe(timeframe: Timeframe): number {
 
 export default function AgricultureIndex() {
   const [selectedContextSymbol, setSelectedContextSymbol] = useState("ZC");
+  const [activeGroupComponents, setActiveGroupComponents] = useState<Record<string, string>>({});
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
   const { data: macro } = useApi<AgricultureMacro>("/agriculture/macro?days=365");
@@ -329,6 +388,16 @@ export default function AgricultureIndex() {
   const matrix60 = correlations?.correlations.group_matrix?.["60"] ?? [];
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
   const groups = overview?.groups ?? [];
+
+  const selectedComponentsByGroup = useMemo(() => {
+    const result: Record<string, GroupRow["components"][number] | undefined> = {};
+    for (const group of groups) {
+      const ordered = sortGroupComponents(group);
+      const requested = activeGroupComponents[group.group];
+      result[group.group] = ordered.find((item) => item.code === requested) ?? ordered[0];
+    }
+    return result;
+  }, [activeGroupComponents, groups]);
 
   const componentHistory = useMemo(() => {
     const rows = overview?.component_history ?? [];
@@ -740,25 +809,62 @@ export default function AgricultureIndex() {
                       <p className="text-stealth-200">{group.correlation_to_composite?.toFixed(2) ?? "—"}</p>
                     </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-[0.12em] text-emerald-400">Strong</p>
-                      {group.strongest.slice(0, 2).map((item) => (
-                        <div key={item.code} className="mb-1 flex items-center justify-between rounded bg-emerald-500/10 px-2 py-1 text-xs">
-                          <span className="text-emerald-200">{item.code}</span>
-                          <span className="text-stealth-400">{item.score.toFixed(1)}</span>
-                        </div>
-                      ))}
+                  <div className="mt-4">
+                    <div className="flex flex-wrap gap-2">
+                      {sortGroupComponents(group).map((component) => {
+                        const selected = selectedComponentsByGroup[group.group]?.code === component.code;
+                        return (
+                          <button
+                            key={component.code}
+                            type="button"
+                            onClick={() =>
+                              setActiveGroupComponents((current) => ({
+                                ...current,
+                                [group.group]: component.code,
+                              }))
+                            }
+                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                              selected
+                                ? "border-emerald-300 bg-emerald-300/12 text-emerald-100"
+                                : "border-stealth-700 bg-stealth-900/60 text-stealth-300 hover:border-stealth-500 hover:text-white"
+                            }`}
+                          >
+                            {component.code}
+                          </button>
+                        );
+                      })}
                     </div>
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-[0.12em] text-rose-400">Weak</p>
-                      {group.weakest.slice(0, 2).map((item) => (
-                        <div key={item.code} className="mb-1 flex items-center justify-between rounded bg-rose-500/10 px-2 py-1 text-xs">
-                          <span className="text-rose-200">{item.code}</span>
-                          <span className="text-stealth-400">{item.score.toFixed(1)}</span>
+
+                    {selectedComponentsByGroup[group.group] ? (
+                      <div className="mt-4 rounded-2xl border border-white/8 bg-stealth-900/45 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-white">{properCase(selectedComponentsByGroup[group.group]!.name)}</p>
+                            <p className="mt-1 text-xs text-stealth-400">{selectedComponentsByGroup[group.group]!.code}{selectedComponentsByGroup[group.group]!.ticker ? ` • ${selectedComponentsByGroup[group.group]!.ticker}` : ""}</p>
+                          </div>
+                          <div className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreTone(selectedComponentsByGroup[group.group]!.score)}`}>
+                            {selectedComponentsByGroup[group.group]!.score.toFixed(1)}
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                        <div className="mt-4 grid grid-cols-4 gap-2 text-xs">
+                          {(["5d", "20d", "60d", "120d"] as const).map((key) => {
+                            const value = selectedComponentsByGroup[group.group]!.changes[key];
+                            return (
+                              <div key={key} className="rounded-xl bg-stealth-950/75 px-2 py-2 text-center">
+                                <p className="text-stealth-500">{key}</p>
+                                <p className={value === null ? "text-stealth-500" : value >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                                  {value === null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between text-xs text-stealth-400">
+                          <span>Volatility</span>
+                          <span className="text-stealth-200">{selectedComponentsByGroup[group.group]!.volatility?.toFixed(1) ?? "—"}</span>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
