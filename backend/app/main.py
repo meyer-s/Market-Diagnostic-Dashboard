@@ -35,6 +35,20 @@ logging.basicConfig(
 )
 
 
+async def prewarm_agriculture_caches() -> None:
+    from app.services.agriculture_index import build_agriculture_long_view, calculate_composite_index
+    from app.services.agriculture_market_context import build_agriculture_market_context
+
+    try:
+        logging.info("🌽 Prewarming agriculture caches...")
+        await asyncio.to_thread(calculate_composite_index, 365)
+        await asyncio.to_thread(build_agriculture_long_view, 30)
+        await asyncio.to_thread(build_agriculture_market_context, "ZC")
+        logging.info("✅ Agriculture caches prewarmed")
+    except Exception:
+        logging.exception("Agriculture cache prewarm failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -49,6 +63,9 @@ async def lifespan(app: FastAPI):
     
     # Run initial ETL to get fresh data immediately
     asyncio.create_task(run_initial_etl())
+
+    # Prewarm the agriculture surfaces used by the deployed dashboard.
+    asyncio.create_task(prewarm_agriculture_caches())
     
     # Start the background scheduler
     start_scheduler()
