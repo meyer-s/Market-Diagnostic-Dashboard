@@ -522,6 +522,9 @@ export default function AgricultureIndex() {
   const [selectedIndicatorsByGroup, setSelectedIndicatorsByGroup] = useState<Record<string, string>>({});
   const [indicatorContexts, setIndicatorContexts] = useState<Record<string, IndicatorContextEntry>>({});
   const backgroundQueuedSymbolsRef = useRef<Set<string>>(new Set());
+  const inFlightSymbolsRef = useRef<Set<string>>(new Set());
+  const indicatorContextsRef = useRef<Record<string, IndicatorContextEntry>>({});
+  const isMountedRef = useRef(true);
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
   const { data: macro } = useApi<AgricultureMacro>("/agriculture/macro?days=365");
@@ -573,6 +576,16 @@ export default function AgricultureIndex() {
   );
 
   useEffect(() => {
+    indicatorContextsRef.current = indicatorContexts;
+  }, [indicatorContexts]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     setSelectedIndicatorsByGroup((current) => {
       const next = { ...current };
       let changed = false;
@@ -601,10 +614,10 @@ export default function AgricultureIndex() {
   useEffect(() => {
     if (!primaryComponentCodes.length) return;
 
-    const missingSymbols = primaryComponentCodes.filter((code) => !indicatorContexts[code]);
+    const missingSymbols = primaryComponentCodes.filter(
+      (code) => !indicatorContexts[code] && !inFlightSymbolsRef.current.has(code)
+    );
     if (!missingSymbols.length) return;
-
-    let cancelled = false;
 
     setIndicatorContexts((current) => {
       const next = { ...current };
@@ -619,16 +632,18 @@ export default function AgricultureIndex() {
     });
 
     for (const symbol of missingSymbols) {
+      inFlightSymbolsRef.current.add(symbol);
+
       void apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(symbol)}`)
         .then((data) => {
-          if (cancelled) return;
+          if (!isMountedRef.current) return;
           setIndicatorContexts((current) => ({
             ...current,
             [symbol]: { data, error: null, loading: false },
           }));
         })
         .catch((fetchError) => {
-          if (cancelled) return;
+          if (!isMountedRef.current) return;
           setIndicatorContexts((current) => ({
             ...current,
             [symbol]: {
@@ -637,12 +652,11 @@ export default function AgricultureIndex() {
               loading: false,
             },
           }));
+        })
+        .finally(() => {
+          inFlightSymbolsRef.current.delete(symbol);
         });
     }
-
-    return () => {
-      cancelled = true;
-    };
   }, [indicatorContexts, primaryComponentCodes]);
 
   useEffect(() => {
@@ -664,11 +678,14 @@ export default function AgricultureIndex() {
       backgroundQueuedSymbolsRef.current.add(symbol);
     }
 
-    let cancelled = false;
-
     const runBackgroundPrefetch = async () => {
       for (const symbol of pendingSymbols) {
-        if (cancelled) return;
+        if (!isMountedRef.current) return;
+        if (indicatorContextsRef.current[symbol] || inFlightSymbolsRef.current.has(symbol)) {
+          continue;
+        }
+
+        inFlightSymbolsRef.current.add(symbol);
 
         setIndicatorContexts((current) => {
           if (current[symbol]) return current;
@@ -680,13 +697,13 @@ export default function AgricultureIndex() {
 
         try {
           const data = await apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(symbol)}`);
-          if (cancelled) return;
+          if (!isMountedRef.current) return;
           setIndicatorContexts((current) => ({
             ...current,
             [symbol]: { data, error: null, loading: false },
           }));
         } catch (fetchError) {
-          if (cancelled) return;
+          if (!isMountedRef.current) return;
           setIndicatorContexts((current) => ({
             ...current,
             [symbol]: {
@@ -695,15 +712,13 @@ export default function AgricultureIndex() {
               loading: false,
             },
           }));
+        } finally {
+          inFlightSymbolsRef.current.delete(symbol);
         }
       }
     };
 
     void runBackgroundPrefetch();
-
-    return () => {
-      cancelled = true;
-    };
   }, [indicatorContexts, primaryComponentCodes, secondaryComponentCodes]);
 
   const componentHistory = useMemo(() => {
