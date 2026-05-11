@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from threading import Lock
 from typing import Any
 
 import pandas as pd
@@ -8,9 +9,9 @@ import pandas as pd
 from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
 from app.services.market_context.agriculture_adapters import (
     AG_TICKERS,
+    build_global_supply_payload,
     fetch_crop_progress_source,
     fetch_export_inspections_source,
-    fetch_global_supply_source,
     fetch_report_calendar_source,
     fetch_wasde_source,
     fetch_weather_source,
@@ -20,6 +21,11 @@ from app.services.market_context.crop_stage import get_crop_stage
 from app.services.market_context.scoring import compute_context_score, synthesize_trade_setup
 from app.services.market_context.session import get_market_session_status
 from app.services.market_context.thesis import generate_market_read, validate_generated_thesis
+
+
+_CONTEXT_CACHE: dict[str, dict[str, Any]] = {}
+_CONTEXT_CACHE_LOCK = Lock()
+_CONTEXT_CACHE_TTL = timedelta(minutes=10)
 
 
 def _series_to_pd(rows: list[dict[str, Any]]) -> pd.Series:
@@ -76,6 +82,13 @@ def _technical_signal(symbol: str) -> dict[str, Any]:
 def build_agriculture_market_context(symbol: str, as_of: datetime | None = None) -> dict[str, Any]:
     reference = as_of or datetime.now(timezone.utc)
     symbol_code = symbol.upper().lstrip("/")
+
+    if as_of is None:
+        with _CONTEXT_CACHE_LOCK:
+            cached = _CONTEXT_CACHE.get(symbol_code)
+            if cached and (reference - cached["timestamp"]) <= _CONTEXT_CACHE_TTL:
+                return cached["payload"]
+
     commodity = resolve_agriculture_commodity(symbol_code)
     session = get_market_session_status(reference)
     crop_stage = get_crop_stage(symbol_code, reference)
@@ -83,8 +96,12 @@ def build_agriculture_market_context(symbol: str, as_of: datetime | None = None)
     weather_payload = fetch_weather_source(symbol_code, reference)
     crop_progress_payload = fetch_crop_progress_source(symbol_code, reference)
     export_payload = fetch_export_inspections_source(symbol_code, reference)
-    wasde_payload, _ = fetch_wasde_source(symbol_code, reference)
-    global_payload = fetch_global_supply_source(symbol_code, reference)
+    wasde_payload, global_context = fetch_wasde_source(symbol_code, reference)
+    global_payload = build_global_supply_payload(
+        symbol_code,
+        global_context,
+        source_health=wasde_payload.source_health,
+    )
     report_calendar_payload = fetch_report_calendar_source(symbol_code, reference)
     technical = _technical_signal(symbol_code)
 
@@ -140,7 +157,7 @@ def build_agriculture_market_context(symbol: str, as_of: datetime | None = None)
         session=session,
     )
 
-    return {
+    payload = {
         "symbol": symbol_code,
         "commodity": commodity.display_name,
         "metadata": {
@@ -188,3 +205,9 @@ def build_agriculture_market_context(symbol: str, as_of: datetime | None = None)
         "thesis_validation": thesis_validation,
         "source_health": source_health,
     }
+
+    if as_of is None:
+        with _CONTEXT_CACHE_LOCK:
+            _CONTEXT_CACHE[symbol_code] = {"timestamp": reference, "payload": payload}
+
+    return payload

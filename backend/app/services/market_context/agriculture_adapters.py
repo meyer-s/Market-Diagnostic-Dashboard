@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, time, timedelta
+from threading import Lock
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,6 +15,7 @@ from app.services.market_context.types import (
     BiasLabel,
     NormalizedSourcePayload,
     SourceDescriptor,
+    SourceHealth,
     build_source_health,
 )
 
@@ -115,9 +117,18 @@ _MONTH_NAME_TO_NUMBER = {
     "dec": 12,
 }
 
+_WASDE_LOOKUP_CACHE: dict[str, dict[str, Any]] = {}
+_WASDE_LOOKUP_CACHE_LOCK = Lock()
+_WASDE_LOOKUP_CACHE_TTL = timedelta(hours=6)
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _wasde_cache_key(as_of: datetime | None) -> str:
+    reference = (as_of or _utcnow()).astimezone(EASTERN_TZ)
+    return reference.strftime("%Y-%m-%d")
 
 
 def _safe_get(url: str) -> requests.Response:
@@ -631,6 +642,12 @@ def _parse_release_schedule(page_text: str, year: int) -> dict[int, int]:
 
 
 def _find_latest_available_wasde(as_of: datetime | None = None) -> tuple[dict[str, Any] | None, str | None, dict[int, int]]:
+    cache_key = _wasde_cache_key(as_of)
+    with _WASDE_LOOKUP_CACHE_LOCK:
+        cached = _WASDE_LOOKUP_CACHE.get(cache_key)
+        if cached and (_utcnow() - cached["timestamp"]) <= _WASDE_LOOKUP_CACHE_TTL:
+            return cached["payload"]
+
     response = _safe_get(WASDE_DESCRIPTOR.source_url or "")
     page_text = response.text
     schedule = _parse_release_schedule(response.text, (as_of or _utcnow()).year)
@@ -655,8 +672,15 @@ def _find_latest_available_wasde(as_of: datetime | None = None) -> tuple[dict[st
         year = 2000 + int(code_match.group(2))
         day = schedule.get(month, 10)
         published_at = datetime(year, month, day, 12, 0, tzinfo=EASTERN_TZ)
-        return ({"code": f"{month:02d}{year % 100:02d}", "link": link, "published_at": published_at}, text, schedule)
-    return None, None, schedule
+        payload = ({"code": f"{month:02d}{year % 100:02d}", "link": link, "published_at": published_at}, text, schedule)
+        with _WASDE_LOOKUP_CACHE_LOCK:
+            _WASDE_LOOKUP_CACHE[cache_key] = {"timestamp": _utcnow(), "payload": payload}
+        return payload
+
+    payload = (None, None, schedule)
+    with _WASDE_LOOKUP_CACHE_LOCK:
+        _WASDE_LOOKUP_CACHE[cache_key] = {"timestamp": _utcnow(), "payload": payload}
+    return payload
 
 
 def _extract_section(text: str, start_marker: str, end_markers: tuple[str, ...]) -> str | None:
@@ -916,6 +940,23 @@ def fetch_global_supply_source(symbol: str, as_of: datetime | None = None) -> No
         last_updated=health.published_at or health.last_fetched_at,
         warnings=tuple(warnings + interpreted.get("warnings", [])),
         errors=tuple(errors),
+    )
+
+
+def build_global_supply_payload(
+    symbol: str,
+    global_context: dict[str, Any] | None,
+    *,
+    source_health: SourceHealth,
+) -> NormalizedSourcePayload:
+    interpreted = interpret_global_supply_context(symbol, global_context)
+    return NormalizedSourcePayload(
+        descriptor=WASDE_DESCRIPTOR,
+        source_health=source_health,
+        normalized_output=interpreted,
+        last_updated=source_health.published_at or source_health.last_fetched_at,
+        warnings=tuple(interpreted.get("warnings", [])),
+        errors=source_health.errors,
     )
 
 
