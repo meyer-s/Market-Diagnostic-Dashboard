@@ -116,9 +116,11 @@ _MONTH_NAME_TO_NUMBER = {
 _WASDE_LOOKUP_CACHE: dict[str, dict[str, Any]] = {}
 _WASDE_LOOKUP_CACHE_LOCK = Lock()
 _WASDE_LOOKUP_CACHE_TTL = timedelta(hours=6)
+_WASDE_LOOKUP_FAILURE_TTL = timedelta(minutes=30)
 _DAILY_SOURCE_CACHE: dict[str, dict[str, Any]] = {}
 _DAILY_SOURCE_CACHE_LOCK = Lock()
 _DAILY_SOURCE_CACHE_TTL = timedelta(hours=30)
+_WASDE_LOOKUP_TIMEOUT_SECONDS = 5
 
 
 def _utcnow() -> datetime:
@@ -160,8 +162,8 @@ def _wasde_cache_key(as_of: datetime | None) -> str:
     return reference.strftime("%Y-%m-%d")
 
 
-def _safe_get(url: str) -> requests.Response:
-    response = requests.get(url, headers=HTTP_HEADERS, timeout=20)
+def _safe_get(url: str, *, timeout_seconds: float = 20) -> requests.Response:
+    response = requests.get(url, headers=HTTP_HEADERS, timeout=timeout_seconds)
     response.raise_for_status()
     return response
 
@@ -703,44 +705,58 @@ def _parse_release_schedule(page_text: str, year: int) -> dict[int, int]:
 
 def _find_latest_available_wasde(as_of: datetime | None = None) -> tuple[dict[str, Any] | None, str | None, dict[int, int]]:
     cache_key = _wasde_cache_key(as_of)
+    now = _utcnow()
     with _WASDE_LOOKUP_CACHE_LOCK:
         cached = _WASDE_LOOKUP_CACHE.get(cache_key)
-        if cached and (_utcnow() - cached["timestamp"]) <= _WASDE_LOOKUP_CACHE_TTL:
-            return cached["payload"]
+        if cached:
+            age = now - cached["timestamp"]
+            cached_error = cached.get("error")
+            if cached_error and age <= _WASDE_LOOKUP_FAILURE_TTL:
+                raise RuntimeError(cached_error)
+            if cached.get("payload") is not None and age <= _WASDE_LOOKUP_CACHE_TTL:
+                return cached["payload"]
 
-    response = _safe_get(WASDE_DESCRIPTOR.source_url or "")
-    page_text = response.text
-    schedule = _parse_release_schedule(response.text, (as_of or _utcnow()).year)
-    soup = BeautifulSoup(page_text, "lxml")
-    txt_links = sorted(
-        {
-            anchor["href"]
-            for anchor in soup.find_all("a", href=True)
-            if re.search(r"wasde\d{4}\.txt$", anchor["href"], re.IGNORECASE)
-        },
-        reverse=True,
-    )
+    try:
+        response = _safe_get(
+            WASDE_DESCRIPTOR.source_url or "",
+            timeout_seconds=_WASDE_LOOKUP_TIMEOUT_SECONDS,
+        )
+        page_text = response.text
+        schedule = _parse_release_schedule(response.text, (as_of or _utcnow()).year)
+        soup = BeautifulSoup(page_text, "lxml")
+        txt_links = sorted(
+            {
+                anchor["href"]
+                for anchor in soup.find_all("a", href=True)
+                if re.search(r"wasde\d{4}\.txt$", anchor["href"], re.IGNORECASE)
+            },
+            reverse=True,
+        )
 
-    for link in txt_links:
-        text = _safe_get(link).text
-        if "not yet available" in text.lower():
-            continue
-        code_match = re.search(r"wasde(\d{2})(\d{2})\.txt$", link)
-        if not code_match:
-            continue
-        month = int(code_match.group(1))
-        year = 2000 + int(code_match.group(2))
-        day = schedule.get(month, 10)
-        published_at = datetime(year, month, day, 12, 0, tzinfo=EASTERN_TZ)
-        payload = ({"code": f"{month:02d}{year % 100:02d}", "link": link, "published_at": published_at}, text, schedule)
+        for link in txt_links:
+            text = _safe_get(link, timeout_seconds=_WASDE_LOOKUP_TIMEOUT_SECONDS).text
+            if "not yet available" in text.lower():
+                continue
+            code_match = re.search(r"wasde(\d{2})(\d{2})\.txt$", link)
+            if not code_match:
+                continue
+            month = int(code_match.group(1))
+            year = 2000 + int(code_match.group(2))
+            day = schedule.get(month, 10)
+            published_at = datetime(year, month, day, 12, 0, tzinfo=EASTERN_TZ)
+            payload = ({"code": f"{month:02d}{year % 100:02d}", "link": link, "published_at": published_at}, text, schedule)
+            with _WASDE_LOOKUP_CACHE_LOCK:
+                _WASDE_LOOKUP_CACHE[cache_key] = {"timestamp": _utcnow(), "payload": payload}
+            return payload
+
+        payload = (None, None, schedule)
         with _WASDE_LOOKUP_CACHE_LOCK:
             _WASDE_LOOKUP_CACHE[cache_key] = {"timestamp": _utcnow(), "payload": payload}
         return payload
-
-    payload = (None, None, schedule)
-    with _WASDE_LOOKUP_CACHE_LOCK:
-        _WASDE_LOOKUP_CACHE[cache_key] = {"timestamp": _utcnow(), "payload": payload}
-    return payload
+    except Exception as exc:
+        with _WASDE_LOOKUP_CACHE_LOCK:
+            _WASDE_LOOKUP_CACHE[cache_key] = {"timestamp": _utcnow(), "error": str(exc)}
+        raise
 
 
 def _extract_section(text: str, start_marker: str, end_markers: tuple[str, ...]) -> str | None:

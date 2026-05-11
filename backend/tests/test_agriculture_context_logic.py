@@ -3,8 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from app.services.market_context.agriculture_metadata import resolve_agriculture_commodity
 from app.services.market_context.agriculture_adapters import (
+    _WASDE_LOOKUP_CACHE,
+    _WASDE_LOOKUP_CACHE_LOCK,
+    _WASDE_LOOKUP_TIMEOUT_SECONDS,
+    _find_latest_available_wasde,
     _with_daily_source_cache,
     interpret_crop_progress_snapshot,
     interpret_export_demand,
@@ -210,3 +216,30 @@ def test_daily_source_cache_reuses_builder_for_current_day() -> None:
 
     assert calls["count"] == 1
     assert first == second == {"value": 1}
+
+
+def test_wasde_lookup_caches_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"count": 0}
+    seen_timeouts: list[float] = []
+
+    with _WASDE_LOOKUP_CACHE_LOCK:
+        _WASDE_LOOKUP_CACHE.clear()
+
+    def fake_safe_get(url: str, *, timeout_seconds: float = 20):
+        calls["count"] += 1
+        seen_timeouts.append(timeout_seconds)
+        raise RuntimeError("simulated wasde timeout")
+
+    monkeypatch.setattr("app.services.market_context.agriculture_adapters._safe_get", fake_safe_get)
+
+    with pytest.raises(RuntimeError, match="simulated wasde timeout"):
+        _find_latest_available_wasde()
+
+    with pytest.raises(RuntimeError, match="simulated wasde timeout"):
+        _find_latest_available_wasde()
+
+    assert calls["count"] == 1
+    assert seen_timeouts == [_WASDE_LOOKUP_TIMEOUT_SECONDS]
+
+    with _WASDE_LOOKUP_CACHE_LOCK:
+        _WASDE_LOOKUP_CACHE.clear()
