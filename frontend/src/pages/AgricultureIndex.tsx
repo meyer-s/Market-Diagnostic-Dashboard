@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   Cell,
@@ -16,7 +16,8 @@ import {
 
 import MarketLoading from "../components/ui/MarketLoading";
 import { useApi } from "../hooks/useApi";
-import AgricultureContextPanel, { type AgricultureContextData } from "../components/agriculture/AgricultureContextPanel";
+import AgricultureContextPanel, { CompactContextDigest, type AgricultureContextData } from "../components/agriculture/AgricultureContextPanel";
+import { apiFetch } from "../utils/apiUtils";
 import {
   CHART_MARGIN,
   commonGridProps,
@@ -140,6 +141,12 @@ type MacdPoint = {
   histogram: number;
   breadth_centered: number | null;
   trend_centered: number | null;
+};
+
+type IndicatorContextEntry = {
+  data: AgricultureContextData | null;
+  error: string | null;
+  loading: boolean;
 };
 
 const GROUP_COMPONENT_ORDER: Record<string, string[]> = {
@@ -379,9 +386,94 @@ function daysForTimeframe(timeframe: Timeframe): number {
   return 365;
 }
 
+function formatSignedPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function fallbackBiasLabel(score: number): { label: string; tone: string } {
+  if (score >= 65) return { label: "Bullish", tone: "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" };
+  if (score <= 35) return { label: "Bearish", tone: "border-rose-400/30 bg-rose-500/10 text-rose-100" };
+  return { label: "Balanced", tone: "border-sky-400/30 bg-sky-500/10 text-sky-100" };
+}
+
+function dominantMove(component: GroupRow["components"][number]): { label: string; value: number | null } {
+  const candidates = (["5d", "20d", "60d", "120d"] as const)
+    .map((key) => ({ label: key, value: component.changes[key] }))
+    .filter((item): item is { label: "5d" | "20d" | "60d" | "120d"; value: number } => item.value !== null);
+
+  return candidates.sort((left, right) => Math.abs(right.value) - Math.abs(left.value))[0] ?? { label: "20d", value: null };
+}
+
+function volatilityLabel(value: number | null): string {
+  if (value === null || value === undefined) return "Unknown";
+  if (value >= 35) return "High";
+  if (value >= 20) return "Moderate";
+  return "Calm";
+}
+
+function breadthLabel(value: number | null): string {
+  if (value === null || value === undefined) return "Unclear";
+  if (value >= 65) return "Broad support";
+  if (value >= 45) return "Mixed support";
+  return "Thin support";
+}
+
+function IndicatorFallbackDigest({
+  group,
+  component,
+  error,
+}: {
+  group: GroupRow;
+  component: GroupRow["components"][number];
+  error?: string | null;
+}) {
+  const bias = fallbackBiasLabel(component.score);
+  const move = dominantMove(component);
+
+  return (
+    <div className="rounded-2xl border border-white/8 bg-stealth-950/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${bias.tone}`}>{bias.label}</div>
+          <p className="mt-3 text-sm leading-6 text-stealth-100">
+            {properCase(component.name)} is leaning {bias.label.toLowerCase()} inside {group.label}, driven by {move.label} momentum at {formatSignedPercent(move.value)} with {volatilityLabel(component.volatility).toLowerCase()} volatility.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-black/15 p-3">
+          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Context Feed</p>
+          <p className="mt-1 text-sm font-semibold text-white">Using local market structure</p>
+          <p className="mt-1 text-xs text-stealth-400">Official context is not available for this indicator yet.</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Why Now</p>
+          <p className="mt-1 text-sm font-semibold text-white">{move.label} momentum</p>
+          <p className="mt-1 text-xs text-stealth-400">{formatSignedPercent(move.value)}</p>
+        </div>
+        <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Risk State</p>
+          <p className="mt-1 text-sm font-semibold text-white">{volatilityLabel(component.volatility)}</p>
+          <p className="mt-1 text-xs text-stealth-400">{breadthLabel(group.breadth_score)}</p>
+        </div>
+        <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Market Fit</p>
+          <p className="mt-1 text-sm font-semibold text-white">{group.label}</p>
+          <p className="mt-1 text-xs text-stealth-400">vs composite {group.correlation_to_composite?.toFixed(2) ?? "—"}</p>
+        </div>
+      </div>
+
+      {error ? <p className="mt-4 text-xs text-stealth-500">{error}</p> : null}
+    </div>
+  );
+}
+
 export default function AgricultureIndex() {
   const [selectedContextSymbol, setSelectedContextSymbol] = useState("ZC");
   const [activeGroupComponents, setActiveGroupComponents] = useState<Record<string, string>>({});
+  const [indicatorContexts, setIndicatorContexts] = useState<Record<string, IndicatorContextEntry>>({});
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
   const { data: macro } = useApi<AgricultureMacro>("/agriculture/macro?days=365");
@@ -406,6 +498,65 @@ export default function AgricultureIndex() {
     }
     return result;
   }, [activeGroupComponents, groups]);
+
+  const requestedIndicatorSymbols = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          Object.values(selectedComponentsByGroup)
+            .map((component) => component?.code)
+            .filter((value): value is string => Boolean(value))
+        )
+      ),
+    [selectedComponentsByGroup]
+  );
+
+  const pendingIndicatorSymbols = useMemo(
+    () => (activeTab !== "deepdive" ? [] : requestedIndicatorSymbols.filter((symbol) => indicatorContexts[symbol] === undefined)),
+    [activeTab, indicatorContexts, requestedIndicatorSymbols]
+  );
+
+  useEffect(() => {
+    if (!pendingIndicatorSymbols.length) return;
+
+    let cancelled = false;
+
+    setIndicatorContexts((current) => {
+      const next = { ...current };
+      for (const symbol of pendingIndicatorSymbols) {
+        next[symbol] = { data: null, error: null, loading: true };
+      }
+      return next;
+    });
+
+    void Promise.all(
+      pendingIndicatorSymbols.map(async (symbol) => {
+        try {
+          const data = await apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(symbol)}`);
+          return { symbol, data, error: null };
+        } catch (fetchError) {
+          return {
+            symbol,
+            data: null,
+            error: fetchError instanceof Error ? fetchError.message : "Failed to load context",
+          };
+        }
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      setIndicatorContexts((current) => {
+        const next = { ...current };
+        for (const result of results) {
+          next[result.symbol] = { data: result.data, error: result.error, loading: false };
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingIndicatorSymbols]);
 
   const componentHistory = useMemo(() => {
     const rows = overview?.component_history ?? [];
@@ -854,23 +1005,24 @@ export default function AgricultureIndex() {
                             {selectedComponentsByGroup[group.group]!.score.toFixed(1)}
                           </div>
                         </div>
-                        <div className="mt-4 grid grid-cols-4 gap-2 text-xs">
-                          {(["5d", "20d", "60d", "120d"] as const).map((key) => {
-                            const value = selectedComponentsByGroup[group.group]!.changes[key];
-                            return (
-                              <div key={key} className="rounded-xl bg-stealth-950/75 px-2 py-2 text-center">
-                                <p className="text-stealth-500">{key}</p>
-                                <p className={value === null ? "text-stealth-500" : value >= 0 ? "text-emerald-300" : "text-rose-300"}>
-                                  {value === null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`}
-                                </p>
-                              </div>
-                            );
-                          })}
+                        <div className="mt-4">
+                          {indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.data ? (
+                            <CompactContextDigest context={indicatorContexts[selectedComponentsByGroup[group.group]!.code]!.data!} variant="indicator" />
+                          ) : indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.loading ? (
+                            <div className="rounded-2xl border border-white/8 bg-stealth-950/60 px-4 py-5 text-sm text-stealth-300">
+                              Loading live context for {selectedComponentsByGroup[group.group]!.code}...
+                            </div>
+                          ) : (
+                            <IndicatorFallbackDigest
+                              group={group}
+                              component={selectedComponentsByGroup[group.group]!}
+                              error={indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.error}
+                            />
+                          )}
                         </div>
-                        <div className="mt-3 flex items-center justify-between text-xs text-stealth-400">
-                          <span>Volatility</span>
-                          <span className="text-stealth-200">{selectedComponentsByGroup[group.group]!.volatility?.toFixed(1) ?? "—"}</span>
-                        </div>
+                        <p className="mt-4 text-[11px] text-stealth-500">
+                          Detailed datapoints remain available in the broader diagnostics, but this view stays focused on the current read and catalyst.
+                        </p>
                       </div>
                     ) : null}
                   </div>
