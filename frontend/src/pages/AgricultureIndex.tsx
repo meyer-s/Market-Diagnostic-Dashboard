@@ -324,6 +324,7 @@ function formatGroupCode(group: string): string {
 
 function properCase(value: string): string {
   const normalized = value.replace(/_/g, " ").trim();
+  const smallWords = new Set(["a", "an", "and", "at", "for", "in", "of", "on", "or", "the", "to", "vs"]);
   const overrides: Record<string, string> = {
     wasde: "WASDE",
     cbot: "CBOT",
@@ -348,7 +349,14 @@ function properCase(value: string): string {
   return normalized
     .split(" ")
     .filter(Boolean)
-    .map((word) => overrides[word.toLowerCase()] ?? `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
+    .map((word, index, array) => {
+      const lowered = word.toLowerCase();
+      if (overrides[lowered]) return overrides[lowered];
+      if (index > 0 && index < array.length - 1 && smallWords.has(lowered)) {
+        return lowered;
+      }
+      return `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`;
+    })
     .join(" ");
 }
 

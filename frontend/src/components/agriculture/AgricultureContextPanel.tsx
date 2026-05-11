@@ -106,6 +106,7 @@ function formatChange(value?: number | null): string {
 
 function properCase(value: string): string {
   const normalized = value.replace(/_/g, " ").trim();
+  const smallWords = new Set(["a", "an", "and", "at", "for", "in", "of", "on", "or", "the", "to", "vs"]);
   const overrides: Record<string, string> = {
     wasde: "WASDE",
     cbot: "CBOT",
@@ -129,11 +130,21 @@ function properCase(value: string): string {
   const direct = overrides[normalized.toLowerCase()];
   if (direct) return direct;
 
-  return normalized
+  const words = normalized
     .split(" ")
     .filter(Boolean)
-    .map((word) => overrides[word.toLowerCase()] ?? `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
-    .join(" ");
+    .map((word, index, array) => {
+      const lowered = word.toLowerCase();
+      if (overrides[lowered]) {
+        return overrides[lowered];
+      }
+      if (index > 0 && index < array.length - 1 && smallWords.has(lowered)) {
+        return lowered;
+      }
+      return `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`;
+    });
+
+  return words.join(" ");
 }
 
 function biasTone(value?: BiasValue): string {
@@ -310,7 +321,7 @@ export default function AgricultureContextPanel({
                     <p className="mt-1 text-xs text-stealth-400">{properCase(context.context_score.confidence)} conviction</p>
                   </div>
                   <div className="rounded-2xl border border-white/8 bg-black/15 p-4">
-                    <p className="text-xs text-stealth-500">Next catalyst</p>
+                    <p className="text-xs text-stealth-500">Next Catalyst</p>
                     <p className="mt-2 text-lg font-semibold text-white">{context.report_calendar.next_report?.report ?? "No near-term report"}</p>
                     <p className="mt-1 text-xs text-stealth-400">{formatDateTime(context.report_calendar.next_report?.release_at)}</p>
                   </div>
@@ -326,7 +337,7 @@ export default function AgricultureContextPanel({
                   <p className="mt-1 text-xs text-stealth-400">Closes {formatDateTime(context.session.next_close)}</p>
                 </div>
                 <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-                  <p className="text-xs text-stealth-500">Crop stage</p>
+                  <p className="text-xs text-stealth-500">Crop Stage</p>
                   <p className="mt-1 text-sm font-semibold text-white">{properCase(context.crop_stage.stage)}</p>
                   <p className="mt-1 text-xs text-stealth-400">{properCase(context.crop_stage.weather_sensitivity)} sensitivity</p>
                 </div>
@@ -339,7 +350,7 @@ export default function AgricultureContextPanel({
             </div>
 
             <div className="rounded-3xl border border-white/8 bg-stealth-950/42 p-5">
-              <p className="text-sm font-semibold text-white">Driver tabs</p>
+              <p className="text-sm font-semibold text-white">Driver Tabs</p>
               <p className="mt-2 text-sm leading-6 text-stealth-300">Pick one driver to inspect the signal without reading a wall of text.</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {modules.map((entry) => (
