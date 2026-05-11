@@ -441,6 +441,14 @@ function buildFallbackSourceLinks(group: GroupRow, component: GroupRow["componen
   return links;
 }
 
+function formatFallbackError(error?: string | null): string | null {
+  if (!error) return null;
+  if (error.toLowerCase().includes("http error")) {
+    return "Official context is unavailable for this indicator right now.";
+  }
+  return error;
+}
+
 function IndicatorFallbackDigest({
   group,
   component,
@@ -453,6 +461,7 @@ function IndicatorFallbackDigest({
   const bias = fallbackBiasLabel(component.score);
   const move = dominantMove(component);
   const sourceLinks = buildFallbackSourceLinks(group, component);
+  const friendlyError = formatFallbackError(error);
 
   return (
     <div className="rounded-2xl border border-white/8 bg-stealth-950/60 p-4">
@@ -502,7 +511,7 @@ function IndicatorFallbackDigest({
         ))}
       </div>
 
-      {error ? <p className="mt-4 text-xs text-stealth-500">{error}</p> : null}
+      {friendlyError ? <p className="mt-4 text-xs text-stealth-500">{friendlyError}</p> : null}
     </div>
   );
 }
