@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import requests
 from bs4 import BeautifulSoup
 
+from app.services.agriculture_index import AGRICULTURE_SYMBOLS
 from app.services.market_context.agriculture_metadata import AGRICULTURE_COMMODITY_METADATA, resolve_agriculture_commodity
 from app.services.market_context.crop_stage import get_crop_stage
 from app.services.market_context.types import (
@@ -27,11 +28,13 @@ HTTP_HEADERS = {
     "Accept": "text/html,application/json,text/plain,*/*",
 }
 
+ALL_AGRICULTURE_CONTEXT_SYMBOLS = tuple(symbol.code for symbol in AGRICULTURE_SYMBOLS)
+
 WEATHER_DESCRIPTOR = SourceDescriptor(
     source_id="nws_forecast",
     source_name="NOAA National Weather Service",
     source_category="weather",
-    affected_commodities=tuple(AGRICULTURE_COMMODITY_METADATA.keys()),
+    affected_commodities=ALL_AGRICULTURE_CONTEXT_SYMBOLS,
     update_frequency="sub-daily",
     stale_data_threshold=timedelta(hours=12),
     reliability_level="official",
@@ -44,7 +47,7 @@ WASDE_DESCRIPTOR = SourceDescriptor(
     source_id="wasde",
     source_name="USDA WASDE",
     source_category="balance_sheet",
-    affected_commodities=tuple(AGRICULTURE_COMMODITY_METADATA.keys()),
+    affected_commodities=ALL_AGRICULTURE_CONTEXT_SYMBOLS,
     update_frequency="monthly",
     stale_data_threshold=timedelta(days=35),
     reliability_level="official",
@@ -70,7 +73,7 @@ REPORT_CALENDAR_DESCRIPTOR = SourceDescriptor(
     source_id="usda_report_calendar",
     source_name="USDA Report Calendar",
     source_category="calendar",
-    affected_commodities=tuple(AGRICULTURE_COMMODITY_METADATA.keys()),
+    affected_commodities=ALL_AGRICULTURE_CONTEXT_SYMBOLS,
     update_frequency="weekly/monthly",
     stale_data_threshold=timedelta(days=14),
     reliability_level="official",
@@ -93,14 +96,7 @@ CPROP_DESCRIPTOR = SourceDescriptor(
 )
 
 
-AG_TICKERS = {
-    "ZC": "ZC=F",
-    "ZS": "ZS=F",
-    "ZW": "ZW=F",
-    "ZM": "ZM=F",
-    "ZL": "ZL=F",
-    "ZO": "ZO=F",
-}
+AG_TICKERS = {symbol.code: symbol.tickers[0] for symbol in AGRICULTURE_SYMBOLS if symbol.tickers}
 
 _MONTH_NAME_TO_NUMBER = {
     "jan": 1,

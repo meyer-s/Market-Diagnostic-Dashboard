@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from app.services.market_context.agriculture_metadata import resolve_agriculture_commodity
 from app.services.market_context.agriculture_adapters import (
     _with_daily_source_cache,
     interpret_crop_progress_snapshot,
@@ -11,6 +12,7 @@ from app.services.market_context.agriculture_adapters import (
     interpret_wasde_balance_sheet,
     interpret_weather_context,
 )
+from app.services.market_context.crop_stage import get_crop_stage
 from app.services.market_context.scoring import compute_context_score, synthesize_trade_setup
 from app.services.market_context.thesis import generate_market_read, validate_generated_thesis
 
@@ -170,6 +172,20 @@ def test_market_read_and_validation_confirm_structured_claims() -> None:
     assert "Corn read" in thesis
     assert validation["validation_status"] == "confirmed"
     assert len(validation["confirmations"]) >= 2
+
+
+def test_resolve_agriculture_commodity_supports_non_grain_symbols() -> None:
+    assert resolve_agriculture_commodity("LE").display_name == "Live Cattle"
+    assert resolve_agriculture_commodity("FERT_N").commodity_group == "fertilizer_inputs"
+
+
+def test_get_crop_stage_supports_non_crop_symbol_groups() -> None:
+    livestock_stage = get_crop_stage("LE")
+    fertilizer_stage = get_crop_stage("FERT_N")
+
+    assert livestock_stage["stage"] == "herd_cycle"
+    assert livestock_stage["weather_sensitivity"] == "low"
+    assert fertilizer_stage["stage"] == "application_cycle"
 
 
 def test_daily_source_cache_reuses_builder_for_current_day() -> None:

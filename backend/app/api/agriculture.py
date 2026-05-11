@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app.services.agriculture_index import build_agriculture_long_view, calculate_composite_index
 from app.services.agriculture_market_context import build_agriculture_market_context
@@ -9,7 +9,10 @@ router = APIRouter(prefix="/agriculture")
 
 @router.get("/context")
 def get_agriculture_context(symbol: str = Query("ZC")):
-    return build_agriculture_market_context(symbol)
+    try:
+        return build_agriculture_market_context(symbol)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'")) from exc
 
 
 @router.get("/overview")

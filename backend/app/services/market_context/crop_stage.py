@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from app.services.market_context.agriculture_metadata import resolve_agriculture_commodity
+
 
 def _as_date(moment: date | datetime | None) -> date:
     if moment is None:
@@ -17,6 +19,8 @@ def get_crop_stage(symbol: str, moment: date | datetime | None = None) -> dict[s
     root_symbol = symbol.upper().lstrip("/")
     if root_symbol in {"ZM", "ZL"}:
         root_symbol = "ZS"
+    if root_symbol in {"KE", "MW"}:
+        root_symbol = "ZW"
 
     if root_symbol == "ZC":
         if month in {4, 5}:
@@ -141,4 +145,65 @@ def get_crop_stage(symbol: str, moment: date | datetime | None = None) -> dict[s
             "stage_explanation": "Oats are outside the main weather-sensitive window, so fundamental carry and demand matter more.",
         }
 
-    raise KeyError(f"Unsupported agriculture symbol: {symbol}")
+    commodity = resolve_agriculture_commodity(root_symbol)
+
+    if commodity.commodity_group == "livestock":
+        return {
+            "stage": "herd_cycle",
+            "weather_sensitivity": "low",
+            "seasonal_pressure": "Livestock contracts are driven more by feed costs, herd dynamics, and consumer demand than by direct crop-weather windows.",
+            "stage_explanation": "This market is in a continuous herd and feed-cost cycle, so official livestock reports carry more weight than day-to-day weather.",
+        }
+
+    if commodity.commodity_group == "dairy":
+        return {
+            "stage": "production_cycle",
+            "weather_sensitivity": "low",
+            "seasonal_pressure": "Dairy pricing is driven more by milk output, product inventories, and feed costs than by direct crop-weather windows.",
+            "stage_explanation": "This market trades a rolling production cycle where dairy reports and feed inputs matter more than crop-stage weather.",
+        }
+
+    if commodity.commodity_group == "lumber":
+        return {
+            "stage": "construction_cycle",
+            "weather_sensitivity": "low",
+            "seasonal_pressure": "Lumber is more sensitive to housing and mill activity than to agricultural weather windows.",
+            "stage_explanation": "This market follows construction demand and sawmill supply conditions rather than a planting-to-harvest cycle.",
+        }
+
+    if commodity.commodity_group == "fertilizer_inputs":
+        return {
+            "stage": "application_cycle",
+            "weather_sensitivity": "low",
+            "seasonal_pressure": "Fertilizer inputs follow crop-margin, energy-cost, and seasonal application demand more than direct weather exposure.",
+            "stage_explanation": "This proxy trades input demand and nutrient pricing rather than crop development itself.",
+        }
+
+    if month in {3, 4, 5}:
+        return {
+            "stage": "planting",
+            "weather_sensitivity": "medium",
+            "seasonal_pressure": "Fieldwork pace and early-condition risk matter most during the spring setup window.",
+            "stage_explanation": "This market is in an early-season setup window where weather can affect planting pace and confidence.",
+        }
+    if month in {6, 7, 8}:
+        return {
+            "stage": "active_growth",
+            "weather_sensitivity": "high",
+            "seasonal_pressure": "Mid-season weather is the most sensitive window for yield, quality, or production expectations.",
+            "stage_explanation": "This market is in an active growth window, so persistent weather stress can still alter supply expectations.",
+        }
+    if month in {9, 10, 11}:
+        return {
+            "stage": "harvest",
+            "weather_sensitivity": "medium",
+            "seasonal_pressure": "Weather matters more through harvest pace, quality, and logistics than fresh yield-setting risk.",
+            "stage_explanation": "This market is in harvest or late-season transition, so weather mostly matters through pace and quality.",
+        }
+
+    return {
+        "stage": "post_harvest",
+        "weather_sensitivity": "low",
+        "seasonal_pressure": "Outside the active production window, balance-sheet, demand, and macro signals matter more than weather.",
+        "stage_explanation": "This market is outside its most weather-sensitive stretch, so structural demand and supply data should dominate context.",
+    }

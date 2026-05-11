@@ -443,7 +443,8 @@ function buildFallbackSourceLinks(group: GroupRow, component: GroupRow["componen
 
 function formatFallbackError(error?: string | null): string | null {
   if (!error) return null;
-  if (error.toLowerCase().includes("http error")) {
+  const normalized = error.toLowerCase();
+  if (normalized.includes("http error") || normalized.includes("unsupported agriculture symbol") || normalized.includes("404")) {
     return "Official context is unavailable for this indicator right now.";
   }
   return error;
@@ -518,7 +519,7 @@ function IndicatorFallbackDigest({
 
 export default function AgricultureIndex() {
   const [selectedContextSymbol, setSelectedContextSymbol] = useState("ZC");
-  const [expandedIndicator, setExpandedIndicator] = useState<{ group: string; code: string } | null>(null);
+  const [selectedIndicatorsByGroup, setSelectedIndicatorsByGroup] = useState<Record<string, string>>({});
   const [indicatorContexts, setIndicatorContexts] = useState<Record<string, IndicatorContextEntry>>({});
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
@@ -534,64 +535,99 @@ export default function AgricultureIndex() {
   const matrix60 = correlations?.correlations.group_matrix?.["60"] ?? [];
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
   const groups = overview?.groups ?? [];
-  const expandedIndicatorSymbol = activeTab === "deepdive" ? expandedIndicator?.code ?? null : null;
 
-  const expandedComponentsByGroup = useMemo(() => {
+  const allComponentCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const group of groups) {
+      for (const component of sortGroupComponents(group)) {
+        codes.add(component.code);
+      }
+    }
+    return [...codes];
+  }, [groups]);
+
+  const selectedComponentsByGroup = useMemo(() => {
     const result: Record<string, GroupRow["components"][number] | undefined> = {};
     for (const group of groups) {
-      if (expandedIndicator?.group !== group.group) {
-        result[group.group] = undefined;
-        continue;
-      }
-
-      result[group.group] = sortGroupComponents(group).find((item) => item.code === expandedIndicator.code);
+      const sorted = sortGroupComponents(group);
+      const selectedCode = selectedIndicatorsByGroup[group.group] ?? sorted[0]?.code;
+      result[group.group] = sorted.find((item) => item.code === selectedCode) ?? sorted[0];
     }
     return result;
-  }, [expandedIndicator, groups]);
+  }, [groups, selectedIndicatorsByGroup]);
 
   useEffect(() => {
-    if (!expandedIndicatorSymbol) return;
-    if (indicatorContexts[expandedIndicatorSymbol]) return;
+    setSelectedIndicatorsByGroup((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const group of groups) {
+        const sorted = sortGroupComponents(group);
+        if (!sorted.length) continue;
+        const validCodes = new Set(sorted.map((component) => component.code));
+        if (!next[group.group] || !validCodes.has(next[group.group])) {
+          next[group.group] = sorted[0].code;
+          changed = true;
+        }
+      }
+
+      for (const groupKey of Object.keys(next)) {
+        if (!groups.some((group) => group.group === groupKey)) {
+          delete next[groupKey];
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [groups]);
+
+  useEffect(() => {
+    if (!allComponentCodes.length) return;
+
+    const missingSymbols = allComponentCodes.filter((code) => !indicatorContexts[code]);
+    if (!missingSymbols.length) return;
 
     let cancelled = false;
 
     setIndicatorContexts((current) => {
-      return {
-        ...current,
-        [expandedIndicatorSymbol]: { data: null, error: null, loading: true },
-      };
+      const next = { ...current };
+      let changed = false;
+      for (const symbol of missingSymbols) {
+        if (!next[symbol]) {
+          next[symbol] = { data: null, error: null, loading: true };
+          changed = true;
+        }
+      }
+      return changed ? next : current;
     });
 
-    void apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(expandedIndicatorSymbol)}`)
-      .then((data) => {
-        if (cancelled) return;
-        setIndicatorContexts((current) => ({
-          ...current,
-          [expandedIndicatorSymbol]: { data, error: null, loading: false },
-        }));
-      })
-      .catch((fetchError) => {
-        if (cancelled) return;
-        setIndicatorContexts((current) => ({
-          ...current,
-          [expandedIndicatorSymbol]: {
-            data: null,
-            error: fetchError instanceof Error ? fetchError.message : "Failed to load context",
-            loading: false,
-          },
-        }));
-      });
+    for (const symbol of missingSymbols) {
+      void apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(symbol)}`)
+        .then((data) => {
+          if (cancelled) return;
+          setIndicatorContexts((current) => ({
+            ...current,
+            [symbol]: { data, error: null, loading: false },
+          }));
+        })
+        .catch((fetchError) => {
+          if (cancelled) return;
+          setIndicatorContexts((current) => ({
+            ...current,
+            [symbol]: {
+              data: null,
+              error: fetchError instanceof Error ? fetchError.message : "Failed to load context",
+              loading: false,
+            },
+          }));
+        });
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [expandedIndicatorSymbol]);
-
-  useEffect(() => {
-    if (activeTab !== "deepdive") {
-      setExpandedIndicator(null);
-    }
-  }, [activeTab]);
+  }, [allComponentCodes, indicatorContexts]);
 
   const componentHistory = useMemo(() => {
     const rows = overview?.component_history ?? [];
@@ -1006,18 +1042,12 @@ export default function AgricultureIndex() {
                   <div className="mt-4">
                     <div className="flex flex-wrap gap-2">
                       {sortGroupComponents(group).map((component) => {
-                        const selected = expandedIndicator?.group === group.group && expandedIndicator.code === component.code;
+                        const selected = selectedIndicatorsByGroup[group.group] === component.code;
                         return (
                           <button
                             key={component.code}
                             type="button"
-                            onClick={() =>
-                              setExpandedIndicator((current) =>
-                                current?.group === group.group && current.code === component.code
-                                  ? null
-                                  : { group: group.group, code: component.code }
-                              )
-                            }
+                            onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [group.group]: component.code }))}
                             className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
                               selected
                                 ? "border-emerald-300 bg-emerald-300/12 text-emerald-100"
@@ -1030,29 +1060,29 @@ export default function AgricultureIndex() {
                       })}
                     </div>
 
-                    {expandedComponentsByGroup[group.group] ? (
+                    {selectedComponentsByGroup[group.group] ? (
                       <div className="mt-4 rounded-2xl border border-white/8 bg-stealth-900/45 p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-white">{properCase(expandedComponentsByGroup[group.group]!.name)}</p>
-                            <p className="mt-1 text-xs text-stealth-400">{expandedComponentsByGroup[group.group]!.code}{expandedComponentsByGroup[group.group]!.ticker ? ` • ${expandedComponentsByGroup[group.group]!.ticker}` : ""}</p>
+                            <p className="text-sm font-semibold text-white">{properCase(selectedComponentsByGroup[group.group]!.name)}</p>
+                            <p className="mt-1 text-xs text-stealth-400">{selectedComponentsByGroup[group.group]!.code}{selectedComponentsByGroup[group.group]!.ticker ? ` • ${selectedComponentsByGroup[group.group]!.ticker}` : ""}</p>
                           </div>
-                          <div className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreTone(expandedComponentsByGroup[group.group]!.score)}`}>
-                            {expandedComponentsByGroup[group.group]!.score.toFixed(1)}
+                          <div className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreTone(selectedComponentsByGroup[group.group]!.score)}`}>
+                            {selectedComponentsByGroup[group.group]!.score.toFixed(1)}
                           </div>
                         </div>
                         <div className="mt-4">
-                          {indicatorContexts[expandedComponentsByGroup[group.group]!.code]?.data ? (
-                            <CompactContextDigest context={indicatorContexts[expandedComponentsByGroup[group.group]!.code]!.data!} variant="indicator" />
-                          ) : indicatorContexts[expandedComponentsByGroup[group.group]!.code]?.loading ? (
+                          {indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.data ? (
+                            <CompactContextDigest context={indicatorContexts[selectedComponentsByGroup[group.group]!.code]!.data!} variant="indicator" />
+                          ) : indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.loading ? (
                             <div className="rounded-2xl border border-white/8 bg-stealth-950/60 px-4 py-5 text-sm text-stealth-300">
-                              Loading live context for {expandedComponentsByGroup[group.group]!.code}...
+                              Loading live context for {selectedComponentsByGroup[group.group]!.code}...
                             </div>
                           ) : (
                             <IndicatorFallbackDigest
                               group={group}
-                              component={expandedComponentsByGroup[group.group]!}
-                              error={indicatorContexts[expandedComponentsByGroup[group.group]!.code]?.error}
+                              component={selectedComponentsByGroup[group.group]!}
+                              error={indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.error}
                             />
                           )}
                         </div>
@@ -1060,9 +1090,7 @@ export default function AgricultureIndex() {
                           Detailed datapoints remain available in the broader diagnostics, but this view stays focused on the current read and catalyst.
                         </p>
                       </div>
-                    ) : (
-                      <p className="mt-3 text-[11px] text-stealth-500">Click an indicator to expand its condensed thesis and catalyst read.</p>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               ))}

@@ -10,6 +10,8 @@ from app.api.agriculture import router as agriculture_router
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     def fake_build_agriculture_market_context(symbol: str) -> dict[str, object]:
+        if symbol == "BAD":
+            raise KeyError("Unsupported agriculture symbol: BAD")
         return {
             "symbol": symbol,
             "commodity": "Corn",
@@ -72,3 +74,17 @@ def test_context_endpoint_returns_aggregate_payload(client: TestClient) -> None:
     assert body["context_score"]["net_bias"] == "bullish"
     assert body["report_calendar"]["next_report"]["report"] == "WASDE"
     assert body["setup_label"] == "wait for report"
+
+
+def test_context_endpoint_supports_non_grain_symbol(client: TestClient) -> None:
+    response = client.get("/agriculture/context", params={"symbol": "LE"})
+
+    assert response.status_code == 200
+    assert response.json()["symbol"] == "LE"
+
+
+def test_context_endpoint_returns_404_for_unknown_symbol(client: TestClient) -> None:
+    response = client.get("/agriculture/context", params={"symbol": "BAD"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Unsupported agriculture symbol: BAD"
