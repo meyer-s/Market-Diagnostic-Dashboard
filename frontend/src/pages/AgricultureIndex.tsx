@@ -16,6 +16,7 @@ import {
 
 import MarketLoading from "../components/ui/MarketLoading";
 import { useApi } from "../hooks/useApi";
+import AgricultureContextPanel, { type AgricultureContextData } from "../components/agriculture/AgricultureContextPanel";
 import {
   CHART_MARGIN,
   commonGridProps,
@@ -313,10 +314,14 @@ function daysForTimeframe(timeframe: Timeframe): number {
 }
 
 export default function AgricultureIndex() {
+  const [selectedContextSymbol, setSelectedContextSymbol] = useState("ZC");
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
   const { data: macro } = useApi<AgricultureMacro>("/agriculture/macro?days=365");
   const { data: longViewData } = useApi<LongViewData>("/agriculture/long-view");
+  const { data: contextData, loading: contextLoading, error: contextError } = useApi<AgricultureContextData>(
+    `/agriculture/context?symbol=${selectedContextSymbol}`
+  );
 
   const [timeframe, setTimeframe] = useState<Timeframe>("90d");
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
@@ -427,6 +432,14 @@ export default function AgricultureIndex() {
           A futures-based macro diagnostic for agriculture regime stability. This is not a trading signal and is designed for contextual market structure analysis.
         </p>
       </div>
+
+      <AgricultureContextPanel
+        context={contextData}
+        loading={contextLoading}
+        error={contextError}
+        symbol={selectedContextSymbol}
+        onSymbolChange={setSelectedContextSymbol}
+      />
 
       <div className="surface-card-strong p-4 md:p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
