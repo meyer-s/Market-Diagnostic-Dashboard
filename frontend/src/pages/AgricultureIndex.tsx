@@ -472,7 +472,7 @@ function IndicatorFallbackDigest({
 
 export default function AgricultureIndex() {
   const [selectedContextSymbol, setSelectedContextSymbol] = useState("ZC");
-  const [activeGroupComponents, setActiveGroupComponents] = useState<Record<string, string>>({});
+  const [expandedIndicator, setExpandedIndicator] = useState<{ group: string; code: string } | null>(null);
   const [indicatorContexts, setIndicatorContexts] = useState<Record<string, IndicatorContextEntry>>({});
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
@@ -489,74 +489,66 @@ export default function AgricultureIndex() {
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
   const groups = overview?.groups ?? [];
 
-  const selectedComponentsByGroup = useMemo(() => {
+  const expandedComponentsByGroup = useMemo(() => {
     const result: Record<string, GroupRow["components"][number] | undefined> = {};
     for (const group of groups) {
-      const ordered = sortGroupComponents(group);
-      const requested = activeGroupComponents[group.group];
-      result[group.group] = ordered.find((item) => item.code === requested) ?? ordered[0];
+      if (expandedIndicator?.group !== group.group) {
+        result[group.group] = undefined;
+        continue;
+      }
+
+      result[group.group] = sortGroupComponents(group).find((item) => item.code === expandedIndicator.code);
     }
     return result;
-  }, [activeGroupComponents, groups]);
+  }, [expandedIndicator, groups]);
 
-  const requestedIndicatorSymbols = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          Object.values(selectedComponentsByGroup)
-            .map((component) => component?.code)
-            .filter((value): value is string => Boolean(value))
-        )
-      ),
-    [selectedComponentsByGroup]
-  );
-
-  const pendingIndicatorSymbols = useMemo(
-    () => (activeTab !== "deepdive" ? [] : requestedIndicatorSymbols.filter((symbol) => indicatorContexts[symbol] === undefined)),
-    [activeTab, indicatorContexts, requestedIndicatorSymbols]
-  );
+  const pendingIndicatorSymbol =
+    activeTab === "deepdive" && expandedIndicator?.code && indicatorContexts[expandedIndicator.code] === undefined
+      ? expandedIndicator.code
+      : null;
 
   useEffect(() => {
-    if (!pendingIndicatorSymbols.length) return;
+    if (!pendingIndicatorSymbol) return;
 
     let cancelled = false;
 
     setIndicatorContexts((current) => {
-      const next = { ...current };
-      for (const symbol of pendingIndicatorSymbols) {
-        next[symbol] = { data: null, error: null, loading: true };
-      }
-      return next;
+      return {
+        ...current,
+        [pendingIndicatorSymbol]: { data: null, error: null, loading: true },
+      };
     });
 
-    void Promise.all(
-      pendingIndicatorSymbols.map(async (symbol) => {
-        try {
-          const data = await apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(symbol)}`);
-          return { symbol, data, error: null };
-        } catch (fetchError) {
-          return {
-            symbol,
+    void apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(pendingIndicatorSymbol)}`)
+      .then((data) => {
+        if (cancelled) return;
+        setIndicatorContexts((current) => ({
+          ...current,
+          [pendingIndicatorSymbol]: { data, error: null, loading: false },
+        }));
+      })
+      .catch((fetchError) => {
+        if (cancelled) return;
+        setIndicatorContexts((current) => ({
+          ...current,
+          [pendingIndicatorSymbol]: {
             data: null,
             error: fetchError instanceof Error ? fetchError.message : "Failed to load context",
-          };
-        }
-      })
-    ).then((results) => {
-      if (cancelled) return;
-      setIndicatorContexts((current) => {
-        const next = { ...current };
-        for (const result of results) {
-          next[result.symbol] = { data: result.data, error: result.error, loading: false };
-        }
-        return next;
+            loading: false,
+          },
+        }));
       });
-    });
 
     return () => {
       cancelled = true;
     };
-  }, [pendingIndicatorSymbols]);
+  }, [pendingIndicatorSymbol]);
+
+  useEffect(() => {
+    if (activeTab !== "deepdive") {
+      setExpandedIndicator(null);
+    }
+  }, [activeTab]);
 
   const componentHistory = useMemo(() => {
     const rows = overview?.component_history ?? [];
@@ -971,16 +963,17 @@ export default function AgricultureIndex() {
                   <div className="mt-4">
                     <div className="flex flex-wrap gap-2">
                       {sortGroupComponents(group).map((component) => {
-                        const selected = selectedComponentsByGroup[group.group]?.code === component.code;
+                        const selected = expandedIndicator?.group === group.group && expandedIndicator.code === component.code;
                         return (
                           <button
                             key={component.code}
                             type="button"
                             onClick={() =>
-                              setActiveGroupComponents((current) => ({
-                                ...current,
-                                [group.group]: component.code,
-                              }))
+                              setExpandedIndicator((current) =>
+                                current?.group === group.group && current.code === component.code
+                                  ? null
+                                  : { group: group.group, code: component.code }
+                              )
                             }
                             className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
                               selected
@@ -994,29 +987,29 @@ export default function AgricultureIndex() {
                       })}
                     </div>
 
-                    {selectedComponentsByGroup[group.group] ? (
+                    {expandedComponentsByGroup[group.group] ? (
                       <div className="mt-4 rounded-2xl border border-white/8 bg-stealth-900/45 p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-white">{properCase(selectedComponentsByGroup[group.group]!.name)}</p>
-                            <p className="mt-1 text-xs text-stealth-400">{selectedComponentsByGroup[group.group]!.code}{selectedComponentsByGroup[group.group]!.ticker ? ` • ${selectedComponentsByGroup[group.group]!.ticker}` : ""}</p>
+                            <p className="text-sm font-semibold text-white">{properCase(expandedComponentsByGroup[group.group]!.name)}</p>
+                            <p className="mt-1 text-xs text-stealth-400">{expandedComponentsByGroup[group.group]!.code}{expandedComponentsByGroup[group.group]!.ticker ? ` • ${expandedComponentsByGroup[group.group]!.ticker}` : ""}</p>
                           </div>
-                          <div className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreTone(selectedComponentsByGroup[group.group]!.score)}`}>
-                            {selectedComponentsByGroup[group.group]!.score.toFixed(1)}
+                          <div className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreTone(expandedComponentsByGroup[group.group]!.score)}`}>
+                            {expandedComponentsByGroup[group.group]!.score.toFixed(1)}
                           </div>
                         </div>
                         <div className="mt-4">
-                          {indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.data ? (
-                            <CompactContextDigest context={indicatorContexts[selectedComponentsByGroup[group.group]!.code]!.data!} variant="indicator" />
-                          ) : indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.loading ? (
+                          {indicatorContexts[expandedComponentsByGroup[group.group]!.code]?.data ? (
+                            <CompactContextDigest context={indicatorContexts[expandedComponentsByGroup[group.group]!.code]!.data!} variant="indicator" />
+                          ) : indicatorContexts[expandedComponentsByGroup[group.group]!.code]?.loading ? (
                             <div className="rounded-2xl border border-white/8 bg-stealth-950/60 px-4 py-5 text-sm text-stealth-300">
-                              Loading live context for {selectedComponentsByGroup[group.group]!.code}...
+                              Loading live context for {expandedComponentsByGroup[group.group]!.code}...
                             </div>
                           ) : (
                             <IndicatorFallbackDigest
                               group={group}
-                              component={selectedComponentsByGroup[group.group]!}
-                              error={indicatorContexts[selectedComponentsByGroup[group.group]!.code]?.error}
+                              component={expandedComponentsByGroup[group.group]!}
+                              error={indicatorContexts[expandedComponentsByGroup[group.group]!.code]?.error}
                             />
                           )}
                         </div>
@@ -1024,7 +1017,9 @@ export default function AgricultureIndex() {
                           Detailed datapoints remain available in the broader diagnostics, but this view stays focused on the current read and catalyst.
                         </p>
                       </div>
-                    ) : null}
+                    ) : (
+                      <p className="mt-3 text-[11px] text-stealth-500">Click an indicator to expand its condensed thesis and catalyst read.</p>
+                    )}
                   </div>
                 </div>
               ))}
