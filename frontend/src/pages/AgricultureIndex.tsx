@@ -119,6 +119,8 @@ type AgricultureMacro = {
 
 type Timeframe = "30d" | "90d" | "180d" | "365d" | "30y";
 
+const BACKGROUND_CONTEXT_PREFETCH_CONCURRENCY = 2;
+
 type LongViewPoint = { date: string; stability_score: number; composite_value: number };
 type LongViewData = { history: LongViewPoint[] };
 type TabKey = "overview" | "deepdive";
@@ -679,10 +681,10 @@ export default function AgricultureIndex() {
     }
 
     const runBackgroundPrefetch = async () => {
-      for (const symbol of pendingSymbols) {
+      const fetchSymbol = async (symbol: string) => {
         if (!isMountedRef.current) return;
         if (indicatorContextsRef.current[symbol] || inFlightSymbolsRef.current.has(symbol)) {
-          continue;
+          return;
         }
 
         inFlightSymbolsRef.current.add(symbol);
@@ -715,7 +717,20 @@ export default function AgricultureIndex() {
         } finally {
           inFlightSymbolsRef.current.delete(symbol);
         }
-      }
+      };
+
+      let nextIndex = 0;
+      const workerCount = Math.min(BACKGROUND_CONTEXT_PREFETCH_CONCURRENCY, pendingSymbols.length);
+
+      await Promise.all(
+        Array.from({ length: workerCount }, async () => {
+          while (nextIndex < pendingSymbols.length) {
+            const symbol = pendingSymbols[nextIndex];
+            nextIndex += 1;
+            await fetchSymbol(symbol);
+          }
+        })
+      );
     };
 
     void runBackgroundPrefetch();
