@@ -38,9 +38,11 @@ logging.basicConfig(
 async def prewarm_agriculture_caches() -> None:
     from app.services.agriculture_index import build_agriculture_long_view, calculate_composite_index
     from app.services.agriculture_market_context import build_agriculture_market_context
+    from app.services.market_context.agriculture_adapters import refresh_agriculture_report_caches
 
     try:
         logging.info("🌽 Prewarming agriculture caches...")
+        await asyncio.to_thread(refresh_agriculture_report_caches)
         await asyncio.to_thread(calculate_composite_index, 365)
         await asyncio.to_thread(build_agriculture_long_view, 30)
         await asyncio.to_thread(build_agriculture_market_context, "ZC")

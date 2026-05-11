@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.services.market_context.agriculture_adapters import (
+    _with_daily_source_cache,
     interpret_crop_progress_snapshot,
     interpret_export_demand,
     interpret_global_supply_context,
@@ -169,3 +170,27 @@ def test_market_read_and_validation_confirm_structured_claims() -> None:
     assert "Corn read" in thesis
     assert validation["validation_status"] == "confirmed"
     assert len(validation["confirmations"]) >= 2
+
+
+def test_daily_source_cache_reuses_builder_for_current_day() -> None:
+    calls = {"count": 0}
+
+    def builder() -> dict[str, int]:
+        calls["count"] += 1
+        return {"value": calls["count"]}
+
+    first = _with_daily_source_cache(
+        "test-cache-key",
+        as_of=datetime.now(UTC),
+        force_refresh=True,
+        builder=builder,
+    )
+    second = _with_daily_source_cache(
+        "test-cache-key",
+        as_of=datetime.now(UTC),
+        force_refresh=False,
+        builder=builder,
+    )
+
+    assert calls["count"] == 1
+    assert first == second == {"value": 1}

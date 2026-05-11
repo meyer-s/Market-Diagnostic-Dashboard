@@ -120,10 +120,43 @@ _MONTH_NAME_TO_NUMBER = {
 _WASDE_LOOKUP_CACHE: dict[str, dict[str, Any]] = {}
 _WASDE_LOOKUP_CACHE_LOCK = Lock()
 _WASDE_LOOKUP_CACHE_TTL = timedelta(hours=6)
+_DAILY_SOURCE_CACHE: dict[str, dict[str, Any]] = {}
+_DAILY_SOURCE_CACHE_LOCK = Lock()
+_DAILY_SOURCE_CACHE_TTL = timedelta(hours=30)
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _should_use_daily_source_cache(as_of: datetime | None) -> bool:
+    if as_of is None:
+        return True
+    reference = as_of.astimezone(EASTERN_TZ)
+    return reference.date() == _utcnow().astimezone(EASTERN_TZ).date()
+
+
+def _with_daily_source_cache(
+    cache_key: str,
+    *,
+    as_of: datetime | None,
+    force_refresh: bool,
+    builder: callable,
+):
+    use_cache = _should_use_daily_source_cache(as_of)
+    if use_cache and not force_refresh:
+        with _DAILY_SOURCE_CACHE_LOCK:
+            cached = _DAILY_SOURCE_CACHE.get(cache_key)
+            if cached and (_utcnow() - cached["timestamp"]) <= _DAILY_SOURCE_CACHE_TTL:
+                return cached["payload"]
+
+    payload = builder()
+
+    if use_cache:
+        with _DAILY_SOURCE_CACHE_LOCK:
+            _DAILY_SOURCE_CACHE[cache_key] = {"timestamp": _utcnow(), "payload": payload}
+
+    return payload
 
 
 def _wasde_cache_key(as_of: datetime | None) -> str:
@@ -460,173 +493,202 @@ def interpret_global_supply_context(symbol: str, global_data: dict[str, Any] | N
     }
 
 
-def fetch_weather_source(symbol: str, as_of: datetime | None = None) -> NormalizedSourcePayload:
-    commodity = resolve_agriculture_commodity(symbol)
-    crop_stage = get_crop_stage(symbol, as_of)
-    fetched_at = _utcnow()
-    warnings: list[str] = []
-    errors: list[str] = []
-    region_summaries: list[dict[str, Any]] = []
-
-    for region in commodity.weather_regions:
-        try:
-            point_response = _safe_get(f"https://api.weather.gov/points/{region.latitude},{region.longitude}")
-            forecast_url = point_response.json()["properties"]["forecast"]
-            forecast_response = _safe_get(forecast_url)
-            periods = forecast_response.json()["properties"]["periods"]
-            daytime_periods = [period for period in periods if period.get("isDaytime")][:4]
-            if not daytime_periods:
-                continue
-            avg_temp = sum(float(period.get("temperature", 0.0)) for period in daytime_periods) / len(daytime_periods)
-            avg_precip = sum(float((period.get("probabilityOfPrecipitation") or {}).get("value") or 0.0) for period in daytime_periods) / len(daytime_periods)
-            region_summaries.append(
-                {
-                    "region_id": region.region_id,
-                    "region_label": region.label,
-                    "forecast_url": forecast_url,
-                    "avg_temp_f": round(avg_temp, 1),
-                    "avg_precip_probability": round(avg_precip, 1),
-                    "short_forecasts": [period.get("shortForecast") for period in daytime_periods],
-                }
-            )
-        except Exception as exc:
-            errors.append(f"{region.label}: {exc}")
-
-    health = build_source_health(
-        WEATHER_DESCRIPTOR,
-        last_fetched_at=fetched_at if region_summaries else None,
-        published_at=fetched_at if region_summaries else None,
-        warnings=warnings,
-        errors=errors,
-        as_of=as_of or fetched_at,
-    )
-    interpreted = interpret_weather_context(
-        symbol=symbol.upper().lstrip("/"),
-        crop_stage=crop_stage,
-        region_summaries=region_summaries,
-        freshness_status=health.freshness_status,
-    )
-    interpreted["forecast_url"] = region_summaries[0].get("forecast_url") if region_summaries else WEATHER_DESCRIPTOR.source_url
-    return NormalizedSourcePayload(
-        descriptor=WEATHER_DESCRIPTOR,
-        source_health=health,
-        normalized_output=interpreted,
-        last_updated=health.last_fetched_at,
-        warnings=tuple(interpreted.get("warnings", [])),
-        errors=tuple(errors),
-    )
-
-
-def fetch_crop_progress_source(symbol: str, as_of: datetime | None = None) -> NormalizedSourcePayload:
-    fetched_at = _utcnow()
-    crop_stage = get_crop_stage(symbol, as_of)
-    pdf_url = f"https://www.nass.usda.gov/Charts_and_Maps/Crop_Progress_%26_Condition/{fetched_at.year}/US_{fetched_at.year}.pdf"
-    warnings = [
-        "Official Crop Progress PDFs are available, but the current adapter cannot machine-extract chart values reliably from the image-based source.",
-    ]
-    health = build_source_health(
-        CPROP_DESCRIPTOR,
-        last_fetched_at=fetched_at,
-        published_at=fetched_at,
-        warnings=warnings,
-        errors=[],
-        confidence_level="low",
-        as_of=as_of or fetched_at,
-    )
-    interpreted = interpret_crop_progress_snapshot(None, crop_stage)
-    interpreted["report_url"] = pdf_url
-    return NormalizedSourcePayload(
-        descriptor=CPROP_DESCRIPTOR,
-        source_health=health,
-        normalized_output=interpreted,
-        last_updated=health.last_fetched_at,
-        warnings=tuple(warnings + interpreted.get("warnings", [])),
-        errors=(),
-    )
-
-
-def fetch_export_inspections_source(symbol: str, as_of: datetime | None = None) -> NormalizedSourcePayload:
+def fetch_weather_source(symbol: str, as_of: datetime | None = None, *, force_refresh: bool = False) -> NormalizedSourcePayload:
     symbol_code = symbol.upper().lstrip("/")
-    commodity_name = {
-        "ZC": "CORN",
-        "ZS": "SOYBEANS",
-        "ZW": "WHEAT",
-        "ZO": "OATS",
-    }.get(symbol_code)
 
-    fetched_at = _utcnow()
-    if commodity_name is None:
+    def _build() -> NormalizedSourcePayload:
+        commodity = resolve_agriculture_commodity(symbol_code)
+        crop_stage = get_crop_stage(symbol_code, as_of)
+        fetched_at = _utcnow()
+        warnings: list[str] = []
+        errors: list[str] = []
+        region_summaries: list[dict[str, Any]] = []
+
+        for region in commodity.weather_regions:
+            try:
+                point_response = _safe_get(f"https://api.weather.gov/points/{region.latitude},{region.longitude}")
+                forecast_url = point_response.json()["properties"]["forecast"]
+                forecast_response = _safe_get(forecast_url)
+                periods = forecast_response.json()["properties"]["periods"]
+                daytime_periods = [period for period in periods if period.get("isDaytime")][:4]
+                if not daytime_periods:
+                    continue
+                avg_temp = sum(float(period.get("temperature", 0.0)) for period in daytime_periods) / len(daytime_periods)
+                avg_precip = sum(float((period.get("probabilityOfPrecipitation") or {}).get("value") or 0.0) for period in daytime_periods) / len(daytime_periods)
+                region_summaries.append(
+                    {
+                        "region_id": region.region_id,
+                        "region_label": region.label,
+                        "forecast_url": forecast_url,
+                        "avg_temp_f": round(avg_temp, 1),
+                        "avg_precip_probability": round(avg_precip, 1),
+                        "short_forecasts": [period.get("shortForecast") for period in daytime_periods],
+                    }
+                )
+            except Exception as exc:
+                errors.append(f"{region.label}: {exc}")
+
         health = build_source_health(
-            EXPORT_INSPECTIONS_DESCRIPTOR,
+            WEATHER_DESCRIPTOR,
+            last_fetched_at=fetched_at if region_summaries else None,
+            published_at=fetched_at if region_summaries else None,
+            warnings=warnings,
+            errors=errors,
+            as_of=as_of or fetched_at,
+        )
+        interpreted = interpret_weather_context(
+            symbol=symbol_code,
+            crop_stage=crop_stage,
+            region_summaries=region_summaries,
+            freshness_status=health.freshness_status,
+        )
+        interpreted["forecast_url"] = region_summaries[0].get("forecast_url") if region_summaries else WEATHER_DESCRIPTOR.source_url
+        return NormalizedSourcePayload(
+            descriptor=WEATHER_DESCRIPTOR,
+            source_health=health,
+            normalized_output=interpreted,
+            last_updated=health.last_fetched_at,
+            warnings=tuple(interpreted.get("warnings", [])),
+            errors=tuple(errors),
+        )
+
+    return _with_daily_source_cache(
+        f"weather:{symbol_code}",
+        as_of=as_of,
+        force_refresh=force_refresh,
+        builder=_build,
+    )
+
+
+def fetch_crop_progress_source(symbol: str, as_of: datetime | None = None, *, force_refresh: bool = False) -> NormalizedSourcePayload:
+    symbol_code = symbol.upper().lstrip("/")
+
+    def _build() -> NormalizedSourcePayload:
+        fetched_at = _utcnow()
+        crop_stage = get_crop_stage(symbol_code, as_of)
+        pdf_url = f"https://www.nass.usda.gov/Charts_and_Maps/Crop_Progress_%26_Condition/{fetched_at.year}/US_{fetched_at.year}.pdf"
+        warnings = [
+            "Official Crop Progress PDFs are available, but the current adapter cannot machine-extract chart values reliably from the image-based source.",
+        ]
+        health = build_source_health(
+            CPROP_DESCRIPTOR,
             last_fetched_at=fetched_at,
             published_at=fetched_at,
-            warnings=["Export inspections are not tracked for this symbol."],
+            warnings=warnings,
             errors=[],
             confidence_level="low",
             as_of=as_of or fetched_at,
         )
-        interpreted = interpret_export_demand(None)
+        interpreted = interpret_crop_progress_snapshot(None, crop_stage)
+        interpreted["report_url"] = pdf_url
+        return NormalizedSourcePayload(
+            descriptor=CPROP_DESCRIPTOR,
+            source_health=health,
+            normalized_output=interpreted,
+            last_updated=health.last_fetched_at,
+            warnings=tuple(warnings + interpreted.get("warnings", [])),
+            errors=(),
+        )
+
+    return _with_daily_source_cache(
+        f"crop_progress:{symbol_code}",
+        as_of=as_of,
+        force_refresh=force_refresh,
+        builder=_build,
+    )
+
+
+def fetch_export_inspections_source(symbol: str, as_of: datetime | None = None, *, force_refresh: bool = False) -> NormalizedSourcePayload:
+    symbol_code = symbol.upper().lstrip("/")
+
+    def _build() -> NormalizedSourcePayload:
+        commodity_name = {
+            "ZC": "CORN",
+            "ZS": "SOYBEANS",
+            "ZW": "WHEAT",
+            "ZO": "OATS",
+        }.get(symbol_code)
+
+        fetched_at = _utcnow()
+        if commodity_name is None:
+            health = build_source_health(
+                EXPORT_INSPECTIONS_DESCRIPTOR,
+                last_fetched_at=fetched_at,
+                published_at=fetched_at,
+                warnings=["Export inspections are not tracked for this symbol."],
+                errors=[],
+                confidence_level="low",
+                as_of=as_of or fetched_at,
+            )
+            interpreted = interpret_export_demand(None)
+            return NormalizedSourcePayload(
+                descriptor=EXPORT_INSPECTIONS_DESCRIPTOR,
+                source_health=health,
+                normalized_output=interpreted,
+                last_updated=health.last_fetched_at,
+                warnings=tuple(health.warnings),
+                errors=(),
+            )
+
+        warnings: list[str] = []
+        errors: list[str] = []
+        metrics: dict[str, Any] | None = None
+        published_at: datetime | None = None
+        try:
+            response = _safe_get(EXPORT_INSPECTIONS_DESCRIPTOR.source_url or "")
+            text = response.text
+            date_match = re.search(r"Mon\s+([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{4})", text)
+            if date_match:
+                month = _MONTH_NAME_TO_NUMBER[date_match.group(1).lower()]
+                published_at = datetime(int(date_match.group(3)), month, int(date_match.group(2)), 11, 0, tzinfo=EASTERN_TZ)
+            pattern = re.compile(
+                rf"^{commodity_name}\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)",
+                re.MULTILINE,
+            )
+            match = pattern.search(text)
+            if match:
+                weekly = _to_number(match.group(1))
+                prev_week = _to_number(match.group(2))
+                prior_year_week = _to_number(match.group(3))
+                ytd = _to_number(match.group(4))
+                prior_ytd = _to_number(match.group(5))
+                metrics = {
+                    "weekly_volume": weekly,
+                    "previous_week_volume": prev_week,
+                    "prior_year_week_volume": prior_year_week,
+                    "marketing_year_to_date": ytd,
+                    "prior_marketing_year_to_date": prior_ytd,
+                    "pace_vs_prior_year_pct": round(((ytd / prior_ytd) - 1.0) * 100.0, 2) if prior_ytd else None,
+                    "weekly_change_pct": round(((weekly / prev_week) - 1.0) * 100.0, 2) if prev_week else None,
+                }
+            else:
+                warnings.append("Commodity row was not found in the export inspections report.")
+        except Exception as exc:
+            errors.append(str(exc))
+
+        health = build_source_health(
+            EXPORT_INSPECTIONS_DESCRIPTOR,
+            last_fetched_at=fetched_at if not errors else None,
+            published_at=published_at,
+            warnings=warnings,
+            errors=errors,
+            as_of=as_of or fetched_at,
+        )
+        interpreted = interpret_export_demand(metrics)
         return NormalizedSourcePayload(
             descriptor=EXPORT_INSPECTIONS_DESCRIPTOR,
             source_health=health,
             normalized_output=interpreted,
             last_updated=health.last_fetched_at,
-            warnings=tuple(health.warnings),
-            errors=(),
+            warnings=tuple(warnings + interpreted.get("warnings", [])),
+            errors=tuple(errors),
         )
 
-    warnings: list[str] = []
-    errors: list[str] = []
-    metrics: dict[str, Any] | None = None
-    published_at: datetime | None = None
-    try:
-        response = _safe_get(EXPORT_INSPECTIONS_DESCRIPTOR.source_url or "")
-        text = response.text
-        date_match = re.search(r"Mon\s+([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{4})", text)
-        if date_match:
-            month = _MONTH_NAME_TO_NUMBER[date_match.group(1).lower()]
-            published_at = datetime(int(date_match.group(3)), month, int(date_match.group(2)), 11, 0, tzinfo=EASTERN_TZ)
-        pattern = re.compile(
-            rf"^{commodity_name}\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)",
-            re.MULTILINE,
-        )
-        match = pattern.search(text)
-        if match:
-            weekly = _to_number(match.group(1))
-            prev_week = _to_number(match.group(2))
-            prior_year_week = _to_number(match.group(3))
-            ytd = _to_number(match.group(4))
-            prior_ytd = _to_number(match.group(5))
-            metrics = {
-                "weekly_volume": weekly,
-                "previous_week_volume": prev_week,
-                "prior_year_week_volume": prior_year_week,
-                "marketing_year_to_date": ytd,
-                "prior_marketing_year_to_date": prior_ytd,
-                "pace_vs_prior_year_pct": round(((ytd / prior_ytd) - 1.0) * 100.0, 2) if prior_ytd else None,
-                "weekly_change_pct": round(((weekly / prev_week) - 1.0) * 100.0, 2) if prev_week else None,
-            }
-        else:
-            warnings.append("Commodity row was not found in the export inspections report.")
-    except Exception as exc:
-        errors.append(str(exc))
-
-    health = build_source_health(
-        EXPORT_INSPECTIONS_DESCRIPTOR,
-        last_fetched_at=fetched_at if not errors else None,
-        published_at=published_at,
-        warnings=warnings,
-        errors=errors,
-        as_of=as_of or fetched_at,
-    )
-    interpreted = interpret_export_demand(metrics)
-    return NormalizedSourcePayload(
-        descriptor=EXPORT_INSPECTIONS_DESCRIPTOR,
-        source_health=health,
-        normalized_output=interpreted,
-        last_updated=health.last_fetched_at,
-        warnings=tuple(warnings + interpreted.get("warnings", [])),
-        errors=tuple(errors),
+    return _with_daily_source_cache(
+        f"export_inspections:{symbol_code}",
+        as_of=as_of,
+        force_refresh=force_refresh,
+        builder=_build,
     )
 
 
@@ -868,45 +930,55 @@ def _build_global_context(symbol: str, text: str) -> dict[str, Any] | None:
     return {"drivers": drivers}
 
 
-def fetch_wasde_source(symbol: str, as_of: datetime | None = None) -> tuple[NormalizedSourcePayload, dict[str, Any] | None]:
-    fetched_at = _utcnow()
-    warnings: list[str] = []
-    errors: list[str] = []
-    balance_sheet: dict[str, Any] | None = None
-    global_context: dict[str, Any] | None = None
-    report_meta: dict[str, Any] | None = None
+def fetch_wasde_source(symbol: str, as_of: datetime | None = None, *, force_refresh: bool = False) -> tuple[NormalizedSourcePayload, dict[str, Any] | None]:
+    symbol_code = symbol.upper().lstrip("/")
 
-    try:
-        report_meta, text, _schedule = _find_latest_available_wasde(as_of)
-        if text and report_meta:
-            balance_sheet = _build_wasde_balance_sheet(symbol, text, report_meta)
-            global_context = _build_global_context(symbol, text)
-            if not balance_sheet:
-                warnings.append("WASDE parser did not find a matching balance-sheet section for this symbol.")
-        else:
-            warnings.append("No available WASDE report was found.")
-    except Exception as exc:
-        errors.append(str(exc))
+    def _build() -> tuple[NormalizedSourcePayload, dict[str, Any] | None]:
+        fetched_at = _utcnow()
+        warnings: list[str] = []
+        errors: list[str] = []
+        balance_sheet: dict[str, Any] | None = None
+        global_context: dict[str, Any] | None = None
+        report_meta: dict[str, Any] | None = None
 
-    health = build_source_health(
-        WASDE_DESCRIPTOR,
-        last_fetched_at=fetched_at if report_meta else None,
-        published_at=report_meta["published_at"] if report_meta else None,
-        warnings=warnings,
-        errors=errors,
-        as_of=as_of or fetched_at,
+        try:
+            report_meta, text, _schedule = _find_latest_available_wasde(as_of)
+            if text and report_meta:
+                balance_sheet = _build_wasde_balance_sheet(symbol_code, text, report_meta)
+                global_context = _build_global_context(symbol_code, text)
+                if not balance_sheet:
+                    warnings.append("WASDE parser did not find a matching balance-sheet section for this symbol.")
+            else:
+                warnings.append("No available WASDE report was found.")
+        except Exception as exc:
+            errors.append(str(exc))
+
+        health = build_source_health(
+            WASDE_DESCRIPTOR,
+            last_fetched_at=fetched_at if report_meta else None,
+            published_at=report_meta["published_at"] if report_meta else None,
+            warnings=warnings,
+            errors=errors,
+            as_of=as_of or fetched_at,
+        )
+        interpreted = interpret_wasde_balance_sheet(balance_sheet)
+        interpreted["report_link"] = report_meta["link"] if report_meta else None
+        payload = NormalizedSourcePayload(
+            descriptor=WASDE_DESCRIPTOR,
+            source_health=health,
+            normalized_output=interpreted,
+            last_updated=health.published_at or health.last_fetched_at,
+            warnings=tuple(warnings + interpreted.get("warnings", [])),
+            errors=tuple(errors),
+        )
+        return payload, global_context
+
+    return _with_daily_source_cache(
+        f"wasde:{symbol_code}",
+        as_of=as_of,
+        force_refresh=force_refresh,
+        builder=_build,
     )
-    interpreted = interpret_wasde_balance_sheet(balance_sheet)
-    interpreted["report_link"] = report_meta["link"] if report_meta else None
-    payload = NormalizedSourcePayload(
-        descriptor=WASDE_DESCRIPTOR,
-        source_health=health,
-        normalized_output=interpreted,
-        last_updated=health.published_at or health.last_fetched_at,
-        warnings=tuple(warnings + interpreted.get("warnings", [])),
-        errors=tuple(errors),
-    )
-    return payload, global_context
 
 
 def fetch_global_supply_source(symbol: str, as_of: datetime | None = None) -> NormalizedSourcePayload:
@@ -962,87 +1034,106 @@ def build_global_supply_payload(
     )
 
 
-def fetch_report_calendar_source(symbol: str, as_of: datetime | None = None) -> NormalizedSourcePayload:
-    as_of_dt = (as_of or _utcnow()).astimezone(EASTERN_TZ)
+def fetch_report_calendar_source(symbol: str, as_of: datetime | None = None, *, force_refresh: bool = False) -> NormalizedSourcePayload:
     symbol_code = symbol.upper().lstrip("/")
-    commodity = resolve_agriculture_commodity(symbol_code)
-    warnings: list[str] = []
-    errors: list[str] = []
-    fetched_at = _utcnow()
 
-    wasde_meta = None
-    schedule: dict[int, int] = {}
-    try:
-        wasde_meta, _text, schedule = _find_latest_available_wasde(as_of)
-    except Exception as exc:
-        errors.append(str(exc))
-        warnings.append("WASDE calendar lookup failed; falling back to recurring report schedules only.")
-    year = as_of_dt.year
-    upcoming: list[dict[str, Any]] = []
+    def _build() -> NormalizedSourcePayload:
+        as_of_dt = (as_of or _utcnow()).astimezone(EASTERN_TZ)
+        commodity = resolve_agriculture_commodity(symbol_code)
+        warnings: list[str] = []
+        errors: list[str] = []
+        fetched_at = _utcnow()
 
-    for month, day_value in schedule.items():
-        release = datetime(year, month, day_value, 12, 0, tzinfo=EASTERN_TZ)
-        if release >= as_of_dt:
-            upcoming.append(
-                {
-                    "report": "WASDE",
-                    "release_at": release.isoformat(),
-                    "impact": "high",
-                    "affected_markets": list(commodity.related_reports),
-                }
-            )
+        wasde_meta = None
+        schedule: dict[int, int] = {}
+        try:
+            wasde_meta, _text, schedule = _find_latest_available_wasde(as_of)
+        except Exception as exc:
+            errors.append(str(exc))
+            warnings.append("WASDE calendar lookup failed; falling back to recurring report schedules only.")
+        year = as_of_dt.year
+        upcoming: list[dict[str, Any]] = []
 
-    def _next_weekday_occurrence(target_weekday: int, release_time: time) -> datetime:
-        candidate = datetime.combine(as_of_dt.date(), release_time, tzinfo=EASTERN_TZ)
-        delta = (target_weekday - as_of_dt.weekday()) % 7
-        if delta == 0 and candidate < as_of_dt:
-            delta = 7
-        return candidate + timedelta(days=delta)
+        for month, day_value in schedule.items():
+            release = datetime(year, month, day_value, 12, 0, tzinfo=EASTERN_TZ)
+            if release >= as_of_dt:
+                upcoming.append(
+                    {
+                        "report": "WASDE",
+                        "release_at": release.isoformat(),
+                        "impact": "high",
+                        "affected_markets": list(commodity.related_reports),
+                    }
+                )
 
-    recurring = [
-        ("Crop Progress", _next_weekday_occurrence(0, time(16, 0)), "high"),
-        ("Export Inspections", _next_weekday_occurrence(0, time(11, 0)), "medium"),
-        ("Export Sales", _next_weekday_occurrence(3, time(8, 30)), "medium"),
-    ]
-    fixed_reports = [
-        ("Grain Stocks", datetime(year, 6, 30, 12, 0, tzinfo=EASTERN_TZ), "high"),
-        ("Acreage", datetime(year, 6, 30, 12, 0, tzinfo=EASTERN_TZ), "high"),
-        ("Crop Production", datetime(year, 6, 11, 12, 0, tzinfo=EASTERN_TZ), "medium"),
-        ("Prospective Plantings", datetime(year, 3, 31, 12, 0, tzinfo=EASTERN_TZ), "high"),
-    ]
-    for report, release_dt, impact in recurring + fixed_reports:
-        if release_dt >= as_of_dt and report in commodity.related_reports:
-            upcoming.append(
-                {
-                    "report": report,
-                    "release_at": release_dt.isoformat(),
-                    "impact": impact,
-                    "affected_markets": [symbol_code],
-                }
-            )
+        def _next_weekday_occurrence(target_weekday: int, release_time: time) -> datetime:
+            candidate = datetime.combine(as_of_dt.date(), release_time, tzinfo=EASTERN_TZ)
+            delta = (target_weekday - as_of_dt.weekday()) % 7
+            if delta == 0 and candidate < as_of_dt:
+                delta = 7
+            return candidate + timedelta(days=delta)
 
-    upcoming.sort(key=lambda item: item["release_at"])
-    next_report = upcoming[0] if upcoming else None
-    if next_report is None:
-        warnings.append("No upcoming report was identified for this symbol.")
+        recurring = [
+            ("Crop Progress", _next_weekday_occurrence(0, time(16, 0)), "high"),
+            ("Export Inspections", _next_weekday_occurrence(0, time(11, 0)), "medium"),
+            ("Export Sales", _next_weekday_occurrence(3, time(8, 30)), "medium"),
+        ]
+        fixed_reports = [
+            ("Grain Stocks", datetime(year, 6, 30, 12, 0, tzinfo=EASTERN_TZ), "high"),
+            ("Acreage", datetime(year, 6, 30, 12, 0, tzinfo=EASTERN_TZ), "high"),
+            ("Crop Production", datetime(year, 6, 11, 12, 0, tzinfo=EASTERN_TZ), "medium"),
+            ("Prospective Plantings", datetime(year, 3, 31, 12, 0, tzinfo=EASTERN_TZ), "high"),
+        ]
+        for report, release_dt, impact in recurring + fixed_reports:
+            if release_dt >= as_of_dt and report in commodity.related_reports:
+                upcoming.append(
+                    {
+                        "report": report,
+                        "release_at": release_dt.isoformat(),
+                        "impact": impact,
+                        "affected_markets": [symbol_code],
+                    }
+                )
 
-    health = build_source_health(
-        REPORT_CALENDAR_DESCRIPTOR,
-        last_fetched_at=fetched_at,
-        published_at=wasde_meta["published_at"] if wasde_meta else fetched_at,
-        warnings=warnings,
-        errors=errors,
-        as_of=as_of or fetched_at,
+        upcoming.sort(key=lambda item: item["release_at"])
+        next_report = upcoming[0] if upcoming else None
+        if next_report is None:
+            warnings.append("No upcoming report was identified for this symbol.")
+
+        health = build_source_health(
+            REPORT_CALENDAR_DESCRIPTOR,
+            last_fetched_at=fetched_at,
+            published_at=wasde_meta["published_at"] if wasde_meta else fetched_at,
+            warnings=warnings,
+            errors=errors,
+            as_of=as_of or fetched_at,
+        )
+        normalized_output = {
+            "next_report": next_report,
+            "upcoming_reports": upcoming[:6],
+        }
+        return NormalizedSourcePayload(
+            descriptor=REPORT_CALENDAR_DESCRIPTOR,
+            source_health=health,
+            normalized_output=normalized_output,
+            last_updated=health.last_fetched_at,
+            warnings=tuple(warnings),
+            errors=tuple(errors),
+        )
+
+    return _with_daily_source_cache(
+        f"report_calendar:{symbol_code}",
+        as_of=as_of,
+        force_refresh=force_refresh,
+        builder=_build,
     )
-    normalized_output = {
-        "next_report": next_report,
-        "upcoming_reports": upcoming[:6],
-    }
-    return NormalizedSourcePayload(
-        descriptor=REPORT_CALENDAR_DESCRIPTOR,
-        source_health=health,
-        normalized_output=normalized_output,
-        last_updated=health.last_fetched_at,
-        warnings=tuple(warnings),
-        errors=tuple(errors),
-    )
+
+
+def refresh_agriculture_report_caches(symbols: list[str] | None = None) -> None:
+    targets = [symbol.upper().lstrip("/") for symbol in (symbols or list(AG_TICKERS.keys()))]
+    for symbol_code in targets:
+        fetch_weather_source(symbol_code, force_refresh=True)
+        fetch_crop_progress_source(symbol_code, force_refresh=True)
+        fetch_export_inspections_source(symbol_code, force_refresh=True)
+        fetch_wasde_source(symbol_code, force_refresh=True)
+        fetch_report_calendar_source(symbol_code, force_refresh=True)

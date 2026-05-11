@@ -11,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.services.ingestion.etl_runner import ETLRunner
+from app.services.market_context.agriculture_adapters import refresh_agriculture_report_caches
 from app.services.options_alerts import run_options_alert_scan
 from app.services.market_diagnostic_runner import run_market_diagnostic
 from app.services.sector_projection import (
@@ -182,6 +183,16 @@ async def scheduled_etl_job():
         logger.error(f"❌ ETL job failed: {str(e)}")
 
 
+async def scheduled_agriculture_report_refresh_job():
+    """Refresh the expensive agriculture report adapters once per day."""
+    try:
+        logger.info("🌽 Refreshing agriculture report caches...")
+        await asyncio.to_thread(refresh_agriculture_report_caches)
+        logger.info("✅ Agriculture report caches refreshed")
+    except Exception as exc:
+        logger.error("❌ Agriculture report cache refresh failed: %s", exc, exc_info=True)
+
+
 def scheduled_market_diagnostic_publish_job():
     """Scheduled runner for Market Diagnostic updates."""
     try:
@@ -231,6 +242,19 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    scheduler.add_job(
+        scheduled_agriculture_report_refresh_job,
+        CronTrigger(
+            day_of_week="mon-sun",
+            hour=5,
+            minute=15,
+            timezone="America/New_York",
+        ),
+        id="agriculture_report_refresh",
+        name="Agriculture Report Cache Refresh",
+        replace_existing=True,
+    )
+
     if os.getenv("OPTIONS_ALERTS_ENABLED", "false").lower() in {"1", "true", "yes"}:
         scheduler.add_job(
             run_options_alert_scan,
@@ -256,7 +280,7 @@ def start_scheduler():
     )
     
     scheduler.start()
-    logger.info("📅 Scheduler started - ETL will run every 4 hours during market hours")
+    logger.info("📅 Scheduler started - ETL runs every 4 hours and agriculture report caches refresh daily")
 
 
 def stop_scheduler():
