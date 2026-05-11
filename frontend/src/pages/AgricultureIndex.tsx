@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   Cell,
@@ -521,6 +521,7 @@ export default function AgricultureIndex() {
   const [selectedContextSymbol, setSelectedContextSymbol] = useState("ZC");
   const [selectedIndicatorsByGroup, setSelectedIndicatorsByGroup] = useState<Record<string, string>>({});
   const [indicatorContexts, setIndicatorContexts] = useState<Record<string, IndicatorContextEntry>>({});
+  const backgroundQueuedSymbolsRef = useRef<Set<string>>(new Set());
   const { data: overview, loading, error } = useApi<AgricultureOverview>("/agriculture/overview?days=365");
   const { data: correlations } = useApi<AgricultureCorrelations>("/agriculture/correlations?days=365");
   const { data: macro } = useApi<AgricultureMacro>("/agriculture/macro?days=365");
@@ -556,6 +557,21 @@ export default function AgricultureIndex() {
     return result;
   }, [groups, selectedIndicatorsByGroup]);
 
+  const primaryComponentCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const component of Object.values(selectedComponentsByGroup)) {
+      if (component?.code) {
+        codes.add(component.code);
+      }
+    }
+    return [...codes];
+  }, [selectedComponentsByGroup]);
+
+  const secondaryComponentCodes = useMemo(
+    () => allComponentCodes.filter((code) => !primaryComponentCodes.includes(code)),
+    [allComponentCodes, primaryComponentCodes]
+  );
+
   useEffect(() => {
     setSelectedIndicatorsByGroup((current) => {
       const next = { ...current };
@@ -583,9 +599,9 @@ export default function AgricultureIndex() {
   }, [groups]);
 
   useEffect(() => {
-    if (!allComponentCodes.length) return;
+    if (!primaryComponentCodes.length) return;
 
-    const missingSymbols = allComponentCodes.filter((code) => !indicatorContexts[code]);
+    const missingSymbols = primaryComponentCodes.filter((code) => !indicatorContexts[code]);
     if (!missingSymbols.length) return;
 
     let cancelled = false;
@@ -627,7 +643,68 @@ export default function AgricultureIndex() {
     return () => {
       cancelled = true;
     };
-  }, [allComponentCodes, indicatorContexts]);
+  }, [indicatorContexts, primaryComponentCodes]);
+
+  useEffect(() => {
+    if (!secondaryComponentCodes.length) return;
+    if (!primaryComponentCodes.length) return;
+
+    const primaryReady = primaryComponentCodes.every((code) => {
+      const entry = indicatorContexts[code];
+      return entry && !entry.loading;
+    });
+    if (!primaryReady) return;
+
+    const pendingSymbols = secondaryComponentCodes.filter(
+      (code) => !indicatorContexts[code] && !backgroundQueuedSymbolsRef.current.has(code)
+    );
+    if (!pendingSymbols.length) return;
+
+    for (const symbol of pendingSymbols) {
+      backgroundQueuedSymbolsRef.current.add(symbol);
+    }
+
+    let cancelled = false;
+
+    const runBackgroundPrefetch = async () => {
+      for (const symbol of pendingSymbols) {
+        if (cancelled) return;
+
+        setIndicatorContexts((current) => {
+          if (current[symbol]) return current;
+          return {
+            ...current,
+            [symbol]: { data: null, error: null, loading: true },
+          };
+        });
+
+        try {
+          const data = await apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(symbol)}`);
+          if (cancelled) return;
+          setIndicatorContexts((current) => ({
+            ...current,
+            [symbol]: { data, error: null, loading: false },
+          }));
+        } catch (fetchError) {
+          if (cancelled) return;
+          setIndicatorContexts((current) => ({
+            ...current,
+            [symbol]: {
+              data: null,
+              error: fetchError instanceof Error ? fetchError.message : "Failed to load context",
+              loading: false,
+            },
+          }));
+        }
+      }
+    };
+
+    void runBackgroundPrefetch();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [indicatorContexts, primaryComponentCodes, secondaryComponentCodes]);
 
   const componentHistory = useMemo(() => {
     const rows = overview?.component_history ?? [];
