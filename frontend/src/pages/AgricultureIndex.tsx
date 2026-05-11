@@ -488,6 +488,7 @@ export default function AgricultureIndex() {
   const matrix60 = correlations?.correlations.group_matrix?.["60"] ?? [];
   const pair60 = correlations?.correlations.pair_insights?.["60"] ?? {};
   const groups = overview?.groups ?? [];
+  const expandedIndicatorSymbol = activeTab === "deepdive" ? expandedIndicator?.code ?? null : null;
 
   const expandedComponentsByGroup = useMemo(() => {
     const result: Record<string, GroupRow["components"][number] | undefined> = {};
@@ -502,36 +503,32 @@ export default function AgricultureIndex() {
     return result;
   }, [expandedIndicator, groups]);
 
-  const pendingIndicatorSymbol =
-    activeTab === "deepdive" && expandedIndicator?.code && indicatorContexts[expandedIndicator.code] === undefined
-      ? expandedIndicator.code
-      : null;
-
   useEffect(() => {
-    if (!pendingIndicatorSymbol) return;
+    if (!expandedIndicatorSymbol) return;
+    if (indicatorContexts[expandedIndicatorSymbol]) return;
 
     let cancelled = false;
 
     setIndicatorContexts((current) => {
       return {
         ...current,
-        [pendingIndicatorSymbol]: { data: null, error: null, loading: true },
+        [expandedIndicatorSymbol]: { data: null, error: null, loading: true },
       };
     });
 
-    void apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(pendingIndicatorSymbol)}`)
+    void apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(expandedIndicatorSymbol)}`)
       .then((data) => {
         if (cancelled) return;
         setIndicatorContexts((current) => ({
           ...current,
-          [pendingIndicatorSymbol]: { data, error: null, loading: false },
+          [expandedIndicatorSymbol]: { data, error: null, loading: false },
         }));
       })
       .catch((fetchError) => {
         if (cancelled) return;
         setIndicatorContexts((current) => ({
           ...current,
-          [pendingIndicatorSymbol]: {
+          [expandedIndicatorSymbol]: {
             data: null,
             error: fetchError instanceof Error ? fetchError.message : "Failed to load context",
             loading: false,
@@ -542,7 +539,7 @@ export default function AgricultureIndex() {
     return () => {
       cancelled = true;
     };
-  }, [pendingIndicatorSymbol]);
+  }, [expandedIndicatorSymbol]);
 
   useEffect(() => {
     if (activeTab !== "deepdive") {
