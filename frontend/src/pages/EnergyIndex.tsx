@@ -3,6 +3,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  ComposedChart,
   Line,
   LineChart,
   PolarAngleAxis,
@@ -316,47 +318,171 @@ function CompositeHistoryChart({ history }: { history: HistoryPoint[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Retail gas / diesel prices (FRED)
+// Futures → Pump Spread (MACD-style: crude cost/gal vs retail with spread bars)
 // ---------------------------------------------------------------------------
 
+type SpreadPoint = {
+  date: string;
+  wti_gal: number;
+  retail: number;
+  diesel: number | null;
+  spread: number;
+  spread_signal: number;
+};
+
+function SpreadTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey?: string; value?: number }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const byKey: Record<string, number> = {};
+  payload.forEach((e) => {
+    if (e.dataKey && typeof e.value === "number") byKey[e.dataKey] = e.value;
+  });
+  const elevated = (byKey.spread ?? 0) > (byKey.spread_signal ?? 0);
+  return (
+    <div
+      style={{
+        background: "rgba(11,15,25,0.94)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 12,
+        fontSize: 12,
+        boxShadow: "0 10px 40px rgba(2,6,23,0.75)",
+        padding: "10px 14px",
+        minWidth: 200,
+      }}
+    >
+      <p style={{ fontWeight: 600, color: "#f1f5f9", marginBottom: 6 }}>{label}</p>
+      {byKey.wti_gal != null && (
+        <p style={{ color: "#f97316" }}>WTI/gal: <span style={{ fontFamily: "monospace" }}>${byKey.wti_gal.toFixed(3)}</span></p>
+      )}
+      {byKey.retail != null && (
+        <p style={{ color: "#fbbf24" }}>Regular gas: <span style={{ fontFamily: "monospace" }}>${byKey.retail.toFixed(3)}</span></p>
+      )}
+      {byKey.diesel != null && (
+        <p style={{ color: "#38bdf8" }}>Diesel: <span style={{ fontFamily: "monospace" }}>${byKey.diesel.toFixed(3)}</span></p>
+      )}
+      {byKey.spread != null && (
+        <p style={{ color: elevated ? "#fca5a5" : "#6ee7b7", borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 6, paddingTop: 6 }}>
+          Spread (retail − crude/gal): <span style={{ fontFamily: "monospace" }}>${byKey.spread.toFixed(3)}</span>
+          <span style={{ color: "#64748b", marginLeft: 4 }}>{elevated ? "↑ elevated" : "↓ compressed"}</span>
+        </p>
+      )}
+      {byKey.spread_signal != null && (
+        <p style={{ color: "#64748b", fontSize: 11 }}>6-mo avg: ${byKey.spread_signal.toFixed(3)}</p>
+      )}
+    </div>
+  );
+}
+
 function RetailPricesChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
-  const gas = prices?.retail_gasoline ?? [];
-  const diesel = prices?.retail_diesel ?? [];
+  const spotData   = prices?.crude_wti_spot  ?? [];
+  const gasData    = prices?.retail_gasoline ?? [];
+  const dieselData = prices?.retail_diesel   ?? [];
 
-  const combined = useMemo(() => {
-    const map: Record<string, { date: string; gas?: number; diesel?: number }> = {};
-    gas.forEach((p) => { map[p.date] = { date: p.date, gas: p.value }; });
-    diesel.forEach((p) => {
-      if (map[p.date]) map[p.date].diesel = p.value;
-      else map[p.date] = { date: p.date, diesel: p.value };
-    });
-    return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
-  }, [gas, diesel]);
+  const merged = useMemo((): SpreadPoint[] => {
+    if (!spotData.length || !gasData.length) return [];
 
-  if (!combined.length) return null;
+    const spotMap: Record<string, number> = {};
+    spotData.forEach((p) => { spotMap[p.date] = p.value; });
 
-  const latest = combined[combined.length - 1];
+    const dieselMap: Record<string, number> = {};
+    dieselData.forEach((p) => { dieselMap[p.date] = p.value; });
+
+    const rows = gasData.map((g) => {
+      let wti = spotMap[g.date];
+      if (!wti) {
+        for (let d = 1; d <= 7; d++) {
+          const a = new Date(g.date); a.setDate(a.getDate() + d);
+          const b = new Date(g.date); b.setDate(b.getDate() - d);
+          wti = spotMap[a.toISOString().slice(0, 10)] ?? spotMap[b.toISOString().slice(0, 10)];
+          if (wti) break;
+        }
+      }
+      if (!wti) return null;
+      const wti_gal = wti / 42;
+      const retail  = g.value;
+      const diesel  = dieselMap[g.date] ?? null;
+      const spread  = retail - wti_gal;
+      return { date: g.date, wti_gal, retail, diesel, spread, spread_signal: 0 };
+    }).filter(Boolean) as SpreadPoint[];
+
+    if (rows.length < 10) return [];
+
+    // Rolling 26-week (~6 month) mean of spread → signal line
+    const W = 26;
+    for (let i = 0; i < rows.length; i++) {
+      const slice = rows.slice(Math.max(0, i - W + 1), i + 1);
+      rows[i].spread_signal = slice.reduce((s, r) => s + r.spread, 0) / slice.length;
+    }
+
+    return rows.filter((_, i) => i % Math.max(1, Math.floor(rows.length / 150)) === 0);
+  }, [spotData, gasData, dieselData]);
+
+  if (!merged.length) return null;
+
+  const latest        = merged[merged.length - 1];
+  const elevated      = latest.spread > latest.spread_signal;
+  const overallMean   = merged.reduce((s, r) => s + r.spread, 0) / merged.length;
+
   return (
     <div className="surface-card p-4">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-5 gap-y-1">
-        <Kicker>Retail Fuel Prices — EIA Weekly</Kicker>
-        {latest.gas && <span className="text-sm font-mono text-amber-300">${latest.gas.toFixed(3)}<span className="text-stealth-500 text-xs">/gal gas</span></span>}
-        {latest.diesel && <span className="text-sm font-mono text-sky-300">${latest.diesel.toFixed(3)}<span className="text-stealth-500 text-xs">/gal diesel</span></span>}
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <div>
+          <Kicker>Futures → Pump: Refining Spread</Kicker>
+          <p className="text-[11px] text-stealth-500">Crude cost/gal vs what you pay at the pump — bars show the margin gap vs its 6-mo average</p>
+        </div>
+        <div className="flex gap-4 text-[11px] text-stealth-400">
+          <span>WTI/gal <span className="font-mono text-orange-300">${latest.wti_gal.toFixed(3)}</span></span>
+          <span>Gas <span className="font-mono text-amber-300">${latest.retail.toFixed(3)}</span></span>
+          <span>Spread <span className={`font-mono ${elevated ? "text-rose-400" : "text-emerald-400"}`}>${latest.spread.toFixed(3)}</span></span>
+        </div>
       </div>
-      <div className="h-44">
+      <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={combined} margin={CHART_MARGIN}>
+          <ComposedChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
-            <YAxis {...commonYAxisProps} tickFormatter={(v) => `$${v.toFixed(2)}`} />
-            <Tooltip
-              {...tip}
-              formatter={(v: number, name: string) => [`$${v.toFixed(3)}/gal`, name === "gas" ? "Regular Gas" : "Diesel"]}
-            />
-            <Line type="monotone" dataKey="gas" stroke="#f59e0b" dot={false} strokeWidth={2} name="gas" />
-            <Line type="monotone" dataKey="diesel" stroke="#38bdf8" dot={false} strokeWidth={1.5} strokeDasharray="4 2" name="diesel" />
-          </LineChart>
+            {/* Left axis — $/gal prices */}
+            <YAxis yAxisId="price" {...commonYAxisProps} tickFormatter={(v: number) => `$${v.toFixed(2)}`} />
+            {/* Right axis — spread */}
+            <YAxis yAxisId="spread" orientation="right" {...commonYAxisProps} tickFormatter={(v: number) => `$${v.toFixed(2)}`} />
+            <ReferenceLine yAxisId="spread" y={overallMean} stroke="#1e293b" strokeDasharray="3 3" />
+            <Tooltip content={<SpreadTooltip />} />
+            {/* Spread histogram bars — colored vs rolling signal */}
+            <Bar yAxisId="spread" dataKey="spread" name="spread" barSize={5} isAnimationActive={false}>
+              {merged.map((entry, i) => (
+                <Cell
+                  key={i}
+                  fill={entry.spread > entry.spread_signal ? "rgba(251,113,133,0.40)" : "rgba(52,211,153,0.40)"}
+                  stroke={entry.spread > entry.spread_signal ? "rgba(251,113,133,0.85)" : "rgba(52,211,153,0.85)"}
+                />
+              ))}
+            </Bar>
+            {/* Rolling signal line */}
+            <Line yAxisId="spread" type="monotone" dataKey="spread_signal" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="spread_signal" />
+            {/* Price lines */}
+            <Line yAxisId="price" type="monotone" dataKey="wti_gal" stroke="#f97316" strokeWidth={2.5} dot={false} isAnimationActive={false} name="wti_gal" />
+            <Line yAxisId="price" type="monotone" dataKey="retail"  stroke="#fbbf24" strokeWidth={2}   dot={false} isAnimationActive={false} name="retail" />
+            {dieselData.length > 0 && (
+              <Line yAxisId="price" type="monotone" dataKey="diesel" stroke="#38bdf8" strokeWidth={1.5} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="diesel" />
+            )}
+          </ComposedChart>
         </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap items-start gap-x-5 gap-y-0.5 text-[10px]">
+        <span><span style={{ color: "#f97316" }}>——</span> WTI/gal (crude ÷42)</span>
+        <span><span style={{ color: "#fbbf24" }}>——</span> Regular Gas</span>
+        <span><span style={{ color: "#38bdf8" }}>- -</span> Diesel</span>
+        <span className="mt-0.5 w-full text-stealth-600">
+          <span className="text-rose-400/80">Red bars</span> = margin above 6-mo avg → retail premium elevated, pump prices may fall to follow crude ·{" "}
+          <span className="text-emerald-400/80">Green bars</span> = spread compressed → crude rising faster than retail, pump likely to follow higher
+        </span>
       </div>
     </div>
   );
