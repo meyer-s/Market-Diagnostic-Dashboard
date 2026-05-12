@@ -90,22 +90,24 @@ ALT_ENERGY_SYMBOLS: Tuple[EnergySymbol, ...] = (
 
 FRED_PRICE_SERIES: Dict[str, str] = {
     "retail_gasoline": "GASREGCOVW",   # Weekly US Regular Conventional Gas, $/gal
-    "retail_diesel":   "GASDESW",       # Weekly US No. 2 Diesel, $/gal
+    "retail_diesel":   "GASDESW",      # Weekly US No. 2 Diesel, $/gal
     "crude_wti_spot":  "DCOILWTICO",   # Daily WTI spot, $/bbl
     "nat_gas_spot":    "DHHNGSP",      # Daily Henry Hub, $/MMBtu
     "crude_inventory": "WCESTUS1",     # Weekly crude stocks excl. SPR, mln bbl
 }
 
-# EIA US electricity net generation by fuel type (via FRED), annual, thousand MWh
-GENERATION_MIX_SERIES: Dict[str, str] = {
-    "coal":      "ELEC.GEN.COW-US-99.A",
-    "nat_gas":   "ELEC.GEN.NG-US-99.A",
-    "nuclear":   "ELEC.GEN.NUC-US-99.A",
-    "hydro":     "ELEC.GEN.HYC-US-99.A",
-    "wind":      "ELEC.GEN.WND-US-99.A",
-    "solar":     "ELEC.GEN.SUN-US-99.A",
-    "petroleum": "ELEC.GEN.PEL-US-99.A",
-    "geothermal":"ELEC.GEN.GEO-US-99.A",
+EIA_GENERATION_URL = "https://api.eia.gov/v2/electricity/electric-power-operational-data/data/"
+
+# EIA annual US generation mix by fuel type, all sectors, thousand MWh.
+EIA_GENERATION_FUELS: Dict[str, str] = {
+    "coal": "COW",
+    "nat_gas": "NG",
+    "nuclear": "NUC",
+    "hydro": "HYC",
+    "wind": "WND",
+    "solar": "TSN",
+    "petroleum": "PET",
+    "geothermal": "GEO",
 }
 
 # 2023 EIA Annual Energy Review fallback values (thousand MWh)
@@ -306,12 +308,63 @@ def fetch_fred_prices(days: int) -> Dict[str, List[Dict[str, Any]]]:
     return out
 
 
-def fetch_generation_mix() -> Dict[str, Any]:
-    """Fetch recent US electricity generation mix from FRED/EIA series.
+def _fetch_eia_generation_mix(start_year: int, end_year: int) -> Dict[str, List[Dict[str, Any]]]:
+    api_key = settings.EIA_API_KEY or "DEMO_KEY"
+    params = {
+        "api_key": api_key,
+        "frequency": "annual",
+        "data[0]": "generation",
+        "facets[location][]": "US",
+        "facets[sectorid][]": "99",
+        "start": str(start_year),
+        "end": str(end_year),
+        "sort[0][column]": "period",
+        "sort[0][direction]": "asc",
+        "offset": 0,
+        "length": 5000,
+    }
+    resp = requests.get(EIA_GENERATION_URL, params=params, headers=HTTP_HEADERS, timeout=20)
+    resp.raise_for_status()
+    payload = resp.json()
+    rows = payload.get("response", {}).get("data", [])
+    if not rows:
+        return {}
 
-    Returns annual generation by fuel type (thousand MWh) for the past 6
-    years, plus a summary of the most recent year.  Falls back to static
-    2023 EIA data if FRED is unavailable.
+    fuel_alias = {series_id: fuel for fuel, series_id in EIA_GENERATION_FUELS.items()}
+    by_fuel: Dict[str, Dict[int, float]] = {fuel: {} for fuel in EIA_GENERATION_FUELS}
+
+    for row in rows:
+        fuel = fuel_alias.get(row.get("fueltypeid"))
+        if fuel is None:
+            continue
+        year_raw = row.get("period")
+        value = _safe_float(row.get("generation"))
+        if value is None or year_raw is None:
+            continue
+        year = int(year_raw)
+        by_fuel[fuel][year] = round(float(value), 0)
+
+    valid_years = sorted({
+        year
+        for yearly in by_fuel.values()
+        for year in yearly.keys()
+        if all(year in candidate for candidate in by_fuel.values())
+    })
+    if not valid_years:
+        return {}
+
+    return {
+        fuel: [{"year": year, "value": yearly[year]} for year in valid_years]
+        for fuel, yearly in by_fuel.items()
+    }
+
+
+def fetch_generation_mix() -> Dict[str, Any]:
+    """Fetch recent US electricity generation mix from authoritative EIA series.
+
+    Returns annual generation by fuel type (thousand MWh) for recent full
+    years, plus a summary of the latest complete year. Falls back to static
+    2023 EIA data only if the live EIA query is unavailable.
     """
     now = datetime.utcnow()
     with _MIX_CACHE_LOCK:
@@ -319,19 +372,16 @@ def fetch_generation_mix() -> Dict[str, Any]:
         if cached and (now - cached["timestamp"]).total_seconds() < _MIX_CACHE_TTL_SECONDS:
             return cached["data"]
 
-    start = "2018-01-01"
     series_data: Dict[str, List[Dict[str, Any]]] = {}
     fallback_used = False
 
-    for fuel, series_id in GENERATION_MIX_SERIES.items():
-        series = _fred_fetch(series_id, start)
-        if not series.empty:
-            series_data[fuel] = [
-                {"year": int(idx.year), "value": round(float(v), 0)}
-                for idx, v in series.items()
-            ]
-        else:
-            fallback_used = True
+    try:
+        series_data = _fetch_eia_generation_mix(start_year=2018, end_year=now.year - 1)
+    except Exception:
+        series_data = {}
+
+    if not series_data:
+        fallback_used = True
 
     # Fill missing fuels with fallback
     for fuel, fallback_val in GENERATION_MIX_FALLBACK_2023.items():
@@ -339,11 +389,14 @@ def fetch_generation_mix() -> Dict[str, Any]:
             series_data[fuel] = [{"year": 2023, "value": fallback_val}]
             fallback_used = True
 
+    latest_year = max(rows[-1]["year"] for rows in series_data.values() if rows)
+
     # Build most-recent-year snapshot
     latest_by_fuel: Dict[str, float] = {}
     for fuel, rows in series_data.items():
-        if rows:
-            latest_by_fuel[fuel] = rows[-1]["value"]
+        match = next((row for row in reversed(rows) if row["year"] == latest_year), None)
+        if match:
+            latest_by_fuel[fuel] = match["value"]
 
     total = sum(latest_by_fuel.values())
     latest_pct: Dict[str, float] = {
@@ -362,6 +415,8 @@ def fetch_generation_mix() -> Dict[str, Any]:
 
     data = {
         "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "latest_year": latest_year,
+        "source": "EIA v2 electric-power-operational-data",
         "fallback_used": fallback_used,
         "series": series_data,
         "latest_by_fuel": latest_by_fuel,
@@ -371,11 +426,8 @@ def fetch_generation_mix() -> Dict[str, Any]:
             "renewables_pct": renewables_pct,
             "nuclear_pct": nuclear_pct,
             "notes": (
-                "Renewables include hydro (conventional + pumped storage), wind, solar (utility + small-scale), "
-                "and geothermal. Pumped-storage hydroelectric is the dominant form of grid-scale energy storage "
-                "and accounts for ~93% of US energy storage capacity — often described as 'gravity storage' "
-                "due to its elevation-based mechanics. Emerging gravity storage (dropped weights, compressed "
-                "air) remains below 0.1% of installed US capacity."
+                "Renewables include conventional hydro, wind, total solar, and geothermal. "
+                "Solar uses EIA total-solar generation to capture utility-scale plus estimated small-scale output."
             ),
         },
     }

@@ -93,6 +93,8 @@ type EnergyPrices = {
 type MixFuel = { year: number; value: number }[];
 type GenerationMix = {
   as_of: string;
+  latest_year: number;
+  source: string;
   fallback_used: boolean;
   series: Record<string, MixFuel>;
   latest_by_fuel: Record<string, number>;
@@ -128,6 +130,16 @@ function fmt(v: number | null | undefined, decimals = 2) {
   if (v == null) return "—";
   const sign = v > 0 ? "+" : "";
   return `${sign}${v.toFixed(decimals)}`;
+}
+
+function money(v: number | null | undefined, decimals = 2, suffix = "") {
+  if (v == null) return "—";
+  return `$${v.toFixed(decimals)}${suffix}`;
+}
+
+function latestValue(points?: PricePoint[]) {
+  if (!points?.length) return null;
+  return points[points.length - 1]?.value ?? null;
 }
 
 function regimeBadgeStyle(label: string) {
@@ -193,6 +205,30 @@ const Kicker = ({ children }: { children: React.ReactNode }) => (
   <p className="page-kicker mb-3">{children}</p>
 );
 
+function StatTile({
+  label,
+  value,
+  detail,
+  tone = "text-stealth-100",
+}: {
+  label: string;
+  value: React.ReactNode;
+  detail?: React.ReactNode;
+  tone?: string;
+}) {
+  return (
+    <div className="surface-card-muted px-3 py-2.5">
+      <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">{label}</p>
+      <p className={`mt-1 text-lg font-semibold ${tone}`}>{value}</p>
+      {detail ? <p className="mt-1 text-xs text-stealth-400">{detail}</p> : null}
+    </div>
+  );
+}
+
+function LegendDot({ color }: { color: string }) {
+  return <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />;
+}
+
 const tip = {
   contentStyle: {
     background: "rgba(11,15,25,0.94)",
@@ -256,7 +292,7 @@ function FuturesTable({ symbols }: { symbols: SymbolRow[] }) {
 
 function GroupCards({ groups }: { groups: GroupRow[] }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
       {groups.map((g) => (
         <div key={g.group} className="surface-card p-4">
           <div className="mb-1 flex items-center justify-between">
@@ -346,35 +382,25 @@ function SpreadTooltip({
   });
   const elevated = (byKey.spread ?? 0) > (byKey.spread_signal ?? 0);
   return (
-    <div
-      style={{
-        background: "rgba(11,15,25,0.94)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: 12,
-        fontSize: 12,
-        boxShadow: "0 10px 40px rgba(2,6,23,0.75)",
-        padding: "10px 14px",
-        minWidth: 200,
-      }}
-    >
-      <p style={{ fontWeight: 600, color: "#f1f5f9", marginBottom: 6 }}>{label}</p>
+    <div className="min-w-[200px] rounded-xl border border-stealth-700/70 bg-stealth-950/95 p-3 text-xs shadow-[0_10px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl">
+      <p className="mb-2 font-semibold text-white">{label}</p>
       {byKey.wti_gal != null && (
-        <p style={{ color: "#f97316" }}>WTI/gal: <span style={{ fontFamily: "monospace" }}>${byKey.wti_gal.toFixed(3)}</span></p>
+        <p className="text-orange-300">WTI/gal: <span className="font-mono">${byKey.wti_gal.toFixed(3)}</span></p>
       )}
       {byKey.retail != null && (
-        <p style={{ color: "#fbbf24" }}>Regular gas: <span style={{ fontFamily: "monospace" }}>${byKey.retail.toFixed(3)}</span></p>
+        <p className="text-amber-300">Regular gas: <span className="font-mono">${byKey.retail.toFixed(3)}</span></p>
       )}
       {byKey.diesel != null && (
-        <p style={{ color: "#38bdf8" }}>Diesel: <span style={{ fontFamily: "monospace" }}>${byKey.diesel.toFixed(3)}</span></p>
+        <p className="text-sky-300">Diesel: <span className="font-mono">${byKey.diesel.toFixed(3)}</span></p>
       )}
       {byKey.spread != null && (
-        <p style={{ color: elevated ? "#fca5a5" : "#6ee7b7", borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 6, paddingTop: 6 }}>
-          Spread (retail − crude/gal): <span style={{ fontFamily: "monospace" }}>${byKey.spread.toFixed(3)}</span>
-          <span style={{ color: "#64748b", marginLeft: 4 }}>{elevated ? "↑ elevated" : "↓ compressed"}</span>
+        <p className={`mt-2 border-t border-white/[0.06] pt-2 ${elevated ? "text-rose-300" : "text-emerald-300"}`}>
+          Spread: <span className="font-mono">${byKey.spread.toFixed(3)}</span>
+          <span className="ml-1 text-stealth-500">{elevated ? "above trend" : "below trend"}</span>
         </p>
       )}
       {byKey.spread_signal != null && (
-        <p style={{ color: "#64748b", fontSize: 11 }}>6-mo avg: ${byKey.spread_signal.toFixed(3)}</p>
+        <p className="text-[11px] text-stealth-500">6-mo avg: ${byKey.spread_signal.toFixed(3)}</p>
       )}
     </div>
   );
@@ -432,15 +458,16 @@ function RetailPricesChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
 
   return (
     <div className="surface-card p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <Kicker>Futures → Pump: Refining Spread</Kicker>
-          <p className="text-[11px] text-stealth-500">Crude cost/gal vs what you pay at the pump — bars show the margin gap vs its 6-mo average</p>
+          <h2 className="text-base font-semibold text-stealth-100">Pump pricing vs futures cost</h2>
+          <p className="mt-1 text-xs text-stealth-400">Bars show how far retail pricing sits above or below its 6-month margin baseline.</p>
         </div>
-        <div className="flex gap-4 text-[11px] text-stealth-400">
-          <span>WTI/gal <span className="font-mono text-orange-300">${latest.wti_gal.toFixed(3)}</span></span>
-          <span>Gas <span className="font-mono text-amber-300">${latest.retail.toFixed(3)}</span></span>
-          <span>Spread <span className={`font-mono ${elevated ? "text-rose-400" : "text-emerald-400"}`}>${latest.spread.toFixed(3)}</span></span>
+        <div className="grid min-w-[260px] grid-cols-3 gap-2 text-xs">
+          <StatTile label="WTI / gal" value={<span className="font-mono">${latest.wti_gal.toFixed(3)}</span>} tone="text-orange-300" />
+          <StatTile label="Regular Gas" value={<span className="font-mono">${latest.retail.toFixed(3)}</span>} tone="text-amber-300" />
+          <StatTile label="Spread" value={<span className="font-mono">${latest.spread.toFixed(3)}</span>} tone={elevated ? "text-rose-300" : "text-emerald-300"} />
         </div>
       </div>
       <div className="h-64">
@@ -475,14 +502,11 @@ function RetailPricesChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-2 flex flex-wrap items-start gap-x-5 gap-y-0.5 text-[10px]">
-        <span><span style={{ color: "#f97316" }}>——</span> WTI/gal (crude ÷42)</span>
-        <span><span style={{ color: "#fbbf24" }}>——</span> Regular Gas</span>
-        <span><span style={{ color: "#38bdf8" }}>- -</span> Diesel</span>
-        <span className="mt-0.5 w-full text-stealth-600">
-          <span className="text-rose-400/80">Red bars</span> = margin above 6-mo avg → retail premium elevated, pump prices may fall to follow crude ·{" "}
-          <span className="text-emerald-400/80">Green bars</span> = spread compressed → crude rising faster than retail, pump likely to follow higher
-        </span>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-400">
+        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#f97316" />WTI / gal</span>
+        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#fbbf24" />Regular Gas</span>
+        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#38bdf8" />Diesel</span>
+        <span className="text-stealth-500">Red bars = retail rich to crude. Green bars = crude leading retail.</span>
       </div>
     </div>
   );
@@ -538,7 +562,8 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
     <div className="surface-card p-4">
       <div className="mb-3">
         <Kicker>Supply ↔ Price Relationship</Kicker>
-        <p className="text-[11px] text-stealth-500">Both normalized 0–100 · Inventory axis inverted — when stocks fall the line rises</p>
+        <h2 className="text-base font-semibold text-stealth-100">Inventories vs WTI</h2>
+        <p className="mt-1 text-xs text-stealth-400">Normalized 0–100 with inventories inverted so tightening supply climbs with price stress.</p>
       </div>
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
@@ -559,10 +584,10 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-2 flex flex-wrap gap-4 text-[10px]">
-        <span><span style={{ color: "#f97316" }}>&#9472;&#9472;</span> WTI Spot (normalized)</span>
-        <span><span style={{ color: "#475569" }}>- -</span> Crude Inventory (inverted)</span>
-        <span className="text-stealth-600">Converging lines = balanced; diverging = stress building</span>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-400">
+        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#f97316" />WTI Spot</span>
+        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#475569" />Inventory (inverted)</span>
+        <span className="text-stealth-500">Divergence = supply/price stress building.</span>
       </div>
     </div>
   );
@@ -613,7 +638,8 @@ function PriceCascadeChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
     <div className="surface-card p-4">
       <div className="mb-3">
         <Kicker>Crude → Pump Pass-Through (indexed to 100)</Kicker>
-        <p className="text-[11px] text-stealth-500">Gap = refining margin + taxes · crude often leads retail by 2–4 weeks</p>
+        <h2 className="text-base font-semibold text-stealth-100">Pass-through lag</h2>
+        <p className="mt-1 text-xs text-stealth-400">Indexed to the start of the window so you can see crude move first and retail catch up later.</p>
       </div>
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
@@ -634,9 +660,10 @@ function PriceCascadeChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-2 flex flex-wrap gap-4 text-[10px]">
-        <span><span style={{ color: "#f97316" }}>&#9472;&#9472;</span> WTI Crude</span>
-        <span><span style={{ color: "#fbbf24" }}>- -</span> Retail Gasoline</span>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-400">
+        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#f97316" />WTI Crude</span>
+        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#fbbf24" />Retail Gasoline</span>
+        <span className="text-stealth-500">Wider gap = refining/tax wedge.</span>
       </div>
     </div>
   );
@@ -670,7 +697,8 @@ function FactorRadar({ symbols }: { symbols: SymbolRow[] }) {
     <div className="surface-card p-4">
       <div className="mb-1">
         <Kicker>Contract Momentum Radar</Kicker>
-        <p className="text-[11px] text-stealth-500">Scores 0–100 per contract + Brent–WTI spread tension</p>
+        <h2 className="text-base font-semibold text-stealth-100">Cross-contract momentum</h2>
+        <p className="mt-1 text-xs text-stealth-400">One shape shows where momentum is concentrated across the energy complex.</p>
       </div>
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
@@ -689,7 +717,7 @@ function FactorRadar({ symbols }: { symbols: SymbolRow[] }) {
           </RadarChart>
         </ResponsiveContainer>
       </div>
-      <div className="flex justify-center gap-6 text-[10px] text-stealth-600">
+      <div className="mt-2 flex justify-center gap-4 text-xs text-stealth-500">
         {wti && <span>Vol: <span className={changeTone(wti.volatility != null ? (wti.volatility > 35 ? 1 : -1) : 0)}>{wti.volatility?.toFixed(1) ?? "—"}%</span></span>}
         {brent && wti && <span>Spread: <span className={spreadRaw > 5 ? "text-amber-400" : "text-stealth-300"}>${spreadRaw.toFixed(2)}</span></span>}
       </div>
@@ -715,13 +743,17 @@ function AltEnergyChart({
 
   return (
     <div className="surface-card p-4">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <Kicker>Traditional vs Alternative Energy — Indexed to 100</Kicker>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Kicker>Traditional vs Alternative Energy — Indexed to 100</Kicker>
+          <h2 className="text-base font-semibold text-stealth-100">Capital rotation context</h2>
+          <p className="mt-1 text-xs text-stealth-400">Tracks whether capital is favoring traditional energy cash flows or transition-linked equities.</p>
+        </div>
         <div className="flex flex-wrap gap-3">
           {altSymbols.map((s) => (
-            <div key={s.code} className="flex items-center gap-1.5 text-[11px]">
-              <div className="h-2 w-3 rounded-sm" style={{ background: ALT_COLORS[s.code] ?? "#94a3b8" }} />
-              <span className="text-stealth-400">{s.code}</span>
+            <div key={s.code} className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1 text-xs text-stealth-300">
+              <LegendDot color={ALT_COLORS[s.code] ?? "#94a3b8"} />
+              <span>{s.code}</span>
             </div>
           ))}
         </div>
@@ -748,7 +780,7 @@ function AltEnergyChart({
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <p className="mt-1.5 text-[10px] text-stealth-600">XLE = traditional · ICLN = global clean · TAN = solar · FAN = wind · PHO = water/hydro</p>
+      <p className="mt-3 text-xs text-stealth-500">XLE = traditional energy cash flow proxy · ICLN/TAN/FAN/PHO = transition and grid-adjacent exposures</p>
     </div>
   );
 }
@@ -758,7 +790,7 @@ function AltEnergyChart({
 // ---------------------------------------------------------------------------
 
 function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
-  const { latest_pct, summary, fallback_used } = mix;
+  const { latest_pct, summary, fallback_used, latest_year, source } = mix;
   const fuels = Object.entries(latest_pct).sort((a, b) => b[1] - a[1]);
 
   const trendData = useMemo(() => {
@@ -780,14 +812,30 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
 
   return (
     <div className="surface-card p-4">
-      <Kicker>US Electricity Generation Mix (Annual)</Kicker>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Kicker>US Electricity Generation Mix (Annual)</Kicker>
+          <h2 className="text-base font-semibold text-stealth-100">Latest full year: {latest_year}</h2>
+          <p className="mt-1 text-xs text-stealth-400">Authoritative EIA annual generation mix, grouped into fossil, renewable, and nuclear blocks.</p>
+        </div>
+        <div className="surface-card-muted px-3 py-2 text-xs text-stealth-400">
+          <p className="uppercase tracking-[0.14em] text-stealth-500">Source</p>
+          <p className="mt-1 text-sm font-medium text-stealth-200">{source}</p>
+        </div>
+      </div>
       {fallback_used && (
         <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-300">
-          2023 EIA estimates — live feed requires FRED API key
+          Live EIA feed unavailable — showing pinned 2023 fallback values.
         </div>
       )}
 
-      {/* Summary proportion bars */}
+      <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <StatTile label="Fossil" value={`${summary.fossil_pct.toFixed(1)}%`} tone="text-stealth-100" detail="Coal + gas + petroleum" />
+        <StatTile label="Renewables" value={`${summary.renewables_pct.toFixed(1)}%`} tone="text-emerald-300" detail="Hydro + wind + solar + geothermal" />
+        <StatTile label="Nuclear" value={`${summary.nuclear_pct.toFixed(1)}%`} tone="text-violet-300" detail="Baseload zero-carbon" />
+        <StatTile label="Coverage" value={`${fuels.length} fuels`} tone="text-stealth-100" detail={`As of ${latest_year}`} />
+      </div>
+
       <div className="mb-4 grid grid-cols-3 gap-3">
         {[
           { label: "Fossil", pct: summary.fossil_pct,     color: "bg-slate-500",   text: "text-stealth-200" },
@@ -838,7 +886,7 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
           </ResponsiveContainer>
         </div>
       )}
-      <p className="mt-2 text-[10px] text-stealth-600">{summary.notes}</p>
+      <p className="mt-3 text-xs text-stealth-500">{summary.notes}</p>
     </div>
   );
 }
@@ -874,6 +922,14 @@ export default function EnergyIndex() {
   const history  = historyApi.data;
   const prices   = pricesApi.data;
   const mix      = mixApi.data;
+  const wti = overview?.symbols.find((symbol) => symbol.code === "CL");
+  const brent = overview?.symbols.find((symbol) => symbol.code === "BZ");
+  const spread = wti?.current_price != null && brent?.current_price != null
+    ? brent.current_price - wti.current_price
+    : null;
+  const latestGas = latestValue(prices?.fred_prices.retail_gasoline);
+  const latestWti = latestValue(prices?.fred_prices.crude_wti_spot);
+  const latestPumpSpread = latestGas != null && latestWti != null ? latestGas - latestWti / 42 : null;
 
   if (!overview) {
     return (
@@ -911,28 +967,49 @@ export default function EnergyIndex() {
       </div>
 
       {/* ── Regime snapshot ───────────────────────────────────────── */}
-      <div className="surface-card-strong p-5">
-        <div className="flex flex-wrap items-center gap-6">
+      <div className="surface-card-strong p-4 md:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.16em] text-stealth-500">Regime</p>
-            <span className={`mt-1 inline-block rounded-full border px-3 py-0.5 text-xs font-semibold ${regimeBadgeStyle(overview.regime_label)}`}>
-              {overview.regime_label}
-            </span>
+            <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Energy Snapshot</p>
+            <p className={`mt-2 text-4xl font-semibold ${biasTone(overview.composite_score)}`}>{overview.composite_score.toFixed(0)}</p>
+            <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
+              <div className={`h-2 rounded-full ${overview.composite_score >= 60 ? "bg-emerald-500" : overview.composite_score <= 40 ? "bg-rose-500" : "bg-amber-500"}`} style={{ width: `${overview.composite_score}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-stealth-400">As of {new Date(overview.as_of).toLocaleString()}</p>
           </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.16em] text-stealth-500">Composite</p>
-            <p className={`mt-1 text-3xl font-semibold ${biasTone(overview.composite_score)}`}>
-              {overview.composite_score.toFixed(0)}
-              <span className="ml-1 text-sm font-normal text-stealth-500">/ 100</span>
-            </p>
+
+          <div className="grid min-w-[280px] flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatTile
+              label="Regime"
+              value={<span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${regimeBadgeStyle(overview.regime_label)}`}>{overview.regime_label}</span>}
+              detail="Composite state"
+            />
+            <StatTile
+              label="Availability"
+              value={`${overview.availability.available_count}/${overview.availability.total_configured}`}
+              detail="Configured contracts"
+            />
+            <StatTile
+              label="Brent-WTI"
+              value={<span className="font-mono">{money(spread)}</span>}
+              tone={spread != null && spread > 5 ? "text-amber-300" : "text-stealth-100"}
+              detail="Global vs US crude tightness"
+            />
+            <StatTile
+              label="Pump Spread"
+              value={<span className="font-mono">{money(latestPumpSpread, 3)}</span>}
+              tone={latestPumpSpread != null && latestPumpSpread > 1.8 ? "text-rose-300" : "text-stealth-100"}
+              detail="Retail gas minus WTI/gal"
+            />
           </div>
-          <div className="h-10 w-px bg-stealth-700/60" />
-          <p className="flex-1 text-sm leading-6 text-stealth-300 max-w-2xl">{overview.summary}</p>
         </div>
+        <p className="mt-4 max-w-4xl text-sm leading-6 text-stealth-300">{overview.summary}</p>
       </div>
 
-      <GroupCards groups={overview.groups} />
-      <FuturesTable symbols={overview.symbols} />
+      <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
+        <GroupCards groups={overview.groups} />
+        <FuturesTable symbols={overview.symbols} />
+      </div>
 
       {/* ── Composite history + Radar ──────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
@@ -950,14 +1027,15 @@ export default function EnergyIndex() {
 
       {prices && <RetailPricesChart prices={prices.fred_prices} />}
 
-      {history && (
-        <AltEnergyChart
-          data={history.alt_comparison}
-          altSymbols={history.alt_symbols}
-        />
-      )}
-
-      {mix && <GenerationMixPanel mix={mix} />}
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+        {history && (
+          <AltEnergyChart
+            data={history.alt_comparison}
+            altSymbols={history.alt_symbols}
+          />
+        )}
+        {mix && <GenerationMixPanel mix={mix} />}
+      </div>
 
       {overview.warnings.length > 0 && (
         <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300">
@@ -967,7 +1045,7 @@ export default function EnergyIndex() {
 
       <p className="text-[10px] text-stealth-600">
         Futures via Yahoo Finance · Retail prices &amp; inventory via FRED/EIA ·
-        Generation mix via EIA Annual Energy Review · ETFs via Yahoo Finance ·
+        Generation mix via {mix?.source ?? "EIA annual data"}{mix?.latest_year ? ` (${mix.latest_year})` : ""} · ETFs via Yahoo Finance ·
         As of {overview.as_of.slice(0, 16).replace("T", " ")} UTC
       </p>
 
