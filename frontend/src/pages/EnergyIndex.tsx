@@ -967,19 +967,75 @@ function AltEnergyChart({
 }) {
   if (!data.length) return null;
 
-  const decimated = data.filter((_, i) => i % Math.max(1, Math.floor(data.length / 200)) === 0);
   const codes = altSymbols.map((s) => s.code).filter((c) => decimated.some((d) => c in d));
+  const transitionCodes = codes.filter((code) => code !== "XLE");
+
+  const chartData = useMemo(() => {
+    return data
+      .map((row) => {
+        const point: Record<string, number | string> = { ...row };
+        const transitionValues = transitionCodes
+          .map((code) => row[code])
+          .filter((value): value is number => typeof value === "number");
+
+        if (transitionValues.length > 0) {
+          point.transition_basket = Number((transitionValues.reduce((sum, value) => sum + value, 0) / transitionValues.length).toFixed(2));
+        }
+
+        if (typeof row.XLE === "number" && typeof point.transition_basket === "number") {
+          point.rotation_spread = Number((row.XLE - point.transition_basket).toFixed(2));
+        }
+
+        return point;
+      })
+      .filter((row) => typeof row.XLE === "number");
+  }, [data, transitionCodes]);
+
+  const decimated = chartData.filter((_, i) => i % Math.max(1, Math.floor(chartData.length / 200)) === 0);
+  const latestPoint = chartData[chartData.length - 1] as Record<string, number | string> | undefined;
+  const firstPoint = chartData[0] as Record<string, number | string> | undefined;
+  const latestSpread = typeof latestPoint?.rotation_spread === "number" ? latestPoint.rotation_spread : null;
+  const startingSpread = typeof firstPoint?.rotation_spread === "number" ? firstPoint.rotation_spread : null;
+  const spreadDelta = latestSpread != null && startingSpread != null ? latestSpread - startingSpread : null;
+  const latestBasket = typeof latestPoint?.transition_basket === "number" ? latestPoint.transition_basket : null;
+  const latestXle = typeof latestPoint?.XLE === "number" ? latestPoint.XLE : null;
+
+  const leadership = latestSpread == null
+    ? { label: "Mixed leadership", tone: "text-stealth-100" }
+    : latestSpread >= 8
+      ? { label: "Traditional energy leading", tone: "text-orange-300" }
+      : latestSpread <= -8
+        ? { label: "Transition leadership", tone: "text-emerald-300" }
+        : { label: "Balanced rotation", tone: "text-stealth-100" };
+
+  const strongestTheme = latestPoint
+    ? codes.reduce<{ code: string; value: number } | null>((best, code) => {
+        const current = latestPoint[code];
+        if (typeof current !== "number") return best;
+        if (!best || current > best.value) return { code, value: current };
+        return best;
+      }, null)
+    : null;
 
   return (
     <div className="surface-card self-start p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <CardHeader kicker="Traditional vs Alternative Energy — Indexed to 100" title="Capital rotation context" tooltipText="Tracks whether capital is favoring traditional energy cash flows or transition-linked equities. XLE is the traditional cash-flow proxy; ICLN, TAN, FAN, and PHO represent transition and grid-adjacent exposure." />
+        <CardHeader kicker="Traditional vs Alternative Energy — Indexed to 100" title="Capital rotation context" tooltipText="This panel is meant to answer one question: is capital favoring traditional energy cash flows or transition-linked equities? XLE is the traditional cash-flow proxy; the transition basket is the average of ICLN, TAN, FAN, and PHO." />
         <div className="flex flex-wrap gap-3">
           {altSymbols.map((s) => (
             <LegendPill key={s.code} color={ALT_COLORS[s.code] ?? "#94a3b8"}>{s.code}</LegendPill>
           ))}
+          <LegendPill color="#e2e8f0">Transition basket</LegendPill>
         </div>
       </div>
+
+      <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <StatTile label="Leadership" value={leadership.label} tone={leadership.tone} detail="Who is currently attracting relative capital." />
+        <StatTile label="XLE" value={latestXle != null ? latestXle.toFixed(1) : "—"} tone="text-orange-300" detail="Traditional energy index level." />
+        <StatTile label="Transition Basket" value={latestBasket != null ? latestBasket.toFixed(1) : "—"} tone="text-emerald-300" detail="Average of clean and grid-adjacent ETFs." />
+        <StatTile label="Rotation Spread" value={latestSpread != null ? fmt(latestSpread, 1) : "—"} tone={leadership.tone} detail={spreadDelta != null ? `${fmt(spreadDelta, 1)} pts vs start of window` : "Relative leadership spread."} />
+      </div>
+
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={decimated} margin={CHART_MARGIN}>
@@ -988,6 +1044,14 @@ function AltEnergyChart({
             <YAxis {...commonYAxisProps} />
             <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
             <Tooltip {...tip} formatter={(v: number, name: string) => [`${v.toFixed(1)}`, name]} />
+            <Line
+              type="monotone"
+              dataKey="transition_basket"
+              stroke="#e2e8f0"
+              dot={false}
+              strokeWidth={2.2}
+              strokeDasharray="6 3"
+            />
             {codes.map((code) => (
               <Line
                 key={code}
@@ -995,12 +1059,34 @@ function AltEnergyChart({
                 dataKey={code}
                 stroke={ALT_COLORS[code] ?? "#94a3b8"}
                 dot={false}
-                strokeWidth={code === "XLE" ? 2.5 : 1.5}
-                strokeDasharray={code === "XLE" || code === "ICLN" ? undefined : "4 2"}
+                strokeWidth={code === "XLE" ? 2.8 : code === strongestTheme?.code ? 2 : 1.2}
+                strokeOpacity={code === "XLE" || code === strongestTheme?.code ? 1 : 0.72}
+                strokeDasharray={code === "XLE" || code === strongestTheme?.code ? undefined : "4 2"}
               />
             ))}
           </LineChart>
         </ResponsiveContainer>
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        <SignalTile
+          label="Takeaway"
+          title={leadership.label}
+          tone={leadership.tone}
+          detail={latestSpread == null ? "Relative leadership spread unavailable." : latestSpread >= 8 ? "Legacy energy cash-flow proxies are outpacing the transition basket." : latestSpread <= -8 ? "Transition-linked equities are leading traditional energy." : "Neither side has a decisive lead right now."}
+        />
+        <SignalTile
+          label="Momentum"
+          title={spreadDelta == null ? "Rotation drift unavailable" : spreadDelta >= 0 ? "Traditional lead widening" : "Transition catching up"}
+          tone={spreadDelta == null ? "text-stealth-100" : spreadDelta >= 0 ? "text-orange-300" : "text-emerald-300"}
+          detail={spreadDelta == null ? "Window-over-window spread change unavailable." : `${fmt(spreadDelta, 1)} points in XLE minus transition basket since the start of the window.`}
+        />
+        <SignalTile
+          label="Strongest Theme"
+          title={strongestTheme?.code ?? "—"}
+          tone={strongestTheme?.code === "XLE" ? "text-orange-300" : "text-emerald-300"}
+          detail={strongestTheme ? `${strongestTheme.value.toFixed(1)} indexed performance.` : "Theme leadership unavailable."}
+        />
       </div>
     </div>
   );
@@ -1130,7 +1216,8 @@ export default function EnergyIndex() {
   const pricesApi   = useApi<EnergyPrices>(`/energy/prices?days=${days}`);
   const mixApi      = useApi<GenerationMix>(`/energy/mix`);
 
-  if ((overviewApi.loading || historyApi.loading) && !overviewApi.data) {
+  const primaryDataPending = !overviewApi.data || !historyApi.data || !pricesApi.data;
+  if ((overviewApi.loading || historyApi.loading || pricesApi.loading) && primaryDataPending) {
     return <MarketLoading message="Loading energy market data…" />;
   }
 
