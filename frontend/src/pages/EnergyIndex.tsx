@@ -25,8 +25,8 @@ import {
   commonGridProps,
   commonXAxisProps,
   commonYAxisProps,
-  formatTooltipValue,
 } from "../utils/chartUtils";
+import InfoTooltip from "../components/ui/InfoTooltip";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -262,16 +262,41 @@ function CardHeader({
   kicker,
   title,
   description,
+  tooltipText,
 }: {
   kicker: React.ReactNode;
   title: React.ReactNode;
   description?: React.ReactNode;
+  tooltipText?: string;
 }) {
   return (
     <div className="space-y-1">
       <Kicker>{kicker}</Kicker>
-      <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+      <div className="flex items-start gap-2">
+        <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+        {tooltipText ? <InfoTooltip text={tooltipText} /> : null}
+      </div>
       {description ? <BodyHint>{description}</BodyHint> : null}
+    </div>
+  );
+}
+
+function SectionHeader({
+  kicker,
+  title,
+  tooltipText,
+}: {
+  kicker: string;
+  title: string;
+  tooltipText: string;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <div>
+        <p className="page-kicker">{kicker}</p>
+        <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
+      </div>
+      <InfoTooltip text={tooltipText} />
     </div>
   );
 }
@@ -346,8 +371,10 @@ function GroupSummaryStrip({ groups }: { groups: GroupRow[] }) {
   return (
     <div className="mt-3 border-t border-stealth-800/60 pt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <LabelCaps className="mb-0">Group Leadership</LabelCaps>
-        <BodyHint>Grouped composite read, compressed into one strip.</BodyHint>
+        <div className="flex items-center gap-2">
+          <LabelCaps className="mb-0">Group Leadership</LabelCaps>
+          <InfoTooltip text="Grouped composite leadership compressed into one strip so the futures table remains the primary market-structure read." />
+        </div>
       </div>
       <div className="grid gap-2 lg:grid-cols-3">
         {groups.map((group) => (
@@ -436,7 +463,7 @@ function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: {
   const decimated = history.filter((_, i) => i % Math.max(1, Math.floor(history.length / 200)) === 0);
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
-      <CardHeader kicker="Energy Composite Score" title="Composite history" description="Trend regime over the selected lookback window." />
+      <CardHeader kicker="Energy Composite Score" title="Composite history" tooltipText="Trend regime over the selected lookback window. A score near 50 is neutral, above 60 is elevated, and below 40 is soft." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={decimated} margin={CHART_MARGIN}>
@@ -448,11 +475,6 @@ function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: {
             <Line type="monotone" dataKey="value" stroke="#f97316" dot={false} strokeWidth={2} />
           </LineChart>
         </ResponsiveContainer>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2 text-xs text-stealth-500">
-        <MetaPill>50 = neutral</MetaPill>
-        <MetaPill tone="text-emerald-300">&gt;60 elevated</MetaPill>
-        <MetaPill tone="text-rose-300">&lt;40 soft</MetaPill>
       </div>
     </div>
   );
@@ -629,7 +651,7 @@ function RetailPricesChart({
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <CardHeader kicker="Futures → Pump: Refining Spread" title="Refining spread momentum" description="MACD-style view of the retail gasoline wedge versus WTI. Positive histogram means pump margin pressure is accelerating; negative means it is fading." />
+        <CardHeader kicker="Futures → Pump: Refining Spread" title="Refining spread momentum" tooltipText="MACD-style view of the retail gasoline wedge versus WTI. Positive histogram means pump margin pressure is accelerating; negative means it is fading. The raw spread line stays in the background as context rather than the primary message." />
         <MetaPill tone={momentumTone}>{momentumLabel}</MetaPill>
       </div>
 
@@ -669,15 +691,14 @@ function RetailPricesChart({
         <LegendPill color="#38bdf8">MACD</LegendPill>
         <LegendPill color="#fb923c">Signal</LegendPill>
         <LegendPill color="#fbbf24">Raw spread</LegendPill>
-        <MetaPill>Red bars = pump margin accelerating. Green bars = spread momentum easing.</MetaPill>
       </div>
 
       {indexedPassThrough.length > 0 && (
         <div className="mt-4 border-t border-stealth-800/60 pt-3">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-            <div>
+            <div className="flex items-center gap-2">
               <LabelCaps className="mb-0">Pass-Through Lag</LabelCaps>
-              <BodyHint>Indexed to 100 so crude can be compared against retail catch-up without needing a separate card.</BodyHint>
+              <InfoTooltip text="Indexed to 100 so crude can be compared against retail catch-up without spending a separate card on pass-through timing." />
             </div>
             <div className="flex flex-wrap gap-2">
               <LegendPill color="#f97316">WTI Crude</LegendPill>
@@ -757,7 +778,7 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
 
   return (
     <div className="surface-card self-start p-3 sm:p-4">
-      <CardHeader kicker="Supply ↔ Price Relationship" title="Inventories vs WTI" description="Normalized 0–100 with inventories inverted so tightening supply climbs with price stress." />
+      <CardHeader kicker="Supply ↔ Price Relationship" title="Inventories vs WTI" tooltipText="Normalized 0–100 with inventories inverted so tightening supply climbs with price stress. Divergence between the two lines suggests supply and spot price are no longer confirming each other cleanly." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={normalized} margin={CHART_MARGIN}>
@@ -780,7 +801,6 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
       <div className="mt-2 flex flex-wrap gap-2 text-xs text-stealth-400">
         <LegendPill color="#f97316">WTI Spot</LegendPill>
         <LegendPill color="#475569">Inventory (inverted)</LegendPill>
-        <MetaPill>Divergence = supply/price stress building.</MetaPill>
       </div>
     </div>
   );
@@ -876,7 +896,7 @@ function FactorRadar({
 
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
-      <CardHeader kicker="Contract Momentum Radar" title="Cross-contract momentum" description="Month-to-month shells deepen from pale to saturated green or red so the time path itself shows expansion or contraction." />
+      <CardHeader kicker="Contract Momentum Radar" title="Cross-contract momentum" tooltipText="Month-to-month shells deepen from pale to saturated green or red so the time path itself shows expansion or contraction across the full contract set." />
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={radar.rows} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
@@ -953,7 +973,7 @@ function AltEnergyChart({
   return (
     <div className="surface-card self-start p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <CardHeader kicker="Traditional vs Alternative Energy — Indexed to 100" title="Capital rotation context" description="Tracks whether capital is favoring traditional energy cash flows or transition-linked equities." />
+        <CardHeader kicker="Traditional vs Alternative Energy — Indexed to 100" title="Capital rotation context" tooltipText="Tracks whether capital is favoring traditional energy cash flows or transition-linked equities. XLE is the traditional cash-flow proxy; ICLN, TAN, FAN, and PHO represent transition and grid-adjacent exposure." />
         <div className="flex flex-wrap gap-3">
           {altSymbols.map((s) => (
             <LegendPill key={s.code} color={ALT_COLORS[s.code] ?? "#94a3b8"}>{s.code}</LegendPill>
@@ -982,7 +1002,6 @@ function AltEnergyChart({
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <p className="mt-3 text-xs text-stealth-500">XLE = traditional energy cash flow proxy · ICLN/TAN/FAN/PHO = transition and grid-adjacent exposures</p>
     </div>
   );
 }
@@ -1081,7 +1100,9 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
           </ResponsiveContainer>
         </div>
       )}
-      <p className="mt-3 text-xs text-stealth-500">{summary.notes}</p>
+      <div className="mt-3 flex justify-end">
+        <InfoTooltip text={summary.notes} />
+      </div>
     </div>
   );
 }
@@ -1127,7 +1148,6 @@ export default function EnergyIndex() {
   const latestPumpSpread = latestGas != null && latestWti != null ? latestGas - latestWti / 42 : null;
   const groupsByStrength = [...overview.groups].sort((left, right) => right.group_composite - left.group_composite);
   const strongestGroup = groupsByStrength[0];
-  const weakestGroup = groupsByStrength[groupsByStrength.length - 1];
   const spreadStress = spread != null && spread > 5;
   const pumpStress = latestPumpSpread != null && latestPumpSpread > 1.8;
   const hasRetailSpreadPanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.retail_gasoline?.length);
@@ -1229,18 +1249,6 @@ export default function EnergyIndex() {
               tone={latestPumpSpread != null && latestPumpSpread > 1.8 ? "text-rose-300" : "text-stealth-100"}
               detail="Retail gas minus WTI/gal"
             />
-            <StatTile
-              label="Leader"
-              value={strongestGroup?.label ?? "—"}
-              tone={strongestGroup ? biasTone(strongestGroup.group_composite) : "text-stealth-100"}
-              detail={strongestGroup ? `${strongestGroup.group_composite.toFixed(0)} composite` : "Group leadership unavailable"}
-            />
-            <StatTile
-              label="Lagging"
-              value={weakestGroup?.label ?? "—"}
-              tone={weakestGroup ? biasTone(weakestGroup.group_composite) : "text-stealth-100"}
-              detail={weakestGroup ? `${weakestGroup.group_composite.toFixed(0)} composite` : "Group laggard unavailable"}
-            />
           </div>
         </div>
       </div>
@@ -1261,13 +1269,11 @@ export default function EnergyIndex() {
 
       <div className="space-y-2.5">
         <div className="flex flex-wrap items-end justify-between gap-2.5">
-          <div>
-            <p className="page-kicker">Market Structure</p>
-            <h2 className="text-lg font-semibold text-stealth-100">Contract structure and leadership</h2>
-          </div>
-          <div className="page-meta mt-0 gap-1.5">
-            <MetaPill>Use this band to see which contracts are driving the composite.</MetaPill>
-          </div>
+          <SectionHeader
+            kicker="Market Structure"
+            title="Contract structure and leadership"
+            tooltipText="Use this band to see which contracts are driving the composite and how that grouped leadership compresses across crude, natural gas, and refined products."
+          />
         </div>
 
         <FuturesTable symbols={overview.symbols} groups={overview.groups} surfaceClassName="surface-card-strong" />
@@ -1276,13 +1282,11 @@ export default function EnergyIndex() {
       {hasSupplyPricePanel && prices && (
         <div className="space-y-2.5">
           <div className="flex flex-wrap items-end justify-between gap-2.5">
-            <div>
-              <p className="page-kicker">Transmission</p>
-              <h2 className="text-lg font-semibold text-stealth-100">Supply confirmation</h2>
-            </div>
-            <div className="page-meta mt-0 gap-1.5">
-              <MetaPill>Inventory context stays separate only when it adds a non-duplicate supply read.</MetaPill>
-            </div>
+            <SectionHeader
+              kicker="Transmission"
+              title="Supply confirmation"
+              tooltipText="Inventory context stays separate only when it adds a non-duplicate supply read. If it stops confirming spot price, that is the signal the panel is meant to surface."
+            />
           </div>
 
           <div className="grid items-start gap-3 md:gap-4 grid-cols-1">
@@ -1293,13 +1297,11 @@ export default function EnergyIndex() {
 
       <div className="space-y-2.5">
         <div className="flex flex-wrap items-end justify-between gap-2.5">
-          <div>
-            <p className="page-kicker">Longer Horizon</p>
-            <h2 className="text-lg font-semibold text-stealth-100">Capital rotation and power mix context</h2>
-          </div>
-          <div className="page-meta mt-0 gap-1.5">
-            <MetaPill>These slower-moving panels frame transition leadership and end-demand structure.</MetaPill>
-          </div>
+          <SectionHeader
+            kicker="Longer Horizon"
+            title="Capital rotation and power mix context"
+            tooltipText="These slower-moving panels frame transition leadership and end-demand structure instead of the nearer-term pressure read shown at the top of the page."
+          />
         </div>
 
         <div className="grid items-start gap-3 md:gap-4 xl:grid-cols-[1.1fr_1fr]">
@@ -1319,12 +1321,9 @@ export default function EnergyIndex() {
         </div>
       )}
 
-      <div className="page-meta">
-        <MetaPill>Futures via Yahoo Finance</MetaPill>
-        <MetaPill>Retail prices &amp; inventory via FRED/EIA</MetaPill>
-        <MetaPill>Generation mix via {mix?.source ?? "EIA annual data"}{mix?.latest_year ? ` (${mix.latest_year})` : ""}</MetaPill>
-        <MetaPill>ETFs via Yahoo Finance</MetaPill>
-        <MetaPill>As of {overview.as_of.slice(0, 16).replace("T", " ")} UTC</MetaPill>
+      <div className="flex items-center justify-end gap-2">
+        <LabelCaps className="mb-0">Sources</LabelCaps>
+        <InfoTooltip text={`Futures via Yahoo Finance. Retail prices and inventory via FRED/EIA. Generation mix via ${mix?.source ?? "EIA annual data"}${mix?.latest_year ? ` (${mix.latest_year})` : ""}. ETFs via Yahoo Finance. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`} />
       </div>
 
     </div>
