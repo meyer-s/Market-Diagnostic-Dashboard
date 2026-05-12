@@ -27,6 +27,7 @@ from app.api.actions import router as actions_router
 from app.api.institutional_flow import router as institutional_flow_router
 from app.api.market_internals import router as market_internals_router
 from app.api.agriculture import router as agriculture_router
+from app.api.energy import router as energy_router
 
 # Set up logging
 logging.basicConfig(
@@ -151,6 +152,9 @@ app.include_router(market_internals_router, tags=["MarketInternals"])
 
 # Agriculture Index
 app.include_router(agriculture_router, tags=["Agriculture"])
+
+# Energy Index
+app.include_router(energy_router, tags=["Energy"])
 
 # Metal Projections
 from app.api.metal_projections import router as metal_projections_router
