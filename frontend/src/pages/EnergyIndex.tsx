@@ -1374,6 +1374,7 @@ const GENERATION_MIX_KEYS: Record<string, 1> = {
 // ---------------------------------------------------------------------------
 
 function EnergyMethodologyPanel() {
+  const [panelOpen, setPanelOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const toggle = (id: string) => {
@@ -1417,13 +1418,24 @@ function EnergyMethodologyPanel() {
 
   return (
     <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg">
-      <div className="p-4 md:p-6 border-b border-stealth-700">
-        <h2 className="text-lg md:text-xl font-semibold text-stealth-100 mb-2">Methodology & Scoring</h2>
-        <p className="text-xs text-stealth-400">
-          How the energy composite is built, scored, and interpreted — groups, signals, and all data sources.
-        </p>
-      </div>
-      <div className="divide-y divide-stealth-700">
+      <button
+        type="button"
+        onClick={() => setPanelOpen((open) => !open)}
+        className="flex w-full items-center justify-between gap-4 p-4 md:p-6 text-left transition-colors hover:bg-stealth-700/40"
+        aria-expanded={panelOpen}
+      >
+        <div>
+          <h2 className="text-lg md:text-xl font-semibold text-stealth-100 mb-2">Methodology & Scoring</h2>
+          <p className="text-xs text-stealth-400">
+            How the energy composite is built, scored, and interpreted — groups, signals, and all data sources.
+          </p>
+        </div>
+        <ChevronIcon open={panelOpen} />
+      </button>
+
+      <div className={`collapsible-panel ${panelOpen ? "collapsible-panel-open" : ""}`}>
+        <div className="collapsible-panel-inner">
+          <div className="divide-y divide-stealth-700 border-t border-stealth-700">
         <Section id="composite" title="What the Composite Measures">
           <p>
             The Energy Markets composite is a momentum-weighted score (0–100) built across all configured futures
@@ -1558,6 +1570,8 @@ function EnergyMethodologyPanel() {
             All scores are computed at request time from the most recent available data. Composite cache TTL is 20 minutes per timeframe window.
           </p>
         </Section>
+          </div>
+        </div>
       </div>
     </div>
   );
