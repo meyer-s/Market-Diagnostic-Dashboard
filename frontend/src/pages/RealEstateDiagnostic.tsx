@@ -127,28 +127,24 @@ function pressureTone(score: number) {
   return "text-amber-400";
 }
 
-function pressureFill(score: number) {
-  if (score >= 60) return "bg-rose-500";
-  if (score <= 40) return "bg-emerald-500";
-  return "bg-amber-500";
+function stabilityScore(pressure: number) {
+  return Math.max(0, Math.min(100, 100 - pressure));
 }
 
-function pressureLabel(score: number | null | undefined, noun = "pressure") {
-  if (score == null) return "Signal unavailable";
-  if (score >= 68) return `High ${noun}`;
-  if (score >= 58) return `Elevated ${noun}`;
-  if (score <= 40) return `Contained ${noun}`;
-  return `Mixed ${noun}`;
+function stabilityTone(score: number) {
+  if (score >= 60) return "text-emerald-400";
+  if (score <= 40) return "text-rose-400";
+  return "text-amber-400";
+}
+
+function stabilityFill(score: number) {
+  if (score >= 60) return "bg-emerald-500";
+  if (score <= 40) return "bg-rose-500";
+  return "bg-amber-500";
 }
 
 function factorEvidence(factor: FactorScore | undefined, fallback: string) {
   return factor?.evidence?.[0] ?? fallback;
-}
-
-function relativeFactorText(left: FactorScore | undefined, right: FactorScore | undefined) {
-  if (!left || !right) return "";
-  const diff = left.score - right.score;
-  return `${left.label} is ${Math.abs(diff).toFixed(0)} pts ${diff >= 0 ? "above" : "below"} ${right.label.toLowerCase()}.`;
 }
 
 function changeTone(v: number | null | undefined) {
@@ -162,6 +158,61 @@ function fmt(v: number | null | undefined, decimals = 2) {
   if (v == null) return "—";
   const sign = v > 0 ? "+" : "";
   return `${sign}${v.toFixed(decimals)}`;
+}
+
+function conciseSummary(args: {
+  stability: number;
+  topFactor?: FactorScore;
+  topGroup?: GroupCard;
+  mortgageRate?: number | null;
+  mortgageDelta?: number | null;
+}) {
+  const { stability, topFactor, topGroup, mortgageRate, mortgageDelta } = args;
+
+  const regimeLine =
+    stability >= 68
+      ? "Real-estate stability is firming up."
+      : stability >= 58
+        ? "Stability is improving, but the tape is not fully clear yet."
+        : stability >= 42
+          ? "The market is mixed and still fragile." 
+          : "Stability remains weak and financing pressure is still controlling the read.";
+
+  const driverLine = topFactor
+    ? `${topFactor.label} is the main swing factor right now.`
+    : topGroup
+      ? `${topGroup.label} is the least stable segment right now.`
+      : "";
+
+  const rateLine = mortgageRate != null
+    ? mortgageDelta != null && Math.abs(mortgageDelta) >= 0.1
+      ? `30Y mortgage rates are ${mortgageRate.toFixed(2)}%, ${fmt(mortgageDelta, 2)} pp versus roughly six months ago.`
+      : `30Y mortgage rates are holding near ${mortgageRate.toFixed(2)}%.`
+    : "";
+
+  return [regimeLine, driverLine, rateLine].filter(Boolean).join(" ");
+}
+
+function primaryReadTitle(topFactor?: FactorScore, score?: number) {
+  if (!topFactor || score == null) return "Mixed stabilization";
+  if (topFactor.key === "financing_pressure") return score >= 58 ? "Financing still binding" : "Rate drag easing";
+  if (topFactor.key === "listed_market_confirmation") return score >= 58 ? "Listed market still fragile" : "Listed market stabilizing";
+  if (topFactor.key === "demand_affordability") return score >= 58 ? "Affordability still restrictive" : "Demand footing improving";
+  return score >= 58 ? "Pipeline still tight" : "Supply pressure contained";
+}
+
+function pressurePointTitle(mortgageDelta?: number | null, creditDelta?: number | null) {
+  if (mortgageDelta != null && mortgageDelta >= 0.15) return "Mortgage headwind rising";
+  if (mortgageDelta != null && mortgageDelta <= -0.15) return "Mortgage relief building";
+  if (creditDelta != null && creditDelta >= 20) return "Credit stress widening";
+  if (creditDelta != null && creditDelta <= -20) return "Credit pressure easing";
+  return "Pressure point steady";
+}
+
+function leadershipTitle(high?: GroupCard, low?: GroupCard) {
+  if (!high) return "Leadership unclear";
+  if (!low || high.group === low.group) return `${high.label} least stable`;
+  return `${high.label} least stable`;
 }
 
 function regimeBadgeStyle(label: string) {
@@ -301,9 +352,14 @@ function StatTile({
 }) {
   return (
     <div className="surface-card-muted px-2.5 py-2">
-      <LabelCaps>{label}</LabelCaps>
+      {detail ? (
+        <HoverTooltip tip={String(detail)} width="w-64">
+          <LabelCaps>{label}</LabelCaps>
+        </HoverTooltip>
+      ) : (
+        <LabelCaps>{label}</LabelCaps>
+      )}
       <p className={`mt-0.5 text-base font-semibold ${tone}`}>{value}</p>
-      {detail ? <BodyHint>{detail}</BodyHint> : null}
     </div>
   );
 }
@@ -321,9 +377,10 @@ function SignalTile({
 }) {
   return (
     <div className="surface-card-muted px-3 py-2.5">
-      <LabelCaps>{label}</LabelCaps>
+      <HoverTooltip tip={String(detail)} width="w-72">
+        <LabelCaps>{label}</LabelCaps>
+      </HoverTooltip>
       <p className={`mt-1 text-sm font-semibold ${tone}`}>{title}</p>
-      <BodyHint className="mt-1 leading-4">{detail}</BodyHint>
     </div>
   );
 }
@@ -366,13 +423,14 @@ function GroupSummaryStrip({ groups }: { groups: GroupCard[] }) {
         {groups.map((group) => (
           <div key={group.group} className="surface-card-muted px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
-              <LabelCaps className="mb-0">{group.label}</LabelCaps>
+              <HoverTooltip tip={`Members: ${group.components.join(" · ")}`} width="w-64">
+                <LabelCaps className="mb-0">{group.label}</LabelCaps>
+              </HoverTooltip>
               <BodyHint>{group.weight.toFixed(0)}% wt</BodyHint>
             </div>
             <div className="mt-1 flex items-end justify-between gap-3">
               <div>
                 <p className={`text-xl font-semibold ${pressureTone(group.score)}`}>{group.score.toFixed(0)}</p>
-                <BodyHint>{group.components.join(" · ")}</BodyHint>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-right text-xs">
                 <span className="text-stealth-500">20d</span>
@@ -456,13 +514,15 @@ function CompositeHistoryChart({
   surfaceClassName?: string;
 }) {
   if (!history.length) return null;
-  const decimated = history.filter((_, i) => i % Math.max(1, Math.floor(history.length / 200)) === 0);
+  const decimated = history
+    .filter((_, i) => i % Math.max(1, Math.floor(history.length / 200)) === 0)
+    .map((point) => ({ ...point, value: stabilityScore(point.value) }));
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader
-        kicker="Pressure Score History"
-        title="Composite trend"
-        tooltipText="Higher scores indicate elevated financing pressure, affordability stress, or listed-market deterioration. Above 60 is stressed; below 40 is easing."
+        kicker="Stability Score History"
+        title="Composite stability"
+        tooltipText="Headline stability is displayed as 100 minus the underlying pressure score. Above 60 means the market is absorbing the financing backdrop; below 40 means stability is weak."
       />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
@@ -470,9 +530,9 @@ function CompositeHistoryChart({
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
             <YAxis {...commonYAxisProps} domain={[20, 80]} />
-            <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Pressure Score"]} />
-            <ReferenceLine y={60} stroke="#f87171" strokeDasharray="2 4" strokeOpacity={0.45} />
-            <ReferenceLine y={40} stroke="#34d399" strokeDasharray="2 4" strokeOpacity={0.45} />
+            <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Stability Score"]} />
+            <ReferenceLine y={60} stroke="#34d399" strokeDasharray="2 4" strokeOpacity={0.45} />
+            <ReferenceLine y={40} stroke="#f87171" strokeDasharray="2 4" strokeOpacity={0.45} />
             <ReferenceLine y={50} stroke="#334155" strokeDasharray="3 3" />
             <Line type="monotone" dataKey="value" stroke="#0ea5e9" dot={false} strokeWidth={2} />
           </LineChart>
@@ -510,8 +570,8 @@ function FactorPanel({
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader
         kicker="Segment Pressure"
-        title="Factor breakdown"
-        tooltipText="Pressure score by segment — higher means more stress. Compare residential vs REIT vs commercial to identify where pressure is concentrated."
+        title="Where stability is breaking"
+        tooltipText="This stays in pressure terms on purpose: higher bars show which segment is doing the most damage to the headline stability read."
       />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
@@ -1144,19 +1204,24 @@ export default function RealEstateDiagnostic() {
   const lowestPressureGroup  = groupsByPressure[groupsByPressure.length - 1];
   const factorsByPressure    = [...(overview.factors ?? [])].sort((a, b) => b.score - a.score);
 
-  const residentialGroup = overview.groups.find((g) => g.group === "residential");
   const financingGroup   = overview.groups.find((g) => g.group === "financing");
   const financingFactor   = overview.factors?.find((factor) => factor.key === "financing_pressure");
-  const listedFactor      = overview.factors?.find((factor) => factor.key === "listed_market_confirmation");
-  const demandFactor      = overview.factors?.find((factor) => factor.key === "demand_affordability");
 
-  const demandScore      = demandFactor?.score ?? residentialGroup?.score;
   const financingScore   = financingFactor?.score ?? financingGroup?.score;
   const financingStress  = financingScore != null && financingScore >= 60;
   const mortgageRate     = overview.metrics?.mortgage_rate_30y;
   const mortgageDelta    = overview.metrics?.mortgage_rate_delta_26w;
   const creditSpread     = overview.metrics?.credit_spread_bps;
   const creditSpreadDelta = overview.metrics?.credit_spread_delta_60d_bps;
+  const topFactor = factorsByPressure[0];
+  const headlineStability = stabilityScore(overview.composite_score);
+  const conciseRead = conciseSummary({
+    stability: headlineStability,
+    topFactor,
+    topGroup: highestPressureGroup,
+    mortgageRate,
+    mortgageDelta,
+  });
 
   const hasCompositePanel     = Boolean(history?.composite_history?.length);
   const hasFactorPanel        = Boolean(overview.groups.length);
@@ -1175,7 +1240,7 @@ export default function RealEstateDiagnostic() {
         <div>
           <p className="page-kicker">Tools</p>
           <h1 className="page-title">Real Estate Markets</h1>
-          <p className="page-subtitle">Financing pressure, listed proxy performance, supply context, and affordability transmission</p>
+          <p className="page-subtitle">Stability, financing transmission, listed proxies, and supply context</p>
         </div>
         <div className="control-strip mt-2">
           {TIMEFRAME_OPTIONS.map(({ key, label }) => (
@@ -1199,53 +1264,45 @@ export default function RealEstateDiagnostic() {
         <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.95fr]">
           <div className="space-y-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Real Estate Pressure</p>
-              <p className={`mt-2 text-4xl font-semibold ${pressureTone(overview.composite_score)}`}>
-                {overview.composite_score.toFixed(0)}
+              <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Real Estate Stability</p>
+              <p className={`mt-2 text-4xl font-semibold ${stabilityTone(headlineStability)}`}>
+                {headlineStability.toFixed(0)}
               </p>
               <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
                 <div
-                  className={`h-2 rounded-full ${pressureFill(overview.composite_score)}`}
-                  style={{ width: `${overview.composite_score}%` }}
+                  className={`h-2 rounded-full ${stabilityFill(headlineStability)}`}
+                  style={{ width: `${headlineStability}%` }}
                 />
               </div>
               <p className="mt-2 text-xs text-stealth-400">
                 As of {new Date(overview.as_of).toLocaleString()}
               </p>
             </div>
-            <p className="max-w-4xl text-sm leading-6 text-stealth-300">{overview.summary}</p>
+            <p className="max-w-4xl text-sm leading-6 text-stealth-300">{conciseRead}</p>
             <div className="grid gap-2 md:grid-cols-3">
               <SignalTile
-                label="Affordability Read"
-                title={pressureLabel(demandScore, "demand pressure")}
-                tone={demandScore != null ? pressureTone(demandScore) : "text-stealth-100"}
+                label="Primary Read"
+                title={primaryReadTitle(topFactor, overview.composite_score)}
+                tone={topFactor ? pressureTone(topFactor.score) : "text-stealth-100"}
                 detail={
-                  `${factorEvidence(demandFactor, residentialGroup ? `Residential proxy pressure is ${residentialGroup.score.toFixed(0)}.` : "Demand signal unavailable.")} ${relativeFactorText(demandFactor, listedFactor)}`
+                  `${factorEvidence(topFactor, highestPressureGroup ? `${highestPressureGroup.label} is the most pressured segment at ${highestPressureGroup.score.toFixed(0)}.` : "Primary read unavailable.")} ${topFactor && factorsByPressure[factorsByPressure.length - 1] ? `${topFactor.label} is ${Math.abs(topFactor.score - factorsByPressure[factorsByPressure.length - 1].score).toFixed(0)} pts above ${factorsByPressure[factorsByPressure.length - 1].label.toLowerCase()}.` : ""}`
                 }
               />
               <SignalTile
-                label="Financing Read"
-                title={pressureLabel(financingScore, "financing pressure")}
-                tone={financingStress ? "text-rose-300" : "text-emerald-300"}
+                label="Pressure Point"
+                title={pressurePointTitle(mortgageDelta, creditSpreadDelta)}
+                tone={financingStress || (creditSpreadDelta != null && creditSpreadDelta > 0) ? "text-rose-300" : "text-emerald-300"}
                 detail={
-                  `${factorEvidence(financingFactor, financingGroup ? `Financing proxy pressure is ${financingGroup.score.toFixed(0)}.` : "Financing read unavailable.")} ${relativeFactorText(financingFactor, listedFactor)}`
+                  `${mortgageRate != null ? `30Y mortgage rate is ${mortgageRate.toFixed(2)}%` : "Mortgage rate unavailable"}${mortgageDelta != null ? `, ${fmt(mortgageDelta, 2)} pp vs about six months ago.` : "."} ${creditSpread != null ? `HY OAS is ${creditSpread.toFixed(0)} bps` : "Credit spread unavailable"}${creditSpreadDelta != null ? `, ${fmt(creditSpreadDelta, 0)} bps over 60 observations.` : "."}`
                 }
               />
               <SignalTile
-                label="Segment Leadership"
-                title={
-                  factorsByPressure[0]
-                    ? `${factorsByPressure[0].label} leads`
-                    : highestPressureGroup
-                    ? `${highestPressureGroup.label} leads`
-                    : "Leadership unclear"
-                }
-                tone={factorsByPressure[0] ? pressureTone(factorsByPressure[0].score) : highestPressureGroup ? pressureTone(highestPressureGroup.score) : "text-stealth-100"}
+                label="Leadership"
+                title={leadershipTitle(highestPressureGroup, lowestPressureGroup)}
+                tone={highestPressureGroup ? pressureTone(highestPressureGroup.score) : "text-stealth-100"}
                 detail={
-                  factorsByPressure[0] && factorsByPressure[factorsByPressure.length - 1]
-                    ? `${factorsByPressure[0].label} is ${factorsByPressure[0].score.toFixed(0)} versus ${factorsByPressure[factorsByPressure.length - 1].label} at ${factorsByPressure[factorsByPressure.length - 1].score.toFixed(0)}.`
-                    : highestPressureGroup && lowestPressureGroup
-                    ? `${highestPressureGroup.label} is ${highestPressureGroup.score.toFixed(0)} versus ${lowestPressureGroup.label} at ${lowestPressureGroup.score.toFixed(0)}.`
+                  highestPressureGroup && lowestPressureGroup
+                    ? `${highestPressureGroup.label} is at ${highestPressureGroup.score.toFixed(0)} versus ${lowestPressureGroup.label} at ${lowestPressureGroup.score.toFixed(0)}.`
                     : "Segment read unavailable."
                 }
               />
