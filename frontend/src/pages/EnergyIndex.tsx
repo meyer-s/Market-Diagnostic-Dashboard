@@ -342,7 +342,48 @@ const tip = {
 // Futures price table
 // ---------------------------------------------------------------------------
 
-function FuturesTable({ symbols, surfaceClassName = "surface-card" }: { symbols: SymbolRow[]; surfaceClassName?: string }) {
+function GroupSummaryStrip({ groups }: { groups: GroupRow[] }) {
+  return (
+    <div className="mt-3 border-t border-stealth-800/60 pt-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <LabelCaps className="mb-0">Group Leadership</LabelCaps>
+        <BodyHint>Grouped composite read, compressed into one strip.</BodyHint>
+      </div>
+      <div className="grid gap-2 lg:grid-cols-3">
+        {groups.map((group) => (
+          <div key={group.group} className="surface-card-muted px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <LabelCaps className="mb-0">{group.label}</LabelCaps>
+              <BodyHint>{group.effective_weight.toFixed(0)}% wt</BodyHint>
+            </div>
+            <div className="mt-1 flex items-end justify-between gap-3">
+              <div>
+                <p className={`text-xl font-semibold ${biasTone(group.group_composite)}`}>{group.group_composite.toFixed(0)}</p>
+                <BodyHint>{group.components.map((component) => component.code).join(" · ")}</BodyHint>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-right text-xs">
+                <span className="text-stealth-500">20d</span>
+                <span className={changeTone(group.changes["20d"])}>{fmt(group.changes["20d"])}%</span>
+                <span className="text-stealth-500">120d</span>
+                <span className={changeTone(group.changes["120d"])}>{fmt(group.changes["120d"])}%</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FuturesTable({
+  symbols,
+  groups,
+  surfaceClassName = "surface-card",
+}: {
+  symbols: SymbolRow[];
+  groups?: GroupRow[];
+  surfaceClassName?: string;
+}) {
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <Kicker>Energy Futures</Kicker>
@@ -381,42 +422,7 @@ function FuturesTable({ symbols, surfaceClassName = "surface-card" }: { symbols:
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Group breakdown cards
-// ---------------------------------------------------------------------------
-
-function GroupCards({ groups }: { groups: GroupRow[] }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-      {groups.map((g) => (
-        <div key={g.group} className="surface-card p-3 sm:p-4">
-          <div className="mb-1 flex items-center justify-between">
-            <LabelCaps className="mb-0">{g.label}</LabelCaps>
-            <BodyHint className="text-right">{g.effective_weight.toFixed(0)}% wt</BodyHint>
-          </div>
-          <div className={`text-2xl font-semibold ${biasTone(g.group_composite)}`}>{g.group_composite.toFixed(0)}</div>
-          <div className="mt-2 grid grid-cols-4 gap-1 text-xs">
-            {(["5d", "20d", "60d", "120d"] as const).map((k) => (
-              <div key={k} className="text-center">
-                <BodyHint className="uppercase tracking-[0.14em]">{k}</BodyHint>
-                <div className={`font-mono ${changeTone(g.changes[k])}`}>{fmt(g.changes[k])}%</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 space-y-1 border-t border-stealth-800/60 pt-2">
-            {g.components.slice(0, 3).map((c) => (
-              <div key={c.code} className="flex items-center justify-between text-xs">
-                <span className="text-stealth-400">{c.code}</span>
-                <span className={`font-mono ${changeTone(c.changes["20d"])}`}>{fmt(c.changes["20d"])}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+      {groups?.length ? <GroupSummaryStrip groups={groups} /> : null}
     </div>
   );
 }
@@ -466,6 +472,14 @@ type SpreadPoint = {
   macd: number;
   macd_signal: number;
   histogram: number;
+};
+
+type PassThroughPoint = {
+  date: string;
+  crude: number;
+  pump: number;
+  crude_v: number;
+  pump_v: number;
 };
 
 function SpreadMomentumTooltip({
@@ -572,6 +586,38 @@ function RetailPricesChart({
     return rows.filter((_, i) => i % Math.max(1, Math.floor(rows.length / 150)) === 0);
   }, [spotData, gasData, dieselData]);
 
+  const indexedPassThrough = useMemo((): PassThroughPoint[] => {
+    if (!spotData.length || !gasData.length) return [];
+
+    const spotMap: Record<string, number> = {};
+    spotData.forEach((p) => { spotMap[p.date] = p.value; });
+
+    const rows = gasData.map((g) => {
+      let price = spotMap[g.date];
+      if (!price) {
+        for (let d = 1; d <= 4; d++) {
+          const a = new Date(g.date); a.setDate(a.getDate() + d);
+          const b = new Date(g.date); b.setDate(b.getDate() - d);
+          price = spotMap[a.toISOString().slice(0, 10)] ?? spotMap[b.toISOString().slice(0, 10)];
+          if (price) break;
+        }
+      }
+      return price ? { date: g.date, spot: price, retail: g.value } : null;
+    }).filter(Boolean) as Array<{ date: string; spot: number; retail: number }>;
+
+    if (rows.length < 5) return [];
+    const base = rows[0];
+    return rows
+      .filter((_, i) => i % Math.max(1, Math.floor(rows.length / 120)) === 0)
+      .map((row) => ({
+        date: row.date,
+        crude: (row.spot / base.spot) * 100,
+        pump: (row.retail / base.retail) * 100,
+        crude_v: row.spot,
+        pump_v: row.retail,
+      }));
+  }, [spotData, gasData]);
+
   if (!merged.length) return null;
 
   const latest = merged[merged.length - 1];
@@ -625,6 +671,40 @@ function RetailPricesChart({
         <LegendPill color="#fbbf24">Raw spread</LegendPill>
         <MetaPill>Red bars = pump margin accelerating. Green bars = spread momentum easing.</MetaPill>
       </div>
+
+      {indexedPassThrough.length > 0 && (
+        <div className="mt-4 border-t border-stealth-800/60 pt-3">
+          <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <LabelCaps className="mb-0">Pass-Through Lag</LabelCaps>
+              <BodyHint>Indexed to 100 so crude can be compared against retail catch-up without needing a separate card.</BodyHint>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <LegendPill color="#f97316">WTI Crude</LegendPill>
+              <LegendPill color="#fbbf24">Retail Gasoline</LegendPill>
+            </div>
+          </div>
+          <div className="h-28">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={indexedPassThrough} margin={CHART_MARGIN}>
+                <CartesianGrid {...commonGridProps} />
+                <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+                <YAxis {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => `${v.toFixed(0)}`} />
+                <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
+                <Tooltip
+                  {...tip}
+                  formatter={(v: number, name: string, props: { payload: { crude_v: number; pump_v: number } }) => {
+                    if (name === "crude") return [`$${props.payload.crude_v.toFixed(2)}/bbl`, "WTI Crude"];
+                    return [`$${props.payload.pump_v.toFixed(3)}/gal`, "Retail Gas"];
+                  }}
+                />
+                <Line type="monotone" dataKey="crude" stroke="#f97316" dot={false} strokeWidth={1.9} name="crude" />
+                <Line type="monotone" dataKey="pump" stroke="#fbbf24" dot={false} strokeWidth={1.8} strokeDasharray="4 2" name="pump" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -701,78 +781,6 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
         <LegendPill color="#f97316">WTI Spot</LegendPill>
         <LegendPill color="#475569">Inventory (inverted)</LegendPill>
         <MetaPill>Divergence = supply/price stress building.</MetaPill>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Crude-to-pump pass-through (both indexed to 100)
-// ---------------------------------------------------------------------------
-
-function PriceCascadeChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
-  const spotData = prices?.crude_wti_spot ?? [];
-  const gasData  = prices?.retail_gasoline ?? [];
-
-  const indexed = useMemo(() => {
-    if (!spotData.length || !gasData.length) return [];
-    const spotMap: Record<string, number> = {};
-    spotData.forEach((p) => { spotMap[p.date] = p.value; });
-
-    const merged = gasData.map((g) => {
-      let price = spotMap[g.date];
-      if (!price) {
-        for (let d = 1; d <= 4; d++) {
-          const a = new Date(g.date); a.setDate(a.getDate() + d);
-          const b = new Date(g.date); b.setDate(b.getDate() - d);
-          price = spotMap[a.toISOString().slice(0, 10)] ?? spotMap[b.toISOString().slice(0, 10)];
-          if (price) break;
-        }
-      }
-      return price ? { date: g.date, spot: price, retail: g.value } : null;
-    }).filter(Boolean) as Array<{ date: string; spot: number; retail: number }>;
-
-    if (merged.length < 5) return [];
-    const base = merged[0];
-    return merged
-      .filter((_, i) => i % Math.max(1, Math.floor(merged.length / 120)) === 0)
-      .map((d) => ({
-        date: d.date,
-        crude: (d.spot    / base.spot)   * 100,
-        pump:  (d.retail  / base.retail) * 100,
-        crude_v: d.spot,
-        pump_v:  d.retail,
-      }));
-  }, [spotData, gasData]);
-
-  if (!indexed.length) return null;
-
-  return (
-    <div className="surface-card self-start p-3 sm:p-4">
-      <CardHeader kicker="Crude → Pump Pass-Through (indexed to 100)" title="Pass-through lag" description="Indexed to the start of the window so you can see crude move first and retail catch up later." />
-      <div className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={indexed} margin={CHART_MARGIN}>
-            <CartesianGrid {...commonGridProps} />
-            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
-            <YAxis {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => `${v.toFixed(0)}`} />
-            <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
-            <Tooltip
-              {...tip}
-              formatter={(v: number, name: string, props: { payload: { crude_v: number; pump_v: number } }) => {
-                if (name === "crude") return [`$${props.payload.crude_v.toFixed(2)}/bbl`, "WTI Crude"];
-                return [`$${props.payload.pump_v.toFixed(3)}/gal`, "Retail Gas"];
-              }}
-            />
-            <Line type="monotone" dataKey="crude" stroke="#f97316" dot={false} strokeWidth={2} name="crude" />
-            <Line type="monotone" dataKey="pump"  stroke="#fbbf24" dot={false} strokeWidth={2} strokeDasharray="4 2" name="pump" />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2 text-xs text-stealth-400">
-        <LegendPill color="#f97316">WTI Crude</LegendPill>
-        <LegendPill color="#fbbf24">Retail Gasoline</LegendPill>
-        <MetaPill>Wider gap = refining/tax wedge.</MetaPill>
       </div>
     </div>
   );
@@ -1126,9 +1134,7 @@ export default function EnergyIndex() {
   const hasCompositePanel = Boolean(history?.composite_history?.length);
   const hasRadarPanel = Boolean(overview.symbols.length);
   const primarySidePanelCount = Number(hasCompositePanel) + Number(hasRadarPanel);
-  const hasPassThroughPanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.retail_gasoline?.length);
   const hasSupplyPricePanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.crude_inventory?.length);
-  const transmissionPanelCount = Number(hasPassThroughPanel) + Number(hasSupplyPricePanel);
 
   if (!overview) {
     return (
@@ -1257,34 +1263,30 @@ export default function EnergyIndex() {
         <div className="flex flex-wrap items-end justify-between gap-2.5">
           <div>
             <p className="page-kicker">Market Structure</p>
-            <h2 className="text-lg font-semibold text-stealth-100">Contracts and group leadership</h2>
+            <h2 className="text-lg font-semibold text-stealth-100">Contract structure and leadership</h2>
           </div>
           <div className="page-meta mt-0 gap-1.5">
             <MetaPill>Use this band to see which contracts are driving the composite.</MetaPill>
           </div>
         </div>
 
-        <div className="grid items-start gap-3 md:gap-4 xl:grid-cols-[1.35fr_0.95fr]">
-          <FuturesTable symbols={overview.symbols} surfaceClassName="surface-card-strong" />
-          <GroupCards groups={overview.groups} />
-        </div>
+        <FuturesTable symbols={overview.symbols} groups={overview.groups} surfaceClassName="surface-card-strong" />
       </div>
 
-      {transmissionPanelCount > 0 && prices && (
+      {hasSupplyPricePanel && prices && (
         <div className="space-y-2.5">
           <div className="flex flex-wrap items-end justify-between gap-2.5">
             <div>
               <p className="page-kicker">Transmission</p>
-              <h2 className="text-lg font-semibold text-stealth-100">How crude pressure moves through the system</h2>
+              <h2 className="text-lg font-semibold text-stealth-100">Supply confirmation</h2>
             </div>
             <div className="page-meta mt-0 gap-1.5">
-              <MetaPill>Pass-through and inventory help explain whether pump pressure is supply-led or margin-led.</MetaPill>
+              <MetaPill>Inventory context stays separate only when it adds a non-duplicate supply read.</MetaPill>
             </div>
           </div>
 
-          <div className={`grid items-start gap-3 md:gap-4 ${transmissionPanelCount > 1 ? "lg:grid-cols-2" : "grid-cols-1"}`}>
-            {hasPassThroughPanel ? <PriceCascadeChart prices={prices.fred_prices} /> : null}
-            {hasSupplyPricePanel ? <SupplyPriceChart prices={prices.fred_prices} /> : null}
+          <div className="grid items-start gap-3 md:gap-4 grid-cols-1">
+            <SupplyPriceChart prices={prices.fred_prices} />
           </div>
         </div>
       )}
