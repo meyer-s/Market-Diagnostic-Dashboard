@@ -235,6 +235,32 @@ const Kicker = ({ children }: { children: React.ReactNode }) => (
   <p className="page-kicker mb-3">{children}</p>
 );
 
+function LabelCaps({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <p className={`text-xs uppercase tracking-[0.14em] text-stealth-500 ${className}`.trim()}>{children}</p>;
+}
+
+function BodyHint({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <p className={`text-xs leading-5 text-stealth-400 ${className}`.trim()}>{children}</p>;
+}
+
+function CardHeader({
+  kicker,
+  title,
+  description,
+}: {
+  kicker: React.ReactNode;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <Kicker>{kicker}</Kicker>
+      <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+      {description ? <BodyHint>{description}</BodyHint> : null}
+    </div>
+  );
+}
+
 function StatTile({
   label,
   value,
@@ -247,16 +273,24 @@ function StatTile({
   tone?: string;
 }) {
   return (
-    <div className="surface-card-muted px-3 py-2.5">
-      <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">{label}</p>
-      <p className={`mt-1 text-lg font-semibold ${tone}`}>{value}</p>
-      {detail ? <p className="mt-1 text-xs text-stealth-400">{detail}</p> : null}
+    <div className="surface-card-muted px-2.5 py-2">
+      <LabelCaps>{label}</LabelCaps>
+      <p className={`mt-0.5 text-base font-semibold ${tone}`}>{value}</p>
+      {detail ? <BodyHint>{detail}</BodyHint> : null}
     </div>
   );
 }
 
 function LegendDot({ color }: { color: string }) {
-  return <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />;
+  return <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: color }} />;
+}
+
+function LegendPill({ color, children }: { color: string; children: React.ReactNode }) {
+  return <span className="page-badge gap-2 px-2 py-1 text-xs text-stealth-300"><LegendDot color={color} />{children}</span>;
+}
+
+function MetaPill({ children, tone = "text-stealth-400" }: { children: React.ReactNode; tone?: string }) {
+  return <span className={`page-badge px-2 py-1 text-xs ${tone}`}>{children}</span>;
 }
 
 const tip = {
@@ -275,38 +309,38 @@ const tip = {
 
 function FuturesTable({ symbols }: { symbols: SymbolRow[] }) {
   return (
-    <div className="surface-card p-4">
+    <div className="surface-card self-start p-3 sm:p-4">
       <Kicker>Energy Futures</Kicker>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
+        <table className="w-full min-w-[560px] text-xs sm:text-sm">
           <thead>
             <tr className="border-b border-stealth-700/50">
-              <th className="pb-2 text-left text-[11px] font-medium text-stealth-400">Contract</th>
-              <th className="pb-2 text-right text-[11px] font-medium text-stealth-400">Price</th>
-              <th className="pb-2 text-right text-[11px] font-medium text-stealth-400">5d</th>
-              <th className="pb-2 text-right text-[11px] font-medium text-stealth-400">20d</th>
-              <th className="pb-2 text-right text-[11px] font-medium text-stealth-400">60d</th>
-              <th className="pb-2 text-right text-[11px] font-medium text-stealth-400">120d</th>
-              <th className="pb-2 text-right text-[11px] font-medium text-stealth-400">Score</th>
+              <th className="pb-2 text-left text-xs font-medium text-stealth-400">Contract</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">Price</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">5d</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">20d</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">60d</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">120d</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">Score</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-stealth-800/40">
             {symbols.map((sym) => (
               <tr key={sym.code} className="hover:bg-white/[0.02] transition-colors">
-                <td className="py-2.5">
+                <td className="py-2">
                   <span className="font-semibold text-stealth-100">{sym.code}</span>
-                  <span className="ml-2 text-[11px] text-stealth-500">{sym.name}</span>
+                  <span className="ml-2 text-xs text-stealth-500">{sym.name}</span>
                 </td>
-                <td className="py-2.5 text-right font-mono text-stealth-200">
+                <td className="py-2 text-right font-mono text-stealth-200">
                   {sym.current_price != null ? sym.current_price.toFixed(3) : "—"}
-                  <span className="ml-1 text-[10px] text-stealth-600">{sym.unit}</span>
+                  <span className="ml-1 text-xs text-stealth-600">{sym.unit}</span>
                 </td>
                 {(["5d", "20d", "60d", "120d"] as const).map((k) => (
-                  <td key={k} className={`py-2.5 text-right font-mono text-xs ${changeTone(sym.changes[k])}`}>
+                  <td key={k} className={`py-2 text-right font-mono text-xs ${changeTone(sym.changes[k])}`}>
                     {fmt(sym.changes[k])}%
                   </td>
                 ))}
-                <td className="py-2.5 text-right">{scoreBar(sym.momentum_score)}</td>
+                <td className="py-2 text-right">{scoreBar(sym.momentum_score)}</td>
               </tr>
             ))}
           </tbody>
@@ -324,23 +358,23 @@ function GroupCards({ groups }: { groups: GroupRow[] }) {
   return (
     <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
       {groups.map((g) => (
-        <div key={g.group} className="surface-card p-4">
+        <div key={g.group} className="surface-card p-3 sm:p-4">
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stealth-400">{g.label}</span>
-            <span className="text-[10px] text-stealth-600">{g.effective_weight.toFixed(0)}% wt</span>
+            <LabelCaps className="mb-0">{g.label}</LabelCaps>
+            <BodyHint className="text-right">{g.effective_weight.toFixed(0)}% wt</BodyHint>
           </div>
-          <div className={`text-3xl font-semibold ${biasTone(g.group_composite)}`}>{g.group_composite.toFixed(0)}</div>
-          <div className="mt-2 grid grid-cols-4 gap-1 text-[10px]">
+          <div className={`text-2xl font-semibold ${biasTone(g.group_composite)}`}>{g.group_composite.toFixed(0)}</div>
+          <div className="mt-2 grid grid-cols-4 gap-1 text-xs">
             {(["5d", "20d", "60d", "120d"] as const).map((k) => (
               <div key={k} className="text-center">
-                <div className="text-stealth-600 uppercase">{k}</div>
+                <BodyHint className="uppercase tracking-[0.14em]">{k}</BodyHint>
                 <div className={`font-mono ${changeTone(g.changes[k])}`}>{fmt(g.changes[k])}%</div>
               </div>
             ))}
           </div>
           <div className="mt-3 space-y-1 border-t border-stealth-800/60 pt-2">
-            {g.components.map((c) => (
-              <div key={c.code} className="flex items-center justify-between text-[11px]">
+            {g.components.slice(0, 3).map((c) => (
+              <div key={c.code} className="flex items-center justify-between text-xs">
                 <span className="text-stealth-400">{c.code}</span>
                 <span className={`font-mono ${changeTone(c.changes["20d"])}`}>{fmt(c.changes["20d"])}%</span>
               </div>
@@ -360,8 +394,8 @@ function CompositeHistoryChart({ history }: { history: HistoryPoint[] }) {
   if (!history.length) return null;
   const decimated = history.filter((_, i) => i % Math.max(1, Math.floor(history.length / 200)) === 0);
   return (
-    <div className="surface-card p-4">
-      <Kicker>Energy Composite Score</Kicker>
+    <div className="surface-card self-start p-3 sm:p-4">
+      <CardHeader kicker="Energy Composite Score" title="Composite history" description="Trend regime over the selected lookback window." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={decimated} margin={CHART_MARGIN}>
@@ -374,10 +408,10 @@ function CompositeHistoryChart({ history }: { history: HistoryPoint[] }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-1.5 flex gap-4 text-[10px] text-stealth-600">
-        <span>50 = neutral</span>
-        <span className="text-emerald-500/70">&gt;60 elevated</span>
-        <span className="text-rose-500/70">&lt;40 soft</span>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs text-stealth-500">
+        <MetaPill>50 = neutral</MetaPill>
+        <MetaPill tone="text-emerald-300">&gt;60 elevated</MetaPill>
+        <MetaPill tone="text-rose-300">&lt;40 soft</MetaPill>
       </div>
     </div>
   );
@@ -487,13 +521,9 @@ function RetailPricesChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
   const overallMean   = merged.reduce((s, r) => s + r.spread, 0) / merged.length;
 
   return (
-    <div className="surface-card p-4">
+    <div className="surface-card self-start p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Kicker>Futures → Pump: Refining Spread</Kicker>
-          <h2 className="text-base font-semibold text-stealth-100">Pump pricing vs futures cost</h2>
-          <p className="mt-1 text-xs text-stealth-400">Bars show how far retail pricing sits above or below its 6-month margin baseline.</p>
-        </div>
+        <CardHeader kicker="Futures → Pump: Refining Spread" title="Pump pricing vs futures cost" description="Bars show how far retail pricing sits above or below its 6-month margin baseline." />
         <div className="grid min-w-[260px] grid-cols-3 gap-2 text-xs">
           <StatTile label="WTI / gal" value={<span className="font-mono">${latest.wti_gal.toFixed(3)}</span>} tone="text-orange-300" />
           <StatTile label="Regular Gas" value={<span className="font-mono">${latest.retail.toFixed(3)}</span>} tone="text-amber-300" />
@@ -532,11 +562,11 @@ function RetailPricesChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-400">
-        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#f97316" />WTI / gal</span>
-        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#fbbf24" />Regular Gas</span>
-        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#38bdf8" />Diesel</span>
-        <span className="text-stealth-500">Red bars = retail rich to crude. Green bars = crude leading retail.</span>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs text-stealth-400">
+        <LegendPill color="#f97316">WTI / gal</LegendPill>
+        <LegendPill color="#fbbf24">Regular Gas</LegendPill>
+        <LegendPill color="#38bdf8">Diesel</LegendPill>
+        <MetaPill>Red bars = retail rich to crude. Green bars = crude leading retail.</MetaPill>
       </div>
     </div>
   );
@@ -589,12 +619,8 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
   if (!normalized.length) return null;
 
   return (
-    <div className="surface-card p-4">
-      <div className="mb-3">
-        <Kicker>Supply ↔ Price Relationship</Kicker>
-        <h2 className="text-base font-semibold text-stealth-100">Inventories vs WTI</h2>
-        <p className="mt-1 text-xs text-stealth-400">Normalized 0–100 with inventories inverted so tightening supply climbs with price stress.</p>
-      </div>
+    <div className="surface-card self-start p-3 sm:p-4">
+      <CardHeader kicker="Supply ↔ Price Relationship" title="Inventories vs WTI" description="Normalized 0–100 with inventories inverted so tightening supply climbs with price stress." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={normalized} margin={CHART_MARGIN}>
@@ -614,10 +640,10 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-400">
-        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#f97316" />WTI Spot</span>
-        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#475569" />Inventory (inverted)</span>
-        <span className="text-stealth-500">Divergence = supply/price stress building.</span>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs text-stealth-400">
+        <LegendPill color="#f97316">WTI Spot</LegendPill>
+        <LegendPill color="#475569">Inventory (inverted)</LegendPill>
+        <MetaPill>Divergence = supply/price stress building.</MetaPill>
       </div>
     </div>
   );
@@ -665,12 +691,8 @@ function PriceCascadeChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
   if (!indexed.length) return null;
 
   return (
-    <div className="surface-card p-4">
-      <div className="mb-3">
-        <Kicker>Crude → Pump Pass-Through (indexed to 100)</Kicker>
-        <h2 className="text-base font-semibold text-stealth-100">Pass-through lag</h2>
-        <p className="mt-1 text-xs text-stealth-400">Indexed to the start of the window so you can see crude move first and retail catch up later.</p>
-      </div>
+    <div className="surface-card self-start p-3 sm:p-4">
+      <CardHeader kicker="Crude → Pump Pass-Through (indexed to 100)" title="Pass-through lag" description="Indexed to the start of the window so you can see crude move first and retail catch up later." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={indexed} margin={CHART_MARGIN}>
@@ -690,10 +712,10 @@ function PriceCascadeChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-400">
-        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#f97316" />WTI Crude</span>
-        <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#fbbf24" />Retail Gasoline</span>
-        <span className="text-stealth-500">Wider gap = refining/tax wedge.</span>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs text-stealth-400">
+        <LegendPill color="#f97316">WTI Crude</LegendPill>
+        <LegendPill color="#fbbf24">Retail Gasoline</LegendPill>
+        <MetaPill>Wider gap = refining/tax wedge.</MetaPill>
       </div>
     </div>
   );
@@ -788,12 +810,8 @@ function FactorRadar({
   }, [radar.layers]);
 
   return (
-    <div className="surface-card p-4">
-      <div className="mb-1">
-        <Kicker>Contract Momentum Radar</Kicker>
-        <h2 className="text-base font-semibold text-stealth-100">Cross-contract momentum</h2>
-        <p className="mt-1 text-xs text-stealth-400">Older shells are thinner and lighter; the full palette shifts warmer on expansion and cooler on contraction.</p>
-      </div>
+    <div className="surface-card self-start p-3 sm:p-4">
+      <CardHeader kicker="Contract Momentum Radar" title="Cross-contract momentum" description="Older shells are thinner and lighter; the full palette shifts warmer on expansion and cooler on contraction." />
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={radar.rows} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
@@ -841,17 +859,17 @@ function FactorRadar({
           </RadarChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-stealth-500">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-stealth-500">
         <div className="flex flex-wrap gap-2">
           {radar.layers.length > 0 && (
             <>
-              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color={radar.layers[0].color} />{radar.layers[0].label}</span>
-              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color={radar.layers[Math.floor(radar.layers.length / 2)]?.color ?? radar.layers[0].color} />Mid curve</span>
-              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color={radar.currentStrokeEnd} />Current</span>
+              <LegendPill color={radar.layers[0].color}>{radar.layers[0].label}</LegendPill>
+              <LegendPill color={radar.layers[Math.floor(radar.layers.length / 2)]?.color ?? radar.layers[0].color}>Mid curve</LegendPill>
+              <LegendPill color={radar.currentStrokeEnd}>Current</LegendPill>
             </>
           )}
         </div>
-        <span className={radar.trendMode === "growth" ? "text-amber-300" : "text-rose-300"}>
+        <span className={radar.trendMode === "growth" ? "text-amber-300" : "text-sky-300"}>
           {radar.trendMode === "growth" ? "Expansion" : "Contraction"} {radar.trendDelta >= 0 ? "+" : ""}{radar.trendDelta.toFixed(1)} pts vs 12m ago
         </span>
         {wti && <span>Vol: <span className={changeTone(wti.volatility != null ? (wti.volatility > 35 ? 1 : -1) : 0)}>{wti.volatility?.toFixed(1) ?? "—"}%</span></span>}
@@ -878,19 +896,12 @@ function AltEnergyChart({
   const codes = altSymbols.map((s) => s.code).filter((c) => decimated.some((d) => c in d));
 
   return (
-    <div className="surface-card p-4">
+    <div className="surface-card self-start p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Kicker>Traditional vs Alternative Energy — Indexed to 100</Kicker>
-          <h2 className="text-base font-semibold text-stealth-100">Capital rotation context</h2>
-          <p className="mt-1 text-xs text-stealth-400">Tracks whether capital is favoring traditional energy cash flows or transition-linked equities.</p>
-        </div>
+        <CardHeader kicker="Traditional vs Alternative Energy — Indexed to 100" title="Capital rotation context" description="Tracks whether capital is favoring traditional energy cash flows or transition-linked equities." />
         <div className="flex flex-wrap gap-3">
           {altSymbols.map((s) => (
-            <div key={s.code} className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1 text-xs text-stealth-300">
-              <LegendDot color={ALT_COLORS[s.code] ?? "#94a3b8"} />
-              <span>{s.code}</span>
-            </div>
+            <LegendPill key={s.code} color={ALT_COLORS[s.code] ?? "#94a3b8"}>{s.code}</LegendPill>
           ))}
         </div>
       </div>
@@ -947,17 +958,10 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
   }, [mix.series]);
 
   return (
-    <div className="surface-card p-4">
+    <div className="surface-card self-start p-3 sm:p-4">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Kicker>US Electricity Generation Mix (Annual)</Kicker>
-          <h2 className="text-base font-semibold text-stealth-100">Latest full year: {latest_year}</h2>
-          <p className="mt-1 text-xs text-stealth-400">Authoritative EIA annual generation mix, grouped into fossil, renewable, and nuclear blocks.</p>
-        </div>
-        <div className="surface-card-muted px-3 py-2 text-xs text-stealth-400">
-          <p className="uppercase tracking-[0.14em] text-stealth-500">Source</p>
-          <p className="mt-1 text-sm font-medium text-stealth-200">{source}</p>
-        </div>
+        <CardHeader kicker="US Electricity Generation Mix (Annual)" title={`Latest full year: ${latest_year}`} description="Authoritative EIA annual generation mix, grouped into fossil, renewable, and nuclear blocks." />
+        <MetaPill tone="text-stealth-300">{source}</MetaPill>
       </div>
       {fallback_used && (
         <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-300">
@@ -1142,20 +1146,20 @@ export default function EnergyIndex() {
         <p className="mt-4 max-w-4xl text-sm leading-6 text-stealth-300">{overview.summary}</p>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
+      <div className="grid items-start gap-3 xl:grid-cols-[0.95fr_1.35fr] xl:gap-4">
         <GroupCards groups={overview.groups} />
         <FuturesTable symbols={overview.symbols} />
       </div>
 
       {/* ── Composite history + Radar ──────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <div className="grid items-start gap-3 lg:grid-cols-[2fr_1fr] lg:gap-4">
         {history && <CompositeHistoryChart history={history.composite_history} />}
         <FactorRadar symbols={overview.symbols} history={history?.radar_history} />
       </div>
 
       {/* ── Supply/Price relationship + pass-through ──────────────── */}
       {prices && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-3 lg:grid-cols-2 lg:gap-4">
           <SupplyPriceChart prices={prices.fred_prices} />
           <PriceCascadeChart prices={prices.fred_prices} />
         </div>
@@ -1163,7 +1167,7 @@ export default function EnergyIndex() {
 
       {prices && <RetailPricesChart prices={prices.fred_prices} />}
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+      <div className="grid items-start gap-3 xl:grid-cols-[1.1fr_1fr] xl:gap-4">
         {history && (
           <AltEnergyChart
             data={history.alt_comparison}
@@ -1179,11 +1183,13 @@ export default function EnergyIndex() {
         </div>
       )}
 
-      <p className="text-[10px] text-stealth-600">
-        Futures via Yahoo Finance · Retail prices &amp; inventory via FRED/EIA ·
-        Generation mix via {mix?.source ?? "EIA annual data"}{mix?.latest_year ? ` (${mix.latest_year})` : ""} · ETFs via Yahoo Finance ·
-        As of {overview.as_of.slice(0, 16).replace("T", " ")} UTC
-      </p>
+      <div className="page-meta">
+        <MetaPill>Futures via Yahoo Finance</MetaPill>
+        <MetaPill>Retail prices &amp; inventory via FRED/EIA</MetaPill>
+        <MetaPill>Generation mix via {mix?.source ?? "EIA annual data"}{mix?.latest_year ? ` (${mix.latest_year})` : ""}</MetaPill>
+        <MetaPill>ETFs via Yahoo Finance</MetaPill>
+        <MetaPill>As of {overview.as_of.slice(0, 16).replace("T", " ")} UTC</MetaPill>
+      </div>
 
     </div>
   );
