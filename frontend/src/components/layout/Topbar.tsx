@@ -18,6 +18,7 @@ export default function Topbar() {
     { path: "/sector-projections", label: "Sector Projections" },
     { path: "/agriculture", label: "Agriculture Index" },
     { path: "/energy", label: "Energy Markets" },
+    { path: "/real-estate", label: "Real Estate" },
     { path: "/institutional-flow", label: "Institutional Flow" },
     { path: "/stock-analysis", label: "Stock Analysis" },
     { path: "/alternative-assets", label: "Alternative Assets" },

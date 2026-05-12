@@ -755,9 +755,9 @@ function RetailPricesChart({
                 <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
                 <Tooltip
                   {...tip}
-                  formatter={(v: number, name: string, props: { payload: { crude_v: number; pump_v: number } }) => {
-                    if (name === "crude") return [`$${props.payload.crude_v.toFixed(2)}/bbl`, "WTI Crude"];
-                    return [`$${props.payload.pump_v.toFixed(3)}/gal`, "Retail Gas"];
+                  formatter={(value: number, name: string, props: { payload?: { crude_v?: number; pump_v?: number } }) => {
+                    if (name === "crude") return [`$${(props.payload?.crude_v ?? value).toFixed(2)}/bbl`, "WTI Crude"];
+                    return [`$${(props.payload?.pump_v ?? value).toFixed(3)}/gal`, "Retail Gas"];
                   }}
                 />
                 <Line type="monotone" dataKey="crude" stroke="#f97316" dot={false} strokeWidth={1.9} name="crude" />
@@ -828,9 +828,9 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
             <YAxis {...commonYAxisProps} domain={[0, 100]} tickFormatter={(v) => `${v.toFixed(0)}`} />
             <Tooltip
               {...tip}
-              formatter={(v: number, name: string, props: { payload: { price: number; inventory: number } }) => {
-                if (name === "price_norm") return [`$${props.payload.price.toFixed(2)}/bbl`, "WTI Spot"];
-                return [`${props.payload.inventory.toFixed(0)} M bbl`, "Crude Stocks"];
+              formatter={(value: number, name: string, props: { payload?: { price?: number; inventory?: number } }) => {
+                if (name === "price_norm") return [`$${(props.payload?.price ?? value).toFixed(2)}/bbl`, "WTI Spot"];
+                return [`${(props.payload?.inventory ?? value).toFixed(0)} M bbl`, "Crude Stocks"];
               }}
             />
             <ReferenceLine y={50} stroke="#1e293b" strokeDasharray="3 3" />
@@ -967,9 +967,9 @@ function FactorRadar({
             />
             <Tooltip
               {...tip}
-              formatter={(v: number, name: string, props: { payload: { factor: string } }) => [
+              formatter={(v: number, name: string, props: { payload?: { factor?: string } }) => [
                 `${v.toFixed(0)} / 100`,
-                `${props.payload.factor} · ${radarTooltipLabel[name] ?? name}`,
+                `${props.payload?.factor ?? "Factor"} · ${radarTooltipLabel[name] ?? name}`,
               ]}
             />
           </RadarChart>
@@ -1598,15 +1598,24 @@ export default function EnergyIndex() {
 
   const primaryDataPending = !overviewApi.data || !historyApi.data || !pricesApi.data;
   if ((overviewApi.loading || historyApi.loading || pricesApi.loading) && primaryDataPending) {
-    return <MarketLoading message="Loading energy market data…" />;
+    return <MarketLoading label="Loading energy market data..." />;
   }
 
   const overview = overviewApi.data;
   const history  = historyApi.data;
   const prices   = pricesApi.data;
   const mix      = mixApi.data;
-  const wti = overview?.symbols.find((symbol) => symbol.code === "CL");
-  const brent = overview?.symbols.find((symbol) => symbol.code === "BZ");
+
+  if (!overview) {
+    return (
+      <div className="page-shell">
+        <p className="text-stealth-400">Energy data unavailable. {overviewApi.error}</p>
+      </div>
+    );
+  }
+
+  const wti = overview.symbols.find((symbol) => symbol.code === "CL");
+  const brent = overview.symbols.find((symbol) => symbol.code === "BZ");
   const spread = wti?.current_price != null && brent?.current_price != null
     ? brent.current_price - wti.current_price
     : null;
@@ -1622,14 +1631,6 @@ export default function EnergyIndex() {
   const hasRadarPanel = Boolean(overview.symbols.length);
   const primarySidePanelCount = Number(hasCompositePanel) + Number(hasRadarPanel);
   const hasSupplyPricePanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.crude_inventory?.length);
-
-  if (!overview) {
-    return (
-      <div className="page-shell">
-        <p className="text-stealth-400">Energy data unavailable. {overviewApi.error}</p>
-      </div>
-    );
-  }
 
   return (
     <div className="page-shell-wide page-stack space-y-5 md:space-y-6">

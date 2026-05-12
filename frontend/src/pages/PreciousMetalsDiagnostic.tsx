@@ -1778,7 +1778,7 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
                       <div>
                         <span className="text-stealth-400">{proj.metal}/{proj.metal === "AU" ? "Pt,Ag,Pd" : "Au"} 20d:</span>
                         <span className={`ml-1 font-semibold ${(proj.relative_confirmation.metal_ratio_momentum_20d ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {proj.relative_confirmation.metal_ratio_momentum_20d !== null
+                          {proj.relative_confirmation.metal_ratio_momentum_20d != null
                             ? `${proj.relative_confirmation.metal_ratio_momentum_20d > 0 ? "+" : ""}${proj.relative_confirmation.metal_ratio_momentum_20d.toFixed(2)}%`
                             : "n/a"}
                         </span>

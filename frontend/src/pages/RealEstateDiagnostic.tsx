@@ -1,0 +1,1418 @@
+import { useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  ReferenceLine,
+} from "recharts";
+import MarketLoading from "../components/ui/MarketLoading";
+import { useApi } from "../hooks/useApi";
+import {
+  CHART_MARGIN,
+  commonGridProps,
+  commonXAxisProps,
+  commonYAxisProps,
+} from "../utils/chartUtils";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type Timeframe = "90d" | "180d" | "365d";
+const TIMEFRAME_DAYS: Record<Timeframe, number> = { "90d": 90, "180d": 180, "365d": 365 };
+
+type DataPoint = { date: string; value: number };
+
+type ProxyRow = {
+  ticker: string;
+  name: string;
+  group: string;
+  current_price: number | null;
+  changes: Record<string, number | null>;
+  momentum_score: number;
+  volatility: number | null;
+};
+
+type GroupCard = {
+  group: string;
+  label: string;
+  weight: number;
+  score: number;
+  components: string[];
+  changes: Record<string, number | null>;
+};
+
+type FactorScore = {
+  key: "financing_pressure" | "listed_market_confirmation" | "demand_affordability" | "supply_balance";
+  label: string;
+  weight: number;
+  score: number;
+  evidence: string[];
+};
+
+type MetricSnapshot = {
+  mortgage_rate_30y?: number | null;
+  mortgage_rate_delta_26w?: number | null;
+  treasury_10y?: number | null;
+  treasury_10y_delta_60d?: number | null;
+  credit_spread_bps?: number | null;
+  credit_spread_delta_60d_bps?: number | null;
+  shelter_cpi_yoy?: number | null;
+  shelter_cpi_yoy_delta_6m?: number | null;
+  housing_starts_6m?: number | null;
+  building_permits_6m?: number | null;
+  completions_6m?: number | null;
+  xhb_60d?: number | null;
+  vnq_60d?: number | null;
+};
+
+type RealEstateOverview = {
+  as_of: string;
+  composite_score: number;
+  regime_label: string;
+  summary: string;
+  groups: GroupCard[];
+  symbols: ProxyRow[];
+  factors: FactorScore[];
+  metrics: MetricSnapshot;
+  availability: { available_count: number; total_configured: number };
+  warnings: string[];
+};
+
+type RealEstateHistory = {
+  as_of: string;
+  composite_history: DataPoint[];
+  factor_history: Array<{
+    date: string;
+    residential: number;
+    reits: number;
+    commercial: number;
+    financing: number;
+  }>;
+};
+
+type RealEstateTransmission = {
+  as_of: string;
+  mortgage_rate_30y: DataPoint[];
+  treasury_10y: DataPoint[];
+  indexed_xhb: DataPoint[];
+  indexed_vnq: DataPoint[];
+  credit_spread: DataPoint[];
+};
+
+type RealEstateContext = {
+  as_of: string;
+  housing_starts: DataPoint[];
+  building_permits: DataPoint[];
+  completions: DataPoint[];
+  shelter_cpi: DataPoint[];
+  mortgage_applications: DataPoint[];
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function pressureTone(score: number) {
+  if (score >= 60) return "text-rose-400";
+  if (score <= 40) return "text-emerald-400";
+  return "text-amber-400";
+}
+
+function pressureFill(score: number) {
+  if (score >= 60) return "bg-rose-500";
+  if (score <= 40) return "bg-emerald-500";
+  return "bg-amber-500";
+}
+
+function pressureLabel(score: number | null | undefined, noun = "pressure") {
+  if (score == null) return "Signal unavailable";
+  if (score >= 68) return `High ${noun}`;
+  if (score >= 58) return `Elevated ${noun}`;
+  if (score <= 40) return `Contained ${noun}`;
+  return `Mixed ${noun}`;
+}
+
+function factorEvidence(factor: FactorScore | undefined, fallback: string) {
+  return factor?.evidence?.[0] ?? fallback;
+}
+
+function relativeFactorText(left: FactorScore | undefined, right: FactorScore | undefined) {
+  if (!left || !right) return "";
+  const diff = left.score - right.score;
+  return `${left.label} is ${Math.abs(diff).toFixed(0)} pts ${diff >= 0 ? "above" : "below"} ${right.label.toLowerCase()}.`;
+}
+
+function changeTone(v: number | null | undefined) {
+  if (v == null) return "text-stealth-500";
+  if (v > 0) return "text-emerald-400";
+  if (v < 0) return "text-rose-400";
+  return "text-stealth-300";
+}
+
+function fmt(v: number | null | undefined, decimals = 2) {
+  if (v == null) return "—";
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(decimals)}`;
+}
+
+function regimeBadgeStyle(label: string) {
+  if (label.toLowerCase().includes("stress") || label.toLowerCase().includes("squeeze"))
+    return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+  if (label.toLowerCase().includes("easing"))
+    return "border-emerald-400/40 bg-emerald-500/10 text-emerald-300";
+  if (label.toLowerCase().includes("stabilization"))
+    return "border-sky-400/40 bg-sky-500/10 text-sky-300";
+  return "border-amber-400/40 bg-amber-500/10 text-amber-300";
+}
+
+function scoreBar(score: number) {
+  const color = score >= 60 ? "#f87171" : score <= 40 ? "#34d399" : "#fbbf24";
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative h-1.5 w-24 overflow-hidden rounded-full bg-stealth-800">
+        <div
+          className="absolute left-0 top-0 h-full rounded-full transition-all"
+          style={{ width: `${score}%`, backgroundColor: color }}
+        />
+      </div>
+      <span className={`text-xs font-mono ${pressureTone(score)}`}>{score.toFixed(0)}</span>
+    </div>
+  );
+}
+
+function nearestDate(map: Record<string, number>, date: string): number | undefined {
+  if (map[date] != null) return map[date];
+  for (let d = 1; d <= 7; d++) {
+    const a = new Date(date); a.setDate(a.getDate() + d);
+    const b = new Date(date); b.setDate(b.getDate() - d);
+    const va = map[a.toISOString().slice(0, 10)];
+    const vb = map[b.toISOString().slice(0, 10)];
+    if (va != null) return va;
+    if (vb != null) return vb;
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Shared primitives
+// ---------------------------------------------------------------------------
+
+const tip = {
+  contentStyle: {
+    background: "rgba(11,15,25,0.94)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    fontSize: 12,
+    boxShadow: "0 10px 40px rgba(2,6,23,0.75)",
+  },
+};
+
+const Kicker = ({ children }: { children: React.ReactNode }) => (
+  <p className="page-kicker mb-3">{children}</p>
+);
+
+function HoverTooltip({ children, tip, width = "w-64" }: { children: React.ReactNode; tip: string; width?: string }) {
+  return (
+    <span className="group/htip relative inline-block cursor-default">
+      {children}
+      <span
+        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-2.5 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block`}
+      >
+        {tip}
+      </span>
+    </span>
+  );
+}
+
+function LabelCaps({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <p className={`text-xs uppercase tracking-[0.14em] text-stealth-500 ${className}`.trim()}>{children}</p>;
+}
+
+function BodyHint({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <p className={`text-xs leading-5 text-stealth-400 ${className}`.trim()}>{children}</p>;
+}
+
+function CardHeader({
+  kicker,
+  title,
+  description,
+  tooltipText,
+}: {
+  kicker: React.ReactNode;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  tooltipText?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <Kicker>{kicker}</Kicker>
+      <div className="flex items-start gap-2">
+        {tooltipText ? (
+          <HoverTooltip tip={tooltipText} width="w-72">
+            <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+          </HoverTooltip>
+        ) : (
+          <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+        )}
+      </div>
+      {description ? <BodyHint>{description}</BodyHint> : null}
+    </div>
+  );
+}
+
+function SectionHeader({
+  kicker,
+  title,
+  tooltipText,
+}: {
+  kicker: string;
+  title: string;
+  tooltipText: string;
+}) {
+  return (
+    <div>
+      <p className="page-kicker">{kicker}</p>
+      <HoverTooltip tip={tooltipText} width="w-80">
+        <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
+      </HoverTooltip>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  detail,
+  tone = "text-stealth-100",
+}: {
+  label: string;
+  value: React.ReactNode;
+  detail?: React.ReactNode;
+  tone?: string;
+}) {
+  return (
+    <div className="surface-card-muted px-2.5 py-2">
+      <LabelCaps>{label}</LabelCaps>
+      <p className={`mt-0.5 text-base font-semibold ${tone}`}>{value}</p>
+      {detail ? <BodyHint>{detail}</BodyHint> : null}
+    </div>
+  );
+}
+
+function SignalTile({
+  label,
+  title,
+  detail,
+  tone = "text-stealth-100",
+}: {
+  label: string;
+  title: React.ReactNode;
+  detail: React.ReactNode;
+  tone?: string;
+}) {
+  return (
+    <div className="surface-card-muted px-3 py-2.5">
+      <LabelCaps>{label}</LabelCaps>
+      <p className={`mt-1 text-sm font-semibold ${tone}`}>{title}</p>
+      <BodyHint className="mt-1 leading-4">{detail}</BodyHint>
+    </div>
+  );
+}
+
+function LegendDot({ color }: { color: string }) {
+  return <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: color }} />;
+}
+
+function LegendPill({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <span className="page-badge gap-2 px-2 py-1 text-xs text-stealth-300">
+      <LegendDot color={color} />
+      {children}
+    </span>
+  );
+}
+
+function MetaPill({ children, tone = "text-stealth-400" }: { children: React.ReactNode; tone?: string }) {
+  return <span className={`page-badge px-2 py-1 text-xs ${tone}`}>{children}</span>;
+}
+
+// ---------------------------------------------------------------------------
+// Group summary strip (below proxy table)
+// ---------------------------------------------------------------------------
+
+function GroupSummaryStrip({ groups }: { groups: GroupCard[] }) {
+  return (
+    <div className="mt-3 border-t border-stealth-800/60 pt-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <HoverTooltip
+            tip="Grouped pressure scores: higher means more stress in that segment. Financing and REIT scores confirm whether listed-market and credit channels are amplifying the residential read."
+            width="w-80"
+          >
+            <LabelCaps className="mb-0">Segment Pressure by Group</LabelCaps>
+          </HoverTooltip>
+        </div>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {groups.map((group) => (
+          <div key={group.group} className="surface-card-muted px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <LabelCaps className="mb-0">{group.label}</LabelCaps>
+              <BodyHint>{group.weight.toFixed(0)}% wt</BodyHint>
+            </div>
+            <div className="mt-1 flex items-end justify-between gap-3">
+              <div>
+                <p className={`text-xl font-semibold ${pressureTone(group.score)}`}>{group.score.toFixed(0)}</p>
+                <BodyHint>{group.components.join(" · ")}</BodyHint>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-right text-xs">
+                <span className="text-stealth-500">20d</span>
+                <span className={changeTone(group.changes["20d"])}>{fmt(group.changes["20d"])}%</span>
+                <span className="text-stealth-500">120d</span>
+                <span className={changeTone(group.changes["120d"])}>{fmt(group.changes["120d"])}%</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Proxy table
+// ---------------------------------------------------------------------------
+
+function ProxyTable({
+  symbols,
+  groups,
+  surfaceClassName = "surface-card",
+}: {
+  symbols: ProxyRow[];
+  groups?: GroupCard[];
+  surfaceClassName?: string;
+}) {
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <Kicker>Real Estate Proxies</Kicker>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[580px] text-xs sm:text-sm">
+          <thead>
+            <tr className="border-b border-stealth-700/50">
+              <th className="pb-2 text-left text-xs font-medium text-stealth-400">Proxy</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">Price</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">5d</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">20d</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">60d</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">120d</th>
+              <th className="pb-2 text-right text-xs font-medium text-stealth-400">Score</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stealth-800/40">
+            {symbols.map((sym) => (
+              <tr key={sym.ticker} className="transition-colors hover:bg-white/[0.02]">
+                <td className="py-2">
+                  <span className="font-semibold text-stealth-100">{sym.ticker}</span>
+                  <span className="ml-2 text-xs text-stealth-500">{sym.name}</span>
+                  <span className="ml-1.5 text-[10px] uppercase tracking-wide text-stealth-600">{sym.group}</span>
+                </td>
+                <td className="py-2 text-right font-mono text-stealth-200">
+                  {sym.current_price != null ? `$${sym.current_price.toFixed(2)}` : "—"}
+                </td>
+                {(["5d", "20d", "60d", "120d"] as const).map((k) => (
+                  <td key={k} className={`py-2 text-right font-mono text-xs ${changeTone(sym.changes[k])}`}>
+                    {fmt(sym.changes[k])}%
+                  </td>
+                ))}
+                <td className="py-2 text-right">{scoreBar(sym.momentum_score)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {groups?.length ? <GroupSummaryStrip groups={groups} /> : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Composite history chart
+// ---------------------------------------------------------------------------
+
+function CompositeHistoryChart({
+  history,
+  surfaceClassName = "surface-card",
+}: {
+  history: DataPoint[];
+  surfaceClassName?: string;
+}) {
+  if (!history.length) return null;
+  const decimated = history.filter((_, i) => i % Math.max(1, Math.floor(history.length / 200)) === 0);
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <CardHeader
+        kicker="Pressure Score History"
+        title="Composite trend"
+        tooltipText="Higher scores indicate elevated financing pressure, affordability stress, or listed-market deterioration. Above 60 is stressed; below 40 is easing."
+      />
+      <div className="h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={decimated} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
+            <YAxis {...commonYAxisProps} domain={[20, 80]} />
+            <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Pressure Score"]} />
+            <ReferenceLine y={60} stroke="#f87171" strokeDasharray="2 4" strokeOpacity={0.45} />
+            <ReferenceLine y={40} stroke="#34d399" strokeDasharray="2 4" strokeOpacity={0.45} />
+            <ReferenceLine y={50} stroke="#334155" strokeDasharray="3 3" />
+            <Line type="monotone" dataKey="value" stroke="#0ea5e9" dot={false} strokeWidth={2} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Factor panel (group pressure bars)
+// ---------------------------------------------------------------------------
+
+const GROUP_COLORS: Record<string, string> = {
+  residential: "#38bdf8",
+  reits:       "#a78bfa",
+  commercial:  "#fbbf24",
+  financing:   "#fb7185",
+};
+
+function FactorPanel({
+  groups,
+  surfaceClassName = "surface-card",
+}: {
+  groups: GroupCard[];
+  surfaceClassName?: string;
+}) {
+  if (!groups.length) return null;
+  const data = groups.map((g) => ({
+    name: g.label,
+    score: g.score,
+    group: g.group,
+  }));
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <CardHeader
+        kicker="Segment Pressure"
+        title="Factor breakdown"
+        tooltipText="Pressure score by segment — higher means more stress. Compare residential vs REIT vs commercial to identify where pressure is concentrated."
+      />
+      <div className="h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} />
+            <YAxis {...commonYAxisProps} domain={[0, 100]} />
+            <ReferenceLine y={60} stroke="#f87171" strokeDasharray="2 4" strokeOpacity={0.5} />
+            <ReferenceLine y={40} stroke="#34d399" strokeDasharray="2 4" strokeOpacity={0.5} />
+            <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Pressure"]} />
+            <Bar dataKey="score" radius={[4, 4, 0, 0]}>
+              {data.map((entry, i) => (
+                <Cell key={i} fill={GROUP_COLORS[entry.group] ?? "#94a3b8"} fillOpacity={0.85} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mortgage pressure chart (primary relationship)
+// ---------------------------------------------------------------------------
+
+function MortgagePressureChart({
+  mortgageRate,
+  treasury10y,
+  indexedXhb,
+  surfaceClassName = "surface-card",
+}: {
+  mortgageRate: DataPoint[];
+  treasury10y: DataPoint[];
+  indexedXhb: DataPoint[];
+  surfaceClassName?: string;
+}) {
+  const treasMap = useMemo(() => Object.fromEntries(treasury10y.map((p) => [p.date, p.value])), [treasury10y]);
+
+  const merged = useMemo(() => {
+    if (!mortgageRate.length) return [];
+    const xhbMap: Record<string, number> = Object.fromEntries(indexedXhb.map((p) => [p.date, p.value]));
+    return mortgageRate
+      .map((p) => ({
+        date: p.date,
+        mortgage: p.value,
+        treasury: treasMap[p.date] ?? null,
+        xhb: nearestDate(xhbMap, p.date) ?? null,
+      }))
+      .filter((_, i) => i % Math.max(1, Math.floor(mortgageRate.length / 150)) === 0);
+  }, [mortgageRate, treasury10y, indexedXhb, treasMap]);
+
+  if (!merged.length) return null;
+
+  const latest = merged[merged.length - 1];
+  const mortgageStress = latest.mortgage != null && latest.mortgage > 7;
+  const xhbTrend = (() => {
+    if (merged.length < 20 || latest.xhb == null) return null;
+    const prev = merged[Math.max(0, merged.length - 20)].xhb;
+    return prev != null ? latest.xhb - prev : null;
+  })();
+  const demandEroding = xhbTrend != null && xhbTrend < -5;
+
+  const statusTone = mortgageStress && demandEroding ? "text-rose-300" : mortgageStress ? "text-amber-300" : "text-emerald-300";
+  const statusLabel = mortgageStress && demandEroding ? "Demand eroding" : mortgageStress ? "Rate elevated" : "Rate contained";
+
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <CardHeader
+          kicker="Mortgage Pressure vs Housing Demand"
+          title="Financing cost vs homebuilder proxy"
+          tooltipText="30Y mortgage rate on the left axis, indexed homebuilder ETF (XHB, base=100) on the right. Divergence — rates rising while XHB falls — is the clearest signal that financing costs are overwhelming demand."
+        />
+        <MetaPill tone={statusTone}>{statusLabel}</MetaPill>
+      </div>
+
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <StatTile
+          label="30Y Mortgage"
+          value={<span className="font-mono">{latest.mortgage != null ? `${latest.mortgage.toFixed(2)}%` : "—"}</span>}
+          tone={mortgageStress ? "text-rose-300" : "text-emerald-300"}
+          detail="Current financing rate"
+        />
+        <StatTile
+          label="10Y Treasury"
+          value={<span className="font-mono">{latest.treasury != null ? `${latest.treasury.toFixed(2)}%` : "—"}</span>}
+          tone="text-stealth-100"
+          detail="Risk-free rate baseline"
+        />
+        <StatTile
+          label="XHB Indexed"
+          value={<span className="font-mono">{latest.xhb != null ? latest.xhb.toFixed(1) : "—"}</span>}
+          tone={xhbTrend != null ? (xhbTrend >= 0 ? "text-emerald-300" : "text-rose-300") : "text-stealth-100"}
+          detail={xhbTrend != null ? `${fmt(xhbTrend, 1)} pts recent trend` : "Homebuilder demand proxy"}
+        />
+      </div>
+
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={merged} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <YAxis
+              yAxisId="rate"
+              {...commonYAxisProps}
+              tickFormatter={(v: number) => `${v.toFixed(1)}%`}
+            />
+            <YAxis
+              yAxisId="idx"
+              orientation="right"
+              {...commonYAxisProps}
+              domain={["auto", "auto"]}
+              tickFormatter={(v: number) => v.toFixed(0)}
+            />
+            <ReferenceLine yAxisId="rate" y={7} stroke="#f87171" strokeDasharray="3 3" strokeOpacity={0.5} />
+            <Tooltip
+              {...tip}
+              formatter={(v: number, name: string) => {
+                if (name === "mortgage") return [`${v.toFixed(2)}%`, "30Y Mortgage"];
+                if (name === "treasury") return [`${v.toFixed(2)}%`, "10Y Treasury"];
+                return [`${v.toFixed(1)}`, "XHB Indexed"];
+              }}
+            />
+            <Line yAxisId="rate" type="monotone" dataKey="mortgage" stroke="#fb923c" strokeWidth={2.4} dot={false} name="mortgage" isAnimationActive={false} />
+            <Line yAxisId="rate" type="monotone" dataKey="treasury" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="treasury" isAnimationActive={false} />
+            <Line yAxisId="idx"  type="monotone" dataKey="xhb"      stroke="#38bdf8" strokeWidth={2}   dot={false} name="xhb"      isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        <LegendPill color="#fb923c">30Y Mortgage</LegendPill>
+        <LegendPill color="#94a3b8">10Y Treasury</LegendPill>
+        <LegendPill color="#38bdf8">XHB (demand proxy, right axis)</LegendPill>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Transmission chart (rates → equities)
+// ---------------------------------------------------------------------------
+
+function TransmissionChart({
+  mortgageRate,
+  treasury10y,
+  indexedXhb,
+  indexedVnq,
+  surfaceClassName = "surface-card",
+}: {
+  mortgageRate: DataPoint[];
+  treasury10y: DataPoint[];
+  indexedXhb: DataPoint[];
+  indexedVnq: DataPoint[];
+  surfaceClassName?: string;
+}) {
+  const merged = useMemo(() => {
+    const spine = indexedVnq.length >= indexedXhb.length ? indexedVnq : indexedXhb;
+    if (!spine.length) return [];
+    const vnqMap  = Object.fromEntries(indexedVnq.map((p) => [p.date, p.value]));
+    const xhbMap  = Object.fromEntries(indexedXhb.map((p) => [p.date, p.value]));
+    const mortMap = Object.fromEntries(mortgageRate.map((p) => [p.date, p.value]));
+    const treasMap = Object.fromEntries(treasury10y.map((p) => [p.date, p.value]));
+    return spine
+      .map((p) => ({
+        date: p.date,
+        vnq:      vnqMap[p.date]  ?? null,
+        xhb:      xhbMap[p.date]  ?? null,
+        mortgage: nearestDate(mortMap, p.date) ?? null,
+        treasury: nearestDate(treasMap, p.date) ?? null,
+      }))
+      .filter((_, i) => i % Math.max(1, Math.floor(spine.length / 150)) === 0);
+  }, [mortgageRate, treasury10y, indexedXhb, indexedVnq]);
+
+  if (!merged.length) return null;
+
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <CardHeader
+        kicker="Rates → Payments → Equities"
+        title="Rate transmission to listed real estate"
+        tooltipText="Indexed REIT and homebuilder ETFs (base=100, left axis) overlaid with rate series (right axis). When yields rise and listed RE falls together, the rate transmission channel is active."
+      />
+      <div className="h-52">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={merged} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <YAxis yAxisId="idx"  {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => v.toFixed(0)} />
+            <YAxis yAxisId="rate" orientation="right" {...commonYAxisProps} tickFormatter={(v: number) => `${v.toFixed(1)}%`} />
+            <ReferenceLine yAxisId="idx" y={100} stroke="#1e293b" strokeDasharray="3 3" />
+            <Tooltip
+              {...tip}
+              formatter={(v: number, name: string) => {
+                if (name === "mortgage") return [`${v.toFixed(2)}%`, "30Y Mortgage"];
+                if (name === "treasury") return [`${v.toFixed(2)}%`, "10Y Treasury"];
+                if (name === "vnq") return [`${v.toFixed(1)}`, "VNQ (indexed)"];
+                return [`${v.toFixed(1)}`, "XHB (indexed)"];
+              }}
+            />
+            <Line yAxisId="idx"  type="monotone" dataKey="vnq"      stroke="#a78bfa" strokeWidth={2.4} dot={false} name="vnq"      isAnimationActive={false} />
+            <Line yAxisId="idx"  type="monotone" dataKey="xhb"      stroke="#38bdf8" strokeWidth={2}   strokeDasharray="5 3" dot={false} name="xhb" isAnimationActive={false} />
+            <Line yAxisId="rate" type="monotone" dataKey="mortgage"  stroke="#fb923c" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="mortgage" strokeOpacity={0.75} isAnimationActive={false} />
+            <Line yAxisId="rate" type="monotone" dataKey="treasury"  stroke="#94a3b8" strokeWidth={1}   strokeDasharray="3 3" dot={false} name="treasury" strokeOpacity={0.6}  isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <LegendPill color="#a78bfa">VNQ (REITs)</LegendPill>
+        <LegendPill color="#38bdf8">XHB (homebuilders)</LegendPill>
+        <LegendPill color="#fb923c">30Y Mortgage</LegendPill>
+        <LegendPill color="#94a3b8">10Y Treasury</LegendPill>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Credit spread chart (credit → cap-rate)
+// ---------------------------------------------------------------------------
+
+function CreditSpreadChart({
+  indexedVnq,
+  creditSpread,
+  surfaceClassName = "surface-card",
+}: {
+  indexedVnq: DataPoint[];
+  creditSpread: DataPoint[];
+  surfaceClassName?: string;
+}) {
+  const merged = useMemo(() => {
+    if (!indexedVnq.length || !creditSpread.length) return [];
+    const spreads = creditSpread.map((p) => p.value);
+    const [minS, maxS] = [Math.min(...spreads), Math.max(...spreads)];
+    const rangeS = maxS - minS || 1;
+    const spreadMap = Object.fromEntries(creditSpread.map((p) => [p.date, p.value]));
+    return indexedVnq
+      .map((p) => {
+        const rawSpread = nearestDate(spreadMap, p.date);
+        return {
+          date: p.date,
+          vnq: p.value,
+          spread_raw: rawSpread ?? null,
+          spread_inv: rawSpread != null ? (1 - (rawSpread - minS) / rangeS) * 100 : null,
+        };
+      })
+      .filter((_, i) => i % Math.max(1, Math.floor(indexedVnq.length / 150)) === 0);
+  }, [indexedVnq, creditSpread]);
+
+  if (!merged.length) return null;
+
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <CardHeader
+        kicker="Credit → Cap-Rate Pressure"
+        title="REIT performance vs credit backdrop"
+        tooltipText="VNQ indexed to 100 vs credit spread (inverted and normalized to 0–100). When both lines decline together, credit tightening is transmitting into cap-rate pressure on listed real estate."
+      />
+      <div className="h-48">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={merged} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
+            <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
+            <Tooltip
+              {...tip}
+              formatter={(value: number, name: string, props: { payload?: { spread_raw?: number | null } }) => {
+                if (name === "spread_inv") return [`${props.payload?.spread_raw?.toFixed(0) ?? "—"} bps`, "Credit Spread (raw)"];
+                return [`${value.toFixed(1)}`, "VNQ (indexed)"];
+              }}
+            />
+            <Line type="monotone" dataKey="vnq"        stroke="#a78bfa" strokeWidth={2.4} dot={false} name="vnq"        isAnimationActive={false} />
+            <Line type="monotone" dataKey="spread_inv" stroke="#f87171" strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="spread_inv" strokeOpacity={0.7} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <LegendPill color="#a78bfa">VNQ (indexed)</LegendPill>
+        <LegendPill color="#f87171">Credit Spread (inverted)</LegendPill>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Supply context chart
+// ---------------------------------------------------------------------------
+
+function SupplyContextChart({
+  starts,
+  permits,
+  completions,
+  surfaceClassName = "surface-card",
+}: {
+  starts: DataPoint[];
+  permits: DataPoint[];
+  completions: DataPoint[];
+  surfaceClassName?: string;
+}) {
+  const merged = useMemo(() => {
+    const spine = permits.length >= starts.length ? permits : starts;
+    if (!spine.length) return [];
+    const startsMap = Object.fromEntries(starts.map((p) => [p.date, p.value]));
+    const permMap   = Object.fromEntries(permits.map((p) => [p.date, p.value]));
+    const compMap   = Object.fromEntries(completions.map((p) => [p.date, p.value]));
+    return spine
+      .map((p) => ({
+        date: p.date,
+        starts:      startsMap[p.date] ?? null,
+        permits:     permMap[p.date]   ?? null,
+        completions: compMap[p.date]   ?? null,
+      }))
+      .filter((_, i) => i % Math.max(1, Math.floor(spine.length / 150)) === 0);
+  }, [starts, permits, completions]);
+
+  if (!merged.length) return null;
+
+  const latestStarts  = starts.length  ? starts[starts.length - 1].value   : null;
+  const latestPermits = permits.length ? permits[permits.length - 1].value  : null;
+
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <CardHeader
+        kicker="Supply and Construction"
+        title="Housing starts, permits, and completions"
+        tooltipText="In thousands of units. Permits lead starts; starts lead completions. A declining permit trend ahead of an elevated rate environment signals supply tightening before demand recovers."
+      />
+      <div className="mb-3 grid gap-3 md:grid-cols-2">
+        <StatTile
+          label="Housing Starts"
+          value={latestStarts != null ? `${latestStarts.toFixed(0)}K` : "—"}
+          tone="text-sky-300"
+          detail="Thousands of units (annualized)"
+        />
+        <StatTile
+          label="Building Permits"
+          value={latestPermits != null ? `${latestPermits.toFixed(0)}K` : "—"}
+          tone="text-violet-300"
+          detail="Leading indicator for starts"
+        />
+      </div>
+      <div className="h-48">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={merged} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <YAxis {...commonYAxisProps} />
+            <Tooltip
+              {...tip}
+              formatter={(v: number, name: string) => [
+                `${v.toFixed(0)}K`,
+                name === "starts" ? "Starts" : name === "permits" ? "Permits" : "Completions",
+              ]}
+            />
+            <Line type="monotone" dataKey="starts"      stroke="#38bdf8" strokeWidth={2.2} dot={false} name="starts"      isAnimationActive={false} />
+            <Line type="monotone" dataKey="permits"     stroke="#a78bfa" strokeWidth={1.8} strokeDasharray="5 3" dot={false} name="permits" isAnimationActive={false} />
+            {completions.length > 0 && (
+              <Line type="monotone" dataKey="completions" stroke="#94a3b8" strokeWidth={1.2} strokeDasharray="3 3" dot={false} name="completions" strokeOpacity={0.7} isAnimationActive={false} />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <LegendPill color="#38bdf8">Starts</LegendPill>
+        <LegendPill color="#a78bfa">Permits</LegendPill>
+        {completions.length > 0 && <LegendPill color="#94a3b8">Completions</LegendPill>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Affordability chart
+// ---------------------------------------------------------------------------
+
+function AffordabilityChart({
+  shelterCpi,
+  mortgageApplications,
+  surfaceClassName = "surface-card",
+}: {
+  shelterCpi: DataPoint[];
+  mortgageApplications: DataPoint[];
+  surfaceClassName?: string;
+}) {
+  const merged = useMemo(() => {
+    if (!shelterCpi.length) return [];
+    const cpiVals = shelterCpi.map((p) => p.value);
+    const [minC, maxC] = [Math.min(...cpiVals), Math.max(...cpiVals)];
+    const rangeC = maxC - minC || 1;
+
+    const appVals = mortgageApplications.map((p) => p.value).filter((v) => v > 0);
+    const [minA, maxA] = appVals.length ? [Math.min(...appVals), Math.max(...appVals)] : [0, 1];
+    const rangeA = maxA - minA || 1;
+
+    const appMap = Object.fromEntries(mortgageApplications.map((p) => [p.date, p.value]));
+    return shelterCpi
+      .map((p) => {
+        const appVal = nearestDate(appMap, p.date);
+        return {
+          date: p.date,
+          shelter_norm: ((p.value - minC) / rangeC) * 100,
+          shelter_raw:  p.value,
+          apps:         appVal ?? null,
+          apps_norm:    appVal != null ? ((appVal - minA) / rangeA) * 100 : null,
+        };
+      })
+      .filter((_, i) => i % Math.max(1, Math.floor(shelterCpi.length / 150)) === 0);
+  }, [shelterCpi, mortgageApplications]);
+
+  if (!merged.length) return null;
+
+  const latestShelter = shelterCpi.length ? shelterCpi[shelterCpi.length - 1].value : null;
+
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <CardHeader
+        kicker="Price and Affordability"
+        title={mortgageApplications.length > 0 ? "Shelter inflation and mortgage demand" : "Shelter inflation context"}
+        tooltipText={
+          mortgageApplications.length > 0
+            ? "Shelter CPI (YoY %) and mortgage application index, both normalized 0-100 for visual comparison. Rising shelter CPI alongside falling applications signals rent inflation is outpacing borrower demand."
+            : "Shelter CPI is converted to year-over-year change from the FRED shelter CPI index. It is used as affordability context, not as a standalone demand conclusion."
+        }
+      />
+      <div className="mb-3">
+        <StatTile
+          label="Shelter CPI (YoY)"
+          value={latestShelter != null ? `${latestShelter.toFixed(1)}%` : "—"}
+          tone={latestShelter != null && latestShelter > 5 ? "text-rose-300" : "text-stealth-100"}
+          detail="Rent and shelter price inflation"
+        />
+      </div>
+      <div className="h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={merged} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <YAxis {...commonYAxisProps} domain={[0, 100]} />
+            <ReferenceLine y={50} stroke="#1e293b" strokeDasharray="3 3" />
+            <Tooltip
+              {...tip}
+              formatter={(value: number, name: string, props: { payload?: { shelter_raw?: number; apps?: number | null } }) => {
+                if (name === "shelter_norm") return [`${(props.payload?.shelter_raw ?? value).toFixed(1)}%`, "Shelter CPI (YoY)"];
+                return [`${props.payload?.apps?.toFixed(0) ?? "—"}`, "Mortgage Apps Index"];
+              }}
+            />
+            <Line type="monotone" dataKey="shelter_norm" stroke="#fbbf24" strokeWidth={2.2} dot={false} name="shelter_norm" isAnimationActive={false} />
+            {mortgageApplications.length > 0 && (
+              <Line type="monotone" dataKey="apps_norm" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="apps_norm" isAnimationActive={false} />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <LegendPill color="#fbbf24">Shelter CPI (normalized)</LegendPill>
+        {mortgageApplications.length > 0 && (
+          <LegendPill color="#94a3b8">Mortgage Apps (normalized)</LegendPill>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Methodology panel
+// ---------------------------------------------------------------------------
+
+function RealEstateMethodologyPanel() {
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const ChevronIcon = ({ open }: { open: boolean }) => (
+    <span className={`collapsible-icon ${open ? "collapsible-icon-open" : ""}`} aria-hidden="true">
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </span>
+  );
+
+  const Section = ({ id, title, children }: { id: string; title: string; children: React.ReactNode }) => {
+    const open = expanded.has(id);
+    return (
+      <div className="border-b border-stealth-700 last:border-b-0">
+        <button
+          onClick={() => toggle(id)}
+          className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-stealth-700/50"
+          aria-expanded={open}
+        >
+          <span className="font-semibold text-stealth-200">{title}</span>
+          <ChevronIcon open={open} />
+        </button>
+        <div className={`collapsible-panel ${open ? "collapsible-panel-open" : ""}`}>
+          <div className="collapsible-panel-inner">
+            <div className="space-y-3 px-4 pb-4 text-sm text-stealth-300">{children}</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded-lg border border-stealth-700 bg-gradient-to-br from-stealth-800 to-stealth-850">
+      <button
+        type="button"
+        onClick={() => setPanelOpen((open) => !open)}
+        className="flex w-full items-center justify-between gap-4 p-4 text-left transition-colors hover:bg-stealth-700/40 md:p-6"
+        aria-expanded={panelOpen}
+      >
+        <div>
+          <h2 className="mb-2 text-lg font-semibold text-stealth-100 md:text-xl">Methodology & Scoring</h2>
+          <p className="text-xs text-stealth-400">
+            How the real-estate pressure score is built from rates, listed proxies, affordability, and construction data.
+          </p>
+        </div>
+        <ChevronIcon open={panelOpen} />
+      </button>
+
+      <div className={`collapsible-panel ${panelOpen ? "collapsible-panel-open" : ""}`}>
+        <div className="collapsible-panel-inner">
+          <div className="divide-y divide-stealth-700 border-t border-stealth-700">
+            <Section id="composite" title="What the Composite Measures">
+              <p>
+                The score is a 0-100 pressure gauge. Higher scores mean financing, affordability, or listed-market
+                confirmation is worsening. Lower scores mean conditions are easing or listed real-estate proxies are
+                absorbing the rate backdrop.
+              </p>
+            </Section>
+
+            <Section id="factors" title="Factor Weights">
+              <div className="grid gap-2 text-xs md:grid-cols-4">
+                {[
+                  ["Financing", "35%", "Mortgage rates, Treasury drift, HY OAS"],
+                  ["Listed Market", "30%", "REITs, builders, office REIT proxy, financing proxies"],
+                  ["Demand", "20%", "Residential proxies plus shelter CPI"],
+                  ["Pipeline", "15%", "Starts, permits, completions"],
+                ].map(([label, weight, detail]) => (
+                  <div key={label} className="rounded bg-stealth-900/50 p-2">
+                    <div className="font-semibold text-sky-300">{label} - {weight}</div>
+                    <div className="mt-0.5 text-stealth-400">{detail}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-stealth-400">
+                If a source is unavailable, the composite redistributes across available factors and the warning strip
+                names the missing series instead of silently filling static values.
+              </p>
+            </Section>
+
+            <Section id="proxy-scoring" title="Listed Proxy Scoring">
+              <p>
+                Listed proxies use 5-day, 20-day, 60-day, and 120-day percent changes. Because this page measures
+                pressure, falling REIT, builder, office, bank, or MBS proxies push the score higher; rising proxies push
+                it lower.
+              </p>
+            </Section>
+
+            <Section id="conclusions" title="Conclusion Guardrails">
+              <p>
+                The summary and hero tiles compare factor scores, segment scores, and relative changes before assigning
+                a regime. A residential stress statement needs a residential score versus REIT context, a rate read, or a
+                builder-equity trend. A credit statement needs credit-spread or financing-proxy confirmation.
+              </p>
+            </Section>
+
+            <Section id="sources" title="Data Sources">
+              <ul className="space-y-1.5 text-xs">
+                <li><span className="font-medium text-stealth-200">Yahoo Finance:</span> VNQ, IYR, XLRE, XHB, ITB, BXP, SLG, KRC, KRE, MBB, REM</li>
+                <li><span className="font-medium text-stealth-200">FRED:</span> MORTGAGE30US, DGS10, BAMLH0A0HYM2, HOUST, PERMIT, COMPUTSA, CUSR0000SAH1</li>
+              </ul>
+              <p className="mt-1 text-xs text-stealth-400">
+                Scores are computed at request time. Composite cache TTL is 20 minutes per timeframe window.
+              </p>
+            </Section>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
+
+const TIMEFRAME_OPTIONS: { key: Timeframe; label: string }[] = [
+  { key: "90d",  label: "90D" },
+  { key: "180d", label: "180D" },
+  { key: "365d", label: "1Y" },
+];
+
+export default function RealEstateDiagnostic() {
+  const [timeframe, setTimeframe] = useState<Timeframe>("365d");
+  const days = TIMEFRAME_DAYS[timeframe];
+
+  const overviewApi      = useApi<RealEstateOverview>(`/real-estate/overview?days=${days}`);
+  const historyApi       = useApi<RealEstateHistory>(`/real-estate/history?days=${days}`);
+  const transmissionApi  = useApi<RealEstateTransmission>(`/real-estate/transmission?days=${days}`);
+  const contextApi       = useApi<RealEstateContext>(`/real-estate/context`);
+
+  const primaryDataPending = !overviewApi.data;
+  if (overviewApi.loading && primaryDataPending) {
+    return <MarketLoading label="Loading real estate market data..." />;
+  }
+
+  if (!overviewApi.data) {
+    return (
+      <div className="page-shell">
+        <p className="text-stealth-400">Real estate data unavailable. {overviewApi.error}</p>
+      </div>
+    );
+  }
+
+  const overview     = overviewApi.data;
+  const history      = historyApi.data;
+  const transmission = transmissionApi.data;
+  const context      = contextApi.data;
+
+  const groupsByPressure    = [...overview.groups].sort((a, b) => b.score - a.score);
+  const highestPressureGroup = groupsByPressure[0];
+  const lowestPressureGroup  = groupsByPressure[groupsByPressure.length - 1];
+  const factorsByPressure    = [...(overview.factors ?? [])].sort((a, b) => b.score - a.score);
+
+  const residentialGroup = overview.groups.find((g) => g.group === "residential");
+  const financingGroup   = overview.groups.find((g) => g.group === "financing");
+  const financingFactor   = overview.factors?.find((factor) => factor.key === "financing_pressure");
+  const listedFactor      = overview.factors?.find((factor) => factor.key === "listed_market_confirmation");
+  const demandFactor      = overview.factors?.find((factor) => factor.key === "demand_affordability");
+
+  const demandScore      = demandFactor?.score ?? residentialGroup?.score;
+  const financingScore   = financingFactor?.score ?? financingGroup?.score;
+  const financingStress  = financingScore != null && financingScore >= 60;
+  const mortgageRate     = overview.metrics?.mortgage_rate_30y;
+  const mortgageDelta    = overview.metrics?.mortgage_rate_delta_26w;
+  const creditSpread     = overview.metrics?.credit_spread_bps;
+  const creditSpreadDelta = overview.metrics?.credit_spread_delta_60d_bps;
+
+  const hasCompositePanel     = Boolean(history?.composite_history?.length);
+  const hasFactorPanel        = Boolean(overview.groups.length);
+  const hasMortgagePressure   = Boolean(transmission?.mortgage_rate_30y?.length && transmission?.indexed_xhb?.length);
+  const hasTransmission       = Boolean(transmission?.indexed_vnq?.length && transmission?.indexed_xhb?.length);
+  const hasCreditPanel        = Boolean(transmission?.indexed_vnq?.length && transmission?.credit_spread?.length);
+  const hasSupplyPanel        = Boolean(context?.housing_starts?.length || context?.building_permits?.length);
+  const hasAffordability      = Boolean(context?.shelter_cpi?.length);
+  const primarySidePanelCount = Number(hasCompositePanel) + Number(hasFactorPanel);
+
+  return (
+    <div className="page-shell-wide page-stack space-y-5 md:space-y-6">
+
+      {/* ── Header ────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Real Estate Markets</h1>
+          <p className="page-subtitle">Financing pressure, listed proxy performance, supply context, and affordability transmission</p>
+        </div>
+        <div className="control-strip mt-2">
+          {TIMEFRAME_OPTIONS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setTimeframe(key)}
+              className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                timeframe === key
+                  ? "bg-sky-500/20 text-sky-300"
+                  : "text-stealth-400 hover:text-stealth-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Hero snapshot ─────────────────────────────────────── */}
+      <div className="surface-card-strong p-4 md:p-5">
+        <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.95fr]">
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Real Estate Pressure</p>
+              <p className={`mt-2 text-4xl font-semibold ${pressureTone(overview.composite_score)}`}>
+                {overview.composite_score.toFixed(0)}
+              </p>
+              <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
+                <div
+                  className={`h-2 rounded-full ${pressureFill(overview.composite_score)}`}
+                  style={{ width: `${overview.composite_score}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-stealth-400">
+                As of {new Date(overview.as_of).toLocaleString()}
+              </p>
+            </div>
+            <p className="max-w-4xl text-sm leading-6 text-stealth-300">{overview.summary}</p>
+            <div className="grid gap-2 md:grid-cols-3">
+              <SignalTile
+                label="Affordability Read"
+                title={pressureLabel(demandScore, "demand pressure")}
+                tone={demandScore != null ? pressureTone(demandScore) : "text-stealth-100"}
+                detail={
+                  `${factorEvidence(demandFactor, residentialGroup ? `Residential proxy pressure is ${residentialGroup.score.toFixed(0)}.` : "Demand signal unavailable.")} ${relativeFactorText(demandFactor, listedFactor)}`
+                }
+              />
+              <SignalTile
+                label="Financing Read"
+                title={pressureLabel(financingScore, "financing pressure")}
+                tone={financingStress ? "text-rose-300" : "text-emerald-300"}
+                detail={
+                  `${factorEvidence(financingFactor, financingGroup ? `Financing proxy pressure is ${financingGroup.score.toFixed(0)}.` : "Financing read unavailable.")} ${relativeFactorText(financingFactor, listedFactor)}`
+                }
+              />
+              <SignalTile
+                label="Segment Leadership"
+                title={
+                  factorsByPressure[0]
+                    ? `${factorsByPressure[0].label} leads`
+                    : highestPressureGroup
+                    ? `${highestPressureGroup.label} leads`
+                    : "Leadership unclear"
+                }
+                tone={factorsByPressure[0] ? pressureTone(factorsByPressure[0].score) : highestPressureGroup ? pressureTone(highestPressureGroup.score) : "text-stealth-100"}
+                detail={
+                  factorsByPressure[0] && factorsByPressure[factorsByPressure.length - 1]
+                    ? `${factorsByPressure[0].label} is ${factorsByPressure[0].score.toFixed(0)} versus ${factorsByPressure[factorsByPressure.length - 1].label} at ${factorsByPressure[factorsByPressure.length - 1].score.toFixed(0)}.`
+                    : highestPressureGroup && lowestPressureGroup
+                    ? `${highestPressureGroup.label} is ${highestPressureGroup.score.toFixed(0)} versus ${lowestPressureGroup.label} at ${lowestPressureGroup.score.toFixed(0)}.`
+                    : "Segment read unavailable."
+                }
+              />
+            </div>
+          </div>
+
+          <div className="grid min-w-[280px] gap-3 sm:grid-cols-2 xl:grid-cols-2">
+            <StatTile
+              label="Regime"
+              value={
+                <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${regimeBadgeStyle(overview.regime_label)}`}>
+                  {overview.regime_label}
+                </span>
+              }
+              detail="Composite state"
+            />
+            <StatTile
+              label="Availability"
+              value={`${overview.availability.available_count}/${overview.availability.total_configured}`}
+              detail="Configured proxies"
+            />
+            <StatTile
+              label="30Y Mortgage"
+              value={mortgageRate != null ? <span className="font-mono">{mortgageRate.toFixed(2)}%</span> : "—"}
+              tone={mortgageRate != null && mortgageRate >= 7 ? "text-rose-300" : "text-stealth-100"}
+              detail={mortgageDelta != null ? `${fmt(mortgageDelta, 2)} pp vs about 6 months ago` : "FRED MORTGAGE30US"}
+            />
+            <StatTile
+              label="HY OAS"
+              value={creditSpread != null ? <span className="font-mono">{creditSpread.toFixed(0)} bps</span> : "—"}
+              tone={creditSpread != null && creditSpread >= 450 ? "text-rose-300" : "text-stealth-100"}
+              detail={creditSpreadDelta != null ? `${fmt(creditSpreadDelta, 0)} bps over 60 observations` : "FRED BAMLH0A0HYM2"}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Primary relationship band ──────────────────────────── */}
+      {(hasMortgagePressure || primarySidePanelCount > 0) && (
+        <div
+          className={`grid items-start gap-3 md:gap-4 ${
+            hasMortgagePressure && primarySidePanelCount > 0
+              ? "xl:grid-cols-[1.45fr_0.95fr]"
+              : "grid-cols-1"
+          }`}
+        >
+          {hasMortgagePressure && transmission ? (
+            <MortgagePressureChart
+              mortgageRate={transmission.mortgage_rate_30y}
+              treasury10y={transmission.treasury_10y}
+              indexedXhb={transmission.indexed_xhb}
+              surfaceClassName="primary-card"
+            />
+          ) : null}
+          {primarySidePanelCount > 0 && (
+            <div className="grid gap-3 md:gap-4">
+              {hasCompositePanel && history ? (
+                <CompositeHistoryChart history={history.composite_history} surfaceClassName="primary-card" />
+              ) : null}
+              {hasFactorPanel ? (
+                <FactorPanel groups={overview.groups} />
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Market structure band ──────────────────────────────── */}
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-end justify-between gap-2.5">
+          <SectionHeader
+            kicker="Market Structure"
+            title="Proxy table and segment leadership"
+            tooltipText="Listed real-estate proxies by segment. Use this band to identify where breadth and momentum are leading or lagging relative to the composite pressure score."
+          />
+        </div>
+        <ProxyTable
+          symbols={overview.symbols}
+          groups={overview.groups}
+          surfaceClassName="surface-card-strong"
+        />
+      </div>
+
+      {/* ── Transmission band ─────────────────────────────────── */}
+      {(hasTransmission || hasCreditPanel) && transmission && (
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-end justify-between gap-2.5">
+            <SectionHeader
+              kicker="Transmission"
+              title="Rate and credit flow-through"
+              tooltipText="How changes in rates and credit spreads are flowing through to listed real-estate valuations. Divergence between rate series and equity performance is the key diagnostic signal."
+            />
+          </div>
+          <div
+            className={`grid items-start gap-3 md:gap-4 ${
+              hasTransmission && hasCreditPanel ? "xl:grid-cols-2" : "grid-cols-1"
+            }`}
+          >
+            {hasTransmission ? (
+              <TransmissionChart
+                mortgageRate={transmission.mortgage_rate_30y}
+                treasury10y={transmission.treasury_10y}
+                indexedXhb={transmission.indexed_xhb}
+                indexedVnq={transmission.indexed_vnq}
+              />
+            ) : null}
+            {hasCreditPanel ? (
+              <CreditSpreadChart
+                indexedVnq={transmission.indexed_vnq}
+                creditSpread={transmission.credit_spread}
+              />
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* ── Longer-horizon context band ────────────────────────── */}
+      {(hasSupplyPanel || hasAffordability) && context && (
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-end justify-between gap-2.5">
+            <SectionHeader
+              kicker="Longer Horizon"
+              title="Supply, construction, and affordability context"
+              tooltipText="Slower-moving structural context. Supply and construction data confirm whether the price and credit picture is demand- or supply-driven. Shelter CPI frames affordability pressure without replacing the listed-market read."
+            />
+          </div>
+          <div
+            className={`grid items-start gap-3 md:gap-4 ${
+              hasSupplyPanel && hasAffordability ? "xl:grid-cols-2" : "grid-cols-1"
+            }`}
+          >
+            {hasSupplyPanel ? (
+              <SupplyContextChart
+                starts={context.housing_starts}
+                permits={context.building_permits}
+                completions={context.completions}
+              />
+            ) : null}
+            {hasAffordability ? (
+              <AffordabilityChart
+                shelterCpi={context.shelter_cpi}
+                mortgageApplications={context.mortgage_applications}
+              />
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* Warnings */}
+      {overview.warnings.length > 0 && (
+        <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300">
+          {overview.warnings.join(" · ")}
+        </div>
+      )}
+
+      {/* Sources footer */}
+      <div className="flex items-center justify-end gap-2">
+        <HoverTooltip
+          tip={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
+          width="w-80"
+        >
+          <LabelCaps className="mb-0">Sources</LabelCaps>
+        </HoverTooltip>
+      </div>
+
+      <RealEstateMethodologyPanel />
+
+    </div>
+  );
+}

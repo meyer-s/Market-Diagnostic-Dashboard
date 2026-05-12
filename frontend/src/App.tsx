@@ -17,6 +17,7 @@ import InstitutionalFlow from "./pages/InstitutionalFlow";
 import Vision from "./pages/Vision";
 import AgricultureIndex from "./pages/AgricultureIndex";
 import EnergyIndex from "./pages/EnergyIndex";
+import RealEstateDiagnostic from "./pages/RealEstateDiagnostic";
 import RecapIndex from "./pages/tools/RecapIndex";
 import RecapPost from "./pages/tools/RecapPost";
 import VolumeBreadthTools from "./pages/tools/VolumeBreadthTools";
@@ -50,6 +51,7 @@ function AppWithAnalytics() {
       location.pathname.includes("/institutional-flow") ? "Institutional Flow" :
       location.pathname.includes("/agriculture") ? "Agriculture Index" :
       location.pathname.includes("/energy") ? "Energy Markets" :
+      location.pathname.includes("/real-estate") ? "Real Estate" :
       location.pathname.includes("/secret/options") ? "Secret Options" :
       location.pathname.includes("/precious-metals") ? "Metals" :
       location.pathname.includes("/tools/volume-breadth") ? "Volume & Breadth" :
@@ -93,6 +95,7 @@ function AppWithAnalytics() {
           <Route path="/alternative-assets" element={<AlternativeAssetStability />} />
           <Route path="/agriculture" element={<AgricultureIndex />} />
           <Route path="/energy" element={<EnergyIndex />} />
+          <Route path="/real-estate" element={<RealEstateDiagnostic />} />
           <Route path="/aas-breakdown" element={<AASComponentBreakdown />} />
         </Routes>
       </main>

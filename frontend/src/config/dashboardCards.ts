@@ -174,6 +174,14 @@ const indicatorRelatedSignalsByFamily: Record<MetricFamily, RelatedSignal[]> = {
     { label: "Metals", reason: "Palladium tracks broader metals cycle" },
     { label: "Growth", reason: "Industrial demand links palladium to growth" },
   ],
+  copper: [
+    { label: "Materials", reason: "Copper tracks industrial demand and construction cycles" },
+    { label: "Growth", reason: "Copper demand confirms growth-sensitive activity" },
+  ],
+  aluminum: [
+    { label: "Materials", reason: "Aluminum follows industrial and manufacturing demand" },
+    { label: "Growth", reason: "Activity cycles influence base-metal demand" },
+  ],
   benchmark: [
     { label: "System Overview", reason: "Benchmark anchors interpretation of signals" },
     { label: "Market Map", reason: "Benchmarks contextualize sector move magnitude" },
