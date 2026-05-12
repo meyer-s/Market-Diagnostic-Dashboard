@@ -967,7 +967,7 @@ function AltEnergyChart({
 }) {
   if (!data.length) return null;
 
-  const codes = altSymbols.map((s) => s.code).filter((c) => decimated.some((d) => c in d));
+  const codes = altSymbols.map((s) => s.code).filter((code) => data.some((row) => code in row));
   const transitionCodes = codes.filter((code) => code !== "XLE");
 
   const chartData = useMemo(() => {
