@@ -151,6 +151,27 @@ function latestValue(points?: PricePoint[]) {
   return points[points.length - 1]?.value ?? null;
 }
 
+function hexToRgb(hex: string) {
+  const clean = hex.replace("#", "");
+  const normalized = clean.length === 3
+    ? clean.split("").map((char) => `${char}${char}`).join("")
+    : clean;
+  const value = parseInt(normalized, 16);
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  };
+}
+
+function mixHex(start: string, end: string, amount: number) {
+  const left = hexToRgb(start);
+  const right = hexToRgb(end);
+  const clamp = Math.max(0, Math.min(1, amount));
+  const mix = (a: number, b: number) => Math.round(a + (b - a) * clamp);
+  return `rgb(${mix(left.r, right.r)}, ${mix(left.g, right.g)}, ${mix(left.b, right.b)})`;
+}
+
 function regimeBadgeStyle(label: string) {
   if (label.includes("Tightening") || label.includes("Elevated"))
     return "border-amber-400/40 bg-amber-500/10 text-amber-300";
@@ -709,25 +730,53 @@ function FactorRadar({
       { factor: "Spread", current: spreadNorm },
     ];
 
+    const currentAverage = rows.reduce((sum, row) => sum + Number(row.current), 0) / rows.length;
+    const oldestSnapshot = (history ?? []).slice(-12)[0];
+    const oldestAverage = oldestSnapshot
+      ? (oldestSnapshot.CL + oldestSnapshot.BZ + oldestSnapshot.NG + oldestSnapshot.RB + oldestSnapshot.HO + oldestSnapshot.spread) / 6
+      : currentAverage;
+    const trendDelta = currentAverage - oldestAverage;
+    const trendMode = trendDelta >= 0 ? "growth" : "contraction";
+    const layerStart = trendMode === "growth" ? "#e2e8f0" : "#fed7aa";
+    const layerMid = trendMode === "growth" ? "#bae6fd" : "#f9a8d4";
+    const layerEnd = trendMode === "growth" ? "#f97316" : "#60a5fa";
+
     const layers = (history ?? []).slice(-12).map((snapshot, index, arr) => {
       const key = `layer_${index}`;
       const progress = arr.length <= 1 ? 1 : index / (arr.length - 1);
+      const layerAverage = (snapshot.CL + snapshot.BZ + snapshot.NG + snapshot.RB + snapshot.HO + snapshot.spread) / 6;
+      const relativePosition = Math.max(0, Math.min(1, (layerAverage - Math.min(oldestAverage, currentAverage)) / (Math.abs(trendDelta) || 1)));
       rows[0][key] = snapshot.CL;
       rows[1][key] = snapshot.BZ;
       rows[2][key] = snapshot.NG;
       rows[3][key] = snapshot.RB;
       rows[4][key] = snapshot.HO;
       rows[5][key] = snapshot.spread;
+      const phaseColor = progress < 0.55
+        ? mixHex(layerStart, layerMid, progress / 0.55)
+        : mixHex(layerMid, layerEnd, (progress - 0.55) / 0.45);
+      const color = mixHex(layerStart, phaseColor, 0.38 + relativePosition * 0.62);
       return {
         key,
         label: new Date(snapshot.date).toLocaleDateString(undefined, { month: "short", year: "2-digit" }),
-        strokeOpacity: 0.14 + progress * 0.34,
-        fillOpacity: 0.015 + progress * 0.09,
-        strokeWidth: 1 + progress * 0.6,
+        color,
+        strokeOpacity: 0.1 + progress * 0.32,
+        fillOpacity: 0.004 + progress * 0.05,
+        strokeWidth: 0.28 + progress * 1.22,
       };
     });
 
-    return { rows, layers };
+    return {
+      rows,
+      layers,
+      trendMode,
+      trendDelta,
+      currentAverage,
+      currentStrokeStart: trendMode === "growth" ? "#bae6fd" : "#fdba74",
+      currentStrokeEnd: trendMode === "growth" ? "#f97316" : "#60a5fa",
+      currentFillStart: trendMode === "growth" ? "#e0f2fe" : "#ffedd5",
+      currentFillEnd: trendMode === "growth" ? "#fb923c" : "#38bdf8",
+    };
   }, [history, wti, brent, ng, rb, ho, spreadNorm]);
 
   const radarTooltipLabel = useMemo(() => {
@@ -743,11 +792,21 @@ function FactorRadar({
       <div className="mb-1">
         <Kicker>Contract Momentum Radar</Kicker>
         <h2 className="text-base font-semibold text-stealth-100">Cross-contract momentum</h2>
-        <p className="mt-1 text-xs text-stealth-400">Monthly onion skins fade from oldest to newest so tension shifts show up as shape drift, not text.</p>
+        <p className="mt-1 text-xs text-stealth-400">Older shells are thinner and lighter; the full palette shifts warmer on expansion and cooler on contraction.</p>
       </div>
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={radar.rows} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
+            <defs>
+              <linearGradient id="energy-radar-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor={radar.currentStrokeStart} stopOpacity={0.95} />
+                <stop offset="100%" stopColor={radar.currentStrokeEnd} stopOpacity={1} />
+              </linearGradient>
+              <linearGradient id="energy-radar-fill" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor={radar.currentFillStart} stopOpacity={0.08} />
+                <stop offset="100%" stopColor={radar.currentFillEnd} stopOpacity={0.24} />
+              </linearGradient>
+            </defs>
             <PolarGrid stroke="#1e293b" />
             <PolarAngleAxis dataKey="factor" tick={{ fill: "#64748b", fontSize: 11 }} />
             <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
@@ -756,8 +815,8 @@ function FactorRadar({
                 key={layer.key}
                 dataKey={layer.key}
                 name={layer.label}
-                stroke="#f97316"
-                fill="#f97316"
+                stroke={layer.color}
+                fill={layer.color}
                 strokeOpacity={layer.strokeOpacity}
                 fillOpacity={layer.fillOpacity}
                 strokeWidth={layer.strokeWidth}
@@ -766,11 +825,11 @@ function FactorRadar({
             <Radar
               dataKey="current"
               name="Current"
-              stroke="#fb923c"
-              fill="#f97316"
-              strokeWidth={2.2}
-              strokeOpacity={0.95}
-              fillOpacity={0.18}
+              stroke="url(#energy-radar-stroke)"
+              fill="url(#energy-radar-fill)"
+              strokeWidth={2.4}
+              strokeOpacity={0.98}
+              fillOpacity={1}
             />
             <Tooltip
               {...tip}
@@ -786,11 +845,15 @@ function FactorRadar({
         <div className="flex flex-wrap gap-2">
           {radar.layers.length > 0 && (
             <>
-              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="rgba(249,115,22,0.28)" />{radar.layers[0].label}</span>
-              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#fb923c" />Current</span>
+              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color={radar.layers[0].color} />{radar.layers[0].label}</span>
+              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color={radar.layers[Math.floor(radar.layers.length / 2)]?.color ?? radar.layers[0].color} />Mid curve</span>
+              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color={radar.currentStrokeEnd} />Current</span>
             </>
           )}
         </div>
+        <span className={radar.trendMode === "growth" ? "text-amber-300" : "text-rose-300"}>
+          {radar.trendMode === "growth" ? "Expansion" : "Contraction"} {radar.trendDelta >= 0 ? "+" : ""}{radar.trendDelta.toFixed(1)} pts vs 12m ago
+        </span>
         {wti && <span>Vol: <span className={changeTone(wti.volatility != null ? (wti.volatility > 35 ? 1 : -1) : 0)}>{wti.volatility?.toFixed(1) ?? "—"}%</span></span>}
         {brent && wti && <span>Spread: <span className={spreadRaw > 5 ? "text-amber-400" : "text-stealth-300"}>${spreadRaw.toFixed(2)}</span></span>}
       </div>
