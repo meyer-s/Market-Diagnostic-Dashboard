@@ -26,6 +26,7 @@ def get_energy_history(days: int = Query(365, ge=90, le=1095)):
     return {
         "as_of": data["as_of"],
         "composite_history": data["composite_history"],
+        "radar_history": data["radar_history"],
         "alt_comparison": data["alt_comparison"],
         "alt_symbols": data["alt_symbols"],
     }

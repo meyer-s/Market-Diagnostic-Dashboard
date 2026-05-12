@@ -533,6 +533,62 @@ def _build_alt_comparison(
     return history
 
 
+def _pct_change_at(series: pd.Series, end_index: int, lookback: int) -> Optional[float]:
+    if end_index < lookback:
+        return None
+    current = _safe_float(series.iloc[end_index])
+    previous = _safe_float(series.iloc[end_index - lookback])
+    if current is None or previous in (None, 0):
+        return None
+    return ((current / previous) - 1.0) * 100.0
+
+
+def _build_radar_history(series_map: Dict[str, pd.Series]) -> List[Dict[str, Any]]:
+    radar_codes = ("CL", "BZ", "NG", "RB", "HO")
+    available = {code: series_map[code].dropna() for code in radar_codes if code in series_map}
+    if len(available) < 3:
+        return []
+
+    combined = pd.DataFrame(available).sort_index().dropna(how="all")
+    if combined.empty:
+        return []
+
+    month_ends = combined.groupby(combined.index.to_period("M")).tail(1).tail(12)
+    history: List[Dict[str, Any]] = []
+
+    for idx in month_ends.index:
+        snapshot: Dict[str, Any] = {"date": str(idx.date())}
+        prices_at_date: Dict[str, float] = {}
+
+        for code in radar_codes:
+            series = available.get(code)
+            if series is None:
+                continue
+            valid = series.loc[series.index <= idx]
+            if valid.empty:
+                continue
+            end_pos = len(valid) - 1
+            changes = {
+                f"{lookback}d": _pct_change_at(valid, end_pos, lookback)
+                for lookback in LOOKBACK_WINDOWS
+            }
+            snapshot[code] = round(normalize_score(changes), 2)
+            price = _safe_float(valid.iloc[end_pos])
+            if price is not None:
+                prices_at_date[code] = price
+
+        if "CL" in prices_at_date and "BZ" in prices_at_date:
+            spread_raw = prices_at_date["BZ"] - prices_at_date["CL"]
+            snapshot["spread"] = round(_clamp((spread_raw / 10.0) * 100.0, 0.0, 100.0), 2)
+        else:
+            snapshot["spread"] = 50.0
+
+        if {"CL", "BZ", "NG", "RB", "HO"}.issubset(snapshot):
+            history.append(snapshot)
+
+    return history
+
+
 # ---------------------------------------------------------------------------
 # Regime labelling
 # ---------------------------------------------------------------------------
@@ -686,6 +742,7 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
 
     history = _build_composite_history(series_map, symbol_data, effective_weights, days)
     alt_comparison = _build_alt_comparison(alt_series, days)
+    radar_history = _build_radar_history(series_map)
 
     wti_20d = symbol_data.get("CL", {}).get("changes", {}).get("20d")
     ng_20d = symbol_data.get("NG", {}).get("changes", {}).get("20d")
@@ -706,6 +763,7 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
         "groups": list(groups.values()),
         "symbols": list(symbol_data.values()),
         "composite_history": history,
+        "radar_history": radar_history,
         "fred_prices": fred_prices,
         "alt_comparison": alt_comparison,
         "alt_symbols": [

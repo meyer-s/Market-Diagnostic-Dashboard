@@ -73,6 +73,15 @@ type HistoryPoint = { date: string; value: number };
 type EnergyHistory = {
   as_of: string;
   composite_history: HistoryPoint[];
+  radar_history: Array<{
+    date: string;
+    CL: number;
+    BZ: number;
+    NG: number;
+    RB: number;
+    HO: number;
+    spread: number;
+  }>;
   alt_comparison: Array<Record<string, number | string>>;
   alt_symbols: Array<{ code: string; name: string; group: string }>;
 };
@@ -673,7 +682,13 @@ function PriceCascadeChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
 // Factor radar (live momentum snapshot across all contracts)
 // ---------------------------------------------------------------------------
 
-function FactorRadar({ symbols }: { symbols: SymbolRow[] }) {
+function FactorRadar({
+  symbols,
+  history,
+}: {
+  symbols: SymbolRow[];
+  history?: EnergyHistory["radar_history"];
+}) {
   const byCode = Object.fromEntries(symbols.map((s) => [s.code, s]));
   const wti   = byCode["CL"];
   const brent = byCode["BZ"];
@@ -684,40 +699,98 @@ function FactorRadar({ symbols }: { symbols: SymbolRow[] }) {
   const spreadRaw   = (brent?.current_price ?? 0) - (wti?.current_price ?? 0);
   const spreadNorm  = Math.min(100, Math.max(0, (spreadRaw / 10) * 100));
 
-  const data = [
-    { factor: "WTI",   value: wti?.momentum_score  ?? 50 },
-    { factor: "Brent", value: brent?.momentum_score ?? 50 },
-    { factor: "Nat Gas",value: ng?.momentum_score   ?? 50 },
-    { factor: "RBOB",  value: rb?.momentum_score    ?? 50 },
-    { factor: "HtgOil",value: ho?.momentum_score    ?? 50 },
-    { factor: "Spread",value: spreadNorm },
-  ];
+  const radar = useMemo(() => {
+    const rows: Array<Record<string, string | number>> = [
+      { factor: "WTI", current: wti?.momentum_score ?? 50 },
+      { factor: "Brent", current: brent?.momentum_score ?? 50 },
+      { factor: "Nat Gas", current: ng?.momentum_score ?? 50 },
+      { factor: "RBOB", current: rb?.momentum_score ?? 50 },
+      { factor: "HtgOil", current: ho?.momentum_score ?? 50 },
+      { factor: "Spread", current: spreadNorm },
+    ];
+
+    const layers = (history ?? []).slice(-12).map((snapshot, index, arr) => {
+      const key = `layer_${index}`;
+      const progress = arr.length <= 1 ? 1 : index / (arr.length - 1);
+      rows[0][key] = snapshot.CL;
+      rows[1][key] = snapshot.BZ;
+      rows[2][key] = snapshot.NG;
+      rows[3][key] = snapshot.RB;
+      rows[4][key] = snapshot.HO;
+      rows[5][key] = snapshot.spread;
+      return {
+        key,
+        label: new Date(snapshot.date).toLocaleDateString(undefined, { month: "short", year: "2-digit" }),
+        strokeOpacity: 0.14 + progress * 0.34,
+        fillOpacity: 0.015 + progress * 0.09,
+        strokeWidth: 1 + progress * 0.6,
+      };
+    });
+
+    return { rows, layers };
+  }, [history, wti, brent, ng, rb, ho, spreadNorm]);
+
+  const radarTooltipLabel = useMemo(() => {
+    const labels: Record<string, string> = { current: "Current" };
+    radar.layers.forEach((layer) => {
+      labels[layer.key] = layer.label;
+    });
+    return labels;
+  }, [radar.layers]);
 
   return (
     <div className="surface-card p-4">
       <div className="mb-1">
         <Kicker>Contract Momentum Radar</Kicker>
         <h2 className="text-base font-semibold text-stealth-100">Cross-contract momentum</h2>
-        <p className="mt-1 text-xs text-stealth-400">One shape shows where momentum is concentrated across the energy complex.</p>
+        <p className="mt-1 text-xs text-stealth-400">Monthly onion skins fade from oldest to newest so tension shifts show up as shape drift, not text.</p>
       </div>
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
-          <RadarChart data={data} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
+          <RadarChart data={radar.rows} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
             <PolarGrid stroke="#1e293b" />
             <PolarAngleAxis dataKey="factor" tick={{ fill: "#64748b", fontSize: 11 }} />
             <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-            <Radar dataKey="value" stroke="#f97316" fill="#f97316" fillOpacity={0.18} strokeWidth={2} />
+            {radar.layers.map((layer) => (
+              <Radar
+                key={layer.key}
+                dataKey={layer.key}
+                name={layer.label}
+                stroke="#f97316"
+                fill="#f97316"
+                strokeOpacity={layer.strokeOpacity}
+                fillOpacity={layer.fillOpacity}
+                strokeWidth={layer.strokeWidth}
+              />
+            ))}
+            <Radar
+              dataKey="current"
+              name="Current"
+              stroke="#fb923c"
+              fill="#f97316"
+              strokeWidth={2.2}
+              strokeOpacity={0.95}
+              fillOpacity={0.18}
+            />
             <Tooltip
               {...tip}
-              formatter={(v: number, _name: string, props: { payload: { factor: string } }) => [
+              formatter={(v: number, name: string, props: { payload: { factor: string } }) => [
                 `${v.toFixed(0)} / 100`,
-                props.payload.factor,
+                `${props.payload.factor} · ${radarTooltipLabel[name] ?? name}`,
               ]}
             />
           </RadarChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-2 flex justify-center gap-4 text-xs text-stealth-500">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-stealth-500">
+        <div className="flex flex-wrap gap-2">
+          {radar.layers.length > 0 && (
+            <>
+              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="rgba(249,115,22,0.28)" />{radar.layers[0].label}</span>
+              <span className="surface-card-muted inline-flex items-center gap-2 px-2.5 py-1"><LegendDot color="#fb923c" />Current</span>
+            </>
+          )}
+        </div>
         {wti && <span>Vol: <span className={changeTone(wti.volatility != null ? (wti.volatility > 35 ? 1 : -1) : 0)}>{wti.volatility?.toFixed(1) ?? "—"}%</span></span>}
         {brent && wti && <span>Spread: <span className={spreadRaw > 5 ? "text-amber-400" : "text-stealth-300"}>${spreadRaw.toFixed(2)}</span></span>}
       </div>
@@ -1014,7 +1087,7 @@ export default function EnergyIndex() {
       {/* ── Composite history + Radar ──────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         {history && <CompositeHistoryChart history={history.composite_history} />}
-        <FactorRadar symbols={overview.symbols} />
+        <FactorRadar symbols={overview.symbols} history={history?.radar_history} />
       </div>
 
       {/* ── Supply/Price relationship + pass-through ──────────────── */}
