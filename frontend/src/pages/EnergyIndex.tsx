@@ -298,6 +298,26 @@ function MetaPill({ children, tone = "text-stealth-400" }: { children: React.Rea
   return <span className={`page-badge px-2 py-1 text-xs ${tone}`}>{children}</span>;
 }
 
+function SignalTile({
+  label,
+  title,
+  detail,
+  tone = "text-stealth-100",
+}: {
+  label: string;
+  title: React.ReactNode;
+  detail: React.ReactNode;
+  tone?: string;
+}) {
+  return (
+    <div className="surface-card-muted px-3 py-2.5">
+      <LabelCaps>{label}</LabelCaps>
+      <p className={`mt-1 text-sm font-semibold ${tone}`}>{title}</p>
+      <BodyHint className="mt-1 leading-4">{detail}</BodyHint>
+    </div>
+  );
+}
+
 const tip = {
   contentStyle: {
     background: "rgba(11,15,25,0.94)",
@@ -312,9 +332,9 @@ const tip = {
 // Futures price table
 // ---------------------------------------------------------------------------
 
-function FuturesTable({ symbols }: { symbols: SymbolRow[] }) {
+function FuturesTable({ symbols, surfaceClassName = "surface-card" }: { symbols: SymbolRow[]; surfaceClassName?: string }) {
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <Kicker>Energy Futures</Kicker>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-xs sm:text-sm">
@@ -395,11 +415,11 @@ function GroupCards({ groups }: { groups: GroupRow[] }) {
 // Composite history chart
 // ---------------------------------------------------------------------------
 
-function CompositeHistoryChart({ history }: { history: HistoryPoint[] }) {
+function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: { history: HistoryPoint[]; surfaceClassName?: string }) {
   if (!history.length) return null;
   const decimated = history.filter((_, i) => i % Math.max(1, Math.floor(history.length / 200)) === 0);
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader kicker="Energy Composite Score" title="Composite history" description="Trend regime over the selected lookback window." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
@@ -475,7 +495,15 @@ function SpreadTooltip({
   );
 }
 
-function RetailPricesChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
+function RetailPricesChart({
+  prices,
+  surfaceClassName = "surface-card",
+  chartHeightClassName = "h-64",
+}: {
+  prices: EnergyPrices["fred_prices"];
+  surfaceClassName?: string;
+  chartHeightClassName?: string;
+}) {
   const spotData   = prices?.crude_wti_spot  ?? [];
   const gasData    = prices?.retail_gasoline ?? [];
   const dieselData = prices?.retail_diesel   ?? [];
@@ -526,7 +554,7 @@ function RetailPricesChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
   const overallMean   = merged.reduce((s, r) => s + r.spread, 0) / merged.length;
 
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <CardHeader kicker="Futures → Pump: Refining Spread" title="Pump pricing vs futures cost" description="Bars show how far retail pricing sits above or below its 6-month margin baseline." />
         <div className="grid min-w-[260px] grid-cols-3 gap-2 text-xs">
@@ -535,7 +563,7 @@ function RetailPricesChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
           <StatTile label="Spread" value={<span className="font-mono">${latest.spread.toFixed(3)}</span>} tone={elevated ? "text-rose-300" : "text-emerald-300"} />
         </div>
       </div>
-      <div className="h-64">
+      <div className={chartHeightClassName}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
@@ -733,9 +761,11 @@ function PriceCascadeChart({ prices }: { prices: EnergyPrices["fred_prices"] }) 
 function FactorRadar({
   symbols,
   history,
+  surfaceClassName = "surface-card",
 }: {
   symbols: SymbolRow[];
   history?: EnergyHistory["radar_history"];
+  surfaceClassName?: string;
 }) {
   const byCode = Object.fromEntries(symbols.map((s) => [s.code, s]));
   const wti   = byCode["CL"];
@@ -813,7 +843,7 @@ function FactorRadar({
   }, [radar.layers]);
 
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader kicker="Contract Momentum Radar" title="Cross-contract momentum" description="Month-to-month shells deepen from pale to saturated green or red so the time path itself shows expansion or contraction." />
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
@@ -1063,6 +1093,11 @@ export default function EnergyIndex() {
   const latestGas = latestValue(prices?.fred_prices.retail_gasoline);
   const latestWti = latestValue(prices?.fred_prices.crude_wti_spot);
   const latestPumpSpread = latestGas != null && latestWti != null ? latestGas - latestWti / 42 : null;
+  const groupsByStrength = [...overview.groups].sort((left, right) => right.group_composite - left.group_composite);
+  const strongestGroup = groupsByStrength[0];
+  const weakestGroup = groupsByStrength[groupsByStrength.length - 1];
+  const spreadStress = spread != null && spread > 5;
+  const pumpStress = latestPumpSpread != null && latestPumpSpread > 1.8;
 
   if (!overview) {
     return (
@@ -1101,17 +1136,40 @@ export default function EnergyIndex() {
 
       {/* ── Regime snapshot ───────────────────────────────────────── */}
       <div className="surface-card-strong p-4 md:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+        <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.95fr]">
+          <div className="space-y-4">
+            <div>
             <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Energy Snapshot</p>
             <p className={`mt-2 text-4xl font-semibold ${biasTone(overview.composite_score)}`}>{overview.composite_score.toFixed(0)}</p>
             <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
               <div className={`h-2 rounded-full ${overview.composite_score >= 60 ? "bg-emerald-500" : overview.composite_score <= 40 ? "bg-rose-500" : "bg-amber-500"}`} style={{ width: `${overview.composite_score}%` }} />
             </div>
             <p className="mt-2 text-xs text-stealth-400">As of {new Date(overview.as_of).toLocaleString()}</p>
+            </div>
+            <p className="max-w-4xl text-sm leading-6 text-stealth-300">{overview.summary}</p>
+            <div className="grid gap-2 md:grid-cols-3">
+              <SignalTile
+                label="Primary Read"
+                title={overview.regime_label}
+                tone={biasTone(overview.composite_score)}
+                detail={strongestGroup ? `${strongestGroup.label} is carrying the tape with a ${strongestGroup.group_composite.toFixed(0)} composite.` : "Composite regime is leading the page."}
+              />
+              <SignalTile
+                label="Pressure Point"
+                title={pumpStress ? "Retail margin still elevated" : "Pump pricing near trend"}
+                tone={pumpStress ? "text-rose-300" : "text-emerald-300"}
+                detail={latestPumpSpread != null ? `Retail gas sits ${money(latestPumpSpread, 3)} over crude-per-gallon.` : "Retail pass-through signal unavailable."}
+              />
+              <SignalTile
+                label="Cross-Market"
+                title={spreadStress ? "Brent premium signals tightness" : "Brent-WTI spread is contained"}
+                tone={spreadStress ? "text-amber-300" : "text-stealth-100"}
+                detail={spread != null ? `Global crude is trading ${money(spread)} over WTI.` : "Spread signal unavailable."}
+              />
+            </div>
           </div>
 
-          <div className="grid min-w-[280px] flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid min-w-[280px] gap-3 sm:grid-cols-2 xl:grid-cols-2">
             <StatTile
               label="Regime"
               value={<span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${regimeBadgeStyle(overview.regime_label)}`}>{overview.regime_label}</span>}
@@ -1134,40 +1192,88 @@ export default function EnergyIndex() {
               tone={latestPumpSpread != null && latestPumpSpread > 1.8 ? "text-rose-300" : "text-stealth-100"}
               detail="Retail gas minus WTI/gal"
             />
+            <StatTile
+              label="Leader"
+              value={strongestGroup?.label ?? "—"}
+              tone={strongestGroup ? biasTone(strongestGroup.group_composite) : "text-stealth-100"}
+              detail={strongestGroup ? `${strongestGroup.group_composite.toFixed(0)} composite` : "Group leadership unavailable"}
+            />
+            <StatTile
+              label="Lagging"
+              value={weakestGroup?.label ?? "—"}
+              tone={weakestGroup ? biasTone(weakestGroup.group_composite) : "text-stealth-100"}
+              detail={weakestGroup ? `${weakestGroup.group_composite.toFixed(0)} composite` : "Group laggard unavailable"}
+            />
           </div>
         </div>
-        <p className="mt-4 max-w-4xl text-sm leading-6 text-stealth-300">{overview.summary}</p>
       </div>
 
-      <div className="grid items-start gap-3 xl:grid-cols-[0.95fr_1.35fr] xl:gap-4">
-        <GroupCards groups={overview.groups} />
-        <FuturesTable symbols={overview.symbols} />
-      </div>
-
-      {/* ── Composite history + Radar ──────────────────────────────── */}
-      <div className="grid items-start gap-3 lg:grid-cols-[2fr_1fr] lg:gap-4">
-        {history && <CompositeHistoryChart history={history.composite_history} />}
-        <FactorRadar symbols={overview.symbols} history={history?.radar_history} />
-      </div>
-
-      {/* ── Supply/Price relationship + pass-through ──────────────── */}
       {prices && (
-        <div className="grid items-start gap-3 lg:grid-cols-2 lg:gap-4">
-          <SupplyPriceChart prices={prices.fred_prices} />
-          <PriceCascadeChart prices={prices.fred_prices} />
+        <div className="grid items-start gap-4 xl:grid-cols-[1.45fr_0.95fr]">
+          <RetailPricesChart prices={prices.fred_prices} surfaceClassName="primary-card" chartHeightClassName="h-72" />
+          <div className="grid gap-4">
+            {history && <CompositeHistoryChart history={history.composite_history} surfaceClassName="primary-card" />}
+            <FactorRadar symbols={overview.symbols} history={history?.radar_history} />
+          </div>
         </div>
       )}
 
-      {prices && <RetailPricesChart prices={prices.fred_prices} />}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="page-kicker">Market Structure</p>
+            <h2 className="text-lg font-semibold text-stealth-100">Contracts and group leadership</h2>
+          </div>
+          <div className="page-meta mt-0">
+            <MetaPill>Use this band to see which contracts are driving the composite.</MetaPill>
+          </div>
+        </div>
 
-      <div className="grid items-start gap-3 xl:grid-cols-[1.1fr_1fr] xl:gap-4">
-        {history && (
-          <AltEnergyChart
-            data={history.alt_comparison}
-            altSymbols={history.alt_symbols}
-          />
-        )}
-        {mix && <GenerationMixPanel mix={mix} />}
+        <div className="grid items-start gap-4 xl:grid-cols-[1.35fr_0.95fr]">
+          <FuturesTable symbols={overview.symbols} surfaceClassName="surface-card-strong" />
+          <GroupCards groups={overview.groups} />
+        </div>
+      </div>
+
+      {prices && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="page-kicker">Transmission</p>
+              <h2 className="text-lg font-semibold text-stealth-100">How crude pressure moves through the system</h2>
+            </div>
+            <div className="page-meta mt-0">
+              <MetaPill>Pass-through and inventory help explain whether pump pressure is supply-led or margin-led.</MetaPill>
+            </div>
+          </div>
+
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            <PriceCascadeChart prices={prices.fred_prices} />
+            <SupplyPriceChart prices={prices.fred_prices} />
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="page-kicker">Longer Horizon</p>
+            <h2 className="text-lg font-semibold text-stealth-100">Capital rotation and power mix context</h2>
+          </div>
+          <div className="page-meta mt-0">
+            <MetaPill>These slower-moving panels frame transition leadership and end-demand structure.</MetaPill>
+          </div>
+        </div>
+
+        <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_1fr]">
+          {history && (
+            <AltEnergyChart
+              data={history.alt_comparison}
+              altSymbols={history.alt_symbols}
+            />
+          )}
+          {mix && <GenerationMixPanel mix={mix} />}
+        </div>
       </div>
 
       {overview.warnings.length > 0 && (
