@@ -737,9 +737,10 @@ function RetailPricesChart({
         <div className="mt-4 border-t border-stealth-800/60 pt-3">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             <div className="flex items-center gap-2">
-            <HoverTooltip tip="Indexed to 100 so crude can be compared against retail catch-up without spending a separate card on pass-through timing.">
-              <LabelCaps className="mb-0">Pass-Through Lag</LabelCaps>
-            </HoverTooltip>
+              <HoverTooltip tip="Indexed to 100 so crude can be compared against retail catch-up without spending a separate card on pass-through timing.">
+                <LabelCaps className="mb-0">Pass-Through Lag</LabelCaps>
+              </HoverTooltip>
+            </div>
             <div className="flex flex-wrap gap-2">
               <LegendPill color="#f97316">WTI Crude</LegendPill>
               <LegendPill color="#fbbf24">Retail Gasoline</LegendPill>
