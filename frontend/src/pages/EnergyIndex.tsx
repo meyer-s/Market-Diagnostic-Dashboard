@@ -26,7 +26,6 @@ import {
   commonXAxisProps,
   commonYAxisProps,
 } from "../utils/chartUtils";
-import InfoTooltip from "../components/ui/InfoTooltip";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -251,6 +250,23 @@ const BIOFUEL_COLORS: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Shared hover tooltip (replaces standalone InfoTooltip icon)
+// ---------------------------------------------------------------------------
+
+function HoverTooltip({ children, tip, width = "w-64" }: { children: React.ReactNode; tip: string; width?: string }) {
+  return (
+    <span className="group/htip relative inline-block cursor-default">
+      {children}
+      <span
+        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden ${width} rounded-lg border border-stealth-700 bg-stealth-950/95 px-2.5 py-2 text-xs font-normal text-stealth-300 shadow-[0_10px_40px_rgba(2,6,23,0.75)] group-hover/htip:block`}
+      >
+        {tip}
+      </span>
+    </span>
+  );
+}
+
 // Shared primitives matching app design system
 // ---------------------------------------------------------------------------
 
@@ -281,8 +297,13 @@ function CardHeader({
     <div className="space-y-1">
       <Kicker>{kicker}</Kicker>
       <div className="flex items-start gap-2">
-        <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
-        {tooltipText ? <InfoTooltip text={tooltipText} /> : null}
+        {tooltipText ? (
+          <HoverTooltip tip={tooltipText} width="w-72">
+            <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+          </HoverTooltip>
+        ) : (
+          <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+        )}
       </div>
       {description ? <BodyHint>{description}</BodyHint> : null}
     </div>
@@ -299,12 +320,11 @@ function SectionHeader({
   tooltipText: string;
 }) {
   return (
-    <div className="flex items-start gap-2">
-      <div>
-        <p className="page-kicker">{kicker}</p>
+    <div>
+      <p className="page-kicker">{kicker}</p>
+      <HoverTooltip tip={tooltipText} width="w-80">
         <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
-      </div>
-      <InfoTooltip text={tooltipText} />
+      </HoverTooltip>
     </div>
   );
 }
@@ -321,10 +341,14 @@ function StatTile({
   tone?: string;
 }) {
   return (
-    <div className="surface-card-muted px-2.5 py-2">
+    <div className="group/stile relative surface-card-muted px-2.5 py-2 cursor-default">
       <LabelCaps>{label}</LabelCaps>
       <p className={`mt-0.5 text-base font-semibold ${tone}`}>{value}</p>
-      {detail ? <BodyHint>{detail}</BodyHint> : null}
+      {detail ? (
+        <span className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 hidden w-52 rounded-lg border border-stealth-700 bg-stealth-950/95 px-2.5 py-2 text-xs text-stealth-300 shadow-[0_10px_40px_rgba(2,6,23,0.75)] group-hover/stile:block">
+          {detail}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -353,10 +377,12 @@ function SignalTile({
   tone?: string;
 }) {
   return (
-    <div className="surface-card-muted px-3 py-2.5">
+    <div className="group/stile relative surface-card-muted px-3 py-2.5 cursor-default">
       <LabelCaps>{label}</LabelCaps>
       <p className={`mt-1 text-sm font-semibold ${tone}`}>{title}</p>
-      <BodyHint className="mt-1 leading-4">{detail}</BodyHint>
+      <span className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 hidden w-56 rounded-lg border border-stealth-700 bg-stealth-950/95 px-2.5 py-2 text-xs text-stealth-300 shadow-[0_10px_40px_rgba(2,6,23,0.75)] group-hover/stile:block">
+        {detail}
+      </span>
     </div>
   );
 }
@@ -380,9 +406,9 @@ function GroupSummaryStrip({ groups }: { groups: GroupRow[] }) {
     <div className="mt-3 border-t border-stealth-800/60 pt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
+        <HoverTooltip tip="Grouped composite leadership compressed into one strip so the futures table remains the primary market-structure read.">
           <LabelCaps className="mb-0">Group Leadership</LabelCaps>
-          <InfoTooltip text="Grouped composite leadership compressed into one strip so the futures table remains the primary market-structure read." />
-        </div>
+        </HoverTooltip>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {groups.map((group) => (
@@ -469,6 +495,11 @@ function FuturesTable({
 function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: { history: HistoryPoint[]; surfaceClassName?: string }) {
   if (!history.length) return null;
   const decimated = history.filter((_, i) => i % Math.max(1, Math.floor(history.length / 200)) === 0);
+  const scores = decimated.map((p) => p.value);
+  const minScore = Math.min(...scores);
+  const maxScore = Math.max(...scores);
+  const yMin = Math.max(0, Math.floor(minScore * 0.95));
+  const yMax = Math.min(100, Math.ceil(maxScore * 1.02));
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader kicker="Energy Composite Score" title="Composite history" tooltipText="Trend regime over the selected lookback window. A score near 50 is neutral, above 60 is elevated, and below 40 is soft." />
@@ -477,7 +508,7 @@ function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: {
           <LineChart data={decimated} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
-            <YAxis {...commonYAxisProps} domain={[20, 80]} />
+            <YAxis {...commonYAxisProps} domain={[yMin, yMax]} />
             <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Score"]} />
             <ReferenceLine y={50} stroke="#334155" strokeDasharray="3 3" />
             <Line type="monotone" dataKey="value" stroke="#f97316" dot={false} strokeWidth={2} />
@@ -705,9 +736,9 @@ function RetailPricesChart({
         <div className="mt-4 border-t border-stealth-800/60 pt-3">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             <div className="flex items-center gap-2">
+            <HoverTooltip tip="Indexed to 100 so crude can be compared against retail catch-up without spending a separate card on pass-through timing.">
               <LabelCaps className="mb-0">Pass-Through Lag</LabelCaps>
-              <InfoTooltip text="Indexed to 100 so crude can be compared against retail catch-up without spending a separate card on pass-through timing." />
-            </div>
+            </HoverTooltip>
             <div className="flex flex-wrap gap-2">
               <LegendPill color="#f97316">WTI Crude</LegendPill>
               <LegendPill color="#fbbf24">Retail Gasoline</LegendPill>
@@ -1318,7 +1349,11 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
         </div>
       )}
       <div className="mt-3 flex justify-end">
-        <InfoTooltip text={summary.notes} />
+        {summary.notes ? (
+          <HoverTooltip tip={summary.notes} width="w-72">
+            <LabelCaps className="mb-0">Notes</LabelCaps>
+          </HoverTooltip>
+        ) : null}
       </div>
     </div>
   );
@@ -1327,6 +1362,200 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
 const GENERATION_MIX_KEYS: Record<string, 1> = {
   coal: 1, nat_gas: 1, nuclear: 1, petroleum: 1, hydro: 1, wind: 1, solar: 1, geothermal: 1,
 };
+
+// ---------------------------------------------------------------------------
+// Energy Methodology & Scoring Panel
+// ---------------------------------------------------------------------------
+
+function EnergyMethodologyPanel() {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const ChevronIcon = ({ open }: { open: boolean }) => (
+    <span className={`collapsible-icon ${open ? "collapsible-icon-open" : ""}`} aria-hidden="true">
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </span>
+  );
+
+  const Section = ({ id, title, children }: { id: string; title: string; children: React.ReactNode }) => {
+    const open = expanded.has(id);
+    return (
+      <div className="border-b border-stealth-700 last:border-b-0">
+        <button
+          onClick={() => toggle(id)}
+          className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-stealth-700/50"
+          aria-expanded={open}
+        >
+          <span className="font-semibold text-stealth-200">{title}</span>
+          <ChevronIcon open={open} />
+        </button>
+        <div className={`collapsible-panel ${open ? "collapsible-panel-open" : ""}`}>
+          <div className="collapsible-panel-inner">
+            <div className="px-4 pb-4 text-sm text-stealth-300 space-y-3">
+              {children}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-stealth-800 to-stealth-850 border border-stealth-700 rounded-lg">
+      <div className="p-4 md:p-6 border-b border-stealth-700">
+        <h2 className="text-lg md:text-xl font-semibold text-stealth-100 mb-2">Methodology & Scoring</h2>
+        <p className="text-xs text-stealth-400">
+          How the energy composite is built, scored, and interpreted — groups, signals, and all data sources.
+        </p>
+      </div>
+      <div className="divide-y divide-stealth-700">
+        <Section id="composite" title="What the Composite Measures">
+          <p>
+            The Energy Markets composite is a momentum-weighted score (0–100) built across all configured futures
+            contracts. It answers one question: is energy-complex momentum broadly accelerating, decelerating, or
+            neutral? A score above 60 is elevated (tightening or demand-driven), below 40 is soft, and near 50 is neutral.
+          </p>
+        </Section>
+
+        <Section id="scoring" title="Momentum Score per Contract">
+          <p>
+            Each contract receives a 0–100 momentum score derived from a multi-horizon blend of percent changes:
+            5-day (short-term), 20-day (medium-term), 60-day (trend), and 120-day (regime). Each horizon's
+            percent change is normalized via a tanh function to produce a bounded signal, then the four signals
+            are averaged into the final contract score.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+            {([["5-day", "Short-term noise"], ["20-day", "Medium-term swing"], ["60-day", "Trend"], ["120-day", "Regime"]] as const).map(([period, label]) => (
+              <div key={period} className="bg-stealth-900/50 rounded p-2 text-xs">
+                <div className="text-orange-300 font-semibold">{period}</div>
+                <div className="text-stealth-400 mt-0.5">{label}</div>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section id="groups" title="Group Weighting Structure">
+          <p>
+            Contracts are organized into four groups. Each group composite is the unweighted average of its member
+            scores. The page composite is the weighted sum of group composites:
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+            {[
+              { label: "Crude", weight: "40%", color: "text-orange-300", contracts: "WTI (CL), Brent (BZ)" },
+              { label: "Natural Gas", weight: "25%", color: "text-sky-300", contracts: "Henry Hub (NG)" },
+              { label: "Refined", weight: "20%", color: "text-amber-300", contracts: "RBOB (RB), Heating Oil (HO)" },
+              { label: "Biofuels", weight: "15%", color: "text-emerald-300", contracts: "Ethanol (EH), Soybean Oil (ZL)" },
+            ].map((g) => (
+              <div key={g.label} className="bg-stealth-900/50 rounded p-2 text-xs">
+                <div className={`font-semibold ${g.color}`}>{g.label} — {g.weight}</div>
+                <div className="text-stealth-400 mt-0.5">{g.contracts}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-stealth-400">
+            Crude carries the largest weight because it sets the input cost for nearly all downstream energy products.
+            Biofuels at 15% reflects their growing policy relevance as a blend component rather than a primary fuel source.
+          </p>
+        </Section>
+
+        <Section id="macd" title="MACD Refining Spread">
+          <p>
+            The refining spread is the difference between the retail gasoline price (FRED weekly series) and WTI
+            crude expressed per gallon (spot ÷ 42). This spread represents the combined refining, transport, and
+            marketing margin passed through to consumers.
+          </p>
+          <p>
+            A MACD-style momentum analysis is applied to the spread: EMA(12) minus EMA(26) gives the MACD line.
+            An EMA(9) of MACD gives the signal line. The histogram is MACD minus signal.
+          </p>
+          <div className="bg-stealth-900/50 rounded p-2 text-xs text-stealth-400">
+            Positive histogram → margin pressure is <span className="text-rose-300">accelerating</span>.
+            Negative → margin pressure is <span className="text-emerald-300">easing</span>.
+            The 26-week rolling mean of the raw spread serves as a drift-adjusted baseline reference.
+          </div>
+        </Section>
+
+        <Section id="radar" title="Radar History — Onion-Skin Layers">
+          <p>
+            The contract momentum radar stacks up to 12 monthly snapshots behind the current reading.
+            The oldest snapshot is palest; the most recent is most saturated. The time-path itself shows whether
+            the full contract set is expanding or contracting.
+          </p>
+          <p>
+            Radar axes: WTI, Brent, Natural Gas, RBOB, Heating Oil, and the Brent–WTI spread (normalized to 0–100).
+            Green layers indicate a growth regime (current composite higher than the 12-month-ago snapshot); red
+            layers indicate contraction.
+          </p>
+        </Section>
+
+        <Section id="rotation" title="Capital Rotation Context">
+          <p>
+            XLE (energy equity) is compared against a transition basket — the equal-weight average of ICLN (clean
+            energy), TAN (solar), FAN (wind), and PHO (water infrastructure). All series are indexed to 100 at the
+            start of the selected window.
+          </p>
+          <p>
+            The rotation spread (XLE minus transition basket) quantifies which side is attracting more relative
+            capital. A spread above +8 favors traditional energy cash flows; below −8 favors transition-linked
+            equities. The strongest individual theme (highest indexed level) is surfaced separately.
+          </p>
+        </Section>
+
+        <Section id="biofuels" title="Biofuels Coverage">
+          <p>
+            Biofuels form a 15% weight group. Two contracts are included:
+          </p>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            <div className="bg-stealth-900/50 rounded p-2 text-xs">
+              <div className="text-emerald-300 font-semibold">Ethanol (EH=F)</div>
+              <div className="text-stealth-400 mt-0.5">CME corn-derived ethanol futures. History is shorter (~64 trading days available at the 1Y window).</div>
+            </div>
+            <div className="bg-stealth-900/50 rounded p-2 text-xs">
+              <div className="text-sky-300 font-semibold">Soybean Oil (ZL=F)</div>
+              <div className="text-stealth-400 mt-0.5">CME soybean oil futures — a key biodiesel feedstock and renewable diesel input.</div>
+            </div>
+          </div>
+          <p>
+            The biofuels panel also shows RBOB and Heating Oil indexed to the same base, so you can read directly
+            whether biofuel-linked contracts are leading or lagging the conventional refining chain.
+          </p>
+        </Section>
+
+        <Section id="mix" title="Generation Mix">
+          <p>
+            Annual U.S. electricity generation shares are sourced from the EIA v2 API (electric-power-operational-data).
+            Data is broken into coal, natural gas, nuclear, petroleum, hydro, wind, solar, and geothermal.
+            Percentages are computed as each fuel's share of total annual generation for the latest complete year.
+          </p>
+          <p className="text-xs text-stealth-400">
+            If the live EIA feed is unavailable, the panel falls back to pinned 2023 values and shows a notice.
+            No FRED fallback is used for the generation mix.
+          </p>
+        </Section>
+
+        <Section id="sources" title="Data Sources">
+          <ul className="space-y-1.5 text-xs">
+            <li><span className="text-stealth-200 font-medium">Yahoo Finance:</span> All futures (CL, BZ, NG, RB, HO, EH=F, ZL=F) and ETFs (XLE, ICLN, TAN, FAN, PHO)</li>
+            <li><span className="text-stealth-200 font-medium">FRED (St. Louis Fed):</span> Retail gasoline, retail diesel, WTI spot, natural gas spot, crude oil inventories</li>
+            <li><span className="text-stealth-200 font-medium">EIA v2 API:</span> Annual electric power generation by fuel type</li>
+          </ul>
+          <p className="text-xs text-stealth-400 mt-1">
+            All scores are computed at request time from the most recent available data. Composite cache TTL is 20 minutes per timeframe window.
+          </p>
+        </Section>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Main page
@@ -1543,8 +1772,14 @@ export default function EnergyIndex() {
       )}
 
       <div className="flex items-center justify-end gap-2">
-        <LabelCaps className="mb-0">Sources</LabelCaps>
-        <InfoTooltip text={`Futures and biofuel-linked contracts via Yahoo Finance. Retail prices and inventory via FRED/EIA. Generation mix via ${mix?.source ?? "EIA annual data"}${mix?.latest_year ? ` (${mix.latest_year})` : ""}. ETFs via Yahoo Finance. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`} />
+        <HoverTooltip
+          tip={`Futures and biofuel-linked contracts via Yahoo Finance. Retail prices and inventory via FRED/EIA. Generation mix via ${mix?.source ?? "EIA annual data"}${mix?.latest_year ? ` (${mix.latest_year})` : ""}. ETFs via Yahoo Finance. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
+          width="w-80"
+        >
+          <LabelCaps className="mb-0">Sources</LabelCaps>
+        </HoverTooltip>
+
+        <EnergyMethodologyPanel />
       </div>
 
     </div>
