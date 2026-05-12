@@ -406,9 +406,10 @@ function GroupSummaryStrip({ groups }: { groups: GroupRow[] }) {
     <div className="mt-3 border-t border-stealth-800/60 pt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-        <HoverTooltip tip="Grouped composite leadership compressed into one strip so the futures table remains the primary market-structure read.">
-          <LabelCaps className="mb-0">Group Leadership</LabelCaps>
-        </HoverTooltip>
+          <HoverTooltip tip="Grouped composite leadership compressed into one strip so the futures table remains the primary market-structure read.">
+            <LabelCaps className="mb-0">Group Leadership</LabelCaps>
+          </HoverTooltip>
+        </div>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {groups.map((group) => (
