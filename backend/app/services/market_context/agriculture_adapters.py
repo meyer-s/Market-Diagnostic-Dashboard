@@ -856,6 +856,121 @@ def _build_wasde_balance_sheet(symbol: str, text: str, report_meta: dict[str, An
             "exports": "Exports",
             "ending_stocks": "Ending Stocks",
         }
+    elif root == "CT":
+        section = _extract_section(
+            text,
+            "U.S. All Cotton Supply and Use",
+            ("World All Cotton", "U.S. Sugar", "World Sugar", "U.S. Livestock"),
+        )
+        if not section:
+            section = _extract_section(
+                text,
+                "U.S. Cotton Supply and Use",
+                ("World Cotton", "U.S. Sugar", "U.S. Livestock"),
+            )
+        labels = {
+            "yield": "Yield",
+            "production": "Production",
+            "imports": "Imports",
+            "domestic_use": "Mill Use",
+            "exports": "Exports",
+            "ending_stocks": "Ending Stocks",
+        }
+    elif root == "SB":
+        section = _extract_section(
+            text,
+            "U.S. Sugar Supply and Use",
+            ("U.S. Cotton", "World Sugar", "U.S. All Cotton", "U.S. Livestock"),
+        )
+        if not section:
+            section = _extract_section(
+                text,
+                "U.S. Sugar and Sweetener Supply and Use",
+                ("U.S. Cotton", "World Sugar", "U.S. Livestock"),
+            )
+        labels = {
+            "production": "Total Production",
+            "imports": "Imports",
+            "domestic_use": "Domestic Food Use",
+            "ending_stocks": "Ending Stocks",
+        }
+    elif root == "RS":
+        # Canola (Rapeseed) – WASDE world oilseed tables
+        section = _extract_section(
+            text,
+            "Rapeseed Supply and Use",
+            ("Palm Oil", "Sunflowerseed", "World Oilseed"),
+        )
+        if not section:
+            section = _extract_section(
+                text,
+                "World Rapeseed and Products Supply and Use",
+                ("Palm Oil", "Sunflowerseed"),
+            )
+        labels = {
+            "production": "Production",
+            "imports": "Imports",
+            "exports": "Exports",
+            "ending_stocks": "Ending Stocks",
+        }
+    elif root in {"LE", "GF"}:
+        livestock_text = _extract_section(
+            text,
+            "U.S. Livestock, Poultry, and Dairy",
+            ("World Coarse Grain", "Foreign Agricultural", "APPENDIX"),
+        )
+        if not livestock_text:
+            livestock_text = _extract_section(
+                text, "BEEF (MILLION LBS)", ("PORK (MILLION", "Foreign Agricultural")
+            )
+        section = None
+        if livestock_text:
+            upper_lt = livestock_text.upper()
+            beef_start = upper_lt.find("BEEF")
+            pork_start = upper_lt.find("PORK")
+            if beef_start >= 0:
+                end = pork_start if (pork_start > beef_start) else min(beef_start + 900, len(livestock_text))
+                section = livestock_text[beef_start:end]
+        labels = {
+            "production": "Production",
+            "imports": "Imports",
+            "exports": "Exports",
+            "domestic_use": "Domestic Disappearance",
+        }
+    elif root == "HE":
+        livestock_text = _extract_section(
+            text,
+            "U.S. Livestock, Poultry, and Dairy",
+            ("World Coarse Grain", "Foreign Agricultural", "APPENDIX"),
+        )
+        section = None
+        if livestock_text:
+            upper_lt = livestock_text.upper()
+            pork_start = upper_lt.find("PORK")
+            broiler_start = max(upper_lt.find("BROILER"), upper_lt.find("POULTRY AND EGGS"))
+            if pork_start >= 0:
+                end = broiler_start if (broiler_start > pork_start) else min(pork_start + 900, len(livestock_text))
+                section = livestock_text[pork_start:end]
+        labels = {
+            "production": "Production",
+            "imports": "Imports",
+            "exports": "Exports",
+            "domestic_use": "Domestic Disappearance",
+        }
+    elif root in {"DC", "DAIRY_CLASS_IV"}:
+        section = _extract_section(
+            text, "DAIRY PRODUCTS", ("FATS AND OILS", "FOREIGN AGRICULTURAL")
+        )
+        if not section:
+            section = _extract_section(
+                text, "Dairy Products", ("Fats and Oils", "Foreign Agricultural")
+            )
+        labels = {
+            "production": "Milk Production",
+            "domestic_use": "Commercial Disappearance",
+            "exports": "Exports",
+            "ending_stocks": "Ending Stocks",
+        }
 
     if not section:
         return None
@@ -916,6 +1031,24 @@ def _build_global_context(symbol: str, text: str) -> dict[str, Any] | None:
             ("Ukraine", "exports", "supply"),
             ("European Union", "production", "supply"),
             ("Australia", "production", "supply"),
+        ]
+    elif root == "CT":
+        section = _extract_section(text, "World Cotton Supply and Use", ("World Sugar",))
+        if not section:
+            section = _extract_section(text, "World All Cotton Supply and Use", ("World Sugar",))
+        markers = [
+            ("India", "production", "supply"),
+            ("China", "imports", "demand"),
+            ("United States", "exports", "supply"),
+            ("Brazil", "production", "supply"),
+        ]
+    elif root == "SB":
+        section = _extract_section(text, "World Sugar Supply and Use", ("World Cotton", "World All Cotton"))
+        markers = [
+            ("Brazil", "production", "supply"),
+            ("India", "production", "supply"),
+            ("Thailand", "exports", "supply"),
+            ("European Union", "production", "supply"),
         ]
     else:
         return None
@@ -1142,10 +1275,44 @@ def fetch_report_calendar_source(symbol: str, as_of: datetime | None = None, *, 
 
 
 def refresh_agriculture_report_caches(symbols: list[str] | None = None) -> None:
+    from app.services.market_context.commodity_specific_adapters import (
+        DAIRY_SYMBOLS,
+        FERTILIZER_SYMBOLS,
+        LIVESTOCK_SYMBOLS,
+        LUMBER_SYMBOLS,
+        SOFTS_SYMBOLS,
+        fetch_dairy_market_source,
+        fetch_fertilizer_demand_source,
+        fetch_fertilizer_input_source,
+        fetch_housing_demand_source,
+        fetch_building_permits_source,
+        fetch_livestock_demand_source,
+        fetch_livestock_feed_cost_source,
+        fetch_softs_world_production_source,
+    )
+
     targets = [symbol.upper().lstrip("/") for symbol in (symbols or list(AG_TICKERS.keys()))]
     for symbol_code in targets:
+        # Common adapters
         fetch_weather_source(symbol_code, force_refresh=True)
-        fetch_crop_progress_source(symbol_code, force_refresh=True)
-        fetch_export_inspections_source(symbol_code, force_refresh=True)
         fetch_wasde_source(symbol_code, force_refresh=True)
-        fetch_report_calendar_source(symbol_code, force_refresh=True)
+
+        # Group-specific adapters
+        if symbol_code in LIVESTOCK_SYMBOLS:
+            fetch_livestock_demand_source(symbol_code, force_refresh=True)
+            fetch_livestock_feed_cost_source(symbol_code, force_refresh=True)
+        elif symbol_code in DAIRY_SYMBOLS:
+            fetch_dairy_market_source(symbol_code, force_refresh=True)
+        elif symbol_code in SOFTS_SYMBOLS:
+            fetch_softs_world_production_source(symbol_code, force_refresh=True)
+        elif symbol_code in LUMBER_SYMBOLS:
+            fetch_housing_demand_source(symbol_code, force_refresh=True)
+            fetch_building_permits_source(symbol_code, force_refresh=True)
+        elif symbol_code in FERTILIZER_SYMBOLS:
+            fetch_fertilizer_input_source(symbol_code, force_refresh=True)
+            fetch_fertilizer_demand_source(symbol_code, force_refresh=True)
+        else:
+            # Grain/oilseed adapters
+            fetch_crop_progress_source(symbol_code, force_refresh=True)
+            fetch_export_inspections_source(symbol_code, force_refresh=True)
+            fetch_report_calendar_source(symbol_code, force_refresh=True)

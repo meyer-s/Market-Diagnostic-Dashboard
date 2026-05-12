@@ -17,6 +17,28 @@ from app.services.market_context.agriculture_adapters import (
     fetch_weather_source,
 )
 from app.services.market_context.agriculture_metadata import resolve_agriculture_commodity
+from app.services.market_context.commodity_specific_adapters import (
+    DAIRY_SYMBOLS,
+    FERTILIZER_SYMBOLS,
+    GRAIN_OILSEED_SYMBOLS,
+    LIVESTOCK_SYMBOLS,
+    LUMBER_SYMBOLS,
+    SOFTS_SYMBOLS,
+    build_dairy_global_context,
+    build_fertilizer_global_context,
+    build_livestock_production_cycle,
+    build_lumber_global_context,
+    build_nongrain_report_calendar,
+    build_softs_crop_conditions,
+    fetch_building_permits_source,
+    fetch_dairy_market_source,
+    fetch_fertilizer_demand_source,
+    fetch_fertilizer_input_source,
+    fetch_housing_demand_source,
+    fetch_livestock_demand_source,
+    fetch_livestock_feed_cost_source,
+    fetch_softs_world_production_source,
+)
 from app.services.market_context.crop_stage import get_crop_stage
 from app.services.market_context.scoring import compute_context_score, synthesize_trade_setup
 from app.services.market_context.session import get_market_session_status
@@ -93,16 +115,69 @@ def build_agriculture_market_context(symbol: str, as_of: datetime | None = None)
     session = get_market_session_status(reference)
     crop_stage = get_crop_stage(symbol_code, reference)
 
+    # ------------------------------------------------------------------
+    # Adapter routing — grain/oilseed symbols use WASDE-centric adapters;
+    # non-grain groups use commodity-specific sources.
+    # ------------------------------------------------------------------
     weather_payload = fetch_weather_source(symbol_code, reference)
-    crop_progress_payload = fetch_crop_progress_source(symbol_code, reference)
-    export_payload = fetch_export_inspections_source(symbol_code, reference)
     wasde_payload, global_context = fetch_wasde_source(symbol_code, reference)
-    global_payload = build_global_supply_payload(
-        symbol_code,
-        global_context,
-        source_health=wasde_payload.source_health,
-    )
-    report_calendar_payload = fetch_report_calendar_source(symbol_code, reference)
+
+    if symbol_code in GRAIN_OILSEED_SYMBOLS:
+        crop_progress_payload = fetch_crop_progress_source(symbol_code, reference)
+        export_payload = fetch_export_inspections_source(symbol_code, reference)
+        global_payload = build_global_supply_payload(
+            symbol_code,
+            global_context,
+            source_health=wasde_payload.source_health,
+        )
+        report_calendar_payload = fetch_report_calendar_source(symbol_code, reference)
+
+    elif symbol_code in LIVESTOCK_SYMBOLS:
+        crop_progress_payload = build_livestock_production_cycle(symbol_code, reference)
+        export_payload = fetch_livestock_demand_source(symbol_code, reference)
+        global_payload = fetch_livestock_feed_cost_source(symbol_code, reference)
+        report_calendar_payload = build_nongrain_report_calendar(symbol_code, reference)
+
+    elif symbol_code in DAIRY_SYMBOLS:
+        crop_progress_payload = fetch_dairy_market_source(symbol_code, reference)
+        export_payload = fetch_dairy_market_source(symbol_code, reference)
+        global_payload = build_dairy_global_context(symbol_code, reference)
+        report_calendar_payload = build_nongrain_report_calendar(symbol_code, reference)
+
+    elif symbol_code in SOFTS_SYMBOLS:
+        crop_progress_payload = build_softs_crop_conditions(symbol_code, reference)
+        # CT and SB export data from WASDE; KC/CC/OJ/RS from FAS PSD
+        export_payload = fetch_softs_world_production_source(symbol_code, reference)
+        global_payload = build_global_supply_payload(
+            symbol_code,
+            global_context,
+            source_health=wasde_payload.source_health,
+        )
+        report_calendar_payload = build_nongrain_report_calendar(symbol_code, reference)
+
+    elif symbol_code in LUMBER_SYMBOLS:
+        crop_progress_payload = fetch_building_permits_source(symbol_code, reference)
+        export_payload = fetch_housing_demand_source(symbol_code, reference)
+        global_payload = build_lumber_global_context(symbol_code, reference)
+        report_calendar_payload = build_nongrain_report_calendar(symbol_code, reference)
+
+    elif symbol_code in FERTILIZER_SYMBOLS:
+        crop_progress_payload = fetch_fertilizer_demand_source(symbol_code, reference)
+        export_payload = fetch_fertilizer_demand_source(symbol_code, reference)
+        global_payload = build_fertilizer_global_context(symbol_code, reference)
+        report_calendar_payload = build_nongrain_report_calendar(symbol_code, reference)
+
+    else:
+        # Unknown group — fall back to generic adapters
+        crop_progress_payload = fetch_crop_progress_source(symbol_code, reference)
+        export_payload = fetch_export_inspections_source(symbol_code, reference)
+        global_payload = build_global_supply_payload(
+            symbol_code,
+            global_context,
+            source_health=wasde_payload.source_health,
+        )
+        report_calendar_payload = fetch_report_calendar_source(symbol_code, reference)
+
     technical = _technical_signal(symbol_code)
 
     source_health = [

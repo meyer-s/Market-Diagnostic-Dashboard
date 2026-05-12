@@ -40,6 +40,16 @@ type TechnicalModule = {
 export type AgricultureContextData = {
   symbol: string;
   commodity: string;
+  metadata?: {
+    commodity_group?: string;
+    display_name?: string;
+    exchange?: string;
+    related_reports?: string[];
+    weather_regions?: string[];
+    global_drivers?: string[];
+    demand_drivers?: string[];
+    supply_drivers?: string[];
+  };
   session: {
     status: string;
     current_time_et?: string;
@@ -250,12 +260,25 @@ function SourceLinks({
 }
 
 function getModuleMeta(context: AgricultureContextData) {
+  const group = context.metadata?.commodity_group ?? "grains_oilseeds";
+
+  const LABELS: Record<string, { cropProgress: string; exportDemand: string; wasde: string; globalSupply: string }> = {
+    livestock: { cropProgress: "Production Cycle", exportDemand: "Cutout / Demand", wasde: "Supply Balance", globalSupply: "Feed Cost Proxy" },
+    dairy: { cropProgress: "Dairy Prices", exportDemand: "Dairy Prices", wasde: "Supply Balance", globalSupply: "Global Dairy Cycle" },
+    softs: { cropProgress: "Crop Conditions", exportDemand: "World Production", wasde: "WASDE / Balance", globalSupply: "Global Supply" },
+    lumber: { cropProgress: "Building Permits", exportDemand: "Housing Starts", wasde: "Supply Balance", globalSupply: "Construction Cycle" },
+    fertilizer_inputs: { cropProgress: "Demand Signal", exportDemand: "Planting Demand", wasde: "Input Costs", globalSupply: "Global Trade" },
+    grains_oilseeds: { cropProgress: "Crop Progress", exportDemand: "Export Demand", wasde: "WASDE", globalSupply: "Global Supply" },
+  };
+
+  const labels = LABELS[group] ?? LABELS["grains_oilseeds"];
+
   return [
     { key: "weather", label: "Weather", breakdownKey: "weather", module: context.weather },
-    { key: "cropProgress", label: "Crop Progress", breakdownKey: "crop_progress", module: context.crop_progress },
-    { key: "exportDemand", label: "Export Demand", breakdownKey: "export_demand", module: context.export_demand },
-    { key: "wasde", label: "WASDE", breakdownKey: "wasde", module: context.wasde },
-    { key: "globalSupply", label: "Global Supply", breakdownKey: "global_supply", module: context.global_supply },
+    { key: "cropProgress", label: labels.cropProgress, breakdownKey: "crop_progress", module: context.crop_progress },
+    { key: "exportDemand", label: labels.exportDemand, breakdownKey: "export_demand", module: context.export_demand },
+    { key: "wasde", label: labels.wasde, breakdownKey: "wasde", module: context.wasde },
+    { key: "globalSupply", label: labels.globalSupply, breakdownKey: "global_supply", module: context.global_supply },
     { key: "technical", label: "Technical", breakdownKey: "technical", module: context.technical },
   ] as const;
 }
