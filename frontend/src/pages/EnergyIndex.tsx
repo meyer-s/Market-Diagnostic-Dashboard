@@ -259,7 +259,7 @@ function HoverTooltip({ children, tip, width = "w-64" }: { children: React.React
     <span className="group/htip relative inline-block cursor-default">
       {children}
       <span
-        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden ${width} rounded-lg border border-stealth-700 bg-stealth-950/95 px-2.5 py-2 text-xs font-normal text-stealth-300 shadow-[0_10px_40px_rgba(2,6,23,0.75)] group-hover/htip:block`}
+        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-2.5 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block`}
       >
         {tip}
       </span>
@@ -1002,9 +1002,11 @@ function FactorRadar({
 function AltEnergyChart({
   data,
   altSymbols,
+  compact = false,
 }: {
   data: Array<Record<string, number | string>>;
   altSymbols: Array<{ code: string; name: string; group: string }>;
+  compact?: boolean;
 }) {
   if (!data.length) return null;
 
@@ -1059,8 +1061,8 @@ function AltEnergyChart({
     : null;
 
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+    <div className={`surface-card self-start p-3 sm:p-4 ${compact ? "h-full" : ""}`.trim()}>
+      <div className={`flex flex-wrap items-start justify-between ${compact ? "mb-2 gap-2" : "mb-3 gap-3"}`}>
         <CardHeader kicker="Traditional vs Alternative Energy — Indexed to 100" title="Capital rotation context" tooltipText="This panel is meant to answer one question: is capital favoring traditional energy cash flows or transition-linked equities? XLE is the traditional cash-flow proxy; the transition basket is the average of ICLN, TAN, FAN, and PHO." />
         <div className="flex flex-wrap gap-3">
           {altSymbols.map((s) => (
@@ -1070,14 +1072,14 @@ function AltEnergyChart({
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 md:grid-cols-4">
+      <div className={`grid md:grid-cols-4 ${compact ? "mb-3 gap-2" : "mb-4 gap-3"}`}>
         <StatTile label="Leadership" value={leadership.label} tone={leadership.tone} detail="Who is currently attracting relative capital." />
         <StatTile label="XLE" value={latestXle != null ? latestXle.toFixed(1) : "—"} tone="text-orange-300" detail="Traditional energy index level." />
         <StatTile label="Transition Basket" value={latestBasket != null ? latestBasket.toFixed(1) : "—"} tone="text-emerald-300" detail="Average of clean and grid-adjacent ETFs." />
         <StatTile label="Rotation Spread" value={latestSpread != null ? fmt(latestSpread, 1) : "—"} tone={leadership.tone} detail={spreadDelta != null ? `${fmt(spreadDelta, 1)} pts vs start of window` : "Relative leadership spread."} />
       </div>
 
-      <div className="h-52">
+      <div className={compact ? "h-36" : "h-52"}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={decimated} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
@@ -1109,7 +1111,7 @@ function AltEnergyChart({
         </ResponsiveContainer>
       </div>
 
-      <div className="mt-3 grid gap-2 md:grid-cols-3">
+      <div className={`grid md:grid-cols-3 ${compact ? "mt-2 gap-1.5" : "mt-3 gap-2"}`}>
         <SignalTile
           label="Takeaway"
           title={leadership.label}
@@ -1136,9 +1138,11 @@ function AltEnergyChart({
 function BiofuelsPanel({
   data,
   symbols,
+  compact = false,
 }: {
   data: Array<Record<string, number | string>>;
   symbols: SymbolRow[];
+  compact?: boolean;
 }) {
   if (!data.length) return null;
 
@@ -1188,8 +1192,8 @@ function BiofuelsPanel({
         : { label: "Balanced chain", tone: "text-stealth-100" };
 
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+    <div className={`surface-card self-start p-3 sm:p-4 ${compact ? "h-full" : ""}`.trim()}>
+      <div className={`flex flex-wrap items-start justify-between ${compact ? "mb-2 gap-2" : "mb-3 gap-3"}`}>
         <CardHeader kicker="Feedstocks and Blendstocks — Indexed to 100" title="Biofuels and combustibles" tooltipText="Tracks whether biofuel-linked contracts like ethanol and soybean oil are leading or lagging the refined petroleum chain. This helps surface where incremental fuel demand is showing up first." />
         <div className="flex flex-wrap gap-2">
           {availableCodes.map((code) => (
@@ -1198,14 +1202,14 @@ function BiofuelsPanel({
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 md:grid-cols-4">
+      <div className={`grid md:grid-cols-4 ${compact ? "mb-3 gap-2" : "mb-4 gap-3"}`}>
         <StatTile label="Leadership" value={leadership.label} tone={leadership.tone} detail="Relative move of biofuel-linked contracts vs refined products." />
         <StatTile label="Biofuel Basket" value={latestBiofuelBasket != null ? latestBiofuelBasket.toFixed(1) : "—"} tone="text-emerald-300" detail="Average of ethanol and soybean oil." />
         <StatTile label="Refined Basket" value={latestRefinedBasket != null ? latestRefinedBasket.toFixed(1) : "—"} tone="text-orange-300" detail="Average of RBOB and heating oil." />
         <StatTile label="Spread" value={rotationSpread != null ? fmt(rotationSpread, 1) : "—"} tone={leadership.tone} detail={spreadDelta != null ? `${fmt(spreadDelta, 1)} pts vs start of window` : "Indexed biofuel minus refined spread."} />
       </div>
 
-      <div className="h-44">
+      <div className={compact ? "h-36" : "h-44"}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
@@ -1232,7 +1236,7 @@ function BiofuelsPanel({
         </ResponsiveContainer>
       </div>
 
-      <div className="mt-3 grid gap-2 md:grid-cols-3">
+      <div className={`grid md:grid-cols-3 ${compact ? "mt-2 gap-1.5" : "mt-3 gap-2"}`}>
         <SignalTile
           label="Takeaway"
           title={leadership.label}
@@ -1753,15 +1757,18 @@ export default function EnergyIndex() {
           />
         </div>
 
-        <div className="grid items-start gap-3 md:gap-4 xl:grid-cols-[1.1fr_1fr]">
-          {history && (
-            <AltEnergyChart
-              data={history.alt_comparison}
-              altSymbols={history.alt_symbols}
-            />
-          )}
-          <div className="grid gap-3 md:gap-4">
-            {history ? <BiofuelsPanel data={history.biofuel_comparison} symbols={overview.symbols} /> : null}
+        <div className="grid items-stretch gap-3 md:gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="grid gap-2 md:gap-3">
+            {history ? (
+              <AltEnergyChart
+                data={history.alt_comparison}
+                altSymbols={history.alt_symbols}
+                compact
+              />
+            ) : null}
+            {history ? <BiofuelsPanel data={history.biofuel_comparison} symbols={overview.symbols} compact /> : null}
+          </div>
+          <div>
             {mix && <GenerationMixPanel mix={mix} />}
           </div>
         </div>
@@ -1780,9 +1787,9 @@ export default function EnergyIndex() {
         >
           <LabelCaps className="mb-0">Sources</LabelCaps>
         </HoverTooltip>
-
-        <EnergyMethodologyPanel />
       </div>
+
+      <EnergyMethodologyPanel />
 
     </div>
   );
