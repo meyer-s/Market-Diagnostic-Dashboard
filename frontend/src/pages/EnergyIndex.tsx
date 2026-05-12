@@ -172,6 +172,11 @@ function mixHex(start: string, end: string, amount: number) {
   return `rgb(${mix(left.r, right.r)}, ${mix(left.g, right.g)}, ${mix(left.b, right.b)})`;
 }
 
+function rgba(hex: string, alpha: number) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+}
+
 function regimeBadgeStyle(label: string) {
   if (label.includes("Tightening") || label.includes("Elevated"))
     return "border-amber-400/40 bg-amber-500/10 text-amber-300";
@@ -759,9 +764,10 @@ function FactorRadar({
       : currentAverage;
     const trendDelta = currentAverage - oldestAverage;
     const trendMode = trendDelta >= 0 ? "growth" : "contraction";
-    const layerStart = trendMode === "growth" ? "#e2e8f0" : "#fed7aa";
-    const layerMid = trendMode === "growth" ? "#bae6fd" : "#f9a8d4";
-    const layerEnd = trendMode === "growth" ? "#f97316" : "#60a5fa";
+    const timelineAnchor = trendMode === "growth" ? "#22c55e" : "#ef4444";
+    const timelineBase = trendMode === "growth" ? "#d9f99d" : "#fecaca";
+    const currentStroke = trendMode === "growth" ? "#4ade80" : "#f87171";
+    const currentFill = trendMode === "growth" ? "#22c55e" : "#ef4444";
 
     const layers = (history ?? []).slice(-12).map((snapshot, index, arr) => {
       const key = `layer_${index}`;
@@ -774,17 +780,14 @@ function FactorRadar({
       rows[3][key] = snapshot.RB;
       rows[4][key] = snapshot.HO;
       rows[5][key] = snapshot.spread;
-      const phaseColor = progress < 0.55
-        ? mixHex(layerStart, layerMid, progress / 0.55)
-        : mixHex(layerMid, layerEnd, (progress - 0.55) / 0.45);
-      const color = mixHex(layerStart, phaseColor, 0.38 + relativePosition * 0.62);
+      const color = mixHex(timelineBase, timelineAnchor, 0.18 + progress * 0.52 + relativePosition * 0.18);
       return {
         key,
         label: new Date(snapshot.date).toLocaleDateString(undefined, { month: "short", year: "2-digit" }),
         color,
-        strokeOpacity: 0.1 + progress * 0.32,
-        fillOpacity: 0.004 + progress * 0.05,
-        strokeWidth: 0.28 + progress * 1.22,
+        strokeOpacity: 0.12 + progress * 0.34,
+        fillOpacity: 0.01 + progress * 0.04,
+        strokeWidth: 0.32 + progress * 1.08,
       };
     });
 
@@ -794,10 +797,10 @@ function FactorRadar({
       trendMode,
       trendDelta,
       currentAverage,
-      currentStrokeStart: trendMode === "growth" ? "#bae6fd" : "#fdba74",
-      currentStrokeEnd: trendMode === "growth" ? "#f97316" : "#60a5fa",
-      currentFillStart: trendMode === "growth" ? "#e0f2fe" : "#ffedd5",
-      currentFillEnd: trendMode === "growth" ? "#fb923c" : "#38bdf8",
+      timelineBase,
+      timelineAnchor,
+      currentStroke,
+      currentFill,
     };
   }, [history, wti, brent, ng, rb, ho, spreadNorm]);
 
@@ -811,20 +814,10 @@ function FactorRadar({
 
   return (
     <div className="surface-card self-start p-3 sm:p-4">
-      <CardHeader kicker="Contract Momentum Radar" title="Cross-contract momentum" description="Older shells are thinner and lighter; the full palette shifts warmer on expansion and cooler on contraction." />
+      <CardHeader kicker="Contract Momentum Radar" title="Cross-contract momentum" description="Month-to-month shells deepen from pale to saturated green or red so the time path itself shows expansion or contraction." />
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={radar.rows} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
-            <defs>
-              <linearGradient id="energy-radar-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor={radar.currentStrokeStart} stopOpacity={0.95} />
-                <stop offset="100%" stopColor={radar.currentStrokeEnd} stopOpacity={1} />
-              </linearGradient>
-              <linearGradient id="energy-radar-fill" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor={radar.currentFillStart} stopOpacity={0.08} />
-                <stop offset="100%" stopColor={radar.currentFillEnd} stopOpacity={0.24} />
-              </linearGradient>
-            </defs>
             <PolarGrid stroke="#1e293b" />
             <PolarAngleAxis dataKey="factor" tick={{ fill: "#64748b", fontSize: 11 }} />
             <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
@@ -843,9 +836,9 @@ function FactorRadar({
             <Radar
               dataKey="current"
               name="Current"
-              stroke="url(#energy-radar-stroke)"
-              fill="url(#energy-radar-fill)"
-              strokeWidth={2.4}
+              stroke={radar.currentStroke}
+              fill={rgba(radar.currentFill, 0.16)}
+              strokeWidth={2.2}
               strokeOpacity={0.98}
               fillOpacity={1}
             />
@@ -865,7 +858,7 @@ function FactorRadar({
             <>
               <LegendPill color={radar.layers[0].color}>{radar.layers[0].label}</LegendPill>
               <LegendPill color={radar.layers[Math.floor(radar.layers.length / 2)]?.color ?? radar.layers[0].color}>Mid curve</LegendPill>
-              <LegendPill color={radar.currentStrokeEnd}>Current</LegendPill>
+              <LegendPill color={radar.currentStroke}>Current</LegendPill>
             </>
           )}
         </div>
