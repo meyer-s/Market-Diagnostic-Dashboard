@@ -1098,6 +1098,13 @@ export default function EnergyIndex() {
   const weakestGroup = groupsByStrength[groupsByStrength.length - 1];
   const spreadStress = spread != null && spread > 5;
   const pumpStress = latestPumpSpread != null && latestPumpSpread > 1.8;
+  const hasRetailSpreadPanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.retail_gasoline?.length);
+  const hasCompositePanel = Boolean(history?.composite_history?.length);
+  const hasRadarPanel = Boolean(overview.symbols.length);
+  const primarySidePanelCount = Number(hasCompositePanel) + Number(hasRadarPanel);
+  const hasPassThroughPanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.retail_gasoline?.length);
+  const hasSupplyPricePanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.crude_inventory?.length);
+  const transmissionPanelCount = Number(hasPassThroughPanel) + Number(hasSupplyPricePanel);
 
   if (!overview) {
     return (
@@ -1108,7 +1115,7 @@ export default function EnergyIndex() {
   }
 
   return (
-    <div className="page-shell-wide page-stack">
+    <div className="page-shell-wide page-stack space-y-5 md:space-y-6">
 
       {/* ── Header ────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1208,64 +1215,68 @@ export default function EnergyIndex() {
         </div>
       </div>
 
-      {prices && (
-        <div className="grid items-start gap-4 xl:grid-cols-[1.45fr_0.95fr]">
-          <RetailPricesChart prices={prices.fred_prices} surfaceClassName="primary-card" chartHeightClassName="h-72" />
-          <div className="grid gap-4">
-            {history && <CompositeHistoryChart history={history.composite_history} surfaceClassName="primary-card" />}
-            <FactorRadar symbols={overview.symbols} history={history?.radar_history} />
-          </div>
+      {(hasRetailSpreadPanel || primarySidePanelCount > 0) && (
+        <div className={`grid items-start gap-3 md:gap-4 ${hasRetailSpreadPanel && primarySidePanelCount > 0 ? "xl:grid-cols-[1.45fr_0.95fr]" : "grid-cols-1"}`}>
+          {hasRetailSpreadPanel && prices ? (
+            <RetailPricesChart prices={prices.fred_prices} surfaceClassName="primary-card" chartHeightClassName="h-72" />
+          ) : null}
+          {primarySidePanelCount > 0 ? (
+            <div className="grid gap-3 md:gap-4">
+              {hasCompositePanel && history ? <CompositeHistoryChart history={history.composite_history} surfaceClassName="primary-card" /> : null}
+              {hasRadarPanel ? <FactorRadar symbols={overview.symbols} history={history?.radar_history} /> : null}
+            </div>
+          ) : null}
         </div>
       )}
 
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-end justify-between gap-2.5">
           <div>
             <p className="page-kicker">Market Structure</p>
             <h2 className="text-lg font-semibold text-stealth-100">Contracts and group leadership</h2>
           </div>
-          <div className="page-meta mt-0">
+          <div className="page-meta mt-0 gap-1.5">
             <MetaPill>Use this band to see which contracts are driving the composite.</MetaPill>
           </div>
         </div>
 
-        <div className="grid items-start gap-4 xl:grid-cols-[1.35fr_0.95fr]">
+        <div className="grid items-start gap-3 md:gap-4 xl:grid-cols-[1.35fr_0.95fr]">
           <FuturesTable symbols={overview.symbols} surfaceClassName="surface-card-strong" />
           <GroupCards groups={overview.groups} />
         </div>
       </div>
 
-      {prices && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
+      {transmissionPanelCount > 0 && prices && (
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-end justify-between gap-2.5">
             <div>
               <p className="page-kicker">Transmission</p>
               <h2 className="text-lg font-semibold text-stealth-100">How crude pressure moves through the system</h2>
             </div>
-            <div className="page-meta mt-0">
+            <div className="page-meta mt-0 gap-1.5">
               <MetaPill>Pass-through and inventory help explain whether pump pressure is supply-led or margin-led.</MetaPill>
             </div>
           </div>
 
-          <div className="grid items-start gap-4 lg:grid-cols-2">
-            <PriceCascadeChart prices={prices.fred_prices} />
-            <SupplyPriceChart prices={prices.fred_prices} />
+          <div className={`grid items-start gap-3 md:gap-4 ${transmissionPanelCount > 1 ? "lg:grid-cols-2" : "grid-cols-1"}`}>
+            {hasPassThroughPanel ? <PriceCascadeChart prices={prices.fred_prices} /> : null}
+            {hasSupplyPricePanel ? <SupplyPriceChart prices={prices.fred_prices} /> : null}
           </div>
         </div>
       )}
 
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-end justify-between gap-2.5">
           <div>
             <p className="page-kicker">Longer Horizon</p>
             <h2 className="text-lg font-semibold text-stealth-100">Capital rotation and power mix context</h2>
           </div>
-          <div className="page-meta mt-0">
+          <div className="page-meta mt-0 gap-1.5">
             <MetaPill>These slower-moving panels frame transition leadership and end-demand structure.</MetaPill>
           </div>
         </div>
 
-        <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_1fr]">
+        <div className="grid items-start gap-3 md:gap-4 xl:grid-cols-[1.1fr_1fr]">
           {history && (
             <AltEnergyChart
               data={history.alt_comparison}
