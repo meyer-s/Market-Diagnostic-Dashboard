@@ -1,9 +1,9 @@
 """Energy Index calculator — futures-based energy market diagnostic.
 
-Covers WTI crude, Brent crude, natural gas, heating oil, and RBOB gasoline
-futures via Yahoo Finance plus retail price and generation-mix context
-from the FRED API.  Alternative-energy ETF performance (ICLN, TAN, FAN, PHO)
-is included for a side-by-side renewables vs traditional comparison.
+Covers WTI crude, Brent crude, natural gas, refined products, and biofuel-linked
+contracts via Yahoo Finance plus retail price and generation-mix context from
+the FRED API. Alternative-energy ETF performance (ICLN, TAN, FAN, PHO) is
+included for a side-by-side renewables vs traditional comparison.
 """
 
 from __future__ import annotations
@@ -30,15 +30,17 @@ from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
 LOOKBACK_WINDOWS: Tuple[int, ...] = (5, 20, 60, 120)
 
 GROUP_WEIGHTS: Dict[str, float] = {
-    "crude": 50.0,
-    "nat_gas": 30.0,
+    "crude": 40.0,
+    "nat_gas": 25.0,
     "refined": 20.0,
+    "biofuels": 15.0,
 }
 
 GROUP_LABELS: Dict[str, str] = {
     "crude": "Crude Oil",
     "nat_gas": "Natural Gas",
     "refined": "Refined Products",
+    "biofuels": "Biofuels",
 }
 
 HTTP_HEADERS = {
@@ -74,6 +76,8 @@ ENERGY_FUTURES: Tuple[EnergySymbol, ...] = (
     EnergySymbol("NG", "Natural Gas",     "nat_gas", ("NG=F",),  "$/MMBtu"),
     EnergySymbol("HO", "Heating Oil",     "refined", ("HO=F",),  "$/gal"),
     EnergySymbol("RB", "RBOB Gasoline",   "refined", ("RB=F",),  "$/gal"),
+    EnergySymbol("EH", "Ethanol",         "biofuels", ("EH=F",), "$/gal"),
+    EnergySymbol("ZL", "Soybean Oil",     "biofuels", ("ZL=F",), "c/lb"),
 )
 
 ALT_ENERGY_SYMBOLS: Tuple[EnergySymbol, ...] = (
@@ -533,6 +537,37 @@ def _build_alt_comparison(
     return history
 
 
+def _build_indexed_history(
+    series_map: Dict[str, pd.Series],
+    codes: Tuple[str, ...],
+    days: int,
+) -> List[Dict[str, Any]]:
+    """Index selected contract series to 100 at the start of the window."""
+    frames = {code: series_map[code] for code in codes if code in series_map}
+    if not frames:
+        return []
+
+    df = pd.DataFrame(frames).sort_index().dropna(how="all").tail(days)
+    if df.empty:
+        return []
+
+    first_valid = {
+        col: df[col].dropna().iloc[0]
+        for col in df.columns
+        if not df[col].dropna().empty
+    }
+    history: List[Dict[str, Any]] = []
+    for idx, row in df.iterrows():
+        point: Dict[str, Any] = {"date": str(idx.date())}
+        for col in df.columns:
+            base = first_valid.get(col)
+            val = row[col]
+            if base is not None and base != 0 and pd.notna(val):
+                point[col] = round((float(val) / float(base)) * 100.0, 2)
+        history.append(point)
+    return history
+
+
 def _pct_change_at(series: pd.Series, end_index: int, lookback: int) -> Optional[float]:
     if end_index < lookback:
         return None
@@ -611,6 +646,7 @@ def _regime_summary(
     ng_20d: Optional[float],
     gas_latest: Optional[float],
     inv_latest: Optional[float],
+    biofuel_20d: Optional[float],
 ) -> str:
     parts: List[str] = []
     if wti_20d is not None:
@@ -623,10 +659,13 @@ def _regime_summary(
         parts.append(f"Retail regular gasoline averages ${gas_latest:.2f}/gal nationally.")
     if inv_latest is not None:
         parts.append(f"US crude inventories stand at {inv_latest:.0f} million barrels.")
+    if biofuel_20d is not None:
+        direction = "up" if biofuel_20d > 0 else "down"
+        parts.append(f"Biofuel-linked contracts are {direction} {abs(biofuel_20d):.1f}% over the past 20 sessions.")
     if score >= 60:
         parts.append(
             "The energy composite indicates above-average price pressure across crude, "
-            "natural gas, and refined products."
+            "natural gas, refined products, and biofuels."
         )
     elif score <= 40:
         parts.append(
@@ -742,10 +781,17 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
 
     history = _build_composite_history(series_map, symbol_data, effective_weights, days)
     alt_comparison = _build_alt_comparison(alt_series, days)
+    biofuel_comparison = _build_indexed_history(series_map, ("RB", "HO", "EH", "ZL"), days)
     radar_history = _build_radar_history(series_map)
 
     wti_20d = symbol_data.get("CL", {}).get("changes", {}).get("20d")
     ng_20d = symbol_data.get("NG", {}).get("changes", {}).get("20d")
+    biofuel_members = [
+        symbol_data[code]["changes"].get("20d")
+        for code in ("EH", "ZL")
+        if code in symbol_data
+    ]
+    biofuel_20d = round(mean([float(v) for v in biofuel_members if v is not None]), 2) if biofuel_members else None
     gas_latest: Optional[float] = None
     gas_rows = fred_prices.get("retail_gasoline", [])
     if gas_rows:
@@ -759,13 +805,14 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
         "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "regime_label": _regime_label(composite_score),
         "composite_score": composite_score,
-        "summary": _regime_summary(composite_score, wti_20d, ng_20d, gas_latest, inv_latest),
+        "summary": _regime_summary(composite_score, wti_20d, ng_20d, gas_latest, inv_latest, biofuel_20d),
         "groups": list(groups.values()),
         "symbols": list(symbol_data.values()),
         "composite_history": history,
         "radar_history": radar_history,
         "fred_prices": fred_prices,
         "alt_comparison": alt_comparison,
+        "biofuel_comparison": biofuel_comparison,
         "alt_symbols": [
             {"code": s.code, "name": s.name, "group": s.group}
             for s in ALT_ENERGY_SYMBOLS

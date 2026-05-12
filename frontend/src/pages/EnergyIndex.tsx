@@ -83,6 +83,7 @@ type EnergyHistory = {
     spread: number;
   }>;
   alt_comparison: Array<Record<string, number | string>>;
+  biofuel_comparison: Array<Record<string, number | string>>;
   alt_symbols: Array<{ code: string; name: string; group: string }>;
 };
 
@@ -242,6 +243,13 @@ const ALT_COLORS: Record<string, string> = {
   PHO:  "#22d3ee",
 };
 
+const BIOFUEL_COLORS: Record<string, string> = {
+  RB: "#f59e0b",
+  HO: "#fb7185",
+  EH: "#34d399",
+  ZL: "#60a5fa",
+};
+
 // ---------------------------------------------------------------------------
 // Shared primitives matching app design system
 // ---------------------------------------------------------------------------
@@ -376,7 +384,7 @@ function GroupSummaryStrip({ groups }: { groups: GroupRow[] }) {
           <InfoTooltip text="Grouped composite leadership compressed into one strip so the futures table remains the primary market-structure read." />
         </div>
       </div>
-      <div className="grid gap-2 lg:grid-cols-3">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {groups.map((group) => (
           <div key={group.group} className="surface-card-muted px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -1092,6 +1100,129 @@ function AltEnergyChart({
   );
 }
 
+function BiofuelsPanel({
+  data,
+  symbols,
+}: {
+  data: Array<Record<string, number | string>>;
+  symbols: SymbolRow[];
+}) {
+  if (!data.length) return null;
+
+  const availableCodes = ["RB", "HO", "EH", "ZL"].filter((code) => data.some((row) => code in row));
+  if (availableCodes.length < 2) return null;
+
+  const labelByCode = Object.fromEntries(symbols.map((symbol) => [symbol.code, symbol.name]));
+  const chartData = data.filter((_, index) => index % Math.max(1, Math.floor(data.length / 180)) === 0);
+  const latestPoint = data[data.length - 1] as Record<string, number | string> | undefined;
+  const firstPoint = data[0] as Record<string, number | string> | undefined;
+  const biofuelCodes = availableCodes.filter((code) => code === "EH" || code === "ZL");
+  const refinedCodes = availableCodes.filter((code) => code === "RB" || code === "HO");
+
+  const averageForCodes = (point: Record<string, number | string> | undefined, codes: string[]) => {
+    if (!point) return null;
+    const values = codes
+      .map((code) => point[code])
+      .filter((value): value is number => typeof value === "number");
+    if (!values.length) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+
+  const latestBiofuelBasket = averageForCodes(latestPoint, biofuelCodes);
+  const latestRefinedBasket = averageForCodes(latestPoint, refinedCodes);
+  const startingBiofuelBasket = averageForCodes(firstPoint, biofuelCodes);
+  const startingRefinedBasket = averageForCodes(firstPoint, refinedCodes);
+  const rotationSpread = latestBiofuelBasket != null && latestRefinedBasket != null ? latestBiofuelBasket - latestRefinedBasket : null;
+  const spreadDelta = rotationSpread != null && startingBiofuelBasket != null && startingRefinedBasket != null
+    ? rotationSpread - (startingBiofuelBasket - startingRefinedBasket)
+    : null;
+
+  const strongestContract = latestPoint
+    ? availableCodes.reduce<{ code: string; value: number } | null>((best, code) => {
+        const current = latestPoint[code];
+        if (typeof current !== "number") return best;
+        if (!best || current > best.value) return { code, value: current };
+        return best;
+      }, null)
+    : null;
+
+  const leadership = rotationSpread == null
+    ? { label: "Leadership unclear", tone: "text-stealth-100" }
+    : rotationSpread >= 6
+      ? { label: "Biofuels leading", tone: "text-emerald-300" }
+      : rotationSpread <= -6
+        ? { label: "Refined products leading", tone: "text-orange-300" }
+        : { label: "Balanced chain", tone: "text-stealth-100" };
+
+  return (
+    <div className="surface-card self-start p-3 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <CardHeader kicker="Feedstocks and Blendstocks — Indexed to 100" title="Biofuels and combustibles" tooltipText="Tracks whether biofuel-linked contracts like ethanol and soybean oil are leading or lagging the refined petroleum chain. This helps surface where incremental fuel demand is showing up first." />
+        <div className="flex flex-wrap gap-2">
+          {availableCodes.map((code) => (
+            <LegendPill key={code} color={BIOFUEL_COLORS[code] ?? "#94a3b8"}>{code}</LegendPill>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <StatTile label="Leadership" value={leadership.label} tone={leadership.tone} detail="Relative move of biofuel-linked contracts vs refined products." />
+        <StatTile label="Biofuel Basket" value={latestBiofuelBasket != null ? latestBiofuelBasket.toFixed(1) : "—"} tone="text-emerald-300" detail="Average of ethanol and soybean oil." />
+        <StatTile label="Refined Basket" value={latestRefinedBasket != null ? latestRefinedBasket.toFixed(1) : "—"} tone="text-orange-300" detail="Average of RBOB and heating oil." />
+        <StatTile label="Spread" value={rotationSpread != null ? fmt(rotationSpread, 1) : "—"} tone={leadership.tone} detail={spreadDelta != null ? `${fmt(spreadDelta, 1)} pts vs start of window` : "Indexed biofuel minus refined spread."} />
+      </div>
+
+      <div className="h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <YAxis {...commonYAxisProps} />
+            <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
+            <Tooltip
+              {...tip}
+              formatter={(value: number, name: string) => [`${value.toFixed(1)}`, labelByCode[name] ?? name]}
+            />
+            {availableCodes.map((code) => (
+              <Line
+                key={code}
+                type="monotone"
+                dataKey={code}
+                stroke={BIOFUEL_COLORS[code] ?? "#94a3b8"}
+                dot={false}
+                strokeWidth={code === strongestContract?.code ? 2.6 : 1.7}
+                strokeOpacity={code === strongestContract?.code ? 1 : 0.78}
+                strokeDasharray={code === "EH" || code === "ZL" ? undefined : "5 3"}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        <SignalTile
+          label="Takeaway"
+          title={leadership.label}
+          tone={leadership.tone}
+          detail={rotationSpread == null ? "Relative biofuel leadership unavailable." : rotationSpread >= 6 ? "Biofuel-linked contracts are outrunning the petroleum refining chain." : rotationSpread <= -6 ? "Refined products are still leading the downstream complex." : "Biofuels and refined products are moving in a relatively balanced way."}
+        />
+        <SignalTile
+          label="Momentum"
+          title={spreadDelta == null ? "Drift unavailable" : spreadDelta >= 0 ? "Biofuel bid improving" : "Refined lead widening"}
+          tone={spreadDelta == null ? "text-stealth-100" : spreadDelta >= 0 ? "text-emerald-300" : "text-orange-300"}
+          detail={spreadDelta == null ? "Window-over-window spread change unavailable." : `${fmt(spreadDelta, 1)} points in biofuels minus refined products since the start of the window.`}
+        />
+        <SignalTile
+          label="Strongest Contract"
+          title={strongestContract ? (labelByCode[strongestContract.code] ?? strongestContract.code) : "—"}
+          tone={strongestContract && (strongestContract.code === "EH" || strongestContract.code === "ZL") ? "text-emerald-300" : "text-orange-300"}
+          detail={strongestContract ? `${strongestContract.value.toFixed(1)} indexed performance.` : "Leadership unavailable."}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Generation mix
 // ---------------------------------------------------------------------------
@@ -1259,7 +1390,7 @@ export default function EnergyIndex() {
         <div>
           <p className="page-kicker">Tools</p>
           <h1 className="page-title">Energy Markets</h1>
-          <p className="page-subtitle">Futures composite, price relationships, generation mix, and renewables transition</p>
+          <p className="page-subtitle">Futures composite, price relationships, biofuels, generation mix, and renewables transition</p>
         </div>
         <div className="control-strip mt-2">
           {TIMEFRAME_OPTIONS.map(({ key, label }) => (
@@ -1359,7 +1490,7 @@ export default function EnergyIndex() {
           <SectionHeader
             kicker="Market Structure"
             title="Contract structure and leadership"
-            tooltipText="Use this band to see which contracts are driving the composite and how that grouped leadership compresses across crude, natural gas, and refined products."
+              tooltipText="Use this band to see which contracts are driving the composite and how that grouped leadership compresses across crude, natural gas, refined products, and biofuels."
           />
         </div>
 
@@ -1386,8 +1517,8 @@ export default function EnergyIndex() {
         <div className="flex flex-wrap items-end justify-between gap-2.5">
           <SectionHeader
             kicker="Longer Horizon"
-            title="Capital rotation and power mix context"
-            tooltipText="These slower-moving panels frame transition leadership and end-demand structure instead of the nearer-term pressure read shown at the top of the page."
+            title="Capital rotation, biofuels, and power mix context"
+            tooltipText="These slower-moving panels frame transition leadership, biofuel-chain leadership, and end-demand structure instead of the nearer-term pressure read shown at the top of the page."
           />
         </div>
 
@@ -1398,7 +1529,10 @@ export default function EnergyIndex() {
               altSymbols={history.alt_symbols}
             />
           )}
-          {mix && <GenerationMixPanel mix={mix} />}
+          <div className="grid gap-3 md:gap-4">
+            {history ? <BiofuelsPanel data={history.biofuel_comparison} symbols={overview.symbols} /> : null}
+            {mix && <GenerationMixPanel mix={mix} />}
+          </div>
         </div>
       </div>
 
@@ -1410,7 +1544,7 @@ export default function EnergyIndex() {
 
       <div className="flex items-center justify-end gap-2">
         <LabelCaps className="mb-0">Sources</LabelCaps>
-        <InfoTooltip text={`Futures via Yahoo Finance. Retail prices and inventory via FRED/EIA. Generation mix via ${mix?.source ?? "EIA annual data"}${mix?.latest_year ? ` (${mix.latest_year})` : ""}. ETFs via Yahoo Finance. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`} />
+        <InfoTooltip text={`Futures and biofuel-linked contracts via Yahoo Finance. Retail prices and inventory via FRED/EIA. Generation mix via ${mix?.source ?? "EIA annual data"}${mix?.latest_year ? ` (${mix.latest_year})` : ""}. ETFs via Yahoo Finance. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`} />
       </div>
 
     </div>
