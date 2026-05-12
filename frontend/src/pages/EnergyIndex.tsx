@@ -177,6 +177,16 @@ function rgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }
 
+function emaSeries(values: number[], period: number) {
+  if (!values.length) return [];
+  const multiplier = 2 / (period + 1);
+  const result: number[] = [values[0]];
+  for (let index = 1; index < values.length; index += 1) {
+    result[index] = values[index] * multiplier + result[index - 1] * (1 - multiplier);
+  }
+  return result;
+}
+
 function regimeBadgeStyle(label: string) {
   if (label.includes("Tightening") || label.includes("Elevated"))
     return "border-amber-400/40 bg-amber-500/10 text-amber-300";
@@ -453,9 +463,12 @@ type SpreadPoint = {
   diesel: number | null;
   spread: number;
   spread_signal: number;
+  macd: number;
+  macd_signal: number;
+  histogram: number;
 };
 
-function SpreadTooltip({
+function SpreadMomentumTooltip({
   active,
   payload,
   label,
@@ -469,27 +482,27 @@ function SpreadTooltip({
   payload.forEach((e) => {
     if (e.dataKey && typeof e.value === "number") byKey[e.dataKey] = e.value;
   });
-  const elevated = (byKey.spread ?? 0) > (byKey.spread_signal ?? 0);
+  const accelerating = (byKey.histogram ?? 0) >= 0;
   return (
     <div className="min-w-[200px] rounded-xl border border-stealth-700/70 bg-stealth-950/95 p-3 text-xs shadow-[0_10px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl">
       <p className="mb-2 font-semibold text-white">{label}</p>
-      {byKey.wti_gal != null && (
-        <p className="text-orange-300">WTI/gal: <span className="font-mono">${byKey.wti_gal.toFixed(3)}</span></p>
-      )}
-      {byKey.retail != null && (
-        <p className="text-amber-300">Regular gas: <span className="font-mono">${byKey.retail.toFixed(3)}</span></p>
-      )}
-      {byKey.diesel != null && (
-        <p className="text-sky-300">Diesel: <span className="font-mono">${byKey.diesel.toFixed(3)}</span></p>
-      )}
       {byKey.spread != null && (
-        <p className={`mt-2 border-t border-white/[0.06] pt-2 ${elevated ? "text-rose-300" : "text-emerald-300"}`}>
-          Spread: <span className="font-mono">${byKey.spread.toFixed(3)}</span>
-          <span className="ml-1 text-stealth-500">{elevated ? "above trend" : "below trend"}</span>
-        </p>
+        <p className="text-amber-300">Refining spread: <span className="font-mono">${byKey.spread.toFixed(3)}</span></p>
       )}
       {byKey.spread_signal != null && (
-        <p className="text-[11px] text-stealth-500">6-mo avg: ${byKey.spread_signal.toFixed(3)}</p>
+        <p className="text-stealth-300">26w baseline: <span className="font-mono">${byKey.spread_signal.toFixed(3)}</span></p>
+      )}
+      {byKey.macd != null && (
+        <p className="text-sky-300">MACD: <span className="font-mono">{fmt(byKey.macd, 3)}</span></p>
+      )}
+      {byKey.macd_signal != null && (
+        <p className="text-orange-300">Signal: <span className="font-mono">{fmt(byKey.macd_signal, 3)}</span></p>
+      )}
+      {byKey.histogram != null && (
+        <p className={`mt-2 border-t border-white/[0.06] pt-2 ${accelerating ? "text-rose-300" : "text-emerald-300"}`}>
+          Histogram: <span className="font-mono">{fmt(byKey.histogram, 3)}</span>
+          <span className="ml-1 text-stealth-500">{accelerating ? "margin pressure accelerating" : "margin pressure fading"}</span>
+        </p>
       )}
     </div>
   );
@@ -532,7 +545,7 @@ function RetailPricesChart({
       const retail  = g.value;
       const diesel  = dieselMap[g.date] ?? null;
       const spread  = retail - wti_gal;
-      return { date: g.date, wti_gal, retail, diesel, spread, spread_signal: 0 };
+      return { date: g.date, wti_gal, retail, diesel, spread, spread_signal: 0, macd: 0, macd_signal: 0, histogram: 0 };
     }).filter(Boolean) as SpreadPoint[];
 
     if (rows.length < 10) return [];
@@ -544,62 +557,73 @@ function RetailPricesChart({
       rows[i].spread_signal = slice.reduce((s, r) => s + r.spread, 0) / slice.length;
     }
 
+    const spreadSeries = rows.map((row) => row.spread);
+    const fast = emaSeries(spreadSeries, 12);
+    const slow = emaSeries(spreadSeries, 26);
+    const macdSeries = spreadSeries.map((_, index) => fast[index] - slow[index]);
+    const signalSeries = emaSeries(macdSeries, 9);
+
+    for (let i = 0; i < rows.length; i++) {
+      rows[i].macd = macdSeries[i];
+      rows[i].macd_signal = signalSeries[i];
+      rows[i].histogram = macdSeries[i] - signalSeries[i];
+    }
+
     return rows.filter((_, i) => i % Math.max(1, Math.floor(rows.length / 150)) === 0);
   }, [spotData, gasData, dieselData]);
 
   if (!merged.length) return null;
 
-  const latest        = merged[merged.length - 1];
-  const elevated      = latest.spread > latest.spread_signal;
-  const overallMean   = merged.reduce((s, r) => s + r.spread, 0) / merged.length;
+  const latest = merged[merged.length - 1];
+  const accelerating = latest.histogram >= 0;
+  const momentumTone = accelerating ? "text-rose-300" : "text-emerald-300";
+  const momentumLabel = accelerating ? "Margins accelerating" : "Margins easing";
+  const chartHeight = chartHeightClassName === "h-64" ? "h-60" : chartHeightClassName;
 
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <CardHeader kicker="Futures → Pump: Refining Spread" title="Pump pricing vs futures cost" description="Bars show how far retail pricing sits above or below its 6-month margin baseline." />
-        <div className="grid min-w-[260px] grid-cols-3 gap-2 text-xs">
-          <StatTile label="WTI / gal" value={<span className="font-mono">${latest.wti_gal.toFixed(3)}</span>} tone="text-orange-300" />
-          <StatTile label="Regular Gas" value={<span className="font-mono">${latest.retail.toFixed(3)}</span>} tone="text-amber-300" />
-          <StatTile label="Spread" value={<span className="font-mono">${latest.spread.toFixed(3)}</span>} tone={elevated ? "text-rose-300" : "text-emerald-300"} />
-        </div>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <CardHeader kicker="Futures → Pump: Refining Spread" title="Refining spread momentum" description="MACD-style view of the retail gasoline wedge versus WTI. Positive histogram means pump margin pressure is accelerating; negative means it is fading." />
+        <MetaPill tone={momentumTone}>{momentumLabel}</MetaPill>
       </div>
-      <div className={chartHeightClassName}>
+
+      <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <StatTile label="WTI / gal" value={<span className="font-mono">${latest.wti_gal.toFixed(3)}</span>} tone="text-orange-300" detail="Crude input cost" />
+        <StatTile label="Regular Gas" value={<span className="font-mono">${latest.retail.toFixed(3)}</span>} tone="text-amber-300" detail="Retail pump price" />
+        <StatTile label="Spread" value={<span className="font-mono">${latest.spread.toFixed(3)}</span>} tone={momentumTone} detail={`26w baseline ${money(latest.spread_signal, 3)}`} />
+        <StatTile label="Histogram" value={<span className="font-mono">{fmt(latest.histogram, 3)}</span>} tone={momentumTone} detail="Margin acceleration" />
+      </div>
+
+      <div className={chartHeight}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
-            {/* Left axis — $/gal prices */}
-            <YAxis yAxisId="price" {...commonYAxisProps} tickFormatter={(v: number) => `$${v.toFixed(2)}`} />
-            {/* Right axis — spread */}
-            <YAxis yAxisId="spread" orientation="right" {...commonYAxisProps} tickFormatter={(v: number) => `$${v.toFixed(2)}`} />
-            <ReferenceLine yAxisId="spread" y={overallMean} stroke="#1e293b" strokeDasharray="3 3" />
-            <Tooltip content={<SpreadTooltip />} />
-            {/* Spread histogram bars — colored vs rolling signal */}
-            <Bar yAxisId="spread" dataKey="spread" name="spread" barSize={5} isAnimationActive={false}>
+            <YAxis yAxisId="momentum" {...commonYAxisProps} tickFormatter={(v: number) => `${v.toFixed(2)}`} />
+            <YAxis yAxisId="spread" orientation="right" hide domain={["auto", "auto"]} />
+            <ReferenceLine yAxisId="momentum" y={0} stroke="#334155" strokeDasharray="3 3" />
+            <Tooltip content={<SpreadMomentumTooltip />} />
+            <Bar yAxisId="momentum" dataKey="histogram" name="histogram" barSize={7} isAnimationActive={false}>
               {merged.map((entry, i) => (
                 <Cell
                   key={i}
-                  fill={entry.spread > entry.spread_signal ? "rgba(251,113,133,0.40)" : "rgba(52,211,153,0.40)"}
-                  stroke={entry.spread > entry.spread_signal ? "rgba(251,113,133,0.85)" : "rgba(52,211,153,0.85)"}
+                  fill={entry.histogram >= 0 ? "rgba(251,113,133,0.42)" : "rgba(52,211,153,0.42)"}
+                  stroke={entry.histogram >= 0 ? "rgba(251,113,133,0.9)" : "rgba(52,211,153,0.9)"}
                 />
               ))}
             </Bar>
-            {/* Rolling signal line */}
-            <Line yAxisId="spread" type="monotone" dataKey="spread_signal" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="spread_signal" />
-            {/* Price lines */}
-            <Line yAxisId="price" type="monotone" dataKey="wti_gal" stroke="#f97316" strokeWidth={2.5} dot={false} isAnimationActive={false} name="wti_gal" />
-            <Line yAxisId="price" type="monotone" dataKey="retail"  stroke="#fbbf24" strokeWidth={2}   dot={false} isAnimationActive={false} name="retail" />
-            {dieselData.length > 0 && (
-              <Line yAxisId="price" type="monotone" dataKey="diesel" stroke="#38bdf8" strokeWidth={1.5} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="diesel" />
-            )}
+            <Line yAxisId="momentum" type="monotone" dataKey="macd" stroke="#38bdf8" strokeWidth={2.6} dot={false} isAnimationActive={false} name="macd" />
+            <Line yAxisId="momentum" type="monotone" dataKey="macd_signal" stroke="#fb923c" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} name="macd_signal" />
+            <Line yAxisId="spread" type="monotone" dataKey="spread" stroke="#fbbf24" strokeOpacity={0.45} strokeWidth={1.5} dot={false} isAnimationActive={false} name="spread" />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
       <div className="mt-2 flex flex-wrap gap-2 text-xs text-stealth-400">
-        <LegendPill color="#f97316">WTI / gal</LegendPill>
-        <LegendPill color="#fbbf24">Regular Gas</LegendPill>
-        <LegendPill color="#38bdf8">Diesel</LegendPill>
-        <MetaPill>Red bars = retail rich to crude. Green bars = crude leading retail.</MetaPill>
+        <LegendPill color="#38bdf8">MACD</LegendPill>
+        <LegendPill color="#fb923c">Signal</LegendPill>
+        <LegendPill color="#fbbf24">Raw spread</LegendPill>
+        <MetaPill>Red bars = pump margin accelerating. Green bars = spread momentum easing.</MetaPill>
       </div>
     </div>
   );
