@@ -288,7 +288,7 @@ export default function SystemBreakdown() {
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
             <div className="invisible group-hover:visible absolute left-6 top-0 w-80 bg-stealth-850 border border-stealth-500 rounded-lg p-3 text-xs text-stealth-100 shadow-2xl z-10">
-              Indicators are intentionally grouped by domain, but overlap is now constrained with conservative de-overlap weighting. Core composites (Bond, Liquidity, Analyst, Sentiment, Breadth) carry more influence, while overlapping standalone proxies (e.g., VIX, T10Y2Y) are retained for interpretability with reduced composite impact.
+              Inputs are intentionally grouped by domain, but overlap is constrained with conservative weighting. Core composites still carry more influence, while the added Agriculture, Energy, and Real Estate page scores stay lighter so they broaden coverage without dominating the system read.
             </div>
           </div>
         </div>
@@ -297,7 +297,7 @@ export default function SystemBreakdown() {
           and analyzing <strong>{indicatorCount} critical indicators</strong> across domain groups: <strong>volatility and trend</strong> (VIX, SPY),
           <strong>participation</strong> (Breadth Health), <strong>rates and labor</strong> (T10Y2Y, UNRATE),
           <strong>bonds</strong> (Bond Market Stability), <strong>liquidity</strong> (Liquidity Proxy), <strong>consumers</strong> (Consumer Health),
-          <strong>sentiment</strong> (Analyst Confidence, Consumer & Corporate Sentiment), and <strong>hidden confirmation layers</strong> (AAS plus Sector Divergence Alignment in composite weighting).
+          <strong>sentiment</strong> (Analyst Confidence, Consumer & Corporate Sentiment), <strong>market pages</strong> (Agriculture, Energy, Real Estate), and <strong>hidden confirmation layers</strong> (AAS plus Sector Divergence Alignment in composite weighting).
           Each indicator is independently scored on a 0-100 scale using statistical normalization techniques, then combined into 
           a weighted composite score that reflects overall market health.
         </p>
@@ -337,6 +337,18 @@ export default function SystemBreakdown() {
           <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
             <div className="text-xs font-semibold text-stealth-200">Sentiment Composite</div>
             <div className="text-xs text-stealth-400">Michigan + NFIB + ISM + CapEx</div>
+          </div>
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
+            <div className="text-xs font-semibold text-stealth-200">Agriculture Stability</div>
+            <div className="text-xs text-stealth-400">Crop leadership + macro confirmation</div>
+          </div>
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
+            <div className="text-xs font-semibold text-stealth-200">Energy Stability</div>
+            <div className="text-xs text-stealth-400">Supply, price, and rotation balance</div>
+          </div>
+          <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
+            <div className="text-xs font-semibold text-stealth-200">Real Estate Stability</div>
+            <div className="text-xs text-stealth-400">Financing transmission + property demand</div>
           </div>
           <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
             <div className="text-xs font-semibold text-stealth-200">AAS (Composite Input)</div>

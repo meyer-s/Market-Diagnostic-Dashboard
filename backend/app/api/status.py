@@ -1,20 +1,92 @@
+from collections import defaultdict
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Query
 from sqlalchemy import func
-from datetime import datetime, timedelta
-from app.models.system_status import SystemStatus
+
 from app.models.indicator import Indicator
 from app.models.indicator_value import IndicatorValue
+from app.models.system_status import SystemStatus
+from app.services.system_overview_inputs import get_page_input_codes, get_page_input_history, get_page_input_statuses
 from app.utils.db_helpers import get_db_session
-from app.utils.response_helpers import format_system_status, format_indicator_status
+from app.utils.response_helpers import format_indicator_status, format_system_status
 from app.utils.system_scoring import compute_weighted_composite
 
 router = APIRouter()
 
+
+def _state_from_score(score: float) -> str:
+    if score >= 70:
+        return "GREEN"
+    if score >= 40:
+        return "YELLOW"
+    return "RED"
+
 @router.get("/system")
 def get_system_status():
     with get_db_session() as db:
-        status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
-        return format_system_status(status)
+        indicators = db.query(Indicator).all()
+
+        subq = (
+            db.query(
+                IndicatorValue.indicator_id,
+                func.max(IndicatorValue.timestamp).label("max_ts"),
+            )
+            .group_by(IndicatorValue.indicator_id)
+            .subquery()
+        )
+        values = (
+            db.query(IndicatorValue)
+            .join(
+                subq,
+                (IndicatorValue.indicator_id == subq.c.indicator_id)
+                & (IndicatorValue.timestamp == subq.c.max_ts),
+            )
+            .all()
+        )
+
+        latest = {value.indicator_id: value for value in values}
+        scores_by_code = {}
+        weights_by_code = {}
+        red_count = 0
+        yellow_count = 0
+        total_count = 0
+
+        for indicator in indicators:
+            value = latest.get(indicator.id)
+            if not value or value.score is None:
+                continue
+            scores_by_code[indicator.code] = value.score
+            weights_by_code[indicator.code] = indicator.weight or 0.0
+            total_count += 1
+            if value.state == "RED":
+                red_count += 1
+            elif value.state == "YELLOW":
+                yellow_count += 1
+
+        for overview_input in get_page_input_statuses():
+            scores_by_code[overview_input["code"]] = overview_input["score"]
+            weights_by_code[overview_input["code"]] = overview_input["weight"]
+            total_count += 1
+            if overview_input["state"] == "RED":
+                red_count += 1
+            elif overview_input["state"] == "YELLOW":
+                yellow_count += 1
+
+        composite_score, _ = compute_weighted_composite(scores_by_code, weights_by_code)
+        if composite_score is None:
+            status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
+            return format_system_status(status)
+
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "state": _state_from_score(composite_score),
+            "composite_score": round(composite_score, 1),
+            "red_count": red_count,
+            "yellow_count": yellow_count,
+            "green_count": max(0, total_count - red_count - yellow_count),
+            "total_count": total_count,
+        }
 
 @router.get("/system/history")
 def get_system_history(days: int = Query(365, ge=1, le=1095)):
@@ -38,7 +110,8 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
         # Get all indicators with their weights
         indicators = db.query(Indicator).all()
         indicator_map = {ind.id: ind for ind in indicators}
-        indicator_codes = [ind.code for ind in indicators]
+        page_input_codes = get_page_input_codes()
+        indicator_codes = [ind.code for ind in indicators] + page_input_codes
         
         # Get historical values for all indicators within date range
         values = (
@@ -49,11 +122,18 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
         )
         
         # Group values by date (day granularity)
-        from collections import defaultdict
         date_values = defaultdict(list)
         for val in values:
             date_key = val.timestamp.date()
             date_values[date_key].append(val)
+
+        page_history_by_code = {
+            code: {
+                datetime.fromisoformat(point["timestamp"]).date(): point
+                for point in get_page_input_history(code, days)
+            }
+            for code in page_input_codes
+        }
 
         # Seed last known values before cutoff so counts carry forward
         last_seen = {}
@@ -75,6 +155,7 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
         start_date = cutoff.date()
         end_date = datetime.utcnow().date()
         current_date = start_date
+        page_latest = {}
         while current_date <= end_date:
             day_values = date_values.get(current_date, [])
 
@@ -83,7 +164,12 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
                 if not existing or val.timestamp > existing.timestamp:
                     last_seen[val.indicator_id] = val
 
-            if not last_seen:
+            for code, history_map in page_history_by_code.items():
+                latest_point = history_map.get(current_date)
+                if latest_point:
+                    page_latest[code] = latest_point
+
+            if not last_seen and not page_latest:
                 current_date += timedelta(days=1)
                 continue
 
@@ -105,19 +191,23 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
                 elif val.state == "YELLOW":
                     yellow_count += 1
 
-            total_count = len(last_seen)
+            for code, point in page_latest.items():
+                score = point.get("score")
+                if score is None:
+                    continue
+                scores_by_code[code] = score
+                weights_by_code[code] = 1.0
+                if point.get("state") == "RED":
+                    red_count += 1
+                elif point.get("state") == "YELLOW":
+                    yellow_count += 1
+
+            total_count = len(scores_by_code)
             green_count = max(0, total_count - red_count - yellow_count)
 
             composite_score, weights_used = compute_weighted_composite(scores_by_code, weights_by_code)
             if composite_score is not None:
-
-                # Determine system state based on composite score
-                if composite_score >= 70:
-                    state = "GREEN"
-                elif composite_score >= 40:
-                    state = "YELLOW"
-                else:
-                    state = "RED"
+                state = _state_from_score(composite_score)
 
                 # Use end of day for timestamp
                 timestamp = datetime.combine(current_date, datetime.max.time())
@@ -170,4 +260,4 @@ def get_indicator_status():
         return [
             format_indicator_status(ind, latest.get(ind.id))
             for ind in indicators
-        ]
+        ] + get_page_input_statuses()

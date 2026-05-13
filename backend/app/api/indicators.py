@@ -12,6 +12,12 @@ from app.utils.response_helpers import (
     format_indicator_detail,
     format_indicator_history,
 )
+from app.services.system_overview_inputs import (
+    get_page_input_detail,
+    get_page_input_history,
+    is_page_input,
+    list_page_input_basic_metadata,
+)
 from app.services.muni_data import get_muni_subsystem
 from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 from app.services.sector_divergence import (
@@ -31,7 +37,7 @@ def list_indicators():
     with get_db_session() as db:
         # Get database indicators
         indicators: List[Indicator] = db.query(Indicator).all()
-        return [format_indicator_basic(ind) for ind in indicators]
+        return [format_indicator_basic(ind) for ind in indicators] + list_page_input_basic_metadata()
 
 
 @router.get("/indicators/{code}")
@@ -39,6 +45,12 @@ def get_indicator_detail(code: str):
     """Return metadata + latest value for a single indicator."""
 
     canonical_code = normalize_indicator_code(code)
+    if is_page_input(canonical_code):
+        detail = get_page_input_detail(canonical_code)
+        if detail is None:
+            raise HTTPException(status_code=404, detail=f"Indicator {code} not found")
+        return detail
+
     with get_db_session() as db:
         ind: Indicator | None = (
             db.query(Indicator)
@@ -68,6 +80,9 @@ def get_indicator_history(code: str, days: int = Query(365, ge=1, le=1095)):
     from datetime import datetime, timedelta
 
     canonical_code = normalize_indicator_code(code)
+    if is_page_input(canonical_code):
+        return get_page_input_history(canonical_code, days)
+
     with get_db_session() as db:
         ind: Indicator | None = (
             db.query(Indicator)
