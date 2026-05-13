@@ -137,6 +137,14 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+def _format_yoy_text(value: Optional[float]) -> Optional[str]:
+    if value is None:
+        return None
+    if abs(value) < 0.05:
+        return "flat YoY"
+    return f"{value:+.1f}% YoY"
+
+
 def _series_from_rows(rows: List[Dict[str, Any]]) -> pd.Series:
     if not rows:
         return pd.Series(dtype="float64")
@@ -675,8 +683,9 @@ def _build_factors(
             else f"{home_sales_latest:.0f}"
         )
         sales_text = f"Existing home sales are running at {sales_level}"
-        if home_sales_yoy_latest is not None:
-            sales_text += f", {home_sales_yoy_latest:+.1f}% YoY"
+        yoy_text = _format_yoy_text(home_sales_yoy_latest)
+        if yoy_text is not None:
+            sales_text += f", {yoy_text}"
         demand_evidence.append(sales_text + ".")
 
     supply_score = _weighted_score([
@@ -758,8 +767,9 @@ def _summary(
             f"a {relative:+.1f} pt residential/listed-REIT spread."
         )
     if home_sales_yoy is not None:
+        yoy_text = _format_yoy_text(home_sales_yoy)
         parts.append(
-            f"Existing home sales are {home_sales_yoy:+.1f}% YoY, "
+            f"Existing home sales are {yoy_text}, "
             "so buyer demand is being checked directly instead of inferred only from builders."
         )
 

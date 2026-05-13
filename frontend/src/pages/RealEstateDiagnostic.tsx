@@ -1739,7 +1739,7 @@ export default function RealEstateDiagnostic() {
       {/* Sources footer */}
       <div className="flex items-center justify-end gap-2">
         <HoverTooltip
-          tip={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, rent CPI, housing CPI, median housing CPI, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
+          tip={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, existing home sales, rent CPI, housing CPI, median housing CPI, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
           width="w-80"
         >
           <LabelCaps className="mb-0">Sources</LabelCaps>
