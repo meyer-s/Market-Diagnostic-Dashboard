@@ -67,8 +67,8 @@ type MetricSnapshot = {
   credit_spread_delta_60d_bps?: number | null;
   shelter_cpi_yoy?: number | null;
   shelter_cpi_yoy_delta_6m?: number | null;
-  mortgage_applications?: number | null;
-  mortgage_applications_yoy?: number | null;
+  home_sales?: number | null;
+  home_sales_yoy?: number | null;
   housing_starts_6m?: number | null;
   building_permits_6m?: number | null;
   completions_6m?: number | null;
@@ -119,7 +119,7 @@ type RealEstateContext = {
   rent_cpi: DataPoint[];
   housing_cpi: DataPoint[];
   median_housing_cpi: DataPoint[];
-  mortgage_applications: DataPoint[];
+  home_sales: DataPoint[];
 };
 
 // ---------------------------------------------------------------------------
@@ -163,6 +163,14 @@ function fmt(v: number | null | undefined, decimals = 2) {
   if (v == null) return "—";
   const sign = v > 0 ? "+" : "";
   return `${sign}${v.toFixed(decimals)}`;
+}
+
+function compactNumber(v: number | null | undefined, decimals = 1) {
+  if (v == null) return "—";
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: decimals,
+  }).format(v);
 }
 
 function conciseSummary(args: {
@@ -955,22 +963,22 @@ function SupplyContextChart({
 // ---------------------------------------------------------------------------
 
 function BuyerSellerDivergenceChart({
-  mortgageApplications,
+  homeSales,
   permits,
   completions,
   starts,
   surfaceClassName = "surface-card",
 }: {
-  mortgageApplications: DataPoint[];
+  homeSales: DataPoint[];
   permits: DataPoint[];
   completions: DataPoint[];
   starts: DataPoint[];
   surfaceClassName?: string;
 }) {
   const merged = useMemo(() => {
-    if (!mortgageApplications.length) return [];
+    if (!homeSales.length) return [];
 
-    const buyerValues = mortgageApplications.map((point) => point.value);
+    const buyerValues = homeSales.map((point) => point.value);
     const buyerMin = Math.min(...buyerValues);
     const buyerRange = Math.max(...buyerValues) - buyerMin || 1;
 
@@ -978,7 +986,7 @@ function BuyerSellerDivergenceChart({
     const completionsMap = Object.fromEntries(completions.map((point) => [point.date, point.value]));
     const startsMap = Object.fromEntries(starts.map((point) => [point.date, point.value]));
 
-    const rows = mortgageApplications
+    const rows = homeSales
       .map((point) => {
         const permitVal = nearestDate(permitsMap, point.date);
         const completionVal = nearestDate(completionsMap, point.date);
@@ -1015,7 +1023,7 @@ function BuyerSellerDivergenceChart({
         };
       })
       .filter((_, index) => index % Math.max(1, Math.floor(rows.length / 120)) === 0);
-  }, [completions, mortgageApplications, permits, starts]);
+  }, [completions, homeSales, permits, starts]);
 
   if (!merged.length) return null;
 
@@ -1027,14 +1035,14 @@ function BuyerSellerDivergenceChart({
       <CardHeader
         kicker="Demand vs Supply"
         title="Home buyers vs seller supply"
-        tooltipText="Buyer demand uses combined existing and new home mortgage applications. Seller supply is a proxy built from permits, starts, and completions until dedicated listings data is added. The bar spread shows when buyer demand and seller-side supply stop confirming each other."
+        tooltipText="Buyer demand uses existing home sales as a live FRED demand proxy. Seller supply is built from permits, starts, and completions. The bar spread shows when buyer demand and seller-side supply stop confirming each other."
       />
       <div className="mb-3 grid gap-3 md:grid-cols-3">
         <StatTile
           label="Buyer Demand"
-          value={latest.buyers_raw.toFixed(0)}
+          value={compactNumber(latest.buyers_raw, 2)}
           tone="text-sky-300"
-          detail="Combined mortgage applications"
+          detail="Existing home sales"
         />
         <StatTile
           label="Seller Proxy"
@@ -1068,8 +1076,8 @@ function BuyerSellerDivergenceChart({
                   const gap = props.payload?.gap ?? value;
                   return [`${gap > 0 ? "+" : ""}${gap.toFixed(0)} pts`, "Divergence"];
                 }
-                if (name === "buyers_norm") return [`${props.payload?.buyers_raw?.toFixed(0) ?? "—"}`, "Buyer Demand"];
-                return [`${props.payload?.sellers_raw?.toFixed(0) ?? "—"}`, "Seller Supply Proxy"];
+                if (name === "buyers_norm") return [compactNumber(props.payload?.buyers_raw, 2), "Buyer Demand"];
+                return [compactNumber(props.payload?.sellers_raw, 1), "Seller Supply Proxy"];
               }}
             />
             <Bar yAxisId="gap" dataKey="gap" name="gap" barSize={8} radius={[3, 3, 0, 0]} isAnimationActive={false}>
@@ -1100,14 +1108,14 @@ function AffordabilityChart({
   rentCpi,
   housingCpi,
   medianHousingCpi,
-  mortgageApplications,
+  homeSales,
   surfaceClassName = "surface-card",
 }: {
   shelterCpi: DataPoint[];
   rentCpi: DataPoint[];
   housingCpi: DataPoint[];
   medianHousingCpi: DataPoint[];
-  mortgageApplications: DataPoint[];
+  homeSales: DataPoint[];
   surfaceClassName?: string;
 }) {
   const inflationConfigs = useMemo(
@@ -1145,11 +1153,11 @@ function AffordabilityChart({
 
     const referenceSeries = [...activeConfigs].sort((left, right) => right.data.length - left.data.length)[0]?.data ?? [];
 
-    const appVals = mortgageApplications.map((p) => p.value).filter((v) => v > 0);
+    const appVals = homeSales.map((p) => p.value).filter((v) => v > 0);
     const [minA, maxA] = appVals.length ? [Math.min(...appVals), Math.max(...appVals)] : [0, 1];
     const rangeA = maxA - minA || 1;
 
-    const appMap = Object.fromEntries(mortgageApplications.map((p) => [p.date, p.value]));
+    const appMap = Object.fromEntries(homeSales.map((p) => [p.date, p.value]));
     return referenceSeries
       .map((point) => {
         const row: Record<string, number | string | null> = { date: point.date };
@@ -1165,7 +1173,7 @@ function AffordabilityChart({
         return row;
       })
       .filter((_, i) => i % Math.max(1, Math.floor(referenceSeries.length / 150)) === 0);
-  }, [activeConfigs, mortgageApplications]);
+  }, [activeConfigs, homeSales]);
 
   if (!merged.length) return null;
 
@@ -1173,17 +1181,17 @@ function AffordabilityChart({
   const latestHousing = housingCpi.length ? housingCpi[housingCpi.length - 1].value : null;
   const latestMedian = medianHousingCpi.length ? medianHousingCpi[medianHousingCpi.length - 1].value : null;
   const latestShelter = shelterCpi.length ? shelterCpi[shelterCpi.length - 1].value : null;
-  const latestApps = mortgageApplications.length ? mortgageApplications[mortgageApplications.length - 1].value : null;
+  const latestHomeSales = homeSales.length ? homeSales[homeSales.length - 1].value : null;
   const rentHousingGap = latestRent != null && latestHousing != null ? latestRent - latestHousing : null;
 
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader
         kicker="Price and Affordability"
-        title={mortgageApplications.length > 0 ? "Housing inflation layers and buyer demand" : "Housing inflation layers"}
+        title={homeSales.length > 0 ? "Housing inflation layers and buyer demand" : "Housing inflation layers"}
         tooltipText={
-          mortgageApplications.length > 0
-            ? "Rent CPI, broad housing CPI, and a median housing inflation read are normalized 0-100 to compare direction and persistence. Mortgage applications are overlaid to show whether buyer demand is absorbing or resisting the inflation backdrop."
+          homeSales.length > 0
+            ? "Rent CPI, broad housing CPI, and a median housing inflation read are normalized 0-100 to compare direction and persistence. Existing home sales are overlaid to show whether buyer demand is absorbing or resisting the inflation backdrop."
             : "Housing inflation lines are normalized 0-100 for directional comparison. Use this panel as context for persistence and breadth of housing inflation rather than as a standalone regime call."
         }
       />
@@ -1212,10 +1220,10 @@ function AffordabilityChart({
             detail="Median housing inflation read"
           />
         )}
-        {latestApps != null ? (
+        {latestHomeSales != null ? (
           <StatTile
-            label="Mortgage Apps"
-            value={latestApps.toFixed(0)}
+            label="Home Sales"
+            value={compactNumber(latestHomeSales, 2)}
             tone="text-stealth-100"
             detail="Buyer demand proxy"
           />
@@ -1246,7 +1254,7 @@ function AffordabilityChart({
               {...tip}
               formatter={(value: number, name: string, props: { payload?: Record<string, number | null> }) => {
                 if (name === "apps_norm") {
-                  return [`${props.payload?.apps?.toFixed(0) ?? "—"}`, "Mortgage Apps Index"];
+                  return [compactNumber(props.payload?.apps, 2), "Existing Home Sales"];
                 }
 
                 const source = activeConfigs.find((config) => `${config.key}_norm` === name);
@@ -1271,7 +1279,7 @@ function AffordabilityChart({
                 isAnimationActive={false}
               />
             ))}
-            {mortgageApplications.length > 0 && (
+            {homeSales.length > 0 && (
               <Line type="monotone" dataKey="apps_norm" stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="7 4" dot={false} name="apps_norm" isAnimationActive={false} />
             )}
           </LineChart>
@@ -1281,8 +1289,8 @@ function AffordabilityChart({
         {activeConfigs.map((config) => (
           <LegendPill key={config.key} color={config.color}>{config.label}</LegendPill>
         ))}
-        {mortgageApplications.length > 0 && (
-          <LegendPill color="#94a3b8">Mortgage Apps (normalized)</LegendPill>
+        {homeSales.length > 0 && (
+          <LegendPill color="#94a3b8">Home Sales (normalized)</LegendPill>
         )}
       </div>
     </div>
@@ -1367,7 +1375,7 @@ function RealEstateMethodologyPanel() {
                 {[
                   ["Financing", "35%", "Mortgage rates, Treasury drift, HY OAS"],
                   ["Listed Market", "30%", "REITs, builders, office REIT proxy, financing proxies"],
-                  ["Demand", "20%", "Residential proxies, mortgage applications, and shelter CPI"],
+                  ["Demand", "20%", "Residential proxies, existing home sales, and shelter CPI"],
                   ["Pipeline", "15%", "Starts, permits, completions"],
                 ].map(([label, weight, detail]) => (
                   <div key={label} className="rounded bg-stealth-900/50 p-2">
@@ -1401,7 +1409,7 @@ function RealEstateMethodologyPanel() {
             <Section id="sources" title="Data Sources">
               <ul className="space-y-1.5 text-xs">
                 <li><span className="font-medium text-stealth-200">Yahoo Finance:</span> VNQ, IYR, XLRE, XHB, ITB, BXP, SLG, KRC, KRE, MBB, REM</li>
-                <li><span className="font-medium text-stealth-200">FRED:</span> MORTGAGE30US, DGS10, BAMLH0A0HYM2, HOUST, PERMIT, COMPUTSA, CUSR0000SAH1, CUSR0000SEHA, CPIEHOUSE, MEDCPIM158SFRBCLE, M0263AUSM500NNBR, M0264AUSM500NNBR</li>
+                <li><span className="font-medium text-stealth-200">FRED:</span> MORTGAGE30US, DGS10, BAMLH0A0HYM2, HOUST, PERMIT, COMPUTSA, CUSR0000SAH1, CUSR0000SEHA, CPIEHOUSE, MEDCPIM158SFRBCLE, EXHOSLUSM495S</li>
               </ul>
               <p className="mt-1 text-xs text-stealth-400">
                 Scores are computed at request time. Composite cache TTL is 20 minutes per timeframe window.
@@ -1481,7 +1489,7 @@ export default function RealEstateDiagnostic() {
   const hasTransmission       = Boolean(transmission?.indexed_vnq?.length && transmission?.indexed_xhb?.length);
   const hasCreditPanel        = Boolean(transmission?.indexed_vnq?.length && transmission?.credit_spread?.length);
   const hasSupplyPanel        = Boolean(context?.housing_starts?.length || context?.building_permits?.length);
-  const hasBuyerSeller        = Boolean(context?.mortgage_applications?.length && (context?.building_permits?.length || context?.completions?.length || context?.housing_starts?.length));
+  const hasBuyerSeller        = Boolean(context?.home_sales?.length && (context?.building_permits?.length || context?.completions?.length || context?.housing_starts?.length));
   const hasAffordability      = Boolean(
     context?.shelter_cpi?.length ||
     context?.rent_cpi?.length ||
@@ -1702,7 +1710,7 @@ export default function RealEstateDiagnostic() {
             ) : null}
             {hasBuyerSeller ? (
               <BuyerSellerDivergenceChart
-                mortgageApplications={context.mortgage_applications}
+                homeSales={context.home_sales}
                 permits={context.building_permits}
                 completions={context.completions}
                 starts={context.housing_starts}
@@ -1714,7 +1722,7 @@ export default function RealEstateDiagnostic() {
                 rentCpi={context.rent_cpi}
                 housingCpi={context.housing_cpi}
                 medianHousingCpi={context.median_housing_cpi}
-                mortgageApplications={context.mortgage_applications}
+                homeSales={context.home_sales}
               />
             ) : null}
           </div>
