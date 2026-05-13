@@ -1064,23 +1064,19 @@ function BuyerSellerDivergenceChart({
     const horizonRows = filterByYears(joinedRows, horizonYears);
     if (!horizonRows.length) return [];
 
-    const buyerValues = horizonRows.map((row) => row.buyers_raw);
-    const sellerValues = horizonRows.map((row) => row.sellers_raw);
-    const buyerMin = Math.min(...buyerValues);
-    const buyerRange = Math.max(...buyerValues) - buyerMin || 1;
-    const sellerMin = Math.min(...sellerValues);
-    const sellerRange = Math.max(...sellerValues) - sellerMin || 1;
+    const buyerBase = horizonRows[0].buyers_raw || 1;
+    const sellerBase = horizonRows[0].sellers_raw || 1;
 
     return decimateKeepLast(
       horizonRows
       .map((row) => {
-        const buyersNorm = ((row.buyers_raw - buyerMin) / buyerRange) * 100;
-        const sellersNorm = ((row.sellers_raw - sellerMin) / sellerRange) * 100;
+        const buyersIndex = (row.buyers_raw / buyerBase) * 100;
+        const sellersIndex = (row.sellers_raw / sellerBase) * 100;
         return {
           ...row,
-          buyers_norm: buyersNorm,
-          sellers_norm: sellersNorm,
-          gap: buyersNorm - sellersNorm,
+          buyers_index: buyersIndex,
+          sellers_index: sellersIndex,
+          gap: buyersIndex - sellersIndex,
         };
       }),
       120,
@@ -1092,6 +1088,13 @@ function BuyerSellerDivergenceChart({
   const latest = merged[merged.length - 1];
   const demandLead = latest.gap >= 8 ? "Buyers leading" : latest.gap <= -8 ? "Supply leading" : "Balanced";
   const cycleTicks = useMemo(() => buildCycleTicks(merged, horizonYears), [horizonYears, merged]);
+  const cycleDomain = useMemo(() => {
+    const values = merged.flatMap((row) => [row.buyers_index, row.sellers_index, 100]);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const padding = Math.max(6, (max - min) * 0.1);
+    return [Math.max(0, Math.floor((min - padding) / 10) * 10), Math.ceil((max + padding) / 10) * 10] as const;
+  }, [merged]);
 
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
@@ -1099,7 +1102,7 @@ function BuyerSellerDivergenceChart({
         <CardHeader
           kicker="Demand vs Supply"
           title="Home buyers vs seller supply"
-          tooltipText="Buyer demand uses new home sales so the chart can span full housing cycles. Seller supply is built from permits, starts, and completions. Use the 1Y, 5Y, 15Y, and 30Y selector to compare short-term shifts against longer housing cycles."
+          tooltipText="Buyer demand uses new home sales so the chart can span full housing cycles. Seller supply is built from permits, starts, and completions. Both lines are indexed to 100 at the start of the selected window, so the divergence compares relative performance over 1Y, 5Y, 15Y, or 30Y on the same basis."
         />
         <div className="control-strip mt-1">
           {BUYER_SELLER_HORIZONS.map(({ years, label }) => (
@@ -1140,7 +1143,7 @@ function BuyerSellerDivergenceChart({
       </div>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <MetaPill tone={latest.gap >= 0 ? "text-emerald-300" : "text-rose-300"}>{demandLead}</MetaPill>
-        <BodyHint className="max-w-xl">Positive spread means buyer demand is firming faster than seller-side supply. Negative spread means supply is outrunning buyer demand. The x-axis shifts to cycle-aware year labels as you widen the horizon.</BodyHint>
+        <BodyHint className="max-w-xl">Positive spread means buyer demand has outperformed seller-side supply since the start of the selected window. Negative spread means supply has outperformed buyer demand over that same window. The x-axis shifts to cycle-aware year labels as you widen the horizon.</BodyHint>
       </div>
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
@@ -1154,8 +1157,9 @@ function BuyerSellerDivergenceChart({
               minTickGap={24}
               tickFormatter={(d: string) => formatCycleAxisLabel(d, horizonYears)}
             />
-            <YAxis {...commonYAxisProps} yAxisId="norm" domain={[0, 100]} />
+            <YAxis {...commonYAxisProps} yAxisId="norm" domain={cycleDomain} />
             <YAxis yAxisId="gap" orientation="right" hide domain={[-100, 100]} />
+            <ReferenceLine yAxisId="norm" y={100} stroke="#1e293b" strokeDasharray="3 3" />
             <ReferenceLine yAxisId="gap" y={0} stroke="#1e293b" strokeDasharray="3 3" />
             <Tooltip
               {...tip}
@@ -1165,8 +1169,10 @@ function BuyerSellerDivergenceChart({
                   const gap = props.payload?.gap ?? value;
                   return [`${gap > 0 ? "+" : ""}${gap.toFixed(0)} pts`, "Divergence"];
                 }
-                if (name === "buyers_norm") return [`${props.payload?.buyers_raw?.toFixed(0) ?? "—"}K`, "Buyer Demand"];
-                return [compactNumber(props.payload?.sellers_raw, 1), "Seller Supply Proxy"];
+                if (name === "buyers_index") {
+                  return [`${value.toFixed(1)} index | ${props.payload?.buyers_raw?.toFixed(0) ?? "—"}K raw`, "Buyer Demand"];
+                }
+                return [`${value.toFixed(1)} index | ${compactNumber(props.payload?.sellers_raw, 1)} raw`, "Seller Supply Proxy"];
               }}
             />
             <Bar yAxisId="gap" dataKey="gap" name="gap" barSize={8} radius={[3, 3, 0, 0]} isAnimationActive={false}>
@@ -1174,14 +1180,14 @@ function BuyerSellerDivergenceChart({
                 <Cell key={row.date} fill={row.gap >= 0 ? "rgba(52, 211, 153, 0.35)" : "rgba(248, 113, 113, 0.35)"} />
               ))}
             </Bar>
-            <Line type="monotone" yAxisId="norm" dataKey="buyers_norm" stroke="#38bdf8" strokeWidth={2.2} dot={false} name="buyers_norm" isAnimationActive={false} />
-            <Line type="monotone" yAxisId="norm" dataKey="sellers_norm" stroke="#f59e0b" strokeWidth={1.8} strokeDasharray="5 3" dot={false} name="sellers_norm" isAnimationActive={false} />
+            <Line type="monotone" yAxisId="norm" dataKey="buyers_index" stroke="#38bdf8" strokeWidth={2.2} dot={false} name="buyers_index" isAnimationActive={false} />
+            <Line type="monotone" yAxisId="norm" dataKey="sellers_index" stroke="#f59e0b" strokeWidth={1.8} strokeDasharray="5 3" dot={false} name="sellers_index" isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
-        <LegendPill color="#38bdf8">Buyer Demand</LegendPill>
-        <LegendPill color="#f59e0b">Seller Supply Proxy</LegendPill>
+        <LegendPill color="#38bdf8">Buyer Demand (indexed)</LegendPill>
+        <LegendPill color="#f59e0b">Seller Supply Proxy (indexed)</LegendPill>
         <LegendPill color="#34d399">Positive Divergence</LegendPill>
       </div>
     </div>
