@@ -19,6 +19,11 @@ import numpy as np
 import pandas as pd
 import requests
 
+try:
+    from curl_cffi import requests as curl_requests
+except ImportError:  # pragma: no cover - fallback dependency is present in deployment image
+    curl_requests = None
+
 from app.core.config import settings
 from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
 
@@ -172,14 +177,31 @@ def _fred_fetch_api(series_id: str, start: str) -> pd.Series:
 
 def _fred_fetch_public_csv(series_id: str, start: str) -> pd.Series:
     url = "https://fred.stlouisfed.org/graph/fredgraph.csv"
-    resp = requests.get(
-        url,
-        params={"id": series_id, "cosd": start},
-        headers=HTTP_HEADERS,
-        timeout=FRED_TIMEOUT_SECONDS,
-    )
-    resp.raise_for_status()
-    frame = pd.read_csv(StringIO(resp.text))
+    params = {"id": series_id, "cosd": start}
+    try:
+        resp = requests.get(
+            url,
+            params=params,
+            headers=HTTP_HEADERS,
+            timeout=FRED_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        payload = resp.text
+    except requests.RequestException:
+        if curl_requests is None:
+            raise
+        resp = curl_requests.get(
+            url,
+            params=params,
+            headers=HTTP_HEADERS,
+            timeout=FRED_TIMEOUT_SECONDS,
+            impersonate="chrome",
+        )
+        if resp.status_code >= 400:
+            raise requests.HTTPError(f"FRED public CSV returned {resp.status_code} for {series_id}")
+        payload = resp.text
+
+    frame = pd.read_csv(StringIO(payload))
     if frame.empty or "observation_date" not in frame.columns or series_id not in frame.columns:
         return pd.Series(dtype="float64")
     rows = [
