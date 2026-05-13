@@ -11,9 +11,18 @@ const stateDotMap = {
 
 function resolveIndicatorDisplay(code: string, name: string) {
   if (code === "ANALYST_ANXIETY") {
-    return { displayName: "Analyst Confidence", displayCode: "ANALYST_CONFIDENCE", routeCode: "ANALYST_CONFIDENCE" };
+    return { displayName: "Analyst Confidence", displayCode: "ANALYST_CONFIDENCE", routePath: "/indicators/ANALYST_CONFIDENCE", linkLabel: "View detail" };
   }
-  return { displayName: name, displayCode: code, routeCode: code };
+  if (code === "AGRICULTURE_STABILITY") {
+    return { displayName: name, displayCode: code, routePath: "/agriculture", linkLabel: "Open page" };
+  }
+  if (code === "ENERGY_STABILITY") {
+    return { displayName: name, displayCode: code, routePath: "/energy", linkLabel: "Open page" };
+  }
+  if (code === "REAL_ESTATE_STABILITY") {
+    return { displayName: name, displayCode: code, routePath: "/real-estate", linkLabel: "Open page" };
+  }
+  return { displayName: name, displayCode: code, routePath: `/indicators/${code}`, linkLabel: "View detail" };
 }
 
 export default function Indicators() {
@@ -113,13 +122,13 @@ export default function Indicators() {
 }
 
 function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
-  const { displayName, displayCode, routeCode } = resolveIndicatorDisplay(indicator.code, indicator.name);
+  const { displayName, displayCode, routePath, linkLabel } = resolveIndicatorDisplay(indicator.code, indicator.name);
 
   return (
     <tr className="border-t border-stealth-700">
       <td className="px-4 py-3">
         <Link
-          to={`/indicators/${routeCode}`}
+          to={routePath}
           className="text-accent-yellow hover:underline"
         >
           {displayCode}
@@ -129,17 +138,17 @@ function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
       <td className="px-4 py-3">{indicator.score}</td>
       <td className="px-4 py-3">{indicator.state}</td>
       <td className="px-4 py-3">
-        <span className="text-stealth-400 text-xs">View detail</span>
+        <span className="text-stealth-400 text-xs">{linkLabel}</span>
       </td>
     </tr>
   );
 }
 
 function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
-  const { displayName, displayCode, routeCode } = resolveIndicatorDisplay(indicator.code, indicator.name);
+  const { displayName, displayCode, routePath, linkLabel } = resolveIndicatorDisplay(indicator.code, indicator.name);
 
   return (
-    <Link to={`/indicators/${routeCode}`}>
+    <Link to={routePath}>
       <div className="primary-card primary-card-hover p-3">
         <div className="mb-2 flex items-start justify-between gap-3">
           <div>
@@ -153,7 +162,7 @@ function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
         <div className="flex items-end justify-between">
           <div className="text-lg font-bold text-stealth-100">Score: {indicator.score}</div>
         </div>
-        <div className="mt-2 text-xs text-stealth-400">Trend history in detail view</div>
+        <div className="mt-2 text-xs text-stealth-400">{linkLabel === "Open page" ? "Open market page" : "Trend history in detail view"}</div>
       </div>
     </Link>
   );

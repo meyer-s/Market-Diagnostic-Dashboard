@@ -35,6 +35,14 @@ const stateDotMap = {
   RED: "bg-accent-red",
 };
 
+function resolveIndicatorRoute(code: string) {
+  if (code === "ANALYST_ANXIETY") return "/indicators/ANALYST_CONFIDENCE";
+  if (code === "AGRICULTURE_STABILITY") return "/agriculture";
+  if (code === "ENERGY_STABILITY") return "/energy";
+  if (code === "REAL_ESTATE_STABILITY") return "/real-estate";
+  return `/indicators/${code}`;
+}
+
 export default function IndicatorCard({ indicator }: Props) {
   const [history, setHistory] = useState<IndicatorHistoryPoint[]>([]);
 
@@ -82,11 +90,10 @@ export default function IndicatorCard({ indicator }: Props) {
 
   const displayName =
     indicator.code === "ANALYST_ANXIETY" ? "Analyst Confidence" : indicator.name;
-  const routeCode =
-    indicator.code === "ANALYST_ANXIETY" ? "ANALYST_CONFIDENCE" : indicator.code;
+  const routePath = resolveIndicatorRoute(indicator.code);
 
   return (
-    <Link to={`/indicators/${routeCode}`} className="block h-full">
+    <Link to={routePath} className="block h-full">
       <div className="primary-card primary-card-hover flex h-full flex-col p-3.5">
         <div className="text-sm leading-6 text-gray-300">{displayName}</div>
         <div className="mt-1 text-2xl font-semibold">
