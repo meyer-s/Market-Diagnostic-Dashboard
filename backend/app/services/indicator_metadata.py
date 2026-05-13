@@ -439,6 +439,54 @@ INDICATOR_METADATA = {
             "Detecting early divergence between narrative and market internals",
             "Cross-checking sector leadership against macro state classification"
         ]
+    },
+
+    "AGRICULTURE_STABILITY": {
+        "name": "Agriculture Stability",
+        "description": "Top-level agriculture stability score combining crop leadership, participation, macro pressure, and cross-market confirmation into one 0-100 read.",
+        "relevance": "Agriculture reacts early to inflation, growth, weather, and input-cost changes. It adds a real-economy confirmation layer to the broader market model.",
+        "scoring": "Uses the agriculture market page stability score directly. Higher values mean broader crop-market balance and healthier participation; lower values reflect fragmentation or stress.",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "High score = crop complex is confirming stable real-economy conditions. Low score = crop complex is reflecting tighter or less orderly conditions.",
+        "thresholds": {
+            "green_below": 40,
+            "yellow_below": 70
+        },
+        "typical_range": "Above 70 is stable, 40-69 is mixed, and below 40 is stressed.",
+        "impact": "Moderate impact by design. Agriculture is informative for inflation and demand context, but it is lighter than the core system drivers."
+    },
+
+    "ENERGY_STABILITY": {
+        "name": "Energy Stability",
+        "description": "Top-level energy stability score combining traditional energy balance, alternative energy participation, and fuel-cost transmission into one 0-100 market read.",
+        "relevance": "Energy conditions feed directly into inflation, growth, margins, and risk appetite. This makes the energy complex more system-driving than most narrow sector inputs.",
+        "scoring": "Uses the energy market page composite score directly. Higher values indicate a more orderly and resilient energy complex; lower values indicate pressure or disorder.",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "High score = energy markets are absorbing pressure cleanly. Low score = energy stress is likely feeding into broader macro conditions.",
+        "thresholds": {
+            "green_below": 40,
+            "yellow_below": 70
+        },
+        "typical_range": "Above 70 is stable, 40-69 is mixed, and below 40 is stressed.",
+        "impact": "Moderately high impact. Energy can reprice inflation expectations quickly, but it still overlaps with core bond, liquidity, and sentiment channels."
+    },
+
+    "REAL_ESTATE_STABILITY": {
+        "name": "Real Estate Stability",
+        "description": "Top-level real-estate stability score combining financing transmission, affordability, property-market confirmation, and supply balance into one 0-100 read.",
+        "relevance": "Real estate is a rate-sensitive bridge between credit conditions and the real economy. It is the most macro-causal of the three added market-page inputs.",
+        "scoring": "Derived from the real-estate market page by converting pressure to stability with 100 minus pressure. Higher values indicate healthier financing and demand conditions.",
+        "direction": -1,
+        "positive_is_good": True,
+        "interpretation": "High score = rates and credit pressure are being absorbed. Low score = financing and affordability are constraining activity.",
+        "thresholds": {
+            "green_below": 40,
+            "yellow_below": 70
+        },
+        "typical_range": "Above 70 is stable, 40-69 is mixed, and below 40 is stressed.",
+        "impact": "High additive impact. Real estate transmits rates into housing, household behavior, and construction-sensitive demand."
     }
 }
 

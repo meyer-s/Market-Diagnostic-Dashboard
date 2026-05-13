@@ -1,7 +1,7 @@
 """
 Seed Indicators Script
 ----------------------
-Creates/updates all 12 indicator metadata entries in the database.
+Creates/updates all 15 indicator metadata entries in the database.
 This script is automatically run on container startup via startup.sh.
 
 Indicators:
@@ -17,6 +17,9 @@ Indicators:
 - SENTIMENT_COMPOSITE: Consumer & corporate confidence from Michigan, NFIB, ISM, CapEx
 - AAS: Alternative Asset Stability from crypto and precious metals (low = pressure/distrust)
 - SECTOR_REGIME_ALIGNMENT: Sector divergence alignment versus current system regime
+- AGRICULTURE_STABILITY: Agriculture market-page stability composite
+- ENERGY_STABILITY: Energy market-page stability composite
+- REAL_ESTATE_STABILITY: Real-estate market-page stability composite
 
 DFF (Federal Funds Rate) was removed — its signal is redundant given T10Y2Y,
 LIQUIDITY_PROXY, and BOND_MARKET_STABILITY, and it provides no incremental information
@@ -178,6 +181,42 @@ INDICATORS = [
         "threshold_green_max": 40,  # Stability score thresholds: RED <40, YELLOW 40-69, GREEN >=70
         "threshold_yellow_max": 70,
         "weight": 2.0,  # Higher weight - structural signal
+    },
+    {
+        "code": "AGRICULTURE_STABILITY",
+        "name": "Agriculture Stability",
+        "source": "DERIVED",
+        "source_symbol": "AGRICULTURE_OVERVIEW",
+        "category": "market_page",
+        "direction": -1,
+        "lookback_days_for_z": 365,
+        "threshold_green_max": 40,
+        "threshold_yellow_max": 70,
+        "weight": 0.6,
+    },
+    {
+        "code": "ENERGY_STABILITY",
+        "name": "Energy Stability",
+        "source": "DERIVED",
+        "source_symbol": "ENERGY_OVERVIEW",
+        "category": "market_page",
+        "direction": -1,
+        "lookback_days_for_z": 365,
+        "threshold_green_max": 40,
+        "threshold_yellow_max": 70,
+        "weight": 0.8,
+    },
+    {
+        "code": "REAL_ESTATE_STABILITY",
+        "name": "Real Estate Stability",
+        "source": "DERIVED",
+        "source_symbol": "REAL_ESTATE_OVERVIEW",
+        "category": "market_page",
+        "direction": -1,
+        "lookback_days_for_z": 365,
+        "threshold_green_max": 40,
+        "threshold_yellow_max": 70,
+        "weight": 1.0,
     },
 ]
 

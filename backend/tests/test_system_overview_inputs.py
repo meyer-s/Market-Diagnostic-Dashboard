@@ -70,3 +70,11 @@ def test_page_input_history_uses_stability_series(monkeypatch):
     assert energy_history[-1]["score"] == 56.0
     assert real_estate_history[0]["score"] == 52.0
     assert real_estate_history[-1]["score"] == 60.0
+
+
+def test_page_input_basic_metadata_matches_db_contract():
+    metadata = {entry["code"]: entry for entry in system_overview_inputs.list_page_input_basic_metadata()}
+
+    assert metadata["AGRICULTURE_STABILITY"]["source_symbol"] == "AGRICULTURE_OVERVIEW"
+    assert metadata["ENERGY_STABILITY"]["weight"] == 0.8
+    assert metadata["REAL_ESTATE_STABILITY"]["category"] == "market_page"

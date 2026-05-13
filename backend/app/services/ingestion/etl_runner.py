@@ -29,6 +29,7 @@ from app.services.ingestion.breadth_utils import (
 )
 from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 from app.services.sector_divergence import compute_alignment_score, split_defensive_cyclical_scores
+from app.services.system_overview_inputs import get_page_input_history, get_page_input_statuses, is_page_input
 from app.utils.system_scoring import compute_weighted_composite
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,10 @@ class ETLRunner:
         if code == "AAS":
             db.close()
             return await self._ingest_aas(backfill_days)
+
+        if is_page_input(code):
+            db.close()
+            return await self._ingest_page_input(code, backfill_days)
 
         # Temporarily disabled: heavy FRED fetching slows down the ETL run
         if code == "BOND_MARKET_STABILITY":
@@ -1210,6 +1215,96 @@ class ETLRunner:
                 "score": latest_score,
                 "state": latest_state
             }
+
+    async def _ingest_page_input(self, code: str, backfill_days: int = 0):
+        db: Session = SessionLocal()
+
+        def parse_timestamp(value: str) -> datetime:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.replace(tzinfo=None)
+
+        try:
+            ind: Indicator | None = (
+                db.query(Indicator)
+                .filter(Indicator.code == code)
+                .first()
+            )
+            if ind is None:
+                raise ValueError(f"Indicator {code} not found in DB")
+
+            history_days = max(backfill_days, 365)
+            history = get_page_input_history(code, days=history_days)
+            latest_point = history[-1] if history else next(
+                (item for item in get_page_input_statuses(days=history_days) if item["code"] == code),
+                None,
+            )
+
+            if latest_point is None or latest_point.get("timestamp") is None:
+                raise ValueError(f"No valid page-input data points returned for {code}")
+
+            points_to_store = history[-backfill_days:] if backfill_days > 0 else [latest_point]
+            stored_count = 0
+
+            for point in points_to_store:
+                timestamp_value = point.get("timestamp")
+                score_value = point.get("score")
+                raw_value = point.get("raw_value", score_value)
+                state_value = point.get("state")
+
+                if timestamp_value is None or score_value is None:
+                    continue
+
+                timestamp = parse_timestamp(timestamp_value)
+                entry = (
+                    db.query(IndicatorValue)
+                    .filter(
+                        IndicatorValue.indicator_id == ind.id,
+                        IndicatorValue.timestamp == timestamp,
+                    )
+                    .first()
+                )
+
+                if entry is None:
+                    entry = IndicatorValue(
+                        indicator_id=ind.id,
+                        timestamp=timestamp,
+                        raw_value=float(raw_value),
+                        normalized_value=float(score_value),
+                        score=float(score_value),
+                        state=state_value,
+                    )
+                    db.add(entry)
+                    stored_count += 1
+                else:
+                    entry.raw_value = float(raw_value)
+                    entry.normalized_value = float(score_value)
+                    entry.score = float(score_value)
+                    entry.state = state_value
+
+            latest_timestamp = parse_timestamp(latest_point["timestamp"])
+            latest_raw = float(latest_point.get("raw_value", latest_point["score"]))
+            latest_score = float(latest_point["score"])
+            latest_state = latest_point.get("state")
+
+            ind.last_raw_value = latest_raw
+            ind.last_score = latest_score
+            ind.last_state = latest_state
+            ind.last_updated = latest_timestamp
+
+            db.commit()
+
+            result = {
+                "indicator": code,
+                "date": latest_timestamp.date().isoformat(),
+                "raw": latest_raw,
+                "score": latest_score,
+                "state": latest_state,
+            }
+            if backfill_days > 0:
+                result["backfilled"] = stored_count
+            return result
+        finally:
+            db.close()
 
     async def _ingest_aas(self, backfill_days: int = 0):
         from sqlalchemy import desc, func

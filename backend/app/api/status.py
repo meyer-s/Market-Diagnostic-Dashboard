@@ -7,7 +7,6 @@ from sqlalchemy import func
 from app.models.indicator import Indicator
 from app.models.indicator_value import IndicatorValue
 from app.models.system_status import SystemStatus
-from app.services.system_overview_inputs import get_page_input_codes, get_page_input_history, get_page_input_statuses, get_page_input_weights
 from app.utils.db_helpers import get_db_session
 from app.utils.response_helpers import format_indicator_status, format_system_status
 from app.utils.system_scoring import compute_weighted_composite
@@ -64,15 +63,6 @@ def get_system_status():
             elif value.state == "YELLOW":
                 yellow_count += 1
 
-        for overview_input in get_page_input_statuses():
-            scores_by_code[overview_input["code"]] = overview_input["score"]
-            weights_by_code[overview_input["code"]] = overview_input["weight"]
-            total_count += 1
-            if overview_input["state"] == "RED":
-                red_count += 1
-            elif overview_input["state"] == "YELLOW":
-                yellow_count += 1
-
         composite_score, _ = compute_weighted_composite(scores_by_code, weights_by_code)
         if composite_score is None:
             status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
@@ -110,8 +100,7 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
         # Get all indicators with their weights
         indicators = db.query(Indicator).all()
         indicator_map = {ind.id: ind for ind in indicators}
-        page_input_codes = get_page_input_codes()
-        indicator_codes = [ind.code for ind in indicators] + page_input_codes
+        indicator_codes = [ind.code for ind in indicators]
         
         # Get historical values for all indicators within date range
         values = (
@@ -126,15 +115,6 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
         for val in values:
             date_key = val.timestamp.date()
             date_values[date_key].append(val)
-
-        page_history_by_code = {
-            code: {
-                datetime.fromisoformat(point["timestamp"]).date(): point
-                for point in get_page_input_history(code, days)
-            }
-            for code in page_input_codes
-        }
-        page_input_weights = get_page_input_weights()
 
         # Seed last known values before cutoff so counts carry forward
         last_seen = {}
@@ -156,7 +136,6 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
         start_date = cutoff.date()
         end_date = datetime.utcnow().date()
         current_date = start_date
-        page_latest = {}
         while current_date <= end_date:
             day_values = date_values.get(current_date, [])
 
@@ -165,12 +144,7 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
                 if not existing or val.timestamp > existing.timestamp:
                     last_seen[val.indicator_id] = val
 
-            for code, history_map in page_history_by_code.items():
-                latest_point = history_map.get(current_date)
-                if latest_point:
-                    page_latest[code] = latest_point
-
-            if not last_seen and not page_latest:
+            if not last_seen:
                 current_date += timedelta(days=1)
                 continue
 
@@ -190,17 +164,6 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
                 if val.state == "RED":
                     red_count += 1
                 elif val.state == "YELLOW":
-                    yellow_count += 1
-
-            for code, point in page_latest.items():
-                score = point.get("score")
-                if score is None:
-                    continue
-                scores_by_code[code] = score
-                weights_by_code[code] = page_input_weights.get(code, 0.0)
-                if point.get("state") == "RED":
-                    red_count += 1
-                elif point.get("state") == "YELLOW":
                     yellow_count += 1
 
             total_count = len(scores_by_code)
@@ -261,4 +224,4 @@ def get_indicator_status():
         return [
             format_indicator_status(ind, latest.get(ind.id))
             for ind in indicators
-        ] + get_page_input_statuses()
+        ]
