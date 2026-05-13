@@ -88,6 +88,8 @@ HTTP_HEADERS = {
     "Accept": "application/json,text/csv,*/*",
 }
 
+FRED_TIMEOUT_SECONDS = 60
+
 _CACHE: Dict[int, Dict[str, Any]] = {}
 _CACHE_LOCK = Lock()
 _CACHE_TTL_SECONDS = 20 * 60
@@ -158,7 +160,7 @@ def _fred_fetch_api(series_id: str, start: str) -> pd.Series:
         "file_type": "json",
         "observation_start": start,
     }
-    resp = requests.get(url, params=params, headers=HTTP_HEADERS, timeout=15)
+    resp = requests.get(url, params=params, headers=HTTP_HEADERS, timeout=FRED_TIMEOUT_SECONDS)
     resp.raise_for_status()
     rows = [
         {"date": obs["date"], "value": obs["value"]}
@@ -174,7 +176,7 @@ def _fred_fetch_public_csv(series_id: str, start: str) -> pd.Series:
         url,
         params={"id": series_id, "cosd": start},
         headers=HTTP_HEADERS,
-        timeout=15,
+        timeout=FRED_TIMEOUT_SECONDS,
     )
     resp.raise_for_status()
     frame = pd.read_csv(StringIO(resp.text))
