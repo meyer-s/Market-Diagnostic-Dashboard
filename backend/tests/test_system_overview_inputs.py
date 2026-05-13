@@ -21,9 +21,12 @@ def test_page_input_statuses_include_latest_page_scores(monkeypatch):
     statuses = {entry["code"]: entry for entry in system_overview_inputs.get_page_input_statuses()}
 
     assert statuses["AGRICULTURE_STABILITY"]["score"] == 62.5
+    assert statuses["AGRICULTURE_STABILITY"]["weight"] == 0.6
     assert statuses["ENERGY_STABILITY"]["score"] == 71.2
+    assert statuses["ENERGY_STABILITY"]["weight"] == 0.8
     assert statuses["ENERGY_STABILITY"]["state"] == "GREEN"
     assert statuses["REAL_ESTATE_STABILITY"]["score"] == 65.0
+    assert statuses["REAL_ESTATE_STABILITY"]["weight"] == 1.0
     assert statuses["REAL_ESTATE_STABILITY"]["state"] == "YELLOW"
 
 

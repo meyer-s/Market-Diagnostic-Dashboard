@@ -646,8 +646,8 @@ export default function SystemBreakdown() {
           <div className="collapsible-panel-inner">
             <div className="collapsible-content">
             <p className="text-xs sm:text-sm text-stealth-300 mb-3 md:mb-4">
-              Each indicator is assigned a weight based on its historical association with market stability shifts. 
-              Weights reflect how strongly each metric influences the composite score and overall system state. The values below come directly from the live API configuration.
+              Each indicator is assigned a weight based on how directly it captures broad market cause rather than just market reaction. 
+              The heaviest weights stay with system-level drivers like bonds, liquidity, breadth, and institutional confidence. The three page-level inputs are intentionally lighter when they overlap with those channels, and heavier only when they capture transmission into the real economy.
             </p>
             <div className="space-y-3">
               {metadata.map((meta) => {
@@ -655,8 +655,8 @@ export default function SystemBreakdown() {
                 const weightPercentage = ((meta.weight / totalWeight) * 100).toFixed(1);
                 
                 // Composite indicators with expandable details
-                const compositeIndicators = ['BOND_MARKET_STABILITY', 'LIQUIDITY_PROXY', 'CONSUMER_HEALTH', 'ANALYST_ANXIETY', 'SENTIMENT_COMPOSITE', 'BREADTH_HEALTH'];
-                const isComposite = compositeIndicators.includes(meta.code);
+                const expandableIndicators = ['BOND_MARKET_STABILITY', 'LIQUIDITY_PROXY', 'CONSUMER_HEALTH', 'ANALYST_ANXIETY', 'SENTIMENT_COMPOSITE', 'BREADTH_HEALTH', 'AGRICULTURE_STABILITY', 'ENERGY_STABILITY', 'REAL_ESTATE_STABILITY'];
+                const isComposite = expandableIndicators.includes(meta.code);
                 const isExpanded = expandedSections.has(`indicator_${meta.code}`);
                 
                 // Detailed descriptions for each indicator
@@ -671,7 +671,10 @@ export default function SystemBreakdown() {
                   LIQUIDITY_PROXY: "Combines M2 money supply growth, Fed balance sheet changes, and overnight reverse repo usage. Measures systemic liquidity availability and tightness.",
                   ANALYST_ANXIETY: "Composite sentiment indicator aggregating VIX (equity vol), MOVE (rates vol), high-yield credit spreads, and equity risk premium. Captures institutional confidence.",
                   SENTIMENT_COMPOSITE: "Consumer & corporate confidence composite from Michigan Consumer Sentiment, business confidence, regional new-orders momentum, and CapEx commitments. Forward-looking demand indicator.",
-                  SECTOR_REGIME_ALIGNMENT: "Checks whether defensive versus cyclical sector leadership aligns with the current market regime. Alignment is supportive; divergence is a warning signal."
+                  SECTOR_REGIME_ALIGNMENT: "Checks whether defensive versus cyclical sector leadership aligns with the current market regime. Alignment is supportive; divergence is a warning signal.",
+                  AGRICULTURE_STABILITY: "Cross-checks crop leadership, participation, and macro sensitivity. Kept lighter because agriculture matters for inflation and growth, but it is not usually the primary driver of the whole market regime on its own.",
+                  ENERGY_STABILITY: "Tracks whether energy-market pressure is feeding through to inflation and risk appetite. Weighted above agriculture because energy shocks can move macro conditions faster and more broadly.",
+                  REAL_ESTATE_STABILITY: "Captures financing transmission, affordability, REIT performance, and housing demand. Weighted highest of the three added inputs because real estate sits closer to the credit and real-economy core of market regime shifts."
                 };
                 
                 return (
@@ -923,6 +926,78 @@ export default function SystemBreakdown() {
                         </div>
                       </div>
                     )}
+
+                    {meta.code === 'AGRICULTURE_STABILITY' && (
+                      <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
+                        <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
+                          <div className="font-mono text-xs text-stealth-300">
+                            <div className="mb-2"><strong className="text-stealth-200">What it captures:</strong></div>
+                            <div className="ml-3 space-y-1">
+                              <div>- <span className="text-lime-400">Crop leadership</span>: whether grains and softs are confirming one another rather than fragmenting</div>
+                              <div>- <span className="text-lime-400">Participation</span>: whether the move is broad enough to matter beyond a single contract</div>
+                              <div>- <span className="text-lime-400">Macro confirmation</span>: whether agriculture is absorbing or reflecting inflation, growth, and cross-asset pressure</div>
+                              <div>- <span className="text-lime-400">Correlation stability</span>: whether related contracts are moving coherently rather than in disorder</div>
+                            </div>
+                          </div>
+                          <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
+                            system_weight = 0.6
+                            <br />
+                            <span className="text-stealth-500">// Light additive input: useful early real-economy confirmation, but too sector-specific to dominate the full market read</span>
+                          </div>
+                        </div>
+                        <div className="text-stealth-400 text-xs">
+                          <strong className="text-stealth-300">Weight rationale:</strong> Agriculture matters most when it confirms inflation pressure, demand softness, or supply stress already visible elsewhere. It is meaningful, but it is not the broadest causal driver of equity, credit, and liquidity regime by itself.
+                        </div>
+                      </div>
+                    )}
+
+                    {meta.code === 'ENERGY_STABILITY' && (
+                      <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
+                        <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
+                          <div className="font-mono text-xs text-stealth-300">
+                            <div className="mb-2"><strong className="text-stealth-200">What it captures:</strong></div>
+                            <div className="ml-3 space-y-1">
+                              <div>- <span className="text-orange-400">Traditional energy balance</span>: oil, gas, inventories, and downstream fuel pressure</div>
+                              <div>- <span className="text-orange-400">Alternative energy and rotation</span>: whether capital is broadening inside the complex</div>
+                              <div>- <span className="text-orange-400">Price transmission</span>: whether moves in the energy complex are feeding into broader inflation-sensitive behavior</div>
+                              <div>- <span className="text-orange-400">Market leadership</span>: whether the complex is orderly, improving, or destabilizing</div>
+                            </div>
+                          </div>
+                          <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
+                            system_weight = 0.8
+                            <br />
+                            <span className="text-stealth-500">// Medium input: energy shocks move inflation and growth quickly, but overlap with bond, liquidity, and sentiment drivers already present in the model</span>
+                          </div>
+                        </div>
+                        <div className="text-stealth-400 text-xs">
+                          <strong className="text-stealth-300">Weight rationale:</strong> Energy is more system-driving than agriculture because it can reprice inflation expectations and margins fast. It still stays below the core fixed-income and liquidity composites because those are broader regime anchors.
+                        </div>
+                      </div>
+                    )}
+
+                    {meta.code === 'REAL_ESTATE_STABILITY' && (
+                      <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
+                        <div className="bg-stealth-950/80 border border-stealth-700/60 rounded p-3 space-y-2">
+                          <div className="font-mono text-xs text-stealth-300">
+                            <div className="mb-2"><strong className="text-stealth-200">What it captures:</strong></div>
+                            <div className="ml-3 space-y-1">
+                              <div>- <span className="text-sky-400">Financing transmission</span>: mortgage rates, Treasury pressure, and credit-spread spillover</div>
+                              <div>- <span className="text-sky-400">Listed confirmation</span>: homebuilders, REITs, and financing proxies</div>
+                              <div>- <span className="text-sky-400">Affordability and demand</span>: whether rates are breaking the buyer side of the market</div>
+                              <div>- <span className="text-sky-400">Supply balance</span>: starts, permits, and completions as confirmation rather than headline noise</div>
+                            </div>
+                          </div>
+                          <div className="font-mono text-xs text-stealth-400 pt-2 border-t border-stealth-700">
+                            system_weight = 1.0
+                            <br />
+                            <span className="text-stealth-500">// Full additive input: real estate sits close to the core of credit, rates, household demand, and construction-sensitive regime shifts</span>
+                          </div>
+                        </div>
+                        <div className="text-stealth-400 text-xs">
+                          <strong className="text-stealth-300">Weight rationale:</strong> Real estate is the most macro-causal of the three added inputs because it transmits rates into credit demand, household behavior, construction, and listed property risk. That makes it materially important without outranking system-level anchors like bonds, liquidity, breadth, or analyst confidence.
+                        </div>
+                      </div>
+                    )}
                         </div>
                       </div>
                     )}
@@ -938,8 +1013,7 @@ export default function SystemBreakdown() {
                 Note: Weights are calibrated in the backend based on historical diagnostic relevance and are exposed live through the API. 
                 Highest current weights: {topWeightedSummary || "Unavailable"}. All indicators output stability scores where higher values indicate better market conditions.
                 <br /><br />
-                <strong className="text-stealth-400">Tip:</strong> Click on any expandable indicator (Bond Market Stability, Liquidity Proxy, Consumer Health, 
-                Analyst Confidence, Consumer & Corporate Sentiment, or Breadth Health) to view calculation notes and context.
+                <strong className="text-stealth-400">Tip:</strong> Click on any expandable indicator, including Agriculture, Energy, and Real Estate Stability, to view the weight rationale and how each one connects to the broader market.
               </div>
             </div>
           </div>

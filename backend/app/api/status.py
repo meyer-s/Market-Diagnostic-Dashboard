@@ -7,7 +7,7 @@ from sqlalchemy import func
 from app.models.indicator import Indicator
 from app.models.indicator_value import IndicatorValue
 from app.models.system_status import SystemStatus
-from app.services.system_overview_inputs import get_page_input_codes, get_page_input_history, get_page_input_statuses
+from app.services.system_overview_inputs import get_page_input_codes, get_page_input_history, get_page_input_statuses, get_page_input_weights
 from app.utils.db_helpers import get_db_session
 from app.utils.response_helpers import format_indicator_status, format_system_status
 from app.utils.system_scoring import compute_weighted_composite
@@ -134,6 +134,7 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
             }
             for code in page_input_codes
         }
+        page_input_weights = get_page_input_weights()
 
         # Seed last known values before cutoff so counts carry forward
         last_seen = {}
@@ -196,7 +197,7 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
                 if score is None:
                     continue
                 scores_by_code[code] = score
-                weights_by_code[code] = 1.0
+                weights_by_code[code] = page_input_weights.get(code, 0.0)
                 if point.get("state") == "RED":
                     red_count += 1
                 elif point.get("state") == "YELLOW":
