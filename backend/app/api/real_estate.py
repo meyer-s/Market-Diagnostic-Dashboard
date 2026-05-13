@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 
-from app.services.real_estate_index import calculate_real_estate_index
+from app.services.real_estate_index import calculate_real_estate_index, get_real_estate_context_payload
 
 
 router = APIRouter(prefix="/real-estate")
@@ -43,9 +43,5 @@ def get_real_estate_transmission(days: int = Query(365, ge=90, le=1095)):
 
 
 @router.get("/context")
-def get_real_estate_context(days: int = Query(1095, ge=365, le=3650)):
-    data = calculate_real_estate_index(days=days)
-    return {
-        "as_of": data["as_of"],
-        **data["context"],
-    }
+def get_real_estate_context(days: int = Query(1095, ge=365, le=10950)):
+    return get_real_estate_context_payload(days=days)

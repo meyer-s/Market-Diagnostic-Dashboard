@@ -69,7 +69,7 @@ FRED_SERIES: Dict[str, str] = {
     "rent_cpi_index": "CUSR0000SEHA",
     "housing_cpi_index": "CPIEHOUSE",
     "median_housing_cpi_index": "MEDCPIM158SFRBCLE",
-    "existing_home_sales": "EXHOSLUSM495S",
+    "new_home_sales": "HSN1F",
 }
 
 FRED_LABELS: Dict[str, str] = {
@@ -83,7 +83,7 @@ FRED_LABELS: Dict[str, str] = {
     "rent_cpi_index": "rent CPI",
     "housing_cpi_index": "housing CPI",
     "median_housing_cpi_index": "median housing CPI",
-    "existing_home_sales": "existing home sales",
+    "new_home_sales": "new home sales",
 }
 
 HTTP_HEADERS = {
@@ -143,6 +143,12 @@ def _format_yoy_text(value: Optional[float]) -> Optional[str]:
     if abs(value) < 0.05:
         return "flat YoY"
     return f"{value:+.1f}% YoY"
+
+
+def _format_new_home_sales_level(value: Optional[float]) -> Optional[str]:
+    if value is None:
+        return None
+    return f"{value:.0f}K SAAR"
 
 
 def _series_from_rows(rows: List[Dict[str, Any]]) -> pd.Series:
@@ -408,15 +414,37 @@ def fetch_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
     series_map["rent_cpi_yoy"] = _yoy(series_map.get("rent_cpi_index", pd.Series(dtype="float64")))
     series_map["housing_cpi_yoy"] = _yoy(series_map.get("housing_cpi_index", pd.Series(dtype="float64")))
 
-    existing_home_sales = series_map.get("existing_home_sales", pd.Series(dtype="float64"))
-    if not existing_home_sales.empty:
-        series_map["home_sales"] = existing_home_sales.rolling(3, min_periods=1).mean().dropna()
-        series_map["home_sales_yoy"] = _yoy(existing_home_sales)
+    new_home_sales = series_map.get("new_home_sales", pd.Series(dtype="float64"))
+    if not new_home_sales.empty:
+        series_map["new_home_sales_yoy"] = _yoy(new_home_sales)
+        series_map["new_home_sales"] = new_home_sales.rolling(3, min_periods=1).mean().dropna()
     else:
-        series_map["home_sales"] = pd.Series(dtype="float64")
-        series_map["home_sales_yoy"] = pd.Series(dtype="float64")
+        series_map["new_home_sales"] = pd.Series(dtype="float64")
+        series_map["new_home_sales_yoy"] = pd.Series(dtype="float64")
 
     return series_map, missing
+
+
+def _build_context_payload(fred_series: Dict[str, pd.Series]) -> Dict[str, Any]:
+    return {
+        "housing_starts": _series_points(fred_series.get("housing_starts", pd.Series(dtype="float64")), decimals=0),
+        "building_permits": _series_points(fred_series.get("building_permits", pd.Series(dtype="float64")), decimals=0),
+        "completions": _series_points(fred_series.get("completions", pd.Series(dtype="float64")), decimals=0),
+        "shelter_cpi": _series_points(fred_series.get("shelter_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
+        "rent_cpi": _series_points(fred_series.get("rent_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
+        "housing_cpi": _series_points(fred_series.get("housing_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
+        "median_housing_cpi": _series_points(fred_series.get("median_housing_cpi_index", pd.Series(dtype="float64")), decimals=2),
+        "new_home_sales": _series_points(fred_series.get("new_home_sales", pd.Series(dtype="float64")), decimals=0),
+    }
+
+
+def get_real_estate_context_payload(days: int = 1095) -> Dict[str, Any]:
+    now = datetime.utcnow()
+    fred_series, _ = fetch_fred_context(days)
+    return {
+        "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        **_build_context_payload(fred_series),
+    }
 
 
 def _build_symbol_data(series_map: Dict[str, pd.Series]) -> Dict[str, Dict[str, Any]]:
@@ -583,8 +611,8 @@ def _build_factors(
     permits = fred.get("building_permits", pd.Series(dtype="float64"))
     completions = fred.get("completions", pd.Series(dtype="float64"))
     shelter_yoy = fred.get("shelter_cpi_yoy", pd.Series(dtype="float64"))
-    home_sales = fred.get("home_sales", pd.Series(dtype="float64"))
-    home_sales_yoy = fred.get("home_sales_yoy", pd.Series(dtype="float64"))
+    new_home_sales = fred.get("new_home_sales", pd.Series(dtype="float64"))
+    new_home_sales_yoy = fred.get("new_home_sales_yoy", pd.Series(dtype="float64"))
 
     mortgage_latest = _latest(mortgage)
     mortgage_delta = _point_delta(mortgage, 26)
@@ -594,8 +622,8 @@ def _build_factors(
     credit_delta = _point_delta(credit, 60)
     shelter_latest = _latest(shelter_yoy)
     shelter_delta = _point_delta(shelter_yoy, 6)
-    home_sales_latest = _latest(home_sales)
-    home_sales_yoy_latest = _latest(home_sales_yoy)
+    new_home_sales_latest = _latest(new_home_sales)
+    new_home_sales_yoy_latest = _latest(new_home_sales_yoy)
     starts_6m = _pct_change_observations(starts, 6)
     permits_6m = _pct_change_observations(permits, 6)
     completions_6m = _pct_change_observations(completions, 6)
@@ -609,8 +637,8 @@ def _build_factors(
         "credit_spread_delta_60d_bps": round(credit_delta * 100.0, 1) if credit_delta is not None else None,
         "shelter_cpi_yoy": round(shelter_latest, 2) if shelter_latest is not None else None,
         "shelter_cpi_yoy_delta_6m": round(shelter_delta, 2) if shelter_delta is not None else None,
-        "home_sales": round(home_sales_latest, 0) if home_sales_latest is not None else None,
-        "home_sales_yoy": round(home_sales_yoy_latest, 2) if home_sales_yoy_latest is not None else None,
+        "new_home_sales": round(new_home_sales_latest, 0) if new_home_sales_latest is not None else None,
+        "new_home_sales_yoy": round(new_home_sales_yoy_latest, 2) if new_home_sales_yoy_latest is not None else None,
         "housing_starts_6m": round(starts_6m, 2) if starts_6m is not None else None,
         "building_permits_6m": round(permits_6m, 2) if permits_6m is not None else None,
         "completions_6m": round(completions_6m, 2) if completions_6m is not None else None,
@@ -660,7 +688,7 @@ def _build_factors(
     demand_score = _weighted_score([
         (groups.get("residential", {}).get("score"), 0.45),
         (_level_pressure(shelter_latest, 2.5, 6.0), 0.25),
-        (_inverse_activity_pressure(home_sales_yoy_latest, 20.0), 0.30),
+        (_inverse_activity_pressure(new_home_sales_yoy_latest, 20.0), 0.30),
     ])
     demand_evidence: List[str] = []
     if "residential" in groups and "reits" in groups:
@@ -676,14 +704,10 @@ def _build_factors(
         if shelter_delta is not None:
             shelter_text += f", {shelter_delta:+.1f} pts over six observations"
         demand_evidence.append(shelter_text + ".")
-    if home_sales_latest is not None:
-        sales_level = (
-            f"{home_sales_latest / 1_000_000:.2f}M annualized"
-            if home_sales_latest >= 1_000_000
-            else f"{home_sales_latest:.0f}"
-        )
-        sales_text = f"Existing home sales are running at {sales_level}"
-        yoy_text = _format_yoy_text(home_sales_yoy_latest)
+    if new_home_sales_latest is not None:
+        sales_level = _format_new_home_sales_level(new_home_sales_latest)
+        sales_text = f"New home sales are running at {sales_level}"
+        yoy_text = _format_yoy_text(new_home_sales_yoy_latest)
         if yoy_text is not None:
             sales_text += f", {yoy_text}"
         demand_evidence.append(sales_text + ".")
@@ -759,17 +783,17 @@ def _summary(
 
     xhb_60d = metrics.get("xhb_60d")
     vnq_60d = metrics.get("vnq_60d")
-    home_sales_yoy = metrics.get("home_sales_yoy")
+    new_home_sales_yoy = metrics.get("new_home_sales_yoy")
     if xhb_60d is not None and vnq_60d is not None:
         relative = xhb_60d - vnq_60d
         parts.append(
             f"XHB is {xhb_60d:+.1f}% over 60 sessions versus VNQ at {vnq_60d:+.1f}%, "
             f"a {relative:+.1f} pt residential/listed-REIT spread."
         )
-    if home_sales_yoy is not None:
-        yoy_text = _format_yoy_text(home_sales_yoy)
+    if new_home_sales_yoy is not None:
+        yoy_text = _format_yoy_text(new_home_sales_yoy)
         parts.append(
-            f"Existing home sales are {yoy_text}, "
+            f"New home sales are {yoy_text}, "
             "so buyer demand is being checked directly instead of inferred only from builders."
         )
 
@@ -860,16 +884,7 @@ def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
             "indexed_vnq": _indexed_history(proxy_series.get("VNQ", pd.Series(dtype="float64")), days),
             "credit_spread": _series_points(credit, decimals=1, multiplier=100.0),
         },
-        "context": {
-            "housing_starts": _series_points(fred_series.get("housing_starts", pd.Series(dtype="float64")), decimals=0),
-            "building_permits": _series_points(fred_series.get("building_permits", pd.Series(dtype="float64")), decimals=0),
-            "completions": _series_points(fred_series.get("completions", pd.Series(dtype="float64")), decimals=0),
-            "shelter_cpi": _series_points(fred_series.get("shelter_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
-            "rent_cpi": _series_points(fred_series.get("rent_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
-            "housing_cpi": _series_points(fred_series.get("housing_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
-            "median_housing_cpi": _series_points(fred_series.get("median_housing_cpi_index", pd.Series(dtype="float64")), decimals=2),
-            "home_sales": _series_points(fred_series.get("home_sales", pd.Series(dtype="float64")), decimals=0),
-        },
+        "context": _build_context_payload(fred_series),
         "availability": {
             "symbols": availability,
             "missing_symbols": missing_proxies,
