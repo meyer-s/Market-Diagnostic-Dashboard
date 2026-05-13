@@ -67,6 +67,8 @@ type MetricSnapshot = {
   credit_spread_delta_60d_bps?: number | null;
   shelter_cpi_yoy?: number | null;
   shelter_cpi_yoy_delta_6m?: number | null;
+  mortgage_applications?: number | null;
+  mortgage_applications_yoy?: number | null;
   housing_starts_6m?: number | null;
   building_permits_6m?: number | null;
   completions_6m?: number | null;
@@ -114,6 +116,9 @@ type RealEstateContext = {
   building_permits: DataPoint[];
   completions: DataPoint[];
   shelter_cpi: DataPoint[];
+  rent_cpi: DataPoint[];
+  housing_cpi: DataPoint[];
+  median_housing_cpi: DataPoint[];
   mortgage_applications: DataPoint[];
 };
 
@@ -946,67 +951,291 @@ function SupplyContextChart({
 }
 
 // ---------------------------------------------------------------------------
+// Buyer vs seller divergence chart
+// ---------------------------------------------------------------------------
+
+function BuyerSellerDivergenceChart({
+  mortgageApplications,
+  permits,
+  completions,
+  starts,
+  surfaceClassName = "surface-card",
+}: {
+  mortgageApplications: DataPoint[];
+  permits: DataPoint[];
+  completions: DataPoint[];
+  starts: DataPoint[];
+  surfaceClassName?: string;
+}) {
+  const merged = useMemo(() => {
+    if (!mortgageApplications.length) return [];
+
+    const buyerValues = mortgageApplications.map((point) => point.value);
+    const buyerMin = Math.min(...buyerValues);
+    const buyerRange = Math.max(...buyerValues) - buyerMin || 1;
+
+    const permitsMap = Object.fromEntries(permits.map((point) => [point.date, point.value]));
+    const completionsMap = Object.fromEntries(completions.map((point) => [point.date, point.value]));
+    const startsMap = Object.fromEntries(starts.map((point) => [point.date, point.value]));
+
+    const rows = mortgageApplications
+      .map((point) => {
+        const permitVal = nearestDate(permitsMap, point.date);
+        const completionVal = nearestDate(completionsMap, point.date);
+        const startVal = nearestDate(startsMap, point.date);
+        const sellerComponents = [permitVal, completionVal, startVal].filter(
+          (value): value is number => value != null,
+        );
+        if (!sellerComponents.length) return null;
+
+        const sellerRaw = sellerComponents.reduce((total, value) => total + value, 0) / sellerComponents.length;
+        return {
+          date: point.date,
+          buyers_raw: point.value,
+          sellers_raw: sellerRaw,
+        };
+      })
+      .filter((row): row is { date: string; buyers_raw: number; sellers_raw: number } => row !== null);
+
+    if (!rows.length) return [];
+
+    const sellerValues = rows.map((row) => row.sellers_raw);
+    const sellerMin = Math.min(...sellerValues);
+    const sellerRange = Math.max(...sellerValues) - sellerMin || 1;
+
+    return rows
+      .map((row) => {
+        const buyersNorm = ((row.buyers_raw - buyerMin) / buyerRange) * 100;
+        const sellersNorm = ((row.sellers_raw - sellerMin) / sellerRange) * 100;
+        return {
+          ...row,
+          buyers_norm: buyersNorm,
+          sellers_norm: sellersNorm,
+          gap: buyersNorm - sellersNorm,
+        };
+      })
+      .filter((_, index) => index % Math.max(1, Math.floor(rows.length / 120)) === 0);
+  }, [completions, mortgageApplications, permits, starts]);
+
+  if (!merged.length) return null;
+
+  const latest = merged[merged.length - 1];
+  const demandLead = latest.gap >= 8 ? "Buyers leading" : latest.gap <= -8 ? "Supply leading" : "Balanced";
+
+  return (
+    <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
+      <CardHeader
+        kicker="Demand vs Supply"
+        title="Home buyers vs seller supply"
+        tooltipText="Buyer demand uses combined existing and new home mortgage applications. Seller supply is a proxy built from permits, starts, and completions until dedicated listings data is added. The bar spread shows when buyer demand and seller-side supply stop confirming each other."
+      />
+      <div className="mb-3 grid gap-3 md:grid-cols-3">
+        <StatTile
+          label="Buyer Demand"
+          value={latest.buyers_raw.toFixed(0)}
+          tone="text-sky-300"
+          detail="Combined mortgage applications"
+        />
+        <StatTile
+          label="Seller Proxy"
+          value={latest.sellers_raw.toFixed(0)}
+          tone="text-amber-300"
+          detail="Average of permits, starts, and completions"
+        />
+        <StatTile
+          label="Divergence"
+          value={`${latest.gap > 0 ? "+" : ""}${latest.gap.toFixed(0)} pts`}
+          tone={latest.gap >= 0 ? "text-emerald-300" : "text-rose-300"}
+          detail={demandLead}
+        />
+      </div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <MetaPill tone={latest.gap >= 0 ? "text-emerald-300" : "text-rose-300"}>{demandLead}</MetaPill>
+        <BodyHint className="max-w-xl">Positive spread means buyer demand is firming faster than seller-side supply. Negative spread means supply is outrunning buyer demand.</BodyHint>
+      </div>
+      <div className="h-52">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={merged} margin={CHART_MARGIN}>
+            <CartesianGrid {...commonGridProps} />
+            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <YAxis {...commonYAxisProps} yAxisId="norm" domain={[0, 100]} />
+            <YAxis yAxisId="gap" orientation="right" hide domain={[-100, 100]} />
+            <ReferenceLine yAxisId="gap" y={0} stroke="#1e293b" strokeDasharray="3 3" />
+            <Tooltip
+              {...tip}
+              formatter={(value: number, name: string, props: { payload?: { buyers_raw?: number; sellers_raw?: number; gap?: number } }) => {
+                if (name === "gap") {
+                  const gap = props.payload?.gap ?? value;
+                  return [`${gap > 0 ? "+" : ""}${gap.toFixed(0)} pts`, "Divergence"];
+                }
+                if (name === "buyers_norm") return [`${props.payload?.buyers_raw?.toFixed(0) ?? "—"}`, "Buyer Demand"];
+                return [`${props.payload?.sellers_raw?.toFixed(0) ?? "—"}`, "Seller Supply Proxy"];
+              }}
+            />
+            <Bar yAxisId="gap" dataKey="gap" name="gap" barSize={8} radius={[3, 3, 0, 0]} isAnimationActive={false}>
+              {merged.map((row) => (
+                <Cell key={row.date} fill={row.gap >= 0 ? "rgba(52, 211, 153, 0.35)" : "rgba(248, 113, 113, 0.35)"} />
+              ))}
+            </Bar>
+            <Line type="monotone" yAxisId="norm" dataKey="buyers_norm" stroke="#38bdf8" strokeWidth={2.2} dot={false} name="buyers_norm" isAnimationActive={false} />
+            <Line type="monotone" yAxisId="norm" dataKey="sellers_norm" stroke="#f59e0b" strokeWidth={1.8} strokeDasharray="5 3" dot={false} name="sellers_norm" isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <LegendPill color="#38bdf8">Buyer Demand</LegendPill>
+        <LegendPill color="#f59e0b">Seller Supply Proxy</LegendPill>
+        <LegendPill color="#34d399">Positive Divergence</LegendPill>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Affordability chart
 // ---------------------------------------------------------------------------
 
 function AffordabilityChart({
   shelterCpi,
+  rentCpi,
+  housingCpi,
+  medianHousingCpi,
   mortgageApplications,
   surfaceClassName = "surface-card",
 }: {
   shelterCpi: DataPoint[];
+  rentCpi: DataPoint[];
+  housingCpi: DataPoint[];
+  medianHousingCpi: DataPoint[];
   mortgageApplications: DataPoint[];
   surfaceClassName?: string;
 }) {
+  const inflationConfigs = useMemo(
+    () => [
+      { key: "rent", label: "Rent CPI (YoY)", data: rentCpi, color: "#f59e0b", dash: undefined as string | undefined, percent: true },
+      { key: "housing", label: "Housing CPI (YoY)", data: housingCpi, color: "#38bdf8", dash: "5 3", percent: true },
+      { key: "median", label: "Median Housing", data: medianHousingCpi, color: "#a78bfa", dash: "3 3", percent: false },
+    ].filter((config) => config.data.length),
+    [housingCpi, medianHousingCpi, rentCpi],
+  );
+
+  const activeConfigs = useMemo(
+    () => inflationConfigs.length
+      ? inflationConfigs
+      : shelterCpi.length
+        ? [{ key: "shelter", label: "Shelter CPI (YoY)", data: shelterCpi, color: "#fbbf24", dash: undefined as string | undefined, percent: true }]
+        : [],
+    [inflationConfigs, shelterCpi],
+  );
+
   const merged = useMemo(() => {
-    if (!shelterCpi.length) return [];
-    const cpiVals = shelterCpi.map((p) => p.value);
-    const [minC, maxC] = [Math.min(...cpiVals), Math.max(...cpiVals)];
-    const rangeC = maxC - minC || 1;
+    if (!activeConfigs.length) return [];
+
+    const normalizedConfigs = activeConfigs.map((config) => {
+      const values = config.data.map((point) => point.value);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min || 1;
+      return {
+        ...config,
+        rawMap: Object.fromEntries(config.data.map((point) => [point.date, point.value])),
+        normalize: (value: number) => ((value - min) / range) * 100,
+      };
+    });
+
+    const referenceSeries = [...activeConfigs].sort((left, right) => right.data.length - left.data.length)[0]?.data ?? [];
 
     const appVals = mortgageApplications.map((p) => p.value).filter((v) => v > 0);
     const [minA, maxA] = appVals.length ? [Math.min(...appVals), Math.max(...appVals)] : [0, 1];
     const rangeA = maxA - minA || 1;
 
     const appMap = Object.fromEntries(mortgageApplications.map((p) => [p.date, p.value]));
-    return shelterCpi
-      .map((p) => {
-        const appVal = nearestDate(appMap, p.date);
-        return {
-          date: p.date,
-          shelter_norm: ((p.value - minC) / rangeC) * 100,
-          shelter_raw:  p.value,
-          apps:         appVal ?? null,
-          apps_norm:    appVal != null ? ((appVal - minA) / rangeA) * 100 : null,
-        };
+    return referenceSeries
+      .map((point) => {
+        const row: Record<string, number | string | null> = { date: point.date };
+        normalizedConfigs.forEach((config) => {
+          const rawValue = nearestDate(config.rawMap, point.date);
+          row[`${config.key}_raw`] = rawValue ?? null;
+          row[`${config.key}_norm`] = rawValue != null ? config.normalize(rawValue) : null;
+        });
+
+        const appVal = nearestDate(appMap, point.date);
+        row.apps = appVal ?? null;
+        row.apps_norm = appVal != null ? ((appVal - minA) / rangeA) * 100 : null;
+        return row;
       })
-      .filter((_, i) => i % Math.max(1, Math.floor(shelterCpi.length / 150)) === 0);
-  }, [shelterCpi, mortgageApplications]);
+      .filter((_, i) => i % Math.max(1, Math.floor(referenceSeries.length / 150)) === 0);
+  }, [activeConfigs, mortgageApplications]);
 
   if (!merged.length) return null;
 
+  const latestRent = rentCpi.length ? rentCpi[rentCpi.length - 1].value : null;
+  const latestHousing = housingCpi.length ? housingCpi[housingCpi.length - 1].value : null;
+  const latestMedian = medianHousingCpi.length ? medianHousingCpi[medianHousingCpi.length - 1].value : null;
   const latestShelter = shelterCpi.length ? shelterCpi[shelterCpi.length - 1].value : null;
+  const latestApps = mortgageApplications.length ? mortgageApplications[mortgageApplications.length - 1].value : null;
+  const rentHousingGap = latestRent != null && latestHousing != null ? latestRent - latestHousing : null;
 
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader
         kicker="Price and Affordability"
-        title={mortgageApplications.length > 0 ? "Shelter inflation and mortgage demand" : "Shelter inflation context"}
+        title={mortgageApplications.length > 0 ? "Housing inflation layers and buyer demand" : "Housing inflation layers"}
         tooltipText={
           mortgageApplications.length > 0
-            ? "Shelter CPI (YoY %) and mortgage application index, both normalized 0-100 for visual comparison. Rising shelter CPI alongside falling applications signals rent inflation is outpacing borrower demand."
-            : "Shelter CPI is converted to year-over-year change from the FRED shelter CPI index. It is used as affordability context, not as a standalone demand conclusion."
+            ? "Rent CPI, broad housing CPI, and a median housing inflation read are normalized 0-100 to compare direction and persistence. Mortgage applications are overlaid to show whether buyer demand is absorbing or resisting the inflation backdrop."
+            : "Housing inflation lines are normalized 0-100 for directional comparison. Use this panel as context for persistence and breadth of housing inflation rather than as a standalone regime call."
         }
       />
-      <div className="mb-3">
-        <StatTile
-          label="Shelter CPI (YoY)"
-          value={latestShelter != null ? `${latestShelter.toFixed(1)}%` : "—"}
-          tone={latestShelter != null && latestShelter > 5 ? "text-rose-300" : "text-stealth-100"}
-          detail="Rent and shelter price inflation"
-        />
+      <div className="mb-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {latestRent != null && (
+          <StatTile
+            label="Rent CPI"
+            value={`${latestRent.toFixed(1)}%`}
+            tone={latestRent > 5 ? "text-rose-300" : "text-amber-300"}
+            detail="Rent of primary residence"
+          />
+        )}
+        {latestHousing != null && (
+          <StatTile
+            label="Housing CPI"
+            value={`${latestHousing.toFixed(1)}%`}
+            tone={latestHousing > 4.5 ? "text-rose-300" : "text-sky-300"}
+            detail="Broader housing inflation"
+          />
+        )}
+        {latestMedian != null && (
+          <StatTile
+            label="Median Housing"
+            value={latestMedian.toFixed(1)}
+            tone="text-violet-300"
+            detail="Median housing inflation read"
+          />
+        )}
+        {latestApps != null ? (
+          <StatTile
+            label="Mortgage Apps"
+            value={latestApps.toFixed(0)}
+            tone="text-stealth-100"
+            detail="Buyer demand proxy"
+          />
+        ) : rentHousingGap != null ? (
+          <StatTile
+            label="Rent vs Housing Gap"
+            value={`${rentHousingGap > 0 ? "+" : ""}${rentHousingGap.toFixed(1)} pp`}
+            tone={rentHousingGap > 0 ? "text-amber-300" : "text-stealth-100"}
+            detail="Rent inflation minus broad housing"
+          />
+        ) : latestShelter != null ? (
+          <StatTile
+            label="Shelter CPI"
+            value={`${latestShelter.toFixed(1)}%`}
+            tone={latestShelter > 5 ? "text-rose-300" : "text-stealth-100"}
+            detail="Fallback shelter context"
+          />
+        ) : null}
       </div>
-      <div className="h-44">
+      <div className="h-52">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
@@ -1015,20 +1244,43 @@ function AffordabilityChart({
             <ReferenceLine y={50} stroke="#1e293b" strokeDasharray="3 3" />
             <Tooltip
               {...tip}
-              formatter={(value: number, name: string, props: { payload?: { shelter_raw?: number; apps?: number | null } }) => {
-                if (name === "shelter_norm") return [`${(props.payload?.shelter_raw ?? value).toFixed(1)}%`, "Shelter CPI (YoY)"];
-                return [`${props.payload?.apps?.toFixed(0) ?? "—"}`, "Mortgage Apps Index"];
+              formatter={(value: number, name: string, props: { payload?: Record<string, number | null> }) => {
+                if (name === "apps_norm") {
+                  return [`${props.payload?.apps?.toFixed(0) ?? "—"}`, "Mortgage Apps Index"];
+                }
+
+                const source = activeConfigs.find((config) => `${config.key}_norm` === name);
+                if (!source) return [value.toFixed(1), name];
+
+                const raw = props.payload?.[`${source.key}_raw`];
+                if (raw == null) return ["—", source.label];
+                if (source.percent) return [`${raw.toFixed(1)}%`, source.label];
+                return [raw.toFixed(1), source.label];
               }}
             />
-            <Line type="monotone" dataKey="shelter_norm" stroke="#fbbf24" strokeWidth={2.2} dot={false} name="shelter_norm" isAnimationActive={false} />
+            {activeConfigs.map((config) => (
+              <Line
+                key={config.key}
+                type="monotone"
+                dataKey={`${config.key}_norm`}
+                stroke={config.color}
+                strokeWidth={config.key === "rent" ? 2.3 : 1.8}
+                strokeDasharray={config.dash}
+                dot={false}
+                name={`${config.key}_norm`}
+                isAnimationActive={false}
+              />
+            ))}
             {mortgageApplications.length > 0 && (
-              <Line type="monotone" dataKey="apps_norm" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="apps_norm" isAnimationActive={false} />
+              <Line type="monotone" dataKey="apps_norm" stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="7 4" dot={false} name="apps_norm" isAnimationActive={false} />
             )}
           </LineChart>
         </ResponsiveContainer>
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
-        <LegendPill color="#fbbf24">Shelter CPI (normalized)</LegendPill>
+        {activeConfigs.map((config) => (
+          <LegendPill key={config.key} color={config.color}>{config.label}</LegendPill>
+        ))}
         {mortgageApplications.length > 0 && (
           <LegendPill color="#94a3b8">Mortgage Apps (normalized)</LegendPill>
         )}
@@ -1115,7 +1367,7 @@ function RealEstateMethodologyPanel() {
                 {[
                   ["Financing", "35%", "Mortgage rates, Treasury drift, HY OAS"],
                   ["Listed Market", "30%", "REITs, builders, office REIT proxy, financing proxies"],
-                  ["Demand", "20%", "Residential proxies plus shelter CPI"],
+                  ["Demand", "20%", "Residential proxies, mortgage applications, and shelter CPI"],
                   ["Pipeline", "15%", "Starts, permits, completions"],
                 ].map(([label, weight, detail]) => (
                   <div key={label} className="rounded bg-stealth-900/50 p-2">
@@ -1149,7 +1401,7 @@ function RealEstateMethodologyPanel() {
             <Section id="sources" title="Data Sources">
               <ul className="space-y-1.5 text-xs">
                 <li><span className="font-medium text-stealth-200">Yahoo Finance:</span> VNQ, IYR, XLRE, XHB, ITB, BXP, SLG, KRC, KRE, MBB, REM</li>
-                <li><span className="font-medium text-stealth-200">FRED:</span> MORTGAGE30US, DGS10, BAMLH0A0HYM2, HOUST, PERMIT, COMPUTSA, CUSR0000SAH1</li>
+                <li><span className="font-medium text-stealth-200">FRED:</span> MORTGAGE30US, DGS10, BAMLH0A0HYM2, HOUST, PERMIT, COMPUTSA, CUSR0000SAH1, CUSR0000SEHA, CPIEHOUSE, MEDCPIM158SFRBCLE, M0263AUSM500NNBR, M0264AUSM500NNBR</li>
               </ul>
               <p className="mt-1 text-xs text-stealth-400">
                 Scores are computed at request time. Composite cache TTL is 20 minutes per timeframe window.
@@ -1229,8 +1481,15 @@ export default function RealEstateDiagnostic() {
   const hasTransmission       = Boolean(transmission?.indexed_vnq?.length && transmission?.indexed_xhb?.length);
   const hasCreditPanel        = Boolean(transmission?.indexed_vnq?.length && transmission?.credit_spread?.length);
   const hasSupplyPanel        = Boolean(context?.housing_starts?.length || context?.building_permits?.length);
-  const hasAffordability      = Boolean(context?.shelter_cpi?.length);
+  const hasBuyerSeller        = Boolean(context?.mortgage_applications?.length && (context?.building_permits?.length || context?.completions?.length || context?.housing_starts?.length));
+  const hasAffordability      = Boolean(
+    context?.shelter_cpi?.length ||
+    context?.rent_cpi?.length ||
+    context?.housing_cpi?.length ||
+    context?.median_housing_cpi?.length
+  );
   const primarySidePanelCount = Number(hasCompositePanel) + Number(hasFactorPanel);
+  const longerHorizonCardCount = Number(hasSupplyPanel) + Number(hasBuyerSeller) + Number(hasAffordability);
 
   return (
     <div className="page-shell-wide page-stack space-y-5 md:space-y-6">
@@ -1420,18 +1679,18 @@ export default function RealEstateDiagnostic() {
       )}
 
       {/* ── Longer-horizon context band ────────────────────────── */}
-      {(hasSupplyPanel || hasAffordability) && context && (
+      {(hasSupplyPanel || hasBuyerSeller || hasAffordability) && context && (
         <div className="space-y-2.5">
           <div className="flex flex-wrap items-end justify-between gap-2.5">
             <SectionHeader
               kicker="Longer Horizon"
               title="Supply, construction, and affordability context"
-              tooltipText="Slower-moving structural context. Supply and construction data confirm whether the price and credit picture is demand- or supply-driven. Shelter CPI frames affordability pressure without replacing the listed-market read."
+              tooltipText="Slower-moving structural context. Supply and construction data confirm whether the price and credit picture is demand- or supply-driven. Buyer-demand divergence and housing inflation provide the structural demand overlay without replacing the listed-market read."
             />
           </div>
           <div
             className={`grid items-start gap-3 md:gap-4 ${
-              hasSupplyPanel && hasAffordability ? "xl:grid-cols-2" : "grid-cols-1"
+              longerHorizonCardCount >= 3 ? "xl:grid-cols-3" : longerHorizonCardCount === 2 ? "xl:grid-cols-2" : "grid-cols-1"
             }`}
           >
             {hasSupplyPanel ? (
@@ -1441,9 +1700,20 @@ export default function RealEstateDiagnostic() {
                 completions={context.completions}
               />
             ) : null}
+            {hasBuyerSeller ? (
+              <BuyerSellerDivergenceChart
+                mortgageApplications={context.mortgage_applications}
+                permits={context.building_permits}
+                completions={context.completions}
+                starts={context.housing_starts}
+              />
+            ) : null}
             {hasAffordability ? (
               <AffordabilityChart
                 shelterCpi={context.shelter_cpi}
+                rentCpi={context.rent_cpi}
+                housingCpi={context.housing_cpi}
+                medianHousingCpi={context.median_housing_cpi}
                 mortgageApplications={context.mortgage_applications}
               />
             ) : null}
@@ -1461,7 +1731,7 @@ export default function RealEstateDiagnostic() {
       {/* Sources footer */}
       <div className="flex items-center justify-end gap-2">
         <HoverTooltip
-          tip={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
+          tip={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, rent CPI, housing CPI, median housing CPI, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
           width="w-80"
         >
           <LabelCaps className="mb-0">Sources</LabelCaps>

@@ -61,6 +61,11 @@ FRED_SERIES: Dict[str, str] = {
     "building_permits": "PERMIT",
     "completions": "COMPUTSA",
     "shelter_cpi_index": "CUSR0000SAH1",
+    "rent_cpi_index": "CUSR0000SEHA",
+    "housing_cpi_index": "CPIEHOUSE",
+    "median_housing_cpi_index": "MEDCPIM158SFRBCLE",
+    "existing_home_mortgage_applications": "M0263AUSM500NNBR",
+    "new_home_mortgage_applications": "M0264AUSM500NNBR",
 }
 
 FRED_LABELS: Dict[str, str] = {
@@ -71,6 +76,11 @@ FRED_LABELS: Dict[str, str] = {
     "building_permits": "building permits",
     "completions": "housing completions",
     "shelter_cpi_index": "shelter CPI",
+    "rent_cpi_index": "rent CPI",
+    "housing_cpi_index": "housing CPI",
+    "median_housing_cpi_index": "median housing CPI",
+    "existing_home_mortgage_applications": "existing home mortgage applications",
+    "new_home_mortgage_applications": "new home mortgage applications",
 }
 
 HTTP_HEADERS = {
@@ -358,11 +368,27 @@ def fetch_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
             missing.append(key)
         series_map[key] = series
 
+    def _yoy(series: pd.Series) -> pd.Series:
+        if series.empty:
+            return pd.Series(dtype="float64")
+        return (series.pct_change(12) * 100.0).dropna()
+
     shelter = series_map.get("shelter_cpi_index", pd.Series(dtype="float64"))
-    if not shelter.empty:
-        series_map["shelter_cpi_yoy"] = (shelter.pct_change(12) * 100.0).dropna()
+    series_map["shelter_cpi_yoy"] = _yoy(shelter)
+    series_map["rent_cpi_yoy"] = _yoy(series_map.get("rent_cpi_index", pd.Series(dtype="float64")))
+    series_map["housing_cpi_yoy"] = _yoy(series_map.get("housing_cpi_index", pd.Series(dtype="float64")))
+
+    existing_apps = series_map.get("existing_home_mortgage_applications", pd.Series(dtype="float64"))
+    new_apps = series_map.get("new_home_mortgage_applications", pd.Series(dtype="float64"))
+    if not existing_apps.empty or not new_apps.empty:
+        combined_apps = existing_apps.add(new_apps, fill_value=0.0).sort_index().dropna()
+        series_map["mortgage_applications_combined"] = combined_apps
+        series_map["mortgage_applications"] = combined_apps.rolling(3, min_periods=1).mean().dropna()
+        series_map["mortgage_applications_yoy"] = _yoy(combined_apps)
     else:
-        series_map["shelter_cpi_yoy"] = pd.Series(dtype="float64")
+        series_map["mortgage_applications_combined"] = pd.Series(dtype="float64")
+        series_map["mortgage_applications"] = pd.Series(dtype="float64")
+        series_map["mortgage_applications_yoy"] = pd.Series(dtype="float64")
 
     return series_map, missing
 
@@ -531,6 +557,8 @@ def _build_factors(
     permits = fred.get("building_permits", pd.Series(dtype="float64"))
     completions = fred.get("completions", pd.Series(dtype="float64"))
     shelter_yoy = fred.get("shelter_cpi_yoy", pd.Series(dtype="float64"))
+    mortgage_apps = fred.get("mortgage_applications_combined", pd.Series(dtype="float64"))
+    mortgage_apps_yoy = fred.get("mortgage_applications_yoy", pd.Series(dtype="float64"))
 
     mortgage_latest = _latest(mortgage)
     mortgage_delta = _point_delta(mortgage, 26)
@@ -540,6 +568,8 @@ def _build_factors(
     credit_delta = _point_delta(credit, 60)
     shelter_latest = _latest(shelter_yoy)
     shelter_delta = _point_delta(shelter_yoy, 6)
+    mortgage_apps_latest = _latest(mortgage_apps)
+    mortgage_apps_yoy_latest = _latest(mortgage_apps_yoy)
     starts_6m = _pct_change_observations(starts, 6)
     permits_6m = _pct_change_observations(permits, 6)
     completions_6m = _pct_change_observations(completions, 6)
@@ -553,6 +583,8 @@ def _build_factors(
         "credit_spread_delta_60d_bps": round(credit_delta * 100.0, 1) if credit_delta is not None else None,
         "shelter_cpi_yoy": round(shelter_latest, 2) if shelter_latest is not None else None,
         "shelter_cpi_yoy_delta_6m": round(shelter_delta, 2) if shelter_delta is not None else None,
+        "mortgage_applications": round(mortgage_apps_latest, 0) if mortgage_apps_latest is not None else None,
+        "mortgage_applications_yoy": round(mortgage_apps_yoy_latest, 2) if mortgage_apps_yoy_latest is not None else None,
         "housing_starts_6m": round(starts_6m, 2) if starts_6m is not None else None,
         "building_permits_6m": round(permits_6m, 2) if permits_6m is not None else None,
         "completions_6m": round(completions_6m, 2) if completions_6m is not None else None,
@@ -600,9 +632,9 @@ def _build_factors(
         )
 
     demand_score = _weighted_score([
-        (groups.get("residential", {}).get("score"), 0.55),
+        (groups.get("residential", {}).get("score"), 0.45),
         (_level_pressure(shelter_latest, 2.5, 6.0), 0.25),
-        (_inverse_activity_pressure(symbol_data.get("XHB", {}).get("changes", {}).get("60d"), 12.0), 0.20),
+        (_inverse_activity_pressure(mortgage_apps_yoy_latest, 20.0), 0.30),
     ])
     demand_evidence: List[str] = []
     if "residential" in groups and "reits" in groups:
@@ -618,6 +650,11 @@ def _build_factors(
         if shelter_delta is not None:
             shelter_text += f", {shelter_delta:+.1f} pts over six observations"
         demand_evidence.append(shelter_text + ".")
+    if mortgage_apps_latest is not None:
+        apps_text = f"Combined mortgage applications are {mortgage_apps_latest:.0f} per workday"
+        if mortgage_apps_yoy_latest is not None:
+            apps_text += f", {mortgage_apps_yoy_latest:+.1f}% YoY"
+        demand_evidence.append(apps_text + ".")
 
     supply_score = _weighted_score([
         (_inverse_activity_pressure(starts_6m, 12.0), 0.35),
@@ -690,11 +727,17 @@ def _summary(
 
     xhb_60d = metrics.get("xhb_60d")
     vnq_60d = metrics.get("vnq_60d")
+    mortgage_apps_yoy = metrics.get("mortgage_applications_yoy")
     if xhb_60d is not None and vnq_60d is not None:
         relative = xhb_60d - vnq_60d
         parts.append(
             f"XHB is {xhb_60d:+.1f}% over 60 sessions versus VNQ at {vnq_60d:+.1f}%, "
             f"a {relative:+.1f} pt residential/listed-REIT spread."
+        )
+    if mortgage_apps_yoy is not None:
+        parts.append(
+            f"Combined mortgage applications are {mortgage_apps_yoy:+.1f}% YoY, "
+            "so borrower demand is being checked directly instead of inferred only from builders."
         )
 
     credit = metrics.get("credit_spread_bps")
@@ -789,7 +832,10 @@ def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
             "building_permits": _series_points(fred_series.get("building_permits", pd.Series(dtype="float64")), decimals=0),
             "completions": _series_points(fred_series.get("completions", pd.Series(dtype="float64")), decimals=0),
             "shelter_cpi": _series_points(fred_series.get("shelter_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
-            "mortgage_applications": [],
+            "rent_cpi": _series_points(fred_series.get("rent_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
+            "housing_cpi": _series_points(fred_series.get("housing_cpi_yoy", pd.Series(dtype="float64")), decimals=2),
+            "median_housing_cpi": _series_points(fred_series.get("median_housing_cpi_index", pd.Series(dtype="float64")), decimals=2),
+            "mortgage_applications": _series_points(fred_series.get("mortgage_applications", pd.Series(dtype="float64")), decimals=0),
         },
         "availability": {
             "symbols": availability,

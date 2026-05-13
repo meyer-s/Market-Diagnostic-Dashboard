@@ -60,6 +60,14 @@ def test_calculate_real_estate_index_uses_relative_factor_evidence(monkeypatch) 
             "completions": _monthly([1400, 1405, 1410, 1400, 1390, 1385, 1375, 1360, 1350, 1340, 1335, 1330]),
             "shelter_cpi_yoy": _monthly([5.5, 5.4, 5.3, 5.2, 5.1, 5.0, 4.9, 4.8, 4.7, 4.6, 4.5, 4.4]),
             "shelter_cpi_index": _monthly([300 + i for i in range(12)]),
+            "rent_cpi_yoy": _monthly([6.1, 6.0, 5.9, 5.8, 5.7, 5.5, 5.4, 5.2, 5.0, 4.9, 4.8, 4.7]),
+            "rent_cpi_index": _monthly([340 + i * 0.8 for i in range(12)]),
+            "housing_cpi_yoy": _monthly([4.8, 4.7, 4.7, 4.6, 4.5, 4.3, 4.2, 4.0, 3.9, 3.8, 3.7, 3.6]),
+            "housing_cpi_index": _monthly([280 + i * 0.7 for i in range(12)]),
+            "median_housing_cpi_index": _monthly([3.9, 3.8, 3.8, 3.7, 3.6, 3.5, 3.5, 3.4, 3.3, 3.2, 3.2, 3.1]),
+            "mortgage_applications_combined": _monthly([940, 960, 980, 995, 1015, 1030, 1040, 1050, 1065, 1080, 1095, 1110]),
+            "mortgage_applications": _monthly([940, 950, 960, 978, 997, 1013, 1028, 1040, 1052, 1065, 1080, 1095]),
+            "mortgage_applications_yoy": _monthly([1.5, 2.1, 2.5, 3.0, 3.6, 4.1, 4.4, 4.8, 5.2, 5.8, 6.2, 6.8]),
         }
         return fred, []
 
@@ -74,4 +82,10 @@ def test_calculate_real_estate_index_uses_relative_factor_evidence(monkeypatch) 
     assert any(factor["key"] == "financing_pressure" for factor in data["factors"])
     assert "pts above" in data["summary"]
     assert "30Y mortgage rates" in data["summary"]
+    assert "borrower demand" in data["summary"]
     assert data["metrics"]["mortgage_rate_delta_26w"] is not None
+    assert data["metrics"]["mortgage_applications_yoy"] is not None
+    assert data["context"]["rent_cpi"]
+    assert data["context"]["housing_cpi"]
+    assert data["context"]["median_housing_cpi"]
+    assert data["context"]["mortgage_applications"]
