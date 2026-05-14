@@ -26,7 +26,7 @@ const DATA_FREQUENCY: Record<string, { frequency: string; description: string; e
   SENTIMENT_COMPOSITE: { frequency: "Monthly", description: "Composite of Michigan sentiment, business confidence, regional new orders, and CapEx data", expectedLag: 30 },
   AGRICULTURE_STABILITY: { frequency: "Cached market page", description: "Derived from the Agriculture Markets page composite and refreshed from the same underlying market and macro inputs", expectedLag: 1 },
   ENERGY_STABILITY: { frequency: "Cached market page", description: "Derived from the Energy Markets page stability score and refreshed from the same underlying energy-market inputs", expectedLag: 1 },
-  REAL_ESTATE_STABILITY: { frequency: "Cached market page", description: "Derived from the Real Estate Markets page composite and refreshed from the same underlying housing and credit inputs", expectedLag: 1 },
+  REAL_ESTATE_STABILITY: { frequency: "Cached market page", description: "Derived from the Real Estate Markets page stability score and refreshed from the same underlying housing and credit inputs", expectedLag: 1 },
 };
 
 const stateDotMap = {

@@ -477,7 +477,7 @@ INDICATOR_METADATA = {
         "name": "Real Estate Stability",
         "description": "Top-level real-estate stability score combining financing transmission, affordability, property-market confirmation, and supply balance into one 0-100 read.",
         "relevance": "Real estate is a rate-sensitive bridge between credit conditions and the real economy. It is the most macro-causal of the three added market-page inputs.",
-        "scoring": "Derived from the real-estate market page by converting pressure to stability with 100 minus pressure. Higher values indicate healthier financing and demand conditions.",
+        "scoring": "Uses the real-estate market page stability score directly. Higher values indicate healthier financing and demand conditions, while the page preserves a separate pressure regime read for directional housing stress.",
         "direction": -1,
         "positive_is_good": True,
         "interpretation": "High score = rates and credit pressure are being absorbed. Low score = financing and affordability are constraining activity.",

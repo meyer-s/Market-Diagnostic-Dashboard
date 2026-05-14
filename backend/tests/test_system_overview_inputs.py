@@ -15,7 +15,7 @@ def test_page_input_statuses_include_latest_page_scores(monkeypatch):
     monkeypatch.setattr(
         system_overview_inputs,
         "calculate_real_estate_index",
-        lambda days=365: {"composite_score": 35.0, "as_of": "2026-05-13T10:00:00Z", "composite_history": []},
+        lambda days=365: {"composite_score": 35.0, "stability_score": 65.0, "as_of": "2026-05-13T10:00:00Z", "composite_history": [], "stability_history": []},
     )
 
     statuses = {entry["code"]: entry for entry in system_overview_inputs.get_page_input_statuses()}
@@ -62,7 +62,11 @@ def test_page_input_history_uses_stability_series(monkeypatch):
             "composite_history": [
                 {"date": "2026-05-11", "value": 48.0},
                 {"date": "2026-05-12", "value": 40.0},
-            ]
+            ],
+            "stability_history": [
+                {"date": "2026-05-11", "value": 52.0},
+                {"date": "2026-05-12", "value": 60.0},
+            ],
         },
     )
 

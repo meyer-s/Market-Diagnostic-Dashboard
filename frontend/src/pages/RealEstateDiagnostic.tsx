@@ -87,6 +87,7 @@ type MetricSnapshot = {
 type RealEstateOverview = {
   as_of: string;
   composite_score: number;
+  stability_score: number;
   regime_label: string;
   summary: string;
   groups: GroupCard[];
@@ -100,6 +101,7 @@ type RealEstateOverview = {
 type RealEstateHistory = {
   as_of: string;
   composite_history: DataPoint[];
+  stability_history: DataPoint[];
   factor_history: Array<{
     date: string;
     residential: number;
@@ -138,10 +140,6 @@ function pressureTone(score: number) {
   if (score >= 60) return "text-rose-400";
   if (score <= 40) return "text-emerald-400";
   return "text-amber-400";
-}
-
-function stabilityScore(pressure: number) {
-  return Math.max(0, Math.min(100, 100 - pressure));
 }
 
 function stabilityTone(score: number) {
@@ -585,13 +583,13 @@ function CompositeHistoryChart({
   if (!history.length) return null;
   const decimated = history
     .filter((_, i) => i % Math.max(1, Math.floor(history.length / 200)) === 0)
-    .map((point) => ({ ...point, value: stabilityScore(point.value) }));
+    .map((point) => ({ ...point }));
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader
         kicker="Stability Score History"
         title="Composite stability"
-        tooltipText="Headline stability is displayed as 100 minus the underlying pressure score. Above 60 means the market is absorbing the financing backdrop; below 40 means stability is weak."
+        tooltipText="Above 60 means the market is absorbing the financing backdrop; below 40 means stability is weak."
       />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
@@ -1571,7 +1569,7 @@ export default function RealEstateDiagnostic() {
   const creditSpread     = overview.metrics?.credit_spread_bps;
   const creditSpreadDelta = overview.metrics?.credit_spread_delta_60d_bps;
   const topFactor = factorsByPressure[0];
-  const headlineStability = stabilityScore(overview.composite_score);
+  const headlineStability = overview.stability_score;
   const conciseRead = conciseSummary({
     stability: headlineStability,
     topFactor,
@@ -1580,7 +1578,7 @@ export default function RealEstateDiagnostic() {
     mortgageDelta,
   });
 
-  const hasCompositePanel     = Boolean(history?.composite_history?.length);
+  const hasCompositePanel     = Boolean(history?.stability_history?.length);
   const hasFactorPanel        = Boolean(overview.groups.length);
   const hasMortgagePressure   = Boolean(transmission?.mortgage_rate_30y?.length && transmission?.indexed_xhb?.length);
   const hasTransmission       = Boolean(transmission?.indexed_vnq?.length && transmission?.indexed_xhb?.length);
@@ -1724,7 +1722,7 @@ export default function RealEstateDiagnostic() {
           {primarySidePanelCount > 0 && (
             <div className="grid gap-3 md:gap-4">
               {hasCompositePanel && history ? (
-                <CompositeHistoryChart history={history.composite_history} surfaceClassName="primary-card" />
+                <CompositeHistoryChart history={history.stability_history} surfaceClassName="primary-card" />
               ) : null}
               {hasFactorPanel ? (
                 <FactorPanel groups={overview.groups} />

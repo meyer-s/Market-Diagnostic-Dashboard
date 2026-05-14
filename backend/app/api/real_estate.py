@@ -13,6 +13,7 @@ def get_real_estate_overview(days: int = Query(365, ge=90, le=1095)):
         "as_of": data["as_of"],
         "regime_label": data["regime_label"],
         "composite_score": data["composite_score"],
+        "stability_score": data["stability_score"],
         "summary": data["summary"],
         "groups": data["groups"],
         "symbols": data["symbols"],
@@ -29,6 +30,7 @@ def get_real_estate_history(days: int = Query(365, ge=90, le=1095)):
     return {
         "as_of": data["as_of"],
         "composite_history": data["composite_history"],
+        "stability_history": data["stability_history"],
         "factor_history": data["factor_history"],
     }
 

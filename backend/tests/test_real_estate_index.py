@@ -77,6 +77,9 @@ def test_calculate_real_estate_index_uses_relative_factor_evidence(monkeypatch) 
     data = rei.calculate_real_estate_index(days=365)
 
     assert data["composite_score"] > 50
+    assert data["stability_score"] == 100.0 - data["composite_score"]
+    assert data["stability_history"]
+    assert data["stability_history"][-1]["value"] == round(100.0 - data["composite_history"][-1]["value"], 2)
     assert data["factors"]
     assert any(factor["key"] == "financing_pressure" for factor in data["factors"])
     assert "pts above" in data["summary"]

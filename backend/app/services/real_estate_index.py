@@ -851,8 +851,14 @@ def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
     elif groups:
         composite_score = _weighted_score([(group["score"], group["weight"]) for group in groups.values()]) or 50.0
     composite_score = round(float(composite_score), 2)
+    stability_score = round(float(_clamp(100.0 - composite_score, 0.0, 100.0)), 2)
 
     composite_history, factor_history = _build_listed_history(proxy_series, symbol_data, effective_weights, days)
+    stability_history = [
+        {"date": point["date"], "value": round(float(_clamp(100.0 - point["value"], 0.0, 100.0)), 2)}
+        for point in composite_history
+        if point.get("value") is not None
+    ]
     regime = _regime_label(composite_score)
 
     mortgage = fred_series.get("mortgage_rate_30y", pd.Series(dtype="float64"))
@@ -870,12 +876,14 @@ def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
         "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "regime_label": regime,
         "composite_score": composite_score,
+        "stability_score": stability_score,
         "summary": _summary(composite_score, regime, factors, groups, metrics),
         "groups": list(groups.values()),
         "symbols": list(symbol_data.values()),
         "factors": factors,
         "metrics": metrics,
         "composite_history": composite_history,
+        "stability_history": stability_history,
         "factor_history": factor_history,
         "transmission": {
             "mortgage_rate_30y": _series_points(mortgage, decimals=3),

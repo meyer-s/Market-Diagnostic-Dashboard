@@ -63,7 +63,7 @@ _PAGE_INPUTS: List[Dict[str, Any]] = [
             "description": "Real Estate Stability captures housing and REIT conditions, financing transmission, affordability, and supply balance as one top-level stability input.",
             "relevance": "Real estate is a rate-sensitive bridge between credit conditions and the real economy, so it adds a direct read on whether financing stress is spilling into demand.",
             "impact": "Weak real-estate stability usually means financing or affordability is constraining activity. Stronger readings suggest the market is absorbing rates without broad deterioration.",
-            "scoring": "Higher is better. This input converts the real-estate page pressure composite to stability using 100 minus pressure and keeps a full 1.0 weight because housing, rates, credit transmission, and property demand sit much closer to the core cause of broad-market regime shifts.",
+            "scoring": "Higher is better. This input uses the real-estate page stability score directly while the page still preserves a separate pressure regime read for directional housing stress. It keeps a full 1.0 weight because housing, rates, credit transmission, and property demand sit much closer to the core cause of broad-market regime shifts.",
             "typical_range": "Above 70 is stable, 40 to 69 is mixed, and below 40 is stressed.",
         },
     },
@@ -134,9 +134,7 @@ def _get_energy_status(days: int) -> Optional[Dict[str, Any]]:
 
 def _get_real_estate_status(days: int) -> Optional[Dict[str, Any]]:
     data = calculate_real_estate_index(days=max(days, 90))
-    pressure = data.get("composite_score")
-    stability = None if pressure is None else 100.0 - float(pressure)
-    return _build_status(_PAGE_INPUTS_BY_CODE["REAL_ESTATE_STABILITY"], stability, data.get("as_of"))
+    return _build_status(_PAGE_INPUTS_BY_CODE["REAL_ESTATE_STABILITY"], data.get("stability_score"), data.get("as_of"))
 
 
 _STATUS_BUILDERS = {
@@ -187,11 +185,8 @@ def _get_energy_history(days: int) -> List[Dict[str, Any]]:
 
 def _get_real_estate_history(days: int) -> List[Dict[str, Any]]:
     data = calculate_real_estate_index(days=max(days, 90))
-    history = data.get("composite_history", [])
-    points = [
-        _history_point(item.get("date", ""), None if item.get("value") is None else 100.0 - float(item.get("value")))
-        for item in history
-    ]
+    history = data.get("stability_history", [])
+    points = [_history_point(item.get("date", ""), item.get("value")) for item in history]
     return [point for point in points if point is not None]
 
 
