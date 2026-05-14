@@ -44,7 +44,7 @@ _PAGE_INPUTS: List[Dict[str, Any]] = [
             "description": "Energy Stability condenses traditional energy, alternative energy, supply-demand pressure, and fuel-cost transmission into one market-level balance score.",
             "relevance": "Energy conditions feed inflation, growth, and risk appetite, so this input helps the system overview register whether commodity-linked stress is broadening or easing.",
             "impact": "Weak energy stability often shows up through tighter supply, rising fuel pressure, or deteriorating market leadership. Strong readings suggest the complex is absorbing those pressures cleanly.",
-            "scoring": "Higher is better. This input uses the energy page composite score directly and carries a medium 0.8 weight because energy shocks can change inflation and growth quickly, but they still overlap with bond, liquidity, and sentiment channels already in the model.",
+            "scoring": "Higher is better. This input uses the energy page stability score, which falls when absolute moves and realized volatility spike regardless of direction. It carries a medium 0.8 weight because energy shocks can change inflation and growth quickly, but they still overlap with bond, liquidity, and sentiment channels already in the model.",
             "typical_range": "Above 70 is stable, 40 to 69 is mixed, and below 40 is stressed.",
         },
     },
@@ -129,7 +129,7 @@ def _get_agriculture_status(days: int) -> Optional[Dict[str, Any]]:
 
 def _get_energy_status(days: int) -> Optional[Dict[str, Any]]:
     data = calculate_energy_index(days=max(days, 90))
-    return _build_status(_PAGE_INPUTS_BY_CODE["ENERGY_STABILITY"], data.get("composite_score"), data.get("as_of"))
+    return _build_status(_PAGE_INPUTS_BY_CODE["ENERGY_STABILITY"], data.get("stability_score"), data.get("as_of"))
 
 
 def _get_real_estate_status(days: int) -> Optional[Dict[str, Any]]:
@@ -180,7 +180,7 @@ def _get_agriculture_history(days: int) -> List[Dict[str, Any]]:
 
 def _get_energy_history(days: int) -> List[Dict[str, Any]]:
     data = calculate_energy_index(days=max(days, 90))
-    history = data.get("composite_history", [])
+    history = data.get("stability_history", [])
     points = [_history_point(item.get("date", ""), item.get("value")) for item in history]
     return [point for point in points if point is not None]
 

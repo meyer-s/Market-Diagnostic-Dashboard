@@ -221,6 +221,32 @@ def normalize_score(changes: Dict[str, Optional[float]]) -> float:
     return _clamp(50.0 + 45.0 * tanh(blended / 12.0), 0.0, 100.0)
 
 
+def stability_from_changes_and_volatility(
+    changes: Dict[str, Optional[float]],
+    volatility: Optional[float],
+) -> float:
+    weights = {"5d": 0.35, "20d": 0.30, "60d": 0.20, "120d": 0.15}
+    values: List[float] = []
+    applied: List[float] = []
+    for key, weight in weights.items():
+        value = changes.get(key)
+        if value is None:
+            continue
+        values.append(abs(value) * weight)
+        applied.append(weight)
+
+    move_score = 50.0
+    if applied:
+        blended_abs = sum(values) / sum(applied)
+        move_score = _clamp(100.0 - 90.0 * tanh(blended_abs / 12.0), 0.0, 100.0)
+
+    if volatility is None:
+        return move_score
+
+    vol_score = _clamp(100.0 - 100.0 * tanh(volatility / 35.0), 0.0, 100.0)
+    return round(0.8 * move_score + 0.2 * vol_score, 2)
+
+
 def _volatility(series: pd.Series, lookback: int = 60) -> Optional[float]:
     if len(series) < 3:
         return None
@@ -514,6 +540,65 @@ def _build_composite_history(
     ]
 
 
+def _build_stability_history(
+    series_map: Dict[str, pd.Series],
+    symbol_data: Dict[str, Dict[str, Any]],
+    weights: Dict[str, float],
+    days: int,
+) -> List[Dict[str, Any]]:
+    frames = {code: s for code, s in series_map.items() if code in symbol_data}
+    if not frames:
+        return []
+
+    df = pd.DataFrame(frames).sort_index().dropna(how="all").tail(days + 130)
+    if len(df) < 25:
+        return []
+
+    score_cols: Dict[str, pd.Series] = {}
+    weight_items = ((5, 0.35), (20, 0.30), (60, 0.20), (120, 0.15))
+    for code, col in df.items():
+        pct_moves = {lookback: col.pct_change(lookback).abs() * 100.0 for lookback, _ in weight_items}
+        availability = sum(weight * pct_moves[lookback].notna().astype(float) for lookback, weight in weight_items)
+        blended_abs = sum(weight * pct_moves[lookback].fillna(0.0) for lookback, weight in weight_items)
+        blended_abs = blended_abs.div(availability.replace(0, np.nan))
+        move_score = (100.0 - 90.0 * np.tanh(blended_abs / 12.0)).clip(0, 100)
+
+        daily_returns = col.pct_change().fillna(0.0)
+        rolling_vol = daily_returns.rolling(60, min_periods=10).std(ddof=0) * (252.0 ** 0.5) * 100.0
+        vol_score = (100.0 - 100.0 * np.tanh(rolling_vol / 35.0)).clip(0, 100)
+
+        score_cols[code] = 0.8 * move_score + 0.2 * vol_score
+
+    if not score_cols:
+        return []
+
+    score_df = pd.DataFrame(score_cols)
+    group_frames: Dict[str, pd.DataFrame] = {}
+    for code in score_cols:
+        grp = symbol_data[code]["group"]
+        group_frames.setdefault(grp, []).append(score_df[code])  # type: ignore[arg-type]
+
+    composite = pd.Series(0.0, index=score_df.index)
+    total_w = 0.0
+    for grp, cols in group_frames.items():
+        w = weights.get(grp, 0.0)
+        if w <= 0:
+            continue
+        grp_mean = pd.concat(cols, axis=1).mean(axis=1)
+        composite += grp_mean * (w / 100.0)
+        total_w += w / 100.0
+
+    if total_w > 0:
+        composite = composite / total_w
+
+    composite = composite.dropna().tail(days)
+    return [
+        {"date": str(idx.date()), "value": round(float(v), 2)}
+        for idx, v in composite.items()
+        if not np.isnan(v)
+    ]
+
+
 def _build_alt_comparison(
     series_map: Dict[str, pd.Series], days: int
 ) -> List[Dict[str, Any]]:
@@ -705,6 +790,7 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
         score = normalize_score(changes)
         current = _safe_float(series.iloc[-1]) if not series.empty else None
         vol = _volatility(series)
+        stability_score = stability_from_changes_and_volatility(changes, vol)
         symbol_data[instrument.code] = {
             "code": instrument.code,
             "name": instrument.name,
@@ -714,6 +800,7 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
             "current_price": round(current, 4) if current is not None else None,
             "changes": {k: round(v, 2) if v is not None else None for k, v in changes.items()},
             "momentum_score": round(score, 2),
+            "stability_score": round(stability_score, 2),
             "volatility": round(vol, 2) if vol is not None else None,
         }
 
@@ -779,7 +866,19 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
             total_w += w / 100.0
         composite_score = round(weighted_sum / total_w if total_w > 0 else 50.0, 2)
 
+    stability_score = 50.0
+    if effective_weights and symbol_data:
+        weighted_sum = 0.0
+        total_w = 0.0
+        for code, data in symbol_data.items():
+            grp = data["group"]
+            w = effective_weights.get(grp, 0.0)
+            weighted_sum += data["stability_score"] * (w / 100.0)
+            total_w += w / 100.0
+        stability_score = round(weighted_sum / total_w if total_w > 0 else 50.0, 2)
+
     history = _build_composite_history(series_map, symbol_data, effective_weights, days)
+    stability_history = _build_stability_history(series_map, symbol_data, effective_weights, days)
     alt_comparison = _build_alt_comparison(alt_series, days)
     biofuel_comparison = _build_indexed_history(series_map, ("RB", "HO", "EH", "ZL"), days)
     radar_history = _build_radar_history(series_map)
@@ -805,10 +904,12 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
         "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "regime_label": _regime_label(composite_score),
         "composite_score": composite_score,
+        "stability_score": stability_score,
         "summary": _regime_summary(composite_score, wti_20d, ng_20d, gas_latest, inv_latest, biofuel_20d),
         "groups": list(groups.values()),
         "symbols": list(symbol_data.values()),
         "composite_history": history,
+        "stability_history": stability_history,
         "radar_history": radar_history,
         "fred_prices": fred_prices,
         "alt_comparison": alt_comparison,

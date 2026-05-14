@@ -60,6 +60,7 @@ type EnergyOverview = {
   as_of: string;
   regime_label: string;
   composite_score: number;
+  stability_score: number;
   summary: string;
   groups: GroupRow[];
   symbols: SymbolRow[];
@@ -1664,20 +1665,20 @@ export default function EnergyIndex() {
         <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.95fr]">
           <div className="space-y-4">
             <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Energy Snapshot</p>
-            <p className={`mt-2 text-4xl font-semibold ${biasTone(overview.composite_score)}`}>{overview.composite_score.toFixed(0)}</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Energy Stability</p>
+            <p className={`mt-2 text-4xl font-semibold ${biasTone(overview.stability_score)}`}>{overview.stability_score.toFixed(0)}</p>
             <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
-              <div className={`h-2 rounded-full ${overview.composite_score >= 60 ? "bg-emerald-500" : overview.composite_score <= 40 ? "bg-rose-500" : "bg-amber-500"}`} style={{ width: `${overview.composite_score}%` }} />
+              <div className={`h-2 rounded-full ${overview.stability_score >= 60 ? "bg-emerald-500" : overview.stability_score <= 40 ? "bg-rose-500" : "bg-amber-500"}`} style={{ width: `${overview.stability_score}%` }} />
             </div>
-            <p className="mt-2 text-xs text-stealth-400">As of {new Date(overview.as_of).toLocaleString()}</p>
+            <p className="mt-2 text-xs text-stealth-400">Large absolute moves and high volatility pull this lower. As of {new Date(overview.as_of).toLocaleString()}</p>
             </div>
             <p className="max-w-4xl text-sm leading-6 text-stealth-300">{overview.summary}</p>
             <div className="grid gap-2 md:grid-cols-3">
               <SignalTile
-                label="Primary Read"
+                label="Pressure Regime"
                 title={overview.regime_label}
                 tone={biasTone(overview.composite_score)}
-                detail={strongestGroup ? `${strongestGroup.label} is carrying the tape with a ${strongestGroup.group_composite.toFixed(0)} composite.` : "Composite regime is leading the page."}
+                detail={strongestGroup ? `${strongestGroup.label} is carrying the directional pressure composite with a ${strongestGroup.group_composite.toFixed(0)} reading.` : "Directional price pressure is leading the page."}
               />
               <SignalTile
                 label="Pressure Point"
@@ -1695,6 +1696,11 @@ export default function EnergyIndex() {
           </div>
 
           <div className="grid min-w-[280px] gap-3 sm:grid-cols-2 xl:grid-cols-2">
+            <StatTile
+              label="Pressure Score"
+              value={<span className={`font-mono ${biasTone(overview.composite_score)}`}>{overview.composite_score.toFixed(0)}</span>}
+              detail="Directional price-pressure composite"
+            />
             <StatTile
               label="Regime"
               value={<span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${regimeBadgeStyle(overview.regime_label)}`}>{overview.regime_label}</span>}

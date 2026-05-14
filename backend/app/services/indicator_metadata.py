@@ -461,10 +461,10 @@ INDICATOR_METADATA = {
         "name": "Energy Stability",
         "description": "Top-level energy stability score combining traditional energy balance, alternative energy participation, and fuel-cost transmission into one 0-100 market read.",
         "relevance": "Energy conditions feed directly into inflation, growth, margins, and risk appetite. This makes the energy complex more system-driving than most narrow sector inputs.",
-        "scoring": "Uses the energy market page composite score directly. Higher values indicate a more orderly and resilient energy complex; lower values indicate pressure or disorder.",
+        "scoring": "Uses the energy market page stability score. Higher values indicate a more orderly and resilient energy complex; lower values indicate large unexpected moves and high volatility are destabilizing the complex, regardless of whether prices are moving up or down.",
         "direction": -1,
         "positive_is_good": True,
-        "interpretation": "High score = energy markets are absorbing pressure cleanly. Low score = energy stress is likely feeding into broader macro conditions.",
+        "interpretation": "High score = energy markets are absorbing pressure cleanly. Low score = large commodity moves or volatility are likely feeding into broader macro conditions.",
         "thresholds": {
             "green_below": 40,
             "yellow_below": 70

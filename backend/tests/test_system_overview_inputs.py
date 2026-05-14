@@ -10,7 +10,7 @@ def test_page_input_statuses_include_latest_page_scores(monkeypatch):
     monkeypatch.setattr(
         system_overview_inputs,
         "calculate_energy_index",
-        lambda days=365: {"composite_score": 71.2, "as_of": "2026-05-13T10:00:00Z", "composite_history": []},
+        lambda days=365: {"composite_score": 71.2, "stability_score": 38.4, "as_of": "2026-05-13T10:00:00Z", "composite_history": [], "stability_history": []},
     )
     monkeypatch.setattr(
         system_overview_inputs,
@@ -22,9 +22,9 @@ def test_page_input_statuses_include_latest_page_scores(monkeypatch):
 
     assert statuses["AGRICULTURE_STABILITY"]["score"] == 62.5
     assert statuses["AGRICULTURE_STABILITY"]["weight"] == 0.6
-    assert statuses["ENERGY_STABILITY"]["score"] == 71.2
+    assert statuses["ENERGY_STABILITY"]["score"] == 38.4
     assert statuses["ENERGY_STABILITY"]["weight"] == 0.8
-    assert statuses["ENERGY_STABILITY"]["state"] == "GREEN"
+    assert statuses["ENERGY_STABILITY"]["state"] == "RED"
     assert statuses["REAL_ESTATE_STABILITY"]["score"] == 65.0
     assert statuses["REAL_ESTATE_STABILITY"]["weight"] == 1.0
     assert statuses["REAL_ESTATE_STABILITY"]["state"] == "YELLOW"
@@ -48,7 +48,11 @@ def test_page_input_history_uses_stability_series(monkeypatch):
             "composite_history": [
                 {"date": "2026-05-11", "value": 54.0},
                 {"date": "2026-05-12", "value": 56.0},
-            ]
+            ],
+            "stability_history": [
+                {"date": "2026-05-11", "value": 44.0},
+                {"date": "2026-05-12", "value": 36.0},
+            ],
         },
     )
     monkeypatch.setattr(
@@ -67,7 +71,7 @@ def test_page_input_history_uses_stability_series(monkeypatch):
     real_estate_history = system_overview_inputs.get_page_input_history("REAL_ESTATE_STABILITY", 365)
 
     assert agriculture_history[-1]["score"] == 60.0
-    assert energy_history[-1]["score"] == 56.0
+    assert energy_history[-1]["score"] == 36.0
     assert real_estate_history[0]["score"] == 52.0
     assert real_estate_history[-1]["score"] == 60.0
 
