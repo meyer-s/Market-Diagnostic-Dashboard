@@ -45,7 +45,9 @@ def test_ingest_page_input_persists_latest_point(monkeypatch):
         {"timestamp": "2026-05-12T00:00:00", "raw_value": 58.0, "score": 58.0, "state": "YELLOW"},
         {"timestamp": "2026-05-13T00:00:00", "raw_value": 62.0, "score": 62.0, "state": "YELLOW"},
     ])
-    monkeypatch.setattr(etl_runner, "get_page_input_statuses", lambda days=365: [])
+    monkeypatch.setattr(etl_runner, "get_page_input_statuses", lambda days=365: [
+        {"code": "AGRICULTURE_STABILITY", "timestamp": "2026-05-13T15:30:00", "raw_value": 66.0, "score": 66.0, "state": "YELLOW"},
+    ])
 
     runner = etl_runner.ETLRunner()
     result = asyncio.run(runner.ingest_indicator("AGRICULTURE_STABILITY"))
@@ -54,12 +56,12 @@ def test_ingest_page_input_persists_latest_point(monkeypatch):
     indicator = db.query(Indicator).filter(Indicator.code == "AGRICULTURE_STABILITY").first()
     values = db.query(IndicatorValue).filter(IndicatorValue.indicator_id == indicator.id).all()
 
-    assert result["score"] == 62.0
-    assert indicator.last_score == 62.0
+    assert result["score"] == 66.0
+    assert indicator.last_score == 66.0
     assert indicator.last_state == "YELLOW"
     assert len(values) == 1
-    assert values[0].score == 62.0
-    assert values[0].normalized_value == 62.0
+    assert values[0].score == 66.0
+    assert values[0].normalized_value == 66.0
     db.close()
 
 
@@ -72,7 +74,9 @@ def test_ingest_page_input_backfills_history(monkeypatch):
         {"timestamp": "2026-05-12T00:00:00", "raw_value": 55.0, "score": 55.0, "state": "YELLOW"},
         {"timestamp": "2026-05-13T00:00:00", "raw_value": 60.0, "score": 60.0, "state": "YELLOW"},
     ])
-    monkeypatch.setattr(etl_runner, "get_page_input_statuses", lambda days=365: [])
+    monkeypatch.setattr(etl_runner, "get_page_input_statuses", lambda days=365: [
+        {"code": "REAL_ESTATE_STABILITY", "timestamp": "2026-05-13T16:00:00", "raw_value": 63.0, "score": 63.0, "state": "YELLOW"},
+    ])
 
     runner = etl_runner.ETLRunner()
     result = asyncio.run(runner.ingest_indicator("REAL_ESTATE_STABILITY", backfill_days=3))
@@ -87,6 +91,6 @@ def test_ingest_page_input_backfills_history(monkeypatch):
     )
 
     assert result["backfilled"] == 3
-    assert indicator.last_score == 60.0
-    assert [value.score for value in values] == [52.0, 55.0, 60.0]
+    assert indicator.last_score == 63.0
+    assert [value.score for value in values] == [52.0, 55.0, 60.0, 63.0]
     db.close()

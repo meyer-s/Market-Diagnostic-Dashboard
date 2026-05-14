@@ -1234,16 +1234,27 @@ class ETLRunner:
 
             history_days = max(backfill_days, 365)
             history = get_page_input_history(code, days=history_days)
-            latest_point = history[-1] if history else next(
+            latest_status = next(
                 (item for item in get_page_input_statuses(days=history_days) if item["code"] == code),
                 None,
             )
+            latest_point = latest_status or (history[-1] if history else None)
 
             if latest_point is None or latest_point.get("timestamp") is None:
                 raise ValueError(f"No valid page-input data points returned for {code}")
 
-            points_to_store = history[-backfill_days:] if backfill_days > 0 else [latest_point]
+            history_points = history[-backfill_days:] if backfill_days > 0 else []
+            points_to_store = list(history_points) if backfill_days > 0 else [latest_point]
+            if backfill_days > 0 and latest_status is not None:
+                latest_timestamp_value = latest_status.get("timestamp")
+                if latest_timestamp_value and all(point.get("timestamp") != latest_timestamp_value for point in points_to_store):
+                    points_to_store.append(latest_status)
+
             stored_count = 0
+            backfilled_count = 0
+            history_timestamps = {
+                point.get("timestamp") for point in history_points if point.get("timestamp") is not None
+            }
 
             for point in points_to_store:
                 timestamp_value = point.get("timestamp")
@@ -1281,6 +1292,9 @@ class ETLRunner:
                     entry.score = float(score_value)
                     entry.state = state_value
 
+                if backfill_days > 0 and timestamp_value in history_timestamps:
+                    backfilled_count += 1
+
             latest_timestamp = parse_timestamp(latest_point["timestamp"])
             latest_raw = float(latest_point.get("raw_value", latest_point["score"]))
             latest_score = float(latest_point["score"])
@@ -1301,7 +1315,7 @@ class ETLRunner:
                 "state": latest_state,
             }
             if backfill_days > 0:
-                result["backfilled"] = stored_count
+                result["backfilled"] = backfilled_count
             return result
         finally:
             db.close()
