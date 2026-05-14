@@ -12,6 +12,7 @@ def get_energy_overview(days: int = Query(365, ge=90, le=1095)):
         "as_of": data["as_of"],
         "regime_label": data["regime_label"],
         "composite_score": data["composite_score"],
+        "stability_score": data["stability_score"],
         "summary": data["summary"],
         "groups": data["groups"],
         "symbols": data["symbols"],
