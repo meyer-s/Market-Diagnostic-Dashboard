@@ -73,6 +73,7 @@ type HistoryPoint = { date: string; value: number };
 type EnergyHistory = {
   as_of: string;
   composite_history: HistoryPoint[];
+  stability_history: HistoryPoint[];
   radar_history: Array<{
     date: string;
     CL: number;
@@ -504,16 +505,16 @@ function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: {
   const yMax = Math.min(100, Math.ceil(maxScore * 1.02));
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
-      <CardHeader kicker="Energy Composite Score" title="Composite history" tooltipText="Trend regime over the selected lookback window. A score near 50 is neutral, above 60 is elevated, and below 40 is soft." />
+      <CardHeader kicker="Energy Stability Score" title="Stability history" tooltipText="Market stability over the selected lookback window. Higher means the complex is absorbing large moves cleanly; lower means absolute moves and volatility are destabilizing the market." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={decimated} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
             <YAxis {...commonYAxisProps} domain={[yMin, yMax]} />
-            <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Score"]} />
+            <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Stability Score"]} />
             <ReferenceLine y={50} stroke="#334155" strokeDasharray="3 3" />
-            <Line type="monotone" dataKey="value" stroke="#f97316" dot={false} strokeWidth={2} />
+            <Line type="monotone" dataKey="value" stroke="#38bdf8" dot={false} strokeWidth={2} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -1628,7 +1629,7 @@ export default function EnergyIndex() {
   const spreadStress = spread != null && spread > 5;
   const pumpStress = latestPumpSpread != null && latestPumpSpread > 1.8;
   const hasRetailSpreadPanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.retail_gasoline?.length);
-  const hasCompositePanel = Boolean(history?.composite_history?.length);
+  const hasCompositePanel = Boolean(history?.stability_history?.length);
   const hasRadarPanel = Boolean(overview.symbols.length);
   const primarySidePanelCount = Number(hasCompositePanel) + Number(hasRadarPanel);
   const hasSupplyPricePanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.crude_inventory?.length);
@@ -1734,7 +1735,7 @@ export default function EnergyIndex() {
           ) : null}
           {primarySidePanelCount > 0 ? (
             <div className="grid gap-3 md:gap-4">
-              {hasCompositePanel && history ? <CompositeHistoryChart history={history.composite_history} surfaceClassName="primary-card" /> : null}
+              {hasCompositePanel && history ? <CompositeHistoryChart history={history.stability_history} surfaceClassName="primary-card" /> : null}
               {hasRadarPanel ? <FactorRadar symbols={overview.symbols} history={history?.radar_history} /> : null}
             </div>
           ) : null}
