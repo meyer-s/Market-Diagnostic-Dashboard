@@ -154,6 +154,34 @@ interface MarketCapsHistoryResponse {
   history: MarketCapsHistoryPoint[];
 }
 
+interface FuturesCurveContract {
+  symbol: string;
+  contract_label: string;
+  month_code: string;
+  month_number: number;
+  year: number;
+  price: number;
+  previous_close: number;
+  change_pct: number;
+  volume: number | null;
+  as_of: string;
+}
+
+interface FuturesCurveMetal {
+  metal: string;
+  label: string;
+  curve_state: "BACKWARDATION" | "CONTANGO" | "FLAT";
+  curve_bps: number | null;
+  contracts: FuturesCurveContract[];
+}
+
+interface FuturesCurveResponse {
+  as_of: string;
+  source: string;
+  contracts_requested: number;
+  metals: FuturesCurveMetal[];
+}
+
 interface PriceHistoryDataPoint {
   date: string;
   AU?: number;
@@ -283,6 +311,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   const { data: market_caps } = useApi<MarketCapsResponse>("/precious-metals/market-caps");
   const { data: market_caps_history } = useApi<MarketCapsHistoryResponse>("/precious-metals/market-caps/history?years=50");
   const { data: projectionsData } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
+  const { data: futuresCurve } = useApi<FuturesCurveResponse>("/precious-metals/futures-curve?contracts=4");
 
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
 
@@ -433,6 +462,10 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
 
             {/* Section 5: Physical vs Paper */}
             <PhysicalPaperPanel indicators={indicators} />
+          </div>
+
+          <div className="mb-6">
+            <FuturesCurvePanel futuresCurve={futuresCurve} />
           </div>
 
           {/* SECTION 6 & 7: SUPPLY-DEMAND (2-COLUMN) */}
@@ -1133,6 +1166,142 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
             </p>
           </div>
       </div>
+    </div>
+  );
+}
+
+function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveResponse | null }) {
+  const [selectedMetal, setSelectedMetal] = useState("AU");
+  const metals = futuresCurve?.metals ?? [];
+  const activeCurve = metals.find((item) => item.metal === selectedMetal) ?? metals[0] ?? null;
+  const activeColor = activeCurve ? getMetalColor(activeCurve.metal) : getFamilyColor("metals");
+  const curveBps = activeCurve?.curve_bps ?? null;
+  const curveLabel = activeCurve?.curve_state === "BACKWARDATION"
+    ? "Backwardation"
+    : activeCurve?.curve_state === "CONTANGO"
+      ? "Contango"
+      : "Flat";
+  const curveSummary = activeCurve && isNumber(curveBps)
+    ? activeCurve.curve_state === "BACKWARDATION"
+      ? `Front-month ${activeCurve.label.toLowerCase()} is pricing ${Math.abs(curveBps).toFixed(0)} bps above the furthest nearby contract.`
+      : activeCurve.curve_state === "CONTANGO"
+        ? `Deferred ${activeCurve.label.toLowerCase()} is pricing ${Math.abs(curveBps).toFixed(0)} bps above the front month.`
+        : `${activeCurve.label} is trading on a mostly flat nearby curve.`
+    : "Nearby contract quotes are unavailable.";
+  const chartData = activeCurve?.contracts.map((contract) => ({
+    contract: contract.contract_label,
+    price: contract.price,
+    change_pct: contract.change_pct,
+    volume: contract.volume,
+  })) ?? [];
+
+  return (
+    <div className="primary-card p-4 md:p-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-bold text-white">Nearby Futures Curve</h3>
+          <p className="text-xs text-stealth-400 mt-1">Uses the next few listed contracts to show whether the metals complex is paying up for nearby delivery or for time.</p>
+        </div>
+        <div className="text-xs text-stealth-500">
+          {futuresCurve?.as_of ? `As of ${futuresCurve.as_of.slice(0, 16).replace("T", " ")}` : "Live quote timing unavailable"}
+        </div>
+      </div>
+
+      {metals.length > 0 ? (
+        <>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {metals.map((metal) => {
+              const isActive = metal.metal === activeCurve?.metal;
+              return (
+                <button
+                  key={metal.metal}
+                  type="button"
+                  onClick={() => setSelectedMetal(metal.metal)}
+                  className={`rounded-full border px-3 py-1.5 text-sm transition ${isActive ? "border-stealth-400 bg-stealth-700 text-white" : "border-stealth-700 bg-stealth-900/70 text-stealth-300 hover:border-stealth-500 hover:text-white"}`}
+                >
+                  {metal.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {activeCurve && (
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.9fr)] gap-4">
+              <div className="bg-stealth-900/55 rounded-xl border border-stealth-800 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <div>
+                    <div className="text-sm font-semibold" style={{ color: activeColor }}>{activeCurve.label}</div>
+                    <div className="text-xs text-stealth-400 mt-1">{curveSummary}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs uppercase tracking-[0.18em] text-stealth-500">Curve Shape</div>
+                    <div className="text-base font-bold" style={{ color: activeColor }}>
+                      {curveLabel}{isNumber(curveBps) ? ` ${curveBps > 0 ? "+" : ""}${curveBps.toFixed(0)} bps` : ""}
+                    </div>
+                  </div>
+                </div>
+
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                    <XAxis
+                      dataKey="contract"
+                      stroke={CHART_NEUTRAL.axis}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 11 }}
+                    />
+                    <YAxis
+                      stroke={CHART_NEUTRAL.axis}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 11 }}
+                      tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: "4px" }}
+                      formatter={(value: number, key: string) => {
+                        if (key === "change_pct") return [`${value.toFixed(2)}%`, "1D change"];
+                        if (key === "volume") return [value?.toLocaleString?.() ?? "n/a", "Volume"];
+                        return [`$${value.toFixed(2)}`, "Price"];
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="price"
+                      stroke={activeColor}
+                      strokeWidth={2.5}
+                      dot={{ r: 3, fill: activeColor, strokeWidth: 0 }}
+                      activeDot={{ r: 5, fill: activeColor }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="space-y-2">
+                {activeCurve.contracts.map((contract) => (
+                  <div key={contract.symbol} className="bg-stealth-900/55 rounded-xl border border-stealth-800 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">{contract.contract_label}</div>
+                        <div className="text-xs text-stealth-500 mt-1">{contract.symbol}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-bold" style={{ color: activeColor }}>${contract.price.toFixed(2)}</div>
+                        <div className={`text-xs ${contract.change_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          {contract.change_pct >= 0 ? "+" : ""}{contract.change_pct.toFixed(2)}%
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-stealth-400">
+                      <span>Prev close ${contract.previous_close.toFixed(2)}</span>
+                      <span>{contract.volume != null ? `${contract.volume.toLocaleString()} vol` : "Volume n/a"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="text-sm text-stealth-400">Nearby futures contracts are unavailable right now.</div>
+      )}
     </div>
   );
 }

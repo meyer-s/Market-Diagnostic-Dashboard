@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from sqlalchemy import func, desc
 import statistics
+import yfinance as yf
 
 from app.models.alternative_assets import MacroLiquidityData
 from app.models.precious_metals import (
@@ -17,6 +18,46 @@ router = APIRouter(prefix="/precious-metals", tags=["precious-metals"])
 
 TONNES_TO_OZ = 32150.7466
 COMEX_PLACEHOLDER_SOURCES = ["SEED", "ESTIMATED_FROM_PRICES"]
+MONTH_CODE_TO_NUMBER = {
+    "F": 1,
+    "G": 2,
+    "H": 3,
+    "J": 4,
+    "K": 5,
+    "M": 6,
+    "N": 7,
+    "Q": 8,
+    "U": 9,
+    "V": 10,
+    "X": 11,
+    "Z": 12,
+}
+PRECIOUS_METALS_FUTURES = {
+    "AU": {
+        "label": "Gold",
+        "root": "GC",
+        "exchange": "CMX",
+        "months": ["G", "J", "M", "Q", "V", "Z"],
+    },
+    "AG": {
+        "label": "Silver",
+        "root": "SI",
+        "exchange": "CMX",
+        "months": ["H", "K", "N", "U", "Z"],
+    },
+    "PT": {
+        "label": "Platinum",
+        "root": "PL",
+        "exchange": "NYM",
+        "months": ["F", "J", "N", "V"],
+    },
+    "PD": {
+        "label": "Palladium",
+        "root": "PA",
+        "exchange": "NYM",
+        "months": ["H", "M", "U", "Z"],
+    },
+}
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -261,6 +302,117 @@ def calculate_structural_monetary_bid(db) -> Optional[float]:
     weight_total = sum(weight for _, weight in components)
     smb = weighted_sum / weight_total
     return max(-100, min(100, smb))  # Clamp to [-100, 100]
+
+
+def _build_nearby_contract_candidates(config: dict, contracts: int, as_of: datetime) -> List[dict]:
+    candidates: List[dict] = []
+    current_year = as_of.year
+    current_month = as_of.month
+    month_codes = sorted(config["months"], key=lambda code: MONTH_CODE_TO_NUMBER[code])
+
+    for year_offset in range(0, 4):
+        year = current_year + year_offset
+        for month_code in month_codes:
+            month_number = MONTH_CODE_TO_NUMBER[month_code]
+            if year == current_year and month_number < current_month:
+                continue
+            symbol = f'{config["root"]}{month_code}{year % 100:02d}.{config["exchange"]}'
+            candidates.append({
+                "symbol": symbol,
+                "month_code": month_code,
+                "month_number": month_number,
+                "year": year,
+                "contract_label": datetime(year, month_number, 1).strftime("%b %Y"),
+            })
+            if len(candidates) >= contracts + 3:
+                return candidates
+
+    return candidates
+
+
+def _fetch_futures_contract_snapshot(symbol: str) -> Optional[dict]:
+    try:
+        history = yf.Ticker(symbol).history(period="5d")
+    except Exception:
+        return None
+
+    if history is None or history.empty or "Close" not in history:
+        return None
+
+    closes = history["Close"].dropna()
+    if closes.empty:
+        return None
+
+    latest_price = float(closes.iloc[-1])
+    previous_close = float(closes.iloc[-2]) if len(closes) > 1 else latest_price
+    latest_row = history.iloc[-1]
+    volume = None
+    if "Volume" in history and latest_row.get("Volume") is not None:
+        try:
+            volume = int(latest_row["Volume"])
+        except (TypeError, ValueError):
+            volume = None
+
+    as_of = history.index[-1]
+    as_of_value = as_of.to_pydatetime().isoformat() if hasattr(as_of, "to_pydatetime") else str(as_of)
+
+    return {
+        "price": latest_price,
+        "previous_close": previous_close,
+        "change_pct": ((latest_price / previous_close) - 1) * 100 if previous_close else 0.0,
+        "volume": volume,
+        "as_of": as_of_value,
+    }
+
+
+def get_precious_metals_futures_curve(contracts: int = 4) -> dict:
+    as_of = datetime.utcnow()
+    metals = []
+    latest_timestamp = as_of.isoformat()
+
+    for metal, config in PRECIOUS_METALS_FUTURES.items():
+        contract_rows = []
+        for candidate in _build_nearby_contract_candidates(config, contracts, as_of):
+            snapshot = _fetch_futures_contract_snapshot(candidate["symbol"])
+            if not snapshot:
+                continue
+
+            contract_rows.append({
+                **candidate,
+                **snapshot,
+            })
+            latest_timestamp = max(latest_timestamp, snapshot["as_of"])
+            if len(contract_rows) >= contracts:
+                break
+
+        if not contract_rows:
+            continue
+
+        front_price = contract_rows[0]["price"]
+        deferred_price = contract_rows[-1]["price"] if len(contract_rows) > 1 else front_price
+        curve_bps = None
+        curve_state = "FLAT"
+        if front_price and deferred_price:
+            curve_bps = ((front_price / deferred_price) - 1) * 10000
+            if curve_bps > 0:
+                curve_state = "BACKWARDATION"
+            elif curve_bps < 0:
+                curve_state = "CONTANGO"
+
+        metals.append({
+            "metal": metal,
+            "label": config["label"],
+            "curve_state": curve_state,
+            "curve_bps": curve_bps,
+            "contracts": contract_rows,
+        })
+
+    return {
+        "as_of": latest_timestamp,
+        "source": "Yahoo Finance month-specific futures history",
+        "contracts_requested": contracts,
+        "metals": metals,
+    }
 
 
 def calculate_monetary_hedge_strength(
@@ -617,6 +769,15 @@ def get_cb_holdings():
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/futures-curve")
+def get_futures_curve(contracts: int = Query(4, ge=3, le=6)):
+    """Get nearby month-specific precious-metals futures curves."""
+    try:
+        return get_precious_metals_futures_curve(contracts=contracts)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/supply")
