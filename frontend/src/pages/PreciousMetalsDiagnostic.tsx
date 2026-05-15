@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useApi } from "../hooks/useApi";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor } from "../theme/metricColors";
@@ -1172,6 +1172,7 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
 
 function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveResponse | null }) {
   const [selectedMetal, setSelectedMetal] = useState("AU");
+  const [curveView, setCurveView] = useState<"spread" | "log">("spread");
   const metals = futuresCurve?.metals ?? [];
   const activeCurve = metals.find((item) => item.metal === selectedMetal) ?? metals[0] ?? null;
   const activeColor = activeCurve ? getMetalColor(activeCurve.metal) : getFamilyColor("metals");
@@ -1188,12 +1189,27 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
         ? `Deferred ${activeCurve.label.toLowerCase()} is pricing ${Math.abs(curveBps).toFixed(0)} bps above the front month.`
         : `${activeCurve.label} is trading on a mostly flat nearby curve.`
     : "Nearby contract quotes are unavailable.";
+  const frontPrice = activeCurve?.contracts[0]?.price ?? null;
   const chartData = activeCurve?.contracts.map((contract) => ({
     contract: contract.contract_label,
     price: contract.price,
+    logPrice: contract.price > 0 ? contract.price : null,
+    spreadPct: isNumber(frontPrice) && frontPrice > 0
+      ? ((contract.price / frontPrice) - 1) * 100
+      : null,
     change_pct: contract.change_pct,
     volume: contract.volume,
   })) ?? [];
+  const positivePrices = chartData
+    .map((point) => point.price)
+    .filter((value): value is number => isNumber(value) && value > 0);
+  const minPrice = positivePrices.length > 0 ? Math.min(...positivePrices) : undefined;
+  const maxPrice = positivePrices.length > 0 ? Math.max(...positivePrices) : undefined;
+  const chartMetric = curveView === "log" ? "logPrice" : "spreadPct";
+  const chartTitle = curveView === "log" ? "Log price curve" : "Curve spread vs front month";
+  const chartSubtitle = curveView === "log"
+    ? "Log scale keeps higher-priced contracts readable while preserving the curve slope."
+    : "Front contract rebased to 0% so contango and backwardation stand out immediately.";
 
   return (
     <div className="primary-card p-4 md:p-6">
@@ -1225,6 +1241,29 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
             })}
           </div>
 
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <div className="text-sm font-semibold text-white">{chartTitle}</div>
+              <div className="text-xs text-stealth-400 mt-1">{chartSubtitle}</div>
+            </div>
+            <div className="inline-flex rounded-full border border-stealth-700 bg-stealth-950/80 p-1">
+              <button
+                type="button"
+                onClick={() => setCurveView("spread")}
+                className={`rounded-full px-3 py-1 text-xs transition ${curveView === "spread" ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-white"}`}
+              >
+                Spread %
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurveView("log")}
+                className={`rounded-full px-3 py-1 text-xs transition ${curveView === "log" ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-white"}`}
+              >
+                Log Price
+              </button>
+            </div>
+          </div>
+
           {activeCurve && (
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.9fr)] gap-4">
               <div className="bg-stealth-900/55 rounded-xl border border-stealth-800 p-3">
@@ -1252,19 +1291,23 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
                     <YAxis
                       stroke={CHART_NEUTRAL.axis}
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 11 }}
-                      tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
+                      scale={curveView === "log" ? "log" : "auto"}
+                      domain={curveView === "log" && minPrice && maxPrice ? [minPrice * 0.998, maxPrice * 1.002] : ["auto", "auto"]}
+                      tickFormatter={(value) => curveView === "log" ? `$${Number(value).toFixed(0)}` : `${Number(value).toFixed(2)}%`}
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: "4px" }}
                       formatter={(value: number, key: string) => {
                         if (key === "change_pct") return [`${value.toFixed(2)}%`, "1D change"];
                         if (key === "volume") return [value?.toLocaleString?.() ?? "n/a", "Volume"];
+                        if (key === "spreadPct") return [`${value.toFixed(2)}%`, "Vs front month"];
                         return [`$${value.toFixed(2)}`, "Price"];
                       }}
                     />
+                    {curveView === "spread" && <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeDasharray="4 4" />}
                     <Line
                       type="monotone"
-                      dataKey="price"
+                      dataKey={chartMetric}
                       stroke={activeColor}
                       strokeWidth={2.5}
                       dot={{ r: 3, fill: activeColor, strokeWidth: 0 }}
