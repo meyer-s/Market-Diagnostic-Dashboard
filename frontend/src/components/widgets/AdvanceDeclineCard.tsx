@@ -198,7 +198,7 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
         <div className="h-40 mb-3">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <ComposedChart data={history} margin={CHART_MARGIN}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
               <XAxis
                 dataKey="dateLabel"
                 minTickGap={24}
@@ -217,10 +217,10 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
               <YAxis yAxisId="rate" orientation="right" hide domain={["dataMin - 2", "dataMax + 2"]} />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#0f172a",
-                  border: "1px solid #334155",
+                  backgroundColor: "var(--chart-tooltip-bg)",
+                  border: "1px solid var(--chart-tooltip-border)",
                   borderRadius: 8,
-                  color: "#cbd5e1",
+                  color: "var(--chart-tooltip-label)",
                 }}
                 formatter={(value: number, name: string) => {
                   if (name === "A/D pace") return [Number(value).toFixed(0), name];
@@ -288,12 +288,12 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-stealth-700/70 pt-3">
-        <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2">
+        <div className="stat-card">
           <div className="text-[10px] uppercase text-stealth-500">Participation</div>
           <div className="mt-1 text-base font-semibold text-stealth-100">{bucket.participation_pct.toFixed(0)}%</div>
           <div className="text-[11px] text-stealth-500 mt-1">{bucket.universe_size} names tracked</div>
         </div>
-        <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2">
+        <div className="stat-card">
           <div className="text-[10px] uppercase text-stealth-500">All Exchange Composite</div>
           <div className="mt-1 flex items-center justify-between text-xs">
             <span className="text-green-300">A/D {composite.advancing_pct.toFixed(0)}%</span>

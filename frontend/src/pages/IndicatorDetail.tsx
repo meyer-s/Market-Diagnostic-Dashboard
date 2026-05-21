@@ -464,7 +464,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
   };
 
   if (!apiCode) {
-    return <div className="p-3 md:p-6 text-gray-200">No indicator code provided.</div>;
+    return <div className="page-shell text-stealth-200">No indicator code provided.</div>;
   }
 
   const displayName = isAnalystConfidence ? "Analyst Confidence" : meta?.name ?? apiCode;
@@ -508,13 +508,13 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
   const showGenericStabilityHistory = !indicatorsWithDedicatedFinalHistory.has(apiCode);
 
   const stateColor = {
-    GREEN: "text-green-400 bg-green-500/10 border-green-500/30",
-    YELLOW: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
-    RED: "text-red-400 bg-red-500/10 border-red-500/30",
+    GREEN: "state-badge state-badge-green",
+    YELLOW: "state-badge state-badge-yellow",
+    RED: "state-badge state-badge-red",
   };
 
   return (
-    <div className="p-3 md:p-6 text-gray-200 max-w-7xl mx-auto">
+    <div className="page-shell page-stack text-stealth-200">
       <h2 className="text-2xl sm:text-3xl font-bold mb-4 md:mb-6">
         {displayName}
       </h2>
@@ -613,27 +613,27 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             </p>
 
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-5">
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Alignment Score</div>
                 <div className={`text-2xl font-bold ${scoreColor}`}>{latest.alignment_score.toFixed(1)}</div>
                 <div className="text-[11px] text-stealth-500 mt-1">0-100 composite</div>
               </div>
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">System State</div>
                 <div className={`text-2xl font-bold ${latest.system_state === "GREEN" ? "text-green-400" : latest.system_state === "RED" ? "text-red-400" : "text-yellow-400"}`}>{latest.system_state}</div>
                 <div className="text-[11px] text-stealth-500 mt-1">Active regime</div>
               </div>
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Def vs Cyc Spread</div>
                 <div className={`text-2xl font-bold ${spreadColor}`}>{latest.spread > 0 ? "+" : ""}{latest.spread.toFixed(1)}</div>
                 <div className="text-[11px] text-stealth-500 mt-1">Positive = defensive lead</div>
               </div>
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Defensive Avg</div>
                 <div className="text-2xl font-bold text-blue-400">{latest.defensive_avg.toFixed(1)}</div>
                 <div className="text-[11px] text-stealth-500 mt-1">XLU, XLP, XLV</div>
               </div>
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Cyclical Avg</div>
                 <div className="text-2xl font-bold text-orange-400">{latest.cyclical_avg.toFixed(1)}</div>
                 <div className="text-[11px] text-stealth-500 mt-1">XLE, XLF, XLK, XLY</div>
@@ -641,7 +641,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Leading Defensive Sectors</div>
                 <div className="space-y-2">
                   {latest.top_defensive.map((leader) => (
@@ -652,7 +652,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   ))}
                 </div>
               </div>
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Leading Cyclical Sectors</div>
                 <div className="space-y-2">
                   {latest.top_cyclical.map((leader) => (
@@ -666,7 +666,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-sm font-semibold text-stealth-200 mb-2">Defensive vs Cyclical Spread</div>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -692,7 +692,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-sm font-semibold text-stealth-200 mb-2">Alignment Score History</div>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -722,24 +722,24 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Regime Expectation</div>
                 <div className="text-sm text-stealth-300 leading-6">{expectedLeadership}</div>
                 <div className="text-[11px] text-stealth-500 mt-2">Current regime: {latest.system_state}</div>
               </div>
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Observed Leadership</div>
                 <div className="text-sm text-stealth-300 leading-6">{observedLeadership}</div>
                 <div className="text-[11px] text-stealth-500 mt-2">Spread compares defensive basket versus cyclical basket</div>
               </div>
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Live Scoring Snapshot</div>
                 <div className="text-sm font-mono text-stealth-300">{scoringFormula}</div>
                 <div className="text-[11px] text-stealth-500 mt-2">Current score {latest.alignment_score.toFixed(1)} lands in the {scoreBand}</div>
               </div>
             </div>
 
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 text-xs text-stealth-300">
+            <div className="data-card text-xs text-stealth-300">
               Breadth context: {latest.sector_breadth.improving} improving, {latest.sector_breadth.stable} stable, {latest.sector_breadth.deteriorating} deteriorating sectors across the forward horizon stack.
             </div>
           </div>
@@ -790,7 +790,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
 
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs text-stealth-400 mb-1">PCE (Spending)</div>
                   <div className="text-lg font-bold text-blue-400">
                     {latestPceEntry.pce.mom_pct.toFixed(3)}%
@@ -805,7 +805,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   )}
                 </div>
 
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs text-stealth-400 mb-1">PI (Income)</div>
                   <div className="text-lg font-bold text-green-400">
                     {latestPiEntry.pi.mom_pct.toFixed(3)}%
@@ -820,7 +820,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   )}
                 </div>
 
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs text-stealth-400 mb-1">CPI (Inflation)</div>
                   <div className="text-lg font-bold text-red-400">
                     {latestCpiEntry.cpi.mom_pct.toFixed(3)}%
@@ -835,7 +835,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   )}
                 </div>
 
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs text-stealth-400 mb-1">XLY / XLP (Wants vs Needs)</div>
                   <div className={`text-lg font-bold ${ratio !== null && ratio > 1 ? "text-emerald-400" : "text-orange-400"}`}>
                     {ratio !== null ? ratio.toFixed(3) : "—"}
@@ -1011,7 +1011,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
 
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">Credit Spreads</div>
               <div className="text-lg font-bold text-red-400">
                 {latest.credit_spread_stress.stability_score.toFixed(1)}
@@ -1026,7 +1026,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               <div className="text-[11px] text-stealth-500 mt-2">Widening spreads reduce stability.</div>
             </div>
             
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">Yield Curves</div>
               <div className="text-lg font-bold text-yellow-400">
                 {latest.yield_curve_stress.stability_score.toFixed(1)}
@@ -1044,7 +1044,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               <div className="text-[11px] text-stealth-500 mt-2">Flatter/inverted curves signal stress.</div>
             </div>
             
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">Rates Momentum</div>
               <div className="text-lg font-bold text-orange-400">
                 {latest.rates_momentum_stress.stability_score.toFixed(1)}
@@ -1059,7 +1059,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               <div className="text-[11px] text-stealth-500 mt-2">Sharp rate spikes reduce stability.</div>
             </div>
             
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">Treasury Vol</div>
               <div className="text-lg font-bold text-purple-400">
                 {latest.treasury_volatility_stress.stability_score.toFixed(1)}
@@ -1200,7 +1200,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   data={breadthHealthComponents.history}
                   margin={CHART_MARGIN}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
                   <XAxis
                     dataKey="date"
                     tick={{ fill: "#94a3b8", fontSize: 10 }}
@@ -1230,10 +1230,10 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#0f172a",
-                      border: "1px solid #334155",
+                      backgroundColor: "var(--chart-tooltip-bg)",
+                      border: "1px solid var(--chart-tooltip-border)",
                       borderRadius: 8,
-                      color: "#cbd5e1",
+                      color: "var(--chart-tooltip-label)",
                       fontSize: 12,
                     }}
                     formatter={(value: number, name: string) => {
@@ -1295,28 +1295,28 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             const iwmDelta = latest.iwm_spy_norm - first.iwm_spy_norm;
             return (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-3">
+                <div className="stat-card p-3">
                   <div className="text-[10px] uppercase text-stealth-500 mb-1">RSP/SPY (90d Δ)</div>
                   <div className={`text-base font-semibold ${rspDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
                     {rspDelta >= 0 ? "+" : ""}{rspDelta.toFixed(1)}
                   </div>
                   <div className="text-[10px] text-stealth-500 mt-0.5">Equal-wt vs cap-wt</div>
                 </div>
-                <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-3">
+                <div className="stat-card p-3">
                   <div className="text-[10px] uppercase text-stealth-500 mb-1">IWM/SPY (90d Δ)</div>
                   <div className={`text-base font-semibold ${iwmDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
                     {iwmDelta >= 0 ? "+" : ""}{iwmDelta.toFixed(1)}
                   </div>
                   <div className="text-[10px] text-stealth-500 mt-0.5">Small-cap breadth</div>
                 </div>
-                <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-3">
+                <div className="stat-card p-3">
                   <div className="text-[10px] uppercase text-stealth-500 mb-1">Sectors &gt; 20d MA</div>
                   <div className={`text-base font-semibold ${latest.sectors_above_ma20_pct >= 55 ? "text-green-300" : latest.sectors_above_ma20_pct >= 36 ? "text-yellow-300" : "text-red-300"}`}>
                     {latest.sectors_above_ma20_pct.toFixed(0)}%
                   </div>
                   <div className="text-[10px] text-stealth-500 mt-0.5">of 11 SPDR sectors</div>
                 </div>
-                <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-3">
+                <div className="stat-card p-3">
                   <div className="text-[10px] uppercase text-stealth-500 mb-1">Positive 20d Return</div>
                   <div className={`text-base font-semibold ${latest.sectors_positive_20d_pct >= 55 ? "text-green-300" : latest.sectors_positive_20d_pct >= 36 ? "text-yellow-300" : "text-red-300"}`}>
                     {latest.sectors_positive_20d_pct.toFixed(0)}%
@@ -1369,7 +1369,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           
           {/* Latest Component Values */}
           <div className="grid grid-cols-1 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">M2 Money Supply</div>
               <div className="text-lg font-bold text-blue-400">
                 {liquidityComponents[liquidityComponents.length - 1].m2_money_supply.yoy_pct.toFixed(2)}%
@@ -1382,7 +1382,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               </div>
             </div>
             
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">Fed Balance Sheet</div>
               <div className="text-lg font-bold text-green-400">
                 ${(liquidityComponents[liquidityComponents.length - 1].fed_balance_sheet.delta / 1000).toFixed(1)}B
@@ -1395,7 +1395,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               </div>
             </div>
             
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">Reverse Repo (RRP)</div>
               <div className="text-lg font-bold text-purple-400">
                 ${(liquidityComponents[liquidityComponents.length - 1].reverse_repo.value / 1000).toFixed(1)}B
@@ -1488,7 +1488,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           
           {/* Latest Component Values */}
           <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">VIX (Equity Vol)</div>
               <div className="text-lg font-bold text-blue-400">
                 {analystAnxietyComponents[analystAnxietyComponents.length - 1].vix.value.toFixed(2)}
@@ -1501,7 +1501,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               </div>
             </div>
             
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">HY OAS (Credit)</div>
               <div className="text-lg font-bold text-red-400">
                 {analystAnxietyComponents[analystAnxietyComponents.length - 1].hy_oas.value.toFixed(0)} bps
@@ -1515,7 +1515,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             </div>
             
             {analystAnxietyComponents[analystAnxietyComponents.length - 1].move && (
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">MOVE (Rates Vol)</div>
                 <div className="text-lg font-bold text-yellow-400">
                   {analystAnxietyComponents[analystAnxietyComponents.length - 1].move!.value.toFixed(2)}
@@ -1530,7 +1530,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             )}
             
             {analystAnxietyComponents[analystAnxietyComponents.length - 1].erp_proxy && (
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">ERP Proxy (BBB-10Y)</div>
                 <div className="text-lg font-bold text-purple-400">
                   {analystAnxietyComponents[analystAnxietyComponents.length - 1].erp_proxy!.spread.toFixed(2)}%
@@ -1741,7 +1741,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           
           {/* Latest Component Values */}
           <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+            <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">Consumer Confidence</div>
               <div className="text-lg font-bold" style={{ color: getFamilyColor("sentiment") }}>
                 {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].michigan_sentiment.value.toFixed(1)}
@@ -1755,7 +1755,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             </div>
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism && (
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">NFIB Business Confidence</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("growth", "muted") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism!.value.toFixed(1)}
@@ -1770,7 +1770,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             )}
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders && (
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Regional New Orders (NY/TX/PHI)</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("growth") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders!.value.toFixed(1)}
@@ -1785,7 +1785,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             )}
             
             {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy && (
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">CapEx Orders (Billions)</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("growth", "muted") }}>
                   ${(sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy!.value / 1000).toFixed(1)}B
@@ -1801,7 +1801,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           </div>
 
           {/* Decoupling Insight (Business vs Consumer Confidence) */}
-          <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-6">
+          <div className="data-card mb-6">
             <h4 className="text-sm font-semibold mb-2 text-stealth-200">Decoupling Insight: Business vs Consumer</h4>
             {(() => {
               const today = new Date();
@@ -2152,9 +2152,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           
           <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4">
             <div className="text-sm text-stealth-400 mb-1">Current State</div>
-            <div className={`inline-block px-3 py-1 rounded-full border font-semibold ${
-              meta.latest.state ? stateColor[meta.latest.state] : ""
-            }`}>
+            <div className={meta.latest.state ? `${stateColor[meta.latest.state]}` : ""}>
               {meta.latest.state}
             </div>
             <div className="text-xs text-stealth-400 mt-2">
@@ -2524,7 +2522,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               </p>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs font-semibold text-stealth-200 mb-2">Input Baskets</div>
                   <div className="text-xs font-mono text-stealth-300 space-y-1">
                     <div>Defensive = XLU + XLP + XLV</div>
@@ -2532,19 +2530,19 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     <div>spread = avg(defensive) - avg(cyclical)</div>
                   </div>
                 </div>
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs font-semibold text-stealth-200 mb-2">Current Scoring Pass</div>
                   <div className="text-xs font-mono text-stealth-300 leading-6">{scoringFormula}</div>
                   <div className="text-[11px] text-stealth-500 mt-2">Active regime: {latest.system_state}</div>
                 </div>
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs font-semibold text-stealth-200 mb-2">Interpretation</div>
                   <div className="text-sm text-stealth-300 leading-6">{interpretation}</div>
                   <div className="text-[11px] text-stealth-500 mt-2">Latest snapshot: {formatDateTime(sectorDivergenceComponents.updated_at)}</div>
                 </div>
               </div>
 
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-4">
+              <div className="data-card mb-4">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Scoring Rules</div>
                 <div className="text-xs font-mono text-stealth-300 space-y-1">
                   <div>RED regime score = 50 + spread</div>
@@ -2555,15 +2553,15 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs font-semibold text-green-400 mb-1">GREEN: 70-100</div>
                   <div className="text-xs text-stealth-300">Leadership is strongly aligned with the inferred regime.</div>
                 </div>
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs font-semibold text-yellow-400 mb-1">YELLOW: 40-69</div>
                   <div className="text-xs text-stealth-300">Leadership is mixed, transitional, or only partially confirming the regime.</div>
                 </div>
-                <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                <div className="data-card">
                   <div className="text-xs font-semibold text-red-400 mb-1">RED: 0-39</div>
                   <div className="text-xs text-stealth-300">Leadership is materially diverging from the regime classification and may warn of transition.</div>
                 </div>
@@ -2592,7 +2590,7 @@ const MONTHLY_CURVE_STYLES = [
   { color: "#fbbf24", opacity: 0.46, width: 1.3 },
   { color: "#fbbf24", opacity: 0.32, width: 1.1 },
 ];
-const YIELD_CURVE_MA_COLOR = "#cbd5e1";
+const YIELD_CURVE_MA_COLOR = "var(--chart-tooltip-label)";
 
 interface YieldCurveTooltipItem {
   dataKey?: string | number;
@@ -3092,7 +3090,7 @@ function MuniStressPanel({
       </div>
 
       {data.relationship_signal && data.relationship_signal.state !== "GREEN" && (
-        <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-4">
+        <div className="data-card mb-4">
           <div className="flex items-center justify-between">
             <div className="text-xs text-stealth-400">{data.relationship_signal.name}</div>
             <div
@@ -3114,7 +3112,7 @@ function MuniStressPanel({
       )}
 
       {data.composite && (
-        <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-4">
+        <div className="data-card mb-4">
           <div className="flex items-center justify-between">
             <div className="text-xs text-stealth-400">Composite Stability</div>
             <div className="text-xs text-stealth-500">
@@ -3152,7 +3150,7 @@ function MuniStressPanel({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-6">
         {orderedSeries.map((series) => (
-          <div key={series.key} className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+          <div key={series.key} className="data-card">
             <div className="flex items-center justify-between">
               <div className="text-xs text-stealth-400 mb-1">{series.label}</div>
               <div className="flex items-center gap-2">
@@ -3195,7 +3193,7 @@ function MuniStressPanel({
         </div>
       )}
 
-      <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 mb-6 text-xs text-stealth-400">
+      <div className="data-card mb-6 text-xs text-stealth-400">
         <div className="text-stealth-200 font-semibold mb-2">Methodology (summary)</div>
         <div>
           Components &amp; default weights: Long-end stress proxy {(muniPublicSectorWeights.MUNI_LONG_SPREAD * 100).toFixed(0)}% ·
@@ -3250,7 +3248,7 @@ function MuniStressPanel({
       </div>
 
       {data.curve?.status === "unavailable" ? (
-        <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 text-xs text-stealth-400">
+        <div className="data-card text-xs text-stealth-400">
           Yield curve data unavailable: {data.curve.reason}
         </div>
       ) : data.curve?.history && data.curve.history.length > 0 ? (

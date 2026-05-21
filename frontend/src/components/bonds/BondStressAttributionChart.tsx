@@ -48,7 +48,7 @@ export default function BondStressAttributionChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={chartData} margin={CHART_MARGIN}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
         <XAxis
           dataKey="label"
           minTickGap={24}
@@ -64,10 +64,10 @@ export default function BondStressAttributionChart({
         />
         <Tooltip
           contentStyle={{
-            backgroundColor: "#0f172a",
-            border: "1px solid #334155",
+            backgroundColor: "var(--chart-tooltip-bg)",
+            border: "1px solid var(--chart-tooltip-border)",
             borderRadius: 8,
-            color: "#cbd5e1",
+            color: "var(--chart-tooltip-label)",
           }}
           formatter={(value, name) => [Number(value).toFixed(2), String(name)]}
         />

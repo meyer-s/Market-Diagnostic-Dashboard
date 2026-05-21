@@ -554,7 +554,7 @@ export default function SystemBreakdown() {
           <div className="collapsible-panel-inner">
             <div className="collapsible-content">
             <div className="space-y-4">
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4 relative">
+              <div className="data-card relative">
                 <div className="group absolute top-4 right-4">
                   <svg className="w-4 h-4 text-stealth-400 hover:text-stealth-200 cursor-help" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
@@ -574,7 +574,7 @@ export default function SystemBreakdown() {
                 </div>
               </div>
               
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <h4 className="text-sm font-semibold text-stealth-200 mb-2">Example Calculation</h4>
                 <div className="text-xs font-mono text-stealth-300 space-y-1">
                   {weightedExampleRows.length > 0 ? (
@@ -604,7 +604,7 @@ export default function SystemBreakdown() {
                 </div>
               </div>
               
-              <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+              <div className="data-card">
                 <h4 className="text-sm font-semibold text-stealth-200 mb-2">Data Timing & Lag Note</h4>
                 <div className="text-xs text-stealth-300 leading-relaxed">
                   Several inputs (e.g., CPI, sentiment surveys) update with known reporting lags and revisions. 
@@ -678,7 +678,7 @@ export default function SystemBreakdown() {
                 };
                 
                 return (
-                  <div key={meta.code} className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
+                  <div key={meta.code} className="data-card">
                     <div 
                       className={`flex items-center justify-between mb-2 ${isComposite ? 'cursor-pointer hover:bg-stealth-800/50 -m-4 p-4 rounded-t' : ''}`}
                       onClick={isComposite ? () => toggleSection(`indicator_${meta.code}`) : undefined}

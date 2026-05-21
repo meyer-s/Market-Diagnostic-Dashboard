@@ -177,7 +177,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
           <div className="h-28 mb-3 border-b border-stealth-700/70 pb-3">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <ComposedChart data={yieldChartData} margin={CHART_MARGIN}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
                 <XAxis
                   dataKey="maturity"
                   tick={{ fill: "#94a3b8", fontSize: 10 }}
@@ -187,10 +187,10 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
                 <YAxis hide domain={["dataMin - 0.2", "dataMax + 0.2"]} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#0f172a",
-                    border: "1px solid #334155",
+                    backgroundColor: "var(--chart-tooltip-bg)",
+                    border: "1px solid var(--chart-tooltip-border)",
                     borderRadius: 8,
-                    color: "#cbd5e1",
+                    color: "var(--chart-tooltip-label)",
                   }}
                   formatter={(value) =>
                     value === null ? "--" : `${Number(value).toFixed(2)}%`
@@ -198,7 +198,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
                 />
                 <Line type="monotone" dataKey="prior_3" stroke="#64748b" strokeOpacity={0.28} strokeWidth={1.2} dot={false} name="Prior 3" />
                 <Line type="monotone" dataKey="prior_2" stroke="#94a3b8" strokeOpacity={0.36} strokeWidth={1.3} dot={false} name="Prior 2" />
-                <Line type="monotone" dataKey="prior_1" stroke="#cbd5e1" strokeOpacity={0.45} strokeWidth={1.4} dot={false} name="Prior 1" />
+                <Line type="monotone" dataKey="prior_1" stroke="var(--chart-tooltip-label)" strokeOpacity={0.45} strokeWidth={1.4} dot={false} name="Prior 1" />
                 <Line type="monotone" dataKey="latest" stroke="#22d3ee" strokeWidth={2.2} dot={false} name="Latest" />
               </ComposedChart>
             </ResponsiveContainer>
@@ -217,15 +217,15 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
         </div>
 
         <div className="grid grid-cols-3 gap-2 border-t border-stealth-700/70 pt-3 text-xs">
-          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2">
+          <div className="stat-card">
             <div className="text-stealth-500">HY OAS</div>
             <div className="mt-1 font-semibold text-stealth-100">{hy.toFixed(2)}</div>
           </div>
-          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2">
+          <div className="stat-card">
             <div className="text-stealth-500">IG OAS</div>
             <div className="mt-1 font-semibold text-stealth-100">{ig.toFixed(2)}</div>
           </div>
-          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2">
+          <div className="stat-card">
             <div className="text-stealth-500">HY-IG Gap</div>
             <div className="mt-1 font-semibold text-stealth-100">{spreadGap.toFixed(2)}</div>
           </div>

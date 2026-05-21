@@ -118,8 +118,8 @@ export default function YieldCurveCard() {
               <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} domain={["dataMin - 0.25", "dataMax + 0.25"]} />
               <Tooltip
                 formatter={(value) => (value === null ? "--" : `${Number(value).toFixed(2)}%`)}
-                contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
-                labelStyle={{ color: "#cbd5e1" }}
+                contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 8 }}
+                labelStyle={{ color: "var(--chart-tooltip-label)" }}
               />
               <Line type="monotone" dataKey="previous" stroke="#64748b" strokeWidth={2} dot={false} name="Prior" />
               <Line type="monotone" dataKey="latest" stroke="#22d3ee" strokeWidth={2.5} dot={false} name="Latest" />
@@ -128,15 +128,15 @@ export default function YieldCurveCard() {
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-2 border-t border-stealth-700/70 pt-3 text-xs">
-          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2">
+          <div className="stat-card">
             <div className="text-stealth-500">2Y</div>
             <div className="mt-1 font-semibold text-stealth-100">{y2 === null ? "--" : `${y2.toFixed(2)}%`}</div>
           </div>
-          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2">
+          <div className="stat-card">
             <div className="text-stealth-500">10Y</div>
             <div className="mt-1 font-semibold text-stealth-100">{y10 === null ? "--" : `${y10.toFixed(2)}%`}</div>
           </div>
-          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2">
+          <div className="stat-card">
             <div className="text-stealth-500">30Y</div>
             <div className="mt-1 font-semibold text-stealth-100">{y30 === null ? "--" : `${y30.toFixed(2)}%`}</div>
           </div>

@@ -40,6 +40,16 @@ body {
   min-height: 0;
 }
 
+/* Recharts tooltip theme — referenced via var() in inline Recharts contentStyle/labelStyle */
+:root {
+  --chart-tooltip-bg: #0f172a;
+  --chart-tooltip-border: #334155;
+  --chart-tooltip-label: #cbd5e1;
+  --chart-axis-line: #475569;
+  --chart-axis-tick: #94a3b8;
+  --chart-grid: #2f3b52;
+}
+
 .weather-research-chart .recharts-brush > rect:first-child {
   rx: 17px;
   ry: 17px;
@@ -249,6 +259,54 @@ body {
 
   .collapsible-icon-open svg {
     transform: rotate(180deg);
+  }
+
+  /* ── Data cells & stat tiles ── */
+
+  /* Generic metric cell: used extensively in IndicatorDetail and SystemBreakdown */
+  .data-card {
+    @apply rounded border border-stealth-700 bg-stealth-900/60 p-4;
+  }
+
+  /* Compact stat tile (e.g. YieldCurveCard maturity cells) */
+  .stat-card {
+    @apply rounded-md border border-stealth-700/70 bg-stealth-900/40 p-2;
+  }
+
+  /* ── State badges ── */
+
+  .state-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .state-badge-green {
+    @apply border-green-500/30 bg-green-500/10 text-green-400;
+  }
+
+  .state-badge-yellow {
+    @apply border-yellow-500/30 bg-yellow-500/10 text-yellow-400;
+  }
+
+  .state-badge-red {
+    @apply border-red-500/30 bg-red-500/10 text-red-400;
+  }
+
+  /* ── Direction cards (Dashboard trend direction) ── */
+
+  .direction-card {
+    @apply rounded border px-3 py-2 text-xs font-medium;
+  }
+
+  .direction-card-up {
+    @apply border-green-400/40 bg-green-500/15 text-green-300;
+  }
+
+  .direction-card-down {
+    @apply border-red-400/40 bg-red-500/15 text-red-300;
+  }
+
+  .direction-card-flat {
+    @apply border-yellow-400/40 bg-yellow-500/15 text-yellow-300;
   }
 }
 
