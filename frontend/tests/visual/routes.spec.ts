@@ -3,6 +3,10 @@ import { expect, test } from "@playwright/test";
 /**
  * Network/fetch errors are expected when running against a static preview
  * with no backend. Only fail on actual JavaScript runtime errors.
+ *
+ * The browser auto-generates "Failed to load resource" console errors when
+ * fetch/XHR requests return non-200 status codes (e.g. Vite proxy 500 when
+ * the backend hostname is unreachable). These are expected and must be filtered.
  */
 const EXPECTED_NETWORK_ERROR_PATTERNS = [
   /Failed to fetch/,
@@ -10,9 +14,11 @@ const EXPECTED_NETWORK_ERROR_PATTERNS = [
   /net::ERR_/,
   /ERR_CONNECTION_REFUSED/,
   /ERR_EMPTY_RESPONSE/,
-  /Fetch error for/,   // useApi.ts console.error format
-  /Failed to fetch sector data/,   // SectorDivergenceWidget
-  /Failed to fetch Dow Theory/,    // DowTheoryWidget
+  /Failed to load resource/,         // browser built-in for any failed HTTP request
+  /Fetch error for/,                 // useApi.ts console.error format
+  /Failed to fetch sector data/,     // SectorDivergenceWidget
+  /Failed to fetch Dow Theory/,      // DowTheoryWidget
+  /getaddrinfo ENOTFOUND/,           // node-level DNS errors surfaced via proxy
 ];
 
 function isExpectedNetworkError(message: string): boolean {
