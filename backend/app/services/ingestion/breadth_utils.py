@@ -3,7 +3,7 @@ from __future__ import annotations
 import bisect
 from typing import Dict, List, Optional, Tuple
 
-from app.services.analytics_stub import normalize_series
+from app.services.analytics import normalize_series
 
 SECTOR_TICKERS = ["XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLV", "XLY", "XLU"]
 

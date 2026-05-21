@@ -13,7 +13,10 @@ Supports:
 import logging
 
 from datetime import datetime, timedelta
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.core.db import SessionLocal
 from app.models.indicator import Indicator
@@ -30,19 +33,87 @@ from app.services.ingestion.breadth_utils import (
 from app.services.ingestion.sentiment_sources import fetch_sentiment_component_series
 from app.services.sector_divergence import compute_alignment_score, split_defensive_cyclical_scores
 from app.services.system_overview_inputs import get_page_input_history, get_page_input_statuses, is_page_input
+from app.services.bond_market_stability import build_bond_market_stability_history
+from app.services.indicator_specs import iter_indicator_specs
 from app.utils.system_scoring import compute_weighted_composite
 
 logger = logging.getLogger(__name__)
 
 # Agent C — clean stubs (will be replaced in Ticket C1)
-from app.services.analytics_stub import (
+from app.services.analytics import (
     classify_series,
     normalize_series,
-    compute_score,
-    compute_state,
     score_series,
     direction_adjusted
 )
+
+
+def _normalize_observation_timestamp(timestamp: datetime) -> datetime:
+    return timestamp.replace(microsecond=0)
+
+
+def _upsert_indicator_value(
+    db: Session,
+    *,
+    indicator_id: int,
+    timestamp: datetime,
+    raw_value: float,
+    normalized_value: float,
+    score: float,
+    state: str | None,
+) -> None:
+    normalized_timestamp = _normalize_observation_timestamp(timestamp)
+    values = {
+        "indicator_id": indicator_id,
+        "timestamp": normalized_timestamp,
+        "raw_value": raw_value,
+        "normalized_value": normalized_value,
+        "score": score,
+        "state": state,
+    }
+    table = IndicatorValue.__table__
+    dialect_name = db.bind.dialect.name if db.bind is not None else ""
+
+    if dialect_name == "sqlite":
+        statement = sqlite_insert(table).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=["indicator_id", "timestamp"],
+            set_={
+                "raw_value": values["raw_value"],
+                "normalized_value": values["normalized_value"],
+                "score": values["score"],
+                "state": values["state"],
+            },
+        )
+        db.execute(statement)
+        return
+    if dialect_name == "postgresql":
+        statement = postgresql_insert(table).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=["indicator_id", "timestamp"],
+            set_={
+                "raw_value": values["raw_value"],
+                "normalized_value": values["normalized_value"],
+                "score": values["score"],
+                "state": values["state"],
+            },
+        )
+        db.execute(statement)
+        return
+
+    existing = db.execute(
+        select(IndicatorValue).where(
+            IndicatorValue.indicator_id == indicator_id,
+            IndicatorValue.timestamp == normalized_timestamp,
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(IndicatorValue(**values))
+        return
+    existing.raw_value = raw_value
+    existing.normalized_value = normalized_value
+    existing.score = score
+    existing.state = state
 
 
 class ETLRunner:
@@ -79,11 +150,6 @@ class ETLRunner:
         if is_page_input(code):
             db.close()
             return await self._ingest_page_input(code, backfill_days)
-
-        # Temporarily disabled: heavy FRED fetching slows down the ETL run
-        if code == "BOND_MARKET_STABILITY":
-            db.close()
-            return {"code": code, "status": "skipped", "reason": "temporarily disabled"}
 
         # Pull enough data for normalization + backfill
         lookback_days = max(800, backfill_days + ind.lookback_days_for_z)
@@ -190,6 +256,8 @@ class ETLRunner:
         # Extract the raw numeric list for normalization/scoring
         raw_series = [x["value"] for x in clean_values]
 
+        precomputed_scores = None
+
         # --- Check if this indicator should use rate-of-change ---
         # For derived indicators, calculate the derived metric
         if code == "CONSUMER_HEALTH":
@@ -252,197 +320,16 @@ class ETLRunner:
             else:
                 normalized_series = macro_norm
         elif code == "BOND_MARKET_STABILITY":
-            import numpy as np
-            
-            # Fetch all sub-indicators
-            # A. Credit Spread Stress (40%)
-            hy_oas_series = await self.fred.fetch_series("BAMLH0A0HYM2", start_date=start_date)  # HY OAS
-            ig_oas_series = await self.fred.fetch_series("BAMLC0A0CM", start_date=start_date)    # IG OAS
-            
-            # B. Yield Curve Health (20%)
-            dgs10_series = await self.fred.fetch_series("DGS10", start_date=start_date)
-            dgs2_series = await self.fred.fetch_series("DGS2", start_date=start_date)
-            dgs3mo_series = await self.fred.fetch_series("DGS3MO", start_date=start_date)
-            dgs30_series = await self.fred.fetch_series("DGS30", start_date=start_date)
-            dgs5_series = await self.fred.fetch_series("DGS5", start_date=start_date)
-            
-            # C. Rates Momentum - already have DGS2 and DGS10
-            
-            # D. Treasury Volatility - Calculate from 10Y yield changes (better data availability than MOVE)
-            # Instead of MOVE Index, we'll calculate realized volatility from DGS10
-            # This will be computed later from dgs10 data
-            
-            # E. Term Premium (optional - may not be available)
-            term_premium_series = []
-            try:
-                term_premium_series = await self.fred.fetch_series("ACMTP10", start_date=start_date)
-            except Exception:
-                print("Warning: Term Premium (ACMTP10) not available, using 4-component model")
-            
-            # Align all series by date
-            def series_to_dict(s):
-                return {x["date"]: x["value"] for x in s if x["value"] is not None}
-            
-            hy_oas = series_to_dict(hy_oas_series)
-            ig_oas = series_to_dict(ig_oas_series)
-            dgs10 = series_to_dict(dgs10_series)
-            dgs2 = series_to_dict(dgs2_series)
-            dgs3mo = series_to_dict(dgs3mo_series)
-            dgs30 = series_to_dict(dgs30_series)
-            dgs5 = series_to_dict(dgs5_series)
-            term_premium = series_to_dict(term_premium_series) if term_premium_series else {}
-            
-            # Find common dates (intersection of required data - no MOVE needed, we'll calculate volatility)
-            # Term premium is optional
-            required_dates = set(hy_oas.keys()) & set(ig_oas.keys()) & set(dgs10.keys()) & set(dgs2.keys()) & \
-                           set(dgs3mo.keys())
-            common_dates = sorted(required_dates)
-            
-            if len(common_dates) < 30:
+            bond_history = await build_bond_market_stability_history(start_date=start_date, fred_client=self.fred)
+            if len(bond_history) < 30:
                 db.close()
-                raise ValueError(f"Insufficient overlapping data for {code}: only {len(common_dates)} common dates")
-            
-            # Build series for each component
-            series = [{"date": date, "value": 0.0} for date in common_dates]
-            
-            # Extract aligned raw values
-            hy_oas_vals = np.array([hy_oas[d] for d in common_dates])
-            ig_oas_vals = np.array([ig_oas[d] for d in common_dates])
-            dgs10_vals = np.array([dgs10[d] for d in common_dates])
-            dgs2_vals = np.array([dgs2[d] for d in common_dates])
-            dgs3mo_vals = np.array([dgs3mo[d] for d in common_dates])
-            # Only extract dgs30/dgs5 if they have data for all required dates
-            dgs30_vals = np.array([dgs30[d] for d in common_dates]) if (dgs30 and all(d in dgs30 for d in common_dates)) else None
-            dgs5_vals = np.array([dgs5[d] for d in common_dates]) if (dgs5 and all(d in dgs5 for d in common_dates)) else None
-            
-            # Helper function to compute z-score and map to 0-100
-            def z_score_to_100(vals, invert=False):
-                """Convert to z-scores, then map to 0-100 scale. Higher = more stress."""
-                mean = np.mean(vals)
-                std = np.std(vals)
-                if std == 0:
-                    return np.full_like(vals, 50.0)
-                z_scores = (vals - mean) / std
-                if invert:
-                    z_scores = -z_scores
-                # Map z-score to 0-100: z=-2 → 0, z=0 → 50, z=2 → 100
-                scores = 50 + (z_scores * 25)
-                return np.clip(scores, 0, 100)
-            
-            # A. Credit Spread Stress (40%) - higher spreads = more stress
-            hy_stress = z_score_to_100(hy_oas_vals, invert=False)
-            ig_stress = z_score_to_100(ig_oas_vals, invert=False)
-            credit_stress = (hy_stress + ig_stress) / 2
-            
-            # B. Yield Curve Health (20%) - higher slope = healthier, invert for stress
-            curve_10y2y = dgs10_vals - dgs2_vals
-            curve_10y3m = dgs10_vals - dgs3mo_vals
-            
-            # Check if 30Y and 5Y data is available for all common dates
-            has_30y_5y = (len(dgs30) > 0 and len(dgs5) > 0 and 
-                         all(d in dgs30 for d in common_dates) and 
-                         all(d in dgs5 for d in common_dates))
-            
-            curve_scores = []
-            if has_30y_5y:
-                dgs30_vals = np.array([dgs30[d] for d in common_dates])
-                dgs5_vals = np.array([dgs5[d] for d in common_dates])
-                curve_30y5y = dgs30_vals - dgs5_vals
-                # Average all three curves
-                for i in range(len(common_dates)):
-                    curves = [curve_10y2y[i], curve_10y3m[i], curve_30y5y[i]]
-                    curve_scores.append(np.mean(curves))
-            else:
-                # Average just 10Y-2Y and 10Y-3M (most reliable)
-                for i in range(len(common_dates)):
-                    curves = [curve_10y2y[i], curve_10y3m[i]]
-                    curve_scores.append(np.mean(curves))
-            
-            curve_health = z_score_to_100(np.array(curve_scores), invert=True)  # Invert: steep curve = low stress
-            
-            # C. Rates Momentum (15%) - 3-month ROC, large upward spikes = stress
-            def compute_roc(vals, periods=63):  # ~3 months of trading days
-                roc = np.zeros_like(vals)
-                for i in range(periods, len(vals)):
-                    roc[i] = vals[i] - vals[i - periods]
-                return roc
-            
-            roc_2y = compute_roc(dgs2_vals)
-            roc_10y = compute_roc(dgs10_vals)
-            avg_roc = (roc_2y + roc_10y) / 2
-            rates_momentum_stress = z_score_to_100(avg_roc, invert=False)  # Large increases = stress
-            
-            # D. Treasury Volatility (15%) - Calculate realized volatility from 10Y yield changes
-            # Use 20-day rolling standard deviation of daily yield changes as volatility proxy
-            dgs10_changes = np.zeros_like(dgs10_vals)
-            for i in range(1, len(dgs10_vals)):
-                dgs10_changes[i] = abs(dgs10_vals[i] - dgs10_vals[i-1])
-            
-            # Calculate rolling volatility (20-period window)
-            rolling_vol = np.zeros_like(dgs10_changes)
-            window = 20
-            for i in range(window, len(dgs10_changes)):
-                rolling_vol[i] = np.std(dgs10_changes[i-window:i])
-            
-            # For initial values (before full window), use expanding window
-            for i in range(1, min(window, len(dgs10_changes))):
-                rolling_vol[i] = np.std(dgs10_changes[:i+1]) if i > 0 else 0
-            
-            treasury_volatility_stress = z_score_to_100(rolling_vol, invert=False)  # Higher volatility = stress
-            
-            # E. Term Premium (10%) - high term premium = stress (optional)
-            has_term_premium = len(term_premium) > 0 and all(d in term_premium for d in common_dates)
-            
-            # Compute weighted composite: lower = better (stable), higher = stress
-            # If term premium unavailable, redistribute weight proportionally
-            if has_term_premium:
-                term_premium_vals = np.array([term_premium[d] for d in common_dates])
-                term_premium_stress = z_score_to_100(term_premium_vals, invert=False)
-                weights = {
-                    'credit': 0.40,
-                    'curve': 0.20,
-                    'momentum': 0.15,
-                    'volatility': 0.15,
-                    'premium': 0.10
-                }
-                composite_stress = (
-                    credit_stress * weights['credit'] +
-                    curve_health * weights['curve'] +
-                    rates_momentum_stress * weights['momentum'] +
-                    treasury_volatility_stress * weights['volatility'] +
-                    term_premium_stress * weights['premium']
-                )
-            else:
-                # Without term premium: redistribute 10% across other components
-                weights = {
-                    'credit': 0.44,  # 40% + 4%
-                    'curve': 0.23,   # 20% + 3%
-                    'momentum': 0.17,  # 15% + 2%
-                    'volatility': 0.16     # 15% + 1%
-                }
-                composite_stress = (
-                    credit_stress * weights['credit'] +
-                    curve_health * weights['curve'] +
-                    rates_momentum_stress * weights['momentum'] +
-                    treasury_volatility_stress * weights['volatility']
-                )
-            
-            # Store composite stress score (0-100, where higher = more stress)
-            # direction=-1 in the indicator config will invert this during normalization
-            # so that high stress → low final score (RED) and low stress → high final score (GREEN)
-            
-            # Update series with actual dates and values
-            series = [{"date": common_dates[i], "value": composite_stress[i]} for i in range(len(common_dates))]
-            clean_values = series  # All values are valid
-            raw_series = composite_stress.tolist()
+                raise ValueError(f"Insufficient overlapping data for {code}: only {len(bond_history)} common dates")
 
-            # Composite stress is already on a 0-100 scale. Convert to z-space
-            # (inverse of map_z_to_score) to avoid double-normalization.
-            score_to_z = lambda score: (score / 100.0) * 4 - 2
-            normalized_series = direction_adjusted(
-                [score_to_z(val) for val in raw_series],
-                ind.direction,
-            )
+            series = [{"date": point["date"], "value": point["composite"]["stress_score"]} for point in bond_history]
+            clean_values = series
+            raw_series = [point["composite"]["stress_score"] for point in bond_history]
+            normalized_series = [point["composite"]["stability_score"] for point in bond_history]
+            precomputed_scores = normalized_series
         elif code == "LIQUIDITY_PROXY":
             import numpy as np
             
@@ -1124,7 +1011,7 @@ class ETLRunner:
                 lookback=ind.lookback_days_for_z,
             )
 
-        scores = score_series(normalized_series)
+        scores = precomputed_scores or score_series(normalized_series)
         states = classify_series(
             scores,
             ind.threshold_green_max,
@@ -1140,24 +1027,16 @@ class ETLRunner:
             for i in range(-num_points, 0):
                 date_str = clean_values[i]["date"]
                 timestamp = datetime.strptime(date_str, "%Y-%m-%d")
-                
-                # Check if this timestamp already exists
-                existing = db.query(IndicatorValue).filter(
-                    IndicatorValue.indicator_id == ind.id,
-                    IndicatorValue.timestamp == timestamp
-                ).first()
-                
-                if not existing:
-                    entry = IndicatorValue(
-                        indicator_id=ind.id,
-                        timestamp=timestamp,
-                        raw_value=float(raw_series[i]),
-                        normalized_value=float(normalized_series[i]),
-                        score=float(scores[i]),
-                        state=states[i],
-                    )
-                    db.add(entry)
-                    stored_count += 1
+                stored_count += 1
+                _upsert_indicator_value(
+                    db,
+                    indicator_id=ind.id,
+                    timestamp=timestamp,
+                    raw_value=float(raw_series[i]),
+                    normalized_value=float(normalized_series[i]),
+                    score=float(scores[i]),
+                    state=states[i],
+                )
             
             db.commit()
             db.close()
@@ -1180,31 +1059,20 @@ class ETLRunner:
             latest_date = clean_values[-1]["date"]
 
             latest_timestamp = datetime.strptime(latest_date, "%Y-%m-%d")
-            entry = db.query(IndicatorValue).filter(
-                IndicatorValue.indicator_id == ind.id,
-                IndicatorValue.timestamp == latest_timestamp,
-            ).first()
-
-            if entry is None:
-                entry = IndicatorValue(
-                    indicator_id=ind.id,
-                    timestamp=latest_timestamp,
-                    raw_value=float(latest_raw),
-                    normalized_value=float(latest_norm),
-                    score=float(latest_score),
-                    state=latest_state,
-                )
-                db.add(entry)
-            else:
-                entry.raw_value = float(latest_raw)
-                entry.normalized_value = float(latest_norm)
-                entry.score = float(latest_score)
-                entry.state = latest_state
+            _upsert_indicator_value(
+                db,
+                indicator_id=ind.id,
+                timestamp=latest_timestamp,
+                raw_value=float(latest_raw),
+                normalized_value=float(latest_norm),
+                score=float(latest_score),
+                state=latest_state,
+            )
 
             ind.last_raw_value = float(latest_raw)
             ind.last_score = float(latest_score)
             ind.last_state = latest_state
-            ind.last_updated = latest_timestamp
+            ind.last_updated = _normalize_observation_timestamp(latest_timestamp)
             db.commit()
             db.close()
             
@@ -1266,31 +1134,16 @@ class ETLRunner:
                     continue
 
                 timestamp = parse_timestamp(timestamp_value)
-                entry = (
-                    db.query(IndicatorValue)
-                    .filter(
-                        IndicatorValue.indicator_id == ind.id,
-                        IndicatorValue.timestamp == timestamp,
-                    )
-                    .first()
+                _upsert_indicator_value(
+                    db,
+                    indicator_id=ind.id,
+                    timestamp=timestamp,
+                    raw_value=float(raw_value),
+                    normalized_value=float(score_value),
+                    score=float(score_value),
+                    state=state_value,
                 )
-
-                if entry is None:
-                    entry = IndicatorValue(
-                        indicator_id=ind.id,
-                        timestamp=timestamp,
-                        raw_value=float(raw_value),
-                        normalized_value=float(score_value),
-                        score=float(score_value),
-                        state=state_value,
-                    )
-                    db.add(entry)
-                    stored_count += 1
-                else:
-                    entry.raw_value = float(raw_value)
-                    entry.normalized_value = float(score_value)
-                    entry.score = float(score_value)
-                    entry.state = state_value
+                stored_count += 1
 
                 if backfill_days > 0 and timestamp_value in history_timestamps:
                     backfilled_count += 1
@@ -1303,7 +1156,7 @@ class ETLRunner:
             ind.last_raw_value = latest_raw
             ind.last_score = latest_score
             ind.last_state = latest_state
-            ind.last_updated = latest_timestamp
+            ind.last_updated = _normalize_observation_timestamp(latest_timestamp)
 
             db.commit()
 
@@ -1436,14 +1289,17 @@ class ETLRunner:
             scores_by_code[indicator.code] = value.score
             weights_by_code[indicator.code] = indicator.weight or 0.0
 
-        composite, _ = compute_weighted_composite(scores_by_code, weights_by_code)
-        composite = composite if composite is not None else 50
-        if composite >= 70:
-            system_state = "GREEN"
-        elif composite >= 40:
-            system_state = "YELLOW"
-        else:
-            system_state = "RED"
+        specs = {spec.code: spec for spec in iter_indicator_specs()}
+        timestamps_by_code = {indicator_map[value.indicator_id].code: value.timestamp for value in latest if value.indicator_id in indicator_map}
+        composite_result = compute_weighted_composite(
+            scores_by_code,
+            weights_by_code,
+            timestamps_by_code=timestamps_by_code,
+            freshness_horizons_by_code={code: spec.freshness_horizon_days for code, spec in specs.items()},
+            core_codes=[code for code, spec in specs.items() if spec.is_core],
+        )
+        composite = composite_result["composite_score"] if composite_result["composite_score"] is not None else 50
+        system_state = composite_result["state"]
 
         entry = SystemStatus(
             timestamp=datetime.utcnow(),
@@ -1465,5 +1321,10 @@ class ETLRunner:
             "system_state": system_state,
             "composite_score": composite,
             "red_count": red_count,
-            "yellow_count": yellow_count
+            "yellow_count": yellow_count,
+            "confidence": composite_result["confidence"],
+            "coverage_ratio": composite_result["coverage_ratio"],
+            "core_coverage_ratio": composite_result["core_coverage_ratio"],
+            "missing_codes": composite_result["missing_codes"],
+            "stale_codes": composite_result["stale_codes"],
         }

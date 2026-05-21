@@ -4,11 +4,13 @@ from typing import Optional
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Market Stability Dashboard API"
     DATABASE_URL: str = "sqlite:///./market.db"
+    ADMIN_API_KEY: Optional[str] = None
     FRED_API_KEY: Optional[str] = None
     EIA_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     MARKET_DIAGNOSTIC_MODEL: Optional[str] = None
     CORS_ORIGINS: str = "*"  # Comma-separated origins or * for all
+    RUN_SCHEDULER: bool = False
     COMEX_INVENTORY_URL: Optional[str] = None
     COMEX_INVENTORY_PATH: Optional[str] = None
     COMEX_INVENTORY_GOLD_URL: Optional[str] = None

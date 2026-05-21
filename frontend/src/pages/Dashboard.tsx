@@ -6,7 +6,7 @@ import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
 import AASWidget from "../components/widgets/AASWidget";
 import MarketLoading from "../components/ui/MarketLoading";
-import { getLegacyApiUrl } from "../utils/apiUtils";
+import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
 
 interface NewsArticle {
@@ -121,27 +121,47 @@ export default function Dashboard() {
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [indicators, setIndicators] = useState<IndicatorStatus[] | null>(null);
   const [indicatorsLoading, setIndicatorsLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [trendPeriod, setTrendPeriod] = useState<90 | 180 | 365>(90);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [insights, setInsights] = useState<Partial<Record<InsightSignal["id"], InsightSignal>>>({});
 
   useEffect(() => {
-    const apiUrl = getLegacyApiUrl();
+    let mounted = true;
     setIndicatorsLoading(true);
-    // Fetch indicators data from backend
-    fetch(`${apiUrl}/indicators`)
-      .then(res => res.json())
-      .then(data => setIndicators(data))
-      .catch(() => setIndicators(null))
-      .finally(() => setIndicatorsLoading(false));
+    Promise.allSettled([
+      apiFetch<IndicatorStatus[]>("/indicators"),
+      apiFetch<NewsArticle[]>("/news?hours=24&limit=200"),
+    ])
+      .then(([indicatorsResult, newsResult]) => {
+        if (!mounted) return;
+        let nextError: string | null = null;
+        if (indicatorsResult.status === "fulfilled") {
+          setIndicators(indicatorsResult.value);
+        } else {
+          setIndicators(null);
+          nextError = getErrorMessage(indicatorsResult.reason);
+        }
 
-    // Fetch cached news from last 24 hours
-    fetch(`${apiUrl}/news?hours=24&limit=200`)
-      .then(res => res.json())
-      .then(data => setNews(data))
-      .catch(() => setNews([])  );
-  }, [refreshKey]);
+        if (newsResult.status === "fulfilled") {
+          setNews(newsResult.value);
+        } else {
+          setNews([]);
+          if (!nextError) {
+            nextError = getErrorMessage(newsResult.reason);
+          }
+        }
+        setDashboardError(nextError);
+      })
+      .finally(() => {
+        if (mounted) {
+          setIndicatorsLoading(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const newsCount = news.length;
   const visibleIndicators = useMemo(() => indicators?.filter((i) => i.code !== "AAS" && i.code !== "AAP") ?? [], [indicators]);
@@ -200,31 +220,6 @@ export default function Dashboard() {
     const secondary = capitalize(describeDirection(insight.secondaryDirection));
     return `${overallTrendLabel}: ${primary}. Recent: ${secondary}.`;
   };
-
-
-  // Manual refresh function - triggers ETL ingestion for all indicators
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      const apiUrl = getLegacyApiUrl();
-      // Trigger backend ETL to fetch latest data from FRED and Yahoo Finance
-      const response = await fetch(`${apiUrl}/admin/ingest/run`, {
-        method: "POST",
-      });
-      
-      if (response.ok) {
-        // Wait for backend to process new data
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        // Force re-fetch of dashboard data by incrementing refresh key
-        setRefreshKey(prev => prev + 1);
-      }
-    } catch (error) {
-      console.error("Failed to refresh data:", error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
   return (
     <div className="page-shell page-stack">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -235,6 +230,7 @@ export default function Dashboard() {
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
             <span className="page-badge">{visibleIndicators.length} active indicators</span>
             <span className="page-badge">Trend window {overallTrendLabel}</span>
+            <span className="page-badge border-stealth-600 bg-stealth-900/80 text-stealth-200">Read-only public dashboard</span>
           </div>
         </div>
 
@@ -254,35 +250,6 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-col justify-end gap-2 sm:flex-row sm:items-center sm:gap-3">
-            {/* Refresh Button */}
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className={`flex items-center justify-center gap-2 rounded-full px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition ${
-                isRefreshing
-                  ? 'border border-stealth-700/80 text-stealth-500 cursor-not-allowed'
-                  : 'border border-stealth-600/90 text-stealth-300 hover:border-stealth-500 hover:text-stealth-200'
-              }`}
-              title="Refresh all indicator data"
-            >
-              <svg
-                className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-              <span className="hidden xs:inline">{isRefreshing ? 'Refreshing...' : 'Refresh Data'}</span>
-              <span className="xs:hidden">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-            </button>
-
-            {/* Trend Period Toggle */}
             <div className="control-strip">
               <button
                 onClick={() => setTrendPeriod(90)}
@@ -320,6 +287,11 @@ export default function Dashboard() {
       </div>
 
       <div>
+        {dashboardError && (
+          <div className="surface-card p-4 sm:p-5">
+            <p className="text-sm text-red-300">Dashboard data is partially unavailable: {dashboardError}</p>
+          </div>
+        )}
         {!overallInsight && (
           <div className="surface-card-strong p-4 sm:p-5">
             <p className="text-xs text-stealth-400">Overall read forming...</p>

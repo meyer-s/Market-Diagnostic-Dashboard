@@ -7,6 +7,7 @@ from sqlalchemy import func
 from app.models.indicator import Indicator
 from app.models.indicator_value import IndicatorValue
 from app.models.system_status import SystemStatus
+from app.services.indicator_specs import iter_indicator_specs
 from app.utils.db_helpers import get_db_session
 from app.utils.response_helpers import format_indicator_status, format_system_status
 from app.utils.system_scoring import compute_weighted_composite
@@ -25,6 +26,7 @@ def _state_from_score(score: float) -> str:
 def get_system_status():
     with get_db_session() as db:
         indicators = db.query(Indicator).all()
+        specs = {spec.code: spec for spec in iter_indicator_specs()}
 
         subq = (
             db.query(
@@ -47,6 +49,7 @@ def get_system_status():
         latest = {value.indicator_id: value for value in values}
         scores_by_code = {}
         weights_by_code = {}
+        timestamps_by_code = {}
         red_count = 0
         yellow_count = 0
         total_count = 0
@@ -57,25 +60,41 @@ def get_system_status():
                 continue
             scores_by_code[indicator.code] = value.score
             weights_by_code[indicator.code] = indicator.weight or 0.0
+            timestamps_by_code[indicator.code] = value.timestamp
             total_count += 1
             if value.state == "RED":
                 red_count += 1
             elif value.state == "YELLOW":
                 yellow_count += 1
 
-        composite_score, _ = compute_weighted_composite(scores_by_code, weights_by_code)
+        composite_result = compute_weighted_composite(
+            scores_by_code,
+            weights_by_code,
+            timestamps_by_code=timestamps_by_code,
+            freshness_horizons_by_code={code: spec.freshness_horizon_days for code, spec in specs.items()},
+            core_codes=[code for code, spec in specs.items() if spec.is_core],
+        )
+        composite_score = composite_result["composite_score"]
         if composite_score is None:
             status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
             return format_system_status(status)
 
         return {
             "timestamp": datetime.utcnow().isoformat(),
-            "state": _state_from_score(composite_score),
+            "state": composite_result["state"],
             "composite_score": round(composite_score, 1),
             "red_count": red_count,
             "yellow_count": yellow_count,
             "green_count": max(0, total_count - red_count - yellow_count),
             "total_count": total_count,
+            "confidence": composite_result["confidence"],
+            "coverage_ratio": composite_result["coverage_ratio"],
+            "core_coverage_ratio": composite_result["core_coverage_ratio"],
+            "missing_codes": composite_result["missing_codes"],
+            "stale_codes": composite_result["stale_codes"],
+            "weights_used": composite_result["weights_used"],
+            "expected_codes": composite_result["expected_codes"],
+            "included_codes": composite_result["included_codes"],
         }
 
 @router.get("/system/history")
@@ -96,6 +115,7 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
     """
     with get_db_session() as db:
         cutoff = datetime.utcnow() - timedelta(days=days)
+        specs = {spec.code: spec for spec in iter_indicator_specs()}
         
         # Get all indicators with their weights
         indicators = db.query(Indicator).all()
@@ -153,6 +173,7 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
             yellow_count = 0
             scores_by_code = {}
             weights_by_code = {}
+            timestamps_by_code = {}
 
             for indicator_id, val in last_seen.items():
                 indicator = indicator_map.get(indicator_id)
@@ -160,6 +181,7 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
                     continue
                 scores_by_code[indicator.code] = val.score
                 weights_by_code[indicator.code] = indicator.weight or 0
+                timestamps_by_code[indicator.code] = val.timestamp
 
                 if val.state == "RED":
                     red_count += 1
@@ -169,15 +191,23 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
             total_count = len(scores_by_code)
             green_count = max(0, total_count - red_count - yellow_count)
 
-            composite_score, weights_used = compute_weighted_composite(scores_by_code, weights_by_code)
+            composite_result = compute_weighted_composite(
+                scores_by_code,
+                weights_by_code,
+                timestamps_by_code=timestamps_by_code,
+                as_of=datetime.combine(current_date, datetime.max.time()),
+                freshness_horizons_by_code={code: spec.freshness_horizon_days for code, spec in specs.items()},
+                core_codes=[code for code, spec in specs.items() if spec.is_core],
+            )
+            composite_score = composite_result["composite_score"]
             if composite_score is not None:
-                state = _state_from_score(composite_score)
+                state = composite_result["state"]
 
                 # Use end of day for timestamp
                 timestamp = datetime.combine(current_date, datetime.max.time())
 
                 contributions = {
-                    code: round((scores_by_code.get(code) or 0.0) * weights_used.get(code, 0.0), 2)
+                    code: round((scores_by_code.get(code) or 0.0) * composite_result["weights_used"].get(code, 0.0), 2)
                     for code in indicator_codes
                 }
 
@@ -190,6 +220,12 @@ def get_system_history(days: int = Query(365, ge=1, le=1095)):
                     "green_count": green_count,
                     "total_count": total_count,
                     "contributions": contributions,
+                    "confidence": composite_result["confidence"],
+                    "coverage_ratio": composite_result["coverage_ratio"],
+                    "core_coverage_ratio": composite_result["core_coverage_ratio"],
+                    "missing_codes": composite_result["missing_codes"],
+                    "stale_codes": composite_result["stale_codes"],
+                    "weights_used": composite_result["weights_used"],
                 })
 
             current_date += timedelta(days=1)

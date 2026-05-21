@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from app.services.ingestion.etl_runner import ETLRunner
 from app.services.indicator_metadata import normalize_indicator_code, get_display_indicator_name
 from app.utils.db_helpers import get_db_session
+from app.api.deps import require_admin_key
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin_key)])
 etl = ETLRunner()
 
 

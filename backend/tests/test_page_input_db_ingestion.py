@@ -59,8 +59,7 @@ def test_ingest_page_input_persists_latest_point(monkeypatch):
     assert result["score"] == 66.0
     assert indicator.last_score == 66.0
     assert indicator.last_state == "YELLOW"
-    assert len(values) == 1
-    assert values[0].score == 66.0
+    assert [value.score for value in values] == [66.0]
     assert values[0].normalized_value == 66.0
     db.close()
 

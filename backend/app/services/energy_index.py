@@ -20,6 +20,8 @@ import pandas as pd
 import requests
 
 from app.core.config import settings
+from app.services.ingestion.fred_client import FredClient, FredClientError
+from app.services.ingestion.retry import ProviderRequestError, retry_sync
 from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
 
 
@@ -166,25 +168,12 @@ def _series_from_rows(rows: List[Dict[str, Any]]) -> pd.Series:
 
 
 def _fred_fetch(series_id: str, start: str) -> pd.Series:
-    api_key = settings.FRED_API_KEY
-    if not api_key:
+    if not settings.FRED_API_KEY:
         return pd.Series(dtype="float64")
-    url = (
-        "https://api.stlouisfed.org/fred/series/observations"
-        f"?series_id={series_id}&api_key={api_key}&file_type=json"
-        f"&observation_start={start}"
-    )
     try:
-        resp = requests.get(url, headers=HTTP_HEADERS, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        rows = [
-            {"date": obs["date"], "value": float(obs["value"])}
-            for obs in data.get("observations", [])
-            if obs.get("value") not in (".", None)
-        ]
+        rows = FredClient().fetch_series_sync(series_id, start_date=start)
         return _series_from_rows(rows)
-    except Exception:
+    except FredClientError:
         return pd.Series(dtype="float64")
 
 
@@ -353,9 +342,19 @@ def _fetch_eia_generation_mix(start_year: int, end_year: int) -> Dict[str, List[
         "offset": 0,
         "length": 5000,
     }
-    resp = requests.get(EIA_GENERATION_URL, params=params, headers=HTTP_HEADERS, timeout=20)
-    resp.raise_for_status()
-    payload = resp.json()
+    def _request() -> dict:
+        response = requests.get(EIA_GENERATION_URL, params=params, headers=HTTP_HEADERS, timeout=20)
+        if response.status_code != 200:
+            raise ProviderRequestError(
+                source="eia",
+                identifier="electricity-generation-mix",
+                message="Failed to fetch EIA generation mix",
+                status_code=response.status_code,
+                request_id=response.headers.get("x-request-id"),
+            )
+        return response.json()
+
+    payload = retry_sync(_request)
     rows = payload.get("response", {}).get("data", [])
     if not rows:
         return {}

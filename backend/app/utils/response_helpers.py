@@ -171,14 +171,28 @@ def format_system_status(status: Any) -> Dict[str, Any]:
             "composite_score": None,
             "red_count": 0,
             "yellow_count": 0,
+            "confidence": "LOW",
+            "coverage_ratio": 0.0,
+            "core_coverage_ratio": 0.0,
+            "missing_codes": [],
+            "stale_codes": [],
+            "weights_used": {},
         }
-    
+    if isinstance(status, dict):
+        return status
+
     return {
         "timestamp": status.timestamp.isoformat() if hasattr(status, 'timestamp') else None,
         "state": status.state,
         "composite_score": status.composite_score,
         "red_count": status.red_count,
         "yellow_count": status.yellow_count,
+        "confidence": getattr(status, "confidence", "LOW"),
+        "coverage_ratio": getattr(status, "coverage_ratio", 0.0),
+        "core_coverage_ratio": getattr(status, "core_coverage_ratio", 0.0),
+        "missing_codes": getattr(status, "missing_codes", []),
+        "stale_codes": getattr(status, "stale_codes", []),
+        "weights_used": getattr(status, "weights_used", {}),
     }
 
 

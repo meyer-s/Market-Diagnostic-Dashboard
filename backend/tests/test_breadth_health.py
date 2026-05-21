@@ -20,7 +20,7 @@ def test_breadth_score_improves_with_rising_ratio():
 def test_system_reweighting_excludes_missing_breadth():
     scores_by_code = {"VIX": 60.0, "SPY": 70.0, "BREADTH_HEALTH": None}
     weights_by_code = {"VIX": 1.5, "SPY": 1.4, "BREADTH_HEALTH": 1.0}
-    composite, weights_used = compute_weighted_composite(scores_by_code, weights_by_code)
-    assert composite is not None
-    assert "BREADTH_HEALTH" not in weights_used
-    assert abs(sum(weights_used.values()) - 1.0) < 1e-6
+    composite = compute_weighted_composite(scores_by_code, weights_by_code)
+    assert composite["composite_score"] is not None
+    assert "BREADTH_HEALTH" not in composite["weights_used"]
+    assert abs(sum(composite["weights_used"].values()) - 1.0) < 1e-6
