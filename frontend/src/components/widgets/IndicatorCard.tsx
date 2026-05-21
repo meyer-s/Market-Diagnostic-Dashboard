@@ -33,6 +33,7 @@ const stateDotMap = {
   GREEN: "bg-accent-green",
   YELLOW: "bg-accent-yellow",
   RED: "bg-accent-red",
+  UNKNOWN: "bg-gray-500",
 };
 
 function resolveIndicatorRoute(code: string) {
@@ -106,7 +107,7 @@ export default function IndicatorCard({ indicator }: Props) {
         </div>
         
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm text-gray-400">Score: {indicator.score}</span>
+          <span className="text-sm text-gray-400">Score: {indicator.score ?? "N/A"}</span>
           <span className="inline-flex items-center" aria-label={`State ${indicator.state}`} title={indicator.state}>
             <span className={`h-2.5 w-2.5 rounded-full ${stateDotMap[indicator.state]}`}></span>
           </span>

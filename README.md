@@ -1,14 +1,14 @@
 # Market Diagnostic Dashboard
 
-Market Diagnostic Dashboard is a live market intelligence tool built to answer the question most dashboards dodge: what kind of tape are we actually trading right now?
-
-Instead of dumping raw charts, it pulls rates, liquidity, credit, sentiment, alternative assets, and sector internals into a single regime read that is fast to scan and hard to misinterpret. The goal is not more noise. The goal is a cleaner market view, tighter context, and better decisions.
+Market Diagnostic Dashboard is a live market-intelligence system that compresses rates, liquidity, credit, sentiment, and cross-asset internals into a single regime read.
 
 Live site: [marketdiagnostictool.com](https://marketdiagnostictool.com)
 
-## What It Covers
+## What it covers
 
-At the core is a weighted indicator framework seeded by [backend/seed_indicators.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/seed_indicators.py). It tracks the pressure points that actually shape market behavior, including:
+The weighted indicator framework is seeded from [`backend/seed_indicators.py`](backend/seed_indicators.py) and documented in [`docs/indicator-specification.md`](docs/indicator-specification.md).
+
+Core and supporting indicators include:
 
 - VIX
 - SPY trend
@@ -18,92 +18,92 @@ At the core is a weighted indicator framework seeded by [backend/seed_indicators
 - Consumer Health
 - Bond Market Stability
 - Liquidity Proxy
-- Analyst Anxiety / Confidence
+- Analyst Confidence
 - Sentiment Composite
 - Alternative Asset Stability
+- Agriculture, energy, and real-estate stability overlays
 
-Around that core signal engine, the platform expands into a broader operating system for market context:
+## Current product surface
 
-- Indicator detail pages that explain the why behind the signal, not just the score
-- System Breakdown views that expose weighting logic, regime state, and historical drift
-- Alternative asset diagnostics for precious metals and crypto when trust in the core system starts to wobble
-- Market Map, sector projections, and stock analysis tools for moving from macro context into tradable follow-through
-- Recap pages for publishing market updates in a format that is actually readable
-- Secret Options tooling and alert infrastructure for higher-touch options workflows
-
-## Current Product Surface
-
-Primary frontend routes live in [frontend/src/App.tsx](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/frontend/src/App.tsx).
+Route, navigation, and analytics metadata are centralized in [`frontend/src/routes/registry.tsx`](frontend/src/routes/registry.tsx).
 
 - `/` Dashboard
 - `/indicators` indicator library
 - `/indicators/:code` indicator detail
 - `/system-breakdown` system methodology and state view
-- `/market-map` market-map and intraday sector context
-- `/sector-projections` sector model output
-- `/stock-analysis` and `/stock-analysis/:symbol` stock analysis
-- `/alternative-assets` alternative-asset diagnostics
-- `/aas-breakdown` AAS component breakdown
-- `/tools/recap` published recap index and posts
-- `/news` cached market news
+- `/vision` product framing
+- `/market-map`, `/sector-projections`, `/stock-analysis`
+- `/alternative-assets`, `/aas-breakdown`
+- `/news`
+- `/tools/recap`
+- `/agriculture`, `/energy`, `/real-estate`
 
 ## Stack
 
-- Backend: FastAPI, SQLAlchemy, PostgreSQL
-- Frontend: React, TypeScript, Vite, Recharts
-- Deployment: Docker Compose
+| Surface | Technology |
+| --- | --- |
+| Backend | FastAPI, SQLAlchemy, Alembic, PostgreSQL |
+| Frontend | React, TypeScript, Vite, Recharts |
+| Deployment | Docker Compose, Nginx |
+| Testing | Pytest, Vitest, Playwright |
 
-Code entry points:
+Key entry points:
 
-- Backend app: [backend/app/main.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/app/main.py)
-- Frontend app: [frontend/src/App.tsx](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/frontend/src/App.tsx)
-- Docker services: [docker-compose.yml](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docker-compose.yml)
+- Backend app: [`backend/app/main.py`](backend/app/main.py)
+- Frontend app: [`frontend/src/App.tsx`](frontend/src/App.tsx)
+- Route registry: [`frontend/src/routes/registry.tsx`](frontend/src/routes/registry.tsx)
+- Deployment manifests: [`docker-compose.yml`](docker-compose.yml), [`docker-compose.dev.yml`](docker-compose.dev.yml)
 
-## Data Pipeline
+## Runtime model
 
-At startup, the backend seeds indicator metadata and launches the API via [backend/startup.sh](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/startup.sh).
+- **Web and scheduler are split.** The FastAPI web service runs with `RUN_SCHEDULER=false`; scheduled ETL and publishing run in the dedicated scheduler worker.
+- **Admin mutations are protected.** Admin endpoints require a bearer token via `ADMIN_API_KEY`.
+- **Schema changes run through Alembic.** Startup applies `alembic upgrade head` before metadata seeding.
+- **Production frontend is static.** The production image builds the Vite app and serves it through Nginx, which proxies `/api` to the backend.
 
-The scheduler in [backend/app/services/scheduler.py](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/backend/app/services/scheduler.py):
+## Local development
 
-- runs an initial ETL job on startup
-- refreshes indicators on a recurring schedule
-- ingests AAS, crypto, metals, and sector-projection data
-- recalculates the Alternative Asset Stability framework
+Start the stack with bind mounts and Vite dev server:
 
-Representative data sources include:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
 
-- FRED for macro and rates data
-- Yahoo Finance for equity and market pricing inputs
-- CoinGecko for crypto market data
-- DeFiLlama for DeFi and stablecoin context
-- metals-specific sources including COMEX, ETF, and central-bank feeds
+Useful endpoints:
 
-## Docs
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8000`
+- Backend health: `http://localhost:8000/health/`
 
-Active project documentation now lives under the `docs/` folder.
+## Production deployment
 
-- Alternative assets and AAS: [docs/alternative-assets.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/alternative-assets.md)
-- Discord integration: [docs/discord.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/discord.md)
-- Secret Options: [docs/secret-options.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/secret-options.md)
-- API reference draft: [docs/api-contract.md](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs/api-contract.md)
+Use the production compose file for immutable containers:
 
-## Notes
+```bash
+docker compose up -d --build
+```
 
-- The repository is public, but the project is not licensed as open-source software.
-- Historical or superseded planning material remains under `archive/`.
+Environment examples live in [`devops/env`](devops/env):
+
+- [`backend.env.example`](devops/env/backend.env.example)
+- [`frontend.env.example`](devops/env/frontend.env.example)
+- [`db.env.example`](devops/env/db.env.example)
+
+More operational detail lives in [`docs/deployment.md`](docs/deployment.md).
+
+## Documentation
+
+- Indicator methodology: [`docs/indicator-specification.md`](docs/indicator-specification.md)
+- Deployment workflow: [`docs/deployment.md`](docs/deployment.md)
+- API draft: [`docs/api-contract.md`](docs/api-contract.md)
+- Alternative assets: [`docs/alternative-assets.md`](docs/alternative-assets.md)
+- Secret Options: [`docs/secret-options.md`](docs/secret-options.md)
+- Discord integration: [`docs/discord.md`](docs/discord.md)
 
 ## License
 
-All rights reserved.
+This repository is **source-available, not open source**.
 
-This project is source-available for viewing only. No permission is granted to
-use, copy, modify, distribute, sublicense, sell, or create derivative works
-from this code without prior written permission from the copyright holder.
+All rights reserved. No permission is granted to use, copy, modify, distribute, sublicense, sell, or create derivative works from this code without prior written permission from the copyright holder.
 
-See [LICENSE](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/LICENSE).
-
-## Links
-
-- Production: [marketdiagnostictool.com](https://marketdiagnostictool.com)
-- Repository: [github.com/meyer-s/Market-Diagnostic-Dashboard](https://github.com/meyer-s/Market-Diagnostic-Dashboard)
-- Docs folder: [docs](c:/Users/sjmey/OneDrive/Documents/GitHub/Market-Diagnostic-Dashboard/docs)
+See [`LICENSE`](LICENSE).

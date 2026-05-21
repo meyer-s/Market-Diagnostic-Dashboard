@@ -1,56 +1,98 @@
 services:
-  backend:
-    build: ./backend
-    container_name: market_backend
-    restart: unless-stopped
-    env_file:
-      - ./devops/env/backend.env
-    volumes:
-      - ./backend:/app
-    ports:
-      - "0.0.0.0:8000:8000"  # Bind to all interfaces for external access
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-    depends_on:
-      - db
-    command: /app/startup.sh
-
-  frontend:
-    build: 
-      context: ./frontend
-    container_name: market_frontend
-    restart: unless-stopped
-    env_file:
-      - ./devops/env/frontend.env
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - ./frontend/index.html:/app/index.html
-      - ./frontend/vite.config.ts:/app/vite.config.ts
-      - ./frontend/tailwind.config.js:/app/tailwind.config.js
-      - ./frontend/postcss.config.js:/app/postcss.config.js
-    ports:
-      - "0.0.0.0:5173:5173"  # Bind to all interfaces for external access
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-    command: ["pnpm", "preview", "--host", "0.0.0.0", "--port", "5173"]
-
   db:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: market_postgres
     restart: unless-stopped
-    env_file:
-      - ./devops/env/db.env
-    ports:
-      - "127.0.0.1:5432:5432"  # Only bind to localhost for security
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-market_diagnostic}
+      POSTGRES_USER: ${POSTGRES_USER:-market}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market}
     volumes:
       - market_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-market} -d ${POSTGRES_DB:-market_diagnostic}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  backend:
+    build:
+      context: ./backend
+    container_name: market_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: ./devops/env/backend.env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://market:market@db:5432/market_diagnostic}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://marketdiagnostictool.com,https://www.marketdiagnostictool.com}
+      RUN_SCHEDULER: "false"
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+    expose:
+      - "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    command: ["/app/startup.sh"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  scheduler:
+    build:
+      context: ./backend
+    container_name: market_scheduler
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: ./devops/env/backend.env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://market:market@db:5432/market_diagnostic}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://marketdiagnostictool.com,https://www.marketdiagnostictool.com}
+      RUN_SCHEDULER: "true"
+    command: ["python", "-m", "app.services.scheduler_worker"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    container_name: market_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     logging:
       driver: json-file
       options:

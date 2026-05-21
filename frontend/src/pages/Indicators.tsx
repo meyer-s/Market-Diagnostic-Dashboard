@@ -7,6 +7,7 @@ const stateDotMap = {
   GREEN: "bg-accent-green",
   YELLOW: "bg-accent-yellow",
   RED: "bg-accent-red",
+  UNKNOWN: "bg-gray-500",
 };
 
 function resolveIndicatorDisplay(code: string, name: string) {
@@ -135,7 +136,7 @@ function IndicatorRow({ indicator }: { indicator: IndicatorStatus }) {
         </Link>
       </td>
       <td className="px-4 py-3">{displayName}</td>
-      <td className="px-4 py-3">{indicator.score}</td>
+      <td className="px-4 py-3">{indicator.score ?? "N/A"}</td>
       <td className="px-4 py-3">{indicator.state}</td>
       <td className="px-4 py-3">
         <span className="text-stealth-400 text-xs">{linkLabel}</span>
@@ -160,7 +161,7 @@ function IndicatorCard({ indicator }: { indicator: IndicatorStatus }) {
           </span>
         </div>
         <div className="flex items-end justify-between">
-          <div className="text-lg font-bold text-stealth-100">Score: {indicator.score}</div>
+          <div className="text-lg font-bold text-stealth-100">Score: {indicator.score ?? "N/A"}</div>
         </div>
         <div className="mt-2 text-xs text-stealth-400">{linkLabel === "Open page" ? "Open market page" : "Trend history in detail view"}</div>
       </div>

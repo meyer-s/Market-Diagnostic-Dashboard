@@ -243,11 +243,11 @@ export default function SystemBreakdown() {
   const totalWeight = metadata.reduce((sum, m) => sum + m.weight, 0);
   const indicatorCount = metadata.length || indicators?.length || 0;
   const weightedExampleRows: WeightedExampleRow[] = metadata
-    .map((meta) => {
-      const indicator = indicatorMap.get(meta.code);
-      if (!indicator || !Number.isFinite(indicator.score)) {
-        return null;
-      }
+      .map((meta) => {
+        const indicator = indicatorMap.get(meta.code);
+        if (!indicator || typeof indicator.score !== "number" || !Number.isFinite(indicator.score)) {
+          return null;
+        }
 
       return {
         code: meta.code,

@@ -3,12 +3,10 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.db import Base, engine
 from app.models import options_alerts  # noqa: F401
 from app.models import option_positions  # noqa: F401
 from app.models import update_post  # noqa: F401
 from app.models import institutional_flow_event  # noqa: F401
-from app.services.schema_patches import ensure_aas_indicator_code, ensure_signal_attribution_columns
 from app.api.health import router as health_router
 from app.api.status import router as status_router
 from app.api.indicators import router as indicators_router
@@ -65,20 +63,19 @@ async def lifespan(app: FastAPI):
     # Startup
     logging.info("🚀 Application starting up...")
     
-    # Run initial ETL to get fresh data immediately
-    asyncio.create_task(run_initial_etl())
-
     # Prewarm the agriculture surfaces used by the deployed dashboard.
     asyncio.create_task(prewarm_agriculture_caches())
-    
-    # Start the background scheduler
-    start_scheduler()
+
+    if settings.RUN_SCHEDULER:
+        asyncio.create_task(run_initial_etl())
+        start_scheduler()
     
     yield
     
     # Shutdown
     logging.info("🛑 Application shutting down...")
-    stop_scheduler()
+    if settings.RUN_SCHEDULER:
+        stop_scheduler()
 
 
 app = FastAPI(
@@ -100,11 +97,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Create tables
-Base.metadata.create_all(bind=engine)
-ensure_aas_indicator_code(engine)
-ensure_signal_attribution_columns(engine)
 
 # Routers
 app.include_router(health_router, prefix="/health", tags=["Health"])

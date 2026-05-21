@@ -16,7 +16,7 @@ from app.core.indicator_constants import (
     MUNI_PUBLIC_SECTOR_STRESS_CUES,
     MUNI_PUBLIC_SECTOR_THRESHOLDS,
 )
-from app.services.analytics_stub import compute_z_scores, direction_adjusted, map_z_to_score
+from app.services.analytics import compute_z_scores, direction_adjusted, map_z_to_score
 from app.services.ingestion.fred_client import FredClient
 from app.utils.data_helpers import series_to_dict, find_common_dates
 

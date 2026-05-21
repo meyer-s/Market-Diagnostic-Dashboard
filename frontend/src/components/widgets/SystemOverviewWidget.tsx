@@ -12,11 +12,12 @@ import {
   CartesianGrid,
   ReferenceLine,
 } from "recharts";
-import { getLegacyApiUrl } from "../../utils/apiUtils";
+import { apiFetch, getErrorMessage } from "../../utils/apiUtils";
 import { calculateMovingAverage } from "../../utils/componentUtils";
 import { formatDateTime, formatTime } from "../../utils/styleUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
 import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
+import type { SystemStatus } from "../../types";
 import {
   analyzeSeries,
   getTrendTone,
@@ -25,22 +26,18 @@ import {
   type InsightSignal,
 } from "../../utils/insightUtils";
 
-interface SystemStatus {
-  state: string;
-  composite_score: number;
-  red_count: number;
-  yellow_count: number;
-  timestamp?: string;
-}
-
 interface SystemHistoryPoint {
+  [key: string]: unknown;
   timestamp: string;
-  composite_score: number;
+  composite_score: number | null;
   state: string;
   red_count?: number;
   yellow_count?: number;
   green_count?: number;
   total_count?: number;
+  coverage_ratio?: number;
+  core_coverage_ratio?: number;
+  confidence?: "HIGH" | "MEDIUM" | "LOW";
 }
 
 interface NewsArticle {
@@ -68,22 +65,12 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const apiUrl = getLegacyApiUrl();
-        const historyUrl = `${apiUrl}/system/history?days=${trendPeriod}`;
-        const [statusResponse, historyResponse, newsResponse] = await Promise.all([
-          fetch(`${apiUrl}/system`),
-          fetch(historyUrl),
-          fetch(`${apiUrl}/news?hours=24&limit=50`),
+        const [statusData, historyData, newsData] = await Promise.all([
+          apiFetch<SystemStatus>("/system"),
+          apiFetch<SystemHistoryPoint[]>(`/system/history?days=${trendPeriod}`),
+          apiFetch<NewsArticle[]>("/news?hours=24&limit=50"),
         ]);
-        
-        if (!statusResponse.ok) throw new Error("Failed to fetch system status");
-        if (!historyResponse.ok) throw new Error("Failed to fetch system history");
-        if (!newsResponse.ok) throw new Error("Failed to fetch news");
-        
-        const statusData = await statusResponse.json();
-        const historyData = await historyResponse.json();
-        const newsData = await newsResponse.json();
-        
+
         setData(statusData);
         setNews(newsData);
         
@@ -103,7 +90,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        setError(getErrorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -115,7 +102,14 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     return () => clearInterval(interval);
   }, [trendPeriod]);
 
-  const scoreSeries = history.map((point) => point.composite_score);
+  const scoreSeries = history
+    .map((point) => point.composite_score)
+    .filter((score): score is number => typeof score === "number");
+  const scoreAverage = scoreSeries.length
+    ? scoreSeries.reduce((sum, score) => sum + score, 0) / scoreSeries.length
+    : 0;
+  const scoreHigh = scoreSeries.length ? Math.max(...scoreSeries) : 0;
+  const scoreLow = scoreSeries.length ? Math.min(...scoreSeries) : 0;
   const trendWindows = getTrendWindows(trendPeriod);
   const primarySignal = analyzeSeries(scoreSeries, trendWindows.primary);
   const secondarySignal = analyzeSeries(scoreSeries, trendWindows.secondary);
@@ -182,7 +176,8 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   };
   const stateColor = stateColorMap[data.state] || "text-gray-500";
 
-  const compositePercentage = Math.min(100, data.composite_score || 0);
+  const compositeScore = data.composite_score ?? 0;
+  const compositePercentage = Math.min(100, compositeScore);
 
   // Get recent news (last 3)
   const recentNews = news.slice(0, 3);
@@ -190,7 +185,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   // Calculate trend (last 7 days vs previous 7 days average)
   const averageScore = (points: SystemHistoryPoint[]) =>
     points.length
-      ? points.reduce((sum, p) => sum + p.composite_score, 0) / points.length
+      ? points.reduce((sum, p) => sum + (p.composite_score ?? 0), 0) / points.length
       : 0;
   const last7 = history.slice(-7);
   const prev7 = history.slice(-14, -7);
@@ -246,6 +241,18 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         : "Stress remains elevated and typically shows up first in borrowing conditions.";
   }
   const systemSummary = `System health blends many signals. ${nuanceSentence} ${actionSentence}`;
+  const confidenceTone =
+    data.confidence === "HIGH"
+      ? "text-green-300"
+      : data.confidence === "LOW"
+      ? "text-red-300"
+      : "text-yellow-300";
+  const coverageText =
+    typeof data.coverage_ratio === "number" ? `${Math.round(data.coverage_ratio * 100)}% covered` : null;
+  const coreCoverageText =
+    typeof data.core_coverage_ratio === "number"
+      ? `${Math.round(data.core_coverage_ratio * 100)}% core coverage`
+      : null;
 
   return (
     <Link to="/system-breakdown" className="block">
@@ -273,22 +280,24 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             </span>
           </div>
           <div className="relative h-2 bg-stealth-900 rounded-full overflow-hidden">
-            <div
-              className={`absolute left-0 top-0 h-full transition-all duration-500 ${
-                data.composite_score >= STABILITY_THRESHOLDS.YELLOW_MAX
+              <div
+                className={`absolute left-0 top-0 h-full transition-all duration-500 ${
+                compositeScore >= STABILITY_THRESHOLDS.YELLOW_MAX
                   ? "bg-green-500"
-                  : data.composite_score >= STABILITY_THRESHOLDS.RED_MAX
+                  : compositeScore >= STABILITY_THRESHOLDS.RED_MAX
                   ? "bg-yellow-500"
                   : "bg-red-500"
               }`}
-              style={{ width: `${compositePercentage}%` }}
-            />
+                style={{ width: `${compositePercentage}%` }}
+              />
           </div>
-          <div className="flex justify-between text-xs gap-1">
-            <span className="text-stealth-400 truncate">Composite:</span>
-            <span className="text-stealth-200 flex-shrink-0">{data.composite_score.toFixed(1)}</span>
+            <div className="flex justify-between text-xs gap-1">
+              <span className="text-stealth-400 truncate">Composite:</span>
+              <span className="text-stealth-200 flex-shrink-0">
+                {typeof data.composite_score === "number" ? data.composite_score.toFixed(1) : "N/A"}
+              </span>
+            </div>
           </div>
-        </div>
 
         {/* Weekly Trend */}
         <div className="space-y-2 min-w-0">
@@ -312,10 +321,10 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
       </div>
 
       {/* Status Badges */}
-      <div className="flex flex-wrap gap-1.5 sm:gap-2">
-        <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap">
-          <span className="text-stealth-400 flex-shrink-0">Red:</span>
-          <span className="font-semibold text-red-400 flex-shrink-0">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap">
+            <span className="text-stealth-400 flex-shrink-0">Red:</span>
+            <span className="font-semibold text-red-400 flex-shrink-0">
             {data.red_count}
           </span>
         </div>
@@ -329,9 +338,29 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
           <span className="text-stealth-400 flex-shrink-0">News:</span>
           <span className="font-semibold text-cyan-400 flex-shrink-0">
             {news.length}
-          </span>
+            </span>
+          </div>
         </div>
-      </div>
+        {(data.confidence || coverageText || coreCoverageText) && (
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+            {data.confidence && (
+              <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap">
+                <span className="text-stealth-400 flex-shrink-0">Confidence:</span>
+                <span className={`font-semibold flex-shrink-0 ${confidenceTone}`}>{data.confidence}</span>
+              </div>
+            )}
+            {coverageText && (
+              <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap text-stealth-200">
+                {coverageText}
+              </div>
+            )}
+            {coreCoverageText && (
+              <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap text-stealth-200">
+                {coreCoverageText}
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Recent News */}
       {recentNews.length > 0 && (
@@ -365,6 +394,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         // Convert timestamps to numeric values and ensure unique dates
         const chartData = history.map(item => ({
           ...item,
+          composite_score: item.composite_score ?? 0,
           timestampNum: new Date(item.timestamp).getTime()
         }));
         const resolvedChartData = chartData.map((item) => {
@@ -562,19 +592,19 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         <div>
           <div className="text-xs text-stealth-400 mb-1">{periodLabel} Avg</div>
           <div className="text-sm font-semibold text-stealth-200">
-            {(history.reduce((sum, p) => sum + p.composite_score, 0) / history.length).toFixed(1)}
+            {scoreAverage.toFixed(1)}
           </div>
         </div>
         <div>
           <div className="text-xs text-stealth-400 mb-1">{periodLabel} High</div>
           <div className="text-sm font-semibold text-stealth-200">
-            {Math.max(...history.map(p => p.composite_score)).toFixed(1)}
+            {scoreHigh.toFixed(1)}
           </div>
         </div>
         <div>
           <div className="text-xs text-stealth-400 mb-1">{periodLabel} Low</div>
           <div className="text-sm font-semibold text-stealth-200">
-            {Math.min(...history.map(p => p.composite_score)).toFixed(1)}
+            {scoreLow.toFixed(1)}
           </div>
         </div>
       </div>

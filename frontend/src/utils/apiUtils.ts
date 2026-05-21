@@ -4,6 +4,20 @@
  * Helper functions for API interactions and URL management.
  */
 
+export class ApiError extends Error {
+  status: number;
+  endpoint: string;
+  body: unknown;
+
+  constructor(endpoint: string, status: number, message: string, body?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.endpoint = endpoint;
+    this.status = status;
+    this.body = body;
+  }
+}
+
 /**
  * Get the base API URL based on environment
  */
@@ -29,7 +43,7 @@ export function buildApiUrl(endpoint: string): string {
  * Now routes through proxy to avoid CORS issues with HTTPS
  */
 export function getLegacyApiUrl(): string {
-  return '/api';
+  return getApiUrl();
 }
 
 /**
@@ -37,19 +51,33 @@ export function getLegacyApiUrl(): string {
  */
 export async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = buildApiUrl(endpoint);
-  
-  try {
-    const response = await fetch(url, options);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error(`API fetch error for ${endpoint}:`, error);
-    throw error;
+  const response = await fetch(url, options);
+  const contentType = response.headers.get("content-type") || "";
+  const body = contentType.includes("application/json")
+    ? await response.json().catch(() => null)
+    : await response.text().catch(() => null);
+
+  if (!response.ok) {
+    const message =
+      typeof body === "string"
+        ? body
+        : typeof body === "object" && body !== null && "detail" in body
+        ? String((body as { detail: unknown }).detail)
+        : `Request failed with status ${response.status}`;
+    throw new ApiError(endpoint, response.status, message, body);
   }
+
+  return body as T;
+}
+
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "Unexpected error.";
 }
 
 /**
@@ -57,8 +85,8 @@ export async function apiFetch<T>(endpoint: string, options?: RequestInit): Prom
  */
 export async function checkApiHealth(): Promise<boolean> {
   try {
-    const response = await fetch(buildApiUrl('/'), { method: 'GET' });
-    return response.ok;
+    await apiFetch<{ status: string }>('/health/');
+    return true;
   } catch {
     return false;
   }

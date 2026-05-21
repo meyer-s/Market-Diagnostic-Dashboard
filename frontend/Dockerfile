@@ -1,23 +1,24 @@
-FROM node:18
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Install dependencies first (for better caching)
+ARG VITE_API_BASE_URL=/api
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+
 COPY package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm@10.28.2 --quiet && pnpm install --frozen-lockfile
 
-# Install pnpm and dependencies with platform-specific handling
-RUN npm install -g pnpm && \
-    rm -rf node_modules && \
-    pnpm install --force --shamefully-hoist
-
-# Copy application files
 COPY src ./src
 COPY public ./public
 COPY index.html tsconfig.json tsconfig.node.json vite.config.ts ./
 COPY tailwind.config.js postcss.config.js ./
+RUN pnpm build
 
-RUN pnpm vite build
+FROM nginx:1.27-alpine AS runner
 
-EXPOSE 5173
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
 
-CMD ["pnpm", "preview", "--host", "0.0.0.0", "--port", "5173"]
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
