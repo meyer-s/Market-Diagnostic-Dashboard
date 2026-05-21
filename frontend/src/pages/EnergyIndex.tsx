@@ -507,7 +507,7 @@ function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: {
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader kicker="Energy Stability Score" title="Stability history" tooltipText="Market stability over the selected lookback window. Higher means the complex is absorbing large moves cleanly; lower means absolute moves and volatility are destabilizing the market." />
       <div className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={decimated} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
@@ -705,7 +705,7 @@ function RetailPricesChart({
       </div>
 
       <div className={chartHeight}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <ComposedChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
@@ -749,7 +749,7 @@ function RetailPricesChart({
             </div>
           </div>
           <div className="h-28">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <LineChart data={indexedPassThrough} margin={CHART_MARGIN}>
                 <CartesianGrid {...commonGridProps} />
                 <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
@@ -823,7 +823,7 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
     <div className="surface-card self-start p-3 sm:p-4">
       <CardHeader kicker="Supply ↔ Price Relationship" title="Inventories vs WTI" tooltipText="Normalized 0–100 with inventories inverted so tightening supply climbs with price stress. Divergence between the two lines suggests supply and spot price are no longer confirming each other cleanly." />
       <div className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={normalized} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
@@ -941,7 +941,7 @@ function FactorRadar({
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <CardHeader kicker="Contract Momentum Radar" title="Cross-contract momentum" tooltipText="Month-to-month shells deepen from pale to saturated green or red so the time path itself shows expansion or contraction across the full contract set." />
       <div className="h-52">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <RadarChart data={radar.rows} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
             <PolarGrid stroke="#1e293b" />
             <PolarAngleAxis dataKey="factor" tick={{ fill: "#64748b", fontSize: 11 }} />
@@ -1082,7 +1082,7 @@ function AltEnergyChart({
       </div>
 
       <div className={compact ? "h-36" : "h-52"}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={decimated} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => (d as string).slice(0, 7)} />
@@ -1212,7 +1212,7 @@ function BiofuelsPanel({
       </div>
 
       <div className={compact ? "h-36" : "h-44"}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={chartData} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
@@ -1340,7 +1340,7 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
       {/* Stacked share trend */}
       {trendData.length > 1 && (
         <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={trendData} margin={CHART_MARGIN}>
               <CartesianGrid {...commonGridProps} />
               <XAxis {...commonXAxisProps} dataKey="year" />

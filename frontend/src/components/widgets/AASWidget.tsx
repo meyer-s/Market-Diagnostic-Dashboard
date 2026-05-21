@@ -511,7 +511,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
           <p className="text-xs text-stealth-400 mb-2">{parseInt(timeframe)}-Day Contribution Trend</p>
           {chartData.length > 0 ? (
             <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                   <XAxis 

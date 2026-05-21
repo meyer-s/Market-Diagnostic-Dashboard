@@ -433,7 +433,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
             Market Direction Trends
           </h4>
           <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <LineChart data={chartHistory} margin={CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                 <XAxis

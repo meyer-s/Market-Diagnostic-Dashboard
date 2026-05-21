@@ -196,7 +196,7 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
 
       {history.length > 0 && (
         <div className="h-40 mb-3">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <ComposedChart data={history} margin={CHART_MARGIN}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis

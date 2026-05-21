@@ -383,7 +383,7 @@ const MarketMap = () => {
         <p className="text-stealth-400 text-xs mb-3 md:mb-4">SPY (S&P 500), DJI (Dow Jones), RTY (Russell 2000)</p>
         <div className="h-48 sm:h-64">
           {intradaySeriesAligned.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <LineChart data={intradaySeriesAligned} margin={CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                 <XAxis

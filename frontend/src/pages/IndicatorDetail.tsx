@@ -669,7 +669,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                 <div className="text-sm font-semibold text-stealth-200 mb-2">Defensive vs Cyclical Spread</div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={sectorHistory} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
@@ -695,7 +695,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               <div className="bg-stealth-900/60 border border-stealth-700 rounded p-4">
                 <div className="text-sm font-semibold text-stealth-200 mb-2">Alignment Score History</div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={sectorHistory} margin={CHART_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
@@ -1195,7 +1195,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           {/* Trend chart */}
           {breadthHealthComponents.history.length > 0 && (
             <div className="h-52 mb-5">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart
                   data={breadthHealthComponents.history}
                   margin={CHART_MARGIN}
@@ -1569,7 +1569,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               const maxDate = deduplicatedData7.length > 0 ? Math.max(...deduplicatedData7.map(d => d.dateNum)) : today.getTime();
               
               return (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={deduplicatedData7} margin={CHART_MARGIN}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
@@ -1674,7 +1674,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               const maxDate = deduplicatedData8.length > 0 ? Math.max(...deduplicatedData8.map(d => d.dateNum)) : today.getTime();
               
               return (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={deduplicatedData8} margin={CHART_MARGIN}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
@@ -1870,7 +1870,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     &nbsp;points ({gapDirection}, {gapLabel} divergence).
                   </p>
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <AreaChart data={deduplicatedCloudData} margin={CHART_MARGIN}>
                         <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                         <XAxis
@@ -1941,7 +1941,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               const maxDate = deduplicatedData9.length > 0 ? Math.max(...deduplicatedData9.map(d => d.dateNum)) : today.getTime();
               
               return (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={deduplicatedData9} margin={CHART_MARGIN}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
@@ -2059,7 +2059,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               const maxDate = deduplicatedData10.length > 0 ? Math.max(...deduplicatedData10.map(d => d.dateNum)) : today.getTime();
               
               return (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={deduplicatedData10} margin={CHART_MARGIN}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
@@ -2245,7 +2245,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               ].filter(item => item.timestampNum >= daysBack.getTime());
               
               return (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={chartData} margin={{ ...CHART_MARGIN, right: 30 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
@@ -2393,7 +2393,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               });
               
               return (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={chartData} margin={{ ...CHART_MARGIN, right: 30 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
@@ -2841,7 +2841,7 @@ function TreasuryYieldCurvePanel({
       </div>
 
       <div className="h-80">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={chartData} margin={CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
             <XAxis

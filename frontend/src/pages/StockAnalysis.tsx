@@ -1176,7 +1176,7 @@ export default function StockAnalysis() {
                         </div>
                       </div>
                       <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <ComposedChart data={revEpsData}>
                             <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
                             <YAxis yAxisId="left" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
@@ -1210,7 +1210,7 @@ export default function StockAnalysis() {
                         </div>
                       </div>
                       <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <ComposedChart data={roeFcfData}>
                             <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
                             <YAxis yAxisId="left" tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: getFamilyColor("growth"), fontSize: 10 }} tickLine={false} axisLine={false} />
@@ -1244,7 +1244,7 @@ export default function StockAnalysis() {
                         </div>
                       </div>
                       <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <ComposedChart data={peMcapData}>
                             <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
                             <YAxis yAxisId="left" tickFormatter={(v) => v.toFixed(0)} tick={{ fill: getFamilyColor("sentiment"), fontSize: 10 }} tickLine={false} axisLine={false} />
@@ -1274,7 +1274,7 @@ export default function StockAnalysis() {
                         </div>
                       </div>
                       <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <ComposedChart data={yoySeries}>
                             <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
                             <YAxis tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />

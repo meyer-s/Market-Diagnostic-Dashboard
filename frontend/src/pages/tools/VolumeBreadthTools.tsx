@@ -79,7 +79,7 @@ function ExchangeChart({ name, bucket }: { name: string; bucket: BreadthBucket }
       </div>
 
       <div className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <ComposedChart data={chartData} margin={CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
             <XAxis dataKey="label" minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} />
