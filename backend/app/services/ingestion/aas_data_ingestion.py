@@ -163,6 +163,11 @@ class CryptoDataIngestion:
                     CryptoPrice.date == date
                 ).first()
                 if existing:
+                    # Update SOL/XRP on existing rows if they're still null
+                    if existing.sol_usd is None and sol_prices.get(date_obj) is not None:
+                        existing.sol_usd = sol_prices.get(date_obj)
+                    if existing.xrp_usd is None and xrp_prices.get(date_obj) is not None:
+                        existing.xrp_usd = xrp_prices.get(date_obj)
                     continue
 
                 btc_price = btc_prices.get(date_obj)
