@@ -52,7 +52,9 @@ for (const route of routes) {
         });
 
         await page.setViewportSize({ width, height: 1200 });
-        await page.goto(route, { waitUntil: "networkidle" });
+        await page.goto(route, { waitUntil: "domcontentloaded" });
+        // Allow initial render and any eager data-fetches to settle
+        await page.waitForTimeout(1500);
 
         expect(jsErrors, `Unexpected JS errors on ${route} @ ${width}px`).toEqual([]);
         await expect(page).toHaveScreenshot(`${route.replace(/\//g, "_") || "home"}-${width}.png`, {

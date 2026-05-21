@@ -33,6 +33,8 @@ export default defineConfig({
         target: 'http://market_backend:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
+        timeout: 3000,
+        proxyTimeout: 3000,
       },
     },
   },
