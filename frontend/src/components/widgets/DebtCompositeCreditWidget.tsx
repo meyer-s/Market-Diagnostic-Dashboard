@@ -175,7 +175,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
 
         {yieldChartData.length > 0 && (
           <div className="h-28 mb-3 border-b border-stealth-700/70 pb-3">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <ComposedChart data={yieldChartData} margin={CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis

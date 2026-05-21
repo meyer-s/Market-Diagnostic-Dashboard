@@ -250,7 +250,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
         </div>
 
         <div className="h-64 md:h-96">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <AreaChart data={history}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
               <XAxis 

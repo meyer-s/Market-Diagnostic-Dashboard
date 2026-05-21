@@ -118,7 +118,7 @@ export function MetalsSubsystemPanel({
                   const smoothColor = metalsColor;
 
                   return (
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <LineChart data={chartData}>
                         <YAxis type="number" domain={[domainMin, domainMax]} hide />
                         <Line

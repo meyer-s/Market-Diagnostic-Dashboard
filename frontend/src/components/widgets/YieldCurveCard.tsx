@@ -111,7 +111,7 @@ export default function YieldCurveCard() {
         </div>
 
         <div className="mt-3 h-36">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2f3b52" />
               <XAxis dataKey="maturity" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} />

@@ -1574,7 +1574,7 @@ export default function SecretOptions() {
               <div className="bg-gray-900 rounded-lg border border-gray-700 p-3">
                 <h3 className="text-sm font-semibold mb-2">Delta vs Price</h3>
                 <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.price_curve}>
                       <XAxis
                         dataKey="price"
@@ -1651,7 +1651,7 @@ export default function SecretOptions() {
               <div className="bg-gray-900 rounded-lg border border-gray-700 p-3">
                 <h3 className="text-sm font-semibold mb-2">Gamma vs Price</h3>
                 <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.price_curve}>
                       <XAxis
                         dataKey="price"
@@ -1728,7 +1728,7 @@ export default function SecretOptions() {
               <div className="bg-gray-900 rounded-lg border border-gray-700 p-3 lg:col-span-2">
                 <h3 className="text-sm font-semibold mb-2">Theta vs Time</h3>
                 <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.theta_curve}>
                       <XAxis
                         dataKey="days"

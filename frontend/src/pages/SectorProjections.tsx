@@ -292,7 +292,7 @@ export default function SectorProjections() {
           {divergenceHistory.length > 0 ? (
             <div className="surface-card-muted p-2 sm:p-4">
               <div className="h-44 sm:h-56">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={divergenceHistory} margin={CHART_MARGIN}>
                     <CartesianGrid {...commonGridProps} />
                     <XAxis

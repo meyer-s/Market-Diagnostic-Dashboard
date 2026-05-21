@@ -392,7 +392,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
           </div>
           {chartData.length > 0 ? (
             <div className="h-40 sm:h-44">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart data={chartData} margin={CHART_MARGIN}>
                   <CartesianGrid {...commonGridProps} />
                   <XAxis

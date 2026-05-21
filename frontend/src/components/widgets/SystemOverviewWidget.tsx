@@ -454,7 +454,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
               Composite Score Trend
             </h4>
             <div className="w-full h-60 sm:h-72 lg:h-80 -mx-6 sm:mx-0 px-3 sm:px-0">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <ComposedChart data={stabilityBandData} margin={CHART_MARGIN}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                   <XAxis

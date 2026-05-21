@@ -398,7 +398,7 @@ export default function SystemBreakdown() {
         <div className="surface-card p-6">
           <h3 className="text-xl font-semibold mb-4 text-stealth-100">Current State Distribution</h3>
           <div className="flex items-center justify-center" style={{ height: 300 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <PieChart>
                 <Pie
                   data={pieData}

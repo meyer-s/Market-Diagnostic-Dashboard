@@ -592,7 +592,7 @@ function CompositeHistoryChart({
         tooltipText="Above 60 means the market is absorbing the financing backdrop; below 40 means stability is weak."
       />
       <div className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={decimated} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
@@ -641,7 +641,7 @@ function FactorPanel({
         tooltipText="This stays in pressure terms on purpose: higher bars show which segment is doing the most damage to the headline stability read."
       />
       <div className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <BarChart data={data} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} />
@@ -738,7 +738,7 @@ function MortgagePressureChart({
       </div>
 
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <ComposedChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
@@ -824,7 +824,7 @@ function TransmissionChart({
         tooltipText="Indexed REIT and homebuilder ETFs (base=100, left axis) overlaid with rate series (right axis). When yields rise and listed RE falls together, the rate transmission channel is active."
       />
       <div className="h-52">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <ComposedChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
@@ -899,7 +899,7 @@ function CreditSpreadChart({
         tooltipText="VNQ indexed to 100 vs credit spread (inverted and normalized to 0–100). When both lines decline together, credit tightening is transmitting into cap-rate pressure on listed real estate."
       />
       <div className="h-48">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
@@ -983,7 +983,7 @@ function SupplyContextChart({
         />
       </div>
       <div className="h-48">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
@@ -1144,7 +1144,7 @@ function BuyerSellerDivergenceChart({
         <BodyHint className="max-w-xl">Positive spread means buyer demand has outperformed seller-side supply since the start of the selected window. Negative spread means supply has outperformed buyer demand over that same window. The x-axis shifts to cycle-aware year labels as you widen the horizon.</BodyHint>
       </div>
       <div className="h-52">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <ComposedChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis
@@ -1337,7 +1337,7 @@ function AffordabilityChart({
         ) : null}
       </div>
       <div className="h-52">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
