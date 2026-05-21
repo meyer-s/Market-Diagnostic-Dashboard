@@ -249,7 +249,7 @@ class CryptoDataIngestion:
                 if data.empty:
                     result[symbol] = None
                     continue
-                close = data["Close"].dropna()
+                close = data["Close"].squeeze().dropna()
                 result[symbol] = float(close.iloc[-1]) if not close.empty else None
             except Exception as e:
                 logger.warning(f"Yahoo Finance error for {symbol} ({ticker}): {e}")
@@ -266,8 +266,17 @@ class CryptoDataIngestion:
             data = yf.download(ticker, start=start, interval="1d", progress=False)
             if data.empty:
                 return {}
-            close = data["Close"].dropna()
-            return {idx.date(): float(val) for idx, val in close.items()}
+            close = data["Close"].squeeze().dropna()
+            result = {}
+            for idx, val in close.items():
+                # idx may be a Timestamp or a string depending on yfinance version
+                if hasattr(idx, "date"):
+                    d = idx.date()
+                else:
+                    import pandas as pd
+                    d = pd.Timestamp(idx).date()
+                result[d] = float(val)
+            return result
         except Exception as e:
             logger.warning(f"Yahoo Finance history error for {symbol}: {e}")
             return {}
