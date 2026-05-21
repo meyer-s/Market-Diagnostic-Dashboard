@@ -18,6 +18,7 @@ const EXPECTED_NETWORK_ERROR_PATTERNS = [
   /Fetch error for/,                 // useApi.ts console.error format
   /Failed to fetch sector data/,     // SectorDivergenceWidget
   /Failed to fetch Dow Theory/,      // DowTheoryWidget
+  /Error fetching market map/,       // MarketMap.tsx console.error on API failure
   /getaddrinfo ENOTFOUND/,           // node-level DNS errors surfaced via proxy
 ];
 
