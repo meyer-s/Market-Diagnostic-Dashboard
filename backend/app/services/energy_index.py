@@ -56,7 +56,8 @@ _CACHE_TTL_SECONDS = 20 * 60  # 20 minutes
 
 _MIX_CACHE: Dict[str, Any] = {}
 _MIX_CACHE_LOCK = Lock()
-_MIX_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours
+_MIX_CACHE_TTL_SECONDS = 6 * 60 * 60        # 6 hours (live data)
+_MIX_CACHE_FALLBACK_TTL_SECONDS = 15 * 60  # 15 minutes (fallback — retry sooner)
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +344,7 @@ def _fetch_eia_generation_mix(start_year: int, end_year: int) -> Dict[str, List[
         "length": 5000,
     }
     def _request() -> dict:
-        response = requests.get(EIA_GENERATION_URL, params=params, headers=HTTP_HEADERS, timeout=20)
+        response = requests.get(EIA_GENERATION_URL, params=params, headers=HTTP_HEADERS, timeout=45)
         if response.status_code != 200:
             raise ProviderRequestError(
                 source="eia",
@@ -398,8 +399,10 @@ def fetch_generation_mix() -> Dict[str, Any]:
     now = datetime.utcnow()
     with _MIX_CACHE_LOCK:
         cached = _MIX_CACHE.get("mix")
-        if cached and (now - cached["timestamp"]).total_seconds() < _MIX_CACHE_TTL_SECONDS:
-            return cached["data"]
+        if cached:
+            ttl = _MIX_CACHE_FALLBACK_TTL_SECONDS if cached["data"].get("fallback_used") else _MIX_CACHE_TTL_SECONDS
+            if (now - cached["timestamp"]).total_seconds() < ttl:
+                return cached["data"]
 
     series_data: Dict[str, List[Dict[str, Any]]] = {}
     fallback_used = False
