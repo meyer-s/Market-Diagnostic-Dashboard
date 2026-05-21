@@ -28,6 +28,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    env_file:
+      - path: ./devops/env/backend.env
+        required: false
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://market:market@db:5432/market_diagnostic}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
@@ -60,6 +63,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    env_file:
+      - path: ./devops/env/backend.env
+        required: false
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://market:market@db:5432/market_diagnostic}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
