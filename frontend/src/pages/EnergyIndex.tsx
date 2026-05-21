@@ -513,7 +513,7 @@ function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: {
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
             <YAxis {...commonYAxisProps} domain={[yMin, yMax]} />
             <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Stability Score"]} />
-            <ReferenceLine y={50} stroke="#334155" strokeDasharray="3 3" />
+            <ReferenceLine y={50} stroke="var(--chart-tooltip-border)" strokeDasharray="3 3" />
             <Line type="monotone" dataKey="value" stroke="#38bdf8" dot={false} strokeWidth={2} />
           </LineChart>
         </ResponsiveContainer>
@@ -711,7 +711,7 @@ function RetailPricesChart({
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis yAxisId="momentum" {...commonYAxisProps} tickFormatter={(v: number) => `${v.toFixed(2)}`} />
             <YAxis yAxisId="spread" orientation="right" hide domain={["auto", "auto"]} />
-            <ReferenceLine yAxisId="momentum" y={0} stroke="#334155" strokeDasharray="3 3" />
+            <ReferenceLine yAxisId="momentum" y={0} stroke="var(--chart-tooltip-border)" strokeDasharray="3 3" />
             <Tooltip content={<SpreadMomentumTooltip />} />
             <Bar yAxisId="momentum" dataKey="histogram" name="histogram" barSize={7} isAnimationActive={false}>
               {merged.map((entry, i) => (

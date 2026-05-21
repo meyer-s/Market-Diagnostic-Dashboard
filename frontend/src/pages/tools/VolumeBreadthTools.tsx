@@ -81,12 +81,12 @@ function ExchangeChart({ name, bucket }: { name: string; bucket: BreadthBucket }
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <ComposedChart data={chartData} margin={CHART_MARGIN}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
             <XAxis dataKey="label" minTickGap={24} tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} />
             <YAxis yAxisId="pct" domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} width={30} />
             <YAxis yAxisId="rate" hide orientation="right" domain={["dataMin - 2", "dataMax + 2"]} />
             <Tooltip
-              contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8, color: "#cbd5e1" }}
+              contentStyle={{ backgroundColor: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 8, color: "var(--chart-tooltip-label)" }}
               formatter={(value: number, name: string) => {
                 if (name === "A/D pace") return [Number(value).toFixed(0), name];
                 return [`${Number(value).toFixed(1)}%`, name];

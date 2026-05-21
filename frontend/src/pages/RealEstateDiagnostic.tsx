@@ -600,7 +600,7 @@ function CompositeHistoryChart({
             <Tooltip {...tip} formatter={(v: number) => [v.toFixed(1), "Stability Score"]} />
             <ReferenceLine y={60} stroke="#34d399" strokeDasharray="2 4" strokeOpacity={0.45} />
             <ReferenceLine y={40} stroke="#f87171" strokeDasharray="2 4" strokeOpacity={0.45} />
-            <ReferenceLine y={50} stroke="#334155" strokeDasharray="3 3" />
+            <ReferenceLine y={50} stroke="var(--chart-tooltip-border)" strokeDasharray="3 3" />
             <Line type="monotone" dataKey="value" stroke="#0ea5e9" dot={false} strokeWidth={2} />
           </LineChart>
         </ResponsiveContainer>

@@ -265,7 +265,7 @@ function StabilityTooltip({ active, payload, label }: { active?: boolean; payloa
           if (!meta || typeof entry.value !== "number") return null;
           return (
             <div key={String(entry.dataKey)}>
-              <p className="font-medium" style={{ color: entry.color ?? "#cbd5e1" }}>
+              <p className="font-medium" style={{ color: entry.color ?? "var(--chart-tooltip-label)" }}>
                 {meta.label}: {formatTooltipValue(entry.value, 1)}
               </p>
               <p className="text-[11px] leading-4 text-stealth-200">{meta.description}</p>
@@ -290,7 +290,7 @@ function MacdTooltip({ active, payload, label }: { active?: boolean; payload?: A
           if (!meta || typeof entry.value !== "number") return null;
           return (
             <div key={String(entry.dataKey)}>
-              <p className="font-medium" style={{ color: entry.color ?? "#cbd5e1" }}>
+              <p className="font-medium" style={{ color: entry.color ?? "var(--chart-tooltip-label)" }}>
                 {meta.label}: {formatTooltipValue(entry.value, 2)}
               </p>
               <p className="text-[11px] leading-4 text-stealth-200">{meta.description}</p>
