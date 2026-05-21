@@ -23,6 +23,12 @@ from app.core.db import SessionLocal
 
 logger = logging.getLogger(__name__)
 
+# Yahoo Finance tickers for extended crypto coverage (no rate limits)
+_YAHOO_CRYPTO_TICKERS: Dict[str, str] = {
+    "SOL": "SOL-USD",
+    "XRP": "XRP-USD",
+}
+
 
 class CryptoDataIngestion:
     """
@@ -83,6 +89,11 @@ class CryptoDataIngestion:
                 btc_volume_24h=data["bitcoin"]["usd_24h_vol"],
                 source="CoinGecko"
             )
+
+            # Augment with Yahoo Finance data for SOL and XRP (no rate limits)
+            yahoo_prices = self._fetch_yahoo_crypto_prices()
+            crypto_price.sol_usd = yahoo_prices.get("SOL")
+            crypto_price.xrp_usd = yahoo_prices.get("XRP")
             
             # Check if today's data already exists
             existing = self.db.query(CryptoPrice).filter(
@@ -93,6 +104,8 @@ class CryptoDataIngestion:
                 # Update existing record
                 existing.btc_usd = crypto_price.btc_usd
                 existing.eth_usd = crypto_price.eth_usd
+                existing.sol_usd = crypto_price.sol_usd
+                existing.xrp_usd = crypto_price.xrp_usd
                 existing.total_crypto_mcap = crypto_price.total_crypto_mcap
                 existing.btc_dominance = crypto_price.btc_dominance
                 existing.btc_gold_ratio = crypto_price.btc_gold_ratio
@@ -130,6 +143,10 @@ class CryptoDataIngestion:
             btc_volumes = self._series_to_date_map(btc_chart.get("total_volumes", []))
             eth_prices = self._series_to_date_map(eth_chart.get("prices", [])) if eth_chart else {}
 
+            # Fetch SOL and XRP historical prices from Yahoo Finance
+            sol_prices = self._fetch_yahoo_crypto_history("SOL", days)
+            xrp_prices = self._fetch_yahoo_crypto_history("XRP", days)
+
             total_market_caps = {}
             if global_chart:
                 total_market_caps = self._series_to_date_map(
@@ -164,6 +181,8 @@ class CryptoDataIngestion:
                     date=date,
                     btc_usd=btc_price,
                     eth_usd=eth_prices.get(date_obj),
+                    sol_usd=sol_prices.get(date_obj),
+                    xrp_usd=xrp_prices.get(date_obj),
                     total_crypto_mcap=(total_mcap / 1_000_000_000) if total_mcap else None,
                     btc_dominance=btc_dominance,
                     btc_gold_ratio=btc_price / gold_price if gold_price else None,
@@ -220,6 +239,38 @@ class CryptoDataIngestion:
             day = datetime.utcfromtimestamp(timestamp_ms / 1000).date()
             data[day] = value
         return data
+
+    def _fetch_yahoo_crypto_prices(self) -> Dict[str, Optional[float]]:
+        """Fetch current prices for extended crypto assets (SOL, XRP) via Yahoo Finance."""
+        result: Dict[str, Optional[float]] = {}
+        for symbol, ticker in _YAHOO_CRYPTO_TICKERS.items():
+            try:
+                data = yf.download(ticker, period="2d", interval="1d", progress=False)
+                if data.empty:
+                    result[symbol] = None
+                    continue
+                close = data["Close"].dropna()
+                result[symbol] = float(close.iloc[-1]) if not close.empty else None
+            except Exception as e:
+                logger.warning(f"Yahoo Finance error for {symbol} ({ticker}): {e}")
+                result[symbol] = None
+        return result
+
+    def _fetch_yahoo_crypto_history(self, symbol: str, days: int) -> Dict[date, float]:
+        """Fetch historical daily prices for a crypto asset via Yahoo Finance."""
+        ticker = _YAHOO_CRYPTO_TICKERS.get(symbol)
+        if not ticker:
+            return {}
+        try:
+            start = (datetime.utcnow() - timedelta(days=days + 5)).strftime("%Y-%m-%d")
+            data = yf.download(ticker, start=start, interval="1d", progress=False)
+            if data.empty:
+                return {}
+            close = data["Close"].dropna()
+            return {idx.date(): float(val) for idx, val in close.items()}
+        except Exception as e:
+            logger.warning(f"Yahoo Finance history error for {symbol}: {e}")
+            return {}
 
     def _fetch_gold_price(self) -> Optional[float]:
         """Helper to fetch current gold price for ratio calculation"""

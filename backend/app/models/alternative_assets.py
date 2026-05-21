@@ -23,6 +23,8 @@ class CryptoPrice(Base):
     # Major crypto assets
     btc_usd = Column(Float)
     eth_usd = Column(Float)
+    sol_usd = Column(Float)
+    xrp_usd = Column(Float)
     total_crypto_mcap = Column(Float)  # Total crypto market cap in billions
     btc_dominance = Column(Float)  # BTC % of total crypto mcap
     
