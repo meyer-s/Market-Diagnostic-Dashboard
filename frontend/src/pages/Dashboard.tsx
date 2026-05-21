@@ -199,11 +199,6 @@ export default function Dashboard() {
     });
   }, []);
 
-  const directionCardStyles = {
-    up: "bg-green-500/15 text-green-300 border-green-400/40",
-    down: "bg-red-500/15 text-red-300 border-red-400/40",
-    flat: "bg-yellow-500/15 text-yellow-300 border-yellow-400/40",
-  } as const;
   const directionLabel = {
     up: "Uptrend",
     down: "Downtrend",
@@ -312,7 +307,7 @@ export default function Dashboard() {
               {insightList.map((insight) => (
                 <div
                   key={insight.id}
-                  className={`rounded-md border px-2 py-2 ${directionCardStyles[insight.primaryDirection]}`}
+                  className={`direction-card direction-card-${insight.primaryDirection}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-stealth-100">

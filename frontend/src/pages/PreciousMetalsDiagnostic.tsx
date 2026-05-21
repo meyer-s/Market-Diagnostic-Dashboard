@@ -349,7 +349,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   const projections = projectionsData?.projections || [];
 
   return (
-    <div className={embedded ? "text-gray-200" : "p-3 md:p-6 text-gray-200"}>
+    <div className={embedded ? "text-stealth-200" : "page-shell text-stealth-200"}>
       {!embedded && (
         <>
           <h1 className="text-2xl md:text-3xl font-bold mb-2">Metals Diagnostic</h1>
