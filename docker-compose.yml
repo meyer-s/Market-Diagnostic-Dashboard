@@ -43,7 +43,8 @@ services:
       UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
     expose:
       - "8000"
-    healthcheck:
+    ports:
+      - "127.0.0.1:8000:8000"
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')\""]
       interval: 30s
       timeout: 10s
