@@ -8,6 +8,7 @@ COPY ./alembic /app/alembic
 COPY ./alembic.ini /app/alembic.ini
 COPY ./seed_indicators.py /app/seed_indicators.py
 COPY ./startup.sh /app/startup.sh
+COPY ./maintenance_scripts /app/maintenance_scripts
 
 RUN pip install --upgrade pip && \
     pip install -r /app/requirements.txt && \
