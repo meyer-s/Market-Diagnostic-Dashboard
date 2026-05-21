@@ -34,10 +34,6 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://market:market@db:5432/market_diagnostic}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
-      FRED_API_KEY: ${FRED_API_KEY:-}
-      EIA_API_KEY: ${EIA_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      MARKET_DIAGNOSTIC_MODEL: ${MARKET_DIAGNOSTIC_MODEL:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://marketdiagnostictool.com,https://www.marketdiagnostictool.com}
       RUN_SCHEDULER: "false"
       UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
@@ -71,10 +67,6 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://market:market@db:5432/market_diagnostic}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
-      FRED_API_KEY: ${FRED_API_KEY:-}
-      EIA_API_KEY: ${EIA_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      MARKET_DIAGNOSTIC_MODEL: ${MARKET_DIAGNOSTIC_MODEL:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://marketdiagnostictool.com,https://www.marketdiagnostictool.com}
       RUN_SCHEDULER: "true"
     command: ["python", "-m", "app.services.scheduler_worker"]
