@@ -16,7 +16,7 @@ CRYPTO_ASSETS = [
     {"symbol": "SOL", "name": "Solana", "coin_id": "solana", "color": "#14f195"},
     {"symbol": "XRP", "name": "XRP", "coin_id": "ripple", "color": "#f472b6"},
 ]
-MARKET_OVERVIEW_CACHE_TTL_SECONDS = 300
+MARKET_OVERVIEW_CACHE_TTL_SECONDS = 900  # 15 minutes (reduce CoinGecko 429s)
 _market_overview_cache: dict[int, tuple[float, dict]] = {}
 
 
@@ -50,6 +50,8 @@ def _build_db_fallback_market_overview(days: int, stale_payload: dict | None = N
     symbol_to_field = {
         "BTC": "btc_usd",
         "ETH": "eth_usd",
+        "SOL": "sol_usd",
+        "XRP": "xrp_usd",
     }
 
     with get_db_session() as db:
@@ -234,6 +236,10 @@ async def get_crypto_market_overview(
         for response in history_responses:
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
+        # On 429 rate-limit, prefer stale cache for up to 2 hours before DB fallback
+        if exc.response.status_code == 429 and stale_cached_payload is not None:
+            return stale_cached_payload
+
         if stale_cached_payload is not None:
             return stale_cached_payload
 
