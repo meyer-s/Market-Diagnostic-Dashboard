@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { isRouteActive, navRoutes, toolRoutes } from "../../routes/registry";
+import { isRouteActive, navRoutes, toolRoutes, toolGroupOrder, toolGroupLabels } from "../../routes/registry";
 
 export default function Topbar() {
   const location = useLocation();
@@ -142,27 +142,40 @@ export default function Topbar() {
                   id="topbar-tools-menu"
                   ref={toolsMenuRef}
                   onKeyDown={handleToolsMenuKeyDown}
-                  className="w-56 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/95 shadow-[0_24px_80px_-40px_rgba(0,0,0,0.95)] backdrop-blur-xl"
+                  className="w-56 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/95 shadow-[0_24px_80px_-40px_rgba(0,0,0,0.95)] backdrop-blur-xl pb-1.5"
                 >
-                  {toolRoutes.map((item, index) => {
-                    const isActive = isRouteActive(location.pathname, item);
+                  {toolGroupOrder.map((group, groupIdx) => {
+                    const groupItems = toolRoutes.filter((r) => r.toolGroup === group);
+                    if (groupItems.length === 0) return null;
                     return (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        ref={(node) => {
-                          toolItemRefs.current[index] = node;
-                        }}
-                        aria-current={isActive ? "page" : undefined}
-                        onClick={() => setToolsOpen(false)}
-                        className={`block px-4 py-2.5 text-sm transition-colors ${
-                          isActive
-                            ? "bg-stealth-800 text-white"
-                            : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300/70"
-                        }`}
-                      >
-                        {item.label}
-                      </Link>
+                      <div key={group}>
+                        {groupIdx > 0 && <div className="mx-3 my-1 border-t border-stealth-700/60" />}
+                        <div className="px-4 pb-1 pt-2.5 text-[10px] font-medium uppercase tracking-[0.2em] text-stealth-500">
+                          {toolGroupLabels[group]}
+                        </div>
+                        {groupItems.map((item) => {
+                          const itemIndex = toolRoutes.indexOf(item);
+                          const isActive = isRouteActive(location.pathname, item);
+                          return (
+                            <Link
+                              key={item.path}
+                              to={item.path}
+                              ref={(node) => {
+                                toolItemRefs.current[itemIndex] = node;
+                              }}
+                              aria-current={isActive ? "page" : undefined}
+                              onClick={() => setToolsOpen(false)}
+                              className={`block px-4 py-2 text-sm transition-colors ${
+                                isActive
+                                  ? "bg-stealth-800 text-white"
+                                  : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300/70"
+                              }`}
+                            >
+                              {item.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
                     );
                   })}
                 </div>
@@ -211,22 +224,33 @@ export default function Topbar() {
           <div className="border-b border-stealth-700 px-4 py-3 text-xs uppercase tracking-[0.22em] text-stealth-500">
             Tools
           </div>
-          {toolRoutes.map((item) => {
-            const isActive = isRouteActive(location.pathname, item);
+          {toolGroupOrder.map((group, groupIdx) => {
+            const groupItems = toolRoutes.filter((r) => r.toolGroup === group);
+            if (groupItems.length === 0) return null;
             return (
-              <Link
-                key={item.path}
-                to={item.path}
-                aria-current={isActive ? "page" : undefined}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`block border-b border-stealth-700 px-6 py-3 text-sm font-medium transition-colors last:border-b-0 ${
-                  isActive
-                    ? "bg-stealth-800 text-white"
-                    : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100"
-                }`}
-              >
-                {item.label}
-              </Link>
+              <div key={group}>
+                <div className={`px-4 py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-stealth-500 ${groupIdx > 0 ? "border-t border-stealth-700/60 pt-3" : ""}`}>
+                  {toolGroupLabels[group]}
+                </div>
+                {groupItems.map((item) => {
+                  const isActive = isRouteActive(location.pathname, item);
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      aria-current={isActive ? "page" : undefined}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`block border-b border-stealth-700 px-8 py-3 text-sm font-medium transition-colors last:border-b-0 ${
+                        isActive
+                          ? "bg-stealth-800 text-white"
+                          : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100"
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
