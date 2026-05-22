@@ -22,6 +22,7 @@ import RecapPost from "../pages/tools/RecapPost";
 import VolumeBreadthTools from "../pages/tools/VolumeBreadthTools";
 
 type NavGroup = "primary" | "tools";
+type ToolGroup = "market-views" | "asset-classes" | "research";
 
 export type AppRouteDefinition = {
   path: string;
@@ -29,6 +30,7 @@ export type AppRouteDefinition = {
   element: ReactElement;
   label?: string;
   navGroup?: NavGroup;
+  toolGroup?: ToolGroup;
   visible?: boolean;
   activeMatch?: string;
 };
@@ -64,15 +66,15 @@ export const routeRegistry: AppRouteDefinition[] = [
   { path: "/indicators", analyticsName: "Indicators", element: <Indicators /> },
   { path: "/indicators/:code", analyticsName: "Indicator Detail", element: <IndicatorDetail /> },
   { path: "/bond_health_stability", analyticsName: "Bond Health Stability", element: <BondHealthStabilityPage /> },
-  { path: "/news", label: "News", analyticsName: "Market News", navGroup: "tools", visible: true, activeMatch: "/news", element: <MarketNews /> },
+  { path: "/news", label: "News", analyticsName: "Market News", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/news", element: <MarketNews /> },
   { path: "/why-this-exists", analyticsName: "Vision", element: <Navigate to="/vision" replace /> },
-  { path: "/market-map", label: "Market Map", analyticsName: "Market Map", navGroup: "tools", visible: true, activeMatch: "/market-map", element: <MarketMap /> },
-  { path: "/sector-projections", label: "Sector Projections", analyticsName: "Sector Projections", navGroup: "tools", visible: true, activeMatch: "/sector-projections", element: <SectorProjections /> },
+  { path: "/market-map", label: "Market Map", analyticsName: "Market Map", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/market-map", element: <MarketMap /> },
+  { path: "/sector-projections", label: "Sector Projections", analyticsName: "Sector Projections", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/sector-projections", element: <SectorProjections /> },
   { path: "/stock-analysis/:symbol", analyticsName: "Stock Analysis", element: <StockAnalysis /> },
-  { path: "/stock-analysis", label: "Stock Analysis", analyticsName: "Stock Analysis", navGroup: "tools", visible: true, activeMatch: "/stock-analysis", element: <StockAnalysis /> },
-  { path: "/institutional-flow", label: "Institutional Flow", analyticsName: "Institutional Flow", navGroup: "tools", visible: true, activeMatch: "/institutional-flow", element: <InstitutionalFlow /> },
+  { path: "/stock-analysis", label: "Stock Analysis", analyticsName: "Stock Analysis", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/stock-analysis", element: <StockAnalysis /> },
+  { path: "/institutional-flow", label: "Institutional Flow", analyticsName: "Institutional Flow", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/institutional-flow", element: <InstitutionalFlow /> },
   { path: "/secret/options", analyticsName: "Secret Options", element: <SecretOptions /> },
-  { path: "/tools/recap", label: "Recap", analyticsName: "Recap", navGroup: "tools", visible: true, activeMatch: "/tools/recap", element: <RecapIndex /> },
+  { path: "/tools/recap", label: "Recap", analyticsName: "Recap", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/tools/recap", element: <RecapIndex /> },
   { path: "/tools/recap/:slug", analyticsName: "Recap", element: <RecapPost /> },
   { path: "/tools/volume-breadth", analyticsName: "Volume & Breadth", element: <VolumeBreadthTools /> },
   { path: "/tools/experiments", analyticsName: "Recap", element: <Navigate to="/tools/recap" replace /> },
@@ -80,16 +82,23 @@ export const routeRegistry: AppRouteDefinition[] = [
   { path: "/tools/updates", analyticsName: "Recap", element: <Navigate to="/tools/recap" replace /> },
   { path: "/tools/updates/:slug", analyticsName: "Recap", element: <LegacyRecapSlugRedirect /> },
   { path: "/precious-metals", analyticsName: "Alternative Assets", element: <Navigate to="/alternative-assets?tab=metals" replace /> },
-  { path: "/alternative-assets", label: "Alternative Assets", analyticsName: "Alternative Assets", navGroup: "tools", visible: true, activeMatch: "/alternative-assets", element: <AlternativeAssetStability /> },
-  { path: "/agriculture", label: "Agriculture Index", analyticsName: "Agriculture Index", navGroup: "tools", visible: true, activeMatch: "/agriculture", element: <AgricultureIndex /> },
-  { path: "/energy", label: "Energy Markets", analyticsName: "Energy Markets", navGroup: "tools", visible: true, activeMatch: "/energy", element: <EnergyIndex /> },
-  { path: "/real-estate", label: "Real Estate", analyticsName: "Real Estate", navGroup: "tools", visible: true, activeMatch: "/real-estate", element: <RealEstateDiagnostic /> },
+  { path: "/alternative-assets", label: "Alternative Assets", analyticsName: "Alternative Assets", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/alternative-assets", element: <AlternativeAssetStability /> },
+  { path: "/agriculture", label: "Agriculture Index", analyticsName: "Agriculture Index", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/agriculture", element: <AgricultureIndex /> },
+  { path: "/energy", label: "Energy Markets", analyticsName: "Energy Markets", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/energy", element: <EnergyIndex /> },
+  { path: "/real-estate", label: "Real Estate", analyticsName: "Real Estate", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/real-estate", element: <RealEstateDiagnostic /> },
   { path: "/aas-breakdown", analyticsName: "AAS Breakdown", element: <AASComponentBreakdown /> },
   { path: "*", analyticsName: "Not Found", element: <NotFoundPage /> },
 ];
 
 export const navRoutes = routeRegistry.filter((route) => route.visible && route.navGroup === "primary");
 export const toolRoutes = routeRegistry.filter((route) => route.visible && route.navGroup === "tools");
+
+export const toolGroupLabels: Record<string, string> = {
+  "market-views": "Market Views",
+  "asset-classes": "Asset Classes",
+  "research": "Research",
+};
+export const toolGroupOrder = ["market-views", "asset-classes", "research"] as const;
 
 export function isRouteActive(pathname: string, route: AppRouteDefinition): boolean {
   if (route.activeMatch === "/") {
