@@ -101,6 +101,24 @@ async def scheduled_etl_job():
             except Exception as e:
                 logger.error(f"❌ AAS calculation failed: {e}", exc_info=True)
             
+            # --- News Ingestion ---
+            logger.info("📰 Ingesting news articles...")
+            try:
+                from app.services.news_service import refresh_news_cache
+                from app.core.db import SessionLocal as _NewsSessionLocal
+                _news_db = _NewsSessionLocal()
+                try:
+                    news_result = refresh_news_cache(_news_db)
+                    logger.info(
+                        "✅ News ingestion completed: %d tickers checked, %d new items",
+                        news_result.get("tickers_checked", 0),
+                        news_result.get("new_items", 0),
+                    )
+                finally:
+                    _news_db.close()
+            except Exception as e:
+                logger.error(f"❌ News ingestion failed: {e}", exc_info=True)
+
             # --- Sector Projections ---
             logger.info("🔮 Computing sector projections...")
             # Get system state
@@ -187,6 +205,29 @@ async def scheduled_etl_job():
         logger.error(f"❌ ETL job failed: {str(e)}")
 
 
+async def scheduled_news_refresh_job():
+    """Refresh news article cache for all tracked tickers every 2 hours."""
+    try:
+        with scheduler_job_lock("scheduled_news_refresh_job") as acquired:
+            if not acquired:
+                return
+            logger.info("📰 Starting scheduled news refresh...")
+            from app.services.news_service import refresh_news_cache
+            from app.core.db import SessionLocal as _NewsSessionLocal
+            db = _NewsSessionLocal()
+            try:
+                result = refresh_news_cache(db)
+                logger.info(
+                    "✅ News refresh completed: %d tickers checked, %d new items",
+                    result.get("tickers_checked", 0),
+                    result.get("new_items", 0),
+                )
+            finally:
+                db.close()
+    except Exception as exc:
+        logger.error("❌ News refresh job failed: %s", exc, exc_info=True)
+
+
 async def scheduled_agriculture_report_refresh_job():
     """Refresh the expensive agriculture report adapters once per day."""
     try:
@@ -250,6 +291,19 @@ def start_scheduler():
             replace_existing=True,
         )
 
+    if scheduler.get_job("news_refresh") is None:
+        scheduler.add_job(
+            scheduled_news_refresh_job,
+            CronTrigger(
+                day_of_week="mon-fri",
+                hour="7-20/2",  # every 2 hours, 7 AM to 8 PM ET
+                timezone="America/New_York",
+            ),
+            id="news_refresh",
+            name="News Article Cache Refresh",
+            replace_existing=True,
+        )
+
     if scheduler.get_job("agriculture_report_refresh") is None:
         scheduler.add_job(
             scheduled_agriculture_report_refresh_job,
@@ -291,7 +345,7 @@ def start_scheduler():
 
     if not scheduler.running:
         scheduler.start()
-        logger.info("📅 Scheduler started - ETL runs every 4 hours and agriculture report caches refresh daily")
+        logger.info("📅 Scheduler started - ETL runs every 4 hours, news refreshes every 2 hours, agriculture caches refresh daily")
 
 
 def stop_scheduler():
