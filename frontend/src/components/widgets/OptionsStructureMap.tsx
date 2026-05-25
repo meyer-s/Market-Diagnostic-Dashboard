@@ -219,6 +219,30 @@ function buildProfileFillPath(points: ChartPoint[], spineX: number, plotTop: num
   return `${buildSmoothPath(points)} L ${spineX.toFixed(1)} ${plotBottom.toFixed(1)} L ${spineX.toFixed(1)} ${plotTop.toFixed(1)} Z`;
 }
 
+function deriveProfileStyle(levels: StructureLevel[], currentPrice: number, rawRange: number) {
+  if (!levels.length) {
+    return {
+      contrastPower: 1.1,
+      baseReach: 0,
+      maxReach: 0,
+    };
+  }
+
+  const intensities = levels.map((level) => level.intensity);
+  const maxIntensity = Math.max(...intensities);
+  const minIntensity = Math.min(...intensities);
+  const meanIntensity = intensities.reduce((sum, value) => sum + value, 0) / intensities.length;
+  const dispersion = maxIntensity - minIntensity;
+  const dominance = Math.max(0, maxIntensity - meanIntensity);
+  const relativeVolatility = Math.min(1.25, (rawRange / Math.max(Math.abs(currentPrice), 1)) * 10);
+
+  return {
+    contrastPower: 1.05 + dispersion * 1.4 + dominance * 1.1,
+    baseReach: maxIntensity < 0.45 ? 0 : 2 + relativeVolatility * 2,
+    maxReach: 18 + dispersion * 28 + dominance * 24 + relativeVolatility * 14,
+  };
+}
+
 function SetupBadge({ setup }: { setup: SetupRegime }) {
   const config = {
     range: { label: "Range Bound", cls: "border-stealth-600 bg-stealth-800/70 text-stealth-300" },
@@ -313,7 +337,7 @@ function StructureBand({
   const GUIDE_LEFT = 74;
   const GUIDE_RIGHT = VW - 74;
   const PROFILE_BLEND_X = CENTER_X;
-  const PROFILE_MAX_REACH = 76;
+  const PROFILE_HARD_CAP = 86;
   const PROFILE_SIGMA = Math.max(13, PLOT_HEIGHT * 0.076);
   const SAMPLE_COUNT = 72;
   const scaleY = (price: number) => PLOT_TOP + ((hi - price) / (hi - lo)) * PLOT_HEIGHT;
@@ -323,28 +347,36 @@ function StructureBand({
   const rightFillId = `${idPrefix}-right-fill`;
   const leftGlowId = `${idPrefix}-left-glow`;
   const rightGlowId = `${idPrefix}-right-glow`;
+  const supportProfileStyle = deriveProfileStyle(supports, currentPrice, rawRange);
+  const resistanceProfileStyle = deriveProfileStyle(resistances, currentPrice, rawRange);
 
-  const profileReach = (levels: StructureLevel[], y: number) => {
+  const profileReach = (
+    levels: StructureLevel[],
+    y: number,
+    style: ReturnType<typeof deriveProfileStyle>
+  ) => {
     if (!levels.length) return 0;
 
     const total = levels.reduce((sum, level) => {
       const levelY = scaleY(level.price);
-      const amplitude = 10 + level.intensity * 42;
+      const normalizedIntensity = Math.max(0, (level.intensity - 0.14) / 0.86);
+      const emphasis = Math.pow(normalizedIntensity, style.contrastPower);
+      const amplitude = style.baseReach + emphasis * style.maxReach;
       return sum + amplitude * Math.exp(-((y - levelY) ** 2) / (2 * PROFILE_SIGMA ** 2));
     }, 0);
 
-    return Math.min(PROFILE_MAX_REACH, total);
+    return Math.min(PROFILE_HARD_CAP, total);
   };
 
   const sampleYs = Array.from({ length: SAMPLE_COUNT + 1 }, (_, index) => PLOT_TOP + (index / SAMPLE_COUNT) * PLOT_HEIGHT);
-  const leftProfile = sampleYs.map((y) => ({ x: LEFT_SPINE_X - profileReach(supports, y), y }));
-  const rightProfile = sampleYs.map((y) => ({ x: RIGHT_SPINE_X + profileReach(resistances, y), y }));
+  const leftProfile = sampleYs.map((y) => ({ x: LEFT_SPINE_X - profileReach(supports, y, supportProfileStyle), y }));
+  const rightProfile = sampleYs.map((y) => ({ x: RIGHT_SPINE_X + profileReach(resistances, y, resistanceProfileStyle), y }));
   const leftProfileFill = buildProfileFillPath(leftProfile, PROFILE_BLEND_X, PLOT_TOP, PLOT_BOTTOM);
   const rightProfileFill = buildProfileFillPath(rightProfile, PROFILE_BLEND_X, PLOT_TOP, PLOT_BOTTOM);
   const leftProfileStroke = buildSmoothPath(leftProfile);
   const rightProfileStroke = buildSmoothPath(rightProfile);
-  const primarySupportReach = primarySupport === null ? 0 : profileReach(supports, scaleY(primarySupport));
-  const primaryResistanceReach = primaryResistance === null ? 0 : profileReach(resistances, scaleY(primaryResistance));
+  const primarySupportReach = primarySupport === null ? 0 : profileReach(supports, scaleY(primarySupport), supportProfileStyle);
+  const primaryResistanceReach = primaryResistance === null ? 0 : profileReach(resistances, scaleY(primaryResistance), resistanceProfileStyle);
 
   return (
     <svg viewBox={`0 0 ${VW} ${VH}`} className="w-full" style={{ height: 300 }} aria-label="Options structure band">
