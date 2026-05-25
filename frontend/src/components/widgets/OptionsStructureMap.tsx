@@ -393,9 +393,9 @@ function StructureBand({
         {/* Fill gradients: transparent at spine → vibrant at outer contour edge */}
         <linearGradient id={leftFillId} gradientUnits="userSpaceOnUse"
           x1={CENTER_X} x2={LEFT_SPINE_X - PROFILE_HARD_CAP} y1="0" y2="0">
-          <stop offset="0%"   stopColor="rgba(74,222,128,0)" />
-          <stop offset="45%"  stopColor="rgba(34,197,94,0.07)" />
-          <stop offset="100%" stopColor="rgba(74,222,128,0.22)" />
+          <stop offset="0%"   stopColor="rgba(56,189,248,0)" />
+          <stop offset="45%"  stopColor="rgba(14,165,233,0.07)" />
+          <stop offset="100%" stopColor="rgba(56,189,248,0.22)" />
         </linearGradient>
         <linearGradient id={rightFillId} gradientUnits="userSpaceOnUse"
           x1={CENTER_X} x2={RIGHT_SPINE_X + PROFILE_HARD_CAP} y1="0" y2="0">
@@ -445,11 +445,11 @@ function StructureBand({
             <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.55" filter={`url(#${leftGlowId})`} stroke="none" />
             {/* neon line: wide blurred halo + thin bright stroke */}
             <path d={leftProfileStroke} fill="none"
-              stroke="rgba(16,185,129,0.32)" strokeWidth="10"
+              stroke="rgba(2,132,199,0.35)" strokeWidth="10"
               strokeLinecap="round" strokeLinejoin="round"
               filter={`url(#${leftGlowId})`} />
             <path d={leftProfileStroke} fill="none"
-              stroke="rgba(110,231,183,0.80)" strokeWidth="1.5"
+              stroke="rgba(125,211,252,0.82)" strokeWidth="1.5"
               strokeLinecap="round" strokeLinejoin="round" />
           </>
         ) : null}
@@ -534,13 +534,13 @@ function StructureBand({
           <g>
             <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
               y1={scaleY(primarySupport)} y2={scaleY(primarySupport)}
-              stroke="rgba(74,222,128,0.4)" strokeWidth="0.5" />
+              stroke="rgba(56,189,248,0.4)" strokeWidth="0.5" />
             <text x={CENTER_X} y={scaleY(primarySupport) - 1.5} textAnchor="middle"
-              fill="#4ade80" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
+              fill="#38bdf8" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
               S
             </text>
             <text x={CENTER_X} y={scaleY(primarySupport) + 8} textAnchor="middle"
-              fill="#6ee7b7" fontSize="7.5" fontFamily="monospace" fontWeight="600">
+              fill="#7dd3fc" fontSize="7.5" fontFamily="monospace" fontWeight="600">
               {fmtPrice(primarySupport)}
             </text>
           </g>
@@ -560,7 +560,7 @@ function StructureBand({
         <text
           x={Math.max(12, LEFT_SPINE_X - primarySupportReach - 16)}
           y={Math.min(VH - 72, scaleY(primarySupport) + 3)}
-          fill="#6ee7b7" fontSize="10" fontFamily="monospace">
+          fill="#7dd3fc" fontSize="10" fontFamily="monospace">
           {fmtPrice(primarySupport)}
         </text>
       ) : null}
@@ -575,7 +575,7 @@ function StructureBand({
         <text x={CENTER_X} y="0" textAnchor="middle" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.6">CURRENT</text>
         <text x={VW - 36} y="0" textAnchor="end" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.6">RESISTANCE</text>
 
-        <text x={36} y="28" fill="#6ee7b7" fontSize="15" fontWeight="600">{primarySupport !== null ? fmtPrice(primarySupport) : "n/a"}</text>
+        <text x={36} y="28" fill="#7dd3fc" fontSize="15" fontWeight="600">{primarySupport !== null ? fmtPrice(primarySupport) : "n/a"}</text>
         <text x={CENTER_X} y="28" textAnchor="middle" fill="#f8fafc" fontSize="15" fontWeight="600">{fmtPrice(currentPrice)}</text>
         <text x={VW - 36} y="28" textAnchor="end" fill="#fca5a5" fontSize="15" fontWeight="600">{primaryResistance !== null ? fmtPrice(primaryResistance) : "n/a"}</text>
 
