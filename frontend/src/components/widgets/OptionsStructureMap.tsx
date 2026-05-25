@@ -82,7 +82,7 @@ function deriveMaAlignment(
 function buildInterpretation(
   setup: SetupRegime,
   maAlignment: MaAlignment,
-  currentPrice: number,
+  _currentPrice: number,
   topCallWall: number | null,
   topPutWall: number | null,
   topResistance: number | null,
