@@ -312,21 +312,24 @@ function StructureBand({
   const RIGHT_SPINE_X = CENTER_X + SPINE_HALF_W;
   const GUIDE_LEFT = 74;
   const GUIDE_RIGHT = VW - 74;
-  const PROFILE_MAX_REACH = 80;
-  const PROFILE_SIGMA = Math.max(12, PLOT_HEIGHT * 0.068);
+  const PROFILE_BLEND_X = CENTER_X;
+  const PROFILE_MAX_REACH = 76;
+  const PROFILE_SIGMA = Math.max(13, PLOT_HEIGHT * 0.076);
   const SAMPLE_COUNT = 72;
   const scaleY = (price: number) => PLOT_TOP + ((hi - price) / (hi - lo)) * PLOT_HEIGHT;
   const currentY = scaleY(currentPrice);
   const spineFillId = `${idPrefix}-spine-fill`;
   const leftFillId = `${idPrefix}-left-fill`;
   const rightFillId = `${idPrefix}-right-fill`;
+  const leftGlowId = `${idPrefix}-left-glow`;
+  const rightGlowId = `${idPrefix}-right-glow`;
 
   const profileReach = (levels: StructureLevel[], y: number) => {
     if (!levels.length) return 0;
 
     const total = levels.reduce((sum, level) => {
       const levelY = scaleY(level.price);
-      const amplitude = 10 + level.intensity * 36;
+      const amplitude = 10 + level.intensity * 42;
       return sum + amplitude * Math.exp(-((y - levelY) ** 2) / (2 * PROFILE_SIGMA ** 2));
     }, 0);
 
@@ -336,33 +339,39 @@ function StructureBand({
   const sampleYs = Array.from({ length: SAMPLE_COUNT + 1 }, (_, index) => PLOT_TOP + (index / SAMPLE_COUNT) * PLOT_HEIGHT);
   const leftProfile = sampleYs.map((y) => ({ x: LEFT_SPINE_X - profileReach(supports, y), y }));
   const rightProfile = sampleYs.map((y) => ({ x: RIGHT_SPINE_X + profileReach(resistances, y), y }));
-  const leftProfileFill = buildProfileFillPath(leftProfile, LEFT_SPINE_X, PLOT_TOP, PLOT_BOTTOM);
-  const rightProfileFill = buildProfileFillPath(rightProfile, RIGHT_SPINE_X, PLOT_TOP, PLOT_BOTTOM);
+  const leftProfileFill = buildProfileFillPath(leftProfile, PROFILE_BLEND_X, PLOT_TOP, PLOT_BOTTOM);
+  const rightProfileFill = buildProfileFillPath(rightProfile, PROFILE_BLEND_X, PLOT_TOP, PLOT_BOTTOM);
   const leftProfileStroke = buildSmoothPath(leftProfile);
   const rightProfileStroke = buildSmoothPath(rightProfile);
-
-  const ledgeWidth = (level: StructureLevel) => Math.min(78, Math.max(22, 20 + level.intensity * 52));
-  const primarySupportLevel = primarySupport === null ? null : supports.find((level) => level.price === primarySupport) ?? null;
-  const primaryResistanceLevel = primaryResistance === null ? null : resistances.find((level) => level.price === primaryResistance) ?? null;
+  const primarySupportReach = primarySupport === null ? 0 : profileReach(supports, scaleY(primarySupport));
+  const primaryResistanceReach = primaryResistance === null ? 0 : profileReach(resistances, scaleY(primaryResistance));
 
   return (
     <svg viewBox={`0 0 ${VW} ${VH}`} className="w-full" style={{ height: 300 }} aria-label="Options structure band">
       <defs>
         <linearGradient id={spineFillId} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="rgba(71,85,105,0.34)" />
-          <stop offset="48%" stopColor="rgba(30,41,59,0.94)" />
-          <stop offset="100%" stopColor="rgba(51,65,85,0.42)" />
+          <stop offset="0%" stopColor="rgba(71,85,105,0.26)" />
+          <stop offset="48%" stopColor="rgba(15,23,42,0.78)" />
+          <stop offset="100%" stopColor="rgba(51,65,85,0.32)" />
         </linearGradient>
         <linearGradient id={leftFillId} x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor="rgba(74,222,128,0.02)" />
-          <stop offset="55%" stopColor="rgba(74,222,128,0.12)" />
-          <stop offset="100%" stopColor="rgba(148,163,184,0.05)" />
+          <stop offset="0%" stopColor="rgba(74,222,128,0)" />
+          <stop offset="48%" stopColor="rgba(34,197,94,0.08)" />
+          <stop offset="82%" stopColor="rgba(74,222,128,0.18)" />
+          <stop offset="100%" stopColor="rgba(110,231,183,0.24)" />
         </linearGradient>
         <linearGradient id={rightFillId} x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor="rgba(148,163,184,0.05)" />
-          <stop offset="45%" stopColor="rgba(251,113,133,0.12)" />
-          <stop offset="100%" stopColor="rgba(251,113,133,0.02)" />
+          <stop offset="0%" stopColor="rgba(251,146,160,0.24)" />
+          <stop offset="18%" stopColor="rgba(251,113,133,0.18)" />
+          <stop offset="52%" stopColor="rgba(251,113,133,0.08)" />
+          <stop offset="100%" stopColor="rgba(251,113,133,0)" />
         </linearGradient>
+        <filter id={leftGlowId} x="-40%" y="-25%" width="200%" height="150%">
+          <feGaussianBlur stdDeviation="5.5" />
+        </filter>
+        <filter id={rightGlowId} x="-40%" y="-25%" width="200%" height="150%">
+          <feGaussianBlur stdDeviation="5.5" />
+        </filter>
       </defs>
 
       <text x={24} y="18" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.8">
@@ -372,8 +381,18 @@ function StructureBand({
         SUPPORT STRUCTURE
       </text>
 
-      {supports.length > 0 ? <path d={leftProfileFill} fill={`url(#${leftFillId})`} stroke="none" /> : null}
-      {resistances.length > 0 ? <path d={rightProfileFill} fill={`url(#${rightFillId})`} stroke="none" /> : null}
+      {supports.length > 0 ? (
+        <>
+          <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.95" stroke="none" />
+          <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.65" filter={`url(#${leftGlowId})`} stroke="none" />
+        </>
+      ) : null}
+      {resistances.length > 0 ? (
+        <>
+          <path d={rightProfileFill} fill={`url(#${rightFillId})`} opacity="0.95" stroke="none" />
+          <path d={rightProfileFill} fill={`url(#${rightFillId})`} opacity="0.65" filter={`url(#${rightGlowId})`} stroke="none" />
+        </>
+      ) : null}
 
       <rect
         x={LEFT_SPINE_X}
@@ -382,7 +401,35 @@ function StructureBand({
         height={PLOT_HEIGHT}
         rx="18"
         fill={`url(#${spineFillId})`}
-        stroke="rgba(71,85,105,0.9)"
+        stroke="rgba(71,85,105,0.68)"
+      />
+      <rect
+        x={LEFT_SPINE_X + 4}
+        y={PLOT_TOP + 4}
+        width={SPINE_W - 8}
+        height={PLOT_HEIGHT - 8}
+        rx="14"
+        fill="rgba(148,163,184,0.03)"
+      />
+      <line
+        x1={LEFT_SPINE_X + 1}
+        x2={LEFT_SPINE_X + 1}
+        y1={PLOT_TOP + 12}
+        y2={PLOT_BOTTOM - 12}
+        stroke="rgba(74,222,128,0.34)"
+        strokeWidth="1.5"
+        opacity="0.85"
+        filter={`url(#${leftGlowId})`}
+      />
+      <line
+        x1={RIGHT_SPINE_X - 1}
+        x2={RIGHT_SPINE_X - 1}
+        y1={PLOT_TOP + 12}
+        y2={PLOT_BOTTOM - 12}
+        stroke="rgba(251,113,133,0.34)"
+        strokeWidth="1.5"
+        opacity="0.85"
+        filter={`url(#${rightGlowId})`}
       />
       <line
         x1={CENTER_X}
@@ -427,44 +474,52 @@ function StructureBand({
         </g>
       ) : null}
 
-      {supports.map((level, index) => {
-        const y = scaleY(level.price);
-        const width = ledgeWidth(level);
-        const barH = 10;
-        const x = LEFT_SPINE_X - width + 4;
-
-        return (
-          <g key={`support-${level.price}-${index}`}>
-            <rect x={x - 8} y={y - barH / 2 - 1} width={width + 10} height={barH + 2} rx="6" fill="rgba(52,211,153,0.08)" />
-            <rect x={x} y={y - barH / 2} width={width} height={barH} rx="5" fill="rgba(110,231,183,0.82)" />
-          </g>
-        );
-      })}
-
-      {resistances.map((level, index) => {
-        const y = scaleY(level.price);
-        const width = ledgeWidth(level);
-        const barH = 10;
-        const x = RIGHT_SPINE_X - 4;
-
-        return (
-          <g key={`resistance-${level.price}-${index}`}>
-            <rect x={x - 2} y={y - barH / 2 - 1} width={width + 10} height={barH + 2} rx="6" fill="rgba(251,113,133,0.08)" />
-            <rect x={x} y={y - barH / 2} width={width} height={barH} rx="5" fill="rgba(251,146,160,0.82)" />
-          </g>
-        );
-      })}
-
       {supports.length > 0 ? (
-        <path d={leftProfileStroke} fill="none" stroke="rgba(74,222,128,0.95)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <>
+          <path
+            d={leftProfileStroke}
+            fill="none"
+            stroke="rgba(16,185,129,0.26)"
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            filter={`url(#${leftGlowId})`}
+          />
+          <path
+            d={leftProfileStroke}
+            fill="none"
+            stroke="rgba(110,231,183,0.72)"
+            strokeWidth="1.65"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </>
       ) : null}
       {resistances.length > 0 ? (
-        <path d={rightProfileStroke} fill="none" stroke="rgba(248,113,113,0.95)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <>
+          <path
+            d={rightProfileStroke}
+            fill="none"
+            stroke="rgba(244,63,94,0.26)"
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            filter={`url(#${rightGlowId})`}
+          />
+          <path
+            d={rightProfileStroke}
+            fill="none"
+            stroke="rgba(251,146,160,0.72)"
+            strokeWidth="1.65"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </>
       ) : null}
 
       {primaryResistance !== null ? (
         <text
-          x={Math.min(VW - 12, RIGHT_SPINE_X + (primaryResistanceLevel ? ledgeWidth(primaryResistanceLevel) : 42) + 18)}
+          x={Math.min(VW - 12, RIGHT_SPINE_X + primaryResistanceReach + 18)}
           y={Math.max(14, scaleY(primaryResistance) + 3)}
           textAnchor="end"
           fill="#fca5a5"
@@ -476,7 +531,7 @@ function StructureBand({
       ) : null}
       {primarySupport !== null ? (
         <text
-          x={Math.max(12, LEFT_SPINE_X - (primarySupportLevel ? ledgeWidth(primarySupportLevel) : 42) - 16)}
+          x={Math.max(12, LEFT_SPINE_X - primarySupportReach - 16)}
           y={Math.min(VH - 72, scaleY(primarySupport) + 3)}
           fill="#6ee7b7"
           fontSize="10"
