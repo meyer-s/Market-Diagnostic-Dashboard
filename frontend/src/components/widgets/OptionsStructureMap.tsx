@@ -350,6 +350,10 @@ function StructureBand({
   const fadeMaskGradId = `${idPrefix}-fade-grad`;
   const fadeMaskId = `${idPrefix}-fade-mask`;
   const pillClipId = `${idPrefix}-pill-clip`;
+  const leftStrokeMaskGradId = `${idPrefix}-left-stroke-grad`;
+  const leftStrokeMaskId = `${idPrefix}-left-stroke-mask`;
+  const rightStrokeMaskGradId = `${idPrefix}-right-stroke-grad`;
+  const rightStrokeMaskId = `${idPrefix}-right-stroke-mask`;
   const supportProfileStyle = deriveProfileStyle(supports, currentPrice, rawRange);
   const resistanceProfileStyle = deriveProfileStyle(resistances, currentPrice, rawRange);
 
@@ -390,11 +394,24 @@ function StructureBand({
     const first = points.findIndex((pt) => reach(pt) > STROKE_MIN_REACH);
     const lastRev = [...points].reverse().findIndex((pt) => reach(pt) > STROKE_MIN_REACH);
     const last = points.length - 1 - lastRev;
-    if (first === -1 || last <= first) return points;
-    return points.slice(Math.max(0, first - 1), Math.min(points.length, last + 2));
+    if (first === -1 || last <= first) return { path: buildSmoothPath(points), yFirst: PLOT_TOP, yLast: PLOT_BOTTOM };
+    const sliced = points.slice(Math.max(0, first - 1), Math.min(points.length, last + 2));
+    return {
+      path: buildSmoothPath(sliced),
+      yFirst: sliced[0].y,
+      yLast: sliced[sliced.length - 1].y,
+    };
   };
-  const leftProfileStroke = buildSmoothPath(trimStroke(leftProfile, LEFT_SPINE_X, "left"));
-  const rightProfileStroke = buildSmoothPath(trimStroke(rightProfile, RIGHT_SPINE_X, "right"));
+  const leftTrim = trimStroke(leftProfile, LEFT_SPINE_X, "left");
+  const rightTrim = trimStroke(rightProfile, RIGHT_SPINE_X, "right");
+  const leftProfileStroke = leftTrim.path;
+  const rightProfileStroke = rightTrim.path;
+  // Fade margin in px — how far from each end the stroke dissolves
+  const FADE_PX = 18;
+  const leftY0 = leftTrim.yFirst;
+  const leftY1 = leftTrim.yLast;
+  const rightY0 = rightTrim.yFirst;
+  const rightY1 = rightTrim.yLast;
   const primarySupportReach = primarySupport === null ? 0 : profileReach(supports, scaleY(primarySupport), supportProfileStyle);
   const primaryResistanceReach = primaryResistance === null ? 0 : profileReach(resistances, scaleY(primaryResistance), resistanceProfileStyle);
 
@@ -444,6 +461,29 @@ function StructureBand({
         <clipPath id={pillClipId}>
           <rect x={LEFT_SPINE_X} y={PLOT_TOP} width={SPINE_W} height={PLOT_HEIGHT} rx="18" />
         </clipPath>
+
+        {/* Per-side stroke fade masks — keyed to the trimmed segment Y extents */}
+        <linearGradient id={leftStrokeMaskGradId} gradientUnits="userSpaceOnUse"
+          x1="0" x2="0" y1={leftY0} y2={leftY1}>
+          <stop offset="0%"   stopColor="white" stopOpacity="0" />
+          <stop offset={`${Math.min(50, (FADE_PX / Math.max(1, leftY1 - leftY0)) * 100).toFixed(1)}%`} stopColor="white" stopOpacity="1" />
+          <stop offset={`${Math.max(50, 100 - (FADE_PX / Math.max(1, leftY1 - leftY0)) * 100).toFixed(1)}%`} stopColor="white" stopOpacity="1" />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
+        </linearGradient>
+        <mask id={leftStrokeMaskId}>
+          <rect x="0" y={leftY0 - 2} width={VW} height={leftY1 - leftY0 + 4} fill={`url(#${leftStrokeMaskGradId})`} />
+        </mask>
+
+        <linearGradient id={rightStrokeMaskGradId} gradientUnits="userSpaceOnUse"
+          x1="0" x2="0" y1={rightY0} y2={rightY1}>
+          <stop offset="0%"   stopColor="white" stopOpacity="0" />
+          <stop offset={`${Math.min(50, (FADE_PX / Math.max(1, rightY1 - rightY0)) * 100).toFixed(1)}%`} stopColor="white" stopOpacity="1" />
+          <stop offset={`${Math.max(50, 100 - (FADE_PX / Math.max(1, rightY1 - rightY0)) * 100).toFixed(1)}%`} stopColor="white" stopOpacity="1" />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
+        </linearGradient>
+        <mask id={rightStrokeMaskId}>
+          <rect x="0" y={rightY0 - 2} width={VW} height={rightY1 - rightY0 + 4} fill={`url(#${rightStrokeMaskGradId})`} />
+        </mask>
       </defs>
 
       <text x={24} y="18" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.8">
@@ -460,27 +500,31 @@ function StructureBand({
             {/* fill: transparent at spine, bright at outer contour edge */}
             <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.95" stroke="none" />
             <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.55" filter={`url(#${leftGlowId})`} stroke="none" />
-            {/* neon line: wide blurred halo + thin bright stroke */}
-            <path d={leftProfileStroke} fill="none"
-              stroke="rgba(2,132,199,0.35)" strokeWidth="10"
-              strokeLinecap="round" strokeLinejoin="round"
-              filter={`url(#${leftGlowId})`} />
-            <path d={leftProfileStroke} fill="none"
-              stroke="rgba(125,211,252,0.82)" strokeWidth="1.5"
-              strokeLinecap="round" strokeLinejoin="round" />
+            {/* neon line: wide blurred halo + thin bright stroke, faded at trim ends */}
+            <g mask={`url(#${leftStrokeMaskId})`}>
+              <path d={leftProfileStroke} fill="none"
+                stroke="rgba(2,132,199,0.35)" strokeWidth="10"
+                strokeLinecap="round" strokeLinejoin="round"
+                filter={`url(#${leftGlowId})`} />
+              <path d={leftProfileStroke} fill="none"
+                stroke="rgba(125,211,252,0.82)" strokeWidth="1.5"
+                strokeLinecap="round" strokeLinejoin="round" />
+            </g>
           </>
         ) : null}
         {resistances.length > 0 ? (
           <>
             <path d={rightProfileFill} fill={`url(#${rightFillId})`} opacity="0.95" stroke="none" />
             <path d={rightProfileFill} fill={`url(#${rightFillId})`} opacity="0.55" filter={`url(#${rightGlowId})`} stroke="none" />
-            <path d={rightProfileStroke} fill="none"
-              stroke="rgba(234,88,12,0.35)" strokeWidth="10"
-              strokeLinecap="round" strokeLinejoin="round"
-              filter={`url(#${rightGlowId})`} />
-            <path d={rightProfileStroke} fill="none"
-              stroke="rgba(253,186,116,0.82)" strokeWidth="1.5"
-              strokeLinecap="round" strokeLinejoin="round" />
+            <g mask={`url(#${rightStrokeMaskId})`}>
+              <path d={rightProfileStroke} fill="none"
+                stroke="rgba(234,88,12,0.35)" strokeWidth="10"
+                strokeLinecap="round" strokeLinejoin="round"
+                filter={`url(#${rightGlowId})`} />
+              <path d={rightProfileStroke} fill="none"
+                stroke="rgba(253,186,116,0.82)" strokeWidth="1.5"
+                strokeLinecap="round" strokeLinejoin="round" />
+            </g>
           </>
         ) : null}
       </g>
