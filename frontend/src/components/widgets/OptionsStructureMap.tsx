@@ -409,23 +409,23 @@ function StructureBand({
           <stop offset="100%" stopColor="rgba(251,146,60,0.22)" />
         </linearGradient>
 
-        {/* Vertical fade: envelope handles the taper; mask is a soft safety polish at extremes */}
+        {/* Vertical fade: catches blur bleed at ends; envelope handles geometry taper */}
         <linearGradient id={fadeMaskGradId} gradientUnits="userSpaceOnUse"
           x1="0" x2="0" y1={PLOT_TOP} y2={PLOT_BOTTOM}>
           <stop offset="0%"   stopColor="white" stopOpacity="0" />
-          <stop offset="5%"   stopColor="white" stopOpacity="1" />
-          <stop offset="95%"  stopColor="white" stopOpacity="1" />
+          <stop offset="12%"  stopColor="white" stopOpacity="1" />
+          <stop offset="88%"  stopColor="white" stopOpacity="1" />
           <stop offset="100%" stopColor="white" stopOpacity="0" />
         </linearGradient>
         <mask id={fadeMaskId}>
           <rect x="0" y={PLOT_TOP} width={VW} height={PLOT_HEIGHT} fill={`url(#${fadeMaskGradId})`} />
         </mask>
 
-        <filter id={leftGlowId} x="-55%" y="-30%" width="210%" height="160%">
-          <feGaussianBlur stdDeviation="7" />
+        <filter id={leftGlowId} x="-55%" y="-8%" width="210%" height="116%">
+          <feGaussianBlur stdDeviation="6" />
         </filter>
-        <filter id={rightGlowId} x="-55%" y="-30%" width="210%" height="160%">
-          <feGaussianBlur stdDeviation="7" />
+        <filter id={rightGlowId} x="-55%" y="-8%" width="210%" height="116%">
+          <feGaussianBlur stdDeviation="6" />
         </filter>
 
         {/* Clip to pill shape for interior labels */}
