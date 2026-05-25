@@ -381,8 +381,20 @@ function StructureBand({
   const rightProfile = sampleYs.map((y) => ({ x: RIGHT_SPINE_X + profileReach(resistances, y, resistanceProfileStyle), y }));
   const leftProfileFill = buildProfileFillPath(leftProfile, PROFILE_BLEND_X, PLOT_TOP, PLOT_BOTTOM);
   const rightProfileFill = buildProfileFillPath(rightProfile, PROFILE_BLEND_X, PLOT_TOP, PLOT_BOTTOM);
-  const leftProfileStroke = buildSmoothPath(leftProfile);
-  const rightProfileStroke = buildSmoothPath(rightProfile);
+
+  // Trim stroke to only the Y range where reach is meaningful — prevents long flat
+  // spine-hugging runs when the level cluster is near one end of the plot
+  const STROKE_MIN_REACH = 1.2;
+  const trimStroke = (points: ChartPoint[], spineX: number, side: "left" | "right") => {
+    const reach = (pt: ChartPoint) => side === "left" ? spineX - pt.x : pt.x - spineX;
+    const first = points.findIndex((pt) => reach(pt) > STROKE_MIN_REACH);
+    const lastRev = [...points].reverse().findIndex((pt) => reach(pt) > STROKE_MIN_REACH);
+    const last = points.length - 1 - lastRev;
+    if (first === -1 || last <= first) return points;
+    return points.slice(Math.max(0, first - 1), Math.min(points.length, last + 2));
+  };
+  const leftProfileStroke = buildSmoothPath(trimStroke(leftProfile, LEFT_SPINE_X, "left"));
+  const rightProfileStroke = buildSmoothPath(trimStroke(rightProfile, RIGHT_SPINE_X, "right"));
   const primarySupportReach = primarySupport === null ? 0 : profileReach(supports, scaleY(primarySupport), supportProfileStyle);
   const primaryResistanceReach = primaryResistance === null ? 0 : profileReach(resistances, scaleY(primaryResistance), resistanceProfileStyle);
 
