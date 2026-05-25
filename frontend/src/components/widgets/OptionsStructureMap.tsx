@@ -337,7 +337,7 @@ function StructureBand({
   const GUIDE_LEFT = 74;
   const GUIDE_RIGHT = VW - 74;
   const PROFILE_BLEND_X = CENTER_X;
-  const PROFILE_HARD_CAP = 86;
+  const PROFILE_HARD_CAP = 130;
   const PROFILE_SIGMA = Math.max(13, PLOT_HEIGHT * 0.076);
   const SAMPLE_COUNT = 72;
   const scaleY = (price: number) => PLOT_TOP + ((hi - price) / (hi - lo)) * PLOT_HEIGHT;
@@ -368,7 +368,12 @@ function StructureBand({
       return sum + amplitude * Math.exp(-((y - levelY) ** 2) / (2 * PROFILE_SIGMA ** 2));
     }, 0);
 
-    return Math.min(PROFILE_HARD_CAP, total);
+    // Shell envelope: sin curve tapers the profile to zero at both ends of the plot
+    // so the contour closes organically like a hull rather than getting clipped by a mask
+    const t = (y - PLOT_TOP) / PLOT_HEIGHT;
+    const envelope = Math.pow(Math.max(0, Math.sin(Math.PI * t)), 0.32);
+
+    return Math.min(PROFILE_HARD_CAP, total) * envelope;
   };
 
   const sampleYs = Array.from({ length: SAMPLE_COUNT + 1 }, (_, index) => PLOT_TOP + (index / SAMPLE_COUNT) * PLOT_HEIGHT);
@@ -404,12 +409,12 @@ function StructureBand({
           <stop offset="100%" stopColor="rgba(251,146,60,0.22)" />
         </linearGradient>
 
-        {/* Vertical fade: transparent at top/bottom edges, opaque in the middle */}
+        {/* Vertical fade: envelope handles the taper; mask is a soft safety polish at extremes */}
         <linearGradient id={fadeMaskGradId} gradientUnits="userSpaceOnUse"
           x1="0" x2="0" y1={PLOT_TOP} y2={PLOT_BOTTOM}>
           <stop offset="0%"   stopColor="white" stopOpacity="0" />
-          <stop offset="16%"  stopColor="white" stopOpacity="1" />
-          <stop offset="84%"  stopColor="white" stopOpacity="1" />
+          <stop offset="5%"   stopColor="white" stopOpacity="1" />
+          <stop offset="95%"  stopColor="white" stopOpacity="1" />
           <stop offset="100%" stopColor="white" stopOpacity="0" />
         </linearGradient>
         <mask id={fadeMaskId}>
