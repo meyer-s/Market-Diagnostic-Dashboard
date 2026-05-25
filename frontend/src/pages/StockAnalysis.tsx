@@ -30,6 +30,7 @@ import { PriceAnalysisChart } from "../components/widgets/PriceAnalysisChart";
 import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
 import { TechnicalIndicators, type TechnicalData } from "../components/widgets/TechnicalIndicators.tsx";
 import { OptionalityMispricingWidget } from "../components/widgets/OptionalityMispricingWidget";
+import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
 import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -756,14 +757,6 @@ export default function StockAnalysis() {
   const formatPercent = (value: number, digits = 1) =>
     `${value.toFixed(digits)}%`;
 
-  const formatStrikeDistance = (strike: number | null | undefined, price: number) => {
-    if (strike === null || strike === undefined || !Number.isFinite(strike) || !Number.isFinite(price) || price <= 0) {
-      return "n/a";
-    }
-    const pct = ((strike - price) / price) * 100;
-    return `${Math.abs(pct).toFixed(1)}% ${pct >= 0 ? "above" : "below"}`;
-  };
-
   const formatDateLabel = (date: string) =>
     new Date(date).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
@@ -961,82 +954,21 @@ export default function StockAnalysis() {
                 </div>
 
                 <div className="mt-3">
-                  <OptionalityMispricingWidget
-                    metrics={optionalityMetrics}
+                  <OptionsStructureMap
+                    currentPrice={projections["T"].current_price}
+                    callWalls={optionsFlow?.call_walls ?? []}
+                    putWalls={optionsFlow?.put_walls ?? []}
+                    sma50={technicalData?.sma_50 ?? null}
+                    sma200={technicalData?.sma_200 ?? null}
+                    putCallRatio={optionsFlow?.put_call_oi_ratio ?? null}
+                    label={searchTicker}
                   />
                 </div>
 
-                <div className="mt-3 rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">Support and Resistance</div>
-                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Support</div>
-                      <div className="mt-1 text-sm font-semibold text-emerald-300">{formatFlowCurrency(optionsFlow?.put_walls?.[0]?.strike ?? null)}</div>
-                    </div>
-                    <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Current</div>
-                      <div className="mt-1 text-sm font-semibold text-stealth-100">{formatFlowCurrency(projections["T"].current_price)}</div>
-                    </div>
-                    <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 px-3 py-2">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">Resistance</div>
-                      <div className="mt-1 text-sm font-semibold text-rose-300">{formatFlowCurrency(optionsFlow?.call_walls?.[0]?.strike ?? null)}</div>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-stealth-400">
-                    Trend context: <span className="font-semibold text-stealth-200">{technicalData?.trend ?? "unknown"}</span> • RSI <span className="font-semibold text-stealth-200">{technicalData?.rsi?.current !== undefined ? technicalData.rsi.current.toFixed(1) : "-"}</span>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                    <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 p-2.5">
-                      <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-stealth-500">Call Walls (Resistance)</div>
-                      <div className="space-y-1.5 text-[11px]">
-                        {(() => {
-                          const callWalls = optionsFlow?.call_walls?.slice(0, 4) ?? [];
-                          const maxCallOi = Math.max(1, ...callWalls.map((wall) => wall.open_interest));
-                          if (!callWalls.length) {
-                            return <div className="text-stealth-400">No call wall data.</div>;
-                          }
-                          return callWalls.map((wall) => (
-                            <div key={`call-wall-${wall.strike}`} className="rounded-lg border border-stealth-800 bg-stealth-950/60 px-2 py-1.5">
-                              <div className="mb-1 flex items-center justify-between">
-                                <span className="font-semibold text-rose-300">{formatFlowCurrency(wall.strike)}</span>
-                                <span className="text-stealth-300">OI {formatCompact(wall.open_interest, 1)}</span>
-                              </div>
-                              <div className="h-1.5 rounded-full bg-stealth-800">
-                                <div className="h-1.5 rounded-full bg-rose-400/85" style={{ width: `${(wall.open_interest / maxCallOi) * 100}%` }} />
-                              </div>
-                              <div className="mt-1 text-[10px] text-stealth-400">{formatStrikeDistance(wall.strike, projections["T"].current_price)}</div>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-stealth-700 bg-stealth-900/65 p-2.5">
-                      <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-stealth-500">Put Walls (Support)</div>
-                      <div className="space-y-1.5 text-[11px]">
-                        {(() => {
-                          const putWalls = optionsFlow?.put_walls?.slice(0, 4) ?? [];
-                          const maxPutOi = Math.max(1, ...putWalls.map((wall) => wall.open_interest));
-                          if (!putWalls.length) {
-                            return <div className="text-stealth-400">No put wall data.</div>;
-                          }
-                          return putWalls.map((wall) => (
-                            <div key={`put-wall-${wall.strike}`} className="rounded-lg border border-stealth-800 bg-stealth-950/60 px-2 py-1.5">
-                              <div className="mb-1 flex items-center justify-between">
-                                <span className="font-semibold text-emerald-300">{formatFlowCurrency(wall.strike)}</span>
-                                <span className="text-stealth-300">OI {formatCompact(wall.open_interest, 1)}</span>
-                              </div>
-                              <div className="h-1.5 rounded-full bg-stealth-800">
-                                <div className="h-1.5 rounded-full bg-emerald-400/85" style={{ width: `${(wall.open_interest / maxPutOi) * 100}%` }} />
-                              </div>
-                              <div className="mt-1 text-[10px] text-stealth-400">{formatStrikeDistance(wall.strike, projections["T"].current_price)}</div>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-                  </div>
+                <div className="mt-3">
+                  <OptionalityMispricingWidget
+                    metrics={optionalityMetrics}
+                  />
                 </div>
               </div>
 

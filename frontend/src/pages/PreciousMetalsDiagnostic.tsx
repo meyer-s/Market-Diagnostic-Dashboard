@@ -5,6 +5,7 @@ import MarketLoading from "../components/ui/MarketLoading";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
+import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
 
 interface RegimeStatus {
   gold_bias: "MONETARY_HEDGE" | "NEUTRAL" | "FINANCIAL_ASSET" | null;
@@ -1886,6 +1887,18 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
                 </div>
               </div>
 
+              {/* Options Structure Map — visual price level summary */}
+              <div className="mb-3">
+                <OptionsStructureMap
+                  currentPrice={proj.current_price}
+                  supportLevels={proj.levels.support}
+                  resistanceLevels={proj.levels.resistance}
+                  sma50={proj.technicals.sma_50}
+                  sma200={proj.technicals.sma_200}
+                  label={proj.etf_symbol}
+                />
+              </div>
+
               {/* Momentum */}
               <div className="mb-3">
                 <div className="text-xs text-stealth-400 mb-1">Momentum</div>
@@ -1908,34 +1921,6 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
                       {proj.technicals.momentum_60d?.toFixed(1) || 'N/A'}%
                     </span>
                   </div>
-                </div>
-              </div>
-
-              {/* Support and Resistance */}
-              <div className="grid grid-cols-2 gap-3 mb-3 text-xs">
-                <div>
-                  <div className="text-stealth-400 mb-1">Support Levels</div>
-                  {proj.levels.support.length > 0 ? (
-                    proj.levels.support.map((level, idx) => (
-                      <div key={idx} className="text-green-400 font-semibold">
-                        ${level.toFixed(2)}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-stealth-500">None detected</div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-stealth-400 mb-1">Resistance Levels</div>
-                  {proj.levels.resistance.length > 0 ? (
-                    proj.levels.resistance.map((level, idx) => (
-                      <div key={idx} className="text-red-400 font-semibold">
-                        ${level.toFixed(2)}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-stealth-500">None detected</div>
-                  )}
                 </div>
               </div>
 
@@ -2048,6 +2033,18 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
                 </div>
               </div>
 
+              {/* Options Structure Map — visual price level summary */}
+              <div className="mb-3">
+                <OptionsStructureMap
+                  currentPrice={proj.current_price}
+                  supportLevels={proj.levels.support}
+                  resistanceLevels={proj.levels.resistance}
+                  sma50={proj.technicals.sma_50}
+                  sma200={proj.technicals.sma_200}
+                  label={proj.etf_symbol}
+                />
+              </div>
+
               {/* Momentum */}
               <div className="mb-3">
                 <div className="text-xs text-stealth-400 mb-1">Momentum</div>
@@ -2070,34 +2067,6 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
                       {proj.technicals.momentum_60d?.toFixed(1) || 'N/A'}%
                     </span>
                   </div>
-                </div>
-              </div>
-
-              {/* Support and Resistance */}
-              <div className="grid grid-cols-2 gap-3 mb-3 text-xs">
-                <div>
-                  <div className="text-stealth-400 mb-1">Support Levels</div>
-                  {proj.levels.support.length > 0 ? (
-                    proj.levels.support.map((level, idx) => (
-                      <div key={idx} className="text-green-400 font-semibold">
-                        ${level.toFixed(2)}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-stealth-500">None detected</div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-stealth-400 mb-1">Resistance Levels</div>
-                  {proj.levels.resistance.length > 0 ? (
-                    proj.levels.resistance.map((level, idx) => (
-                      <div key={idx} className="text-red-400 font-semibold">
-                        ${level.toFixed(2)}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-stealth-500">None detected</div>
-                  )}
                 </div>
               </div>
 
