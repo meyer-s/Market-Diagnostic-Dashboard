@@ -37,9 +37,9 @@ const getSignal = (value: number | null, high: number, low: number) => {
 export function OptionalityMispricingWidget({ metrics }: OptionalityMispricingWidgetProps) {
   if (!metrics) {
     return (
-      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-        <div className="text-sm font-semibold text-gray-100">Optionality Mispricing</div>
-        <p className="text-xs text-gray-400 mt-2">Options data not available.</p>
+      <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
+        <div className="text-sm font-semibold text-stealth-100">Optionality Mispricing</div>
+        <p className="mt-2 text-xs text-stealth-400">Options data not available.</p>
       </div>
     );
   }
@@ -81,53 +81,53 @@ export function OptionalityMispricingWidget({ metrics }: OptionalityMispricingWi
   const stateLabel = getStateLabel(mispricing);
 
   return (
-    <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+    <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-sm font-semibold text-gray-100">Optionality Mispricing</div>
-          <p className="text-xs text-gray-400">
+          <div className="text-sm font-semibold text-stealth-100">Optionality Mispricing</div>
+          <p className="text-xs text-stealth-400">
             Compares implied vs realized volatility, IV percentile, and extrinsic density.
           </p>
         </div>
         <div className="text-right">
           <div className={`text-lg font-semibold ${stateColor}`}>{stateLabel}</div>
-          <div className="text-[10px] text-gray-400">Options chain value</div>
+          <div className="text-[10px] text-stealth-500 uppercase tracking-[0.16em]">Options chain value</div>
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
-        <div className="bg-gray-800/70 border border-gray-700 rounded p-2">
-          <div className="text-gray-400 mb-1">IV30 vs HV30</div>
-          <div className="text-sm text-gray-100">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 p-2.5">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-stealth-500">IV30 vs HV30</div>
+          <div className="text-sm text-stealth-100">
             {iv30 !== null ? `${iv30.toFixed(1)}%` : "n/a"} / {hv30 !== null ? `${hv30.toFixed(1)}%` : "n/a"}
           </div>
-          <div className={`text-[10px] ${ivSpread !== null && ivSpread >= 0 ? "text-red-300" : "text-green-300"}`}>
+          <div className={`text-[10px] ${ivSpread !== null && ivSpread >= 0 ? "text-rose-300" : "text-emerald-300"}`}>
             {ivSpread !== null ? `${ivSpread > 0 ? "+" : ""}${ivSpread.toFixed(1)} pts` : "n/a"}
           </div>
         </div>
 
-        <div className="bg-gray-800/70 border border-gray-700 rounded p-2">
-          <div className="text-gray-400 mb-1">IV Percentile</div>
-          <div className="text-sm text-gray-100">
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 p-2.5">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-stealth-500">IV Percentile</div>
+          <div className="text-sm text-stealth-100">
             {ivPercentile !== null ? `${ivPercentile.toFixed(1)}%` : "n/a"}
           </div>
-          <div className="text-[10px] text-gray-400">Higher = richer IV</div>
+          <div className="text-[10px] text-stealth-400">Higher = richer IV</div>
         </div>
 
-        <div className="bg-gray-800/70 border border-gray-700 rounded p-2">
-          <div className="text-gray-400 mb-1">Avg EDR (front 3-6)</div>
-          <div className="text-sm text-gray-100">
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 p-2.5">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-stealth-500">Avg EDR (front 3-6)</div>
+          <div className="text-sm text-stealth-100">
             {avgEdr !== null ? `${avgEdr.toFixed(1)}%` : "n/a"}
           </div>
-          <div className="text-[10px] text-gray-400">Extrinsic / price</div>
+          <div className="text-[10px] text-stealth-400">Extrinsic / price</div>
         </div>
 
-        <div className="bg-gray-800/70 border border-gray-700 rounded p-2">
-          <div className="text-gray-400 mb-1">Vol Spread</div>
-          <div className="text-sm text-gray-100">
+        <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 p-2.5">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-stealth-500">Vol Spread</div>
+          <div className="text-sm text-stealth-100">
             {ivSpread !== null ? `${ivSpread > 0 ? "+" : ""}${ivSpread.toFixed(1)} pts` : "n/a"}
           </div>
-          <div className="text-[10px] text-gray-400">IV30 - HV30</div>
+          <div className="text-[10px] text-stealth-400">IV30 - HV30</div>
         </div>
       </div>
     </div>
