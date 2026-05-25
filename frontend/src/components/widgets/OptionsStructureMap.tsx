@@ -347,6 +347,9 @@ function StructureBand({
   const rightFillId = `${idPrefix}-right-fill`;
   const leftGlowId = `${idPrefix}-left-glow`;
   const rightGlowId = `${idPrefix}-right-glow`;
+  const fadeMaskGradId = `${idPrefix}-fade-grad`;
+  const fadeMaskId = `${idPrefix}-fade-mask`;
+  const pillClipId = `${idPrefix}-pill-clip`;
   const supportProfileStyle = deriveProfileStyle(supports, currentPrice, rawRange);
   const resistanceProfileStyle = deriveProfileStyle(resistances, currentPrice, rawRange);
 
@@ -386,24 +389,44 @@ function StructureBand({
           <stop offset="48%" stopColor="rgba(15,23,42,0.78)" />
           <stop offset="100%" stopColor="rgba(51,65,85,0.32)" />
         </linearGradient>
-        <linearGradient id={leftFillId} x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor="rgba(74,222,128,0)" />
-          <stop offset="48%" stopColor="rgba(34,197,94,0.08)" />
-          <stop offset="82%" stopColor="rgba(74,222,128,0.18)" />
-          <stop offset="100%" stopColor="rgba(110,231,183,0.24)" />
+
+        {/* Fill gradients: transparent at spine → vibrant at outer contour edge */}
+        <linearGradient id={leftFillId} gradientUnits="userSpaceOnUse"
+          x1={CENTER_X} x2={LEFT_SPINE_X - PROFILE_HARD_CAP} y1="0" y2="0">
+          <stop offset="0%"   stopColor="rgba(74,222,128,0)" />
+          <stop offset="45%"  stopColor="rgba(34,197,94,0.07)" />
+          <stop offset="100%" stopColor="rgba(74,222,128,0.22)" />
         </linearGradient>
-        <linearGradient id={rightFillId} x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor="rgba(251,146,160,0.24)" />
-          <stop offset="18%" stopColor="rgba(251,113,133,0.18)" />
-          <stop offset="52%" stopColor="rgba(251,113,133,0.08)" />
-          <stop offset="100%" stopColor="rgba(251,113,133,0)" />
+        <linearGradient id={rightFillId} gradientUnits="userSpaceOnUse"
+          x1={CENTER_X} x2={RIGHT_SPINE_X + PROFILE_HARD_CAP} y1="0" y2="0">
+          <stop offset="0%"   stopColor="rgba(251,113,133,0)" />
+          <stop offset="45%"  stopColor="rgba(251,113,133,0.07)" />
+          <stop offset="100%" stopColor="rgba(251,113,133,0.22)" />
         </linearGradient>
-        <filter id={leftGlowId} x="-40%" y="-25%" width="200%" height="150%">
-          <feGaussianBlur stdDeviation="5.5" />
+
+        {/* Vertical fade: transparent at top/bottom edges, opaque in the middle */}
+        <linearGradient id={fadeMaskGradId} gradientUnits="userSpaceOnUse"
+          x1="0" x2="0" y1={PLOT_TOP} y2={PLOT_BOTTOM}>
+          <stop offset="0%"   stopColor="white" stopOpacity="0" />
+          <stop offset="16%"  stopColor="white" stopOpacity="1" />
+          <stop offset="84%"  stopColor="white" stopOpacity="1" />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
+        </linearGradient>
+        <mask id={fadeMaskId}>
+          <rect x="0" y={PLOT_TOP} width={VW} height={PLOT_HEIGHT} fill={`url(#${fadeMaskGradId})`} />
+        </mask>
+
+        <filter id={leftGlowId} x="-55%" y="-30%" width="210%" height="160%">
+          <feGaussianBlur stdDeviation="7" />
         </filter>
-        <filter id={rightGlowId} x="-40%" y="-25%" width="200%" height="150%">
-          <feGaussianBlur stdDeviation="5.5" />
+        <filter id={rightGlowId} x="-55%" y="-30%" width="210%" height="160%">
+          <feGaussianBlur stdDeviation="7" />
         </filter>
+
+        {/* Clip to pill shape for interior labels */}
+        <clipPath id={pillClipId}>
+          <rect x={LEFT_SPINE_X} y={PLOT_TOP} width={SPINE_W} height={PLOT_HEIGHT} rx="18" />
+        </clipPath>
       </defs>
 
       <text x={24} y="18" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.8">
@@ -413,151 +436,123 @@ function StructureBand({
         SUPPORT STRUCTURE
       </text>
 
-      {supports.length > 0 ? (
-        <>
-          <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.95" stroke="none" />
-          <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.65" filter={`url(#${leftGlowId})`} stroke="none" />
-        </>
-      ) : null}
-      {resistances.length > 0 ? (
-        <>
-          <path d={rightProfileFill} fill={`url(#${rightFillId})`} opacity="0.95" stroke="none" />
-          <path d={rightProfileFill} fill={`url(#${rightFillId})`} opacity="0.65" filter={`url(#${rightGlowId})`} stroke="none" />
-        </>
-      ) : null}
+      {/* ── LAYER 1: contour fills + neon strokes, all behind the pill ── */}
+      <g mask={`url(#${fadeMaskId})`}>
+        {supports.length > 0 ? (
+          <>
+            {/* fill: transparent at spine, bright at outer contour edge */}
+            <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.95" stroke="none" />
+            <path d={leftProfileFill} fill={`url(#${leftFillId})`} opacity="0.55" filter={`url(#${leftGlowId})`} stroke="none" />
+            {/* neon line: wide blurred halo + thin bright stroke */}
+            <path d={leftProfileStroke} fill="none"
+              stroke="rgba(16,185,129,0.32)" strokeWidth="10"
+              strokeLinecap="round" strokeLinejoin="round"
+              filter={`url(#${leftGlowId})`} />
+            <path d={leftProfileStroke} fill="none"
+              stroke="rgba(110,231,183,0.80)" strokeWidth="1.5"
+              strokeLinecap="round" strokeLinejoin="round" />
+          </>
+        ) : null}
+        {resistances.length > 0 ? (
+          <>
+            <path d={rightProfileFill} fill={`url(#${rightFillId})`} opacity="0.95" stroke="none" />
+            <path d={rightProfileFill} fill={`url(#${rightFillId})`} opacity="0.55" filter={`url(#${rightGlowId})`} stroke="none" />
+            <path d={rightProfileStroke} fill="none"
+              stroke="rgba(244,63,94,0.32)" strokeWidth="10"
+              strokeLinecap="round" strokeLinejoin="round"
+              filter={`url(#${rightGlowId})`} />
+            <path d={rightProfileStroke} fill="none"
+              stroke="rgba(251,146,160,0.80)" strokeWidth="1.5"
+              strokeLinecap="round" strokeLinejoin="round" />
+          </>
+        ) : null}
+      </g>
 
+      {/* ── LAYER 2: pill (foreground, over the contour) ── */}
       <rect
-        x={LEFT_SPINE_X}
-        y={PLOT_TOP}
-        width={SPINE_W}
-        height={PLOT_HEIGHT}
+        x={LEFT_SPINE_X} y={PLOT_TOP}
+        width={SPINE_W} height={PLOT_HEIGHT}
         rx="18"
         fill={`url(#${spineFillId})`}
         stroke="rgba(71,85,105,0.68)"
       />
-      <rect
-        x={LEFT_SPINE_X + 4}
-        y={PLOT_TOP + 4}
-        width={SPINE_W - 8}
-        height={PLOT_HEIGHT - 8}
-        rx="14"
-        fill="rgba(148,163,184,0.03)"
-      />
       <line
-        x1={LEFT_SPINE_X + 1}
-        x2={LEFT_SPINE_X + 1}
-        y1={PLOT_TOP + 12}
-        y2={PLOT_BOTTOM - 12}
-        stroke="rgba(74,222,128,0.34)"
-        strokeWidth="1.5"
-        opacity="0.85"
-        filter={`url(#${leftGlowId})`}
-      />
-      <line
-        x1={RIGHT_SPINE_X - 1}
-        x2={RIGHT_SPINE_X - 1}
-        y1={PLOT_TOP + 12}
-        y2={PLOT_BOTTOM - 12}
-        stroke="rgba(251,113,133,0.34)"
-        strokeWidth="1.5"
-        opacity="0.85"
-        filter={`url(#${rightGlowId})`}
-      />
-      <line
-        x1={CENTER_X}
-        x2={CENTER_X}
-        y1={PLOT_TOP + 8}
-        y2={PLOT_BOTTOM - 8}
-        stroke="rgba(100,116,139,0.42)"
+        x1={CENTER_X} x2={CENTER_X}
+        y1={PLOT_TOP + 8} y2={PLOT_BOTTOM - 8}
+        stroke="rgba(100,116,139,0.28)"
         strokeDasharray="3 4"
       />
 
-      {sma200 ? (
-        <g>
-          <line
-            x1={GUIDE_LEFT}
-            x2={GUIDE_RIGHT}
-            y1={scaleY(sma200)}
-            y2={scaleY(sma200)}
-            stroke="#6b7280"
-            strokeDasharray="4 4"
-            opacity="0.55"
-          />
-          <text x={GUIDE_LEFT - 26} y={scaleY(sma200) + 3} textAnchor="start" fill="#9ca3af" fontSize="9" fontFamily="monospace">
-            SMA200
-          </text>
-        </g>
-      ) : null}
+      {/* ── SMA + level values inside the pill (clipped) ── */}
+      <g clipPath={`url(#${pillClipId})`}>
+        {sma200 ? (
+          <g>
+            <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
+              y1={scaleY(sma200)} y2={scaleY(sma200)}
+              stroke="rgba(107,114,128,0.4)" strokeWidth="0.5" />
+            <text x={CENTER_X} y={scaleY(sma200) - 1.5} textAnchor="middle"
+              fill="#6b7280" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
+              200
+            </text>
+            <text x={CENTER_X} y={scaleY(sma200) + 8} textAnchor="middle"
+              fill="#9ca3af" fontSize="7.5" fontFamily="monospace" fontWeight="600">
+              {fmtPrice(sma200)}
+            </text>
+          </g>
+        ) : null}
+        {sma50 ? (
+          <g>
+            <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
+              y1={scaleY(sma50)} y2={scaleY(sma50)}
+              stroke="rgba(167,139,250,0.45)" strokeWidth="0.5" />
+            <text x={CENTER_X} y={scaleY(sma50) - 1.5} textAnchor="middle"
+              fill="#a78bfa" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
+              50
+            </text>
+            <text x={CENTER_X} y={scaleY(sma50) + 8} textAnchor="middle"
+              fill="#c4b5fd" fontSize="7.5" fontFamily="monospace" fontWeight="600">
+              {fmtPrice(sma50)}
+            </text>
+          </g>
+        ) : null}
+        {primaryResistance !== null ? (
+          <g>
+            <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
+              y1={scaleY(primaryResistance)} y2={scaleY(primaryResistance)}
+              stroke="rgba(251,113,133,0.4)" strokeWidth="0.5" />
+            <text x={CENTER_X} y={scaleY(primaryResistance) - 1.5} textAnchor="middle"
+              fill="#fb7185" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
+              R
+            </text>
+            <text x={CENTER_X} y={scaleY(primaryResistance) + 8} textAnchor="middle"
+              fill="#fca5a5" fontSize="7.5" fontFamily="monospace" fontWeight="600">
+              {fmtPrice(primaryResistance)}
+            </text>
+          </g>
+        ) : null}
+        {primarySupport !== null ? (
+          <g>
+            <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
+              y1={scaleY(primarySupport)} y2={scaleY(primarySupport)}
+              stroke="rgba(74,222,128,0.4)" strokeWidth="0.5" />
+            <text x={CENTER_X} y={scaleY(primarySupport) - 1.5} textAnchor="middle"
+              fill="#4ade80" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
+              S
+            </text>
+            <text x={CENTER_X} y={scaleY(primarySupport) + 8} textAnchor="middle"
+              fill="#6ee7b7" fontSize="7.5" fontFamily="monospace" fontWeight="600">
+              {fmtPrice(primarySupport)}
+            </text>
+          </g>
+        ) : null}
+      </g>
 
-      {sma50 ? (
-        <g>
-          <line
-            x1={GUIDE_LEFT}
-            x2={GUIDE_RIGHT}
-            y1={scaleY(sma50)}
-            y2={scaleY(sma50)}
-            stroke="#a78bfa"
-            strokeDasharray="4 4"
-            opacity="0.72"
-          />
-          <text x={GUIDE_LEFT - 26} y={scaleY(sma50) + 3} textAnchor="start" fill="#c4b5fd" fontSize="9" fontFamily="monospace">
-            SMA50
-          </text>
-        </g>
-      ) : null}
-
-      {supports.length > 0 ? (
-        <>
-          <path
-            d={leftProfileStroke}
-            fill="none"
-            stroke="rgba(16,185,129,0.26)"
-            strokeWidth="7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            filter={`url(#${leftGlowId})`}
-          />
-          <path
-            d={leftProfileStroke}
-            fill="none"
-            stroke="rgba(110,231,183,0.72)"
-            strokeWidth="1.65"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </>
-      ) : null}
-      {resistances.length > 0 ? (
-        <>
-          <path
-            d={rightProfileStroke}
-            fill="none"
-            stroke="rgba(244,63,94,0.26)"
-            strokeWidth="7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            filter={`url(#${rightGlowId})`}
-          />
-          <path
-            d={rightProfileStroke}
-            fill="none"
-            stroke="rgba(251,146,160,0.72)"
-            strokeWidth="1.65"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </>
-      ) : null}
-
+      {/* Outer price labels next to contour peaks */}
       {primaryResistance !== null ? (
         <text
           x={Math.min(VW - 12, RIGHT_SPINE_X + primaryResistanceReach + 18)}
           y={Math.max(14, scaleY(primaryResistance) + 3)}
-          textAnchor="end"
-          fill="#fca5a5"
-          fontSize="10"
-          fontFamily="monospace"
-        >
+          textAnchor="end" fill="#fca5a5" fontSize="10" fontFamily="monospace">
           {fmtPrice(primaryResistance)}
         </text>
       ) : null}
@@ -565,15 +560,13 @@ function StructureBand({
         <text
           x={Math.max(12, LEFT_SPINE_X - primarySupportReach - 16)}
           y={Math.min(VH - 72, scaleY(primarySupport) + 3)}
-          fill="#6ee7b7"
-          fontSize="10"
-          fontFamily="monospace"
-        >
+          fill="#6ee7b7" fontSize="10" fontFamily="monospace">
           {fmtPrice(primarySupport)}
         </text>
       ) : null}
 
-      <line x1={GUIDE_LEFT} x2={GUIDE_RIGHT} y1={currentY} y2={currentY} stroke="rgba(226,232,240,0.18)" strokeDasharray="3 4" />
+      {/* Current price dot (topmost layer) */}
+      <line x1={GUIDE_LEFT} x2={GUIDE_RIGHT} y1={currentY} y2={currentY} stroke="rgba(226,232,240,0.14)" strokeDasharray="3 4" />
       <circle cx={CENTER_X} cy={currentY} r="11" fill="rgba(241,245,249,0.12)" />
       <circle cx={CENTER_X} cy={currentY} r="5.5" fill="#f8fafc" />
 
