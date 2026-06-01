@@ -11,6 +11,7 @@ import {
   usePlotArea,
 } from "recharts";
 import { Link } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
@@ -563,6 +564,12 @@ export default function SecretOptions() {
   const [spotWeightBySymbol, setSpotWeightBySymbol] = useState<Record<string, SpotWeighting>>({});
 
   const anyModalOpen = showAddModal || showCloseModal || showTrainingOutcomes;
+  const renderModal = (node: JSX.Element) => {
+    if (typeof document === "undefined") {
+      return null;
+    }
+    return createPortal(node, document.body);
+  };
 
   useEffect(() => {
     if (!anyModalOpen) return;
@@ -1968,7 +1975,7 @@ export default function SecretOptions() {
       </div>
 
       {/* Trade Modal */}
-      {showAddModal && (
+      {showAddModal && renderModal(
         <div
           className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
           onClick={closeTradeModal}
@@ -2149,7 +2156,7 @@ export default function SecretOptions() {
       )}
 
       {/* Close Position Modal */}
-      {showCloseModal && (
+      {showCloseModal && renderModal(
         <div
           className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
           onClick={() => {
@@ -2228,7 +2235,7 @@ export default function SecretOptions() {
       )}
 
       {/* P/L History Modal */}
-      {showClosedLog && (
+      {showClosedLog && renderModal(
         <div
           className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 p-4"
         >
@@ -2434,7 +2441,7 @@ export default function SecretOptions() {
       )}
 
       {/* Scanner Training Outcomes Modal */}
-      {showTrainingOutcomes && (
+      {showTrainingOutcomes && renderModal(
         <div
           className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
           onClick={() => setShowTrainingOutcomes(false)}
