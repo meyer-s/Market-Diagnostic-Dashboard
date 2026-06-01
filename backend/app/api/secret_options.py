@@ -150,7 +150,28 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
 
     entry_candidates = daily.index[daily.index.date >= trigger_day]
     if len(entry_candidates) == 0:
-        return None
+        fallback_entry_price = float(close.iloc[-1])
+        recommended_exit_date = trigger_day + timedelta(days=hold_days)
+        elapsed_calendar_days = (date.today() - trigger_day).days
+        return {
+            "event_id": event.id,
+            "symbol": event.symbol,
+            "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
+            "option_type": option_type,
+            "hold_days": hold_days,
+            "entry_date": trigger_day.isoformat(),
+            "exit_date": None,
+            "entry_underlying": fallback_entry_price,
+            "exit_underlying": None,
+            "underlying_directional_return_pct": None,
+            "entry_option_price_est": event.selected_premium if event.selected_premium is not None else recipe.get("est_premium"),
+            "exit_option_price_est": None,
+            "option_return_pct_est": None,
+            "option_pnl_per_contract_est": None,
+            "recommended_exit_date": recommended_exit_date.isoformat(),
+            "days_elapsed_calendar": elapsed_calendar_days,
+            "status": "pending",
+        }
 
     entry_date = entry_candidates[0]
     entry_idx = daily.index.get_loc(entry_date)
