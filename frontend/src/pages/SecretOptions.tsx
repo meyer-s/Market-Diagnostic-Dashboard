@@ -1970,7 +1970,7 @@ export default function SecretOptions() {
       {/* Trade Modal */}
       {showAddModal && (
         <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
           onClick={closeTradeModal}
         >
           <div
@@ -2151,7 +2151,7 @@ export default function SecretOptions() {
       {/* Close Position Modal */}
       {showCloseModal && (
         <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
           onClick={() => {
             setShowCloseModal(false);
             setExitPrice("");
@@ -2230,10 +2230,9 @@ export default function SecretOptions() {
       {/* P/L History Modal */}
       {showClosedLog && (
         <div
-          className="fixed left-0 top-0 z-50 flex h-screen w-screen items-center justify-center overflow-y-auto bg-black/70 p-4"
-          style={{ height: "100dvh" }}
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 p-4"
         >
-          <div className="my-auto w-full max-w-5xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto">
+          <div className="w-full max-w-5xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Closed Positions History</h2>
               <button
@@ -2437,12 +2436,11 @@ export default function SecretOptions() {
       {/* Scanner Training Outcomes Modal */}
       {showTrainingOutcomes && (
         <div
-          className="fixed left-0 top-0 z-50 flex h-screen w-screen items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
-          style={{ height: "100dvh" }}
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
           onClick={() => setShowTrainingOutcomes(false)}
         >
           <div
-            className="my-auto w-full max-w-6xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto"
+            className="w-full max-w-6xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
