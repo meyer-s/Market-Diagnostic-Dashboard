@@ -12,9 +12,13 @@ from app.services.options_alerts import (
     _build_stock_analyzer_url,
     _compute_option_bias,
     _compute_horizon_bias,
+    _contract_side_from_direction,
     _direction_hint,
     _format_alert_message,
+    _hold_days_from_returns,
     _is_iv_data_valid,
+    _select_training_contract,
+    _selected_contract_event_fields,
 )
 from app.models.options_alerts import OptionAlertEvent
 from app.services.options_alerts import _send_webhook, _get_current_price
@@ -163,6 +167,14 @@ def _scan_tickers(
         reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold, bias, votes)
         direction, direction_reason = _direction_hint(history)
         horizon_labels, horizon_returns = _compute_horizon_bias(history)
+        hold_days = _hold_days_from_returns(horizon_returns)
+        selected_contract = _select_training_contract(
+            stock=stock,
+            current_price=current_price,
+            contract_side=_contract_side_from_direction(direction),
+            target_dte=max(30, hold_days + 14),
+            min_remaining_after_hold=hold_days + 3,
+        )
         analyzer_url = _build_stock_analyzer_url(symbol)
         message = _format_alert_message(
             label,
@@ -180,6 +192,8 @@ def _scan_tickers(
             horizon_labels,
             horizon_returns,
             history,
+            stock=stock,
+            selected_contract=selected_contract,
             analyzer_url=analyzer_url,
         )
         delivered, channel, error = _send_webhook(
@@ -204,6 +218,7 @@ def _scan_tickers(
                     delivered=delivered,
                     delivery_channel=channel,
                     delivery_error=error,
+                    **_selected_contract_event_fields(selected_contract),
                 )
             )
             db.commit()
@@ -222,6 +237,7 @@ def _scan_tickers(
                 "horizon_labels": horizon_labels,
                 "horizon_returns": horizon_returns,
                 "votes": votes,
+                "selected_contract": selected_contract,
             }
         )
 

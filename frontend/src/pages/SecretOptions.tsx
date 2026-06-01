@@ -53,6 +53,19 @@ interface PositionMetrics {
   };
   option_price: number | null;
   option_price_source: string | null;
+  quote: {
+    bid: number | null;
+    ask: number | null;
+    last: number | null;
+    mid: number | null;
+    spread: number | null;
+    spread_pct: number | null;
+    volume: number | null;
+    open_interest: number | null;
+    implied_volatility: number | null;
+    last_trade_at: string | null;
+    quality: string | null;
+  };
   volatility: number | null;
   volatility_source: string | null;
   dte: number | null;
@@ -491,6 +504,19 @@ const normalizePositionMetrics = (
     },
     option_price: metrics?.option_price ?? null,
     option_price_source: metrics?.option_price_source ?? null,
+    quote: metrics?.quote ?? {
+      bid: null,
+      ask: null,
+      last: null,
+      mid: null,
+      spread: null,
+      spread_pct: null,
+      volume: null,
+      open_interest: null,
+      implied_volatility: null,
+      last_trade_at: null,
+      quality: null,
+    },
     volatility: metrics?.volatility ?? null,
     volatility_source: metrics?.volatility_source ?? null,
     dte: metrics?.dte ?? null,
@@ -1561,6 +1587,23 @@ export default function SecretOptions() {
                   {selected.metrics.volatility ? `(${formatPercent(selected.metrics.volatility * 100, 1)})` : ""}
                 </div>
                 <div>Option price: {selected.metrics.option_price_source || "n/a"}</div>
+                <div>
+                  Quote: bid{" "}
+                  {selected.metrics.quote?.bid !== null && selected.metrics.quote?.bid !== undefined
+                    ? formatCurrency(selected.metrics.quote.bid, 2)
+                    : "n/a"}{" "}
+                  / ask{" "}
+                  {selected.metrics.quote?.ask !== null && selected.metrics.quote?.ask !== undefined
+                    ? formatCurrency(selected.metrics.quote.ask, 2)
+                    : "n/a"}
+                </div>
+                <div>
+                  Spread:{" "}
+                  {selected.metrics.quote?.spread_pct !== null && selected.metrics.quote?.spread_pct !== undefined
+                    ? formatPercent(selected.metrics.quote.spread_pct, 1)
+                    : "n/a"}{" "}
+                  | OI/Vol: {selected.metrics.quote?.open_interest ?? "n/a"} / {selected.metrics.quote?.volume ?? "n/a"}
+                </div>
               </div>
             )}
           </div>

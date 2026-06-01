@@ -66,6 +66,10 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _SETUP_RE = re.compile(r"Setup\s*:\s*1x ATM\s+(CALL|PUT)", re.IGNORECASE)
+_CONTRACT_RE = re.compile(
+    r"Contract\s*:\s*(\d{4}-\d{2}-\d{2})\s+([0-9]+(?:\.[0-9]+)?)\s+(CALL|PUT)",
+    re.IGNORECASE,
+)
 _HOLD_RE = re.compile(r"Hold\s*:\s*(\d+)\s*trading\s*days", re.IGNORECASE)
 _PREMIUM_RE = re.compile(r"Est\s+Prem\s*:\s*\$\s*([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
 
@@ -92,15 +96,23 @@ def _is_exceptional_training_event(event: OptionAlertEvent) -> bool:
 def _extract_training_recipe(message: Optional[str]) -> Dict[str, Optional[float | int | str]]:
     plain = _strip_ansi(message)
     setup_match = _SETUP_RE.search(plain)
+    contract_match = _CONTRACT_RE.search(plain)
     hold_match = _HOLD_RE.search(plain)
     premium_match = _PREMIUM_RE.search(plain)
 
     option_type = setup_match.group(1).lower() if setup_match else None
+    contract_expiry = contract_match.group(1) if contract_match else None
+    contract_strike = float(contract_match.group(2)) if contract_match else None
+    contract_type = contract_match.group(3).lower() if contract_match else None
+    if option_type is None:
+        option_type = contract_type
     hold_days = int(hold_match.group(1)) if hold_match else None
     est_premium = float(premium_match.group(1)) if premium_match else None
 
     return {
         "option_type": option_type,
+        "contract_expiry": contract_expiry,
+        "contract_strike": contract_strike,
         "hold_days": hold_days,
         "est_premium": est_premium,
     }
@@ -108,7 +120,7 @@ def _extract_training_recipe(message: Optional[str]) -> Dict[str, Optional[float
 
 def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, object]]:
     recipe = _extract_training_recipe(event.message)
-    option_type = recipe.get("option_type")
+    option_type = event.selected_option_type or recipe.get("option_type")
     hold_days = recipe.get("hold_days")
 
     if not option_type or not isinstance(hold_days, int) or hold_days <= 0:
@@ -210,18 +222,31 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
         sigma = float(event.hv30) / 100.0 if event.hv30 is not None else 0.30
     sigma = max(0.08, min(2.0, sigma))
 
-    est_premium_raw = recipe.get("est_premium")
+    est_premium_raw = event.selected_premium if event.selected_premium is not None else recipe.get("est_premium")
     if isinstance(est_premium_raw, (int, float)) and est_premium_raw > 0:
         entry_option_price = float(est_premium_raw)
     else:
         entry_option_price = max(0.35, entry_price * 0.012)
 
-    initial_dte = max(30, hold_days + 14)
-    remaining_dte = max(1, initial_dte - hold_days)
+    contract_strike_raw = event.selected_strike if event.selected_strike is not None else recipe.get("contract_strike")
+    strike = (
+        float(contract_strike_raw)
+        if isinstance(contract_strike_raw, (int, float)) and contract_strike_raw > 0
+        else entry_price
+    )
+
+    contract_expiry_raw = event.selected_expiry or recipe.get("contract_expiry")
+    contract_expiry = _parse_date(str(contract_expiry_raw)) if contract_expiry_raw else None
+    if contract_expiry:
+        remaining_dte = max(1, (contract_expiry - exit_date.date()).days)
+    else:
+        initial_dte = max(30, hold_days + 14)
+        remaining_dte = max(1, initial_dte - hold_days)
+
     exit_option_price = black_scholes_price(
         S=exit_price,
-        K=entry_price,
-        T=remaining_dte / 252.0,
+        K=strike,
+        T=remaining_dte / 365.0,
         r=RISK_FREE_RATE,
         sigma=sigma,
         option_type=option_type,
@@ -234,6 +259,8 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
         "symbol": event.symbol,
         "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
         "option_type": option_type,
+        "contract_expiry": contract_expiry.isoformat() if contract_expiry else None,
+        "contract_strike": strike,
         "hold_days": hold_days,
         "entry_date": entry_date.date().isoformat(),
         "exit_date": exit_date.date().isoformat(),
@@ -433,6 +460,70 @@ def _resolve_option_row(stock: yf.Ticker, expiration: date, option_type: str, st
     return row
 
 
+def _quote_float(value) -> Optional[float]:
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _quote_int(value) -> Optional[int]:
+    number = _quote_float(value)
+    return int(number) if number is not None else None
+
+
+def _quote_timestamp(value) -> Optional[str]:
+    if value is None or pd.isna(value):
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _quote_payload_from_row(row: Optional[pd.Series]) -> Dict[str, object]:
+    if row is None:
+        return {
+            "bid": None,
+            "ask": None,
+            "last": None,
+            "mid": None,
+            "spread": None,
+            "spread_pct": None,
+            "volume": None,
+            "open_interest": None,
+            "implied_volatility": None,
+            "last_trade_at": None,
+            "quality": "missing",
+        }
+
+    bid = _quote_float(row.get("bid"))
+    ask = _quote_float(row.get("ask"))
+    last = _quote_float(row.get("lastPrice"))
+    mid = (bid + ask) / 2.0 if bid is not None and ask is not None and bid > 0 and ask > 0 else None
+    spread = (ask - bid) if bid is not None and ask is not None and bid > 0 and ask > 0 else None
+    spread_pct = (spread / mid * 100.0) if spread is not None and mid else None
+
+    quality = "mid" if mid is not None else "last" if last is not None and last > 0 else "missing"
+    if spread_pct is not None and spread_pct > 25:
+        quality = "wide"
+
+    return {
+        "bid": bid,
+        "ask": ask,
+        "last": last,
+        "mid": mid,
+        "spread": spread,
+        "spread_pct": spread_pct,
+        "volume": _quote_int(row.get("volume")),
+        "open_interest": _quote_int(row.get("openInterest")),
+        "implied_volatility": _quote_float(row.get("impliedVolatility")),
+        "last_trade_at": _quote_timestamp(row.get("lastTradeDate")),
+        "quality": quality,
+    }
+
+
 def _market_data_for_symbol(symbol: str) -> Dict[str, object]:
     stock = yf.Ticker(symbol)
     try:
@@ -508,6 +599,7 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
     market = _market_data_for_symbol(position.symbol)
 
     option_row = _resolve_option_row(stock, position.expiration, position.option_type, position.strike)
+    quote = _quote_payload_from_row(option_row)
     implied_vol = None
     option_price = None
     option_price_source = None
@@ -547,14 +639,10 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
     
     # Determine volatility to use
     volatility = None
-    
-    # Priority 1: Chain IV (but only if realistic - between 10% and 500%)
-    # Below 10% is often bad data from yfinance
-    if implied_vol is not None and 0.10 <= implied_vol <= 5.0:
-        volatility = implied_vol
-        iv_source = "chain"
-    # Priority 2: Invert from option price if available
-    elif option_price is not None and spot and spot > 0:
+
+    # Priority 1: invert from current quoted option price if available. This
+    # keeps Greeks consistent with the premium shown on the options page.
+    if option_price is not None and spot and spot > 0:
         dte = max((position.expiration - date.today()).days, 0)
         T = max(dte, 0) / 365.0
         if T > 0:
@@ -569,10 +657,16 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
             if inverted_iv is not None:
                 volatility = inverted_iv
                 iv_source = f"inverted ({option_price_source})"
-    
-    # Priority 3: Historical volatility
+
+    # Priority 2: Chain IV (but only if realistic - between 10% and 500%).
+    if volatility is None and implied_vol is not None and 0.10 <= implied_vol <= 5.0:
+        volatility = implied_vol
+        iv_source = "chain"
+
+    # Priority 3: Historical volatility. compute_historical_volatility returns
+    # percent units, while Black-Scholes expects decimal volatility.
     if volatility is None and hv30 is not None:
-        volatility = hv30
+        volatility = float(hv30) / 100.0
         iv_source = "historical"
     
     # If still no volatility, try a default
@@ -617,6 +711,7 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
         },
         "option_price": option_price,
         "option_price_source": option_price_source,
+        "quote": quote,
         "volatility": volatility,
         "volatility_source": volatility_source,
         "dte": dte,

@@ -38,6 +38,9 @@ env/
 .env.*.local
 devops/env/backend.env
 
+# Local handoff notes
+docs/options-mispricing-ibkr-roadmap.md
+
 # IDE
 .vscode/
 .idea/
