@@ -10,7 +10,7 @@ import requests
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.models.options_alerts import OptionAlertWatch, OptionAlertEvent
-from app.services.options_quotes import select_atm_contract
+from app.services.options_quotes import select_atm_contract, select_optimal_contract
 from app.utils.db_helpers import get_db_session
 
 ESC = "\u001b"
@@ -279,11 +279,15 @@ def _hold_days_from_returns(horizon_returns: Optional[dict[str, Optional[float]]
         if trend_return is None:
             trend_return = horizon_returns.get("3m")
 
+    if trend_return is not None and abs(trend_return) >= 12:
+        return 7
     if trend_return is not None and abs(trend_return) >= 8:
         return 10
-    if trend_return is not None and abs(trend_return) >= 3:
+    if trend_return is not None and abs(trend_return) >= 4:
         return 14
-    return 21
+    if trend_return is not None and abs(trend_return) >= 1.5:
+        return 21
+    return 28
 
 
 def _contract_side_from_direction(direction: str) -> str:
@@ -296,7 +300,28 @@ def _select_training_contract(
     contract_side: str,
     target_dte: int,
     min_remaining_after_hold: int,
+    hold_days: Optional[int] = None,
+    target_move_pct: Optional[float] = None,
+    stop_move_pct: Optional[float] = None,
+    iv30: Optional[float] = None,
+    hv30: Optional[float] = None,
 ) -> Optional[dict[str, object]]:
+    if hold_days is not None and target_move_pct is not None and stop_move_pct is not None:
+        optimized = select_optimal_contract(
+            stock=stock,
+            current_price=current_price,
+            contract_side=contract_side,
+            hold_days=hold_days,
+            target_move_pct=target_move_pct,
+            stop_move_pct=stop_move_pct,
+            fallback_iv_pct=iv30,
+            fallback_hv_pct=hv30,
+            min_dte=30,
+            max_dte=90,
+        )
+        if optimized:
+            return optimized
+
     return select_atm_contract(
         stock=stock,
         current_price=current_price,
@@ -304,6 +329,55 @@ def _select_training_contract(
         target_dte=target_dte,
         min_remaining_after_hold=min_remaining_after_hold,
     )
+
+
+def _training_plan_inputs(
+    direction: str,
+    iv30: Optional[float],
+    hv30: Optional[float],
+    horizon_returns: Optional[dict[str, Optional[float]]],
+    history: Optional[pd.DataFrame],
+) -> dict[str, Optional[float] | int | str]:
+    close = history.get("Close") if history is not None else None
+    price = None
+    if close is not None:
+        close = close.dropna()
+        if not close.empty:
+            price = float(close.iloc[-1])
+
+    hold_days = _hold_days_from_returns(horizon_returns)
+    hv_move_pct = float(hv30) * sqrt(hold_days / 252.0) if hv30 is not None else None
+    iv_move_pct = float(iv30) * sqrt(hold_days / 252.0) if iv30 is not None else None
+    move_candidates = [value for value in [hv_move_pct, iv_move_pct] if value is not None]
+    expected_underlying_move = _clamp(
+        (sum(move_candidates) / len(move_candidates)) if move_candidates else 4.0,
+        2.0,
+        14.0,
+    )
+
+    target_move = expected_underlying_move
+    stop_move = _clamp(expected_underlying_move * 0.55, 1.2, 8.0)
+    contract_side = _contract_side_from_direction(direction)
+
+    stop_price = None
+    target_price = None
+    if price is not None:
+        if contract_side == "CALL":
+            stop_price = price * (1 - stop_move / 100.0)
+            target_price = price * (1 + target_move / 100.0)
+        else:
+            stop_price = price * (1 + stop_move / 100.0)
+            target_price = price * (1 - target_move / 100.0)
+
+    return {
+        "price": price,
+        "hold_days": hold_days,
+        "target_move": target_move,
+        "stop_move": stop_move,
+        "contract_side": contract_side,
+        "target_price": target_price,
+        "stop_price": stop_price,
+    }
 
 
 def _selected_contract_event_fields(selected_contract: Optional[dict[str, object]]) -> dict[str, object]:
@@ -339,47 +413,30 @@ def _build_training_trade_lines(
     stock: Optional[yf.Ticker] = None,
     selected_contract: Optional[dict[str, object]] = None,
 ) -> list[str]:
-    close = history.get("Close") if history is not None else None
-    price = None
-    if close is not None:
-        close = close.dropna()
-        if not close.empty:
-            price = float(close.iloc[-1])
+    plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, history)
+    price = plan["price"]
+    hold_days = int(plan["hold_days"])
+    target_move = float(plan["target_move"])
+    stop_move = float(plan["stop_move"])
+    contract_side = str(plan["contract_side"])
 
-    hold_days = _hold_days_from_returns(horizon_returns)
-
-    hv_move_pct = float(hv30) * sqrt(hold_days / 252.0) if hv30 is not None else None
-    iv_move_pct = float(iv30) * sqrt(hold_days / 252.0) if iv30 is not None else None
-    move_candidates = [value for value in [hv_move_pct, iv_move_pct] if value is not None]
-    expected_underlying_move = _clamp(
-        (sum(move_candidates) / len(move_candidates)) if move_candidates else 4.0,
-        2.0,
-        14.0,
-    )
-
-    target_move = expected_underlying_move
-    stop_move = _clamp(expected_underlying_move * 0.55, 1.2, 8.0)
-
-    contract_side = _contract_side_from_direction(direction)
-
-    if price is None:
+    if plan["stop_price"] is None or plan["target_price"] is None:
         stop_target_text = "n/a"
-    elif contract_side == "CALL":
-        stop_price = price * (1 - stop_move / 100.0)
-        target_price = price * (1 + target_move / 100.0)
-        stop_target_text = f"{stop_price:.2f} / {target_price:.2f}"
     else:
-        stop_price = price * (1 + stop_move / 100.0)
-        target_price = price * (1 - target_move / 100.0)
-        stop_target_text = f"{stop_price:.2f} / {target_price:.2f}"
+        stop_target_text = f"{float(plan['stop_price']):.2f} / {float(plan['target_price']):.2f}"
 
     if selected_contract is None:
         selected_contract = _select_training_contract(
             stock=stock,
-            current_price=price,
+            current_price=float(price) if isinstance(price, (int, float)) else None,
             contract_side=contract_side,
-            target_dte=max(30, hold_days + 14),
+            target_dte=60,
             min_remaining_after_hold=hold_days + 3,
+            hold_days=hold_days,
+            target_move_pct=target_move,
+            stop_move_pct=stop_move,
+            iv30=iv30,
+            hv30=hv30,
         )
 
     if selected_contract:
@@ -401,11 +458,11 @@ def _build_training_trade_lines(
     )
     target_premium_pct = _clamp(35.0 + cheapness_edge * 1.2, 28.0, 90.0)
     stop_premium_pct = _clamp(24.0 + (12.0 - min(12.0, cheapness_edge)) * 1.4, 25.0, 55.0)
-    est_profit = est_premium * 100.0 * (target_premium_pct / 100.0)
-    est_loss = est_premium * 100.0 * (stop_premium_pct / 100.0)
+    est_profit = float(selected_contract.get("target_profit", 0.0)) if selected_contract else est_premium * 100.0 * (target_premium_pct / 100.0)
+    est_loss = float(selected_contract.get("planned_loss", 0.0)) if selected_contract else est_premium * 100.0 * (stop_premium_pct / 100.0)
 
     lines = [
-        f"  Setup     : 1x ATM {contract_side} (training example)",
+        f"  Setup     : 1x optimized {contract_side} (training example)",
     ]
     if selected_contract:
         bid = selected_contract.get("bid")
@@ -416,11 +473,38 @@ def _build_training_trade_lines(
         spread_text = f"{float(spread_pct):.1f}%" if isinstance(spread_pct, (int, float)) else "n/a"
         iv = selected_contract.get("implied_volatility")
         iv_text = f"{float(iv) * 100:.1f}%" if isinstance(iv, (int, float)) else "n/a"
+        target_option = selected_contract.get("target_option_price")
+        stop_option = selected_contract.get("stop_option_price")
+        rr = selected_contract.get("reward_risk")
+        profit_pct = selected_contract.get("target_profit_pct")
+        loss_pct = selected_contract.get("planned_loss_pct")
+        target_option_text = f"{float(target_option):.2f}" if isinstance(target_option, (int, float)) else "n/a"
+        stop_option_text = f"{float(stop_option):.2f}" if isinstance(stop_option, (int, float)) else "n/a"
+        rr_text = f"{float(rr):.2f}R" if isinstance(rr, (int, float)) else "n/a"
+        profit_pct_text = f"{float(profit_pct):+.0f}%" if isinstance(profit_pct, (int, float)) else "n/a"
+        loss_pct_text = f"-{float(loss_pct):.0f}%" if isinstance(loss_pct, (int, float)) else "n/a"
+        target_underlying_text = (
+            f"{float(plan['target_price']):.2f}" if isinstance(plan.get("target_price"), (int, float)) else "n/a"
+        )
+        stop_underlying_text = (
+            f"{float(plan['stop_price']):.2f}" if isinstance(plan.get("stop_price"), (int, float)) else "n/a"
+        )
+        theoretical_max = selected_contract.get("theoretical_max_profit")
+        if contract_side == "CALL":
+            max_profit_text = "unlimited theoretical"
+        elif isinstance(theoretical_max, (int, float)):
+            max_profit_text = f"${float(theoretical_max):.0f} theoretical"
+        else:
+            max_profit_text = "n/a"
         lines.extend(
             [
                 f"  Contract  : {selected_contract['expiry']} {float(selected_contract['strike']):.2f} {contract_side}",
                 f"  Quote     : bid {bid_text} / ask {ask_text} / spread {spread_text}",
                 f"  OI/Vol/IV : {selected_contract['open_interest']} / {selected_contract['volume']} / {iv_text}",
+                f"  Exit Tgt  : opt ${target_option_text} ({profit_pct_text}) @ und ${target_underlying_text}",
+                f"  Risk Cut  : opt ${stop_option_text} ({loss_pct_text}) @ und ${stop_underlying_text}",
+                f"  Max Gain  : +${est_profit:.0f} modeled / {max_profit_text}",
+                f"  Reward/Risk: {rr_text}",
             ]
         )
     else:
@@ -431,7 +515,7 @@ def _build_training_trade_lines(
             f"  Est Prem  : ${est_premium:.2f} ({premium_source})",
             f"  Est G/L   : +${est_profit:.0f} / -${est_loss:.0f}",
             f"  Stop/Tgt  : {stop_target_text}",
-            f"  Hold      : {hold_days} trading days",
+            f"  Hold      : {hold_days} trading days (30-90 DTE scan)",
         ]
     )
     return lines
@@ -768,13 +852,19 @@ def run_options_alert_scan() -> dict:
                 )
                 direction, direction_reason = _direction_hint(hist)
                 horizon_labels, horizon_returns = _compute_horizon_bias(hist)
-                hold_days = _hold_days_from_returns(horizon_returns)
+                plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, hist)
+                hold_days = int(plan["hold_days"])
                 selected_contract = _select_training_contract(
                     stock=stock,
                     current_price=current_price,
-                    contract_side=_contract_side_from_direction(direction),
-                    target_dte=max(30, hold_days + 14),
+                    contract_side=str(plan["contract_side"]),
+                    target_dte=60,
                     min_remaining_after_hold=hold_days + 3,
+                    hold_days=hold_days,
+                    target_move_pct=float(plan["target_move"]),
+                    stop_move_pct=float(plan["stop_move"]),
+                    iv30=iv30,
+                    hv30=hv30,
                 )
                 if watch.last_triggered_at:
                     cooldown = timedelta(minutes=watch.cooldown_minutes or 0)

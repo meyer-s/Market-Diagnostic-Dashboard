@@ -12,13 +12,12 @@ from app.services.options_alerts import (
     _build_stock_analyzer_url,
     _compute_option_bias,
     _compute_horizon_bias,
-    _contract_side_from_direction,
     _direction_hint,
     _format_alert_message,
-    _hold_days_from_returns,
     _is_iv_data_valid,
     _select_training_contract,
     _selected_contract_event_fields,
+    _training_plan_inputs,
 )
 from app.models.options_alerts import OptionAlertEvent
 from app.services.options_alerts import _send_webhook, _get_current_price
@@ -167,13 +166,19 @@ def _scan_tickers(
         reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold, bias, votes)
         direction, direction_reason = _direction_hint(history)
         horizon_labels, horizon_returns = _compute_horizon_bias(history)
-        hold_days = _hold_days_from_returns(horizon_returns)
+        plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, history)
+        hold_days = int(plan["hold_days"])
         selected_contract = _select_training_contract(
             stock=stock,
             current_price=current_price,
-            contract_side=_contract_side_from_direction(direction),
-            target_dte=max(30, hold_days + 14),
+            contract_side=str(plan["contract_side"]),
+            target_dte=60,
             min_remaining_after_hold=hold_days + 3,
+            hold_days=hold_days,
+            target_move_pct=float(plan["target_move"]),
+            stop_move_pct=float(plan["stop_move"]),
+            iv30=iv30,
+            hv30=hv30,
         )
         analyzer_url = _build_stock_analyzer_url(symbol)
         message = _format_alert_message(
