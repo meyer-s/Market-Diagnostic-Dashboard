@@ -458,7 +458,7 @@ def _build_training_trade_lines(
     )
     target_premium_pct = _clamp(35.0 + cheapness_edge * 1.2, 28.0, 90.0)
     stop_premium_pct = _clamp(24.0 + (12.0 - min(12.0, cheapness_edge)) * 1.4, 25.0, 55.0)
-    est_profit = float(selected_contract.get("target_profit", 0.0)) if selected_contract else est_premium * 100.0 * (target_premium_pct / 100.0)
+    est_profit = float(selected_contract.get("convexity_profit", selected_contract.get("target_profit", 0.0))) if selected_contract else est_premium * 100.0 * (target_premium_pct / 100.0)
     est_loss = float(selected_contract.get("planned_loss", 0.0)) if selected_contract else est_premium * 100.0 * (stop_premium_pct / 100.0)
 
     lines = [
@@ -474,11 +474,14 @@ def _build_training_trade_lines(
         iv = selected_contract.get("implied_volatility")
         iv_text = f"{float(iv) * 100:.1f}%" if isinstance(iv, (int, float)) else "n/a"
         target_option = selected_contract.get("target_option_price")
+        convexity_option = selected_contract.get("convexity_exit_option_price")
+        convexity_underlying = selected_contract.get("convexity_exit_underlying")
         stop_option = selected_contract.get("stop_option_price")
         rr = selected_contract.get("reward_risk")
-        profit_pct = selected_contract.get("target_profit_pct")
+        profit_pct = selected_contract.get("convexity_profit_pct", selected_contract.get("target_profit_pct"))
         loss_pct = selected_contract.get("planned_loss_pct")
         target_option_text = f"{float(target_option):.2f}" if isinstance(target_option, (int, float)) else "n/a"
+        convexity_option_text = f"{float(convexity_option):.2f}" if isinstance(convexity_option, (int, float)) else target_option_text
         stop_option_text = f"{float(stop_option):.2f}" if isinstance(stop_option, (int, float)) else "n/a"
         rr_text = f"{float(rr):.2f}R" if isinstance(rr, (int, float)) else "n/a"
         profit_pct_text = f"{float(profit_pct):+.0f}%" if isinstance(profit_pct, (int, float)) else "n/a"
@@ -486,24 +489,28 @@ def _build_training_trade_lines(
         target_underlying_text = (
             f"{float(plan['target_price']):.2f}" if isinstance(plan.get("target_price"), (int, float)) else "n/a"
         )
+        convexity_underlying_text = (
+            f"{float(convexity_underlying):.2f}" if isinstance(convexity_underlying, (int, float)) else target_underlying_text
+        )
         stop_underlying_text = (
             f"{float(plan['stop_price']):.2f}" if isinstance(plan.get("stop_price"), (int, float)) else "n/a"
         )
-        theoretical_max = selected_contract.get("theoretical_max_profit")
-        if contract_side == "CALL":
-            max_profit_text = "unlimited theoretical"
-        elif isinstance(theoretical_max, (int, float)):
-            max_profit_text = f"${float(theoretical_max):.0f} theoretical"
-        else:
-            max_profit_text = "n/a"
+        probability = selected_contract.get("convexity_probability_itm")
+        delta = selected_contract.get("convexity_delta")
+        theta_pct = selected_contract.get("convexity_theta_daily_pct")
+        probability_text = f"{float(probability) * 100:.0f}%" if isinstance(probability, (int, float)) else "n/a"
+        delta_text = f"{float(delta):.2f}" if isinstance(delta, (int, float)) else "n/a"
+        theta_text = f"{float(theta_pct):.1f}%/day" if isinstance(theta_pct, (int, float)) else "n/a"
         lines.extend(
             [
                 f"  Contract  : {selected_contract['expiry']} {float(selected_contract['strike']):.2f} {contract_side}",
                 f"  Quote     : bid {bid_text} / ask {ask_text} / spread {spread_text}",
                 f"  OI/Vol/IV : {selected_contract['open_interest']} / {selected_contract['volume']} / {iv_text}",
-                f"  Exit Tgt  : opt ${target_option_text} ({profit_pct_text}) @ und ${target_underlying_text}",
+                f"  Hump Exit : opt ${convexity_option_text} ({profit_pct_text}) @ und ${convexity_underlying_text}",
+                f"  Hump Prob : ITM {probability_text} / delta {delta_text} / theta {theta_text}",
+                f"  Base Tgt  : opt ${target_option_text} @ und ${target_underlying_text}",
                 f"  Risk Cut  : opt ${stop_option_text} ({loss_pct_text}) @ und ${stop_underlying_text}",
-                f"  Max Gain  : +${est_profit:.0f} modeled / {max_profit_text}",
+                f"  Max Profit: +${est_profit:.0f} convexity harvest",
                 f"  Reward/Risk: {rr_text}",
             ]
         )

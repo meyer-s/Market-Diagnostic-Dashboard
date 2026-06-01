@@ -7,10 +7,12 @@ from typing import Optional
 import pandas as pd
 import yfinance as yf
 
-from app.services.greeks_calculator import black_scholes_price
+from app.services.greeks_calculator import black_scholes_d1_d2, black_scholes_price, calculate_greeks, norm_cdf
 
 
 RISK_FREE_RATE = 0.0425
+CONVEXITY_PROBABILITY_HUMP = 0.55
+MIN_PROFIT_AT_HUMP_PCT = 20.0
 
 
 def parse_option_expiry(value: str) -> Optional[date]:
@@ -227,6 +229,108 @@ def _modeled_exit_price(
     )
 
 
+def _probability_itm(
+    *,
+    underlying_price: float,
+    strike: float,
+    remaining_calendar_days: int,
+    sigma: float,
+    contract_side: str,
+) -> float:
+    T = max(1, remaining_calendar_days) / 365.0
+    try:
+        _, d2 = black_scholes_d1_d2(
+            S=underlying_price,
+            K=strike,
+            T=T,
+            r=RISK_FREE_RATE,
+            sigma=sigma,
+        )
+    except Exception:
+        return 0.0
+    if contract_side == "CALL":
+        return float(norm_cdf(d2))
+    return float(norm_cdf(-d2))
+
+
+def _convexity_harvest_point(
+    *,
+    current_price: float,
+    target_underlying: float,
+    strike: float,
+    premium: float,
+    remaining_calendar_days: int,
+    sigma: float,
+    contract_side: str,
+) -> dict[str, object]:
+    if contract_side == "CALL":
+        upper = max(target_underlying, strike * 1.02, current_price * 1.04)
+        upper = min(max(upper, current_price * 1.02), current_price * 1.18)
+        points = [current_price + (upper - current_price) * step / 36 for step in range(1, 37)]
+    else:
+        lower = min(target_underlying, strike * 0.98, current_price * 0.96)
+        lower = max(min(lower, current_price * 0.98), current_price * 0.82)
+        points = [current_price - (current_price - lower) * step / 36 for step in range(1, 37)]
+
+    best = None
+    fallback = None
+    for underlying in points:
+        option_price = _modeled_exit_price(
+            underlying_price=underlying,
+            strike=strike,
+            remaining_calendar_days=remaining_calendar_days,
+            sigma=sigma,
+            contract_side=contract_side,
+        )
+        profit = max(0.0, (option_price - premium) * 100.0)
+        profit_pct = ((option_price / premium) - 1.0) * 100.0 if premium else 0.0
+        probability = _probability_itm(
+            underlying_price=underlying,
+            strike=strike,
+            remaining_calendar_days=remaining_calendar_days,
+            sigma=sigma,
+            contract_side=contract_side,
+        )
+        greeks = calculate_greeks(
+            S=underlying,
+            K=strike,
+            T=max(1, remaining_calendar_days) / 365.0,
+            r=RISK_FREE_RATE,
+            sigma=sigma,
+            option_type=contract_side.lower(),
+        )
+        theta_daily_pct = (
+            abs(float(greeks["theta"])) / max(option_price * 100.0, 1.0) * 100.0
+            if option_price > 0
+            else None
+        )
+        point = {
+            "underlying": float(underlying),
+            "option_price": float(option_price),
+            "profit": float(profit),
+            "profit_pct": float(profit_pct),
+            "probability_itm": float(probability),
+            "delta": float(abs(greeks["delta"])),
+            "theta_daily_pct": float(theta_daily_pct) if theta_daily_pct is not None else None,
+            "hump_reached": probability >= CONVEXITY_PROBABILITY_HUMP,
+        }
+        fallback = point
+        if probability >= CONVEXITY_PROBABILITY_HUMP and profit_pct >= MIN_PROFIT_AT_HUMP_PCT:
+            best = point
+            break
+
+    return best or fallback or {
+        "underlying": float(target_underlying),
+        "option_price": 0.0,
+        "profit": 0.0,
+        "profit_pct": 0.0,
+        "probability_itm": 0.0,
+        "delta": 0.0,
+        "theta_daily_pct": None,
+        "hump_reached": False,
+    }
+
+
 def select_optimal_contract(
     stock: Optional[yf.Ticker],
     current_price: Optional[float],
@@ -330,13 +434,24 @@ def select_optimal_contract(
                 sigma=sigma,
                 contract_side=contract_side,
             )
+            harvest = _convexity_harvest_point(
+                current_price=current_price,
+                target_underlying=target_underlying,
+                strike=strike,
+                premium=float(premium),
+                remaining_calendar_days=remaining_calendar_days,
+                sigma=sigma,
+                contract_side=contract_side,
+            )
 
             plan_profit = max(0.0, (target_option - premium) * 100.0)
+            convexity_profit = float(harvest["profit"])
             planned_loss = max(0.0, (premium - stop_option) * 100.0)
             max_loss = premium * 100.0
             risk = max(planned_loss, premium * 100.0 * 0.25, 1.0)
-            reward_risk = plan_profit / risk
+            reward_risk = convexity_profit / risk
             profit_pct = ((target_option / premium) - 1.0) * 100.0 if premium else 0.0
+            convexity_profit_pct = float(harvest["profit_pct"])
             stop_loss_pct = max(0.0, (1.0 - (stop_option / premium)) * 100.0) if premium else 0.0
 
             open_interest = int(quote.get("open_interest") or 0)
@@ -348,7 +463,8 @@ def select_optimal_contract(
 
             score = (
                 reward_risk * 2.0
-                + min(2.5, profit_pct / 45.0)
+                + min(2.5, convexity_profit_pct / 45.0)
+                + (0.75 if harvest.get("hump_reached") else -0.5)
                 + liquidity_score
                 - spread_penalty
                 - dte_penalty
@@ -391,10 +507,21 @@ def select_optimal_contract(
                 "stop_option_price": float(stop_option),
                 "target_profit": float(plan_profit),
                 "target_profit_pct": float(profit_pct),
+                "convexity_exit_underlying": float(harvest["underlying"]),
+                "convexity_exit_option_price": float(harvest["option_price"]),
+                "convexity_profit": float(harvest["profit"]),
+                "convexity_profit_pct": float(harvest["profit_pct"]),
+                "convexity_probability_itm": float(harvest["probability_itm"]),
+                "convexity_delta": float(harvest["delta"]),
+                "convexity_theta_daily_pct": harvest.get("theta_daily_pct"),
+                "convexity_hump_reached": bool(harvest["hump_reached"]),
+                "convexity_probability_hump": CONVEXITY_PROBABILITY_HUMP,
                 "planned_loss": float(planned_loss),
                 "planned_loss_pct": float(stop_loss_pct),
                 "max_loss": float(max_loss),
                 "theoretical_max_profit": float(theoretical_max_profit) if theoretical_max_profit is not None else None,
+                "max_profit": float(harvest["profit"]),
+                "max_profit_definition": "convexity_harvest_probability_hump",
                 "reward_risk": float(reward_risk),
                 "remaining_dte_after_hold": remaining_calendar_days,
                 "model_volatility": float(sigma),

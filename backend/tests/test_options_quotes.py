@@ -110,3 +110,6 @@ def test_select_optimal_contract_keeps_time_after_hold() -> None:
     assert selected["remaining_dte_after_hold"] >= 14
     assert selected["selection"] == "optimized_30_90_dte"
     assert selected["target_option_price"] > selected["premium"]
+    assert selected["max_profit_definition"] == "convexity_harvest_probability_hump"
+    assert selected["convexity_exit_option_price"] > selected["premium"]
+    assert selected["max_profit"] == selected["convexity_profit"]
