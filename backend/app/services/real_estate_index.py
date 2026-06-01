@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import StringIO
 from math import tanh
 from statistics import mean
@@ -91,11 +92,16 @@ HTTP_HEADERS = {
     "Accept": "application/json,text/csv,*/*",
 }
 
-FRED_TIMEOUT_SECONDS = 60
+FRED_TIMEOUT_SECONDS = 8
 
 _CACHE: Dict[int, Dict[str, Any]] = {}
 _CACHE_LOCK = Lock()
+_COMPUTE_LOCK = Lock()
 _CACHE_TTL_SECONDS = 20 * 60
+
+_CONTEXT_CACHE: Dict[int, Dict[str, Any]] = {}
+_CONTEXT_CACHE_LOCK = Lock()
+_CONTEXT_COMPUTE_LOCK = Lock()
 
 
 @dataclass(frozen=True)
@@ -395,14 +401,24 @@ def fetch_real_estate_proxy_data(days: int) -> Tuple[Dict[str, pd.Series], List[
 
 def fetch_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
     start = (datetime.utcnow() - timedelta(days=days + 450)).strftime("%Y-%m-%d")
-    series_map: Dict[str, pd.Series] = {}
+    series_map: Dict[str, pd.Series] = {key: pd.Series(dtype="float64") for key in FRED_SERIES}
     missing: List[str] = []
 
-    for key, series_id in FRED_SERIES.items():
-        series = _fred_fetch(series_id, start)
-        if series.empty:
-            missing.append(key)
-        series_map[key] = series
+    max_workers = min(8, max(1, len(FRED_SERIES)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_fred_fetch, series_id, start): key
+            for key, series_id in FRED_SERIES.items()
+        }
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                series = future.result()
+            except Exception:
+                series = pd.Series(dtype="float64")
+            if series.empty:
+                missing.append(key)
+            series_map[key] = series
 
     def _yoy(series: pd.Series) -> pd.Series:
         if series.empty:
@@ -440,11 +456,26 @@ def _build_context_payload(fred_series: Dict[str, pd.Series]) -> Dict[str, Any]:
 
 def get_real_estate_context_payload(days: int = 1095) -> Dict[str, Any]:
     now = datetime.utcnow()
-    fred_series, _ = fetch_fred_context(days)
-    return {
-        "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        **_build_context_payload(fred_series),
-    }
+    with _CONTEXT_CACHE_LOCK:
+        cached = _CONTEXT_CACHE.get(days)
+        if cached and (now - cached["timestamp"]).total_seconds() < _CACHE_TTL_SECONDS:
+            return cached["data"]
+
+    with _CONTEXT_COMPUTE_LOCK:
+        now = datetime.utcnow()
+        with _CONTEXT_CACHE_LOCK:
+            cached = _CONTEXT_CACHE.get(days)
+            if cached and (now - cached["timestamp"]).total_seconds() < _CACHE_TTL_SECONDS:
+                return cached["data"]
+
+        fred_series, _ = fetch_fred_context(days)
+        payload = {
+            "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            **_build_context_payload(fred_series),
+        }
+        with _CONTEXT_CACHE_LOCK:
+            _CONTEXT_CACHE[days] = {"timestamp": now, "data": payload}
+        return payload
 
 
 def _build_symbol_data(series_map: Dict[str, pd.Series]) -> Dict[str, Dict[str, Any]]:
@@ -833,77 +864,84 @@ def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
         if cached and (now - cached["timestamp"]).total_seconds() < _CACHE_TTL_SECONDS:
             return cached["data"]
 
-    proxy_series, availability, missing_proxies = fetch_real_estate_proxy_data(days)
-    fred_series, missing_fred = fetch_fred_context(days)
-    symbol_data = _build_symbol_data(proxy_series)
-    effective_weights = _effective_group_weights(symbol_data)
-    groups = _build_groups(symbol_data, effective_weights)
-    factors, metrics = _build_factors(groups, symbol_data, fred_series)
+    with _COMPUTE_LOCK:
+        now = datetime.utcnow()
+        with _CACHE_LOCK:
+            cached = _CACHE.get(days)
+            if cached and (now - cached["timestamp"]).total_seconds() < _CACHE_TTL_SECONDS:
+                return cached["data"]
 
-    composite_score = 50.0
-    if factors:
-        total_weight = sum(FACTOR_WEIGHTS.get(factor["key"], 0.0) for factor in factors)
-        if total_weight > 0:
-            composite_score = sum(
-                factor["score"] * FACTOR_WEIGHTS[factor["key"]]
-                for factor in factors
-            ) / total_weight
-    elif groups:
-        composite_score = _weighted_score([(group["score"], group["weight"]) for group in groups.values()]) or 50.0
-    composite_score = round(float(composite_score), 2)
-    stability_score = round(float(_clamp(100.0 - composite_score, 0.0, 100.0)), 2)
+        proxy_series, availability, missing_proxies = fetch_real_estate_proxy_data(days)
+        fred_series, missing_fred = fetch_fred_context(days)
+        symbol_data = _build_symbol_data(proxy_series)
+        effective_weights = _effective_group_weights(symbol_data)
+        groups = _build_groups(symbol_data, effective_weights)
+        factors, metrics = _build_factors(groups, symbol_data, fred_series)
 
-    composite_history, factor_history = _build_listed_history(proxy_series, symbol_data, effective_weights, days)
-    stability_history = [
-        {"date": point["date"], "value": round(float(_clamp(100.0 - point["value"], 0.0, 100.0)), 2)}
-        for point in composite_history
-        if point.get("value") is not None
-    ]
-    regime = _regime_label(composite_score)
+        composite_score = 50.0
+        if factors:
+            total_weight = sum(FACTOR_WEIGHTS.get(factor["key"], 0.0) for factor in factors)
+            if total_weight > 0:
+                composite_score = sum(
+                    factor["score"] * FACTOR_WEIGHTS[factor["key"]]
+                    for factor in factors
+                ) / total_weight
+        elif groups:
+            composite_score = _weighted_score([(group["score"], group["weight"]) for group in groups.values()]) or 50.0
+        composite_score = round(float(composite_score), 2)
+        stability_score = round(float(_clamp(100.0 - composite_score, 0.0, 100.0)), 2)
 
-    mortgage = fred_series.get("mortgage_rate_30y", pd.Series(dtype="float64"))
-    treasury = fred_series.get("treasury_10y", pd.Series(dtype="float64"))
-    credit = fred_series.get("credit_spread", pd.Series(dtype="float64"))
+        composite_history, factor_history = _build_listed_history(proxy_series, symbol_data, effective_weights, days)
+        stability_history = [
+            {"date": point["date"], "value": round(float(_clamp(100.0 - point["value"], 0.0, 100.0)), 2)}
+            for point in composite_history
+            if point.get("value") is not None
+        ]
+        regime = _regime_label(composite_score)
 
-    warnings: List[str] = []
-    if missing_proxies:
-        warnings.append(f"Missing listed proxies: {', '.join(proxy['code'] for proxy in missing_proxies)}")
-    if missing_fred:
-        labels = [FRED_LABELS.get(key, key) for key in missing_fred]
-        warnings.append(f"Missing FRED macro series: {', '.join(labels)}")
+        mortgage = fred_series.get("mortgage_rate_30y", pd.Series(dtype="float64"))
+        treasury = fred_series.get("treasury_10y", pd.Series(dtype="float64"))
+        credit = fred_series.get("credit_spread", pd.Series(dtype="float64"))
 
-    data: Dict[str, Any] = {
-        "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "regime_label": regime,
-        "composite_score": composite_score,
-        "stability_score": stability_score,
-        "summary": _summary(composite_score, regime, factors, groups, metrics),
-        "groups": list(groups.values()),
-        "symbols": list(symbol_data.values()),
-        "factors": factors,
-        "metrics": metrics,
-        "composite_history": composite_history,
-        "stability_history": stability_history,
-        "factor_history": factor_history,
-        "transmission": {
-            "mortgage_rate_30y": _series_points(mortgage, decimals=3),
-            "treasury_10y": _series_points(treasury, decimals=3),
-            "indexed_xhb": _indexed_history(proxy_series.get("XHB", pd.Series(dtype="float64")), days),
-            "indexed_vnq": _indexed_history(proxy_series.get("VNQ", pd.Series(dtype="float64")), days),
-            "credit_spread": _series_points(credit, decimals=1, multiplier=100.0),
-        },
-        "context": _build_context_payload(fred_series),
-        "availability": {
-            "symbols": availability,
-            "missing_symbols": missing_proxies,
-            "missing_macro_series": missing_fred,
-            "available_count": len(proxy_series),
-            "total_configured": len(REAL_ESTATE_PROXIES),
-        },
-        "warnings": warnings,
-    }
+        warnings: List[str] = []
+        if missing_proxies:
+            warnings.append(f"Missing listed proxies: {', '.join(proxy['code'] for proxy in missing_proxies)}")
+        if missing_fred:
+            labels = [FRED_LABELS.get(key, key) for key in missing_fred]
+            warnings.append(f"Missing FRED macro series: {', '.join(labels)}")
 
-    with _CACHE_LOCK:
-        _CACHE[days] = {"timestamp": now, "data": data}
+        data: Dict[str, Any] = {
+            "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "regime_label": regime,
+            "composite_score": composite_score,
+            "stability_score": stability_score,
+            "summary": _summary(composite_score, regime, factors, groups, metrics),
+            "groups": list(groups.values()),
+            "symbols": list(symbol_data.values()),
+            "factors": factors,
+            "metrics": metrics,
+            "composite_history": composite_history,
+            "stability_history": stability_history,
+            "factor_history": factor_history,
+            "transmission": {
+                "mortgage_rate_30y": _series_points(mortgage, decimals=3),
+                "treasury_10y": _series_points(treasury, decimals=3),
+                "indexed_xhb": _indexed_history(proxy_series.get("XHB", pd.Series(dtype="float64")), days),
+                "indexed_vnq": _indexed_history(proxy_series.get("VNQ", pd.Series(dtype="float64")), days),
+                "credit_spread": _series_points(credit, decimals=1, multiplier=100.0),
+            },
+            "context": _build_context_payload(fred_series),
+            "availability": {
+                "symbols": availability,
+                "missing_symbols": missing_proxies,
+                "missing_macro_series": missing_fred,
+                "available_count": len(proxy_series),
+                "total_configured": len(REAL_ESTATE_PROXIES),
+            },
+            "warnings": warnings,
+        }
 
-    return data
+        with _CACHE_LOCK:
+            _CACHE[days] = {"timestamp": now, "data": data}
+
+        return data
