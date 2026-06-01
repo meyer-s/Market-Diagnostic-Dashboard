@@ -15,6 +15,7 @@ from app.api.stock_projection import compute_historical_volatility
 from app.models.option_positions import OptionPosition
 from app.models.closed_positions import ClosedPosition
 from app.models.options_alerts import OptionAlertEvent
+from app.services.options_quotes import option_quote_from_row
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
     black_scholes_price,
@@ -460,67 +461,20 @@ def _resolve_option_row(stock: yf.Ticker, expiration: date, option_type: str, st
     return row
 
 
-def _quote_float(value) -> Optional[float]:
-    if value is None or pd.isna(value):
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None
-
-
-def _quote_int(value) -> Optional[int]:
-    number = _quote_float(value)
-    return int(number) if number is not None else None
-
-
-def _quote_timestamp(value) -> Optional[str]:
-    if value is None or pd.isna(value):
-        return None
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    return str(value)
-
-
 def _quote_payload_from_row(row: Optional[pd.Series]) -> Dict[str, object]:
-    if row is None:
-        return {
-            "bid": None,
-            "ask": None,
-            "last": None,
-            "mid": None,
-            "spread": None,
-            "spread_pct": None,
-            "volume": None,
-            "open_interest": None,
-            "implied_volatility": None,
-            "last_trade_at": None,
-            "quality": "missing",
-        }
-
-    bid = _quote_float(row.get("bid"))
-    ask = _quote_float(row.get("ask"))
-    last = _quote_float(row.get("lastPrice"))
-    mid = (bid + ask) / 2.0 if bid is not None and ask is not None and bid > 0 and ask > 0 else None
-    spread = (ask - bid) if bid is not None and ask is not None and bid > 0 and ask > 0 else None
-    spread_pct = (spread / mid * 100.0) if spread is not None and mid else None
-
-    quality = "mid" if mid is not None else "last" if last is not None and last > 0 else "missing"
-    if spread_pct is not None and spread_pct > 25:
-        quality = "wide"
-
+    quote = option_quote_from_row(row)
     return {
-        "bid": bid,
-        "ask": ask,
-        "last": last,
-        "mid": mid,
-        "spread": spread,
-        "spread_pct": spread_pct,
-        "volume": _quote_int(row.get("volume")),
-        "open_interest": _quote_int(row.get("openInterest")),
-        "implied_volatility": _quote_float(row.get("impliedVolatility")),
-        "last_trade_at": _quote_timestamp(row.get("lastTradeDate")),
-        "quality": quality,
+        "bid": quote.get("bid"),
+        "ask": quote.get("ask"),
+        "last": quote.get("last"),
+        "mid": quote.get("mid"),
+        "spread": quote.get("spread"),
+        "spread_pct": quote.get("spread_pct"),
+        "volume": quote.get("volume"),
+        "open_interest": quote.get("open_interest"),
+        "implied_volatility": quote.get("implied_volatility"),
+        "last_trade_at": quote.get("last_trade_date"),
+        "quality": quote.get("quality"),
     }
 
 

@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from math import sqrt
 from typing import Optional
 from urllib.parse import quote
@@ -10,6 +10,7 @@ import requests
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.models.options_alerts import OptionAlertWatch, OptionAlertEvent
+from app.services.options_quotes import select_atm_contract
 from app.utils.db_helpers import get_db_session
 
 ESC = "\u001b"
@@ -289,22 +290,6 @@ def _contract_side_from_direction(direction: str) -> str:
     return "PUT" if direction.lower() == "puts" else "CALL"
 
 
-def _parse_expiry_date(value: str) -> Optional[date]:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except Exception:
-        return None
-
-
-def _numeric(value) -> Optional[float]:
-    if value is None or pd.isna(value):
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None
-
-
 def _select_training_contract(
     stock: Optional[yf.Ticker],
     current_price: Optional[float],
@@ -312,98 +297,13 @@ def _select_training_contract(
     target_dte: int,
     min_remaining_after_hold: int,
 ) -> Optional[dict[str, object]]:
-    if stock is None or current_price is None or current_price <= 0:
-        return None
-
-    try:
-        expiries = stock.options or []
-    except Exception:
-        return None
-
-    today = datetime.utcnow().date()
-    candidates: list[tuple[str, int]] = []
-    for expiry in expiries:
-        expiry_date = _parse_expiry_date(expiry)
-        if not expiry_date:
-            continue
-        dte = (expiry_date - today).days
-        if dte <= min_remaining_after_hold:
-            continue
-        candidates.append((expiry, dte))
-
-    if not candidates:
-        return None
-
-    expiry, dte = min(candidates, key=lambda item: abs(item[1] - target_dte))
-    try:
-        chain = stock.option_chain(expiry)
-    except Exception:
-        return None
-
-    frame = chain.calls if contract_side == "CALL" else chain.puts
-    if frame is None or frame.empty or "strike" not in frame.columns:
-        return None
-
-    frame = frame.dropna(subset=["strike"]).copy()
-    if frame.empty:
-        return None
-    frame["strike_delta"] = (frame["strike"] - current_price).abs()
-    near_frame = frame[(frame["strike"] - current_price).abs() / current_price <= 0.20]
-    if not near_frame.empty:
-        frame = near_frame
-
-    # Prefer rows with an actual two-sided quote. Fall back to last trade only
-    # when no quoted ATM candidate is available.
-    quoted = frame[
-        frame["bid"].apply(lambda value: (_numeric(value) or 0) > 0)
-        & frame["ask"].apply(lambda value: (_numeric(value) or 0) > 0)
-    ] if {"bid", "ask"}.issubset(frame.columns) else pd.DataFrame()
-    source_frame = quoted if not quoted.empty else frame
-    row = source_frame.sort_values("strike_delta").iloc[0]
-
-    bid = _numeric(row.get("bid"))
-    ask = _numeric(row.get("ask"))
-    last = _numeric(row.get("lastPrice"))
-    if bid is not None and ask is not None and bid > 0 and ask > 0:
-        premium = (bid + ask) / 2.0
-        price_source = "mid"
-    elif last is not None and last > 0:
-        premium = last
-        price_source = "last"
-    else:
-        return None
-
-    if premium <= 0:
-        return None
-
-    spread_pct = None
-    if bid is not None and ask is not None and bid > 0 and ask > 0:
-        spread_pct = ((ask - bid) / premium) * 100.0 if premium else None
-
-    last_trade_date = row.get("lastTradeDate")
-    if hasattr(last_trade_date, "isoformat"):
-        last_trade_text = last_trade_date.isoformat()
-    elif last_trade_date is not None and not pd.isna(last_trade_date):
-        last_trade_text = str(last_trade_date)
-    else:
-        last_trade_text = None
-
-    return {
-        "expiry": expiry,
-        "dte": dte,
-        "strike": float(row.strike),
-        "side": contract_side,
-        "premium": premium,
-        "price_source": price_source,
-        "bid": bid,
-        "ask": ask,
-        "last": last,
-        "spread_pct": spread_pct,
-        "volume": int(_numeric(row.get("volume")) or 0),
-        "open_interest": int(_numeric(row.get("openInterest")) or 0),
-        "implied_volatility": _numeric(row.get("impliedVolatility")),
-        "last_trade_date": last_trade_text,
-    }
+    return select_atm_contract(
+        stock=stock,
+        current_price=current_price,
+        contract_side=contract_side,
+        target_dte=target_dte,
+        min_remaining_after_hold=min_remaining_after_hold,
+    )
 
 
 def _selected_contract_event_fields(selected_contract: Optional[dict[str, object]]) -> dict[str, object]:

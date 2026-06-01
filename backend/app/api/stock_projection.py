@@ -23,6 +23,7 @@ import math
 from app.models.institutional_flow_event import InstitutionalFlowEvent
 from app.models.system_status import SystemStatus
 from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
+from app.services.options_quotes import option_premium_from_row, option_quote_from_row
 from app.utils.db_helpers import get_db_session
 
 router = APIRouter()
@@ -953,14 +954,7 @@ def _near_atm(options_df: pd.DataFrame, current_price: float, threshold: float =
 
 
 def _option_mid_price(row: pd.Series) -> Optional[float]:
-    bid = row.get("bid")
-    ask = row.get("ask")
-    last = row.get("lastPrice")
-    if bid is not None and ask is not None and bid > 0 and ask > 0:
-        return float((bid + ask) / 2)
-    if last is not None and last > 0:
-        return float(last)
-    return None
+    return option_premium_from_row(row)
 
 
 def compute_options_flow(stock: yf.Ticker) -> Optional[dict]:
@@ -1011,6 +1005,7 @@ def compute_options_flow(stock: yf.Ticker) -> Optional[dict]:
         return {
             "expiry": expiry,
             "as_of": datetime.utcnow().isoformat(),
+            "data_source": "yfinance_option_chain",
             "call_walls": call_walls,
             "put_walls": put_walls,
             "call_open_interest_total": call_oi_total,
@@ -1072,6 +1067,7 @@ def compute_optionality_metrics(
 
     iv_values = []
     edr_values = []
+    price_source_counts = {"mid": 0, "last": 0, "missing": 0, "wide": 0}
     iv30 = None
 
     def collect_iv_values(df: pd.DataFrame) -> None:
@@ -1111,17 +1107,27 @@ def compute_optionality_metrics(
         collect_iv_values(near_chain)
 
         for _, row in near_calls.iterrows():
-            price = _option_mid_price(row)
+            quote = option_quote_from_row(row)
+            price = quote.get("premium")
             if not price:
+                price_source_counts["missing"] += 1
                 continue
+            price_source_counts[str(quote.get("price_source") or "missing")] += 1
+            if quote.get("quality") == "wide":
+                price_source_counts["wide"] += 1
             intrinsic = max(current_price - row.strike, 0)
             extrinsic = max(price - intrinsic, 0)
             edr_values.append(extrinsic / price if price > 0 else 0)
 
         for _, row in near_puts.iterrows():
-            price = _option_mid_price(row)
+            quote = option_quote_from_row(row)
+            price = quote.get("premium")
             if not price:
+                price_source_counts["missing"] += 1
                 continue
+            price_source_counts[str(quote.get("price_source") or "missing")] += 1
+            if quote.get("quality") == "wide":
+                price_source_counts["wide"] += 1
             intrinsic = max(row.strike - current_price, 0)
             extrinsic = max(price - intrinsic, 0)
             edr_values.append(extrinsic / price if price > 0 else 0)
@@ -1149,6 +1155,9 @@ def compute_optionality_metrics(
         "hv30": hv30,
         "iv_percentile": iv_percentile,
         "avg_edr": avg_edr,
+        "data_source": "yfinance_option_chain",
+        "pricing_basis": "bid_ask_mid_then_last",
+        "price_source_counts": price_source_counts,
     }
 
 
