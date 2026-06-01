@@ -27,6 +27,8 @@ R2K_IWM_URL = (
     "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
     "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund"
 )
+R2K_WIKIPEDIA_URL = "https://en.wikipedia.org/wiki/Russell_2000_Index"
+SP600_WIKIPEDIA_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_600_companies"
 
 CBOE_INTRADAY_OPTIONS_VOLUME_URL = (
     "https://www.cboe.com/us/options/market_statistics/intraday_contract_volume/"
@@ -178,7 +180,10 @@ def resolve_sweep_universe(selection: str) -> SweepUniverse:
         tickers=tickers,
         notes=notes,
     )
-    _CACHE[key] = (datetime.utcnow(), tickers[:], notes[:])
+    if tickers:
+        _CACHE[key] = (datetime.utcnow(), tickers[:], notes[:])
+    else:
+        _CACHE.pop(key, None)
     return universe
 
 
@@ -214,9 +219,39 @@ def _build_nasdaq100() -> Tuple[List[str], List[str]]:
 
 
 def _build_russell2000() -> Tuple[List[str], List[str]]:
+    preset = _symbols_from_preset("russell2000")
+    if preset:
+        return preset, ["Loaded from local ticker preset: russell2000."]
+
     symbols = _fetch_ishares_tickers(R2K_IWM_URL)
-    notes = ["Loaded from iShares IWM holdings CSV."] if symbols else ["Failed to load Russell 2000 symbols."]
-    return symbols, notes
+    if symbols:
+        return symbols, ["Loaded from iShares IWM holdings CSV."]
+
+    wiki_symbols = _fetch_wikipedia_constituent_symbols(R2K_WIKIPEDIA_URL, min_expected=1200)
+    if wiki_symbols:
+        return wiki_symbols, ["Loaded from Wikipedia Russell 2000 constituent table."]
+
+    finviz_symbols = _fetch_finviz_sorted_symbols(
+        sort_key="marketcap",
+        limit=2200,
+        filters="idx_rus2k,sh_opt_option",
+    )
+    if finviz_symbols:
+        return finviz_symbols, [
+            "Loaded from Finviz Russell 2000 filter (optionable subset).",
+            "Primary iShares and Wikipedia Russell sources were unavailable.",
+        ]
+
+    # Last-resort fallback keeps Discord sweep operational with a small-cap
+    # proxy universe if Russell-specific sources are unavailable.
+    proxy_symbols = _fetch_wikipedia_constituent_symbols(SP600_WIKIPEDIA_URL, min_expected=450)
+    if proxy_symbols:
+        return proxy_symbols, [
+            "Loaded S&P 600 proxy universe (small-cap fallback).",
+            "Primary Russell 2000 sources were unavailable.",
+        ]
+
+    return [], ["Failed to load Russell 2000 symbols."]
 
 
 def _build_sector_etfs() -> Tuple[List[str], List[str]]:
@@ -481,6 +516,39 @@ def _fetch_ishares_tickers(url: str) -> List[str]:
         return []
 
     return _unique_symbols(str(value) for value in tickers.dropna().astype(str).tolist())
+
+
+def _fetch_wikipedia_constituent_symbols(url: str, min_expected: int) -> List[str]:
+    try:
+        response = requests.get(url, timeout=20, headers=STANDARD_HEADERS)
+        response.raise_for_status()
+        tables = pd.read_html(io.StringIO(response.text))
+    except Exception as exc:
+        logger.warning("Failed to fetch Wikipedia constituents from %s: %s", url, exc)
+        return []
+
+    best: List[str] = []
+    for table in tables:
+        if table is None or table.empty:
+            continue
+
+        symbol_col = None
+        for column in table.columns:
+            name = str(column).strip().lower()
+            if "ticker" in name or name == "symbol" or "symbol" in name:
+                symbol_col = column
+                break
+
+        if symbol_col is None:
+            continue
+
+        symbols = _unique_symbols(table[symbol_col].dropna().astype(str).tolist())
+        if len(symbols) > len(best):
+            best = symbols
+
+    if len(best) < min_expected:
+        return []
+    return best
 
 
 def _symbols_from_preset(preset_id: str) -> List[str]:
