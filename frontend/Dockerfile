@@ -4,6 +4,8 @@ WORKDIR /app
 
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ARG VITE_GA_ID=G-50NDCBKGYM
+ENV VITE_GA_ID=${VITE_GA_ID}
 
 COPY package.json pnpm-lock.yaml ./
 RUN npm install -g pnpm@10.28.2 --quiet && pnpm install --frozen-lockfile
