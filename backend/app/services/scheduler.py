@@ -247,15 +247,18 @@ def scheduled_market_diagnostic_publish_job():
             now_et = datetime.now(ZoneInfo("America/New_York"))
             run_date_utc = datetime.now(timezone.utc).date().isoformat()
             day_of_week = now_et.strftime("%a").upper()
-            should_post = day_of_week in {"MON", "THU"}
+            is_first_friday = day_of_week == "FRI" and now_et.day <= 7
+            should_post = day_of_week in {"MON", "THU"} or is_first_friday
+            special_event_summary = is_first_friday
             dry_run = not should_post
 
             logger.info(
-                "Market Diagnostic schedule check at %s ET: day=%s should_post=%s dry_run=%s",
+                "Market Diagnostic schedule check at %s ET: day=%s should_post=%s dry_run=%s first_friday=%s",
                 now_et.isoformat(),
                 day_of_week,
                 should_post,
                 dry_run,
+                is_first_friday,
             )
 
             result = run_market_diagnostic(
@@ -263,6 +266,7 @@ def scheduled_market_diagnostic_publish_job():
                 day_of_week=day_of_week,
                 mode="scheduled",
                 dry_run=dry_run,
+                special_event_summary=special_event_summary,
             )
             logger.info("Market Diagnostic runner completed: ok=%s slug=%s action=%s id=%s", result.ok, result.slug, result.action, result.id)
     except Exception as exc:
@@ -328,7 +332,7 @@ def start_scheduler():
         )
 
     # Runs daily at 10:00 AM America/New_York.
-    # Posting is gated inside the job to Mon/Thu; non-post days run dry-run checks.
+    # Posting is gated inside the job to Mon/Thu plus first Friday; non-post days run dry-run checks.
     if scheduler.get_job("market_diagnostic_runner") is None:
         scheduler.add_job(
             scheduled_market_diagnostic_publish_job,

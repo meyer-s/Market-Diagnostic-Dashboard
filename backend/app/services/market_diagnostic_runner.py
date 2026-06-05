@@ -292,6 +292,7 @@ def _build_prompts(
     run_date_utc: str,
     day_of_week: str,
     mode: Mode,
+    special_event_summary: bool,
     recent_titles: Sequence[str],
 ) -> tuple[str, str]:
     system_prompt = (
@@ -314,6 +315,7 @@ def _build_prompts(
             "run_date_utc": run_date_utc,
             "day_of_week": day_of_week,
             "mode": mode,
+            "special_event_summary": special_event_summary,
             "recent_titles_to_avoid_repeating_verbatim": list(recent_titles),
             "schema": {
                 "title": "news-driven weekly recap headline",
@@ -357,6 +359,7 @@ def _build_prompts(
                 "summary should explain the current backdrop and what that means for conviction, caution, or risk-taking.",
                 "summary should be highly readable: 2 short paragraphs is preferred when it improves clarity; avoid long dense blocks.",
                 "tags MUST include market-diagnostic and macro, plus 1-4 additional lowercase hyphenated topical tags.",
+                "If special_event_summary is true, tags MUST include event-summary and jobs-day.",
                 "chart_urls MUST be an empty array unless you have real http(s) URLs from sources (otherwise keep []).",
                 "content_markdown MUST include the required headings in order and exactly once each.",
                 "Include a date/time stamp line at the top (e.g., 'Date: YYYY-MM-DD (UTC)').",
@@ -367,6 +370,7 @@ def _build_prompts(
                 "In the Earnings / EPS Revisions section, include recent notable earnings beats/misses, guidance changes, revisions, or margin commentary when available.",
                 "Across the recap, include major market moves and highlights when they materially changed the backdrop: leadership, laggards, outsized sector moves, rates/credit shifts, FX or commodity moves, and policy-driven reactions.",
                 "At least one bullet in the recap should capture a clear market highlight or standout move from the last 1-2 trading days when such a move exists.",
+                "If special_event_summary is true, explicitly include the latest U.S. payrolls/jobs signal and market reaction in the recap.",
                 "Each bullet must end with a citation in the format '(Source: https://full.real.url/path)' using a full real http(s) URL.",
                 "Do not put citations on separate lines; the citation must be at the end of the bullet line.",
                 "If you cannot find a source URL for a bullet, do not include that bullet.",
@@ -449,6 +453,7 @@ def _build_repair_prompts(
     run_date_utc: str,
     day_of_week: str,
     mode: Mode,
+    special_event_summary: bool,
     validation_error: str,
     previous_output: dict[str, Any] | None,
     recent_titles: Sequence[str],
@@ -475,6 +480,7 @@ def _build_repair_prompts(
             "run_date_utc": run_date_utc,
             "day_of_week": day_of_week,
             "mode": mode,
+            "special_event_summary": special_event_summary,
             "recent_titles_to_avoid_repeating_verbatim": list(recent_titles),
             "validation_error": error_snippet,
             "previous_output": previous_output,
@@ -498,6 +504,7 @@ def _build_repair_prompts(
                 "summary should be highly readable; prefer short paragraphs over one dense block.",
                 "Do not reuse any recent title verbatim; pick a new headline framing.",
                 "tags MUST include market-diagnostic and macro, plus additional topical tags.",
+                "If special_event_summary is true, tags MUST include event-summary and jobs-day.",
                 "content_markdown MUST include required headings in order and exactly once each.",
                 "Do not add freeform paragraphs inside content_markdown other than the top date line.",
                 "Each of the first 5 sections must include a Trend line and a Signal line.",
@@ -505,6 +512,7 @@ def _build_repair_prompts(
                 "For each of the first 5 sections, use either 3-7 sourced bullets OR a single 'No Change:' line.",
                 "When there are material updates, prefer 4-6 short, specific bullets rather than the bare minimum.",
                 "Include recent notable earnings, major market moves, and standout highlights whenever they materially changed the backdrop.",
+                "If special_event_summary is true, include payrolls/jobs outcome and immediate market reaction with citations.",
                 "Strongly prefer sources from the last 72 hours for earnings, major moves, and headlines when available.",
                 "Each bullet must end with '(Source: https://full.real.url/path)' using a full real http(s) URL. No citations on separate lines.",
                 "Every citation URL must match one of the web search source URLs you actually used.",
@@ -561,12 +569,38 @@ def _build_repair_prompts(
     return system_prompt, user_prompt
 
 
+def _merge_required_tags(tags: Sequence[str], *, special_event_summary: bool) -> list[str]:
+    # Keep existing order while guaranteeing required tags for filtering and event badges.
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        value = (tag or "").strip().lower()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+
+    for required in ("market-diagnostic", "macro"):
+        if required not in seen:
+            normalized.append(required)
+            seen.add(required)
+
+    if special_event_summary:
+        for required in ("event-summary", "jobs-day"):
+            if required not in seen:
+                normalized.append(required)
+                seen.add(required)
+
+    return normalized
+
+
 def run_market_diagnostic(
     *,
     run_date_utc: str,
     day_of_week: str,
     mode: Mode = "scheduled",
     dry_run: bool = False,
+    special_event_summary: bool = False,
 ) -> MarketDiagnosticRunResult:
     """
     Server-side job runner: fetch cached inputs, call OpenAI, validate, idempotently publish by slug.
@@ -656,6 +690,7 @@ def run_market_diagnostic(
         run_date_utc=run_date_utc,
         day_of_week=day_of_week,
         mode=mode,
+        special_event_summary=special_event_summary,
         recent_titles=recent_titles,
     )
 
@@ -673,6 +708,7 @@ def run_market_diagnostic(
                     run_date_utc=run_date_utc,
                     day_of_week=day_of_week,
                     mode=mode,
+                    special_event_summary=special_event_summary,
                     validation_error=last_validation_error or "unknown validation error",
                     previous_output=previous_output,
                     recent_titles=recent_titles,
@@ -696,6 +732,7 @@ def run_market_diagnostic(
             try:
                 payload = MarketDiagnosticPublishPayload.model_validate(model_json)
                 validate_slug(payload.slug, run_date_utc=run_date_utc)
+                payload.tags = _merge_required_tags(payload.tags, special_event_summary=special_event_summary)
                 if payload.slug != slug:
                     raise ValueError(f"slug mismatch: expected={slug} got={payload.slug}")
                 if payload.published is not True:
@@ -734,6 +771,7 @@ def run_market_diagnostic(
                     "id": None,
                     "mode": mode,
                     "dry_run": dry_run,
+                    "special_event_summary": special_event_summary,
                     "duration_ms": int((time.perf_counter() - started) * 1000),
                     "validation": "failed",
                     "error": str(exc),
@@ -766,6 +804,7 @@ def run_market_diagnostic(
                             "id": fallback.response_id,
                             "mode": mode,
                             "dry_run": dry_run,
+                            "special_event_summary": special_event_summary,
                             "duration_ms": int((time.perf_counter() - started) * 1000),
                             "validation": "fallback_posted",
                             "generation_mode": "fallback_template",
@@ -824,6 +863,7 @@ def run_market_diagnostic(
                     "id": None,
                     "mode": mode,
                     "dry_run": True,
+                "special_event_summary": special_event_summary,
                 "duration_ms": int((time.perf_counter() - started) * 1000),
                 "validation": "passed_dry_run",
                 "generation_mode": generation_mode,
@@ -864,6 +904,7 @@ def run_market_diagnostic(
                 "id": post.id,
                 "mode": mode,
                 "dry_run": False,
+                "special_event_summary": special_event_summary,
                 "duration_ms": int((time.perf_counter() - started) * 1000),
                 "validation": "passed",
                 "generation_mode": generation_mode,
