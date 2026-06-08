@@ -8,21 +8,32 @@ CBOT_GRAIN_SESSION_PROFILE_ID = "cbot_grains_et"
 
 
 _REGIONS = {
-    "iowa": WeatherRegion("iowa", "Iowa Corn Belt", "IA", 41.878, -93.097),
-    "illinois": WeatherRegion("illinois", "Illinois Corn Belt", "IL", 40.633, -89.398),
-    "nebraska": WeatherRegion("nebraska", "Nebraska Plains", "NE", 41.492, -99.901),
-    "indiana": WeatherRegion("indiana", "Indiana Belt", "IN", 40.267, -86.134),
-    "minnesota": WeatherRegion("minnesota", "Minnesota Belt", "MN", 46.730, -94.686),
-    "missouri": WeatherRegion("missouri", "Missouri Soybelt", "MO", 37.964, -91.831),
-    "kansas": WeatherRegion("kansas", "Kansas Wheat Belt", "KS", 39.011, -98.484),
-    "oklahoma": WeatherRegion("oklahoma", "Oklahoma Wheat Belt", "OK", 35.468, -97.516),
-    "north_dakota": WeatherRegion("north_dakota", "North Dakota Plains", "ND", 47.551, -101.002),
-    "montana": WeatherRegion("montana", "Montana Plains", "MT", 46.879, -110.362),
-    "texas": WeatherRegion("texas", "Texas Southern Plains", "TX", 31.969, -99.901),
-    "arkansas": WeatherRegion("arkansas", "Arkansas Delta", "AR", 34.746, -92.290),
-    "louisiana": WeatherRegion("louisiana", "Louisiana Delta", "LA", 30.984, -91.962),
-    "mississippi": WeatherRegion("mississippi", "Mississippi Delta", "MS", 32.355, -89.399),
-    "florida": WeatherRegion("florida", "Florida Citrus Belt", "FL", 27.994, -81.760),
+    # Coordinates are centered on production belts (not state capitals), and grouped by
+    # historically high-volume USDA/NASS production concentration.
+    "iowa": WeatherRegion("iowa", "Iowa Corn Belt", "IA", 42.07, -93.53),
+    "illinois": WeatherRegion("illinois", "Central Illinois Corn Belt", "IL", 40.00, -89.20),
+    "nebraska": WeatherRegion("nebraska", "Eastern Nebraska Corn Belt", "NE", 41.30, -98.00),
+    "indiana": WeatherRegion("indiana", "Central Indiana Corn Belt", "IN", 39.90, -86.50),
+    "minnesota": WeatherRegion("minnesota", "Southern Minnesota Corn Belt", "MN", 44.30, -94.60),
+    "south_dakota": WeatherRegion("south_dakota", "Eastern South Dakota Corn Belt", "SD", 44.20, -97.00),
+    "kansas": WeatherRegion("kansas", "Kansas Wheat Belt", "KS", 38.50, -98.30),
+    "ohio": WeatherRegion("ohio", "Northwest Ohio Soy Belt", "OH", 41.30, -83.70),
+    "missouri": WeatherRegion("missouri", "Northern Missouri Soy Belt", "MO", 39.10, -92.60),
+    "oklahoma": WeatherRegion("oklahoma", "Oklahoma Wheat Belt", "OK", 36.00, -97.50),
+    "north_dakota": WeatherRegion("north_dakota", "North Dakota Plains", "ND", 47.40, -100.50),
+    "montana": WeatherRegion("montana", "North-Central Montana Wheat Belt", "MT", 47.00, -109.80),
+    "washington": WeatherRegion("washington", "Washington Palouse Wheat Belt", "WA", 46.80, -117.20),
+    "texas": WeatherRegion("texas", "Texas Panhandle/Plains", "TX", 35.30, -101.80),
+    "arkansas": WeatherRegion("arkansas", "Arkansas Delta", "AR", 34.80, -91.50),
+    "louisiana": WeatherRegion("louisiana", "Louisiana Rice Belt", "LA", 30.90, -91.80),
+    "mississippi": WeatherRegion("mississippi", "Mississippi Delta", "MS", 33.40, -90.70),
+    "california": WeatherRegion("california", "California Central Valley", "CA", 36.60, -119.70),
+    "georgia": WeatherRegion("georgia", "South Georgia Cotton Belt", "GA", 31.60, -83.50),
+    "north_carolina": WeatherRegion("north_carolina", "Eastern North Carolina Cotton Belt", "NC", 35.50, -77.80),
+    "wisconsin": WeatherRegion("wisconsin", "Central Wisconsin Oats Belt", "WI", 44.50, -89.60),
+    "pennsylvania": WeatherRegion("pennsylvania", "Central Pennsylvania Oats Belt", "PA", 40.80, -77.80),
+    "florida": WeatherRegion("florida", "Florida Citrus Belt", "FL", 27.90, -81.70),
+    "arizona": WeatherRegion("arizona", "Arizona Desert Citrus Belt", "AZ", 32.70, -114.60),
 }
 
 _CORN_REGIONS = (
@@ -31,39 +42,78 @@ _CORN_REGIONS = (
     _REGIONS["nebraska"],
     _REGIONS["indiana"],
     _REGIONS["minnesota"],
+    _REGIONS["south_dakota"],
+    _REGIONS["kansas"],
 )
 
 _SOY_REGIONS = (
-    _REGIONS["iowa"],
     _REGIONS["illinois"],
-    _REGIONS["indiana"],
+    _REGIONS["iowa"],
     _REGIONS["minnesota"],
+    _REGIONS["indiana"],
+    _REGIONS["nebraska"],
+    _REGIONS["ohio"],
     _REGIONS["missouri"],
 )
 
 _WHEAT_REGIONS = (
     _REGIONS["kansas"],
-    _REGIONS["oklahoma"],
     _REGIONS["north_dakota"],
     _REGIONS["montana"],
+    _REGIONS["washington"],
+    _REGIONS["oklahoma"],
     _REGIONS["texas"],
+    _REGIONS["south_dakota"],
 )
 
 _RICE_REGIONS = (
     _REGIONS["arkansas"],
+    _REGIONS["california"],
     _REGIONS["louisiana"],
+    _REGIONS["missouri"],
     _REGIONS["mississippi"],
+    _REGIONS["texas"],
 )
 
-_CITRUS_REGIONS = (_REGIONS["florida"],)
+_CITRUS_REGIONS = (
+    _REGIONS["florida"],
+    _REGIONS["california"],
+    _REGIONS["texas"],
+    _REGIONS["arizona"],
+)
+
+_OATS_REGIONS = (
+    _REGIONS["north_dakota"],
+    _REGIONS["minnesota"],
+    _REGIONS["south_dakota"],
+    _REGIONS["wisconsin"],
+    _REGIONS["iowa"],
+    _REGIONS["pennsylvania"],
+)
+
+_COTTON_REGIONS = (
+    _REGIONS["texas"],
+    _REGIONS["georgia"],
+    _REGIONS["mississippi"],
+    _REGIONS["arkansas"],
+    _REGIONS["california"],
+    _REGIONS["north_carolina"],
+)
+
+_SPRING_WHEAT_REGIONS = (
+    _REGIONS["north_dakota"],
+    _REGIONS["montana"],
+    _REGIONS["minnesota"],
+    _REGIONS["south_dakota"],
+)
 
 _INDEX_SYMBOL_MAP = {symbol.code: symbol for symbol in AGRICULTURE_SYMBOLS}
 
 _DERIVED_WEATHER_REGIONS: dict[str, tuple[WeatherRegion, ...]] = {
     "KE": _WHEAT_REGIONS,
-    "MW": (_REGIONS["north_dakota"], _REGIONS["montana"], _REGIONS["minnesota"]),
+    "MW": _SPRING_WHEAT_REGIONS,
     "ZR": _RICE_REGIONS,
-    "CT": (_REGIONS["texas"],),
+    "CT": _COTTON_REGIONS,
     "OJ": _CITRUS_REGIONS,
 }
 
@@ -253,7 +303,7 @@ AGRICULTURE_COMMODITY_METADATA: dict[str, CommodityMetadata] = {
         exchange="CBOT",
         trading_hours_profile=CBOT_GRAIN_SESSION_PROFILE_ID,
         related_reports=("WASDE", "Crop Progress", "Export Inspections"),
-        weather_regions=(_REGIONS["north_dakota"], _REGIONS["montana"], _REGIONS["minnesota"]),
+        weather_regions=_OATS_REGIONS,
         crop_stages=("planting", "grain_fill", "harvest", "post_harvest"),
         global_drivers=("Canadian oats",),
         demand_drivers=("feed demand", "food demand"),
