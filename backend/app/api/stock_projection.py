@@ -24,7 +24,7 @@ from app.models.institutional_flow_event import InstitutionalFlowEvent
 from app.models.system_status import SystemStatus
 from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
 from app.services.options_quotes import option_premium_from_row, option_quote_from_row
-from app.services.stock_price_cache import get_or_refresh_daily_frame
+from app.services.stock_price_cache import get_cached_intraday_frame, get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
 
 router = APIRouter()
@@ -156,6 +156,27 @@ def _build_price_history(df: pd.DataFrame, days: int = 180) -> list[dict]:
         history.append(
             {
                 "date": date.date().isoformat(),
+                "close": round(float(close_price), 4),
+            }
+        )
+    return history
+
+
+def _build_intraday_history(df: pd.DataFrame) -> list[dict]:
+    if df is None or df.empty or "Close" not in df.columns:
+        return []
+
+    history = []
+    for idx, row in df.iterrows():
+        close_price = row.get("Close")
+        if pd.isna(close_price):
+            continue
+        dt = pd.to_datetime(idx, errors="coerce")
+        if pd.isna(dt):
+            continue
+        history.append(
+            {
+                "timestamp": dt.isoformat(),
                 "close": round(float(close_price), 4),
             }
         )
@@ -1366,7 +1387,7 @@ def compute_stock_projection(ticker: str, df: pd.DataFrame, spy_df: pd.DataFrame
 @router.get("/stocks/{ticker}/projections")
 def get_stock_projections(
     ticker: str = Path(..., description="Stock ticker symbol (e.g., AAPL, TSLA)"),
-    history_window: Literal["1y", "5y", "max"] = Query("1y", description="Price history window for chart payload"),
+    history_window: Literal["252d", "1y", "5y", "max"] = Query("252d", description="Price history window for chart payload"),
 ):
     """
     Get multi-horizon projections for a single stock
@@ -1385,6 +1406,7 @@ def get_stock_projections(
     hv30 = compute_historical_volatility(df, window=30)
 
     history_window_days = {
+        "252d": 252,
         "1y": 365,
         "5y": 365 * 5,
         "max": 50000,
@@ -1396,6 +1418,14 @@ def get_stock_projections(
     except Exception:
         # Keep analysis available even if long-range history fetch fails.
         price_history_df = df
+
+    intraday_history: list[dict] = []
+    if history_window == "252d":
+        try:
+            intraday_df = get_cached_intraday_frame(ticker, days=252)
+            intraday_history = _build_intraday_history(intraday_df)
+        except Exception:
+            intraday_history = []
     
     # Fetch SPY for relative strength comparison
     spy_df = fetch_stock_data("SPY")
@@ -1556,6 +1586,7 @@ def get_stock_projections(
         "institutional_flow": institutional_flow,
         "price_history_window": history_window,
         "price_history": _build_price_history(price_history_df, days=history_days),
+        "intraday_history_2h": intraday_history,
         "projections": projections,
         "historical": {
             "score_3m_ago": historical_score  # What the score was 90 days ago

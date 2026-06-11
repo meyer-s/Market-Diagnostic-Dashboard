@@ -306,3 +306,23 @@ def get_or_refresh_daily_frame(symbol: str, days: int = 2000) -> pd.DataFrame:
     cached = cached.sort_index()
     cached["returns"] = cached["Close"].pct_change()
     return cached
+
+
+def get_cached_intraday_frame(symbol: str, days: int = 252) -> pd.DataFrame:
+    symbol = _normalize_symbol(symbol)
+    now = datetime.utcnow()
+    start = now - timedelta(days=max(days + 7, 30))
+    end = now + timedelta(days=1)
+
+    with get_db_session() as db:
+        cached = _read_cached_frame(db, symbol, "2h", start, end)
+
+    if cached.empty:
+        ensure_symbol_history(symbol, years=5, full_history=False, include_2h=True, intraday_days=max(days, 30))
+        with get_db_session() as db:
+            cached = _read_cached_frame(db, symbol, "2h", start, end)
+
+    if cached.empty:
+        return pd.DataFrame()
+
+    return cached.sort_index()

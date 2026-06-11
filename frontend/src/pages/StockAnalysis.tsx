@@ -132,7 +132,11 @@ interface PriceHistoryPoint {
   close: number;
 }
 
-type HistoryWindow = "1y" | "5y" | "max";
+type HistoryWindow = "252d" | "1y" | "5y" | "max";
+interface IntradayHistoryPoint {
+  timestamp: string;
+  close: number;
+}
 
 interface InstitutionalFlowEvent {
   date: string;
@@ -564,6 +568,7 @@ export default function StockAnalysis() {
   const [dataWarnings, setDataWarnings] = useState<DataWarning[]>([]);
   const [institutionalFlow, setInstitutionalFlow] = useState<InstitutionalFlowPayload | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryPoint[]>([]);
+  const [intradayHistory2h, setIntradayHistory2h] = useState<IntradayHistoryPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [projectionUnavailable, setProjectionUnavailable] = useState(false);
@@ -573,9 +578,9 @@ export default function StockAnalysis() {
   const [dataAsOf, setDataAsOf] = useState<string | null>(null);
   const [showSummaryDebug, setShowSummaryDebug] = useState(false);
   const [fundView, setFundView] = useState<"1Y" | "5Y">("1Y");
-  const [historyWindow, setHistoryWindow] = useState<HistoryWindow>("1y");
+  const [historyWindow, setHistoryWindow] = useState<HistoryWindow>("252d");
 
-  const runSearch = useCallback(async (rawTicker: string) => {
+  const runSearch = useCallback(async (rawTicker: string, window: HistoryWindow = historyWindow) => {
     const normalizedTicker = rawTicker.trim().toUpperCase();
     if (!normalizedTicker) return;
 
@@ -594,6 +599,7 @@ export default function StockAnalysis() {
       optionality?: OptionalityMetrics;
       institutional_flow?: InstitutionalFlowPayload;
       price_history?: PriceHistoryPoint[];
+      intraday_history_2h?: IntradayHistoryPoint[];
       price_history_window?: HistoryWindow;
       fundamentals?: FundamentalsPayload;
       analyst_target?: number;
@@ -605,7 +611,7 @@ export default function StockAnalysis() {
 
     try {
       const response = await fetch(
-        buildApiUrl(`/stocks/${normalizedTicker}/projections?history_window=${historyWindow}`)
+        buildApiUrl(`/stocks/${normalizedTicker}/projections?history_window=${window}`)
       );
       if (response.status === 404) {
         setProjectionUnavailable(true);
@@ -626,6 +632,7 @@ export default function StockAnalysis() {
       setOptionalityMetrics(projectionsPayload.optionality || null);
       setInstitutionalFlow(projectionsPayload.institutional_flow || null);
       setPriceHistory(projectionsPayload.price_history || []);
+      setIntradayHistory2h(projectionsPayload.intraday_history_2h || []);
       setFundamentals(projectionsPayload.fundamentals || null);
       setAnalystTarget(projectionsPayload.analyst_target ?? null);
       setAnalystCount(projectionsPayload.analyst_count ?? null);
@@ -640,6 +647,7 @@ export default function StockAnalysis() {
       setOptionalityMetrics(null);
       setInstitutionalFlow(null);
       setPriceHistory([]);
+      setIntradayHistory2h([]);
       setFundamentals(null);
       setAnalystTarget(null);
       setAnalystCount(null);
@@ -662,99 +670,21 @@ export default function StockAnalysis() {
     }
 
     setLoading(false);
-  }, []);
+  }, [historyWindow]);
 
   useEffect(() => {
     if (!searchTicker) return;
-    void runSearch(searchTicker);
+    void runSearch(searchTicker, historyWindow);
   }, [historyWindow, searchTicker, runSearch]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    await runSearch(ticker);
+    await runSearch(ticker, historyWindow);
   };
 
   useEffect(() => {
     const symbolFromHash = (() => {
       const rawHash = (location.hash || "").replace(/^#/, "");
-      if (!rawHash) return "";
-
-      const hashQuery = rawHash.includes("?")
-        ? rawHash.split("?").slice(1).join("?")
-        : rawHash.includes("=")
-          ? rawHash
-          : "";
-      if (!hashQuery) return "";
-
-      const hashParams = new URLSearchParams(hashQuery);
-      return hashParams.get("symbol") || hashParams.get("ticker") || "";
-    })();
-
-    const symbolFromQuery = (
-      searchParams.get("symbol") ||
-      searchParams.get("ticker") ||
-      symbolFromPath ||
-      symbolFromHash ||
-      ""
-    )
-      .trim()
-      .toUpperCase();
-
-    if (!symbolFromQuery) return;
-    if (autoLoadedSymbolRef.current === symbolFromQuery) return;
-
-    autoLoadedSymbolRef.current = symbolFromQuery;
-    void runSearch(symbolFromQuery);
-  }, [location.hash, searchParams, symbolFromPath, runSearch]);
-
-  // Prepare data for line chart
-  const getChartData = () => {
-    const tScore = projections["T"]?.score_total;
-    const score3m = projections["3m"]?.score_total;
-    const score6m = projections["6m"]?.score_total;
-    const score12m = projections["12m"]?.score_total;
-
-    if (
-      tScore === undefined ||
-      score3m === undefined ||
-      score6m === undefined ||
-      score12m === undefined
-    ) {
-      return null;
-    }
-
-    return {
-      ticker: searchTicker,
-      name: projections["3m"].name,
-      scores: {
-        "T": tScore,
-        "3m": score3m,
-        "6m": score6m,
-        "12m": score12m,
-      },
-    };
-  };
-
-  const chartData = getChartData();
-
-  const isSelectedHorizon = (h: "T" | "3m" | "6m" | "12m") => selectedHorizon === h;
-
-  // Format relative time for timestamps
-  const getRelativeTime = (isoString: string) => {
-    const date = new Date(isoString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return "1d ago";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
 
   const formatCompact = (value: number, digits = 1) =>
     new Intl.NumberFormat("en-US", {
@@ -931,6 +861,9 @@ export default function StockAnalysis() {
                 analystTarget={analystTarget}
                 analystCount={analystCount}
                 priceHistory={priceHistory}
+                intradayHistory2h={intradayHistory2h}
+                historyWindow={historyWindow}
+                onHistoryWindowChange={setHistoryWindow}
                 flowEvents={institutionalFlow?.event_history ?? []}
               />
               <ConvictionSnapshot
@@ -939,85 +872,6 @@ export default function StockAnalysis() {
                 volatility={projections[selectedHorizon].volatility}
                 horizon={selectedHorizon.toUpperCase()}
               />
-            </div>
-          )}
-
-          {/* Extended Price History Viewer */}
-          {priceHistory.length > 0 && (
-            <div className="surface-card-strong p-4 sm:p-6 mb-6">
-              <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="text-base sm:text-lg font-semibold">Price History</h3>
-                  <p className="mt-1 text-xs text-stealth-400">Extended view from your persistent stock cache.</p>
-                </div>
-                <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/60 p-0.5">
-                  {([
-                    { value: "1y", label: "1Y" },
-                    { value: "5y", label: "5Y" },
-                    { value: "max", label: "Max" },
-                  ] as const).map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => setHistoryWindow(option.value)}
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors ${
-                        historyWindow === option.value
-                          ? "bg-stealth-700 text-white"
-                          : "text-stealth-400 hover:text-stealth-200"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="h-56" style={{ minWidth: 0, minHeight: 0 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <ComposedChart data={priceHistory}>
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={(v) =>
-                        new Date(String(v)).toLocaleDateString("en-US", {
-                          month: "short",
-                          year: "2-digit",
-                        })
-                      }
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(v) => `$${Number(v).toFixed(0)}`}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      formatter={(value: number) => [`$${Number(value).toFixed(2)}`, "Close"]}
-                      labelFormatter={(label) =>
-                        new Date(String(label)).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })
-                      }
-                      contentStyle={{
-                        background: "#111827",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="close"
-                      stroke={getFamilyColor("equity")}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
             </div>
           )}
 
