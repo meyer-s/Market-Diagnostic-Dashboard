@@ -715,6 +715,55 @@ export default function StockAnalysis() {
     void runSearch(symbolFromQuery, historyWindow);
   }, [location.hash, searchParams, symbolFromPath, runSearch, historyWindow]);
 
+  // Prepare data for line chart
+  const getChartData = () => {
+    const tScore = projections["T"]?.score_total;
+    const score3m = projections["3m"]?.score_total;
+    const score6m = projections["6m"]?.score_total;
+    const score12m = projections["12m"]?.score_total;
+
+    if (
+      tScore === undefined ||
+      score3m === undefined ||
+      score6m === undefined ||
+      score12m === undefined
+    ) {
+      return null;
+    }
+
+    return {
+      ticker: searchTicker,
+      name: projections["3m"].name,
+      scores: {
+        "T": tScore,
+        "3m": score3m,
+        "6m": score6m,
+        "12m": score12m,
+      },
+    };
+  };
+
+  const chartData = getChartData();
+
+  const isSelectedHorizon = (h: "T" | "3m" | "6m" | "12m") => selectedHorizon === h;
+
+  // Format relative time for timestamps
+  const getRelativeTime = (isoString: string) => {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return "1d ago";
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
   const formatCompact = (value: number, digits = 1) =>
     new Intl.NumberFormat("en-US", {
       notation: "compact",
