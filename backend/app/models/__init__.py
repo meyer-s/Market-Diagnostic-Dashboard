@@ -14,3 +14,4 @@ from .alternative_assets import (
 )
 from .closed_positions import ClosedPosition
 from .institutional_flow_event import InstitutionalFlowEvent
+from .stock_price_bar import StockPriceBar

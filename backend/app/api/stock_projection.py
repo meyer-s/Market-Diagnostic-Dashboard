@@ -24,6 +24,7 @@ from app.models.institutional_flow_event import InstitutionalFlowEvent
 from app.models.system_status import SystemStatus
 from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
 from app.services.options_quotes import option_premium_from_row, option_quote_from_row
+from app.services.stock_price_cache import get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
 
 router = APIRouter()
@@ -844,51 +845,13 @@ def _normalize_yf_download_frame(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
 
 
 def fetch_stock_data(ticker: str, days: int = 2000) -> pd.DataFrame:
-    """Fetch historical price data for a stock with retries/fallback for transient upstream failures."""
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days)
-    errors: list[str] = []
-
-    attempts = [
-        lambda: yf.Ticker(ticker).history(start=start_date, end=end_date),
-        lambda: _normalize_yf_download_frame(
-            yf.download(
-                ticker,
-                start=start_date,
-                end=end_date,
-                progress=False,
-                threads=False,
-                auto_adjust=False,
-            ),
-            ticker,
-        ),
-    ]
-
-    for index, attempt in enumerate(attempts):
-        try:
-            df = attempt()
-            if df is None or df.empty:
-                errors.append("No data returned")
-                continue
-            if "Close" not in df.columns:
-                errors.append("Missing Close column in price data")
-                continue
-            df["returns"] = df["Close"].pct_change()
-            return df
-        except Exception as exc:
-            errors.append(str(exc))
-            if _is_yahoo_rate_limit_error(exc) and index < len(attempts) - 1:
-                time.sleep(1.0)
-            continue
-
-    if any(_is_yahoo_rate_limit_message(msg) for msg in errors if msg):
-        raise HTTPException(
-            status_code=429,
-            detail=f"Unable to fetch data for {ticker}: Yahoo Finance rate limit. Try again shortly.",
-        )
-
-    detail = "; ".join(err for err in errors if err) or "Unknown upstream fetch error."
-    raise HTTPException(status_code=404, detail=f"Unable to fetch data for {ticker}: {detail}")
+    """Read-through fetch backed by persistent DB candle cache."""
+    try:
+        return get_or_refresh_daily_frame(ticker, days=days)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Unable to fetch data for {ticker}: {exc}")
 
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
