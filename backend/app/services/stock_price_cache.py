@@ -46,27 +46,22 @@ def _coerce_ohlcv_frame(df: pd.DataFrame) -> pd.DataFrame:
     if any(col not in frame.columns for col in needed):
         return pd.DataFrame()
 
-    idx = pd.to_datetime(frame.index, errors="coerce")
-    out = pd.DataFrame(index=idx)
-    out = out[out.index.notna()]
-    if out.empty:
+    frame.index = pd.to_datetime(frame.index, errors="coerce")
+    frame = frame[frame.index.notna()]
+    if frame.empty:
         return pd.DataFrame()
 
-    frame = frame.loc[out.index]
+    if isinstance(frame.index, pd.DatetimeIndex) and frame.index.tz is not None:
+        frame.index = frame.index.tz_convert(None)
+
+    out = pd.DataFrame(index=frame.index)
     out["Open"] = pd.to_numeric(frame["Open"], errors="coerce")
     out["High"] = pd.to_numeric(frame["High"], errors="coerce")
     out["Low"] = pd.to_numeric(frame["Low"], errors="coerce")
     out["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
+    out["Volume"] = pd.to_numeric(frame["Volume"], errors="coerce") if "Volume" in frame.columns else None
 
-    if "Volume" in frame.columns:
-        out["Volume"] = pd.to_numeric(frame["Volume"], errors="coerce")
-    else:
-        out["Volume"] = None
-
-    out = out.dropna(subset=["Open", "High", "Low", "Close"])
-    out = out.sort_index()
-    if isinstance(out.index, pd.DatetimeIndex) and out.index.tz is not None:
-        out.index = out.index.tz_convert(None)
+    out = out.dropna(subset=["Open", "High", "Low", "Close"]).sort_index()
     return out
 
 
