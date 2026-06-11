@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -70,19 +70,28 @@ def _coerce_ohlcv_frame(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _as_naive_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _fetch_daily(symbol: str, start: datetime, end: datetime, full_history: bool = False) -> pd.DataFrame:
+    start_naive = _as_naive_utc(start)
+    end_naive = _as_naive_utc(end)
+
     attempts = [
         (
             lambda: yf.Ticker(symbol).history(period="max", auto_adjust=False)
             if full_history
-            else yf.Ticker(symbol).history(start=start, end=end, auto_adjust=False)
+            else yf.Ticker(symbol).history(start=start_naive, end=end_naive, auto_adjust=False)
         ),
         lambda: _normalize_download_frame(
             yf.download(
                 symbol,
                 period="max" if full_history else None,
-                start=None if full_history else start,
-                end=None if full_history else end,
+                start=None if full_history else start_naive,
+                end=None if full_history else end_naive,
                 progress=False,
                 threads=False,
                 auto_adjust=False,
@@ -105,11 +114,13 @@ def _fetch_daily(symbol: str, start: datetime, end: datetime, full_history: bool
 
 def _fetch_2h(symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
     # Yahoo does not provide a native 2h interval; fetch 60m and resample.
+    start_naive = _as_naive_utc(start)
+    end_naive = _as_naive_utc(end)
     raw = _normalize_download_frame(
         yf.download(
             symbol,
-            start=start,
-            end=end,
+            start=start_naive,
+            end=end_naive,
             interval="60m",
             progress=False,
             threads=False,
