@@ -12,9 +12,9 @@ All projections include:
 - Raw metrics (returns, volatility, drawdown, etc.)
 """
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Query
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Literal, Optional
 import time
 import yfinance as yf
 import pandas as pd
@@ -1365,7 +1365,8 @@ def compute_stock_projection(ticker: str, df: pd.DataFrame, spy_df: pd.DataFrame
 
 @router.get("/stocks/{ticker}/projections")
 def get_stock_projections(
-    ticker: str = Path(..., description="Stock ticker symbol (e.g., AAPL, TSLA)")
+    ticker: str = Path(..., description="Stock ticker symbol (e.g., AAPL, TSLA)"),
+    history_window: Literal["1y", "5y", "max"] = Query("1y", description="Price history window for chart payload"),
 ):
     """
     Get multi-horizon projections for a single stock
@@ -1378,10 +1379,23 @@ def get_stock_projections(
     
     data_warnings = []
 
-    # Fetch stock data
+    # Fetch stock data used for projections (bounded window keeps compute predictable).
     df = fetch_stock_data(ticker)
     current_price = float(df['Close'].iloc[-1])
     hv30 = compute_historical_volatility(df, window=30)
+
+    history_window_days = {
+        "1y": 365,
+        "5y": 365 * 5,
+        "max": 50000,
+    }
+    history_days = history_window_days.get(history_window, 365)
+
+    try:
+        price_history_df = fetch_stock_data(ticker, days=history_days)
+    except Exception:
+        # Keep analysis available even if long-range history fetch fails.
+        price_history_df = df
     
     # Fetch SPY for relative strength comparison
     spy_df = fetch_stock_data("SPY")
@@ -1540,7 +1554,8 @@ def get_stock_projections(
         "options_flow": options_flow,
         "optionality": optionality,
         "institutional_flow": institutional_flow,
-        "price_history": _build_price_history(df),
+        "price_history_window": history_window,
+        "price_history": _build_price_history(price_history_df, days=history_days),
         "projections": projections,
         "historical": {
             "score_3m_ago": historical_score  # What the score was 90 days ago
