@@ -35,22 +35,31 @@ def _coerce_ohlcv_frame(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
 
+    frame = df.copy()
+    if isinstance(frame.columns, pd.MultiIndex):
+        try:
+            frame.columns = frame.columns.get_level_values(0)
+        except Exception:
+            return pd.DataFrame()
+
     needed = ["Open", "High", "Low", "Close"]
-    if any(col not in df.columns for col in needed):
+    if any(col not in frame.columns for col in needed):
         return pd.DataFrame()
 
-    out = pd.DataFrame(index=pd.to_datetime(df.index, errors="coerce"))
+    idx = pd.to_datetime(frame.index, errors="coerce")
+    out = pd.DataFrame(index=idx)
     out = out[out.index.notna()]
     if out.empty:
         return pd.DataFrame()
 
-    out["Open"] = pd.to_numeric(df.loc[out.index, "Open"], errors="coerce")
-    out["High"] = pd.to_numeric(df.loc[out.index, "High"], errors="coerce")
-    out["Low"] = pd.to_numeric(df.loc[out.index, "Low"], errors="coerce")
-    out["Close"] = pd.to_numeric(df.loc[out.index, "Close"], errors="coerce")
+    frame = frame.loc[out.index]
+    out["Open"] = pd.to_numeric(frame["Open"], errors="coerce")
+    out["High"] = pd.to_numeric(frame["High"], errors="coerce")
+    out["Low"] = pd.to_numeric(frame["Low"], errors="coerce")
+    out["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
 
-    if "Volume" in df.columns:
-        out["Volume"] = pd.to_numeric(df.loc[out.index, "Volume"], errors="coerce")
+    if "Volume" in frame.columns:
+        out["Volume"] = pd.to_numeric(frame["Volume"], errors="coerce")
     else:
         out["Volume"] = None
 
