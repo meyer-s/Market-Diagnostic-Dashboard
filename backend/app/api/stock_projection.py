@@ -142,13 +142,17 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
 
 
 def _build_price_history(df: pd.DataFrame, days: int = 180) -> list[dict]:
-    if df is None or df.empty or "Close" not in df.columns:
+    required = {"Open", "High", "Low", "Close"}
+    if df is None or df.empty or not required.issubset(df.columns):
         return []
 
     history = []
     for idx, row in df.tail(days).iterrows():
+        open_price = row.get("Open")
+        high_price = row.get("High")
+        low_price = row.get("Low")
         close_price = row.get("Close")
-        if pd.isna(close_price):
+        if pd.isna(open_price) or pd.isna(high_price) or pd.isna(low_price) or pd.isna(close_price):
             continue
         date = pd.to_datetime(idx, errors="coerce")
         if pd.isna(date):
@@ -156,6 +160,9 @@ def _build_price_history(df: pd.DataFrame, days: int = 180) -> list[dict]:
         history.append(
             {
                 "date": date.date().isoformat(),
+                "open": round(float(open_price), 4),
+                "high": round(float(high_price), 4),
+                "low": round(float(low_price), 4),
                 "close": round(float(close_price), 4),
             }
         )
@@ -163,13 +170,17 @@ def _build_price_history(df: pd.DataFrame, days: int = 180) -> list[dict]:
 
 
 def _build_intraday_history(df: pd.DataFrame) -> list[dict]:
-    if df is None or df.empty or "Close" not in df.columns:
+    required = {"Open", "High", "Low", "Close"}
+    if df is None or df.empty or not required.issubset(df.columns):
         return []
 
     history = []
     for idx, row in df.iterrows():
+        open_price = row.get("Open")
+        high_price = row.get("High")
+        low_price = row.get("Low")
         close_price = row.get("Close")
-        if pd.isna(close_price):
+        if pd.isna(open_price) or pd.isna(high_price) or pd.isna(low_price) or pd.isna(close_price):
             continue
         dt = pd.to_datetime(idx, errors="coerce")
         if pd.isna(dt):
@@ -177,6 +188,9 @@ def _build_intraday_history(df: pd.DataFrame) -> list[dict]:
         history.append(
             {
                 "timestamp": dt.isoformat(),
+                "open": round(float(open_price), 4),
+                "high": round(float(high_price), 4),
+                "low": round(float(low_price), 4),
                 "close": round(float(close_price), 4),
             }
         )

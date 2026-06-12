@@ -4,7 +4,6 @@
  * Displays price history (252 days), RSI, and MACD charts with real data
  */
 
-import { ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import { getFamilyColor, statePalette } from "../../theme/metricColors";
@@ -78,6 +77,26 @@ interface FlowEventPoint {
   strength: number;
 }
 
+interface OhlcHistoryPoint {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+interface DailyHistoryPoint extends OhlcHistoryPoint {
+  date: string;
+}
+
+interface IntradayHistoryPoint extends OhlcHistoryPoint {
+  timestamp: string;
+}
+
+interface CandleChartPoint extends OhlcHistoryPoint {
+  x: string;
+  eventPrice: number | null;
+}
+
 type HistoryWindow = "252d" | "1y" | "5y" | "max";
 
 interface TechnicalIndicatorsProps {
@@ -85,11 +104,45 @@ interface TechnicalIndicatorsProps {
   optionsFlow?: OptionsFlowData | null;
   optionalityMetrics?: OptionalityMetrics | null;
   flowEvents?: FlowEventPoint[];
-  priceHistory?: Array<{ date: string; close: number }>;
-  intradayHistory2h?: Array<{ timestamp: string; close: number }>;
+  priceHistory?: DailyHistoryPoint[];
+  intradayHistory2h?: IntradayHistoryPoint[];
   historyWindow?: HistoryWindow;
   onHistoryWindowChange?: (window: HistoryWindow) => void;
   hideOptionsContext?: boolean;
+}
+
+function aggregateCandles<T extends OhlcHistoryPoint>(
+  points: T[],
+  getBucketKey: (point: T) => string,
+  getLabel: (point: T) => string
+): CandleChartPoint[] {
+  if (!points.length) return [];
+
+  const buckets = new Map<string, CandleChartPoint>();
+  const order: string[] = [];
+
+  points.forEach((point) => {
+    const bucketKey = getBucketKey(point);
+    if (!buckets.has(bucketKey)) {
+      buckets.set(bucketKey, {
+        x: getLabel(point),
+        open: point.open,
+        high: point.high,
+        low: point.low,
+        close: point.close,
+        eventPrice: null,
+      });
+      order.push(bucketKey);
+      return;
+    }
+
+    const bucket = buckets.get(bucketKey)!;
+    bucket.high = Math.max(bucket.high, point.high);
+    bucket.low = Math.min(bucket.low, point.low);
+    bucket.close = point.close;
+  });
+
+  return order.map((key) => buckets.get(key)!);
 }
 
 export function TechnicalIndicators({
@@ -282,37 +335,93 @@ export function TechnicalIndicators({
   const eventDates = new Set(flowEvents.filter((evt) => evt.side !== "neutral").map((evt) => evt.date));
   const overlayEventCount = eventDates.size;
 
-  const unifiedChartData = (() => {
+  const unifiedChartData: CandleChartPoint[] = (() => {
     if (isShortView && intradayHistory2h.length > 0) {
-      const closes = intradayHistory2h.map((p) => p.close);
-      return intradayHistory2h.map((point, idx) => {
-        const sma50 = idx >= 49 ? closes.slice(idx - 49, idx + 1).reduce((a, b) => a + b, 0) / 50 : null;
-        const sma200 = idx >= 199 ? closes.slice(idx - 199, idx + 1).reduce((a, b) => a + b, 0) / 200 : null;
-        const day = point.timestamp.slice(0, 10);
-        return {
-          x: point.timestamp,
-          close: point.close,
-          sma50,
-          sma200,
-          eventPrice: eventDates.has(day) ? point.close : null,
-        };
-      });
+      return intradayHistory2h.map((point) => ({
+        x: point.timestamp,
+        open: point.open,
+        high: point.high,
+        low: point.low,
+        close: point.close,
+        eventPrice: eventDates.has(point.timestamp.slice(0, 10)) ? point.close : null,
+      }));
     }
 
-    return priceHistory.map((point) => ({
-      x: point.date,
-      close: point.close,
-      sma50: null,
-      sma200: null,
-      eventPrice: null,
-    }));
+    if (historyWindow === "1y") {
+      return priceHistory.map((point) => ({
+        x: point.date,
+        open: point.open,
+        high: point.high,
+        low: point.low,
+        close: point.close,
+        eventPrice: null,
+      }));
+    }
+
+    if (historyWindow === "5y") {
+      return aggregateCandles(
+        priceHistory,
+        (point) => {
+          const date = new Date(point.date);
+          const start = new Date(date);
+          const day = start.getUTCDay();
+          const offset = day === 0 ? -6 : 1 - day;
+          start.setUTCDate(start.getUTCDate() + offset);
+          return start.toISOString().slice(0, 10);
+        },
+        (point) => point.date
+      );
+    }
+
+    return aggregateCandles(
+      priceHistory,
+      (point) => point.date.slice(0, 7),
+      (point) => `${point.date.slice(0, 7)}-01`
+    );
   })();
+
+  const priceValues = unifiedChartData.flatMap((point) => [point.high, point.low]);
+  const minPrice = priceValues.length ? Math.min(...priceValues) : 0;
+  const maxPrice = priceValues.length ? Math.max(...priceValues) : 0;
+  const priceRange = Math.max(maxPrice - minPrice, maxPrice * 0.02 || 1);
+  const pricePadding = priceRange * 0.08;
+  const priceChartHeight = 300;
+  const pricePaddingBox = { top: 20, right: 50, bottom: 40, left: 50 };
+  const pricePlotWidth = chartWidth - pricePaddingBox.left - pricePaddingBox.right;
+  const pricePlotHeight = priceChartHeight - pricePaddingBox.top - pricePaddingBox.bottom;
+
+  const scalePrice = (price: number) => {
+    const normalized = (price - (minPrice - pricePadding)) / (priceRange + pricePadding * 2);
+    return pricePaddingBox.top + (1 - normalized) * pricePlotHeight;
+  };
+
+  const scalePriceX = (index: number) => {
+    if (unifiedChartData.length <= 1) return pricePaddingBox.left + pricePlotWidth / 2;
+    return pricePaddingBox.left + (index / (unifiedChartData.length - 1)) * pricePlotWidth;
+  };
+
+  const shortViewCloses = isShortView ? unifiedChartData.map((point) => point.close) : [];
+  const sma50Series = isShortView
+    ? shortViewCloses.map((_, idx) => idx >= 49 ? shortViewCloses.slice(idx - 49, idx + 1).reduce((a, b) => a + b, 0) / 50 : null)
+    : [];
+  const sma200Series = isShortView
+    ? shortViewCloses.map((_, idx) => idx >= 199 ? shortViewCloses.slice(idx - 199, idx + 1).reduce((a, b) => a + b, 0) / 200 : null)
+    : [];
+
+  const candleIntervalLabel =
+    historyWindow === "252d" ? "2H candles" : historyWindow === "1y" ? "Daily candles" : historyWindow === "5y" ? "Weekly candles" : "Monthly candles";
 
   const formatTick = (value: string) => {
     const dt = new Date(value);
     if (Number.isNaN(dt.getTime())) return value;
     if (isShortView) {
       return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+    if (historyWindow === "1y") {
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+    if (historyWindow === "5y") {
+      return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
     }
     return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
   };
@@ -322,6 +431,9 @@ export function TechnicalIndicators({
     if (Number.isNaN(dt.getTime())) return value;
     if (isShortView) {
       return dt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    }
+    if (historyWindow === "1y") {
+      return dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
     }
     return dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   };
@@ -342,7 +454,7 @@ export function TechnicalIndicators({
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base sm:text-lg font-semibold">Price History</h3>
           <div className="flex items-center gap-2">
-            <div className="text-[10px] text-stealth-500">{isShortView ? `${overlayEventCount} flow markers` : "Daily history"}</div>
+            <div className="text-[10px] text-stealth-500">{isShortView ? `${overlayEventCount} flow markers` : candleIntervalLabel}</div>
             <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/70 p-0.5">
               {([
                 { value: "252d", label: "252D" },
@@ -365,45 +477,133 @@ export function TechnicalIndicators({
           </div>
         </div>
 
-        <div className="secondary-card p-4 mb-4 h-64" style={{ minWidth: 0, minHeight: 0 }}>
+        <div className="secondary-card p-4 mb-4 overflow-x-auto">
           {unifiedChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <ComposedChart data={unifiedChartData}>
-                <XAxis dataKey="x" tickFormatter={formatTick} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis
-                  domain={["dataMin", "dataMax"]}
-                  tickFormatter={(v) => `$${Number(v).toFixed(0)}`}
-                  tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
+            <svg
+              width="100%"
+              height="100%"
+              viewBox={`0 0 ${chartWidth} ${priceChartHeight}`}
+              preserveAspectRatio="xMidYMid meet"
+              style={{ minWidth: "800px" }}
+            >
+              {[0, 0.25, 0.5, 0.75, 1].map((percent) => {
+                const y = pricePaddingBox.top + percent * pricePlotHeight;
+                const price = maxPrice + pricePadding - percent * (priceRange + pricePadding * 2);
+                return (
+                  <g key={`price-grid-${percent}`}>
+                    <line
+                      x1={pricePaddingBox.left}
+                      y1={y}
+                      x2={chartWidth - pricePaddingBox.right}
+                      y2={y}
+                      stroke={chartColors.grid}
+                      strokeWidth="1"
+                      strokeDasharray="4 4"
+                    />
+                    <text x={pricePaddingBox.left - 10} y={y + 4} fill={chartColors.tick} fontSize="10" textAnchor="end">
+                      ${price.toFixed(0)}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {isShortView && sma50Series.some((value) => value !== null) && (
+                <polyline
+                  points={sma50Series
+                    .map((value, idx) => value === null ? null : `${scalePriceX(idx)},${scalePrice(value)}`)
+                    .filter((point): point is string => point !== null)
+                    .join(" ")}
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth="1.5"
                 />
-                <Tooltip
-                  labelFormatter={(label) => formatLabel(String(label))}
-                  formatter={(value: number, name: string) => {
-                    if (name === "close") return [`$${Number(value).toFixed(2)}`, "Price"];
-                    if (name === "sma50") return [`$${Number(value).toFixed(2)}`, "SMA 50 (2h)"];
-                    if (name === "sma200") return [`$${Number(value).toFixed(2)}`, "SMA 200 (2h)"];
-                    return [value, name];
-                  }}
-                  contentStyle={{
-                    background: "#111827",
-                    border: "1px solid #374151",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                  }}
+              )}
+
+              {isShortView && sma200Series.some((value) => value !== null) && (
+                <polyline
+                  points={sma200Series
+                    .map((value, idx) => value === null ? null : `${scalePriceX(idx)},${scalePrice(value)}`)
+                    .filter((point): point is string => point !== null)
+                    .join(" ")}
+                  fill="none"
+                  stroke="#a78bfa"
+                  strokeWidth="1.5"
                 />
-                <Line type="monotone" dataKey="close" stroke="#60a5fa" strokeWidth={2} dot={false} name="close" />
-                {isShortView && (
-                  <>
-                    <Line type="monotone" dataKey="sma50" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="sma50" />
-                    <Line type="monotone" dataKey="sma200" stroke="#a78bfa" strokeWidth={1.5} dot={false} name="sma200" />
-                    <Line type="monotone" dataKey="eventPrice" stroke="#22c55e" strokeWidth={0} dot={{ r: 2 }} name="eventPrice" />
-                  </>
-                )}
-              </ComposedChart>
-            </ResponsiveContainer>
+              )}
+
+              {unifiedChartData.map((candle, idx) => {
+                const x = scalePriceX(idx);
+                const openY = scalePrice(candle.open);
+                const highY = scalePrice(candle.high);
+                const lowY = scalePrice(candle.low);
+                const closeY = scalePrice(candle.close);
+                const isGreen = candle.close >= candle.open;
+                const bodyTop = Math.min(openY, closeY);
+                const bodyBottom = Math.max(openY, closeY);
+                const bodyHeight = Math.max(bodyBottom - bodyTop, 1.5);
+                const candleStep = unifiedChartData.length > 1 ? pricePlotWidth / (unifiedChartData.length - 1) : pricePlotWidth;
+                const halfWidth = Math.max(1.5, Math.min(8, candleStep * (historyWindow === "252d" ? 0.28 : historyWindow === "1y" ? 0.32 : 0.4)));
+                const color = isGreen ? chartColors.priceUp : chartColors.priceDown;
+
+                return (
+                  <g key={`${candle.x}-${idx}`}>
+                    <line x1={x} y1={highY} x2={x} y2={lowY} stroke={color} strokeWidth="1" opacity="0.8" />
+                    <rect
+                      x={x - halfWidth}
+                      y={bodyTop}
+                      width={halfWidth * 2}
+                      height={bodyHeight}
+                      fill={color}
+                      opacity="0.82"
+                      rx="1"
+                    />
+                    {isShortView && candle.eventPrice !== null && (
+                      <>
+                        <circle cx={x} cy={closeY} r="5.5" fill={color} opacity="0.12" />
+                        <circle cx={x} cy={closeY} r="3.2" fill={color} fillOpacity="0.54" stroke={isGreen ? "#bbf7d0" : "#fecaca"} strokeWidth="1" />
+                      </>
+                    )}
+                    <title>
+                      {`${formatLabel(candle.x)} | O ${candle.open.toFixed(2)} H ${candle.high.toFixed(2)} L ${candle.low.toFixed(2)} C ${candle.close.toFixed(2)}`}
+                    </title>
+                  </g>
+                );
+              })}
+
+              {isShortView && sma50Series.some((value) => value !== null) && (
+                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(sma50Series.filter((value): value is number => value !== null).slice(-1)[0]) + 4} fill="#f59e0b" fontSize="10">
+                  SMA50
+                </text>
+              )}
+              {isShortView && sma200Series.some((value) => value !== null) && (
+                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(sma200Series.filter((value): value is number => value !== null).slice(-1)[0]) - 4} fill="#a78bfa" fontSize="10">
+                  SMA200
+                </text>
+              )}
+
+              {(() => {
+                const tickCount = Math.min(historyWindow === "252d" ? 10 : 8, unifiedChartData.length);
+                const indices = new Set<number>();
+                for (let i = 0; i < tickCount; i += 1) {
+                  const idx = Math.round((i * Math.max(unifiedChartData.length - 1, 0)) / Math.max(tickCount - 1, 1));
+                  indices.add(idx);
+                }
+                return Array.from(indices).map((idx) => {
+                  const x = scalePriceX(idx);
+                  const label = formatTick(unifiedChartData[idx].x);
+                  return (
+                    <text key={`tick-${idx}`} x={x} y={priceChartHeight - 14} fill={chartColors.tick} fontSize="10" textAnchor="middle">
+                      {label}
+                    </text>
+                  );
+                });
+              })()}
+
+              <line x1={pricePaddingBox.left} y1={pricePaddingBox.top} x2={pricePaddingBox.left} y2={priceChartHeight - pricePaddingBox.bottom} stroke={chartColors.axis} strokeWidth="2" />
+              <line x1={pricePaddingBox.left} y1={priceChartHeight - pricePaddingBox.bottom} x2={chartWidth - pricePaddingBox.right} y2={priceChartHeight - pricePaddingBox.bottom} stroke={chartColors.axis} strokeWidth="2" />
+            </svg>
           ) : (
-            <div className="h-full flex items-center justify-center text-xs text-stealth-400">
+            <div className="h-64 flex items-center justify-center text-xs text-stealth-400">
               No price history available for this window.
             </div>
           )}

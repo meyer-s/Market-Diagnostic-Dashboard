@@ -129,12 +129,18 @@ interface FundamentalsPayload {
 
 interface PriceHistoryPoint {
   date: string;
+  open: number;
+  high: number;
+  low: number;
   close: number;
 }
 
 type HistoryWindow = "252d" | "1y" | "5y" | "max";
 interface IntradayHistoryPoint {
   timestamp: string;
+  open: number;
+  high: number;
+  low: number;
   close: number;
 }
 
