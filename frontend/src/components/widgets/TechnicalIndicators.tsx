@@ -4,7 +4,7 @@
  * Displays price history (252 days), RSI, and MACD charts with real data
  */
 
-import { useRef, useState } from "react";
+import { ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import { getFamilyColor, statePalette } from "../../theme/metricColors";
@@ -78,11 +78,17 @@ interface FlowEventPoint {
   strength: number;
 }
 
+type HistoryWindow = "252d" | "1y" | "5y" | "max";
+
 interface TechnicalIndicatorsProps {
   technicalData?: TechnicalData;
   optionsFlow?: OptionsFlowData | null;
   optionalityMetrics?: OptionalityMetrics | null;
   flowEvents?: FlowEventPoint[];
+  priceHistory?: Array<{ date: string; close: number }>;
+  intradayHistory2h?: Array<{ timestamp: string; close: number }>;
+  historyWindow?: HistoryWindow;
+  onHistoryWindowChange?: (window: HistoryWindow) => void;
   hideOptionsContext?: boolean;
 }
 
@@ -91,11 +97,12 @@ export function TechnicalIndicators({
   optionsFlow,
   optionalityMetrics,
   flowEvents = [],
+  priceHistory = [],
+  intradayHistory2h = [],
+  historyWindow = "252d",
+  onHistoryWindowChange,
   hideOptionsContext = false,
 }: TechnicalIndicatorsProps) {
-  const [activeFlowEventKey, setActiveFlowEventKey] = useState<string | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-  const chartContainerRef = useRef<HTMLDivElement | null>(null);
 
   if (!technicalData && !optionsFlow) {
     return (
@@ -242,16 +249,12 @@ export function TechnicalIndicators({
     candles,
     rsi,
     macd,
-    sma_50,
-    sma_200,
   } = technicalData;
 
   // Calculate chart dimensions
   const chartWidth = 1000;
-  const chartHeight = 300;
   const padding = { top: 20, right: 50, bottom: 40, left: 50 };
   const plotWidth = chartWidth - padding.left - padding.right;
-  const plotHeight = chartHeight - padding.top - padding.bottom;
   const chartColors = {
     grid: CHART_NEUTRAL.grid,
     axis: CHART_NEUTRAL.axis,
@@ -266,18 +269,6 @@ export function TechnicalIndicators({
     macdSignal: getFamilyColor("benchmark"),
   };
 
-  // Find price range
-  const prices = candles.map((c) => [c.high, c.low]).flat();
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  const priceRange = maxPrice - minPrice;
-  const padding_price = priceRange * 0.1;
-
-  const scalePrice = (price: number) => {
-    const normalized = (price - (minPrice - padding_price)) / (priceRange + padding_price * 2);
-    return padding.top + (1 - normalized) * plotHeight;
-  };
-
   const scaleX = (index: number) => {
     return padding.left + (index / (candles.length - 1)) * plotWidth;
   };
@@ -287,46 +278,52 @@ export function TechnicalIndicators({
     .filter((value) => Number.isFinite(value) && value >= 0);
   const maxVolume = Math.max(...volumes, 0);
 
-  const candleIndexByDate = new Map(candles.map((candle, index) => [candle.date, index]));
-  const overlayEvents = flowEvents
-    .map((event) => {
-      const candleIndex = candleIndexByDate.get(event.date);
-      if (candleIndex === undefined) {
-        return null;
-      }
+  const isShortView = historyWindow === "252d";
+  const eventDates = new Set(flowEvents.filter((evt) => evt.side !== "neutral").map((evt) => evt.date));
+  const overlayEventCount = eventDates.size;
 
-      const candle = candles[candleIndex];
-
-      return {
-        ...event,
-        eventKey: `${event.date}-${event.side}-${event.price}-${event.volume}`,
-        anchorPrice: candle.open,
-        candleIndex,
-        markerRadius: Math.max(4, Math.min(9, 3 + event.strength * 1.15)),
-        tooltipX: scaleX(candleIndex),
-        tooltipY: scalePrice(candle.open),
-      };
-    })
-    .filter((event): event is FlowEventPoint & { eventKey: string; anchorPrice: number; candleIndex: number; markerRadius: number; tooltipX: number; tooltipY: number } => event !== null);
-  const activeFlowEvent = overlayEvents.find((event) => event.eventKey === activeFlowEventKey) ?? null;
-  const handleFlowMarkerPointer = (mouseX: number, mouseY: number, eventKey: string) => {
-    const container = chartContainerRef.current;
-    if (!container) {
-      setActiveFlowEventKey(eventKey);
-      return;
+  const unifiedChartData = (() => {
+    if (isShortView && intradayHistory2h.length > 0) {
+      const closes = intradayHistory2h.map((p) => p.close);
+      return intradayHistory2h.map((point, idx) => {
+        const sma50 = idx >= 49 ? closes.slice(idx - 49, idx + 1).reduce((a, b) => a + b, 0) / 50 : null;
+        const sma200 = idx >= 199 ? closes.slice(idx - 199, idx + 1).reduce((a, b) => a + b, 0) / 200 : null;
+        const day = point.timestamp.slice(0, 10);
+        return {
+          x: point.timestamp,
+          close: point.close,
+          sma50,
+          sma200,
+          eventPrice: eventDates.has(day) ? point.close : null,
+        };
+      });
     }
 
-    const bounds = container.getBoundingClientRect();
-    setActiveFlowEventKey(eventKey);
-    setTooltipPosition({
-      x: mouseX - bounds.left,
-      y: mouseY - bounds.top,
-    });
+    return priceHistory.map((point) => ({
+      x: point.date,
+      close: point.close,
+      sma50: null,
+      sma200: null,
+      eventPrice: null,
+    }));
+  })();
+
+  const formatTick = (value: string) => {
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return value;
+    if (isShortView) {
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+    return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
   };
 
-  const clearFlowTooltip = (_eventKey: string) => {
-    setActiveFlowEventKey(null);
-    setTooltipPosition(null);
+  const formatLabel = (value: string) => {
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return value;
+    if (isShortView) {
+      return dt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    }
+    return dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   };
 
   const volumeChartHeight = 160;
@@ -343,152 +340,71 @@ export function TechnicalIndicators({
       {/* Price History Chart */}
       <div className="surface-card-strong p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base sm:text-lg font-semibold">Price History ({technicalData.lookback_days}-Day)</h3>
-          <div className="text-[10px] text-stealth-500">{overlayEvents.length} flow markers</div>
+          <h3 className="text-base sm:text-lg font-semibold">Price History</h3>
+          <div className="flex items-center gap-2">
+            <div className="text-[10px] text-stealth-500">{isShortView ? `${overlayEventCount} flow markers` : "Daily history"}</div>
+            <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/70 p-0.5">
+              {([
+                { value: "252d", label: "252D" },
+                { value: "1y", label: "1Y" },
+                { value: "5y", label: "5Y" },
+                { value: "max", label: "Max" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onHistoryWindowChange?.(opt.value)}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                    historyWindow === opt.value ? "bg-stealth-700 text-white" : "text-stealth-300 hover:text-white"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div ref={chartContainerRef} className="relative secondary-card p-4 mb-4 overflow-x-auto">
-          <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet" style={{ minWidth: '800px' }}>
-            {/* Grid lines */}
-            {[0, 0.25, 0.5, 0.75, 1].map((percent) => {
-              const y = padding.top + percent * plotHeight;
-              const price = minPrice - padding_price + percent * (priceRange + padding_price * 2);
-              return (
-                <g key={`grid-${percent}`}>
-                  <line
-                    x1={padding.left}
-                    y1={y}
-                    x2={chartWidth - padding.right}
-                    y2={y}
-                    stroke={chartColors.grid}
-                    strokeWidth="1"
-                    strokeDasharray="4 4"
-                  />
-                  <text x={padding.left - 10} y={y + 4} fill={chartColors.tick} fontSize="10" textAnchor="end">
-                    ${price.toFixed(0)}
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* Candlesticks */}
-            {candles.map((candle, idx) => {
-              const x = scaleX(idx);
-              const o = scalePrice(candle.open);
-              const h = scalePrice(candle.high);
-              const l = scalePrice(candle.low);
-              const c = scalePrice(candle.close);
-
-              const isGreen = candle.close >= candle.open;
-              const bodyTop = Math.min(o, c);
-              const bodyBottom = Math.max(o, c);
-              const bodyHeight = Math.max(bodyBottom - bodyTop, 1);
-              const color = isGreen ? chartColors.priceUp : chartColors.priceDown;
-              const wickWidth = plotWidth / candles.length / 3;
-
-              return (
-                <g key={idx}>
-                  {/* Wick */}
-                  <line x1={x} y1={h} x2={x} y2={l} stroke={color} strokeWidth="1" opacity="0.6" />
-                  {/* Body */}
-                  <rect x={x - wickWidth} y={bodyTop} width={wickWidth * 2} height={bodyHeight} fill={color} opacity="0.8" />
-                </g>
-              );
-            })}
-
-            {/* SMA 50 line */}
-            {sma_50 && (
-              <>
-                <line
-                  x1={padding.left}
-                  y1={scalePrice(sma_50)}
-                  x2={chartWidth - padding.right}
-                  y2={scalePrice(sma_50)}
-                  stroke={chartColors.sma50}
-                  strokeWidth="2"
-                  strokeDasharray="4 2"
-                  opacity="0.6"
+        <div className="secondary-card p-4 mb-4 h-64" style={{ minWidth: 0, minHeight: 0 }}>
+          {unifiedChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ComposedChart data={unifiedChartData}>
+                <XAxis dataKey="x" tickFormatter={formatTick} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                <YAxis
+                  domain={["dataMin", "dataMax"]}
+                  tickFormatter={(v) => `$${Number(v).toFixed(0)}`}
+                  tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
                 />
-                <text x={chartWidth - padding.right + 5} y={scalePrice(sma_50) + 4} fill={chartColors.sma50} fontSize="10">
-                  SMA50
-                </text>
-              </>
-            )}
-
-            {/* SMA 200 line */}
-            {sma_200 && (
-              <>
-                <line
-                  x1={padding.left}
-                  y1={scalePrice(sma_200)}
-                  x2={chartWidth - padding.right}
-                  y2={scalePrice(sma_200)}
-                  stroke={chartColors.sma200}
-                  strokeWidth="2"
-                  strokeDasharray="4 2"
-                  opacity="0.6"
+                <Tooltip
+                  labelFormatter={(label) => formatLabel(String(label))}
+                  formatter={(value: number, name: string) => {
+                    if (name === "close") return [`$${Number(value).toFixed(2)}`, "Price"];
+                    if (name === "sma50") return [`$${Number(value).toFixed(2)}`, "SMA 50 (2h)"];
+                    if (name === "sma200") return [`$${Number(value).toFixed(2)}`, "SMA 200 (2h)"];
+                    return [value, name];
+                  }}
+                  contentStyle={{
+                    background: "#111827",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  }}
                 />
-                <text x={chartWidth - padding.right + 5} y={scalePrice(sma_200) - 4} fill={chartColors.sma200} fontSize="10">
-                  SMA200
-                </text>
-              </>
-            )}
-
-            {overlayEvents.map((event) => {
-              const x = scaleX(event.candleIndex);
-              const y = scalePrice(event.anchorPrice);
-              const fill = event.side === "buy" ? chartColors.priceUp : event.side === "sell" ? chartColors.priceDown : chartColors.tick;
-              const stroke = event.side === "buy" ? "#bbf7d0" : event.side === "sell" ? "#fecaca" : "#e2e8f0";
-
-              return (
-                <g key={`flow-${event.eventKey}`}>
-                  <circle cx={x} cy={y} r={event.markerRadius + 2} fill={fill} opacity="0.08" />
-                  <circle
-                    cx={x}
-                    cy={y}
-                    r={event.markerRadius}
-                    fill={fill}
-                    fillOpacity="0.54"
-                    stroke={stroke}
-                    strokeWidth="1.1"
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`${event.side} event on ${event.date} anchored to candle open at $${event.anchorPrice.toFixed(2)}`}
-                    onMouseEnter={(hoverEvent) => handleFlowMarkerPointer(hoverEvent.clientX, hoverEvent.clientY, event.eventKey)}
-                    onMouseMove={(moveEvent) => handleFlowMarkerPointer(moveEvent.clientX, moveEvent.clientY, event.eventKey)}
-                    onMouseLeave={() => clearFlowTooltip(event.eventKey)}
-                    onFocus={() => {
-                      setActiveFlowEventKey(event.eventKey);
-                      setTooltipPosition({ x: event.tooltipX, y: event.tooltipY });
-                    }}
-                    onBlur={() => clearFlowTooltip(event.eventKey)}
-                  />
-                </g>
-              );
-            })}
-
-            {/* Axes */}
-            <line x1={padding.left} y1={padding.top} x2={padding.left} y2={chartHeight - padding.bottom} stroke={chartColors.axis} strokeWidth="2" />
-            <line x1={padding.left} y1={chartHeight - padding.bottom} x2={chartWidth - padding.right} y2={chartHeight - padding.bottom} stroke={chartColors.axis} strokeWidth="2" />
-          </svg>
-
-          {activeFlowEvent && tooltipPosition && (
-            <div
-              className="pointer-events-none absolute z-10 max-w-[240px] rounded-lg border border-stealth-700 bg-stealth-950/95 px-3 py-2 text-xs text-stealth-200 shadow-2xl"
-              style={{
-                left: Math.max(12, Math.min(tooltipPosition.x + 14, chartWidth - 250)),
-                top: Math.max(12, tooltipPosition.y - 70),
-              }}
-            >
-              <div className="mb-1 font-medium text-stealth-100">
-                {activeFlowEvent.side.toUpperCase()} · {activeFlowEvent.date}
-              </div>
-              <div className="text-stealth-300">
-                open ${activeFlowEvent.anchorPrice.toFixed(2)} · event ${activeFlowEvent.price.toFixed(2)}
-              </div>
-              <div className="text-stealth-400">
-                z {activeFlowEvent.volume_z.toFixed(2)} · {formatCompact(activeFlowEvent.notional)}
-              </div>
+                <Line type="monotone" dataKey="close" stroke="#60a5fa" strokeWidth={2} dot={false} name="close" />
+                {isShortView && (
+                  <>
+                    <Line type="monotone" dataKey="sma50" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="sma50" />
+                    <Line type="monotone" dataKey="sma200" stroke="#a78bfa" strokeWidth={1.5} dot={false} name="sma200" />
+                    <Line type="monotone" dataKey="eventPrice" stroke="#22c55e" strokeWidth={0} dot={{ r: 2 }} name="eventPrice" />
+                  </>
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex items-center justify-center text-xs text-stealth-400">
+              No price history available for this window.
             </div>
           )}
         </div>
@@ -533,7 +449,7 @@ export function TechnicalIndicators({
           </div>
         </div>
 
-        {overlayEvents.length > 0 && (
+        {overlayEventCount > 0 && (
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-stealth-400">
             <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-1 text-green-300">Buy events</span>
             <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-300">Sell events</span>

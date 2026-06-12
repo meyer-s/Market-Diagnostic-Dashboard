@@ -938,11 +938,6 @@ export default function StockAnalysis() {
                 horizon={selectedHorizon.toUpperCase()}
                 analystTarget={analystTarget}
                 analystCount={analystCount}
-                priceHistory={priceHistory}
-                intradayHistory2h={intradayHistory2h}
-                historyWindow={historyWindow}
-                onHistoryWindowChange={setHistoryWindow}
-                flowEvents={institutionalFlow?.event_history ?? []}
               />
               <ConvictionSnapshot
                 conviction={projections[selectedHorizon].conviction}
@@ -960,6 +955,10 @@ export default function StockAnalysis() {
               optionsFlow={optionsFlow}
               optionalityMetrics={optionalityMetrics}
               flowEvents={institutionalFlow?.event_history ?? []}
+              priceHistory={priceHistory}
+              intradayHistory2h={intradayHistory2h}
+              historyWindow={historyWindow}
+              onHistoryWindowChange={setHistoryWindow}
               hideOptionsContext={true}
             />
           )}
