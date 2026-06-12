@@ -1258,9 +1258,9 @@ def calculate_technical_indicators(df: pd.DataFrame, lookback_days: int = 252) -
     # MACD
     macd_data = calculate_macd(lookback_df, lookback_days)
     
-    # SMA 50 and 200
-    sma_50 = lookback_df['Close'].rolling(50).mean().iloc[-1]
-    sma_200 = lookback_df['Close'].rolling(200).mean().iloc[-1] if len(lookback_df) >= 200 else None
+    # EMA 50 and 200
+    ema_50 = lookback_df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
+    ema_200 = lookback_df['Close'].ewm(span=200, adjust=False).mean().iloc[-1] if len(lookback_df) >= 200 else None
     
     # Price levels
     current_price = lookback_df['Close'].iloc[-1]
@@ -1268,15 +1268,16 @@ def calculate_technical_indicators(df: pd.DataFrame, lookback_days: int = 252) -
     low_52w = lookback_df['Low'].min()
     
     # Trend
-    trend = "uptrend" if current_price > sma_50 else "downtrend" if sma_200 and current_price < sma_200 else "neutral"
+    trend = "uptrend" if current_price > ema_50 else "downtrend" if ema_200 and current_price < ema_200 else "neutral"
     
     return {
         "lookback_days": len(lookback_df),
         "current_price": float(current_price),
         "high_52w": float(high_52w),
         "low_52w": float(low_52w),
-        "sma_50": float(sma_50),
-        "sma_200": float(sma_200) if sma_200 else None,
+        # Preserve legacy field names for frontend compatibility; values are EMA-based.
+        "sma_50": float(ema_50),
+        "sma_200": float(ema_200) if ema_200 else None,
         "trend": trend,
         "rsi": {
             "current": float(rsi_current),

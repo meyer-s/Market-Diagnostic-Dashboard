@@ -145,6 +145,25 @@ function aggregateCandles<T extends OhlcHistoryPoint>(
   return order.map((key) => buckets.get(key)!);
 }
 
+function calcEmaSeries(values: number[], span: number): Array<number | null> {
+  if (!values.length) return [];
+  const alpha = 2 / (span + 1);
+  const result: Array<number | null> = [];
+  let ema: number | null = null;
+
+  values.forEach((value, idx) => {
+    if (idx === 0) {
+      ema = value;
+    } else if (ema !== null) {
+      ema = value * alpha + ema * (1 - alpha);
+    }
+
+    result.push(idx >= span - 1 ? ema : null);
+  });
+
+  return result;
+}
+
 export function TechnicalIndicators({
   technicalData,
   optionsFlow,
@@ -401,12 +420,8 @@ export function TechnicalIndicators({
   };
 
   const shortViewCloses = isShortView ? unifiedChartData.map((point) => point.close) : [];
-  const sma50Series = isShortView
-    ? shortViewCloses.map((_, idx) => idx >= 49 ? shortViewCloses.slice(idx - 49, idx + 1).reduce((a, b) => a + b, 0) / 50 : null)
-    : [];
-  const sma200Series = isShortView
-    ? shortViewCloses.map((_, idx) => idx >= 199 ? shortViewCloses.slice(idx - 199, idx + 1).reduce((a, b) => a + b, 0) / 200 : null)
-    : [];
+  const ema50Series = isShortView ? calcEmaSeries(shortViewCloses, 50) : [];
+  const ema200Series = isShortView ? calcEmaSeries(shortViewCloses, 200) : [];
 
   const candleIntervalLabel =
     historyWindow === "252d" ? "2H candles" : historyWindow === "1y" ? "Daily candles" : historyWindow === "5y" ? "Weekly candles" : "Monthly candles";
@@ -507,9 +522,9 @@ export function TechnicalIndicators({
                 );
               })}
 
-              {isShortView && sma50Series.some((value) => value !== null) && (
+              {isShortView && ema50Series.some((value) => value !== null) && (
                 <polyline
-                  points={sma50Series
+                  points={ema50Series
                     .map((value, idx) => value === null ? null : `${scalePriceX(idx)},${scalePrice(value)}`)
                     .filter((point): point is string => point !== null)
                     .join(" ")}
@@ -519,9 +534,9 @@ export function TechnicalIndicators({
                 />
               )}
 
-              {isShortView && sma200Series.some((value) => value !== null) && (
+              {isShortView && ema200Series.some((value) => value !== null) && (
                 <polyline
-                  points={sma200Series
+                  points={ema200Series
                     .map((value, idx) => value === null ? null : `${scalePriceX(idx)},${scalePrice(value)}`)
                     .filter((point): point is string => point !== null)
                     .join(" ")}
@@ -570,14 +585,14 @@ export function TechnicalIndicators({
                 );
               })}
 
-              {isShortView && sma50Series.some((value) => value !== null) && (
-                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(sma50Series.filter((value): value is number => value !== null).slice(-1)[0]) + 4} fill="#f59e0b" fontSize="10">
-                  SMA50
+              {isShortView && ema50Series.some((value) => value !== null) && (
+                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema50Series.filter((value): value is number => value !== null).slice(-1)[0]) + 4} fill="#f59e0b" fontSize="10">
+                  EMA50
                 </text>
               )}
-              {isShortView && sma200Series.some((value) => value !== null) && (
-                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(sma200Series.filter((value): value is number => value !== null).slice(-1)[0]) - 4} fill="#a78bfa" fontSize="10">
-                  SMA200
+              {isShortView && ema200Series.some((value) => value !== null) && (
+                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema200Series.filter((value): value is number => value !== null).slice(-1)[0]) - 4} fill="#a78bfa" fontSize="10">
+                  EMA200
                 </text>
               )}
 
@@ -624,11 +639,11 @@ export function TechnicalIndicators({
             <p className="text-sm font-bold text-red-400">${technicalData.low_52w.toFixed(2)}</p>
           </div>
           <div className="secondary-card p-2">
-            <p className="text-stealth-400 mb-1">SMA50</p>
+            <p className="text-stealth-400 mb-1">EMA50</p>
             <p className="text-sm font-bold text-amber-400">${technicalData.sma_50.toFixed(2)}</p>
           </div>
           <div className="secondary-card p-2">
-            <p className="text-stealth-400 mb-1">SMA200</p>
+            <p className="text-stealth-400 mb-1">EMA200</p>
             <p className="text-sm font-bold text-purple-400">
               {technicalData.sma_200 !== null ? `$${technicalData.sma_200.toFixed(2)}` : "n/a"}
             </p>
