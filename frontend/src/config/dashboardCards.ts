@@ -151,15 +151,15 @@ const indicatorRelatedSignalsByFamily: Record<MetricFamily, RelatedSignal[]> = {
     { label: "Market Map", reason: "Leadership shows broader sector rotation" },
   ],
   crypto: [
-    { label: "Crypto Indicators", reason: "Crypto drives metals/crypto stability signal" },
+    { label: "Crypto", reason: "Crypto drives metals/crypto stability signal" },
     { label: "Liquidity Proxy", reason: "Liquidity cycles influence crypto demand" },
   ],
   metals: [
-    { label: "Metals Indicators", reason: "Metals drive metals/crypto stability signal" },
+    { label: "Metals", reason: "Metals drive metals/crypto stability signal" },
     { label: "Inflation", reason: "Metals hedge rising inflation expectations" },
   ],
   gold: [
-    { label: "Metals Indicators", reason: "Gold stabilizes metals/crypto stability read" },
+    { label: "Metals", reason: "Gold stabilizes metals/crypto stability read" },
     { label: "Inflation", reason: "Gold tracks long-term inflation expectations" },
   ],
   silver: [

@@ -54,7 +54,7 @@ export default function CryptoMarketWidget() {
   if (loading) {
     return (
       <div className="primary-card p-4 md:p-6">
-        <h3 className="text-base sm:text-lg font-bold mb-3">Crypto Indicators</h3>
+        <h3 className="text-base sm:text-lg font-bold mb-3">Crypto</h3>
         <div className="text-sm text-stealth-400">Loading...</div>
       </div>
     );
@@ -66,7 +66,7 @@ export default function CryptoMarketWidget() {
       className="primary-card primary-card-hover p-4 md:p-6 cursor-pointer block"
     >
       <div className="flex justify-between items-start mb-4">
-        <h3 className="text-base sm:text-lg font-bold">Crypto Indicators</h3>
+        <h3 className="text-base sm:text-lg font-bold">Crypto</h3>
         <span className="text-xs text-stealth-400">90d view</span>
       </div>
 
