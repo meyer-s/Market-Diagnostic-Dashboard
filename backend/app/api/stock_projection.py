@@ -22,6 +22,7 @@ import pandas as pd
 import numpy as np
 import math
 from app.models.institutional_flow_event import InstitutionalFlowEvent
+from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.models.system_status import SystemStatus
 from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
 from app.services.options_quotes import option_premium_from_row, option_quote_from_row
@@ -46,21 +47,76 @@ def _get_stock_projection_cache(ticker: str) -> Optional[dict[str, Any]]:
     now_ts = time.time()
     with _stock_projection_cache_lock:
         cached = _stock_projection_cache.get(ticker)
-        if not cached:
-            return None
-        if now_ts - float(cached.get("cached_at", 0)) > _STOCK_PROJECTION_CACHE_TTL_SECONDS:
-            _stock_projection_cache.pop(ticker, None)
-            return None
-        payload = cached.get("payload")
-        return dict(payload) if isinstance(payload, dict) else None
+        if cached:
+            if now_ts - float(cached.get("cached_at", 0)) > _STOCK_PROJECTION_CACHE_TTL_SECONDS:
+                _stock_projection_cache.pop(ticker, None)
+            else:
+                payload = cached.get("payload")
+                if isinstance(payload, dict):
+                    return dict(payload)
+
+    # Fallback to persistent DB snapshot cache so warm data survives process restarts.
+    try:
+        with get_db_session() as db:
+            row = (
+                db.query(StockProjectionSnapshot)
+                .filter(StockProjectionSnapshot.symbol == ticker)
+                .first()
+            )
+            if row is None or row.cached_at is None:
+                return None
+            age_seconds = (datetime.utcnow() - row.cached_at).total_seconds()
+            if age_seconds > _STOCK_PROJECTION_CACHE_TTL_SECONDS:
+                return None
+            if not isinstance(row.payload, dict):
+                return None
+
+            payload = dict(row.payload)
+            with _stock_projection_cache_lock:
+                _stock_projection_cache[ticker] = {
+                    "cached_at": time.time(),
+                    "payload": payload,
+                }
+            return payload
+    except Exception:
+        return None
 
 
 def _set_stock_projection_cache(ticker: str, payload: dict[str, Any]) -> None:
+    now_utc = datetime.utcnow()
+    safe_payload = sanitize_for_json(dict(payload))
+
     with _stock_projection_cache_lock:
         _stock_projection_cache[ticker] = {
-            "cached_at": time.time(),
-            "payload": dict(payload),
+            "cached_at": now_utc.timestamp(),
+            "payload": safe_payload,
         }
+
+    # Persist snapshot to Postgres for cross-process cache reuse.
+    try:
+        with get_db_session() as db:
+            row = (
+                db.query(StockProjectionSnapshot)
+                .filter(StockProjectionSnapshot.symbol == ticker)
+                .first()
+            )
+            if row is None:
+                row = StockProjectionSnapshot(
+                    symbol=ticker,
+                    payload=safe_payload,
+                    cached_at=now_utc,
+                    created_at=now_utc,
+                    updated_at=now_utc,
+                )
+                db.add(row)
+            else:
+                row.payload = safe_payload
+                row.cached_at = now_utc
+                row.updated_at = now_utc
+            db.commit()
+    except Exception:
+        # If cache persistence fails, request should still succeed via in-memory cache.
+        return
 
 
 def sanitize_for_json(obj):
