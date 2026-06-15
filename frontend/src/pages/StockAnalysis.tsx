@@ -556,6 +556,30 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
 }
 
 export default function StockAnalysis() {
+  const PROJECTION_CACHE_TTL_MS = 5 * 60 * 1000;
+  const NEWS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+  type ProjectionsPayload = {
+    projections?: Record<string, StockProjection>;
+    historical?: { score_3m_ago?: number };
+    technical?: TechnicalData;
+    options_flow?: OptionsFlowData;
+    optionality?: OptionalityMetrics;
+    institutional_flow?: InstitutionalFlowPayload;
+    price_history?: PriceHistoryPoint[];
+    intraday_history_2h?: IntradayHistoryPoint[];
+    price_history_window?: HistoryWindow;
+    fundamentals?: FundamentalsPayload;
+    analyst_target?: number;
+    analyst_count?: number;
+    data_warnings?: DataWarning[];
+    as_of_date?: string;
+    created_at?: string;
+  };
+
+  const projectionCacheRef = useRef<Map<string, { payload: ProjectionsPayload; fetchedAt: number }>>(new Map());
+  const newsCacheRef = useRef<Map<string, { data: NewsArticle[]; fetchedAt: number }>>(new Map());
+
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { symbol: symbolFromPath } = useParams<{ symbol?: string }>();
@@ -586,7 +610,47 @@ export default function StockAnalysis() {
   const [fundView, setFundView] = useState<"1Y" | "5Y">("1Y");
   const [historyWindow, setHistoryWindow] = useState<HistoryWindow>("252d");
 
-  const runSearch = useCallback(async (rawTicker: string, window: HistoryWindow = historyWindow) => {
+  const applyProjectionsPayload = useCallback((payload: ProjectionsPayload | null, fetchTimestamp: string) => {
+    if (payload) {
+      setProjections(payload.projections ?? {});
+      setHistoricalScore(payload.historical?.score_3m_ago ?? null);
+      setTechnicalData(payload.technical || null);
+      setOptionsFlow(payload.options_flow || null);
+      setOptionalityMetrics(payload.optionality || null);
+      setInstitutionalFlow(payload.institutional_flow || null);
+      setPriceHistory(payload.price_history || []);
+      setIntradayHistory2h(payload.intraday_history_2h || []);
+      setFundamentals(payload.fundamentals || null);
+      setAnalystTarget(payload.analyst_target ?? null);
+      setAnalystCount(payload.analyst_count ?? null);
+      setDataWarnings(payload.data_warnings || []);
+      setLastUpdated(fetchTimestamp);
+      setDataAsOf(payload.as_of_date || payload.created_at || null);
+      return;
+    }
+
+    setProjections({});
+    setHistoricalScore(null);
+    setTechnicalData(null);
+    setOptionsFlow(null);
+    setOptionalityMetrics(null);
+    setInstitutionalFlow(null);
+    setPriceHistory([]);
+    setIntradayHistory2h([]);
+    setFundamentals(null);
+    setAnalystTarget(null);
+    setAnalystCount(null);
+    setDataWarnings([]);
+    setLastUpdated(null);
+    setDataAsOf(null);
+  }, []);
+
+  const runSearch = useCallback(async (
+    rawTicker: string,
+    window: HistoryWindow,
+    options: { includeNews?: boolean } = {}
+  ) => {
+    const includeNews = options.includeNews ?? true;
     const normalizedTicker = rawTicker.trim().toUpperCase();
     if (!normalizedTicker) return;
 
@@ -597,95 +661,70 @@ export default function StockAnalysis() {
     setProjectionUnavailable(false);
 
     const fetchTimestamp = new Date().toISOString();
-    let projectionsPayload: {
-      projections?: Record<string, StockProjection>;
-      historical?: { score_3m_ago?: number };
-      technical?: TechnicalData;
-      options_flow?: OptionsFlowData;
-      optionality?: OptionalityMetrics;
-      institutional_flow?: InstitutionalFlowPayload;
-      price_history?: PriceHistoryPoint[];
-      intraday_history_2h?: IntradayHistoryPoint[];
-      price_history_window?: HistoryWindow;
-      fundamentals?: FundamentalsPayload;
-      analyst_target?: number;
-      analyst_count?: number;
-      data_warnings?: DataWarning[];
-      as_of_date?: string;
-      created_at?: string;
-    } | null = null;
+    let projectionsPayload: ProjectionsPayload | null = null;
+    const cacheKey = `${normalizedTicker}:${window}`;
+    const now = Date.now();
+    const cachedProjection = projectionCacheRef.current.get(cacheKey);
+    if (cachedProjection && now - cachedProjection.fetchedAt < PROJECTION_CACHE_TTL_MS) {
+      projectionsPayload = cachedProjection.payload;
+    }
 
-    try {
-      const response = await fetch(
-        buildApiUrl(`/stocks/${normalizedTicker}/projections?history_window=${window}`)
-      );
-      if (response.status === 404) {
-        setProjectionUnavailable(true);
-      } else if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      } else {
-        projectionsPayload = await response.json();
+    if (!projectionsPayload) {
+      try {
+        const response = await fetch(
+          buildApiUrl(`/stocks/${normalizedTicker}/projections?history_window=${window}`)
+        );
+        if (response.status === 404) {
+          setProjectionUnavailable(true);
+        } else if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        } else {
+          projectionsPayload = await response.json();
+          projectionCacheRef.current.set(cacheKey, {
+            payload: projectionsPayload,
+            fetchedAt: now,
+          });
+        }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Failed to fetch stock data");
       }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to fetch stock data");
     }
 
-    if (projectionsPayload) {
-      setProjections(projectionsPayload.projections ?? {});
-      setHistoricalScore(projectionsPayload.historical?.score_3m_ago ?? null);
-      setTechnicalData(projectionsPayload.technical || null);
-      setOptionsFlow(projectionsPayload.options_flow || null);
-      setOptionalityMetrics(projectionsPayload.optionality || null);
-      setInstitutionalFlow(projectionsPayload.institutional_flow || null);
-      setPriceHistory(projectionsPayload.price_history || []);
-      setIntradayHistory2h(projectionsPayload.intraday_history_2h || []);
-      setFundamentals(projectionsPayload.fundamentals || null);
-      setAnalystTarget(projectionsPayload.analyst_target ?? null);
-      setAnalystCount(projectionsPayload.analyst_count ?? null);
-      setDataWarnings(projectionsPayload.data_warnings || []);
-      setLastUpdated(fetchTimestamp);
-      setDataAsOf(projectionsPayload.as_of_date || projectionsPayload.created_at || null);
-    } else {
-      setProjections({});
-      setHistoricalScore(null);
-      setTechnicalData(null);
-      setOptionsFlow(null);
-      setOptionalityMetrics(null);
-      setInstitutionalFlow(null);
-      setPriceHistory([]);
-      setIntradayHistory2h([]);
-      setFundamentals(null);
-      setAnalystTarget(null);
-      setAnalystCount(null);
-      setDataWarnings([]);
-      setLastUpdated(null);
-      setDataAsOf(null);
-    }
+    applyProjectionsPayload(projectionsPayload, fetchTimestamp);
 
     // Fetch news filtered by ticker (server-side to avoid missing relevant articles)
-    const tickerNews = await apiFetch<NewsArticle[]>(
-      `/news?hours=720&limit=50&symbol=${normalizedTicker}`
-    ).catch(() => null); // Last 30 days
-    if (tickerNews) {
-      setNews(tickerNews.slice(0, 10)); // Show top 10 articles
-      if (!projectionsPayload) {
-        setLastUpdated(fetchTimestamp);
+    if (includeNews) {
+      const cachedNews = newsCacheRef.current.get(normalizedTicker);
+      if (cachedNews && now - cachedNews.fetchedAt < NEWS_CACHE_TTL_MS) {
+        setNews(cachedNews.data);
+      } else {
+        const tickerNews = await apiFetch<NewsArticle[]>(
+          `/news?hours=720&limit=50&symbol=${normalizedTicker}`
+        ).catch(() => null); // Last 30 days
+        if (tickerNews) {
+          const sliced = tickerNews.slice(0, 10);
+          setNews(sliced);
+          newsCacheRef.current.set(normalizedTicker, { data: sliced, fetchedAt: now });
+          if (!projectionsPayload) {
+            setLastUpdated(fetchTimestamp);
+          }
+        } else {
+          setNews([]);
+        }
       }
-    } else {
-      setNews([]);
     }
 
     setLoading(false);
-  }, [historyWindow]);
+  }, [applyProjectionsPayload]);
 
   useEffect(() => {
     if (!searchTicker) return;
-    void runSearch(searchTicker, historyWindow);
+    void runSearch(searchTicker, historyWindow, { includeNews: false });
   }, [historyWindow, searchTicker, runSearch]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    await runSearch(ticker, historyWindow);
+    await runSearch(ticker, historyWindow, { includeNews: true });
   };
 
   useEffect(() => {
@@ -718,7 +757,7 @@ export default function StockAnalysis() {
     if (autoLoadedSymbolRef.current === symbolFromQuery) return;
 
     autoLoadedSymbolRef.current = symbolFromQuery;
-    void runSearch(symbolFromQuery, historyWindow);
+    void runSearch(symbolFromQuery, historyWindow, { includeNews: true });
   }, [location.hash, searchParams, symbolFromPath, runSearch, historyWindow]);
 
   // Prepare data for line chart

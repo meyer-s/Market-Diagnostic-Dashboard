@@ -7,6 +7,7 @@
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import { getFamilyColor, statePalette } from "../../theme/metricColors";
+import { memo } from "react";
 
 interface Candle {
   date: string;
@@ -164,7 +165,7 @@ function calcEmaSeries(values: number[], span: number): Array<number | null> {
   return result;
 }
 
-export function TechnicalIndicators({
+function TechnicalIndicatorsComponent({
   technicalData,
   optionsFlow,
   optionalityMetrics,
@@ -973,3 +974,5 @@ export function TechnicalIndicators({
     </div>
   );
 }
+
+export const TechnicalIndicators = memo(TechnicalIndicatorsComponent);

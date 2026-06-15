@@ -14,8 +14,9 @@ All projections include:
 
 from fastapi import APIRouter, HTTPException, Path, Query
 from datetime import datetime, timedelta
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 import time
+import threading
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -35,6 +36,31 @@ HORIZONS = {
     "6m": 126,
     "12m": 252,
 }
+
+_STOCK_PROJECTION_CACHE_TTL_SECONDS = 5 * 60
+_stock_projection_cache: dict[str, dict[str, Any]] = {}
+_stock_projection_cache_lock = threading.Lock()
+
+
+def _get_stock_projection_cache(ticker: str) -> Optional[dict[str, Any]]:
+    now_ts = time.time()
+    with _stock_projection_cache_lock:
+        cached = _stock_projection_cache.get(ticker)
+        if not cached:
+            return None
+        if now_ts - float(cached.get("cached_at", 0)) > _STOCK_PROJECTION_CACHE_TTL_SECONDS:
+            _stock_projection_cache.pop(ticker, None)
+            return None
+        payload = cached.get("payload")
+        return dict(payload) if isinstance(payload, dict) else None
+
+
+def _set_stock_projection_cache(ticker: str, payload: dict[str, Any]) -> None:
+    with _stock_projection_cache_lock:
+        _stock_projection_cache[ticker] = {
+            "cached_at": time.time(),
+            "payload": dict(payload),
+        }
 
 
 def sanitize_for_json(obj):
@@ -1411,14 +1437,206 @@ def get_stock_projections(
     """
     
     ticker = ticker.upper()
-    stock = yf.Ticker(ticker)
-    
-    data_warnings = []
+    cached_payload = _get_stock_projection_cache(ticker)
 
-    # Fetch stock data used for projections (bounded window keeps compute predictable).
+    data_warnings: list[dict[str, Any]] = []
+    stock_name = ticker
+    analyst_target = None
+    analyst_count = None
+    options_flow = None
+    optionality: dict[str, Any] = {}
+    institutional_flow = None
+    projections: dict[str, Any] = {}
+    historical_score: Optional[float] = None
+    technical_data: Optional[dict[str, Any]] = None
+    fundamentals: dict[str, Any] = {}
+    as_of_date = datetime.now().isoformat()
+    created_at = datetime.utcnow().isoformat()
+
+    # Pull daily frame regardless, then reuse cached compute payload when available.
     df = fetch_stock_data(ticker)
-    current_price = float(df['Close'].iloc[-1])
-    hv30 = compute_historical_volatility(df, window=30)
+
+    if cached_payload:
+        data_warnings = list(cached_payload.get("data_warnings", []))
+        stock_name = cached_payload.get("name") or ticker
+        analyst_target = cached_payload.get("analyst_target")
+        analyst_count = cached_payload.get("analyst_count")
+        options_flow = cached_payload.get("options_flow")
+        optionality = cached_payload.get("optionality") or {}
+        institutional_flow = cached_payload.get("institutional_flow")
+        projections = cached_payload.get("projections") or {}
+        historical_score = cached_payload.get("historical_score")
+        technical_data = cached_payload.get("technical")
+        fundamentals = cached_payload.get("fundamentals") or {}
+        as_of_date = cached_payload.get("as_of_date") or as_of_date
+        created_at = cached_payload.get("created_at") or created_at
+    else:
+        stock = yf.Ticker(ticker)
+        current_price = float(df['Close'].iloc[-1])
+        hv30 = compute_historical_volatility(df, window=30)
+
+        # Fetch SPY for relative strength comparison
+        spy_df = fetch_stock_data("SPY")
+
+        # Data freshness checks
+        try:
+            latest_stock_date = pd.to_datetime(df.index).max()
+            latest_spy_date = pd.to_datetime(spy_df.index).max()
+            if latest_stock_date < latest_spy_date:
+                lag_days = (latest_spy_date - latest_stock_date).days
+                if lag_days > 2:
+                    data_warnings.append({
+                        "type": "stale_series",
+                        "details": {
+                            "symbol": ticker,
+                            "latest_date": latest_stock_date.date().isoformat(),
+                            "lag_days": lag_days,
+                        },
+                    })
+        except Exception:
+            pass
+
+        # Get current system state
+        with get_db_session() as db:
+            status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
+            system_state = status.state if status else "YELLOW"
+            institutional_flow = _sync_institutional_flow_history(db, ticker, df, current_price)
+
+        # Get stock name and analyst snapshot
+        stock_info = {}
+        try:
+            stock_info = stock.info
+        except Exception:
+            stock_info = {}
+
+        stock_name = stock_info.get("longName") or stock_info.get("shortName") or ticker
+        analyst_target = stock_info.get("targetMeanPrice") or stock_info.get("targetMedianPrice")
+        analyst_count = stock_info.get("numberOfAnalystOpinions")
+        try:
+            analyst_target = round(float(analyst_target), 2) if analyst_target is not None else None
+        except Exception:
+            analyst_target = None
+        try:
+            analyst_count = int(analyst_count) if analyst_count is not None else None
+        except Exception:
+            analyst_count = None
+
+        try:
+            options_flow = compute_options_flow(stock)
+        except Exception as exc:
+            options_flow = None
+            data_warnings.append({
+                "type": "upstream_options_unavailable",
+                "details": {
+                    "symbol": ticker,
+                    "source": "Yahoo Finance",
+                    "message": str(exc),
+                },
+            })
+
+        try:
+            optionality = compute_optionality_metrics(stock, current_price, hv30)
+        except Exception as exc:
+            optionality = {
+                "iv30": None,
+                "hv30": hv30,
+                "iv_percentile": None,
+                "avg_edr": None,
+                "error": str(exc),
+            }
+        if optionality.get("error"):
+            data_warnings.append({
+                "type": "upstream_options_unavailable",
+                "details": {
+                    "symbol": ticker,
+                    "source": "Yahoo Finance",
+                    "message": optionality["error"],
+                },
+            })
+
+        # Compute projections for each horizon
+        projections = {}
+        for horizon_name, horizon_days in HORIZONS.items():
+            try:
+                effective_days = T_WINDOW_DAYS if horizon_days == 0 else horizon_days
+                projection = compute_stock_projection(ticker, df, spy_df, effective_days, system_state)
+                projection.update({
+                    "ticker": ticker,
+                    "name": stock_name,
+                    "horizon": horizon_name,
+                })
+                projections[horizon_name] = projection
+            except Exception as e:
+                data_warnings.append({
+                    "type": "projection_unavailable",
+                    "details": {
+                        "symbol": ticker,
+                        "horizon": horizon_name,
+                        "message": str(e),
+                    },
+                })
+
+        # Compute HISTORICAL score from 3 months ago (for chart visualization)
+        historical_score = None
+        try:
+            three_months_ago_idx = len(df) - 90
+            if three_months_ago_idx > 63:
+                historical_df = df.iloc[:three_months_ago_idx]
+                historical_spy = spy_df.iloc[:three_months_ago_idx]
+                historical_score = compute_stock_projection(
+                    ticker,
+                    historical_df,
+                    historical_spy,
+                    HORIZONS["3m"],
+                    system_state,
+                )["score_total"]
+        except Exception as e:
+            print(f"Warning: Could not compute historical score for {ticker}: {str(e)}")
+
+        # Calculate technical indicators for 252-day lookback
+        try:
+            technical_data = calculate_technical_indicators(df, lookback_days=252)
+        except Exception as exc:
+            technical_data = None
+            data_warnings.append({
+                "type": "technical_unavailable",
+                "details": {
+                    "symbol": ticker,
+                    "message": str(exc),
+                },
+            })
+
+        try:
+            fundamentals = compute_fundamentals(stock, df)
+        except Exception as exc:
+            fundamentals = {}
+            data_warnings.append({
+                "type": "fundamentals_unavailable",
+                "details": {
+                    "symbol": ticker,
+                    "source": "Yahoo Finance",
+                    "message": str(exc),
+                },
+            })
+
+        _set_stock_projection_cache(
+            ticker,
+            {
+                "name": stock_name,
+                "as_of_date": as_of_date,
+                "created_at": created_at,
+                "data_warnings": data_warnings,
+                "analyst_target": analyst_target,
+                "analyst_count": analyst_count,
+                "options_flow": options_flow,
+                "optionality": optionality,
+                "institutional_flow": institutional_flow,
+                "projections": projections,
+                "historical_score": historical_score,
+                "technical": technical_data,
+                "fundamentals": fundamentals,
+            },
+        )
 
     history_window_days = {
         "252d": 252,
@@ -1442,157 +1660,11 @@ def get_stock_projections(
         except Exception:
             intraday_history = []
     
-    # Fetch SPY for relative strength comparison
-    spy_df = fetch_stock_data("SPY")
-
-    # Data freshness checks
-    try:
-        latest_stock_date = pd.to_datetime(df.index).max()
-        latest_spy_date = pd.to_datetime(spy_df.index).max()
-        if latest_stock_date < latest_spy_date:
-            lag_days = (latest_spy_date - latest_stock_date).days
-            if lag_days > 2:
-                data_warnings.append({
-                    "type": "stale_series",
-                    "details": {
-                        "symbol": ticker,
-                        "latest_date": latest_stock_date.date().isoformat(),
-                        "lag_days": lag_days,
-                    },
-                })
-    except Exception:
-        pass
-    
-    # Get current system state
-    with get_db_session() as db:
-        status = db.query(SystemStatus).order_by(SystemStatus.timestamp.desc()).first()
-        system_state = status.state if status else "YELLOW"
-        institutional_flow = _sync_institutional_flow_history(db, ticker, df, current_price)
-    
-    # Get stock name
-    stock_info = {}
-    try:
-        stock_info = stock.info
-    except Exception:
-        stock_info = {}
-
-    stock_name = stock_info.get('longName') or stock_info.get('shortName') or ticker
-    analyst_target = stock_info.get("targetMeanPrice") or stock_info.get("targetMedianPrice")
-    analyst_count = stock_info.get("numberOfAnalystOpinions")
-    try:
-        analyst_target = round(float(analyst_target), 2) if analyst_target is not None else None
-    except Exception:
-        analyst_target = None
-    try:
-        analyst_count = int(analyst_count) if analyst_count is not None else None
-    except Exception:
-        analyst_count = None
-
-    try:
-        options_flow = compute_options_flow(stock)
-    except Exception as exc:
-        options_flow = None
-        data_warnings.append({
-            "type": "upstream_options_unavailable",
-            "details": {
-                "symbol": ticker,
-                "source": "Yahoo Finance",
-                "message": str(exc),
-            },
-        })
-
-    try:
-        optionality = compute_optionality_metrics(stock, current_price, hv30)
-    except Exception as exc:
-        optionality = {
-            "iv30": None,
-            "hv30": hv30,
-            "iv_percentile": None,
-            "avg_edr": None,
-            "error": str(exc),
-        }
-    if optionality.get("error"):
-        data_warnings.append({
-            "type": "upstream_options_unavailable",
-            "details": {
-                "symbol": ticker,
-                "source": "Yahoo Finance",
-                "message": optionality["error"],
-            },
-        })
-    
-    # Compute projections for each horizon
-    projections = {}
-    for horizon_name, horizon_days in HORIZONS.items():
-        try:
-            effective_days = T_WINDOW_DAYS if horizon_days == 0 else horizon_days
-            projection = compute_stock_projection(ticker, df, spy_df, effective_days, system_state)
-            projection.update({
-                "ticker": ticker,
-                "name": stock_name,
-                "horizon": horizon_name,
-            })
-            projections[horizon_name] = projection
-        except Exception as e:
-            data_warnings.append({
-                "type": "projection_unavailable",
-                "details": {
-                    "symbol": ticker,
-                    "horizon": horizon_name,
-                    "message": str(e),
-                },
-            })
-    
-    # Compute HISTORICAL score from 3 months ago (for chart visualization)
-    historical_score = None
-    try:
-        # Calculate what the 3M score was 90 days ago
-        three_months_ago_idx = len(df) - 90  # Go back 90 days from today
-        if three_months_ago_idx > 63:  # Need at least 63 days of lookback data
-            historical_df = df.iloc[:three_months_ago_idx]
-            historical_spy = spy_df.iloc[:three_months_ago_idx]
-            historical_score = compute_stock_projection(
-                ticker, 
-                historical_df, 
-                historical_spy, 
-                HORIZONS["3m"],  # 63 days
-                system_state
-            )["score_total"]
-    except Exception as e:
-        # If we can't compute historical, that's okay - frontend will handle it
-        print(f"Warning: Could not compute historical score for {ticker}: {str(e)}")
-    
-    # Calculate technical indicators for 252-day lookback
-    try:
-        technical_data = calculate_technical_indicators(df, lookback_days=252)
-    except Exception as exc:
-        technical_data = None
-        data_warnings.append({
-            "type": "technical_unavailable",
-            "details": {
-                "symbol": ticker,
-                "message": str(exc),
-            },
-        })
-
-    try:
-        fundamentals = compute_fundamentals(stock, df)
-    except Exception as exc:
-        fundamentals = {}
-        data_warnings.append({
-            "type": "fundamentals_unavailable",
-            "details": {
-                "symbol": ticker,
-                "source": "Yahoo Finance",
-                "message": str(exc),
-            },
-        })
-    
     result = {
         "ticker": ticker,
         "name": stock_name,
-        "as_of_date": datetime.now().isoformat(),
-        "created_at": datetime.utcnow().isoformat(),
+        "as_of_date": as_of_date,
+        "created_at": created_at,
         "data_warnings": data_warnings,
         "analyst_target": analyst_target,
         "analyst_count": analyst_count,
