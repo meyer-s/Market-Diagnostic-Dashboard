@@ -679,9 +679,10 @@ export default function StockAnalysis() {
         } else if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         } else {
-          projectionsPayload = await response.json();
+          const parsedPayload = (await response.json()) as ProjectionsPayload;
+          projectionsPayload = parsedPayload;
           projectionCacheRef.current.set(cacheKey, {
-            payload: projectionsPayload,
+            payload: parsedPayload,
             fetchedAt: now,
           });
         }
