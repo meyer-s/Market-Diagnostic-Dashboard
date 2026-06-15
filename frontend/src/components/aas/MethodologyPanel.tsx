@@ -57,7 +57,7 @@ export function MethodologyPanel() {
         <Section id="overview" title="What AAS Measures">
           <div className="space-y-3">
             <p>
-              The Alternative Asset Stability (AAS) index is a composite indicator that tracks "flight to alternatives" 
+              The Metals and Crypto Stability (AAS) index is a composite indicator that tracks "flight to metals and crypto" 
               as a proxy for confidence in traditional financial assets and fiat currencies. It combines 18 components 
               across two major subsystems:
             </p>
@@ -130,7 +130,7 @@ export function MethodologyPanel() {
                 <div className="text-green-400 font-bold text-lg mb-1">67-100</div>
                 <div className="text-xs text-green-300 font-semibold mb-2">HIGH STABILITY</div>
                 <p className="text-xs text-stealth-300">
-                  Normal market conditions. Capital prefers traditional assets. Alternative assets underperforming 
+                  Normal market conditions. Capital prefers traditional assets. Metals and crypto underperforming 
                   or moving in line with risk-on sentiment.
                 </p>
               </div>
@@ -274,7 +274,7 @@ export function MethodologyPanel() {
                 <ul className="space-y-1.5 text-xs text-stealth-300">
                   <li className="flex items-start gap-2">
                     <span className="text-red-400">✗</span>
-                    <span>Alternative assets may contribute less to stability changes</span>
+                    <span>Metals and crypto may contribute less to stability changes</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-red-400">✗</span>

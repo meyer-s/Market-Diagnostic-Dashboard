@@ -22,7 +22,7 @@ const principles = [
   {
     title: "Keep The Whole Board Visible",
     body:
-      "The dashboard is meant to keep rates, credit, breadth, leadership, volatility, commodities, and alternative assets in view together. It is a personal research surface first, built around the belief that macro context is easier to reason about when the moving parts are not scattered across tabs.",
+      "The dashboard is meant to keep rates, credit, breadth, leadership, volatility, commodities, metals, and crypto in view together. It is a personal research surface first, built around the belief that macro context is easier to reason about when the moving parts are not scattered across tabs.",
     motif: "board",
   },
   {

@@ -4,7 +4,8 @@ import IndicatorCard from "../components/widgets/IndicatorCard";
 import DowTheoryWidget from "../components/widgets/DowTheoryWidget";
 import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
-import AASWidget from "../components/widgets/AASWidget";
+import PreciousMetalsWidget from "../components/widgets/PreciousMetalsWidget";
+import CryptoMarketWidget from "../components/widgets/CryptoMarketWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
@@ -42,7 +43,7 @@ const buildOverallInsight = (
   signals: InsightSignal[],
   trendLabel: string
 ): OverallInsight | null => {
-  if (signals.length < 4) return null;
+  if (signals.length < 3) return null;
 
   const stanceScore = signals.reduce((sum, item) => {
     if (item.stance === "risk-on") return sum + 1;
@@ -165,7 +166,7 @@ export default function Dashboard() {
 
   const newsCount = news.length;
   const visibleIndicators = useMemo(() => indicators?.filter((i) => i.code !== "AAS" && i.code !== "AAP") ?? [], [indicators]);
-  const insightOrder: InsightSignal["id"][] = ["system", "dow", "sector", "aas"];
+  const insightOrder: InsightSignal["id"][] = ["system", "dow", "sector"];
   const insightList = useMemo(
     () => insightOrder.map((id) => insights[id]).filter(Boolean) as InsightSignal[],
     [insights]
@@ -334,10 +335,8 @@ export default function Dashboard() {
         <SystemOverviewWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
         <DowTheoryWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
         <SectorDivergenceWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
-        <AASWidget
-          timeframe={trendPeriod === 90 ? '90d' : trendPeriod === 180 ? '180d' : '365d'}
-          onInsight={handleInsight}
-        />
+        <PreciousMetalsWidget />
+        <CryptoMarketWidget />
       </div>
 
       <div className="flex items-end justify-between gap-3">

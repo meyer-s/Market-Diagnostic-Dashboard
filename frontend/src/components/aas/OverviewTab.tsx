@@ -360,7 +360,7 @@ export function OverviewTab({ aasData, history, componentHistory, timeframe, set
             <strong className="text-stealth-100">Current State:</strong> The AAS Stability Score of {aasData.stability_score.toFixed(1)} 
             indicates <strong className={aasData.stability_score >= 67 ? 'text-green-400' : aasData.stability_score >= 34 ? 'text-yellow-400' : 'text-red-400'}>
               {aasData.stability_score >= 67 ? 'high stability' : aasData.stability_score >= 34 ? 'moderate stability' : 'low stability'}
-            </strong> in alternative asset markets.
+            </strong> in metals and crypto markets.
           </p>
           <p>
             <strong className="text-stealth-100">Primary Driver:</strong> The dominant signal is coming from <strong className="text-emerald-400 capitalize">{aasData.primary_driver}</strong> markets, 

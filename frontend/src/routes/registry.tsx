@@ -10,7 +10,8 @@ import MarketMap from "../pages/MarketMap";
 import SectorProjections from "../pages/SectorProjections";
 import StockAnalysis from "../pages/StockAnalysis";
 import SecretOptions from "../pages/SecretOptions";
-import AlternativeAssetStability from "../pages/AlternativeAssetStability";
+import PreciousMetalsDiagnostic from "../pages/PreciousMetalsDiagnostic";
+import CryptoDiagnostic from "../pages/CryptoDiagnostic";
 import AASComponentBreakdown from "../pages/AASComponentBreakdown";
 import InstitutionalFlow from "../pages/InstitutionalFlow";
 import Vision from "../pages/Vision";
@@ -81,8 +82,9 @@ export const routeRegistry: AppRouteDefinition[] = [
   { path: "/tools/weather-research", analyticsName: "Recap", element: <Navigate to="/tools/recap" replace /> },
   { path: "/tools/updates", analyticsName: "Recap", element: <Navigate to="/tools/recap" replace /> },
   { path: "/tools/updates/:slug", analyticsName: "Recap", element: <LegacyRecapSlugRedirect /> },
-  { path: "/precious-metals", analyticsName: "Alternative Assets", element: <Navigate to="/alternative-assets?tab=metals" replace /> },
-  { path: "/alternative-assets", label: "Alternative Assets", analyticsName: "Alternative Assets", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/alternative-assets", element: <AlternativeAssetStability /> },
+  { path: "/precious-metals", analyticsName: "Metals Indicators", element: <Navigate to="/metals-indicators" replace /> },
+  { path: "/metals-indicators", label: "Metals Indicators", analyticsName: "Metals Indicators", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/metals-indicators", element: <PreciousMetalsDiagnostic /> },
+  { path: "/crypto-indicators", label: "Crypto Indicators", analyticsName: "Crypto Indicators", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/crypto-indicators", element: <CryptoDiagnostic /> },
   { path: "/agriculture", label: "Agriculture Index", analyticsName: "Agriculture Index", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/agriculture", element: <AgricultureIndex /> },
   { path: "/energy", label: "Energy Markets", analyticsName: "Energy Markets", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/energy", element: <EnergyIndex /> },
   { path: "/real-estate", label: "Real Estate", analyticsName: "Real Estate", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/real-estate", element: <RealEstateDiagnostic /> },

@@ -276,11 +276,11 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const toneClause = trendTone === "mixed" ? "" : ` It feels ${trendTone}.`;
   let actionSentence = "Context remains mixed.";
   if (primarySignal.direction === "up" && trendTone !== "noisy") {
-    actionSentence = "Participation is improving within alternative assets.";
+    actionSentence = "Participation is improving across metals and crypto.";
   } else if (primarySignal.direction === "down") {
-    actionSentence = "Participation is softening within alternative assets.";
+    actionSentence = "Participation is softening across metals and crypto.";
   }
-  const aasSummary = `Alternative assets reflect shifts in risk appetite and liquidity. ${trendClause}${toneClause} ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
+  const aasSummary = `Metals and crypto reflect shifts in risk appetite and liquidity. ${trendClause}${toneClause} ${leaderPhrase}, ${leaderImpact}; ${actionSentence}`;
   const summaryShort = `${trendWindows.shortLabel} ${primarySignal.direction}${
     secondarySignal.direction === primarySignal.direction
       ? ""
@@ -344,10 +344,10 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   return (
       <div
         className="primary-card primary-card-hover p-4 md:p-6 cursor-pointer h-full"
-        onClick={() => navigate('/alternative-assets')}
+        onClick={() => navigate('/metals-indicators')}
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-stealth-100">Alternative Asset Stability</h3>
+          <h3 className="text-lg font-semibold text-stealth-100">Metals and Crypto Stability</h3>
           <svg className="w-5 h-5 text-stealth-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
           </svg>
@@ -428,7 +428,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
 
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
           <Link
-            to="/alternative-assets?tab=metals"
+            to="/metals-indicators"
             onClick={(event) => event.stopPropagation()}
             className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
             aria-label="Open Metals detail"
@@ -467,7 +467,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
           </Link>
 
           <Link
-            to="/alternative-assets?tab=crypto"
+            to="/crypto-indicators"
             onClick={(event) => event.stopPropagation()}
             className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
             aria-label="Open Crypto detail"

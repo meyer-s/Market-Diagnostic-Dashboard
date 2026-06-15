@@ -24,7 +24,7 @@ export const dashboardCardDetails: Record<
       { label: "System Overview", reason: "Composite anchor for stability read" },
       { label: "Dow Theory", reason: "Confirms trend agreement across transports" },
       { label: "Sector Divergence", reason: "Shows leadership between defense and growth" },
-      { label: "Alternative Assets", reason: "Risk appetite cross-check for confirmation" },
+      { label: "Metals and Crypto", reason: "Risk appetite cross-check for confirmation" },
     ],
   },
   system: {
@@ -34,7 +34,7 @@ export const dashboardCardDetails: Record<
     related: [
       { label: "Dow Theory", reason: "Trend confirmation from price leadership" },
       { label: "Sector Divergence", reason: "Leadership check on regime alignment" },
-      { label: "Alternative Assets", reason: "Cross-check for risk appetite shifts" },
+      { label: "Metals and Crypto", reason: "Cross-check for risk appetite shifts" },
     ],
   },
   dow: {
@@ -44,7 +44,7 @@ export const dashboardCardDetails: Record<
     related: [
       { label: "System Overview", reason: "Composite confirmation for trend context" },
       { label: "Sector Divergence", reason: "Leadership check on sector participation" },
-      { label: "Alternative Assets", reason: "Risk appetite cross-check for confirmation" },
+      { label: "Metals and Crypto", reason: "Risk appetite cross-check for confirmation" },
     ],
   },
   sector: {
@@ -54,12 +54,12 @@ export const dashboardCardDetails: Record<
     related: [
       { label: "System Overview", reason: "Baseline for regime confirmation read" },
       { label: "Dow Theory", reason: "Participation check across transports data" },
-      { label: "Alternative Assets", reason: "Risk appetite cross-check for confirmation" },
+      { label: "Metals and Crypto", reason: "Risk appetite cross-check for confirmation" },
     ],
   },
   aas: {
     context: "Metals vs crypto pressure mix",
-    why: "Alternative assets reveal confidence in fiat risk.",
+    why: "Metals and crypto reveal confidence in fiat risk.",
     methodology: "Composite of metals and crypto stability contributions.",
     related: [
       { label: "System Overview", reason: "Composite anchor for risk regime" },
@@ -92,7 +92,7 @@ const indicatorRelatedSignalsByFamily: Record<MetricFamily, RelatedSignal[]> = {
   ],
   liquidity: [
     { label: "System Overview", reason: "Liquidity anchors broad risk conditions" },
-    { label: "Alternative Assets", reason: "Liquidity cycles drive alt demand" },
+    { label: "Metals and Crypto", reason: "Liquidity cycles drive metals and crypto demand" },
   ],
   growth: [
     { label: "Consumer Health", reason: "Growth signals rely on consumer demand" },
@@ -100,7 +100,7 @@ const indicatorRelatedSignalsByFamily: Record<MetricFamily, RelatedSignal[]> = {
   ],
   sentiment: [
     { label: "System Overview", reason: "Sentiment shifts confirm regime changes" },
-    { label: "Alternative Assets", reason: "Risk appetite cross-check for confidence" },
+    { label: "Metals and Crypto", reason: "Risk appetite cross-check for confidence" },
   ],
   credit: [
     { label: "Bond Market Stability", reason: "Credit spreads signal funding stress" },
@@ -151,15 +151,15 @@ const indicatorRelatedSignalsByFamily: Record<MetricFamily, RelatedSignal[]> = {
     { label: "Market Map", reason: "Leadership shows broader sector rotation" },
   ],
   crypto: [
-    { label: "Alternative Assets", reason: "Crypto drives alt stability signal" },
+    { label: "Crypto Indicators", reason: "Crypto drives metals/crypto stability signal" },
     { label: "Liquidity Proxy", reason: "Liquidity cycles influence crypto demand" },
   ],
   metals: [
-    { label: "Alternative Assets", reason: "Metals drive alt stability signal" },
+    { label: "Metals Indicators", reason: "Metals drive metals/crypto stability signal" },
     { label: "Inflation", reason: "Metals hedge rising inflation expectations" },
   ],
   gold: [
-    { label: "Alternative Assets", reason: "Gold stabilizes alt stability read" },
+    { label: "Metals Indicators", reason: "Gold stabilizes metals/crypto stability read" },
     { label: "Inflation", reason: "Gold tracks long-term inflation expectations" },
   ],
   silver: [
@@ -214,7 +214,7 @@ export const getIndicatorRelatedSignals = (
 
   if (indicatorKey === "LIQUIDITY_PROXY") {
     return [
-      { label: "Alternative Assets", reason: "Liquidity cycles drive alt demand" },
+      { label: "Metals and Crypto", reason: "Liquidity cycles drive metals and crypto demand" },
       { label: "Equity", reason: "Liquidity conditions influence risk assets" },
       { label: "System Overview", reason: "Liquidity shifts move composite regime" },
     ];

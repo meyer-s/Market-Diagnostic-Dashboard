@@ -813,7 +813,7 @@ export default function CryptoDiagnostic({
                 <div className={`text-2xl font-bold ${getSignalTone(diagnosticContext.current_signals.btc_spy_correlation)}`}>
                   {formatSignal(diagnosticContext.current_signals.btc_spy_correlation)}
                 </div>
-                <div className="mt-2 text-xs text-stealth-400">Higher normalized readings mean BTC is acting more like an alternative asset than plain risk beta.</div>
+                <div className="mt-2 text-xs text-stealth-400">Higher normalized readings mean BTC is acting more like a reserve hedge than plain risk beta.</div>
               </div>
               <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4">
                 <div className="text-xs text-stealth-500 mb-1">Alt Breadth Stress</div>

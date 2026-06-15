@@ -167,7 +167,7 @@ const AASComponentBreakdown: React.FC = () => {
           
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Alternative Asset Stability (AAS)
+              Metals and Crypto Stability (AAS)
             </h1>
             <p className="text-gray-600 mb-6">
               Comprehensive 18-component indicator measuring systemic stability through precious metals and cryptocurrency signals
@@ -394,7 +394,7 @@ const AASComponentBreakdown: React.FC = () => {
             <div>
               <h3 className="font-semibold text-blue-900 mb-2">About AAS Indicator</h3>
               <p className="text-blue-800 text-sm mb-3">
-                The Alternative Asset Stability (AAS) indicator measures systemic stability through 18 weighted components
+                The Metals and Crypto Stability (AAS) indicator measures systemic stability through 18 weighted components
                 split equally between precious metals and cryptocurrency markets. Lower stability scores
                 indicate growing distrust in fiat currencies and increased demand for alternative stores of value.
               </p>
