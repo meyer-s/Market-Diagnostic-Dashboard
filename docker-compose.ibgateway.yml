@@ -1,4 +1,22 @@
 services:
+  backend:
+    depends_on:
+      ibgateway:
+        condition: service_started
+    environment:
+      XDG_CONFIG_HOME: /home/appuser/.config
+    volumes:
+      - ./devops/env/ibkr-cli-config.toml:/home/appuser/.config/ibkr-cli/config.toml:ro
+
+  scheduler:
+    depends_on:
+      ibgateway:
+        condition: service_started
+    environment:
+      XDG_CONFIG_HOME: /home/appuser/.config
+    volumes:
+      - ./devops/env/ibkr-cli-config.toml:/home/appuser/.config/ibkr-cli/config.toml:ro
+
   ibgateway:
     build:
       context: ./devops/ibgateway

@@ -9,6 +9,12 @@ Build and start with the production compose project:
 docker compose -f docker-compose.yml -f docker-compose.ibgateway.yml up -d --build ibgateway
 ```
 
+Before using the override for backend or scheduler containers, create the
+untracked `devops/env/ibkr-cli-config.toml` from
+`devops/ibgateway/ibkr-cli-config.toml.example`. The override mounts that file
+into the Python containers so `ibkr-cli` can reach the Gateway service by Docker
+DNS name instead of `127.0.0.1`.
+
 The compose override binds all exposed ports to `127.0.0.1` on the host:
 
 - `4001`: Gateway live API default
