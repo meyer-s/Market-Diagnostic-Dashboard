@@ -19,10 +19,8 @@ from app.services.sector_projection import (
     detect_duplicate_series,
     detect_stale_series,
     fetch_sector_price_history,
-    MODEL_VERSION,
-    WEIGHTS,
+    save_sector_projection_run,
 )
-from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 from app.models.system_status import SystemStatus
 from app.utils.db_helpers import get_db_session
 from app.services.scheduler_lock import scheduler_job_lock
@@ -140,65 +138,22 @@ async def scheduled_etl_job():
             if projections:
                 as_of_date = datetime.utcnow().date()
                 with get_db_session() as db:
-                    prev_run = (
-                        db.query(SectorProjectionRun)
-                        .order_by(SectorProjectionRun.created_at.desc())
-                        .first()
-                    )
-                    prev_cache = None
-                    if prev_run:
-                        prev_values = (
-                            db.query(SectorProjectionValue)
-                            .filter_by(run_id=prev_run.id)
-                            .all()
-                        )
-                        prev_cache = {
-                            "run_id": prev_run.id,
-                            "as_of_date": str(prev_run.as_of_date),
-                            "created_at": prev_run.created_at.isoformat(),
-                            "system_state": prev_run.system_state,
-                            "model_version": prev_run.model_version,
-                            "values": [
-                                {
-                                    "horizon": v.horizon,
-                                    "sector_symbol": v.sector_symbol,
-                                    "sector_name": v.sector_name,
-                                    "score_total": v.score_total,
-                                    "rank": v.rank,
-                                }
-                                for v in prev_values
-                            ],
-                        }
-
-                    run = SectorProjectionRun(
-                        as_of_date=as_of_date,
-                        created_at=datetime.utcnow(),
+                    run, persisted_warnings = save_sector_projection_run(
+                        db,
+                        projections,
                         system_state=system_state,
-                        model_version=MODEL_VERSION,
-                        config_json={
-                            "weights": WEIGHTS,
-                            "data_warnings": warnings,
-                            "previous_run_cache": prev_cache,
-                        },
+                        source_warnings=warnings,
+                        as_of_date=as_of_date,
                     )
-                    db.add(run)
-                    db.flush()
-                    for p in projections:
-                        db.add(SectorProjectionValue(
-                            run_id=run.id,
-                            horizon=p["horizon"],
-                            sector_symbol=p["sector_symbol"],
-                            sector_name=p["sector_name"],
-                            score_total=p["score_total"],
-                            score_trend=p["score_trend"],
-                            score_rel=p["score_rel"],
-                            score_risk=p["score_risk"],
-                            score_regime=p["score_regime"],
-                            metrics_json=p["metrics"],
-                            rank=p["rank"],
-                        ))
-                    db.commit()
-                logger.info(f"✅ Sector projections computed and stored for {as_of_date}")
+                    run_id = run.id
+                    quality_status = (run.config_json or {}).get("quality_status", "valid")
+                logger.info(
+                    "✅ Sector projections computed and stored for %s (run_id=%s, quality=%s, warnings=%s)",
+                    as_of_date,
+                    run_id,
+                    quality_status,
+                    len(persisted_warnings),
+                )
             else:
                 logger.warning("⚠️ No sector projections computed.")
     except Exception as e:

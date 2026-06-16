@@ -5,9 +5,8 @@ Generates alerts when sector leadership patterns diverge from expected market re
 from typing import List, Dict, Any
 from datetime import datetime
 from app.utils.db_helpers import get_db_session
-from app.models.alert import Alert
-from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
-from app.models.system_status import SystemStatus
+from app.models.sector_projection import SectorProjectionValue
+from app.services.sector_projection import get_latest_sector_projection_run
 
 # Sector classifications
 DEFENSIVE_SECTORS = ["XLU", "XLP", "XLV"]
@@ -29,9 +28,7 @@ def check_sector_divergence_alerts() -> List[Dict[str, Any]]:
     
     with get_db_session() as db:
         # Get latest projection run
-        run = db.query(SectorProjectionRun).order_by(
-            SectorProjectionRun.as_of_date.desc()
-        ).first()
+        run = get_latest_sector_projection_run(db)
         
         if not run:
             return alerts
