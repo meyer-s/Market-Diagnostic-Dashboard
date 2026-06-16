@@ -7,6 +7,9 @@ services:
       XDG_CONFIG_HOME: /home/appuser/.config
     volumes:
       - ./devops/env/ibkr-cli-config.toml:/home/appuser/.config/ibkr-cli/config.toml:ro
+    networks:
+      default:
+        ipv4_address: 172.18.0.5
 
   scheduler:
     depends_on:
@@ -16,6 +19,9 @@ services:
       XDG_CONFIG_HOME: /home/appuser/.config
     volumes:
       - ./devops/env/ibkr-cli-config.toml:/home/appuser/.config/ibkr-cli/config.toml:ro
+    networks:
+      default:
+        ipv4_address: 172.18.0.4
 
   ibgateway:
     build:
@@ -39,3 +45,10 @@ services:
 
 volumes:
   ibgateway_jts:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1
