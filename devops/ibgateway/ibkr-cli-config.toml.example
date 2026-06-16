@@ -6,6 +6,12 @@ port = 4003
 client_id = 11
 mode = "paper"
 
+[profiles.gateway-paper-scheduler]
+host = "ibgateway"
+port = 4003
+client_id = 12
+mode = "paper"
+
 [profiles.gateway-live]
 host = "ibgateway"
 port = 4001

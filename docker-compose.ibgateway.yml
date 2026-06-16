@@ -4,6 +4,7 @@ services:
       ibgateway:
         condition: service_started
     environment:
+      IBKR_PROFILE: ${IBKR_BACKEND_PROFILE:-gateway-paper}
       XDG_CONFIG_HOME: /home/appuser/.config
     volumes:
       - ./devops/env/ibkr-cli-config.toml:/home/appuser/.config/ibkr-cli/config.toml:ro
@@ -16,6 +17,7 @@ services:
       ibgateway:
         condition: service_started
     environment:
+      IBKR_PROFILE: ${IBKR_SCHEDULER_PROFILE:-gateway-paper-scheduler}
       XDG_CONFIG_HOME: /home/appuser/.config
     volumes:
       - ./devops/env/ibkr-cli-config.toml:/home/appuser/.config/ibkr-cli/config.toml:ro
