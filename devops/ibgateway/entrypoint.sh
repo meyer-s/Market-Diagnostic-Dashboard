@@ -3,11 +3,33 @@ set -euo pipefail
 
 display="${DISPLAY:-:1}"
 resolution="${XVFB_RESOLUTION:-1280x900x24}"
+display_number="${display#:}"
+display_socket="/tmp/.X11-unix/X${display_number}"
 
 mkdir -p "${HOME}/Jts"
+mkdir -p /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix 2>/dev/null || true
+rm -f "/tmp/.X${display_number}-lock" "${display_socket}" 2>/dev/null || true
 
 Xvfb "${display}" -screen 0 "${resolution}" -ac +extension GLX +render -noreset &
 xvfb_pid="$!"
+
+for _ in {1..50}; do
+  if [[ -S "${display_socket}" ]] && kill -0 "${xvfb_pid}" 2>/dev/null; then
+    break
+  fi
+  if ! kill -0 "${xvfb_pid}" 2>/dev/null; then
+    echo "Xvfb exited before display ${display} became available" >&2
+    wait "${xvfb_pid}" || true
+    exit 1
+  fi
+  sleep 0.1
+done
+
+if [[ ! -S "${display_socket}" ]]; then
+  echo "Display ${display} did not become available" >&2
+  exit 1
+fi
 
 fluxbox >/tmp/fluxbox.log 2>&1 &
 x11vnc_args=(

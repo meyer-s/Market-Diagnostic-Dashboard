@@ -44,6 +44,8 @@ RUN curl -fsSL "${IBGATEWAY_INSTALLER_URL}" -o /tmp/ibgateway-installer.sh && \
 
 RUN useradd --create-home --shell /bin/bash ibgateway && \
     mkdir -p /home/ibgateway/Jts && \
+    mkdir -p /tmp/.X11-unix && \
+    chmod 1777 /tmp/.X11-unix && \
     chown -R ibgateway:ibgateway /home/ibgateway /opt/ibgateway
 
 COPY entrypoint.sh /usr/local/bin/ibgateway-entrypoint.sh
