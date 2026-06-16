@@ -72,6 +72,10 @@ if [[ -n "${IBGATEWAY_TRUSTED_IPS:-}" ]]; then
   set_ini_value "${HOME}/Jts/jts.ini" "IBGateway" "TrustedIPs" "${IBGATEWAY_TRUSTED_IPS}"
 fi
 
+if [[ "${IBGATEWAY_API_PROXY_ENABLED:-true}" == "true" ]]; then
+  python3 /usr/local/bin/ibgateway-api-proxy.py >>/tmp/api-proxy.log 2>&1 &
+fi
+
 Xvfb "${display}" -screen 0 "${resolution}" -ac +extension GLX +render -noreset &
 xvfb_pid="$!"
 

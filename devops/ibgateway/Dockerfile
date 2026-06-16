@@ -49,7 +49,8 @@ RUN useradd --create-home --shell /bin/bash ibgateway && \
     chown -R ibgateway:ibgateway /home/ibgateway /opt/ibgateway
 
 COPY entrypoint.sh /usr/local/bin/ibgateway-entrypoint.sh
-RUN chmod +x /usr/local/bin/ibgateway-entrypoint.sh
+COPY api_proxy.py /usr/local/bin/ibgateway-api-proxy.py
+RUN chmod +x /usr/local/bin/ibgateway-entrypoint.sh /usr/local/bin/ibgateway-api-proxy.py
 
 USER ibgateway
 WORKDIR /home/ibgateway
@@ -58,6 +59,6 @@ ENV DISPLAY=:1
 ENV HOME=/home/ibgateway
 
 VOLUME ["/home/ibgateway/Jts"]
-EXPOSE 4001 4002 5900 6080
+EXPOSE 4001 4002 4003 5900 6080
 
 ENTRYPOINT ["/usr/local/bin/ibgateway-entrypoint.sh"]
