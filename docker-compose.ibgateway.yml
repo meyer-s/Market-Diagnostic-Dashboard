@@ -1,0 +1,23 @@
+services:
+  ibgateway:
+    build:
+      context: ./devops/ibgateway
+      args:
+        IBGATEWAY_INSTALLER_URL: ${IBGATEWAY_INSTALLER_URL:-https://download2.interactivebrokers.com/installers/ibgateway/latest-standalone/ibgateway-latest-standalone-linux-x64.sh}
+        IBGATEWAY_INSTALLER_SHA256: ${IBGATEWAY_INSTALLER_SHA256:-}
+    container_name: market_ibgateway
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-America/New_York}
+      XVFB_RESOLUTION: ${IBGATEWAY_XVFB_RESOLUTION:-1280x900x24}
+      VNC_PASSWORD: ${IBGATEWAY_VNC_PASSWORD:-}
+    volumes:
+      - ibgateway_jts:/home/ibgateway/Jts
+    ports:
+      - "127.0.0.1:4001:4001"
+      - "127.0.0.1:4002:4002"
+      - "127.0.0.1:5900:5900"
+      - "127.0.0.1:6080:6080"
+
+volumes:
+  ibgateway_jts:
