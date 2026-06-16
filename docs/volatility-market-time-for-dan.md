@@ -312,3 +312,45 @@ realized variance-time vs priced future variance-time
 ## One-Line Summary
 
 Volatility is the rate at which variance accumulates. Options price expected future market-time, not calendar time by itself.
+
+## Reference Stack
+
+### Equation Stack
+
+| # | Concept | Equation | Read |
+|---|---|---|---|
+| 1 | Return | `r_t = ln(P_t / P_{t-1})` | Convert price into proportional change. |
+| 2 | Realized variance | `RV_N = sum(r_t^2)` | Accumulated squared movement. |
+| 3 | Realized volatility | `sigma = sqrt(RV_N / N)` | Average rate of variance accumulation per period. |
+| 4 | Historical volatility | `HV_N = stdev(r_t) x sqrt(252)` | Annualized realized volatility. |
+| 5 | Calendar time | `T = DTE / 365` or `trading days / 252` | Time container, not risk itself. |
+| 6 | Implied variance | `IVar = IV^2 x T` | Option-time pricing core. |
+| 7 | Expected move | `EM ~= S x IV x sqrt(T)` | Approximate one-standard-deviation price range. |
+| 8 | Forward variance | `FV = (IV_2^2 x T_2 - IV_1^2 x T_1) / (T_2 - T_1)` | Variance priced between expiries. |
+| 9 | Forward IV | `Forward IV = sqrt(FV)` | Forward variance expressed as volatility. |
+| 10 | Variance consumed | `Consumed = RV / (IV^2 x T)` | Pace of realized vs priced variance. |
+| 11 | Variance carry | `Carry = IV^2 - HV^2` | Implied variance minus realized variance. |
+| 12 | Implied variance premium | `IV^2 x T - E[RV_future]` | Priced variance vs expected future variance. |
+
+### Interpretation Rules
+
+| Condition | Read |
+|---|---|
+| `Consumed < 1` | Moved less than priced. |
+| `Consumed > 1` | Moved more than priced. |
+| `IV^2 > HV^2` | Options price more variance than recent history. |
+| `IV^2 < HV^2` | Options price less variance than recent history. |
+| `IV^2 x T > E[RV]` | Options may be expensive. |
+| `IV^2 x T < E[RV]` | Options may be cheap. |
+
+### Final Form
+
+| Input Chain | Meaning |
+|---|---|
+| `Price path -> returns -> realized variance` | Realized market-time |
+| `Option price -> IV -> implied variance` | Priced future market-time |
+| `sum(r_t^2) vs IV^2 x T` | Core comparison |
+
+### Scanner Question
+
+Is the market mispricing future variance relative to the state of the time series?
