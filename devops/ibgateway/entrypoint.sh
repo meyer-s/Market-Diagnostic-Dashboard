@@ -11,6 +11,67 @@ mkdir -p /tmp/.X11-unix
 chmod 1777 /tmp/.X11-unix 2>/dev/null || true
 rm -f "/tmp/.X${display_number}-lock" "${display_socket}" 2>/dev/null || true
 
+set_ini_value() {
+  local file="$1"
+  local section="$2"
+  local key="$3"
+  local value="$4"
+  local tmp="${file}.tmp"
+
+  if [[ ! -f "${file}" ]]; then
+    printf '[%s]\n%s=%s\n' "${section}" "${key}" "${value}" >"${file}"
+    return
+  fi
+
+  awk -v section="${section}" -v key="${key}" -v value="${value}" '
+    BEGIN {
+      section_header = "[" section "]"
+      in_section = 0
+      section_seen = 0
+      key_set = 0
+    }
+    $0 == section_header {
+      if (in_section && !key_set) {
+        print key "=" value
+        key_set = 1
+      }
+      in_section = 1
+      section_seen = 1
+      print
+      next
+    }
+    /^\[/ {
+      if (in_section && !key_set) {
+        print key "=" value
+        key_set = 1
+      }
+      in_section = 0
+    }
+    in_section && index($0, key "=") == 1 {
+      if (!key_set) {
+        print key "=" value
+        key_set = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!section_seen) {
+        print ""
+        print section_header
+        print key "=" value
+      } else if (in_section && !key_set) {
+        print key "=" value
+      }
+    }
+  ' "${file}" >"${tmp}"
+  mv "${tmp}" "${file}"
+}
+
+if [[ -n "${IBGATEWAY_TRUSTED_IPS:-}" ]]; then
+  set_ini_value "${HOME}/Jts/jts.ini" "IBGateway" "TrustedIPs" "${IBGATEWAY_TRUSTED_IPS}"
+fi
+
 Xvfb "${display}" -screen 0 "${resolution}" -ac +extension GLX +render -noreset &
 xvfb_pid="$!"
 
