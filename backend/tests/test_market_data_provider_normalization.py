@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from app.services.market_data.date_utils import expiry_to_ibkr, expiry_to_iso, parse_option_expiry
-from app.services.market_data.ibkr_cli_provider import _ibkr_option_rows_to_frames
+from app.services.market_data.ibkr_cli_provider import _ibkr_option_rows_to_frames, _quote_market_data_modes
 from app.services.options_quotes import option_quote_from_row
 
 
@@ -71,3 +71,8 @@ def test_option_quote_from_normalized_ibkr_row_prefers_mid() -> None:
     assert quote["premium"] == pytest.approx(1.3)
     assert quote["price_source"] == "mid"
     assert quote["quote_source"] == "delayed"
+
+
+def test_ibkr_quote_mode_order_prefers_delayed_when_allowed() -> None:
+    assert _quote_market_data_modes(True) == [3, 4, 1, 2]
+    assert _quote_market_data_modes(False) == [1, 2, 3, 4]

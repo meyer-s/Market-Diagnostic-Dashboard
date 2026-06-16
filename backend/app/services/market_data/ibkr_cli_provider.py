@@ -12,6 +12,13 @@ import pandas as pd
 from app.services.market_data.date_utils import expiry_to_ibkr, expiry_to_iso
 from app.services.market_data.provider import OptionChainFrame, OptionRight, UnderlyingQuote
 from app.services.market_data.symbol_mapping import ibkr_symbol_candidates
+from ibkr_cli.ib_service import (
+    _capture_ib_errors,
+    _quote_has_useful_prices,
+    _quote_snapshot_payload,
+    _suppress_ib_async_logs,
+    ib_session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,24 +94,13 @@ class IbkrCliProvider:
         self._symbol_cache: dict[str, str] = {}
 
     def quote(self, symbol: str) -> UnderlyingQuote:
-        from ibkr_cli.ib_service import get_quote_snapshot
-
         normalized = symbol.upper()
         key = ("quote", normalized)
         cached = self._cache.get(key)
         if cached is not None:
             return cached
 
-        def fetch(api_symbol: str) -> dict[str, Any]:
-            return get_quote_snapshot(
-                self.profile,
-                symbol=api_symbol,
-                exchange=self.exchange,
-                currency=self.currency,
-                timeout=self.timeout,
-            )
-
-        payload = self._call_with_symbol(normalized, fetch)
+        payload = self._call_with_symbol(normalized, self._quote_snapshot_with_fallback)
         quote = UnderlyingQuote(
             symbol=normalized,
             last=_num(payload.get("last")),
@@ -311,6 +307,39 @@ class IbkrCliProvider:
             return payload
         raise RuntimeError(f"IBKR request failed for {normalized}: {last_exc}") from last_exc
 
+    def _quote_snapshot_with_fallback(self, api_symbol: str) -> dict[str, Any]:
+        from ib_async import Stock
+
+        modes = _quote_market_data_modes(self.allow_delayed)
+
+        with ib_session(self.profile, timeout=max(self.timeout, 10.0), readonly=True) as ib:
+            contract = Stock(symbol=api_symbol.upper(), exchange=self.exchange, currency=self.currency)
+            qualified = ib.qualifyContracts(contract)
+            if not qualified:
+                raise RuntimeError(f"Unable to qualify contract for symbol '{api_symbol}'.")
+
+            qualified_contract = qualified[0]
+            matcher = lambda current_contract: current_contract is not None and getattr(current_contract, "conId", None) == qualified_contract.conId
+            last_payload: dict[str, Any] | None = None
+            for mode in modes:
+                with _capture_ib_errors(ib, matcher) as raw_errors:
+                    with _suppress_ib_async_logs():
+                        ib.reqMarketDataType(mode)
+                        ticker = ib.reqTickers(qualified_contract)[0]
+                last_payload = _quote_snapshot_payload(ticker, qualified_contract)
+                last_payload["quote_source"] = _quote_source_for_market_data_type(mode)
+                last_payload["requested_market_data_type"] = modes[0]
+                last_payload["returned_market_data_type"] = mode
+                last_payload["fallback_applied"] = mode != modes[0]
+                last_payload["raw_error_codes"] = sorted({int(error["code"]) for error in raw_errors})
+                last_payload["raw_errors"] = raw_errors
+                if _quote_has_useful_prices(last_payload):
+                    return last_payload
+
+            if last_payload is not None:
+                return last_payload
+            raise RuntimeError(f"Unable to retrieve quote snapshot for '{api_symbol}'.")
+
     def _get_option_quotes_with_fallback(
         self,
         *,
@@ -420,6 +449,10 @@ def _quote_source_for_market_data_type(mode: int) -> str:
         3: "delayed",
         4: "delayed_frozen",
     }.get(mode, f"market_data_type_{mode}")
+
+
+def _quote_market_data_modes(allow_delayed: bool) -> list[int]:
+    return [3, 4, 1, 2] if allow_delayed else [1, 2, 3, 4]
 
 
 def _ticker_to_option_row(ticker: object, market_data_type: int) -> dict[str, Any]:
