@@ -4,8 +4,15 @@ Dan,
 
 The clean way to think about this is:
 
-> Volatility is the clock speed of variance-time.
-> Options do not price calendar time alone. They price expected future variance across calendar time.
+> Volatility is the rate at which variance accumulates.
+> Higher volatility means more market-time passes inside the same calendar-time window.
+> Options price that expected future variance, not time by itself.
+
+Plain English:
+
+A 30-day option is not just paying for 30 calendar days. It is paying for how much movement the market expects during those 30 days.
+
+If the stock barely moves, little market-time has passed. If the stock moves violently, a lot of market-time has passed, even though the same number of calendar days went by.
 
 ```text
 realized variance-time = accumulated realized variance
@@ -225,6 +232,55 @@ How much future variance is plausible over the option's life?
 Is the sweep paying a fair price for movement, or overpaying for time?
 ```
 
+## 12. Inferring Priced Market-Time From Premiums
+
+The useful part for the bot is that we do not have to invent the market's clock from scratch.
+
+Other traders are already pricing time and movement into option premiums. Once the market gives us:
+
+```text
+option premium
+underlying price
+strike
+expiration
+rates/dividends, if needed
+```
+
+we can back out implied volatility. From there, we can convert the premium into implied variance:
+
+```text
+option premium -> implied volatility -> IV^2 x T
+```
+
+That means we can almost derive the market's priced version of time by leapfrogging off the option market's own pricing.
+
+The bot is not saying:
+
+```text
+This option has 30 days, so it has 30 units of time value.
+```
+
+It is saying:
+
+```text
+The market charged this much premium for this expiration.
+That premium implies this much volatility.
+That volatility implies this much total variance over the option's life.
+That total variance is the amount of priced market-time embedded in the trade.
+```
+
+Then the bot can compare:
+
+```text
+priced market-time in the sweep
+vs
+recent realized market-time
+vs
+forecast future market-time
+```
+
+This is why a high-premium sweep is not automatically attractive. The buyer may be paying for a lot of market-time that the underlying may not actually deliver.
+
 ## Final Form
 
 ```text
@@ -255,4 +311,4 @@ realized variance-time vs priced future variance-time
 
 ## One-Line Summary
 
-Volatility is the clock speed of variance-time. Options price expected future variance-time, not calendar time alone.
+Volatility is the rate at which variance accumulates. Options price expected future market-time, not calendar time by itself.
