@@ -10,14 +10,25 @@ Xvfb "${display}" -screen 0 "${resolution}" -ac +extension GLX +render -noreset 
 xvfb_pid="$!"
 
 fluxbox >/tmp/fluxbox.log 2>&1 &
-x11vnc_args=(-display "${display}" -forever -shared -listen 0.0.0.0 -rfbport 5900)
+x11vnc_args=(
+  -display "${display}"
+  -forever
+  -shared
+  -listen 0.0.0.0
+  -rfbport 5900
+  -noxdamage
+  -noxfixes
+)
 if [[ -n "${VNC_PASSWORD:-}" ]]; then
   x11vnc -storepasswd "${VNC_PASSWORD}" /tmp/vnc.pass >/dev/null 2>&1
   x11vnc_args+=(-rfbauth /tmp/vnc.pass)
 else
   x11vnc_args+=(-nopw)
 fi
-x11vnc "${x11vnc_args[@]}" >/tmp/x11vnc.log 2>&1 &
+while true; do
+  x11vnc "${x11vnc_args[@]}" >>/tmp/x11vnc.log 2>&1 || true
+  sleep 2
+done &
 
 web_root="/usr/share/novnc"
 if [[ -d "${web_root}" ]]; then
