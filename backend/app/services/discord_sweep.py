@@ -8,9 +8,9 @@ from typing import List, Optional
 
 import pandas as pd
 import requests
-import yfinance as yf
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
+from app.services.market_data.factory import get_market_data_provider
 from app.services.options_alerts import (
     _build_alert_reason,
     _compute_option_bias,
@@ -82,6 +82,7 @@ def _scan_tickers_for_discord(
     """
     alerts = []
     scanned = 0
+    provider = get_market_data_provider()
     
     for symbol in tickers[:max_count]:
         symbol = _normalize_symbol(symbol)
@@ -90,17 +91,16 @@ def _scan_tickers_for_discord(
         
         scanned += 1
         try:
-            stock = yf.Ticker(symbol)
-            if not stock.options:
+            if not provider.option_expirations(symbol):
                 continue
             
-            current_price = _get_current_price(stock)
+            current_price = _get_current_price(provider, symbol)
             if current_price is None:
                 continue
             
-            history = stock.history(period="1y")
+            history = provider.daily_bars(symbol, days=365)
             hv30 = compute_historical_volatility(history, 30) if history is not None else None
-            metrics = compute_optionality_metrics(stock, current_price, hv30)
+            metrics = compute_optionality_metrics(provider, symbol, current_price, hv30)
             iv_percentile = metrics.get("iv_percentile")
             iv30 = metrics.get("iv30")
             

@@ -15,6 +15,8 @@ from app.api.stock_projection import compute_historical_volatility
 from app.models.option_positions import OptionPosition
 from app.models.closed_positions import ClosedPosition
 from app.models.options_alerts import OptionAlertEvent
+from app.services.market_data.factory import get_market_data_provider
+from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import option_quote_from_row
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
@@ -465,12 +467,29 @@ def _seed_positions(db) -> None:
     db.commit()
 
 
-def _resolve_option_row(stock: yf.Ticker, expiration: date, option_type: str, strike: float) -> Optional[pd.Series]:
+def _resolve_option_row(
+    provider: MarketDataProvider,
+    symbol: str,
+    expiration: date,
+    option_type: str,
+    strike: float,
+) -> Optional[pd.Series]:
     try:
-        chain = stock.option_chain(expiration.strftime("%Y-%m-%d"))
+        side = "CALL" if option_type.lower() == "call" else "PUT"
+        try:
+            available_strikes = provider.option_strikes(symbol, expiration.isoformat())
+            strikes = sorted(available_strikes, key=lambda value: abs(float(value) - float(strike)))[:3]
+        except Exception:
+            strikes = [float(strike)]
+        chain = provider.option_chain(
+            symbol,
+            expiration.isoformat(),
+            right=side,
+            strikes=strikes or [float(strike)],
+        )
     except Exception:
         return None
-    frame = chain.calls if option_type.lower() == "call" else chain.puts
+    frame = chain.calls if side == "CALL" else chain.puts
     if frame is None or frame.empty or "strike" not in frame.columns:
         return None
     frame = frame.dropna(subset=["strike"])
@@ -499,10 +518,9 @@ def _quote_payload_from_row(row: Optional[pd.Series]) -> Dict[str, object]:
     }
 
 
-def _market_data_for_symbol(symbol: str) -> Dict[str, object]:
-    stock = yf.Ticker(symbol)
+def _market_data_for_symbol(provider: MarketDataProvider, symbol: str) -> Dict[str, object]:
     try:
-        history = stock.history(period="5d")
+        quote = provider.quote(symbol)
     except Exception as exc:
         return {
             "current_price": None,
@@ -512,26 +530,9 @@ def _market_data_for_symbol(symbol: str) -> Dict[str, object]:
             "last_updated": datetime.utcnow().isoformat(),
             "error": str(exc),
         }
-    if history is None or history.empty or "Close" not in history.columns:
-        return {
-            "current_price": None,
-            "previous_close": None,
-            "change": None,
-            "change_percent": None,
-            "last_updated": datetime.utcnow().isoformat(),
-        }
-    close = history["Close"].dropna()
-    if close.empty:
-        return {
-            "current_price": None,
-            "previous_close": None,
-            "change": None,
-            "change_percent": None,
-            "last_updated": datetime.utcnow().isoformat(),
-        }
-    current = float(close.iloc[-1])
-    previous = float(close.iloc[-2]) if len(close) >= 2 else current
-    change = current - previous
+    current = quote.price
+    previous = quote.close
+    change = current - previous if current is not None and previous is not None else None
     change_pct = (change / previous) * 100 if previous else None
     return {
         "current_price": current,
@@ -539,6 +540,8 @@ def _market_data_for_symbol(symbol: str) -> Dict[str, object]:
         "change": change,
         "change_percent": change_pct,
         "last_updated": datetime.utcnow().isoformat(),
+        "data_source": provider.name,
+        "quote_source": quote.quote_source,
     }
 
 
@@ -570,10 +573,16 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
 
 
 def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
-    stock = yf.Ticker(position.symbol)
-    market = _market_data_for_symbol(position.symbol)
+    provider = get_market_data_provider()
+    market = _market_data_for_symbol(provider, position.symbol)
 
-    option_row = _resolve_option_row(stock, position.expiration, position.option_type, position.strike)
+    option_row = _resolve_option_row(
+        provider,
+        position.symbol,
+        position.expiration,
+        position.option_type,
+        position.strike,
+    )
     quote = _quote_payload_from_row(option_row)
     implied_vol = None
     option_price = None
@@ -601,7 +610,7 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
 
     # Get historical volatility as fallback
     try:
-        hist = stock.history(period="6mo")
+        hist = provider.daily_bars(position.symbol, days=180)
     except Exception:
         hist = None
     try:

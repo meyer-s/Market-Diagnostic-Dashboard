@@ -37,6 +37,8 @@ env/
 .env.local
 .env.*.local
 devops/env/backend.env
+!devops/env/
+!devops/env/*.example
 
 # Local handoff notes
 docs/options-mispricing-ibkr-roadmap.md
@@ -61,6 +63,7 @@ package-lock.json
 dist/
 dist-ssr/
 *.local
+*.tsbuildinfo
 
 # Backup files
 *.backup
