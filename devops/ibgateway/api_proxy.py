@@ -17,7 +17,9 @@ LISTEN_HOST = os.getenv("IBGATEWAY_API_PROXY_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.getenv("IBGATEWAY_API_PROXY_PORT", "4003"))
 TARGET_HOST = os.getenv("IBGATEWAY_API_PROXY_TARGET_HOST", "127.0.0.1")
 TARGET_PORT = int(os.getenv("IBGATEWAY_API_PROXY_TARGET_PORT", "4002"))
-ALLOWED_IPS = _parse_allowed_ips(os.getenv("IBGATEWAY_API_PROXY_ALLOWED_IPS", ""))
+ALLOWED_IPS = _parse_allowed_ips(
+    os.getenv("IBGATEWAY_API_PROXY_ALLOWED_IPS", "172.18.0.4,172.18.0.5")
+)
 
 
 def _log(message: str) -> None:
