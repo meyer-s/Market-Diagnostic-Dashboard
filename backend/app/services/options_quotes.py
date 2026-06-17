@@ -49,12 +49,14 @@ def option_quote_from_row(row: Optional[pd.Series]) -> dict[str, object]:
             "mid": None,
             "premium": None,
             "price_source": None,
+            "data_source": None,
             "spread": None,
             "spread_pct": None,
             "volume": None,
             "open_interest": None,
             "implied_volatility": None,
             "last_trade_date": None,
+            "quote_source": None,
             "quality": "missing",
         }
 
@@ -86,6 +88,7 @@ def option_quote_from_row(row: Optional[pd.Series]) -> dict[str, object]:
         "mid": mid,
         "premium": premium,
         "price_source": price_source,
+        "data_source": row.get("dataSource"),
         "spread": spread,
         "spread_pct": spread_pct,
         "volume": quote_int(row.get("volume")),

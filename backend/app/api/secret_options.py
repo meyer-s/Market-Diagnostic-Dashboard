@@ -527,7 +527,10 @@ def _resolve_option_row(
         return None
     frame = frame.copy()
     frame["strike_delta"] = (frame["strike"] - strike).abs()
-    row = frame.sort_values("strike_delta").iloc[0]
+    row = frame.sort_values("strike_delta").iloc[0].copy()
+    row["dataSource"] = chain.source
+    if chain.quote_source and ("quoteSource" not in row or pd.isna(row.get("quoteSource"))):
+        row["quoteSource"] = chain.quote_source
     return row
 
 
@@ -544,6 +547,8 @@ def _quote_payload_from_row(row: Optional[pd.Series]) -> Dict[str, object]:
         "open_interest": quote.get("open_interest"),
         "implied_volatility": quote.get("implied_volatility"),
         "last_trade_at": quote.get("last_trade_date"),
+        "data_source": quote.get("data_source"),
+        "quote_source": quote.get("quote_source"),
         "quality": quote.get("quality"),
     }
 
@@ -558,6 +563,8 @@ def _market_data_for_symbol(provider: MarketDataProvider, symbol: str) -> Dict[s
             "change": None,
             "change_percent": None,
             "last_updated": datetime.utcnow().isoformat(),
+            "data_source": getattr(provider, "name", "unknown"),
+            "quote_source": None,
             "error": str(exc),
         }
     current = quote.price
@@ -570,7 +577,7 @@ def _market_data_for_symbol(provider: MarketDataProvider, symbol: str) -> Dict[s
         "change": change,
         "change_percent": change_pct,
         "last_updated": datetime.utcnow().isoformat(),
-        "data_source": provider.name,
+        "data_source": quote.source or provider.name,
         "quote_source": quote.quote_source,
     }
 
@@ -584,9 +591,26 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
             "change_percent": None,
             "implied_volatility": None,
             "last_updated": datetime.utcnow().isoformat(),
+            "data_source": None,
+            "quote_source": None,
         },
         "option_price": None,
         "option_price_source": None,
+        "quote": {
+            "bid": None,
+            "ask": None,
+            "last": None,
+            "mid": None,
+            "spread": None,
+            "spread_pct": None,
+            "volume": None,
+            "open_interest": None,
+            "implied_volatility": None,
+            "last_trade_at": None,
+            "data_source": None,
+            "quote_source": None,
+            "quality": "missing",
+        },
         "volatility": None,
         "volatility_source": None,
         "dte": None,

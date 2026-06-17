@@ -51,6 +51,8 @@ interface PositionMetrics {
     change_percent: number | null;
     implied_volatility: number | null;
     last_updated: string;
+    data_source?: string | null;
+    quote_source?: string | null;
   };
   option_price: number | null;
   option_price_source: string | null;
@@ -65,6 +67,8 @@ interface PositionMetrics {
     open_interest: number | null;
     implied_volatility: number | null;
     last_trade_at: string | null;
+    data_source?: string | null;
+    quote_source?: string | null;
     quality: string | null;
   };
   volatility: number | null;
@@ -250,6 +254,18 @@ const formatSigned = (value: number | null | undefined, digits = 2) => {
 const capitalizeWord = (value: string) => {
   if (!value) return value;
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+};
+
+const formatDataSource = (source?: string | null, quoteSource?: string | null) => {
+  const normalized = source?.trim().toLowerCase();
+  const provider =
+    normalized === "ibkr"
+      ? "IBKR"
+      : normalized === "yahoo" || normalized === "yfinance"
+        ? "yfinance"
+        : source?.trim() || "Unknown";
+  const detail = quoteSource?.trim();
+  return detail ? `${provider} (${detail.replace(/_/g, " ")})` : provider;
 };
 
 const clampUnit = (value: number) => Math.max(-1, Math.min(1, value));
@@ -502,21 +518,28 @@ const normalizePositionMetrics = (
       change_percent: metrics?.market?.change_percent ?? null,
       implied_volatility: metrics?.market?.implied_volatility ?? null,
       last_updated: metrics?.market?.last_updated ?? "",
+      data_source: metrics?.market?.data_source ?? null,
+      quote_source: metrics?.market?.quote_source ?? null,
     },
     option_price: metrics?.option_price ?? null,
     option_price_source: metrics?.option_price_source ?? null,
-    quote: metrics?.quote ?? {
-      bid: null,
-      ask: null,
-      last: null,
-      mid: null,
-      spread: null,
-      spread_pct: null,
-      volume: null,
-      open_interest: null,
-      implied_volatility: null,
-      last_trade_at: null,
-      quality: null,
+    quote: {
+      ...{
+        bid: null,
+        ask: null,
+        last: null,
+        mid: null,
+        spread: null,
+        spread_pct: null,
+        volume: null,
+        open_interest: null,
+        implied_volatility: null,
+        last_trade_at: null,
+        data_source: null,
+        quote_source: null,
+        quality: null,
+      },
+      ...(metrics?.quote ?? {}),
     },
     volatility: metrics?.volatility ?? null,
     volatility_source: metrics?.volatility_source ?? null,
@@ -1473,6 +1496,11 @@ export default function SecretOptions() {
                     position.source_match_confidence,
                     position.source_match_notes
                   );
+                  const optionQuoteSource = formatDataSource(metrics.quote?.data_source, metrics.quote?.quote_source);
+                  const underlyingQuoteSource = formatDataSource(
+                    metrics.market?.data_source,
+                    metrics.market?.quote_source
+                  );
                   const rowActive = position.id === selectedId;
                   return (
                     <tr
@@ -1497,14 +1525,22 @@ export default function SecretOptions() {
                       <td className="px-3 py-2">{position.contracts}</td>
                       <td className="px-3 py-2">{formatCurrency(position.fill_price, 2)}</td>
                       <td className="px-3 py-2">
-                        {metrics.option_price !== null
-                          ? formatCurrency(metrics.option_price, 2)
-                          : "—"}
+                        <div className="flex flex-col gap-0.5">
+                          <span>{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
+                          <span className="text-[10px] uppercase text-gray-500">{optionQuoteSource}</span>
+                        </div>
                       </td>
                       <td className="px-3 py-2">
-                        {metrics.market.current_price !== null
-                          ? formatCurrency(metrics.market.current_price, 2)
-                          : "—"}
+                        <div className="flex flex-col gap-0.5">
+                          <span>
+                            {metrics.market.current_price !== null
+                              ? formatCurrency(metrics.market.current_price, 2)
+                              : "—"}
+                          </span>
+                          <span className="text-[10px] uppercase text-gray-500">
+                            {underlyingQuoteSource}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-3 py-2">{metrics.dte ?? "—"}</td>
                       <td
@@ -1594,6 +1630,14 @@ export default function SecretOptions() {
                   {selected.metrics.volatility ? `(${formatPercent(selected.metrics.volatility * 100, 1)})` : ""}
                 </div>
                 <div>Option price: {selected.metrics.option_price_source || "n/a"}</div>
+                <div>
+                  Option quote source:{" "}
+                  {formatDataSource(selected.metrics.quote?.data_source, selected.metrics.quote?.quote_source)}
+                </div>
+                <div>
+                  Underlying source:{" "}
+                  {formatDataSource(selected.metrics.market?.data_source, selected.metrics.market?.quote_source)}
+                </div>
                 <div>
                   Quote: bid{" "}
                   {selected.metrics.quote?.bid !== null && selected.metrics.quote?.bid !== undefined
