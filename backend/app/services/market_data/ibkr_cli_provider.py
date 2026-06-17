@@ -12,13 +12,21 @@ import pandas as pd
 from app.services.market_data.date_utils import expiry_to_ibkr, expiry_to_iso
 from app.services.market_data.provider import OptionChainFrame, OptionRight, UnderlyingQuote
 from app.services.market_data.symbol_mapping import ibkr_symbol_candidates
-from ibkr_cli.ib_service import (
-    _capture_ib_errors,
-    _quote_has_useful_prices,
-    _quote_snapshot_payload,
-    _suppress_ib_async_logs,
-    ib_session,
-)
+
+try:
+    from ibkr_cli.ib_service import (
+        _capture_ib_errors,
+        _quote_has_useful_prices,
+        _quote_snapshot_payload,
+        _suppress_ib_async_logs,
+        ib_session,
+    )
+except ModuleNotFoundError:
+    _capture_ib_errors = None
+    _quote_has_useful_prices = None
+    _quote_snapshot_payload = None
+    _suppress_ib_async_logs = None
+    ib_session = None
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +71,11 @@ class TtlCache:
 
     def set(self, key: tuple[Any, ...], value: Any, ttl_seconds: float) -> None:
         self._items[key] = _CacheEntry(value=value, expires_at=time.time() + ttl_seconds)
+
+
+def _require_ibkr_cli() -> None:
+    if ib_session is None:
+        raise RuntimeError("ibkr_cli is required for IBKR market data but is not installed")
 
 
 class IbkrCliProvider:
@@ -319,6 +332,7 @@ class IbkrCliProvider:
     def _quote_snapshot_with_fallback(self, api_symbol: str) -> dict[str, Any]:
         from ib_async import Stock
 
+        _require_ibkr_cli()
         modes = _quote_market_data_modes(self.allow_delayed)
 
         with ib_session(self.profile, timeout=self.timeout, readonly=True) as ib:
@@ -357,15 +371,13 @@ class IbkrCliProvider:
         strikes: Optional[list[float]],
         right: str,
     ) -> dict[str, Any]:
-        from ibkr_cli.ib_service import ib_session
         from ib_async import Option, Stock
 
+        _require_ibkr_cli()
         if not strikes:
             raise ValueError("IbkrCliProvider.option_chain requires an explicit strike list")
 
-        modes = [1]
-        if self.allow_delayed:
-            modes.extend([2, 3, 4])
+        modes = _quote_market_data_modes(self.allow_delayed)
 
         with ib_session(self.profile, timeout=self.timeout, readonly=True) as ib:
             underlying = Stock(symbol=api_symbol.upper(), exchange=self.exchange, currency=self.currency)

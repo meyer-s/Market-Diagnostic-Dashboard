@@ -4,6 +4,7 @@ Discord sweep - reuses existing sweep scripts
 import os
 import time
 import threading
+from collections import Counter
 from typing import Any
 
 import requests
@@ -17,6 +18,21 @@ from app.services.discord_sweep_universe import resolve_sweep_universe
 DISCORD_API_BASE = "https://discord.com/api/v10"
 _ACTIVE_SWEEPS: dict[str, threading.Event] = {}
 _ACTIVE_SWEEPS_LOCK = threading.Lock()
+
+
+def _source_summary(hit_details: list[dict[str, Any]]) -> str:
+    counts: Counter[str] = Counter()
+    for detail in hit_details:
+        selected = detail.get("selected_contract") or {}
+        source = (
+            selected.get("data_source")
+            or detail.get("data_source")
+            or "unknown"
+        )
+        quote_source = selected.get("quote_source") or detail.get("quote_source")
+        label = f"{source}/{quote_source}" if quote_source and quote_source != source else str(source)
+        counts[label] += 1
+    return ", ".join(f"{source}: {count}" for source, count in counts.most_common())
 
 
 def _sweep_key(channel_id: str | None) -> str:
@@ -126,6 +142,7 @@ async def execute_sweep(
         if os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower() == "ibkr":
             default_pause = float(os.getenv("IBKR_SWEEP_PAUSE_SECONDS", "0.25"))
         pause_seconds = float(os.getenv("DISCORD_SWEEP_PAUSE_SECONDS", default_pause))
+        provider_name = os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower() or "yahoo"
         status_every = int(os.getenv("DISCORD_SWEEP_STATUS_EVERY_TICKERS", "100"))
         status_min_seconds = float(os.getenv("DISCORD_SWEEP_STATUS_MIN_SECONDS", "60"))
         rate_limit_backoff_seconds = float(
@@ -146,6 +163,7 @@ async def execute_sweep(
         start_content = (
             f"Options sweep started. {label} "
             f"Tickers: {len(tickers)} Threshold: {threshold:.1f}% "
+            f"Data: {provider_name} "
             f"Pause: {pause_seconds:.2f}s "
             f"Rate-limit backoff: {rate_limit_backoff_seconds:.0f}s"
         )
@@ -176,6 +194,7 @@ async def execute_sweep(
             None,
             pause_seconds=pause_seconds,
             capture_hit_symbols=True,
+            capture_hit_details=True,
             progress_callback=progress_callback,
             should_stop=stop_event.is_set,
             rate_limit_backoff_seconds=rate_limit_backoff_seconds,
@@ -185,8 +204,12 @@ async def execute_sweep(
         )
         hits = 0
         hit_symbols: list[str] = []
+        hit_details: list[dict[str, Any]] = []
         if isinstance(hits_result, tuple):
-            hits, hit_symbols = hits_result
+            if len(hits_result) == 3:
+                hits, hit_symbols, hit_details = hits_result
+            else:
+                hits, hit_symbols = hits_result
         else:
             hits = hits_result
         print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
@@ -199,6 +222,8 @@ async def execute_sweep(
             preview = ", ".join(hit_symbols[:12])
             suffix = "" if len(hit_symbols) <= 12 else f" (+{len(hit_symbols) - 12} more)"
             details += f"\nHit symbols: {preview}{suffix}"
+        if hit_details:
+            details += f"\nData sources: {_source_summary(hit_details)}"
 
         status = "stopped" if stop_event.is_set() else "finished"
         content = f"Options sweep {status}. {label} Scanned tickers {total} Hits: {hits}{details}"
@@ -267,7 +292,7 @@ def _build_progress_callback(
                 else "Retry budget exhausted for this ticker; moving on."
             )
             content = (
-                "Options sweep status: Yahoo Finance may be throttling requests. "
+                "Options sweep status: market data provider may be throttling requests. "
                 f"Last symbol: {symbol}. "
                 f"Scanned {scanned}/{total_expected}; hits {hits}; "
                 f"errors {errors}; rate-limit warnings {rate_limit_errors}. "
@@ -314,7 +339,7 @@ def _build_progress_callback(
             f"Hits: {hits}. Errors: {errors}."
         )
         if rate_limit_errors:
-            content += f" Yahoo/rate-limit warnings: {rate_limit_errors}."
+            content += f" Market-data warnings: {rate_limit_errors}."
         _send_followup_message_sync(
             application_id,
             interaction_token,

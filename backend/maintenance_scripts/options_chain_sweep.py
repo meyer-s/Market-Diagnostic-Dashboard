@@ -57,6 +57,49 @@ def _normalize_symbol(symbol: str) -> str:
     return symbol.replace(".", "-").upper()
 
 
+def _parse_float_list(value: Optional[str], default: list[float]) -> list[float]:
+    if not value:
+        return list(default)
+    parsed: list[float] = []
+    for part in value.split(","):
+        try:
+            number = float(part.strip())
+        except Exception:
+            continue
+        if number > 0:
+            parsed.append(number)
+    return parsed or list(default)
+
+
+def _int_env(name: str, default: Optional[int]) -> Optional[int]:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except Exception:
+        return default
+    return value if value > 0 else None
+
+
+def _sweep_optionality_config(provider_name: str) -> dict[str, Any]:
+    provider_key = (provider_name or "").strip().lower()
+    if provider_key == "ibkr":
+        return {
+            "max_expiries": _int_env("IBKR_SWEEP_OPTIONALITY_MAX_EXPIRIES", 3),
+            "strike_thresholds": _parse_float_list(
+                os.getenv("IBKR_SWEEP_STRIKE_WINDOWS"),
+                [0.08, 0.15],
+            ),
+            "contract_max_expiries": _int_env("IBKR_SWEEP_CONTRACT_MAX_EXPIRIES", 3),
+        }
+    return {
+        "max_expiries": _int_env("SWEEP_OPTIONALITY_MAX_EXPIRIES", None),
+        "strike_thresholds": _parse_float_list(os.getenv("SWEEP_STRIKE_WINDOWS"), [0.05, 0.1, 0.2]),
+        "contract_max_expiries": _int_env("SWEEP_CONTRACT_MAX_EXPIRIES", None),
+    }
+
+
 def _scan_tickers(
     tickers: List[str],
     label: str,
@@ -81,6 +124,7 @@ def _scan_tickers(
     consecutive_rate_limits = 0
     total_expected = min(len(tickers), max_count) if max_count else len(tickers)
     provider = get_market_data_provider()
+    optionality_config = _sweep_optionality_config(getattr(provider, "name", "unknown"))
     rate_limit_backoff_seconds = (
         rate_limit_backoff_seconds
         if rate_limit_backoff_seconds is not None
@@ -143,17 +187,20 @@ def _scan_tickers(
     def _scan_symbol(symbol: str) -> None:
         nonlocal hits
 
-        expiries = provider.option_expirations(symbol)
-        if not expiries:
-            return
-
         current_price = _get_current_price(provider, symbol)
         if current_price is None:
             return
 
         history = provider.daily_bars(symbol, days=365)
         hv30 = compute_historical_volatility(history, 30) if history is not None else None
-        metrics = compute_optionality_metrics(provider, symbol, current_price, hv30)
+        metrics = compute_optionality_metrics(
+            provider,
+            symbol,
+            current_price,
+            hv30,
+            max_expiries=optionality_config.get("max_expiries"),
+            strike_thresholds=optionality_config.get("strike_thresholds"),
+        )
         iv_percentile = metrics.get("iv_percentile")
         iv30 = metrics.get("iv30")
 
@@ -181,6 +228,7 @@ def _scan_tickers(
             stop_move_pct=float(plan["stop_move"]),
             iv30=iv30,
             hv30=hv30,
+            max_expiries=optionality_config.get("contract_max_expiries"),
         )
         analyzer_url = _build_stock_analyzer_url(symbol)
         message = _format_alert_message(
@@ -202,6 +250,8 @@ def _scan_tickers(
             provider=provider,
             selected_contract=selected_contract,
             analyzer_url=analyzer_url,
+            options_data_source=metrics.get("data_source"),
+            options_quote_source=metrics.get("quote_source"),
         )
         delivered, channel, error = _send_webhook(
             message,
@@ -239,6 +289,8 @@ def _scan_tickers(
                 "hv30": metrics.get("hv30"),
                 "iv_percentile": iv_percentile,
                 "avg_edr": metrics.get("avg_edr"),
+                "data_source": metrics.get("data_source"),
+                "quote_source": metrics.get("quote_source"),
                 "direction": direction,
                 "direction_reason": direction_reason,
                 "horizon_labels": horizon_labels,

@@ -267,6 +267,12 @@ def _format_value(value: Optional[float], digits: int = 1) -> str:
     return f"{value:.{digits}f}" if value is not None else "n/a"
 
 
+def _format_source_text(data_source: object = None, quote_source: object = None) -> str:
+    source = str(data_source).strip() if data_source else "unknown"
+    quote = str(quote_source).strip() if quote_source else ""
+    return f"{source} / {quote}" if quote and quote != source else source
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -305,6 +311,7 @@ def _select_training_contract(
     stop_move_pct: Optional[float] = None,
     iv30: Optional[float] = None,
     hv30: Optional[float] = None,
+    max_expiries: Optional[int] = None,
 ) -> Optional[dict[str, object]]:
     if hold_days is not None and target_move_pct is not None and stop_move_pct is not None:
         optimized = select_optimal_contract(
@@ -319,6 +326,7 @@ def _select_training_contract(
             fallback_hv_pct=hv30,
             min_dte=30,
             max_dte=90,
+            max_expiries=max_expiries,
         )
         if optimized:
             return optimized
@@ -446,6 +454,10 @@ def _build_training_trade_lines(
     if selected_contract:
         est_premium = float(selected_contract["premium"])
         premium_source = f"chain {selected_contract['price_source']}"
+        contract_source_text = _format_source_text(
+            selected_contract.get("data_source"),
+            selected_contract.get("quote_source"),
+        )
     elif price is None:
         est_premium = 2.5
         premium_source = "fallback"
@@ -509,6 +521,7 @@ def _build_training_trade_lines(
             [
                 f"  Contract  : {selected_contract['expiry']} {float(selected_contract['strike']):.2f} {contract_side}",
                 f"  Quote     : bid {bid_text} / ask {ask_text} / spread {spread_text}",
+                f"  Data Src  : {contract_source_text}",
                 f"  OI/Vol/IV : {selected_contract['open_interest']} / {selected_contract['volume']} / {iv_text}",
                 f"  Hump Exit : opt ${convexity_option_text} ({profit_pct_text}) @ und ${convexity_underlying_text}",
                 f"  Hump Prob : ITM {probability_text} / delta {delta_text} / theta {theta_text}",
@@ -723,6 +736,8 @@ def _format_alert_message(
     provider: Optional[MarketDataProvider] = None,
     selected_contract: Optional[dict[str, object]] = None,
     analyzer_url: Optional[str] = None,
+    options_data_source: Optional[object] = None,
+    options_quote_source: Optional[object] = None,
 ) -> str:
     threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
     exceptional = _is_exceptional_sweep_setup(
@@ -774,6 +789,10 @@ def _format_alert_message(
     iv_line = f"  IV Pctl   : {_format_value(iv_percentile, 1)}% (<= {threshold_text}%)"
     if exceptional:
         iv_line = _ansi(iv_line, 92)
+    metrics_source_text = _format_source_text(
+        options_data_source or (selected_contract or {}).get("data_source"),
+        options_quote_source or (selected_contract or {}).get("quote_source"),
+    )
 
     ansi_lines = [
         *([accent_line] if accent_line else []),
@@ -784,6 +803,7 @@ def _format_alert_message(
         f"  Consensus : {bias_colored}",
         iv_line,
         f"  IV/HV/EDR : {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}",
+        f"  Data Src  : {metrics_source_text}",
         "",
         _ansi("DIRECTION", section_title_color),
         f"  Bias      : {direction_colored}",
@@ -904,6 +924,8 @@ def run_options_alert_scan() -> dict:
                     provider=provider,
                     selected_contract=selected_contract,
                     analyzer_url=analyzer_url,
+                    options_data_source=metrics.get("data_source"),
+                    options_quote_source=metrics.get("quote_source"),
                 )
                 delivered, channel, error = _send_webhook(
                     message,
