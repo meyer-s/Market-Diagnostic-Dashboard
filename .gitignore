@@ -36,7 +36,7 @@ env/
 .env
 .env.local
 .env.*.local
-devops/env/backend.env
+devops/env/*.env
 !devops/env/
 !devops/env/*.example
 
