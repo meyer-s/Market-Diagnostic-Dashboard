@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 import math
+from numbers import Real
 import re
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 import yfinance as yf
@@ -29,6 +30,35 @@ router = APIRouter(prefix="/secret/options", tags=["SecretOptions"])
 
 # Risk-free rate configuration (can be adjusted based on current T-bill rates)
 RISK_FREE_RATE = 0.0425  # 4.25% - adjust as needed
+
+
+def _is_finite_number(value: object) -> bool:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert non-finite live-market values to JSON-safe nulls."""
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, Real):
+        return float(value) if math.isfinite(float(value)) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
 
 
 class OptionPositionCreate(BaseModel):
@@ -583,19 +613,28 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
     if option_row is not None:
         # Try to get IV from option chain
         implied_vol = option_row.get("impliedVolatility")
-        if pd.notna(implied_vol):
+        if pd.notna(implied_vol) and _is_finite_number(implied_vol):
             implied_vol = float(implied_vol)
             iv_source = "chain"
+        else:
+            implied_vol = None
         
         # Get option price (prefer mid, fallback to last)
         last_price = option_row.get("lastPrice")
         bid = option_row.get("bid")
         ask = option_row.get("ask")
         
-        if pd.notna(bid) and pd.notna(ask) and bid > 0 and ask > 0:
+        if (
+            pd.notna(bid)
+            and pd.notna(ask)
+            and _is_finite_number(bid)
+            and _is_finite_number(ask)
+            and bid > 0
+            and ask > 0
+        ):
             option_price = float(bid + ask) / 2.0
             option_price_source = "mid"
-        elif pd.notna(last_price) and last_price > 0:
+        elif pd.notna(last_price) and _is_finite_number(last_price) and last_price > 0:
             option_price = float(last_price)
             option_price_source = "last"
 
@@ -640,7 +679,7 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
 
     # Priority 3: Historical volatility. compute_historical_volatility returns
     # percent units, while Black-Scholes expects decimal volatility.
-    if volatility is None and hv30 is not None:
+    if volatility is None and hv30 is not None and _is_finite_number(hv30):
         volatility = float(hv30) / 100.0
         iv_source = "historical"
     
@@ -655,7 +694,13 @@ def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
     time_to_expiry = max(dte, 0) / 365.0
     
     greeks = None
-    if spot and volatility and time_to_expiry > 0:
+    if (
+        spot
+        and _is_finite_number(spot)
+        and volatility
+        and _is_finite_number(volatility)
+        and time_to_expiry > 0
+    ):
         greeks = calculate_greeks(
             spot,
             position.strike,
@@ -747,7 +792,7 @@ def get_positions():
                         "metrics": metrics,
                     }
                 )
-            return {"positions": payload}
+            return _json_safe({"positions": payload})
     except Exception as exc:
         # Log traceback to server logs for debugging
         traceback.print_exc()
@@ -790,7 +835,7 @@ def create_position(payload: OptionPositionCreate):
         db.add(position)
         db.commit()
         db.refresh(position)
-        return {"position": _serialize_position(position)}
+        return _json_safe({"position": _serialize_position(position)})
 
 
 @router.put("/positions/{position_id}")
@@ -831,7 +876,7 @@ def update_position(position_id: int, payload: OptionPositionCreate):
 
         db.commit()
         db.refresh(position)
-        return {"position": _serialize_position(position)}
+        return _json_safe({"position": _serialize_position(position)})
 
 
 @router.get("/greeks/{position_id}")
@@ -904,7 +949,7 @@ def get_position_greeks(
         # Current Greeks
         current_greeks = metrics.get("greeks")
 
-        return {
+        return _json_safe({
             "price_curve": price_curve,
             "theta_curve": theta_curve,
             "current_greeks": current_greeks,
@@ -922,7 +967,7 @@ def get_position_greeks(
                     "vega": "per 1 vol point per contract"
                 }
             }
-        }
+        })
 
 
 @router.delete("/positions/{position_id}")
@@ -976,14 +1021,14 @@ def close_position(position_id: int, request: ClosePositionRequest):
         db.delete(position)
         db.commit()
         
-        return {
+        return _json_safe({
             "message": "Position closed successfully",
             "pnl": {
                 "dollar": dollar_pnl,
                 "percent": percent_pnl,
                 "total_proceeds": total_proceeds
             }
-        }
+        })
 
 
 @router.get("/closed-positions")
@@ -1043,7 +1088,7 @@ def get_closed_positions(
         attributed_pnl = sum(pos.dollar_pnl for pos in attributed)
         attributed_win_rate = (attributed_winners / attributed_total * 100) if attributed_total else 0
         
-        return {
+        return _json_safe({
             "closed_positions": results,
             "summary": {
                 "total_pnl": total_pnl,
@@ -1056,7 +1101,7 @@ def get_closed_positions(
                 "attributed_total_pnl": attributed_pnl,
                 "attributed_win_rate": attributed_win_rate,
             }
-        }
+        })
 
 
 @router.post("/attribution/backfill")
@@ -1105,12 +1150,12 @@ def backfill_signal_attribution(limit: int = Query(1000, ge=1, le=10000)):
                 closed_linked += 1
 
         db.commit()
-        return {
+        return _json_safe({
             "open_positions_checked": len(open_positions),
             "open_positions_linked": open_linked,
             "closed_positions_checked": len(closed_positions),
             "closed_positions_linked": closed_linked,
-        }
+        })
 
 
 @router.get("/training-outcomes")
@@ -1165,7 +1210,7 @@ def get_training_outcomes(
         "total_option_pnl_per_contract": sum(matured_option_pnl) if matured_option_pnl else None,
     }
 
-    return {
+    return _json_safe({
         "outcomes": outcomes,
         "summary": summary,
-    }
+    })
