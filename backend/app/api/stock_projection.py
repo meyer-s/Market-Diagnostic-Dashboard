@@ -15,6 +15,7 @@ All projections include:
 from fastapi import APIRouter, HTTPException, Path, Query
 from datetime import datetime, timedelta
 from typing import Literal, Optional, Any
+import os
 import time
 import threading
 import yfinance as yf
@@ -25,6 +26,9 @@ from app.models.institutional_flow_event import InstitutionalFlowEvent
 from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.models.system_status import SystemStatus
 from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
+from app.services.market_data.date_utils import parse_option_expiry
+from app.services.market_data.factory import get_market_data_provider
+from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import option_premium_from_row, option_quote_from_row
 from app.services.stock_price_cache import get_cached_intraday_frame, get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
@@ -43,6 +47,24 @@ _stock_projection_cache: dict[str, dict[str, Any]] = {}
 _stock_projection_cache_lock = threading.Lock()
 
 
+def _option_source_name(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        return ""
+    return str(value.get("data_source") or "")
+
+
+def _cache_matches_market_data_provider(payload: dict[str, Any]) -> bool:
+    provider = os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower()
+    if provider != "ibkr":
+        return True
+    option_sources = (
+        _option_source_name(payload, "options_flow"),
+        _option_source_name(payload, "optionality"),
+    )
+    return not any(source.startswith("yahoo") for source in option_sources)
+
+
 def _get_stock_projection_cache(ticker: str) -> Optional[dict[str, Any]]:
     now_ts = time.time()
     with _stock_projection_cache_lock:
@@ -52,7 +74,7 @@ def _get_stock_projection_cache(ticker: str) -> Optional[dict[str, Any]]:
                 _stock_projection_cache.pop(ticker, None)
             else:
                 payload = cached.get("payload")
-                if isinstance(payload, dict):
+                if isinstance(payload, dict) and _cache_matches_market_data_provider(payload):
                     return dict(payload)
 
     # Fallback to persistent DB snapshot cache so warm data survives process restarts.
@@ -72,6 +94,8 @@ def _get_stock_projection_cache(ticker: str) -> Optional[dict[str, Any]]:
                 return None
 
             payload = dict(row.payload)
+            if not _cache_matches_market_data_provider(payload):
+                return None
             with _stock_projection_cache_lock:
                 _stock_projection_cache[ticker] = {
                     "cached_at": time.time(),
@@ -1021,10 +1045,10 @@ def compute_historical_volatility(df: pd.DataFrame, window: int = 30) -> Optiona
 
 
 def _parse_expiry(expiry: str) -> Optional[datetime]:
-    try:
-        return datetime.strptime(expiry, "%Y-%m-%d")
-    except Exception:
+    parsed = parse_option_expiry(expiry)
+    if parsed is None:
         return None
+    return datetime.combine(parsed, datetime.min.time())
 
 
 def _near_atm(options_df: pd.DataFrame, current_price: float, threshold: float = 0.05) -> pd.DataFrame:
@@ -1037,28 +1061,65 @@ def _option_mid_price(row: pd.Series) -> Optional[float]:
     return option_premium_from_row(row)
 
 
-def compute_options_flow(stock: yf.Ticker) -> Optional[dict]:
+def _ordered_option_providers(provider: MarketDataProvider) -> list[MarketDataProvider]:
+    primary = getattr(provider, "primary", None)
+    if primary is None:
+        return [provider]
+
+    providers = [primary]
+    fallback = getattr(provider, "fallback", None)
+    if fallback is not None:
+        providers.append(fallback)
+    return providers
+
+
+def _optionality_has_provider_data(metrics: dict[str, Any]) -> bool:
+    return (
+        metrics.get("iv30") is not None
+        or metrics.get("avg_edr") is not None
+        or int(metrics.get("expiries_scanned") or 0) > 0
+    )
+
+
+def compute_options_flow(
+    provider: MarketDataProvider,
+    symbol: str,
+    current_price: Optional[float] = None,
+) -> Optional[dict]:
     """Build a lightweight options flow snapshot from the nearest expiry."""
-    try:
-        expiries = stock.options or []
-        if not expiries:
-            return None
-        expiry = None
+    for candidate in _ordered_option_providers(provider):
+        try:
+            expiries = candidate.option_expirations(symbol)
+            if not expiries:
+                continue
+            spot = current_price
+            if spot is None or spot <= 0:
+                spot = candidate.quote(symbol).price
+        except Exception:
+            continue
+
+        chain = None
         calls = pd.DataFrame()
         puts = pd.DataFrame()
-        for exp in expiries:
+        for exp in expiries[:8]:
             try:
-                chain = stock.option_chain(exp)
+                strikes = candidate.option_strikes(symbol, exp)
+                if spot is not None and spot > 0:
+                    strikes = [s for s in strikes if spot * 0.85 <= s <= spot * 1.15]
+                if not strikes:
+                    continue
+                chain = candidate.option_chain(symbol, exp, right="ALL", strikes=strikes)
             except Exception:
                 continue
-            calls = chain.calls if chain and hasattr(chain, "calls") else pd.DataFrame()
-            puts = chain.puts if chain and hasattr(chain, "puts") else pd.DataFrame()
+            calls = chain.calls if chain else pd.DataFrame()
+            puts = chain.puts if chain else pd.DataFrame()
             if not calls.empty or not puts.empty:
-                expiry = exp
                 break
+        else:
+            continue
 
         if calls.empty and puts.empty:
-            return None
+            continue
 
         def top_walls(df: pd.DataFrame) -> list:
             if df is None or df.empty:
@@ -1083,9 +1144,10 @@ def compute_options_flow(stock: yf.Ticker) -> Optional[dict]:
         put_call_oi_ratio = round(put_oi_total / call_oi_total, 2) if call_oi_total > 0 else None
 
         return {
-            "expiry": expiry,
+            "expiry": chain.expiry if chain else None,
             "as_of": datetime.utcnow().isoformat(),
-            "data_source": "yfinance_option_chain",
+            "data_source": f"{chain.source or getattr(candidate, 'name', 'unknown')}_option_chain",
+            "quote_source": chain.quote_source if chain else None,
             "call_walls": call_walls,
             "put_walls": put_walls,
             "call_open_interest_total": call_oi_total,
@@ -1094,18 +1156,38 @@ def compute_options_flow(stock: yf.Ticker) -> Optional[dict]:
             "put_volume_total": put_vol_total,
             "put_call_oi_ratio": put_call_oi_ratio,
         }
-    except Exception:
-        return None
+
+    return None
 
 
 def compute_optionality_metrics(
-    stock: yf.Ticker,
+    provider: MarketDataProvider,
+    symbol: str,
     current_price: float,
     hv30: Optional[float],
 ) -> dict:
     """Compute IV/HV spread, IV percentile, and extrinsic density ratio."""
+    ordered_providers = _ordered_option_providers(provider)
+    if len(ordered_providers) > 1:
+        primary_metrics = compute_optionality_metrics(ordered_providers[0], symbol, current_price, hv30)
+        if _optionality_has_provider_data(primary_metrics):
+            return primary_metrics
+
+        fallback_metrics = primary_metrics
+        for fallback_provider in ordered_providers[1:]:
+            fallback_metrics = compute_optionality_metrics(fallback_provider, symbol, current_price, hv30)
+            if _optionality_has_provider_data(fallback_metrics):
+                fallback_metrics = dict(fallback_metrics)
+                fallback_metrics["fallback_reason"] = (
+                    primary_metrics.get("error") or "primary_options_unavailable"
+                )
+                fallback_metrics["primary_data_source"] = primary_metrics.get("data_source")
+                return fallback_metrics
+        return fallback_metrics
+
+    source_name = getattr(provider, "name", "unknown")
     try:
-        expiries = stock.options or []
+        expiries = provider.option_expirations(symbol)
     except Exception as exc:
         return {
             "iv30": None,
@@ -1113,6 +1195,7 @@ def compute_optionality_metrics(
             "iv_percentile": None,
             "avg_edr": None,
             "error": str(exc),
+            "data_source": f"{source_name}_option_chain",
         }
     if not expiries:
         return {
@@ -1120,6 +1203,7 @@ def compute_optionality_metrics(
             "hv30": hv30,
             "iv_percentile": None,
             "avg_edr": None,
+            "data_source": f"{source_name}_option_chain",
         }
 
     today = datetime.utcnow().date()
@@ -1139,6 +1223,7 @@ def compute_optionality_metrics(
             "hv30": hv30,
             "iv_percentile": None,
             "avg_edr": None,
+            "data_source": f"{source_name}_option_chain",
         }
 
     expiry_candidates.sort(key=lambda x: x[1])
@@ -1160,20 +1245,33 @@ def compute_optionality_metrics(
             if val and val > 0:
                 iv_values.append(float(val) * 100)
 
+    expiries_scanned = 0
     for expiry, _ in front_expiries:
         try:
-            chain = stock.option_chain(expiry)
+            all_strikes = provider.option_strikes(symbol, expiry)
         except Exception:
             continue
-
-        calls = chain.calls if chain and hasattr(chain, "calls") else pd.DataFrame()
-        puts = chain.puts if chain and hasattr(chain, "puts") else pd.DataFrame()
 
         thresholds = [0.05, 0.1, 0.2]
         near_calls = pd.DataFrame()
         near_puts = pd.DataFrame()
         near_chain = pd.DataFrame()
+        chain_source = source_name
         for threshold in thresholds:
+            near_strikes = [
+                strike
+                for strike in all_strikes
+                if current_price > 0 and abs(strike - current_price) / current_price <= threshold
+            ]
+            if not near_strikes:
+                continue
+            try:
+                chain = provider.option_chain(symbol, expiry, right="ALL", strikes=near_strikes)
+            except Exception:
+                continue
+            chain_source = chain.source or source_name
+            calls = chain.calls if chain else pd.DataFrame()
+            puts = chain.puts if chain else pd.DataFrame()
             near_calls = _near_atm(calls, current_price, threshold)
             near_puts = _near_atm(puts, current_price, threshold)
             near_chain = pd.concat([near_calls, near_puts], ignore_index=True)
@@ -1181,9 +1279,10 @@ def compute_optionality_metrics(
                 break
 
         if near_chain.empty:
-            collect_iv_values(pd.concat([calls, puts], ignore_index=True))
             continue
 
+        expiries_scanned += 1
+        source_name = chain_source
         collect_iv_values(near_chain)
 
         for _, row in near_calls.iterrows():
@@ -1235,9 +1334,10 @@ def compute_optionality_metrics(
         "hv30": hv30,
         "iv_percentile": iv_percentile,
         "avg_edr": avg_edr,
-        "data_source": "yfinance_option_chain",
+        "data_source": f"{source_name}_option_chain",
         "pricing_basis": "bid_ask_mid_then_last",
         "price_source_counts": price_source_counts,
+        "expiries_scanned": expiries_scanned,
     }
 
 
@@ -1578,20 +1678,37 @@ def get_stock_projections(
             analyst_count = None
 
         try:
-            options_flow = compute_options_flow(stock)
+            option_provider = get_market_data_provider()
+        except Exception as exc:
+            option_provider = None
+            data_warnings.append({
+                "type": "upstream_options_unavailable",
+                "details": {
+                    "symbol": ticker,
+                    "source": "market_data_provider",
+                    "message": str(exc),
+                },
+            })
+
+        try:
+            if option_provider is None:
+                raise RuntimeError("Market data provider is unavailable")
+            options_flow = compute_options_flow(option_provider, ticker, current_price)
         except Exception as exc:
             options_flow = None
             data_warnings.append({
                 "type": "upstream_options_unavailable",
                 "details": {
                     "symbol": ticker,
-                    "source": "Yahoo Finance",
+                    "source": "market_data_provider",
                     "message": str(exc),
                 },
             })
 
         try:
-            optionality = compute_optionality_metrics(stock, current_price, hv30)
+            if option_provider is None:
+                raise RuntimeError("Market data provider is unavailable")
+            optionality = compute_optionality_metrics(option_provider, ticker, current_price, hv30)
         except Exception as exc:
             optionality = {
                 "iv30": None,
@@ -1599,13 +1716,14 @@ def get_stock_projections(
                 "iv_percentile": None,
                 "avg_edr": None,
                 "error": str(exc),
+                "data_source": "market_data_provider",
             }
         if optionality.get("error"):
             data_warnings.append({
                 "type": "upstream_options_unavailable",
                 "details": {
                     "symbol": ticker,
-                    "source": "Yahoo Finance",
+                    "source": optionality.get("data_source") or "market_data_provider",
                     "message": optionality["error"],
                 },
             })

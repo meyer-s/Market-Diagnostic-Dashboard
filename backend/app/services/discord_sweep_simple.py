@@ -123,13 +123,25 @@ async def execute_sweep(
             default_pause = 0.02
         elif len(tickers) > 1000:
             default_pause = 0.05
+        if os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower() == "ibkr":
+            default_pause = float(os.getenv("IBKR_SWEEP_PAUSE_SECONDS", "0.25"))
         pause_seconds = float(os.getenv("DISCORD_SWEEP_PAUSE_SECONDS", default_pause))
         status_every = int(os.getenv("DISCORD_SWEEP_STATUS_EVERY_TICKERS", "100"))
         status_min_seconds = float(os.getenv("DISCORD_SWEEP_STATUS_MIN_SECONDS", "60"))
-        rate_limit_backoff_seconds = float(os.getenv("DISCORD_SWEEP_RATE_LIMIT_BACKOFF_SECONDS", "90"))
+        rate_limit_backoff_seconds = float(
+            os.getenv(
+                "DISCORD_SWEEP_RATE_LIMIT_BACKOFF_SECONDS",
+                os.getenv("IBKR_TRANSIENT_RETRY_SECONDS", "5"),
+            )
+        )
         rate_limit_backoff_multiplier = float(os.getenv("DISCORD_SWEEP_RATE_LIMIT_BACKOFF_MULTIPLIER", "2"))
         rate_limit_backoff_max_seconds = float(os.getenv("DISCORD_SWEEP_RATE_LIMIT_BACKOFF_MAX_SECONDS", "600"))
-        rate_limit_max_retries = int(os.getenv("DISCORD_SWEEP_RATE_LIMIT_MAX_RETRIES", "3"))
+        rate_limit_max_retries = int(
+            os.getenv(
+                "DISCORD_SWEEP_RATE_LIMIT_MAX_RETRIES",
+                os.getenv("IBKR_TRANSIENT_MAX_RETRIES", "1"),
+            )
+        )
 
         start_content = (
             f"Options sweep started. {label} "

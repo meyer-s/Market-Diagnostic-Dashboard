@@ -4,7 +4,6 @@ import time
 from typing import Any, Callable, Iterable, List, Optional
 
 import pandas as pd
-import yfinance as yf
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.services.options_alerts import (
@@ -20,6 +19,7 @@ from app.services.options_alerts import (
     _training_plan_inputs,
 )
 from app.models.options_alerts import OptionAlertEvent
+from app.services.market_data.factory import get_market_data_provider
 from app.services.options_alerts import _send_webhook, _get_current_price
 from app.utils.db_helpers import get_db_session
 
@@ -80,10 +80,11 @@ def _scan_tickers(
     rate_limit_errors = 0
     consecutive_rate_limits = 0
     total_expected = min(len(tickers), max_count) if max_count else len(tickers)
+    provider = get_market_data_provider()
     rate_limit_backoff_seconds = (
         rate_limit_backoff_seconds
         if rate_limit_backoff_seconds is not None
-        else float(os.getenv("SWEEP_RATE_LIMIT_BACKOFF_SECONDS", "90"))
+        else float(os.getenv("IBKR_TRANSIENT_RETRY_SECONDS", os.getenv("SWEEP_RATE_LIMIT_BACKOFF_SECONDS", "5")))
     )
     rate_limit_backoff_multiplier = (
         rate_limit_backoff_multiplier
@@ -98,7 +99,7 @@ def _scan_tickers(
     rate_limit_max_retries = (
         rate_limit_max_retries
         if rate_limit_max_retries is not None
-        else int(os.getenv("SWEEP_RATE_LIMIT_MAX_RETRIES", "3"))
+        else int(os.getenv("IBKR_TRANSIENT_MAX_RETRIES", os.getenv("SWEEP_RATE_LIMIT_MAX_RETRIES", "1")))
     )
 
     def _emit_progress(event: dict[str, Any]) -> None:
@@ -142,17 +143,17 @@ def _scan_tickers(
     def _scan_symbol(symbol: str) -> None:
         nonlocal hits
 
-        stock = yf.Ticker(symbol)
-        if not stock.options:
+        expiries = provider.option_expirations(symbol)
+        if not expiries:
             return
 
-        current_price = _get_current_price(stock)
+        current_price = _get_current_price(provider, symbol)
         if current_price is None:
             return
 
-        history = stock.history(period="1y")
+        history = provider.daily_bars(symbol, days=365)
         hv30 = compute_historical_volatility(history, 30) if history is not None else None
-        metrics = compute_optionality_metrics(stock, current_price, hv30)
+        metrics = compute_optionality_metrics(provider, symbol, current_price, hv30)
         iv_percentile = metrics.get("iv_percentile")
         iv30 = metrics.get("iv30")
 
@@ -169,7 +170,8 @@ def _scan_tickers(
         plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, history)
         hold_days = int(plan["hold_days"])
         selected_contract = _select_training_contract(
-            stock=stock,
+            provider=provider,
+            symbol=symbol,
             current_price=current_price,
             contract_side=str(plan["contract_side"]),
             target_dte=60,
@@ -197,7 +199,7 @@ def _scan_tickers(
             horizon_labels,
             horizon_returns,
             history,
-            stock=stock,
+            provider=provider,
             selected_contract=selected_contract,
             analyzer_url=analyzer_url,
         )
@@ -264,7 +266,7 @@ def _scan_tickers(
                 break
             except Exception as exc:
                 errors += 1
-                if _is_yahoo_rate_limit_error(exc):
+                if _is_transient_market_data_error(exc):
                     rate_limit_errors += 1
                     consecutive_rate_limits += 1
                     wait_seconds = min(
@@ -324,14 +326,23 @@ def _scan_tickers(
     return hits
 
 
-def _is_yahoo_rate_limit_error(exc: Exception) -> bool:
+def _is_transient_market_data_error(exc: Exception) -> bool:
     message = str(exc).lower()
-    return (
-        "rate limit" in message
-        or "rate limited" in message
-        or "too many requests" in message
-        or "429" in message
-        or "yfratelimiterror" in message
+    return any(
+        token in message
+        for token in (
+            "timeout",
+            "pacing",
+            "market data",
+            "not connected",
+            "connection reset",
+            "no security definition",
+            "no option chains",
+            "rate limit",
+            "rate limited",
+            "too many requests",
+            "429",
+        )
     )
 
 
@@ -339,7 +350,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--threshold", type=float, default=20.0)
     parser.add_argument("--max", type=int, default=0, help="Limit tickers scanned (0 = all).")
-    parser.add_argument("--pause", type=float, default=0.2)
+    parser.add_argument("--pause", type=float, default=float(os.getenv("IBKR_SWEEP_PAUSE_SECONDS", "0.25")))
     args = parser.parse_args()
 
     max_count = args.max if args.max and args.max > 0 else None

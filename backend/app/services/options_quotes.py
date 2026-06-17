@@ -1,25 +1,21 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+import logging
+from datetime import datetime, timezone
 from math import ceil, log10
 from typing import Optional
 
 import pandas as pd
-import yfinance as yf
 
+from app.services.market_data.date_utils import parse_option_expiry
+from app.services.market_data.provider import MarketDataProvider
 from app.services.greeks_calculator import black_scholes_d1_d2, black_scholes_price, calculate_greeks, norm_cdf
 
 
 RISK_FREE_RATE = 0.0425
 CONVEXITY_PROBABILITY_HUMP = 0.55
 MIN_PROFIT_AT_HUMP_PCT = 20.0
-
-
-def parse_option_expiry(value: str) -> Optional[date]:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except Exception:
-        return None
+logger = logging.getLogger(__name__)
 
 
 def quote_number(value) -> Optional[float]:
@@ -53,12 +49,14 @@ def option_quote_from_row(row: Optional[pd.Series]) -> dict[str, object]:
             "mid": None,
             "premium": None,
             "price_source": None,
+            "data_source": None,
             "spread": None,
             "spread_pct": None,
             "volume": None,
             "open_interest": None,
             "implied_volatility": None,
             "last_trade_date": None,
+            "quote_source": None,
             "quality": "missing",
         }
 
@@ -90,12 +88,14 @@ def option_quote_from_row(row: Optional[pd.Series]) -> dict[str, object]:
         "mid": mid,
         "premium": premium,
         "price_source": price_source,
+        "data_source": row.get("dataSource"),
         "spread": spread,
         "spread_pct": spread_pct,
         "volume": quote_int(row.get("volume")),
         "open_interest": quote_int(row.get("openInterest")),
         "implied_volatility": quote_number(row.get("impliedVolatility")),
         "last_trade_date": quote_timestamp(row.get("lastTradeDate")),
+        "quote_source": row.get("quoteSource"),
         "quality": quality,
     }
 
@@ -106,18 +106,19 @@ def option_premium_from_row(row: pd.Series) -> Optional[float]:
 
 
 def select_atm_contract(
-    stock: Optional[yf.Ticker],
+    provider: MarketDataProvider,
+    symbol: str,
     current_price: Optional[float],
     contract_side: str,
     target_dte: int,
     min_remaining_after_hold: int,
     max_moneyness_pct: float = 0.20,
 ) -> Optional[dict[str, object]]:
-    if stock is None or current_price is None or current_price <= 0:
+    if provider is None or current_price is None or current_price <= 0:
         return None
 
     try:
-        expiries = stock.options or []
+        expiries = provider.option_expirations(symbol)
     except Exception:
         return None
 
@@ -137,8 +138,29 @@ def select_atm_contract(
 
     expiry, dte = min(candidates, key=lambda item: abs(item[1] - target_dte))
     try:
-        chain = stock.option_chain(expiry)
+        strikes = [
+            strike
+            for strike in provider.option_strikes(symbol, expiry)
+            if abs(strike - current_price) / current_price <= max_moneyness_pct
+        ]
+        if not strikes:
+            return None
+        chain = provider.option_chain(
+            symbol,
+            expiry,
+            right=contract_side,
+            strikes=strikes,
+        )
     except Exception:
+        logger.info(
+            "selected_contract_missing",
+            extra={
+                "symbol": symbol,
+                "provider": getattr(provider, "name", "unknown"),
+                "reason": "provider_error",
+                "expiry": expiry,
+            },
+        )
         return None
 
     frame = chain.calls if contract_side == "CALL" else chain.puts
@@ -184,6 +206,8 @@ def select_atm_contract(
         "open_interest": int(quote.get("open_interest") or 0),
         "implied_volatility": quote.get("implied_volatility"),
         "last_trade_date": quote.get("last_trade_date"),
+        "data_source": getattr(provider, "name", "unknown"),
+        "quote_source": quote.get("quote_source") or chain.quote_source,
     }
 
 
@@ -332,7 +356,8 @@ def _convexity_harvest_point(
 
 
 def select_optimal_contract(
-    stock: Optional[yf.Ticker],
+    provider: MarketDataProvider,
+    symbol: str,
     current_price: Optional[float],
     contract_side: str,
     hold_days: int,
@@ -343,11 +368,11 @@ def select_optimal_contract(
     min_dte: int = 30,
     max_dte: int = 90,
 ) -> Optional[dict[str, object]]:
-    if stock is None or current_price is None or current_price <= 0:
+    if provider is None or current_price is None or current_price <= 0:
         return None
 
     try:
-        expiries = stock.options or []
+        expiries = provider.option_expirations(symbol)
     except Exception:
         return None
 
@@ -390,8 +415,38 @@ def select_optimal_contract(
             continue
         remaining_calendar_days = max(1, dte - hold_calendar_days)
         try:
-            chain = stock.option_chain(expiry)
+            strikes = provider.option_strikes(symbol, expiry)
+            if contract_side == "CALL":
+                strikes = [s for s in strikes if current_price * 0.96 <= s <= current_price * 1.10]
+            else:
+                strikes = [s for s in strikes if current_price * 0.90 <= s <= current_price * 1.04]
+            if not strikes:
+                logger.info(
+                    "selected_contract_missing",
+                    extra={
+                        "symbol": symbol,
+                        "provider": getattr(provider, "name", "unknown"),
+                        "reason": "no_strikes",
+                        "expiry": expiry,
+                    },
+                )
+                continue
+            chain = provider.option_chain(
+                symbol,
+                expiry,
+                right=contract_side,
+                strikes=strikes,
+            )
         except Exception:
+            logger.info(
+                "selected_contract_missing",
+                extra={
+                    "symbol": symbol,
+                    "provider": getattr(provider, "name", "unknown"),
+                    "reason": "provider_error",
+                    "expiry": expiry,
+                },
+            )
             continue
 
         frame = chain.calls if contract_side == "CALL" else chain.puts
@@ -495,6 +550,8 @@ def select_optimal_contract(
                 "open_interest": open_interest,
                 "implied_volatility": quote.get("implied_volatility"),
                 "last_trade_date": quote.get("last_trade_date"),
+                "data_source": getattr(provider, "name", "unknown"),
+                "quote_source": quote.get("quote_source") or chain.quote_source,
                 "quality": quote.get("quality"),
                 "selection": "optimized_30_90_dte",
                 "score": float(score),

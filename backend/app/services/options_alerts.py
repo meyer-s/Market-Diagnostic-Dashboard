@@ -4,12 +4,13 @@ from math import sqrt
 from typing import Optional
 from urllib.parse import quote
 
-import yfinance as yf
 import pandas as pd
 import requests
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.models.options_alerts import OptionAlertWatch, OptionAlertEvent
+from app.services.market_data.factory import get_market_data_provider
+from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import select_atm_contract, select_optimal_contract
 from app.utils.db_helpers import get_db_session
 
@@ -23,14 +24,12 @@ HORIZON_WINDOWS = {
 }
 
 
-def _get_current_price(stock: yf.Ticker) -> Optional[float]:
-    history = stock.history(period="3mo")
-    if history is None or history.empty:
+def _get_current_price(provider: MarketDataProvider, symbol: str) -> Optional[float]:
+    try:
+        quote = provider.quote(symbol)
+    except Exception:
         return None
-    close = history["Close"].dropna()
-    if close.empty:
-        return None
-    return float(close.iloc[-1])
+    return quote.price
 
 
 def _send_webhook(
@@ -295,7 +294,8 @@ def _contract_side_from_direction(direction: str) -> str:
 
 
 def _select_training_contract(
-    stock: Optional[yf.Ticker],
+    provider: MarketDataProvider,
+    symbol: str,
     current_price: Optional[float],
     contract_side: str,
     target_dte: int,
@@ -308,7 +308,8 @@ def _select_training_contract(
 ) -> Optional[dict[str, object]]:
     if hold_days is not None and target_move_pct is not None and stop_move_pct is not None:
         optimized = select_optimal_contract(
-            stock=stock,
+            provider=provider,
+            symbol=symbol,
             current_price=current_price,
             contract_side=contract_side,
             hold_days=hold_days,
@@ -323,7 +324,8 @@ def _select_training_contract(
             return optimized
 
     return select_atm_contract(
-        stock=stock,
+        provider=provider,
+        symbol=symbol,
         current_price=current_price,
         contract_side=contract_side,
         target_dte=target_dte,
@@ -410,7 +412,8 @@ def _build_training_trade_lines(
     threshold: Optional[float],
     horizon_returns: Optional[dict[str, Optional[float]]],
     history: Optional[pd.DataFrame],
-    stock: Optional[yf.Ticker] = None,
+    provider: Optional[MarketDataProvider] = None,
+    symbol: Optional[str] = None,
     selected_contract: Optional[dict[str, object]] = None,
 ) -> list[str]:
     plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, history)
@@ -425,9 +428,10 @@ def _build_training_trade_lines(
     else:
         stop_target_text = f"{float(plan['stop_price']):.2f} / {float(plan['target_price']):.2f}"
 
-    if selected_contract is None:
+    if selected_contract is None and provider is not None and symbol:
         selected_contract = _select_training_contract(
-            stock=stock,
+            provider=provider,
+            symbol=symbol,
             current_price=float(price) if isinstance(price, (int, float)) else None,
             contract_side=contract_side,
             target_dte=60,
@@ -515,7 +519,7 @@ def _build_training_trade_lines(
             ]
         )
     else:
-        lines.append("  Contract  : yfinance chain quote unavailable")
+        lines.append("  Contract  : market data chain quote unavailable")
 
     lines.extend(
         [
@@ -716,7 +720,7 @@ def _format_alert_message(
     horizon_labels: Optional[dict[str, str]] = None,
     horizon_returns: Optional[dict[str, Optional[float]]] = None,
     history: Optional[pd.DataFrame] = None,
-    stock: Optional[yf.Ticker] = None,
+    provider: Optional[MarketDataProvider] = None,
     selected_contract: Optional[dict[str, object]] = None,
     analyzer_url: Optional[str] = None,
 ) -> str:
@@ -756,7 +760,8 @@ def _format_alert_message(
         threshold=threshold,
         horizon_returns=horizon_returns,
         history=history,
-        stock=stock,
+        provider=provider,
+        symbol=symbol,
         selected_contract=selected_contract,
     )
     section_title_color = 97 if exceptional else 37
@@ -823,6 +828,7 @@ def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float], bia
 
 def run_options_alert_scan() -> dict:
     results = {"checked": 0, "triggered": 0, "errors": 0}
+    provider = get_market_data_provider()
     with get_db_session() as db:
         watches = db.query(OptionAlertWatch).filter(OptionAlertWatch.active.is_(True)).all()
 
@@ -830,14 +836,13 @@ def run_options_alert_scan() -> dict:
             results["checked"] += 1
             symbol = watch.symbol.upper()
             try:
-                stock = yf.Ticker(symbol)
-                current_price = _get_current_price(stock)
+                current_price = _get_current_price(provider, symbol)
                 if current_price is None:
                     continue
 
-                hist = stock.history(period="1y")
+                hist = provider.daily_bars(symbol, days=365)
                 hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
-                metrics = compute_optionality_metrics(stock, current_price, hv30)
+                metrics = compute_optionality_metrics(provider, symbol, current_price, hv30)
                 iv_percentile = metrics.get("iv_percentile")
                 iv30 = metrics.get("iv30")
                 avg_edr = metrics.get("avg_edr")
@@ -862,7 +867,8 @@ def run_options_alert_scan() -> dict:
                 plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, hist)
                 hold_days = int(plan["hold_days"])
                 selected_contract = _select_training_contract(
-                    stock=stock,
+                    provider=provider,
+                    symbol=symbol,
                     current_price=current_price,
                     contract_side=str(plan["contract_side"]),
                     target_dte=60,
@@ -895,7 +901,7 @@ def run_options_alert_scan() -> dict:
                     horizon_labels,
                     horizon_returns,
                     hist,
-                    stock=stock,
+                    provider=provider,
                     selected_contract=selected_contract,
                     analyzer_url=analyzer_url,
                 )

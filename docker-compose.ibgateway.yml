@@ -1,0 +1,60 @@
+services:
+  backend:
+    depends_on:
+      ibgateway:
+        condition: service_started
+    environment:
+      IBKR_PROFILE: ${IBKR_BACKEND_PROFILE:-gateway-paper}
+      XDG_CONFIG_HOME: /home/appuser/.config
+    volumes:
+      - ./devops/env/ibkr-cli-config.toml:/home/appuser/.config/ibkr-cli/config.toml:ro
+    networks:
+      default:
+        ipv4_address: 172.18.0.5
+
+  scheduler:
+    depends_on:
+      ibgateway:
+        condition: service_started
+    environment:
+      IBKR_PROFILE: ${IBKR_SCHEDULER_PROFILE:-gateway-paper-scheduler}
+      XDG_CONFIG_HOME: /home/appuser/.config
+    volumes:
+      - ./devops/env/ibkr-cli-config.toml:/home/appuser/.config/ibkr-cli/config.toml:ro
+    networks:
+      default:
+        ipv4_address: 172.18.0.4
+
+  ibgateway:
+    build:
+      context: ./devops/ibgateway
+      args:
+        IBGATEWAY_INSTALLER_URL: ${IBGATEWAY_INSTALLER_URL:-https://download2.interactivebrokers.com/installers/ibgateway/latest-standalone/ibgateway-latest-standalone-linux-x64.sh}
+        IBGATEWAY_INSTALLER_SHA256: ${IBGATEWAY_INSTALLER_SHA256:-}
+    container_name: market_ibgateway
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-America/New_York}
+      XVFB_RESOLUTION: ${IBGATEWAY_XVFB_RESOLUTION:-1280x900x24}
+      VNC_PASSWORD: ${IBGATEWAY_VNC_PASSWORD:-}
+      IBGATEWAY_TRUSTED_IPS: ${IBGATEWAY_TRUSTED_IPS:-127.0.0.1}
+      IBGATEWAY_API_PROXY_PORT: ${IBGATEWAY_API_PROXY_PORT:-4003}
+      IBGATEWAY_API_PROXY_TARGET_PORT: ${IBGATEWAY_API_PROXY_TARGET_PORT:-4002}
+      IBGATEWAY_API_PROXY_ALLOWED_IPS: ${IBGATEWAY_API_PROXY_ALLOWED_IPS:-172.18.0.4,172.18.0.5}
+    volumes:
+      - ibgateway_jts:/home/ibgateway/Jts
+    ports:
+      - "127.0.0.1:4001:4001"
+      - "127.0.0.1:4002:4002"
+      - "127.0.0.1:5900:5900"
+      - "127.0.0.1:6080:6080"
+
+volumes:
+  ibgateway_jts:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1

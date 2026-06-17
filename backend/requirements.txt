@@ -10,6 +10,7 @@ feedparser==6.0.11
 python-dateutil==2.9.0.post0
 httpx==0.28.1
 yfinance==0.2.61
+ibkr-cli==0.7.1
 numpy==2.2.5
 pandas==2.2.3
 scipy==1.15.2
