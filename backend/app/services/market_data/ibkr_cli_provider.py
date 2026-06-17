@@ -115,6 +115,9 @@ class IbkrCliProvider:
             quote_source=str(payload.get("quote_source")) if payload.get("quote_source") else None,
             observed_at=str(payload.get("observed_at")) if payload.get("observed_at") else None,
         )
+        from app.services.market_data_capture import record_underlying_quote
+
+        record_underlying_quote(quote, raw_payload=payload)
         self._cache.set(key, quote, self.quote_ttl)
         return quote
 
@@ -143,6 +146,9 @@ class IbkrCliProvider:
         payload = self._call_with_symbol(normalized, fetch)
         rows = payload.get("rows") or []
         frame = _bars_rows_to_frame(rows).tail(days)
+        from app.services.market_data_capture import record_daily_bars
+
+        record_daily_bars(provider=self.name, symbol=normalized, frame=frame, days_requested=days)
         self._cache.set(key, frame.copy(), self.bars_ttl)
         return frame
 
@@ -249,6 +255,9 @@ class IbkrCliProvider:
             source=self.name,
             quote_source=",".join(sorted(quote_sources)) if quote_sources else None,
         )
+        from app.services.market_data_capture import record_option_chain
+
+        record_option_chain(provider=self.name, chain=chain, right=right, strikes=strike_list)
         self._cache.set(cache_key, chain, self.quote_ttl)
         return OptionChainFrame(
             symbol=chain.symbol,
