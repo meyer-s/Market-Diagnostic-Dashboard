@@ -37,8 +37,16 @@ env/
 .env.local
 .env.*.local
 devops/env/*.env
+devops/env/*.toml
+devops/env/*.bak.*
 !devops/env/
 !devops/env/*.example
+
+# Server/local diagnostic scratch scripts
+backend/check_*.py
+backend/test_scrape.py
+backend/trigger_etl.py
+/1
 
 # Local handoff notes
 docs/options-mispricing-ibkr-roadmap.md
