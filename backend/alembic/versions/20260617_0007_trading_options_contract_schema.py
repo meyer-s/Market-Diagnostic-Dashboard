@@ -18,7 +18,7 @@ def upgrade() -> None:
         "option_contract",
         sa.Column("id", sa.BigInteger(), sa.Identity(), nullable=False),
         sa.Column("underlying_symbol", sa.Text(), nullable=False),
-        sa.Column("right", sa.Text(), nullable=False),
+        sa.Column("option_right", sa.Text(), nullable=False),
         sa.Column("strike", sa.Numeric(18, 6), nullable=False),
         sa.Column("expiration", sa.Date(), nullable=False),
         sa.Column("exchange", sa.Text(), nullable=False, server_default="SMART"),
@@ -29,11 +29,11 @@ def upgrade() -> None:
         sa.Column("trading_class", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.CheckConstraint('"right" IN (\'CALL\', \'PUT\')', name="ck_option_contract_right"),
+        sa.CheckConstraint("option_right IN ('CALL', 'PUT')", name="ck_option_contract_right"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "underlying_symbol",
-            "right",
+            "option_right",
             "strike",
             "expiration",
             "exchange",
@@ -46,7 +46,7 @@ def upgrade() -> None:
     op.create_index(
         "option_contract_lookup_idx",
         "option_contract",
-        ["underlying_symbol", "expiration", "right", "strike"],
+        ["underlying_symbol", "expiration", "option_right", "strike"],
         schema="trading",
     )
 

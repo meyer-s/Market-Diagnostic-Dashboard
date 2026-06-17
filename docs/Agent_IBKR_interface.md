@@ -229,7 +229,7 @@ From the JSON row, capture:
 - `con_id`
 - `expiration`
 - `strike`
-- `right`
+- `right` from IBKR JSON, stored in the database as `option_right`
 - `trading_class`
 - `multiplier`
 - `bid`
@@ -245,7 +245,7 @@ as fallback.
 
 Normalize:
 
-- `right`: `C` becomes `CALL`; `P` becomes `PUT`.
+- `option_right`: IBKR `right` value `C` becomes `CALL`; `P` becomes `PUT`.
 - `expiration`: store as `DATE`.
 - `strike`: store numeric.
 - `multiplier`: store `100` unless IBKR reports otherwise.
@@ -253,7 +253,7 @@ Normalize:
 The unique key should be:
 
 ```text
-underlying_symbol, right, strike, expiration, exchange, currency
+underlying_symbol, option_right, strike, expiration, exchange, currency
 ```
 
 Store `ibkr_con_id` when present.
@@ -517,4 +517,3 @@ backend service methods:
 
 Until that API exists, agents must treat `docs/contract_db.md` and this file as
 the operational contract.
-

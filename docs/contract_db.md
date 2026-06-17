@@ -83,7 +83,7 @@ Canonical option contract identity.
 CREATE TABLE trading.option_contract (
   id BIGSERIAL PRIMARY KEY,
   underlying_symbol TEXT NOT NULL,
-  right TEXT NOT NULL CHECK (right IN ('CALL', 'PUT')),
+  option_right TEXT NOT NULL CHECK (option_right IN ('CALL', 'PUT')),
   strike NUMERIC(18, 6) NOT NULL,
   expiration DATE NOT NULL,
   exchange TEXT NOT NULL DEFAULT 'SMART',
@@ -94,17 +94,17 @@ CREATE TABLE trading.option_contract (
   trading_class TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (underlying_symbol, right, strike, expiration, exchange, currency),
+  UNIQUE (underlying_symbol, option_right, strike, expiration, exchange, currency),
   UNIQUE (ibkr_con_id)
 );
 
 CREATE INDEX option_contract_lookup_idx
-  ON trading.option_contract (underlying_symbol, expiration, right, strike);
+  ON trading.option_contract (underlying_symbol, expiration, option_right, strike);
 ```
 
 Store `ibkr_con_id` whenever it is available. The scheduler should prefer
 `ibkr_con_id` for execution/reconciliation because it is less ambiguous than
-symbol, expiry, right, and strike.
+symbol, expiry, option right, and strike.
 
 ### `trading.option_lot`
 
@@ -400,4 +400,3 @@ Before enabling live submissions:
 - Verify `AUTO_SELL_ENABLED` is false until preview and reconciliation flows are
   proven.
 - Verify no public port exposes Postgres or IB Gateway API access.
-
