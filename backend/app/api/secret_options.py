@@ -626,8 +626,11 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
     return payload
 
 
-def _compute_position_metrics(position: OptionPosition) -> Dict[str, object]:
-    provider = get_market_data_provider()
+def _compute_position_metrics(
+    position: OptionPosition,
+    provider: Optional[MarketDataProvider] = None,
+) -> Dict[str, object]:
+    provider = provider or get_market_data_provider()
     market = _market_data_for_symbol(provider, position.symbol)
 
     option_row = _resolve_option_row(
@@ -811,10 +814,11 @@ def get_positions():
         with get_db_session() as db:
             _seed_positions(db)
             positions = db.query(OptionPosition).order_by(OptionPosition.trade_date.desc()).all()
+            provider = get_market_data_provider()
             payload = []
             for position in positions:
                 try:
-                    metrics = _compute_position_metrics(position)
+                    metrics = _compute_position_metrics(position, provider)
                 except Exception as perr:
                     # Log per-position errors but continue returning other positions
                     traceback.print_exc()
@@ -1020,7 +1024,7 @@ def close_position(position_id: int, request: ClosePositionRequest):
         percent_pnl = (dollar_pnl / position.total_cost) * 100 if position.total_cost else 0
         
         # Get current underlying price
-        market = _market_data_for_symbol(position.symbol)
+        market = _market_data_for_symbol(get_market_data_provider(), position.symbol)
         underlying_at_exit = market.get("current_price")
         
         # Create closed position record

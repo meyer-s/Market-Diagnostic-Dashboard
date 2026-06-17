@@ -1165,17 +1165,33 @@ def compute_optionality_metrics(
     symbol: str,
     current_price: float,
     hv30: Optional[float],
+    max_expiries: Optional[int] = None,
+    strike_thresholds: Optional[list[float]] = None,
 ) -> dict:
     """Compute IV/HV spread, IV percentile, and extrinsic density ratio."""
     ordered_providers = _ordered_option_providers(provider)
     if len(ordered_providers) > 1:
-        primary_metrics = compute_optionality_metrics(ordered_providers[0], symbol, current_price, hv30)
+        primary_metrics = compute_optionality_metrics(
+            ordered_providers[0],
+            symbol,
+            current_price,
+            hv30,
+            max_expiries=max_expiries,
+            strike_thresholds=strike_thresholds,
+        )
         if _optionality_has_provider_data(primary_metrics):
             return primary_metrics
 
         fallback_metrics = primary_metrics
         for fallback_provider in ordered_providers[1:]:
-            fallback_metrics = compute_optionality_metrics(fallback_provider, symbol, current_price, hv30)
+            fallback_metrics = compute_optionality_metrics(
+                fallback_provider,
+                symbol,
+                current_price,
+                hv30,
+                max_expiries=max_expiries,
+                strike_thresholds=strike_thresholds,
+            )
             if _optionality_has_provider_data(fallback_metrics):
                 fallback_metrics = dict(fallback_metrics)
                 fallback_metrics["fallback_reason"] = (
@@ -1227,13 +1243,16 @@ def compute_optionality_metrics(
         }
 
     expiry_candidates.sort(key=lambda x: x[1])
-    front_expiries = expiry_candidates[:6]
+    expiry_limit = max_expiries if max_expiries is not None and max_expiries > 0 else 6
+    front_expiries = expiry_candidates[:expiry_limit]
     target_expiry = min(front_expiries, key=lambda x: abs(x[1] - 30))[0]
 
     iv_values = []
     edr_values = []
     price_source_counts = {"mid": 0, "last": 0, "missing": 0, "wide": 0}
     iv30 = None
+    quote_sources: set[str] = set()
+    thresholds = strike_thresholds or [0.05, 0.1, 0.2]
 
     def collect_iv_values(df: pd.DataFrame) -> None:
         if df is None or df.empty:
@@ -1252,7 +1271,6 @@ def compute_optionality_metrics(
         except Exception:
             continue
 
-        thresholds = [0.05, 0.1, 0.2]
         near_calls = pd.DataFrame()
         near_puts = pd.DataFrame()
         near_chain = pd.DataFrame()
@@ -1270,6 +1288,8 @@ def compute_optionality_metrics(
             except Exception:
                 continue
             chain_source = chain.source or source_name
+            if chain.quote_source:
+                quote_sources.add(str(chain.quote_source))
             calls = chain.calls if chain else pd.DataFrame()
             puts = chain.puts if chain else pd.DataFrame()
             near_calls = _near_atm(calls, current_price, threshold)
@@ -1335,6 +1355,7 @@ def compute_optionality_metrics(
         "iv_percentile": iv_percentile,
         "avg_edr": avg_edr,
         "data_source": f"{source_name}_option_chain",
+        "quote_source": ",".join(sorted(quote_sources)) if quote_sources else None,
         "pricing_basis": "bid_ask_mid_then_last",
         "price_source_counts": price_source_counts,
         "expiries_scanned": expiries_scanned,

@@ -105,6 +105,40 @@ def option_premium_from_row(row: pd.Series) -> Optional[float]:
     return float(premium) if isinstance(premium, (int, float)) and premium > 0 else None
 
 
+def _contract_data_source(
+    provider: MarketDataProvider,
+    chain,
+    quote: dict[str, object],
+) -> str:
+    for value in (quote.get("data_source"), getattr(chain, "source", None), getattr(provider, "name", "unknown")):
+        if value is None:
+            continue
+        try:
+            if pd.isna(value):
+                continue
+        except Exception:
+            pass
+        text = str(value).strip()
+        if text:
+            return text
+    return "unknown"
+
+
+def _contract_quote_source(chain, quote: dict[str, object]) -> Optional[str]:
+    for value in (quote.get("quote_source"), getattr(chain, "quote_source", None)):
+        if value is None:
+            continue
+        try:
+            if pd.isna(value):
+                continue
+        except Exception:
+            pass
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
 def select_atm_contract(
     provider: MarketDataProvider,
     symbol: str,
@@ -206,8 +240,8 @@ def select_atm_contract(
         "open_interest": int(quote.get("open_interest") or 0),
         "implied_volatility": quote.get("implied_volatility"),
         "last_trade_date": quote.get("last_trade_date"),
-        "data_source": getattr(provider, "name", "unknown"),
-        "quote_source": quote.get("quote_source") or chain.quote_source,
+        "data_source": _contract_data_source(provider, chain, quote),
+        "quote_source": _contract_quote_source(chain, quote),
     }
 
 
@@ -367,6 +401,7 @@ def select_optimal_contract(
     fallback_hv_pct: Optional[float] = None,
     min_dte: int = 30,
     max_dte: int = 90,
+    max_expiries: Optional[int] = None,
 ) -> Optional[dict[str, object]]:
     if provider is None or current_price is None or current_price <= 0:
         return None
@@ -388,6 +423,8 @@ def select_optimal_contract(
 
     if not expiry_candidates:
         return None
+    if max_expiries is not None and max_expiries > 0:
+        expiry_candidates = sorted(expiry_candidates, key=lambda item: abs(item[1] - 60))[:max_expiries]
 
     if contract_side == "CALL":
         target_underlying = current_price * (1 + target_move_pct / 100.0)
@@ -550,8 +587,8 @@ def select_optimal_contract(
                 "open_interest": open_interest,
                 "implied_volatility": quote.get("implied_volatility"),
                 "last_trade_date": quote.get("last_trade_date"),
-                "data_source": getattr(provider, "name", "unknown"),
-                "quote_source": quote.get("quote_source") or chain.quote_source,
+                "data_source": _contract_data_source(provider, chain, quote),
+                "quote_source": _contract_quote_source(chain, quote),
                 "quality": quote.get("quality"),
                 "selection": "optimized_30_90_dte",
                 "score": float(score),

@@ -14,7 +14,8 @@ This endpoint powers the SectorDivergenceWidget on the main Dashboard.
 
 from fastapi import APIRouter, HTTPException
 from app.utils.db_helpers import get_db_session
-from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
+from app.models.sector_projection import SectorProjectionValue
+from app.services.sector_projection import get_latest_sector_projection_run
 from app.services.sector_divergence import (
     CYCLICAL_SECTORS,
     DEFENSIVE_SECTORS,
@@ -35,7 +36,7 @@ def get_sector_summary():
     """
     with get_db_session() as db:
         # Get latest projection run
-        run = db.query(SectorProjectionRun).order_by(SectorProjectionRun.as_of_date.desc()).first()
+        run = get_latest_sector_projection_run(db)
         if not run:
             raise HTTPException(status_code=404, detail="No sector projections available")
         

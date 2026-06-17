@@ -17,8 +17,9 @@ Designed for extensibility - Option A machine learning overlay can be added in f
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from app.services.ingestion.yahoo_client import YahooClient
+from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 import logging
 
 # =============================================================================
@@ -63,11 +64,378 @@ WEIGHTS = {
     "regime": 0.05,
 }
 
+EXPECTED_SECTOR_SYMBOLS = {etf["symbol"] for etf in SECTOR_ETFS}
+BLOCKING_DATA_WARNING_TYPES = {
+    "empty_sector_projection_run",
+    "missing_sector_projections",
+    "partial_sector_metrics",
+}
+QUALITY_STATUS_BLOCKED = "blocked"
+QUALITY_STATUS_WARNING = "warning"
+QUALITY_STATUS_VALID = "valid"
+
 # =============================================================================
 # CORE PROJECTION COMPUTATION
 # =============================================================================
 
 logger = logging.getLogger(__name__)
+
+
+def _warning_type(warning: Dict[str, Any]) -> Optional[str]:
+    return warning.get("type") if isinstance(warning, dict) else None
+
+
+def is_blocking_sector_projection_warning(warning: Dict[str, Any]) -> bool:
+    return _warning_type(warning) in BLOCKING_DATA_WARNING_TYPES
+
+
+def sector_projection_quality_status(warnings: List[Dict[str, Any]]) -> str:
+    if any(is_blocking_sector_projection_warning(warning) for warning in warnings):
+        return QUALITY_STATUS_BLOCKED
+    if warnings:
+        return QUALITY_STATUS_WARNING
+    return QUALITY_STATUS_VALID
+
+
+def is_sector_run_excluded_from_latest(run: SectorProjectionRun) -> bool:
+    config = run.config_json or {}
+    if config.get("excluded_from_latest") is True:
+        return True
+    warnings = config.get("data_warnings", [])
+    return sector_projection_quality_status(warnings) == QUALITY_STATUS_BLOCKED
+
+
+def get_latest_sector_projection_run(
+    db,
+    *,
+    include_excluded: bool = False,
+    search_limit: Optional[int] = None,
+) -> Optional[SectorProjectionRun]:
+    """Return the latest projection run, optionally skipping quality-blocked runs."""
+    query = (
+        db.query(SectorProjectionRun)
+        .order_by(
+            SectorProjectionRun.as_of_date.desc(),
+            SectorProjectionRun.created_at.desc(),
+            SectorProjectionRun.id.desc(),
+        )
+    )
+    if search_limit is not None:
+        query = query.limit(search_limit)
+    runs = query.all()
+    if include_excluded:
+        return runs[0] if runs else None
+    for run in runs:
+        if not is_sector_run_excluded_from_latest(run):
+            values = db.query(SectorProjectionValue).filter_by(run_id=run.id).all()
+            read_warnings = validate_sector_projection_quality(_projection_dicts_from_values(values))
+            if sector_projection_quality_status(read_warnings) == QUALITY_STATUS_BLOCKED:
+                continue
+            return run
+    return None
+
+
+def validate_sector_projection_quality(
+    projections: List[Dict[str, Any]],
+    *,
+    zero_metric_threshold_ratio: float = 0.40,
+    zero_metric_threshold_count: int = 3,
+) -> List[Dict[str, Any]]:
+    """Detect incomplete sector projection runs before they become chart inputs."""
+    warnings: List[Dict[str, Any]] = []
+    if not projections:
+        return [{
+            "type": "empty_sector_projection_run",
+            "details": [{"message": "No sector projection rows were produced."}],
+        }]
+
+    by_horizon: Dict[str, List[Dict[str, Any]]] = {horizon: [] for horizon in HORIZONS}
+    for projection in projections:
+        horizon = projection.get("horizon")
+        if horizon in by_horizon:
+            by_horizon[horizon].append(projection)
+
+    missing_details = []
+    partial_details = []
+    for horizon in HORIZONS:
+        rows = by_horizon[horizon]
+        present_symbols = {row.get("sector_symbol") for row in rows if row.get("sector_symbol")}
+        missing_symbols = sorted(EXPECTED_SECTOR_SYMBOLS - present_symbols)
+        if missing_symbols:
+            missing_details.append({
+                "horizon": horizon,
+                "present_count": len(present_symbols),
+                "expected_count": len(EXPECTED_SECTOR_SYMBOLS),
+                "missing_symbols": missing_symbols,
+            })
+
+        affected_symbols = []
+        for row in rows:
+            metrics = row.get("metrics") or {}
+            core_values = [metrics.get("return"), metrics.get("sma_dist"), metrics.get("rel_ret")]
+            missing_or_nonfinite = [
+                value is None
+                or not isinstance(value, (int, float, np.floating))
+                or not np.isfinite(value)
+                for value in core_values
+            ]
+            all_zero = all(
+                isinstance(value, (int, float, np.floating))
+                and np.isfinite(value)
+                and abs(float(value)) <= 1e-12
+                for value in core_values
+            )
+            if any(missing_or_nonfinite) or all_zero:
+                affected_symbols.append(row.get("sector_symbol"))
+
+        threshold = max(zero_metric_threshold_count, int(len(EXPECTED_SECTOR_SYMBOLS) * zero_metric_threshold_ratio))
+        if len(affected_symbols) > threshold:
+            partial_details.append({
+                "horizon": horizon,
+                "affected_count": len(affected_symbols),
+                "expected_count": len(EXPECTED_SECTOR_SYMBOLS),
+                "symbols": sorted(symbol for symbol in affected_symbols if symbol),
+                "reason": "return, sma_dist, and rel_ret are all zero-filled or missing",
+            })
+
+    if missing_details:
+        warnings.append({"type": "missing_sector_projections", "details": missing_details})
+    if partial_details:
+        warnings.append({"type": "partial_sector_metrics", "details": partial_details})
+    return warnings
+
+
+def merge_sector_projection_warnings(*warning_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged: List[Dict[str, Any]] = []
+    seen = set()
+    for warnings in warning_groups:
+        for warning in warnings or []:
+            marker = (warning.get("type"), repr(warning.get("details")))
+            if marker in seen:
+                continue
+            seen.add(marker)
+            merged.append(warning)
+    return merged
+
+
+def _previous_run_cache(db, prev_run: Optional[SectorProjectionRun]) -> Optional[Dict[str, Any]]:
+    if not prev_run:
+        return None
+    prev_values = (
+        db.query(SectorProjectionValue)
+        .filter_by(run_id=prev_run.id)
+        .all()
+    )
+    return {
+        "run_id": prev_run.id,
+        "as_of_date": str(prev_run.as_of_date),
+        "created_at": prev_run.created_at.isoformat(),
+        "system_state": prev_run.system_state,
+        "model_version": prev_run.model_version,
+        "values": [
+            {
+                "horizon": v.horizon,
+                "sector_symbol": v.sector_symbol,
+                "sector_name": v.sector_name,
+                "score_total": v.score_total,
+                "rank": v.rank,
+            }
+            for v in prev_values
+        ],
+    }
+
+
+def _projection_dicts_from_values(values: List[SectorProjectionValue]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "horizon": value.horizon,
+            "sector_symbol": value.sector_symbol,
+            "sector_name": value.sector_name,
+            "score_total": value.score_total,
+            "score_trend": value.score_trend,
+            "score_rel": value.score_rel,
+            "score_risk": value.score_risk,
+            "score_regime": value.score_regime,
+            "rank": value.rank,
+            "metrics": value.metrics_json or {},
+        }
+        for value in values
+    ]
+
+
+def save_sector_projection_run(
+    db,
+    projections: List[Dict[str, Any]],
+    *,
+    system_state: str,
+    source_warnings: Optional[List[Dict[str, Any]]] = None,
+    as_of_date=None,
+    created_at: Optional[datetime] = None,
+) -> Tuple[SectorProjectionRun, List[Dict[str, Any]]]:
+    """Persist a projection run with quality metadata used by latest/history readers."""
+    created_at = created_at or datetime.utcnow()
+    as_of_date = as_of_date or created_at.date()
+    quality_warnings = validate_sector_projection_quality(projections)
+    warnings = merge_sector_projection_warnings(source_warnings or [], quality_warnings)
+    quality_status = sector_projection_quality_status(warnings)
+    excluded_from_latest = quality_status == QUALITY_STATUS_BLOCKED
+    prev_run = get_latest_sector_projection_run(db, include_excluded=False)
+    prev_cache = _previous_run_cache(db, prev_run)
+
+    run = SectorProjectionRun(
+        as_of_date=as_of_date,
+        created_at=created_at,
+        system_state=system_state,
+        model_version=MODEL_VERSION,
+        config_json={
+            "weights": WEIGHTS,
+            "data_warnings": warnings,
+            "quality_status": quality_status,
+            "excluded_from_latest": excluded_from_latest,
+            "previous_run_cache": prev_cache,
+        },
+    )
+    db.add(run)
+    db.flush()
+    for p in projections:
+        db.add(SectorProjectionValue(
+            run_id=run.id,
+            horizon=p["horizon"],
+            sector_symbol=p["sector_symbol"],
+            sector_name=p["sector_name"],
+            score_total=p["score_total"],
+            score_trend=p["score_trend"],
+            score_rel=p["score_rel"],
+            score_risk=p["score_risk"],
+            score_regime=p["score_regime"],
+            metrics_json=p["metrics"],
+            rank=p["rank"],
+        ))
+    db.commit()
+    return run, warnings
+
+
+def _history_precedence_key(entry: Dict[str, Any]) -> Tuple[datetime, int]:
+    created_at = entry.get("created_at")
+    parsed_created_at = datetime.min
+    if created_at:
+        try:
+            parsed_created_at = datetime.fromisoformat(str(created_at))
+        except ValueError:
+            parsed_created_at = datetime.min
+    run_id = entry.get("run_id") or -1
+    try:
+        run_id = int(run_id)
+    except (TypeError, ValueError):
+        run_id = -1
+    return parsed_created_at, run_id
+
+
+def build_sector_projection_history(
+    db,
+    cutoff,
+    *,
+    include_flagged: bool = False,
+) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+    """Build de-duplicated, chronologically sorted sector projection history."""
+    runs = (
+        db.query(SectorProjectionRun)
+        .filter(SectorProjectionRun.as_of_date >= cutoff)
+        .order_by(
+            SectorProjectionRun.as_of_date.asc(),
+            SectorProjectionRun.created_at.asc(),
+            SectorProjectionRun.id.asc(),
+        )
+        .all()
+    )
+    candidates: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+
+    def add_entry(
+        *,
+        sector_symbol: str,
+        horizon: str,
+        as_of_date: str,
+        created_at: Optional[str],
+        run_id: Optional[int],
+        score_total: float,
+        rank: int,
+        data_warnings: Optional[List[Dict[str, Any]]] = None,
+        quality_status: Optional[str] = None,
+    ) -> None:
+        key = (sector_symbol, horizon, as_of_date)
+        entry = {
+            "as_of_date": as_of_date,
+            "created_at": created_at,
+            "run_id": run_id,
+            "score_total": score_total,
+            "rank": rank,
+        }
+        if data_warnings:
+            entry["data_warnings"] = data_warnings
+        if quality_status:
+            entry["quality_status"] = quality_status
+        existing = candidates.get(key)
+        if existing is None or _history_precedence_key(entry) >= _history_precedence_key(existing):
+            candidates[key] = entry
+
+    for run in runs:
+        config = run.config_json or {}
+        warnings = config.get("data_warnings", [])
+        values = db.query(SectorProjectionValue).filter_by(run_id=run.id).all()
+        read_warnings = validate_sector_projection_quality(_projection_dicts_from_values(values))
+        warnings = merge_sector_projection_warnings(warnings, read_warnings)
+        quality_status = config.get("quality_status") or sector_projection_quality_status(warnings)
+        if not include_flagged and (
+            is_sector_run_excluded_from_latest(run)
+            or sector_projection_quality_status(warnings) == QUALITY_STATUS_BLOCKED
+        ):
+            continue
+        for v in values:
+            add_entry(
+                sector_symbol=v.sector_symbol,
+                horizon=v.horizon,
+                as_of_date=str(run.as_of_date),
+                created_at=run.created_at.isoformat(),
+                run_id=run.id,
+                score_total=v.score_total,
+                rank=v.rank,
+                data_warnings=warnings,
+                quality_status=quality_status,
+            )
+
+    if runs:
+        latest_run = runs[-1]
+        if include_flagged or not is_sector_run_excluded_from_latest(latest_run):
+            prev_cache = (latest_run.config_json or {}).get("previous_run_cache")
+            if prev_cache and prev_cache.get("as_of_date"):
+                try:
+                    prev_date = datetime.fromisoformat(prev_cache["as_of_date"]).date()
+                except ValueError:
+                    prev_date = None
+                if prev_date and prev_date >= cutoff:
+                    for value in prev_cache.get("values", []):
+                        add_entry(
+                            sector_symbol=value["sector_symbol"],
+                            horizon=value["horizon"],
+                            as_of_date=prev_cache["as_of_date"],
+                            created_at=prev_cache.get("created_at"),
+                            run_id=prev_cache.get("run_id"),
+                            score_total=value["score_total"],
+                            rank=value["rank"],
+                        )
+
+    history: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+    for sector_symbol, horizon, _date_key in sorted(candidates):
+        history.setdefault(sector_symbol, {}).setdefault(horizon, []).append(candidates[(sector_symbol, horizon, _date_key)])
+
+    for horizons in history.values():
+        for entries in horizons.values():
+            entries.sort(key=lambda entry: (
+                entry["as_of_date"],
+                _history_precedence_key(entry)[0],
+                _history_precedence_key(entry)[1],
+            ))
+    return history
 
 def detect_duplicate_series(
     price_data: Dict[str, pd.DataFrame],

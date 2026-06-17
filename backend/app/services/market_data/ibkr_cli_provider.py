@@ -12,13 +12,21 @@ import pandas as pd
 from app.services.market_data.date_utils import expiry_to_ibkr, expiry_to_iso
 from app.services.market_data.provider import OptionChainFrame, OptionRight, UnderlyingQuote
 from app.services.market_data.symbol_mapping import ibkr_symbol_candidates
-from ibkr_cli.ib_service import (
-    _capture_ib_errors,
-    _quote_has_useful_prices,
-    _quote_snapshot_payload,
-    _suppress_ib_async_logs,
-    ib_session,
-)
+
+try:
+    from ibkr_cli.ib_service import (
+        _capture_ib_errors,
+        _quote_has_useful_prices,
+        _quote_snapshot_payload,
+        _suppress_ib_async_logs,
+        ib_session,
+    )
+except ModuleNotFoundError:
+    _capture_ib_errors = None
+    _quote_has_useful_prices = None
+    _quote_snapshot_payload = None
+    _suppress_ib_async_logs = None
+    ib_session = None
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +73,11 @@ class TtlCache:
         self._items[key] = _CacheEntry(value=value, expires_at=time.time() + ttl_seconds)
 
 
+def _require_ibkr_cli() -> None:
+    if ib_session is None:
+        raise RuntimeError("ibkr_cli is required for IBKR market data but is not installed")
+
+
 class IbkrCliProvider:
     name = "ibkr"
 
@@ -84,7 +97,7 @@ class IbkrCliProvider:
         self.profile = selected_profile
         self.exchange = exchange or os.getenv("IBKR_EXCHANGE", "SMART")
         self.currency = currency or os.getenv("IBKR_CURRENCY", "USD")
-        self.timeout = float(timeout or os.getenv("IBKR_TIMEOUT_SECONDS", "10"))
+        self.timeout = float(timeout or os.getenv("IBKR_TIMEOUT_SECONDS", "5"))
         self.chain_ttl = float(os.getenv("IBKR_CHAIN_CACHE_TTL_SECONDS", "86400"))
         self.quote_ttl = float(os.getenv("IBKR_QUOTE_CACHE_TTL_SECONDS", "30"))
         self.bars_ttl = float(os.getenv("IBKR_BARS_CACHE_TTL_SECONDS", "300"))
@@ -115,6 +128,9 @@ class IbkrCliProvider:
             quote_source=str(payload.get("quote_source")) if payload.get("quote_source") else None,
             observed_at=str(payload.get("observed_at")) if payload.get("observed_at") else None,
         )
+        from app.services.market_data_capture import record_underlying_quote
+
+        record_underlying_quote(quote, raw_payload=payload)
         self._cache.set(key, quote, self.quote_ttl)
         return quote
 
@@ -137,12 +153,15 @@ class IbkrCliProvider:
                 bar_size="1 day",
                 what_to_show="TRADES",
                 use_rth=True,
-                timeout=max(self.timeout, 10.0),
+                timeout=self.timeout,
             )
 
         payload = self._call_with_symbol(normalized, fetch)
         rows = payload.get("rows") or []
         frame = _bars_rows_to_frame(rows).tail(days)
+        from app.services.market_data_capture import record_daily_bars
+
+        record_daily_bars(provider=self.name, symbol=normalized, frame=frame, days_requested=days)
         self._cache.set(key, frame.copy(), self.bars_ttl)
         return frame
 
@@ -249,6 +268,9 @@ class IbkrCliProvider:
             source=self.name,
             quote_source=",".join(sorted(quote_sources)) if quote_sources else None,
         )
+        from app.services.market_data_capture import record_option_chain
+
+        record_option_chain(provider=self.name, chain=chain, right=right, strikes=strike_list)
         self._cache.set(cache_key, chain, self.quote_ttl)
         return OptionChainFrame(
             symbol=chain.symbol,
@@ -274,7 +296,7 @@ class IbkrCliProvider:
                 symbol=api_symbol,
                 exchange=self.exchange,
                 currency=self.currency,
-                timeout=max(self.timeout, 10.0),
+                timeout=self.timeout,
             )
 
         payload = self._call_with_symbol(normalized, fetch)
@@ -310,9 +332,10 @@ class IbkrCliProvider:
     def _quote_snapshot_with_fallback(self, api_symbol: str) -> dict[str, Any]:
         from ib_async import Stock
 
+        _require_ibkr_cli()
         modes = _quote_market_data_modes(self.allow_delayed)
 
-        with ib_session(self.profile, timeout=max(self.timeout, 10.0), readonly=True) as ib:
+        with ib_session(self.profile, timeout=self.timeout, readonly=True) as ib:
             contract = Stock(symbol=api_symbol.upper(), exchange=self.exchange, currency=self.currency)
             qualified = ib.qualifyContracts(contract)
             if not qualified:
@@ -348,17 +371,15 @@ class IbkrCliProvider:
         strikes: Optional[list[float]],
         right: str,
     ) -> dict[str, Any]:
-        from ibkr_cli.ib_service import ib_session
         from ib_async import Option, Stock
 
+        _require_ibkr_cli()
         if not strikes:
             raise ValueError("IbkrCliProvider.option_chain requires an explicit strike list")
 
-        modes = [1]
-        if self.allow_delayed:
-            modes.extend([2, 3, 4])
+        modes = _quote_market_data_modes(self.allow_delayed)
 
-        with ib_session(self.profile, timeout=max(self.timeout, 10.0), readonly=True) as ib:
+        with ib_session(self.profile, timeout=self.timeout, readonly=True) as ib:
             underlying = Stock(symbol=api_symbol.upper(), exchange=self.exchange, currency=self.currency)
             qualified_underlying = ib.qualifyContracts(underlying)
             if not qualified_underlying:

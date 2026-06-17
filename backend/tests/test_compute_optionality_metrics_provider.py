@@ -29,3 +29,30 @@ def test_compute_optionality_metrics_returns_structured_error_on_provider_except
     assert metrics["avg_edr"] is None
     assert metrics["error"] == "not connected"
     assert metrics["data_source"] == "failing_option_chain"
+
+
+def test_compute_optionality_metrics_can_limit_expiries_for_sweeps() -> None:
+    class CountingProvider(FakeProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.option_chain_calls = 0
+
+        def option_chain(self, *args, **kwargs):
+            self.option_chain_calls += 1
+            return super().option_chain(*args, **kwargs)
+
+    provider = CountingProvider()
+
+    metrics = compute_optionality_metrics(
+        provider,
+        "FAKE",
+        100.0,
+        20.0,
+        max_expiries=1,
+        strike_thresholds=[0.08],
+    )
+
+    assert metrics["iv30"] == 35.0
+    assert metrics["expiries_scanned"] == 1
+    assert provider.option_chain_calls == 1
+    assert metrics["quote_source"] == "fake"

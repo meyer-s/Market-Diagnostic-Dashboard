@@ -65,7 +65,11 @@ const getSectorColor = (
 
 interface SectorHistoryEntry {
   as_of_date: string;
+  created_at?: string | null;
+  run_id?: number | null;
   score_total: number;
+  data_warnings?: DataWarning[];
+  quality_status?: string;
 }
 
 type SectorProjectionHistory = Record<string, Record<string, SectorHistoryEntry[]>>;
@@ -88,6 +92,11 @@ interface SectorProjectionItem {
   score_regime: number;
   rank: number;
   classification: string;
+  metrics?: {
+    return?: number | null;
+    sma_dist?: number | null;
+    rel_ret?: number | null;
+  };
 }
 
 interface DataWarning {
@@ -99,6 +108,35 @@ interface ChartDataPoint {
   name: string;
   symbol: string;
   scores: Record<string, number | null>;
+}
+
+const BLOCKING_WARNING_TYPES = new Set([
+  "empty_sector_projection_run",
+  "missing_sector_projections",
+  "partial_sector_metrics",
+]);
+
+function hasBlockingDataWarnings(warnings?: DataWarning[]) {
+  return (warnings || []).some((warning) => BLOCKING_WARNING_TYPES.has(warning.type));
+}
+
+function isSuspiciousProjectionSet(projectionSet?: Record<string, SectorProjectionItem[]>) {
+  if (!projectionSet) return false;
+  const expectedSectorCount = 11;
+  return Object.entries(projectionSet).some(([, rows]) => {
+    if (!rows || rows.length === 0) return true;
+    if (rows.length < expectedSectorCount) return true;
+    const zeroFilledRows = rows.filter((row) => {
+      const metrics = row.metrics || {};
+      const coreValues = [metrics.return, metrics.sma_dist, metrics.rel_ret];
+      return coreValues.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1e-12);
+    });
+    return zeroFilledRows.length > Math.max(3, Math.floor(expectedSectorCount * 0.4));
+  });
+}
+
+function isFlaggedHistoryEntry(entry: SectorHistoryEntry) {
+  return entry.quality_status === "blocked" || hasBlockingDataWarnings(entry.data_warnings);
 }
 
 /**
@@ -126,6 +164,8 @@ export default function SectorProjections() {
     as_of_date: string;
     system_state: string;
     data_warnings: DataWarning[];
+    quality_status?: string;
+    excluded_from_latest?: boolean;
   }
   const { data, loading, error } = useApi<SectorProjectionsResponse>("/sectors/projections/latest");
   const { data: historyData } = useApi("/sectors/projections/history?days=365");
@@ -148,7 +188,7 @@ export default function SectorProjections() {
       const isCyclical = CYCLICAL_SECTORS.has(symbol);
       if (!isDefensive && !isCyclical) return;
 
-      entries.forEach((entry) => {
+      entries.filter((entry) => !isFlaggedHistoryEntry(entry)).forEach((entry) => {
         if (!Number.isFinite(entry.score_total)) return;
         const dateKey = entry.as_of_date;
         if (!buckets.has(dateKey)) {
@@ -186,7 +226,12 @@ export default function SectorProjections() {
 
   useEffect(() => {
     if (data && data.projections) {
-      setProjections(data.projections);
+      const excludeLatestRun =
+        data.excluded_from_latest ||
+        data.quality_status === "blocked" ||
+        hasBlockingDataWarnings(data.data_warnings) ||
+        isSuspiciousProjectionSet(data.projections);
+      setProjections(excludeLatestRun ? {} : data.projections);
       setHistoricalScores(data.historical || {});
       
       // If T data is invalid and currently selected, switch to 3m
@@ -231,6 +276,11 @@ export default function SectorProjections() {
   };
 
   const chartData = getChartData();
+  const latestRunSuspicious =
+    data?.excluded_from_latest ||
+    data?.quality_status === "blocked" ||
+    hasBlockingDataWarnings(data?.data_warnings) ||
+    isSuspiciousProjectionSet(data?.projections);
   const tInterpolated = chartData.some((sector) =>
     sector.scores["T"] === null || sector.scores["T"] === undefined
   );
@@ -272,6 +322,13 @@ export default function SectorProjections() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      {latestRunSuspicious && (
+        <div className="rounded-2xl border border-red-700/50 bg-red-950/30 p-3 sm:p-4">
+          <p className="text-xs sm:text-sm text-red-100/90 leading-relaxed">
+            <strong>Projection run excluded:</strong> The latest sector projection payload appears partial or quality-blocked, so it is not used in charts.
+          </p>
         </div>
       )}
       
