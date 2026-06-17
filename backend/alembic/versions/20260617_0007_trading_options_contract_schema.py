@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column("trading_class", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.CheckConstraint("right IN ('CALL', 'PUT')", name="ck_option_contract_right"),
+        sa.CheckConstraint('"right" IN (\'CALL\', \'PUT\')', name="ck_option_contract_right"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "underlying_symbol",
