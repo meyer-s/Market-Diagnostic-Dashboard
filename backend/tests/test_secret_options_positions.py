@@ -61,7 +61,7 @@ def test_positions_endpoint_replaces_non_finite_metrics(monkeypatch: pytest.Monk
     monkeypatch.setattr(
         secret_options,
         "_compute_position_metrics",
-        lambda _position: {
+        lambda _position, _provider=None: {
             "market": {"current_price": float("nan")},
             "volatility": float("inf"),
             "greeks": {"delta": float("-inf")},

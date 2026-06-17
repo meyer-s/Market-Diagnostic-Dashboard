@@ -84,7 +84,7 @@ class IbkrCliProvider:
         self.profile = selected_profile
         self.exchange = exchange or os.getenv("IBKR_EXCHANGE", "SMART")
         self.currency = currency or os.getenv("IBKR_CURRENCY", "USD")
-        self.timeout = float(timeout or os.getenv("IBKR_TIMEOUT_SECONDS", "10"))
+        self.timeout = float(timeout or os.getenv("IBKR_TIMEOUT_SECONDS", "5"))
         self.chain_ttl = float(os.getenv("IBKR_CHAIN_CACHE_TTL_SECONDS", "86400"))
         self.quote_ttl = float(os.getenv("IBKR_QUOTE_CACHE_TTL_SECONDS", "30"))
         self.bars_ttl = float(os.getenv("IBKR_BARS_CACHE_TTL_SECONDS", "300"))
@@ -137,7 +137,7 @@ class IbkrCliProvider:
                 bar_size="1 day",
                 what_to_show="TRADES",
                 use_rth=True,
-                timeout=max(self.timeout, 10.0),
+                timeout=self.timeout,
             )
 
         payload = self._call_with_symbol(normalized, fetch)
@@ -274,7 +274,7 @@ class IbkrCliProvider:
                 symbol=api_symbol,
                 exchange=self.exchange,
                 currency=self.currency,
-                timeout=max(self.timeout, 10.0),
+                timeout=self.timeout,
             )
 
         payload = self._call_with_symbol(normalized, fetch)
@@ -312,7 +312,7 @@ class IbkrCliProvider:
 
         modes = _quote_market_data_modes(self.allow_delayed)
 
-        with ib_session(self.profile, timeout=max(self.timeout, 10.0), readonly=True) as ib:
+        with ib_session(self.profile, timeout=self.timeout, readonly=True) as ib:
             contract = Stock(symbol=api_symbol.upper(), exchange=self.exchange, currency=self.currency)
             qualified = ib.qualifyContracts(contract)
             if not qualified:
@@ -358,7 +358,7 @@ class IbkrCliProvider:
         if self.allow_delayed:
             modes.extend([2, 3, 4])
 
-        with ib_session(self.profile, timeout=max(self.timeout, 10.0), readonly=True) as ib:
+        with ib_session(self.profile, timeout=self.timeout, readonly=True) as ib:
             underlying = Stock(symbol=api_symbol.upper(), exchange=self.exchange, currency=self.currency)
             qualified_underlying = ib.qualifyContracts(underlying)
             if not qualified_underlying:

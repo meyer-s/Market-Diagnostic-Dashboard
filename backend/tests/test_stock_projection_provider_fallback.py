@@ -7,6 +7,7 @@ from app.api.stock_projection import (
     compute_optionality_metrics,
     compute_options_flow,
 )
+from app.services.market_data import factory
 from app.services.market_data.provider import OptionChainFrame, OptionRight
 from tests.fake_market_data import FakeProvider
 
@@ -114,3 +115,22 @@ def test_optionality_metrics_exhausts_primary_expiries_before_fallback() -> None
     assert metrics["expiries_scanned"] > 0
     assert provider.primary.expiries[1] in provider.primary.option_chain_calls
     assert provider.fallback.option_chain_calls == []
+
+
+def test_fallback_provider_skips_primary_after_slow_call(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_DATA_PRIMARY_SLOW_SECONDS", "1")
+    monkeypatch.setenv("MARKET_DATA_PRIMARY_COOLDOWN_SECONDS", "60")
+    ticks = iter([0.0, 0.0, 2.0, 2.0, 2.1])
+    monkeypatch.setattr(factory.time, "monotonic", lambda: next(ticks))
+
+    primary = FakeProvider()
+    primary.name = "ibkr"
+    fallback = FakeProvider()
+    fallback.name = "yahoo"
+    provider = factory.FallbackMarketDataProvider(primary, fallback)
+
+    first = provider.quote("FAKE")
+    second = provider.quote("FAKE")
+
+    assert first.source == "ibkr"
+    assert second.source == "yahoo"
