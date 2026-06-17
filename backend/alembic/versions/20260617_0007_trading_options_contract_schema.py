@@ -5,8 +5,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "20260617_0006"
-down_revision = "20260615_0005"
+revision = "20260617_0007"
+down_revision = "20260617_0006"
 branch_labels = None
 depends_on = None
 
@@ -195,16 +195,14 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         schema="trading",
     )
-    op.create_index(
-        "position_reconciliation_latest_idx",
-        "position_reconciliation",
-        [sa.text("checked_at DESC"), "status"],
-        schema="trading",
+    op.execute(
+        "CREATE INDEX position_reconciliation_latest_idx "
+        "ON trading.position_reconciliation (checked_at DESC, status)"
     )
 
 
 def downgrade() -> None:
-    op.drop_index("position_reconciliation_latest_idx", table_name="position_reconciliation", schema="trading")
+    op.execute("DROP INDEX IF EXISTS trading.position_reconciliation_latest_idx")
     op.drop_table("position_reconciliation", schema="trading")
     op.drop_index("broker_event_order_idx", table_name="broker_event", schema="trading")
     op.drop_table("broker_event", schema="trading")
