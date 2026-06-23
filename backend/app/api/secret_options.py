@@ -88,6 +88,23 @@ class ClosePositionRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class ClosedPositionUpdate(BaseModel):
+    trade_date: str
+    close_date: str
+    account: Optional[str] = None
+    contracts: int
+    symbol: str
+    expiration: str
+    strike: float
+    option_type: str
+    fill_price: float
+    exit_price: float
+    total_cost: float
+    underlying_at_entry: Optional[float] = None
+    underlying_at_exit: Optional[float] = None
+    notes: Optional[str] = None
+
+
 # Old Greeks functions removed - now using greeks_calculator module
 
 
@@ -95,6 +112,10 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
     if not value:
         return None
     return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def _nullable_equals(column: Any, value: Any) -> Any:
+    return column.is_(None) if value is None else column == value
 
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -808,6 +829,102 @@ def _serialize_position(position: OptionPosition) -> Dict[str, object]:
     }
 
 
+def _serialize_closed_position(position: ClosedPosition) -> Dict[str, object]:
+    return {
+        "id": position.id,
+        "symbol": position.symbol,
+        "option_type": position.option_type,
+        "strike": position.strike,
+        "expiration": position.expiration.isoformat(),
+        "contracts": position.contracts,
+        "trade_date": position.trade_date.isoformat(),
+        "close_date": position.close_date.isoformat(),
+        "fill_price": position.fill_price,
+        "exit_price": position.exit_price,
+        "total_cost": position.total_cost,
+        "total_proceeds": position.total_proceeds,
+        "dollar_pnl": position.dollar_pnl,
+        "percent_pnl": position.percent_pnl,
+        "underlying_at_entry": position.underlying_at_entry,
+        "underlying_at_exit": position.underlying_at_exit,
+        "account": position.account,
+        "notes": position.notes,
+        "source_event_id": position.source_event_id,
+        "source_triggered_at": (
+            position.source_triggered_at.isoformat() if position.source_triggered_at else None
+        ),
+        "source_match_method": position.source_match_method,
+        "source_match_confidence": position.source_match_confidence,
+        "source_match_notes": position.source_match_notes,
+    }
+
+
+def _find_duplicate_open_position(
+    db: Any,
+    *,
+    trade_date: date,
+    account: Optional[str],
+    action: Optional[str],
+    contracts: int,
+    symbol: str,
+    expiration: date,
+    strike: float,
+    option_type: str,
+    fill_price: float,
+    total_cost: float,
+    exclude_id: Optional[int] = None,
+) -> Optional[OptionPosition]:
+    query = db.query(OptionPosition).filter(
+        OptionPosition.trade_date == trade_date,
+        _nullable_equals(OptionPosition.account, account),
+        _nullable_equals(OptionPosition.action, action),
+        OptionPosition.contracts == contracts,
+        OptionPosition.symbol == symbol,
+        OptionPosition.expiration == expiration,
+        OptionPosition.strike == strike,
+        OptionPosition.option_type == option_type,
+        OptionPosition.fill_price == fill_price,
+        OptionPosition.total_cost == total_cost,
+    )
+    if exclude_id is not None:
+        query = query.filter(OptionPosition.id != exclude_id)
+    return query.first()
+
+
+def _find_duplicate_closed_position(
+    db: Any,
+    *,
+    trade_date: date,
+    close_date: date,
+    account: Optional[str],
+    contracts: int,
+    symbol: str,
+    expiration: date,
+    strike: float,
+    option_type: str,
+    fill_price: float,
+    exit_price: float,
+    total_cost: float,
+    exclude_id: Optional[int] = None,
+) -> Optional[ClosedPosition]:
+    query = db.query(ClosedPosition).filter(
+        ClosedPosition.trade_date == trade_date,
+        ClosedPosition.close_date == close_date,
+        _nullable_equals(ClosedPosition.account, account),
+        ClosedPosition.contracts == contracts,
+        ClosedPosition.symbol == symbol,
+        ClosedPosition.expiration == expiration,
+        ClosedPosition.strike == strike,
+        ClosedPosition.option_type == option_type,
+        ClosedPosition.fill_price == fill_price,
+        ClosedPosition.exit_price == exit_price,
+        ClosedPosition.total_cost == total_cost,
+    )
+    if exclude_id is not None:
+        query = query.filter(ClosedPosition.id != exclude_id)
+    return query.first()
+
+
 @router.get("/positions")
 def get_positions():
     try:
@@ -841,9 +958,30 @@ def get_positions():
 def create_position(payload: OptionPositionCreate):
     with get_db_session() as db:
         trade_date = _parse_date(payload.trade_date)
+        expiration = _parse_date(payload.expiration)
+        symbol = payload.symbol.upper()
+        option_type = payload.option_type.lower()
+        duplicate = _find_duplicate_open_position(
+            db,
+            trade_date=trade_date,
+            account=payload.account,
+            action=payload.action,
+            contracts=payload.contracts,
+            symbol=symbol,
+            expiration=expiration,
+            strike=payload.strike,
+            option_type=option_type,
+            fill_price=payload.fill_price,
+            total_cost=payload.total_cost,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate open position already exists as trade #{duplicate.id}.",
+            )
         attribution = _resolve_signal_attribution(
             db,
-            payload.symbol.upper(),
+            symbol,
             trade_date,
             explicit_event_id=payload.source_event_id,
         )
@@ -852,10 +990,10 @@ def create_position(payload: OptionPositionCreate):
             account=payload.account,
             action=payload.action,
             contracts=payload.contracts,
-            symbol=payload.symbol.upper(),
-            expiration=_parse_date(payload.expiration),
+            symbol=symbol,
+            expiration=expiration,
             strike=payload.strike,
-            option_type=payload.option_type.lower(),
+            option_type=option_type,
             fill_price=payload.fill_price,
             total_cost=payload.total_cost,
             underlying_at_entry=payload.underlying_at_entry,
@@ -883,9 +1021,31 @@ def update_position(position_id: int, payload: OptionPositionCreate):
             raise HTTPException(status_code=404, detail="Position not found")
 
         trade_date = _parse_date(payload.trade_date)
+        expiration = _parse_date(payload.expiration)
+        symbol = payload.symbol.upper()
+        option_type = payload.option_type.lower()
+        duplicate = _find_duplicate_open_position(
+            db,
+            trade_date=trade_date,
+            account=payload.account,
+            action=payload.action,
+            contracts=payload.contracts,
+            symbol=symbol,
+            expiration=expiration,
+            strike=payload.strike,
+            option_type=option_type,
+            fill_price=payload.fill_price,
+            total_cost=payload.total_cost,
+            exclude_id=position_id,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate open position already exists as trade #{duplicate.id}.",
+            )
         attribution = _resolve_signal_attribution(
             db,
-            payload.symbol.upper(),
+            symbol,
             trade_date,
             explicit_event_id=payload.source_event_id,
         )
@@ -894,10 +1054,10 @@ def update_position(position_id: int, payload: OptionPositionCreate):
         position.account = payload.account
         position.action = payload.action
         position.contracts = payload.contracts
-        position.symbol = payload.symbol.upper()
-        position.expiration = _parse_date(payload.expiration)
+        position.symbol = symbol
+        position.expiration = expiration
         position.strike = payload.strike
-        position.option_type = payload.option_type.lower()
+        position.option_type = option_type
         position.fill_price = payload.fill_price
         position.total_cost = payload.total_cost
         position.underlying_at_entry = payload.underlying_at_entry
@@ -1022,6 +1182,26 @@ def close_position(position_id: int, request: ClosePositionRequest):
         total_proceeds = request.exit_price * position.contracts * 100
         dollar_pnl = total_proceeds - position.total_cost
         percent_pnl = (dollar_pnl / position.total_cost) * 100 if position.total_cost else 0
+        close_date = _parse_date(request.close_date) if request.close_date else date.today()
+        duplicate = _find_duplicate_closed_position(
+            db,
+            trade_date=position.trade_date,
+            close_date=close_date,
+            account=position.account,
+            contracts=position.contracts,
+            symbol=position.symbol,
+            expiration=position.expiration,
+            strike=position.strike,
+            option_type=position.option_type,
+            fill_price=position.fill_price,
+            exit_price=request.exit_price,
+            total_cost=position.total_cost,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate closed position already exists as trade #{duplicate.id}.",
+            )
         
         # Get current underlying price
         market = _market_data_for_symbol(get_market_data_provider(), position.symbol)
@@ -1038,7 +1218,7 @@ def close_position(position_id: int, request: ClosePositionRequest):
             fill_price=position.fill_price,
             total_cost=position.total_cost,
             underlying_at_entry=position.underlying_at_entry,
-            close_date=_parse_date(request.close_date) if request.close_date else date.today(),
+            close_date=close_date,
             exit_price=request.exit_price,
             total_proceeds=total_proceeds,
             underlying_at_exit=underlying_at_exit,
@@ -1086,33 +1266,7 @@ def get_closed_positions(
         
         results = []
         for pos in closed_positions:
-            results.append({
-                "id": pos.id,
-                "symbol": pos.symbol,
-                "option_type": pos.option_type,
-                "strike": pos.strike,
-                "expiration": pos.expiration.isoformat(),
-                "contracts": pos.contracts,
-                "trade_date": pos.trade_date.isoformat(),
-                "close_date": pos.close_date.isoformat(),
-                "fill_price": pos.fill_price,
-                "exit_price": pos.exit_price,
-                "total_cost": pos.total_cost,
-                "total_proceeds": pos.total_proceeds,
-                "dollar_pnl": pos.dollar_pnl,
-                "percent_pnl": pos.percent_pnl,
-                "underlying_at_entry": pos.underlying_at_entry,
-                "underlying_at_exit": pos.underlying_at_exit,
-                "account": pos.account,
-                "notes": pos.notes,
-                "source_event_id": pos.source_event_id,
-                "source_triggered_at": (
-                    pos.source_triggered_at.isoformat() if pos.source_triggered_at else None
-                ),
-                "source_match_method": pos.source_match_method,
-                "source_match_confidence": pos.source_match_confidence,
-                "source_match_notes": pos.source_match_notes,
-            })
+            results.append(_serialize_closed_position(pos))
         
         # Calculate summary stats
         total_pnl = sum(pos.dollar_pnl for pos in closed_positions)
@@ -1139,6 +1293,78 @@ def get_closed_positions(
                 "attributed_win_rate": attributed_win_rate,
             }
         })
+
+
+@router.put("/closed-positions/{closed_position_id}")
+def update_closed_position(closed_position_id: int, payload: ClosedPositionUpdate):
+    with get_db_session() as db:
+        position = db.query(ClosedPosition).filter(ClosedPosition.id == closed_position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Closed position not found")
+
+        trade_date = _parse_date(payload.trade_date)
+        close_date = _parse_date(payload.close_date)
+        expiration = _parse_date(payload.expiration)
+        symbol = payload.symbol.upper()
+        option_type = payload.option_type.lower()
+        duplicate = _find_duplicate_closed_position(
+            db,
+            trade_date=trade_date,
+            close_date=close_date,
+            account=payload.account,
+            contracts=payload.contracts,
+            symbol=symbol,
+            expiration=expiration,
+            strike=payload.strike,
+            option_type=option_type,
+            fill_price=payload.fill_price,
+            exit_price=payload.exit_price,
+            total_cost=payload.total_cost,
+            exclude_id=closed_position_id,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate closed position already exists as trade #{duplicate.id}.",
+            )
+
+        total_proceeds = payload.exit_price * payload.contracts * 100
+        dollar_pnl = total_proceeds - payload.total_cost
+        percent_pnl = (dollar_pnl / payload.total_cost) * 100 if payload.total_cost else 0
+
+        position.trade_date = trade_date
+        position.close_date = close_date
+        position.account = payload.account
+        position.contracts = payload.contracts
+        position.symbol = symbol
+        position.expiration = expiration
+        position.strike = payload.strike
+        position.option_type = option_type
+        position.fill_price = payload.fill_price
+        position.exit_price = payload.exit_price
+        position.total_cost = payload.total_cost
+        position.total_proceeds = total_proceeds
+        position.dollar_pnl = dollar_pnl
+        position.percent_pnl = percent_pnl
+        position.underlying_at_entry = payload.underlying_at_entry
+        position.underlying_at_exit = payload.underlying_at_exit
+        position.notes = payload.notes
+
+        db.commit()
+        db.refresh(position)
+        return _json_safe({"closed_position": _serialize_closed_position(position)})
+
+
+@router.delete("/closed-positions/{closed_position_id}")
+def delete_closed_position(closed_position_id: int):
+    with get_db_session() as db:
+        position = db.query(ClosedPosition).filter(ClosedPosition.id == closed_position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Closed position not found")
+
+        db.delete(position)
+        db.commit()
+        return {"message": "Closed position deleted successfully"}
 
 
 @router.post("/attribution/backfill")
