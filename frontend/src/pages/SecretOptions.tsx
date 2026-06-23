@@ -485,6 +485,58 @@ const initialFormState = {
   underlying_reference: "",
 };
 
+const initialClosedFormState = {
+  trade_date: "",
+  close_date: "",
+  account: "",
+  contracts: "",
+  symbol: "",
+  expiration: "",
+  strike: "",
+  option_type: "call",
+  fill_price: "",
+  exit_price: "",
+  total_cost: "",
+  underlying_at_entry: "",
+  underlying_at_exit: "",
+  notes: "",
+};
+
+type PositionFormPayload = {
+  trade_date: string;
+  account: string | null;
+  action: string | null;
+  contracts: number;
+  symbol: string;
+  expiration: string;
+  strike: number;
+  option_type: string;
+  fill_price: number;
+  total_cost: number;
+  underlying_at_entry: number | null;
+  estimated_delta: number | null;
+  shares_equivalent: number | null;
+  dte_at_entry: number | null;
+  underlying_reference: number | null;
+};
+
+type ClosedPositionFormPayload = {
+  trade_date: string;
+  close_date: string;
+  account: string | null;
+  contracts: number;
+  symbol: string;
+  expiration: string;
+  strike: number;
+  option_type: string;
+  fill_price: number;
+  exit_price: number;
+  total_cost: number;
+  underlying_at_entry: number | null;
+  underlying_at_exit: number | null;
+  notes: string | null;
+};
+
 const asNumber = (value: string | number | null | undefined): number | null => {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -492,6 +544,43 @@ const asNumber = (value: string | number | null | undefined): number | null => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
+
+const normalizedNullableText = (value: string | null | undefined) => (value || "").trim().toUpperCase();
+const duplicateNumber = (value: number | null | undefined) =>
+  value === null || value === undefined || !Number.isFinite(value) ? "" : Number(value).toFixed(4);
+
+const openPositionSignature = (
+  item: PositionFormPayload | OptionPosition
+) =>
+  [
+    item.trade_date,
+    normalizedNullableText(item.account),
+    normalizedNullableText(item.action),
+    item.contracts,
+    item.symbol.trim().toUpperCase(),
+    item.expiration,
+    duplicateNumber(item.strike),
+    item.option_type.trim().toLowerCase(),
+    duplicateNumber(item.fill_price),
+    duplicateNumber(item.total_cost),
+  ].join("|");
+
+const closedPositionSignature = (
+  item: ClosedPositionFormPayload | ClosedPositionRow
+) =>
+  [
+    item.trade_date,
+    item.close_date,
+    normalizedNullableText(item.account),
+    item.contracts,
+    item.symbol.trim().toUpperCase(),
+    item.expiration,
+    duplicateNumber(item.strike),
+    item.option_type.trim().toLowerCase(),
+    duplicateNumber(item.fill_price),
+    duplicateNumber(item.exit_price),
+    duplicateNumber(item.total_cost),
+  ].join("|");
 
 const normalizePositionMetrics = (
   metrics: RawPositionPayload["metrics"]
@@ -562,6 +651,7 @@ export default function SecretOptions() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [closingSubmitting, setClosingSubmitting] = useState(false);
   const [formData, setFormData] = useState(initialFormState);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPositionId, setEditingPositionId] = useState<number | null>(null);
@@ -571,6 +661,11 @@ export default function SecretOptions() {
   const [closeNotes, setCloseNotes] = useState("");
   const [closedPositions, setClosedPositions] = useState<ClosedPositionRow[]>([]);
   const [showClosedLog, setShowClosedLog] = useState(false);
+  const [showClosedEditModal, setShowClosedEditModal] = useState(false);
+  const [editingClosedPositionId, setEditingClosedPositionId] = useState<number | null>(null);
+  const [closedFormData, setClosedFormData] = useState(initialClosedFormState);
+  const [closedFormError, setClosedFormError] = useState<string | null>(null);
+  const [closedSubmitting, setClosedSubmitting] = useState(false);
   const [showTrainingOutcomes, setShowTrainingOutcomes] = useState(false);
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
@@ -586,7 +681,7 @@ export default function SecretOptions() {
   const [zoneInputsByPosition, setZoneInputsByPosition] = useState<Record<number, ZoneInputs>>({});
   const [spotWeightBySymbol, setSpotWeightBySymbol] = useState<Record<string, SpotWeighting>>({});
 
-  const anyModalOpen = showAddModal || showCloseModal || showTrainingOutcomes;
+  const anyModalOpen = showAddModal || showCloseModal || showClosedLog || showClosedEditModal || showTrainingOutcomes;
   const renderModal = (node: JSX.Element) => {
     if (typeof document === "undefined") {
       return null;
@@ -652,7 +747,7 @@ export default function SecretOptions() {
     return Number.isFinite(parsed) ? parsed : null;
   };
 
-  const buildPositionPayloadFromForm = () => {
+  const buildPositionPayloadFromForm = (): PositionFormPayload | null => {
     if (!formData.trade_date || !formData.symbol || !formData.expiration) {
       setFormError("Trade date, symbol, and expiration are required.");
       return null;
@@ -684,6 +779,41 @@ export default function SecretOptions() {
       shares_equivalent: optionalNumber(formData.shares_equivalent),
       dte_at_entry: optionalNumber(formData.dte_at_entry),
       underlying_reference: optionalNumber(formData.underlying_reference),
+    };
+  };
+
+  const buildClosedPositionPayloadFromForm = (): ClosedPositionFormPayload | null => {
+    if (!closedFormData.trade_date || !closedFormData.close_date || !closedFormData.symbol || !closedFormData.expiration) {
+      setClosedFormError("Trade date, close date, symbol, and expiration are required.");
+      return null;
+    }
+
+    const contracts = Number(closedFormData.contracts);
+    const strike = Number(closedFormData.strike);
+    const fillPrice = Number(closedFormData.fill_price);
+    const exitPriceValue = Number(closedFormData.exit_price);
+    const totalCost = Number(closedFormData.total_cost);
+
+    if (!contracts || !strike || !fillPrice || !totalCost || !Number.isFinite(exitPriceValue)) {
+      setClosedFormError("Contracts, strike, entry, exit, and total cost are required.");
+      return null;
+    }
+
+    return {
+      trade_date: closedFormData.trade_date,
+      close_date: closedFormData.close_date,
+      account: closedFormData.account || null,
+      contracts,
+      symbol: closedFormData.symbol.toUpperCase(),
+      expiration: closedFormData.expiration,
+      strike,
+      option_type: closedFormData.option_type,
+      fill_price: fillPrice,
+      exit_price: exitPriceValue,
+      total_cost: totalCost,
+      underlying_at_entry: optionalNumber(closedFormData.underlying_at_entry),
+      underlying_at_exit: optionalNumber(closedFormData.underlying_at_exit),
+      notes: closedFormData.notes || null,
     };
   };
 
@@ -731,11 +861,22 @@ export default function SecretOptions() {
       setFormData((prev) => ({ ...prev, [field]: event.target.value }));
     };
 
+  const handleClosedFieldChange =
+    (field: keyof typeof initialClosedFormState) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      setClosedFormData((prev) => ({ ...prev, [field]: event.target.value }));
+    };
+
   const handleCreatePosition = async (event: React.FormEvent) => {
     event.preventDefault();
     setFormError(null);
     const payload = buildPositionPayloadFromForm();
     if (!payload) return;
+    const duplicate = positions.find((item) => openPositionSignature(item.position) === openPositionSignature(payload));
+    if (duplicate) {
+      setFormError(`This open trade already exists as trade #${duplicate.position.id}.`);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -763,6 +904,15 @@ export default function SecretOptions() {
     setFormError(null);
     const payload = buildPositionPayloadFromForm();
     if (!payload) return;
+    const duplicate = positions.find(
+      (item) =>
+        item.position.id !== editingPositionId &&
+        openPositionSignature(item.position) === openPositionSignature(payload)
+    );
+    if (duplicate) {
+      setFormError(`This open trade would duplicate trade #${duplicate.position.id}.`);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -813,7 +963,11 @@ export default function SecretOptions() {
       alert("Please enter an exit price");
       return;
     }
+    if (closingSubmitting) {
+      return;
+    }
 
+    setClosingSubmitting(true);
     try {
       await apiFetch(`/secret/options/positions/${closingPositionId}`, {
         method: "DELETE",
@@ -833,12 +987,99 @@ export default function SecretOptions() {
       await loadClosedPositions();
     } catch (err: unknown) {
       alert(`Failed to close position: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setClosingSubmitting(false);
     }
   };
 
   const openCloseModal = (positionId: number) => {
     setClosingPositionId(positionId);
     setShowCloseModal(true);
+  };
+
+  const closeClosedEditModal = () => {
+    setShowClosedEditModal(false);
+    setEditingClosedPositionId(null);
+    setClosedFormData(initialClosedFormState);
+    setClosedFormError(null);
+  };
+
+  const openClosedEditModal = (position: ClosedPositionRow) => {
+    setEditingClosedPositionId(position.id);
+    setClosedFormError(null);
+    setClosedFormData({
+      trade_date: position.trade_date || "",
+      close_date: position.close_date || "",
+      account: position.account || "",
+      contracts: String(position.contracts ?? ""),
+      symbol: position.symbol || "",
+      expiration: position.expiration || "",
+      strike: position.strike !== null && position.strike !== undefined ? String(position.strike) : "",
+      option_type: position.option_type || "call",
+      fill_price: position.fill_price !== null && position.fill_price !== undefined ? String(position.fill_price) : "",
+      exit_price: position.exit_price !== null && position.exit_price !== undefined ? String(position.exit_price) : "",
+      total_cost: position.total_cost !== null && position.total_cost !== undefined ? String(position.total_cost) : "",
+      underlying_at_entry:
+        position.underlying_at_entry !== null && position.underlying_at_entry !== undefined
+          ? String(position.underlying_at_entry)
+          : "",
+      underlying_at_exit:
+        position.underlying_at_exit !== null && position.underlying_at_exit !== undefined
+          ? String(position.underlying_at_exit)
+          : "",
+      notes: position.notes || "",
+    });
+    setShowClosedEditModal(true);
+  };
+
+  const handleUpdateClosedPosition = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingClosedPositionId) {
+      setClosedFormError("No closed position selected for edit.");
+      return;
+    }
+
+    setClosedFormError(null);
+    const payload = buildClosedPositionPayloadFromForm();
+    if (!payload) return;
+    const duplicate = closedPositions.find(
+      (item) => item.id !== editingClosedPositionId && closedPositionSignature(item) === closedPositionSignature(payload)
+    );
+    if (duplicate) {
+      setClosedFormError(`This closed trade would duplicate trade #${duplicate.id}.`);
+      return;
+    }
+
+    setClosedSubmitting(true);
+    try {
+      await apiFetch(`/secret/options/closed-positions/${editingClosedPositionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      closeClosedEditModal();
+      await loadClosedPositions();
+    } catch (err: unknown) {
+      setClosedFormError(err instanceof Error ? err.message : "Failed to update closed position.");
+    } finally {
+      setClosedSubmitting(false);
+    }
+  };
+
+  const handleDeleteClosedPosition = async (position: ClosedPositionRow) => {
+    const confirmed = window.confirm(
+      `Delete closed trade #${position.id} for ${position.symbol} ${formatDate(position.close_date)}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      await apiFetch(`/secret/options/closed-positions/${position.id}`, {
+        method: "DELETE",
+      });
+      await loadClosedPositions();
+    } catch (err: unknown) {
+      alert(`Failed to delete closed position: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   useEffect(() => {
@@ -2268,12 +2509,221 @@ export default function SecretOptions() {
                 </button>
                 <button
                   onClick={handleClosePosition}
-                  className="bg-rose-700 hover:bg-rose-600 text-white px-4 py-2 rounded-md text-sm font-medium"
+                  disabled={closingSubmitting}
+                  className="bg-rose-700 hover:bg-rose-600 disabled:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
                 >
-                  Close Position
+                  {closingSubmitting ? "Closing..." : "Close Position"}
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Closed Position Modal */}
+      {showClosedEditModal && renderModal(
+        <div
+          className="fixed inset-0 z-[60] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/75 backdrop-blur-sm p-4"
+          onClick={closeClosedEditModal}
+        >
+          <div
+            className="w-full max-w-3xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Edit Closed Trade</h2>
+              <button
+                onClick={closeClosedEditModal}
+                className="text-gray-400 hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            {closedFormError && (
+              <div className="mb-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+                {closedFormError}
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateClosedPosition} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label className="text-xs text-gray-400">
+                  Trade Date *
+                  <input
+                    type="date"
+                    value={closedFormData.trade_date}
+                    onChange={handleClosedFieldChange("trade_date")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Close Date *
+                  <input
+                    type="date"
+                    value={closedFormData.close_date}
+                    onChange={handleClosedFieldChange("close_date")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Account
+                  <input
+                    type="text"
+                    value={closedFormData.account}
+                    onChange={handleClosedFieldChange("account")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Symbol *
+                  <input
+                    type="text"
+                    value={closedFormData.symbol}
+                    onChange={handleClosedFieldChange("symbol")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm uppercase text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Expiration *
+                  <input
+                    type="date"
+                    value={closedFormData.expiration}
+                    onChange={handleClosedFieldChange("expiration")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Type *
+                  <select
+                    value={closedFormData.option_type}
+                    onChange={handleClosedFieldChange("option_type")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  >
+                    <option value="call">Call</option>
+                    <option value="put">Put</option>
+                  </select>
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Contracts *
+                  <input
+                    type="number"
+                    min="1"
+                    value={closedFormData.contracts}
+                    onChange={handleClosedFieldChange("contracts")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Strike *
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={closedFormData.strike}
+                    onChange={handleClosedFieldChange("strike")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Total Cost *
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={closedFormData.total_cost}
+                    onChange={handleClosedFieldChange("total_cost")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Entry Price *
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={closedFormData.fill_price}
+                    onChange={handleClosedFieldChange("fill_price")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Exit Price *
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={closedFormData.exit_price}
+                    onChange={handleClosedFieldChange("exit_price")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    required
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Underlying at Entry
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={closedFormData.underlying_at_entry}
+                    onChange={handleClosedFieldChange("underlying_at_entry")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  />
+                </label>
+
+                <label className="text-xs text-gray-400">
+                  Underlying at Exit
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={closedFormData.underlying_at_exit}
+                    onChange={handleClosedFieldChange("underlying_at_exit")}
+                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  />
+                </label>
+              </div>
+
+              <label className="block text-xs text-gray-400">
+                Notes
+                <textarea
+                  value={closedFormData.notes}
+                  onChange={handleClosedFieldChange("notes")}
+                  rows={3}
+                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                />
+              </label>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeClosedEditModal}
+                  className="px-4 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={closedSubmitting}
+                  className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                >
+                  {closedSubmitting ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -2431,6 +2881,7 @@ export default function SecretOptions() {
                         </button>
                       </th>
                       <th className="px-3 py-2 text-left">Notes</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
@@ -2474,6 +2925,24 @@ export default function SecretOptions() {
                           {formatSigned(pos.percent_pnl, 1)}%
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-400">{pos.notes || "—"}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openClosedEditModal(pos)}
+                              className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:border-emerald-500 hover:text-emerald-200"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClosedPosition(pos)}
+                              className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:border-rose-500 hover:text-rose-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     )})}
                   </tbody>
