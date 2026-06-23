@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 import sys
 import types
 
@@ -26,6 +26,8 @@ sys.modules.setdefault("ibkr_cli.ib_service", ib_service_module)
 from app.api import secret_options
 from app.core.db import Base
 from app.models.closed_positions import ClosedPosition
+from app.models.option_training_outcomes import OptionTrainingOutcome
+from app.models.options_alerts import OptionAlertEvent
 from app.models.option_positions import OptionPosition
 
 
@@ -278,3 +280,68 @@ def test_update_and_delete_closed_position(secret_options_client) -> None:
     assert delete_response.status_code == 200
     with session_local() as db:
         assert db.query(ClosedPosition).count() == 0
+
+
+def test_training_outcomes_are_persisted(secret_options_client, monkeypatch: pytest.MonkeyPatch) -> None:
+    client, session_local = secret_options_client
+    with session_local() as db:
+        db.add(
+            OptionAlertEvent(
+                symbol="BTU",
+                triggered_at=datetime(2026, 6, 1, 14, 30),
+                iv30=50.0,
+                hv30=60.0,
+                iv_percentile=4.0,
+                avg_edr=70.0,
+                selected_option_type="put",
+                selected_expiry="2026-09-18",
+                selected_strike=24.0,
+                selected_premium=2.70,
+                message="Setup: 1x ATM PUT\nContract: 2026-09-18 24.0 PUT\nHold: 21 trading days\nEst Prem: $2.70",
+            )
+        )
+        db.commit()
+        event_id = db.query(OptionAlertEvent).one().id
+
+    calls = {"count": 0}
+
+    def _fake_compute(event: OptionAlertEvent) -> dict[str, object]:
+        calls["count"] += 1
+        return {
+            "event_id": event.id,
+            "symbol": "BTU",
+            "triggered_at": event.triggered_at.isoformat(),
+            "option_type": "put",
+            "contract_expiry": "2026-09-18",
+            "contract_strike": 24.0,
+            "hold_days": 21,
+            "entry_date": "2026-06-01",
+            "exit_date": "2026-06-22",
+            "entry_underlying": 23.0,
+            "exit_underlying": 21.0,
+            "underlying_directional_return_pct": 8.69565,
+            "entry_option_price_est": 2.70,
+            "exit_option_price_est": 4.20,
+            "option_return_pct_est": 55.55556,
+            "option_pnl_per_contract_est": 150.0,
+            "recommended_exit_date": "2026-06-22",
+            "hold_days_realized": 21,
+            "days_elapsed_calendar": 21,
+            "status": "matured",
+        }
+
+    monkeypatch.setattr(secret_options, "_compute_training_outcome_with_cache", _fake_compute)
+
+    first = client.get("/secret/options/training-outcomes", params={"lookback_days": 365, "limit": 50})
+    second = client.get("/secret/options/training-outcomes", params={"lookback_days": 365, "limit": 50})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls["count"] == 1
+    assert first.json()["outcomes"][0]["event_id"] == event_id
+    assert second.json()["outcomes"][0]["event_id"] == event_id
+    with session_local() as db:
+        row = db.query(OptionTrainingOutcome).one()
+        assert row.event_id == event_id
+        assert row.compute_status == "ok"
+        assert row.status == "matured"

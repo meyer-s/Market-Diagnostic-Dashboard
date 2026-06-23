@@ -16,9 +16,11 @@ from app.api.stock_projection import compute_historical_volatility
 from app.models.option_positions import OptionPosition
 from app.models.closed_positions import ClosedPosition
 from app.models.options_alerts import OptionAlertEvent
+from app.models.option_training_outcomes import OptionTrainingOutcome
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import option_quote_from_row
+from app.services.stock_price_cache import get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
     black_scholes_price,
@@ -172,7 +174,10 @@ def _extract_training_recipe(message: Optional[str]) -> Dict[str, Optional[float
     }
 
 
-def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, object]]:
+def _compute_training_outcome(
+    event: OptionAlertEvent,
+    history: Optional[pd.DataFrame] = None,
+) -> Optional[Dict[str, object]]:
     recipe = _extract_training_recipe(event.message)
     option_type = event.selected_option_type or recipe.get("option_type")
     hold_days = recipe.get("hold_days")
@@ -186,8 +191,9 @@ def _compute_training_outcome(event: OptionAlertEvent) -> Optional[Dict[str, obj
     # yfinance `end` is exclusive, so `end=today` includes up to yesterday.
     end_day = date.today()
 
-    stock = yf.Ticker(event.symbol)
-    history = stock.history(start=start_day.isoformat(), end=end_day.isoformat())
+    if history is None:
+        stock = yf.Ticker(event.symbol)
+        history = stock.history(start=start_day.isoformat(), end=end_day.isoformat())
     if history is None or history.empty or "Close" not in history.columns:
         return None
 
@@ -925,6 +931,147 @@ def _find_duplicate_closed_position(
     return query.first()
 
 
+_TRAINING_RETRY_AFTER = timedelta(hours=6)
+
+
+def _parse_iso_date(value: object) -> Optional[date]:
+    if not value:
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    return _parse_date(str(value))
+
+
+def _training_outcome_payload(row: OptionTrainingOutcome) -> Dict[str, object]:
+    today = date.today()
+    days_elapsed = row.days_elapsed_calendar
+    if row.entry_date is not None and row.status == "pending":
+        days_elapsed = (today - row.entry_date).days
+
+    return {
+        "event_id": row.event_id,
+        "symbol": row.symbol,
+        "triggered_at": row.triggered_at.isoformat() if row.triggered_at else None,
+        "option_type": row.option_type,
+        "contract_expiry": row.contract_expiry.isoformat() if row.contract_expiry else None,
+        "contract_strike": row.contract_strike,
+        "hold_days": row.hold_days,
+        "entry_date": row.entry_date.isoformat() if row.entry_date else None,
+        "exit_date": row.exit_date.isoformat() if row.exit_date else None,
+        "entry_underlying": row.entry_underlying,
+        "exit_underlying": row.exit_underlying,
+        "underlying_directional_return_pct": row.underlying_directional_return_pct,
+        "entry_option_price_est": row.entry_option_price_est,
+        "exit_option_price_est": row.exit_option_price_est,
+        "option_return_pct_est": row.option_return_pct_est,
+        "option_pnl_per_contract_est": row.option_pnl_per_contract_est,
+        "recommended_exit_date": row.recommended_exit_date.isoformat() if row.recommended_exit_date else None,
+        "hold_days_realized": row.hold_days_realized,
+        "days_elapsed_calendar": days_elapsed,
+        "status": row.status,
+    }
+
+
+def _apply_training_outcome_payload(
+    row: OptionTrainingOutcome,
+    event: OptionAlertEvent,
+    outcome: Dict[str, object],
+) -> None:
+    now = datetime.utcnow()
+    row.event_id = event.id
+    row.symbol = str(outcome.get("symbol") or event.symbol).upper()
+    row.triggered_at = event.triggered_at
+    row.option_type = str(outcome["option_type"]) if outcome.get("option_type") else None
+    row.contract_expiry = _parse_iso_date(outcome.get("contract_expiry"))
+    row.contract_strike = (
+        float(outcome["contract_strike"]) if outcome.get("contract_strike") is not None else None
+    )
+    row.hold_days = int(outcome["hold_days"]) if outcome.get("hold_days") is not None else None
+    row.entry_date = _parse_iso_date(outcome.get("entry_date"))
+    row.exit_date = _parse_iso_date(outcome.get("exit_date"))
+    row.recommended_exit_date = _parse_iso_date(outcome.get("recommended_exit_date"))
+    row.hold_days_realized = (
+        int(outcome["hold_days_realized"]) if outcome.get("hold_days_realized") is not None else None
+    )
+    row.days_elapsed_calendar = (
+        int(outcome["days_elapsed_calendar"]) if outcome.get("days_elapsed_calendar") is not None else None
+    )
+    row.entry_underlying = (
+        float(outcome["entry_underlying"]) if outcome.get("entry_underlying") is not None else None
+    )
+    row.exit_underlying = (
+        float(outcome["exit_underlying"]) if outcome.get("exit_underlying") is not None else None
+    )
+    row.underlying_directional_return_pct = (
+        float(outcome["underlying_directional_return_pct"])
+        if outcome.get("underlying_directional_return_pct") is not None
+        else None
+    )
+    row.entry_option_price_est = (
+        float(outcome["entry_option_price_est"]) if outcome.get("entry_option_price_est") is not None else None
+    )
+    row.exit_option_price_est = (
+        float(outcome["exit_option_price_est"]) if outcome.get("exit_option_price_est") is not None else None
+    )
+    row.option_return_pct_est = (
+        float(outcome["option_return_pct_est"]) if outcome.get("option_return_pct_est") is not None else None
+    )
+    row.option_pnl_per_contract_est = (
+        float(outcome["option_pnl_per_contract_est"])
+        if outcome.get("option_pnl_per_contract_est") is not None
+        else None
+    )
+    row.status = str(outcome.get("status") or "pending")
+    row.compute_status = "ok"
+    row.compute_error = None
+    row.computed_at = now
+    row.updated_at = now
+    if row.created_at is None:
+        row.created_at = now
+
+
+def _mark_training_outcome_error(
+    row: OptionTrainingOutcome,
+    event: OptionAlertEvent,
+    error: Exception,
+) -> None:
+    recipe = _extract_training_recipe(event.message)
+    now = datetime.utcnow()
+    row.event_id = event.id
+    row.symbol = event.symbol.upper()
+    row.triggered_at = event.triggered_at
+    row.option_type = event.selected_option_type or recipe.get("option_type")
+    row.contract_expiry = _parse_iso_date(event.selected_expiry or recipe.get("contract_expiry"))
+    contract_strike = event.selected_strike if event.selected_strike is not None else recipe.get("contract_strike")
+    row.contract_strike = float(contract_strike) if isinstance(contract_strike, (int, float)) else None
+    hold_days = recipe.get("hold_days")
+    row.hold_days = int(hold_days) if isinstance(hold_days, int) else None
+    row.status = "error"
+    row.compute_status = "error"
+    row.compute_error = f"{type(error).__name__}: {str(error)[:450]}"
+    row.computed_at = now
+    row.updated_at = now
+    if row.created_at is None:
+        row.created_at = now
+
+
+def _training_outcome_needs_compute(row: Optional[OptionTrainingOutcome]) -> bool:
+    if row is None:
+        return True
+    if row.compute_status == "error":
+        return datetime.utcnow() - row.computed_at >= _TRAINING_RETRY_AFTER
+    if row.status == "pending" and row.recommended_exit_date and date.today() >= row.recommended_exit_date:
+        return True
+    return False
+
+
+def _compute_training_outcome_with_cache(event: OptionAlertEvent) -> Optional[Dict[str, object]]:
+    trigger_day = event.triggered_at.date() if event.triggered_at else date.today()
+    days = max(30, (date.today() - trigger_day).days + 14)
+    history = get_or_refresh_daily_frame(event.symbol, days=days)
+    return _compute_training_outcome(event, history=history)
+
+
 @router.get("/positions")
 def get_positions():
     try:
@@ -1440,16 +1587,50 @@ def get_training_outcomes(
             .all()
         )
 
-    exceptional_events = [event for event in events if _is_exceptional_training_event(event)]
-    outcomes: list[Dict[str, object]] = []
+        exceptional_events = [event for event in events if _is_exceptional_training_event(event)]
+        existing_rows = (
+            db.query(OptionTrainingOutcome)
+            .filter(OptionTrainingOutcome.event_id.in_([event.id for event in exceptional_events]))
+            .all()
+            if exceptional_events
+            else []
+        )
+        rows_by_event_id = {row.event_id: row for row in existing_rows}
 
-    for event in exceptional_events:
-        try:
-            outcome = _compute_training_outcome(event)
-            if outcome:
-                outcomes.append(outcome)
-        except Exception:
-            continue
+        for event in exceptional_events:
+            row = rows_by_event_id.get(event.id)
+            if not _training_outcome_needs_compute(row):
+                continue
+
+            if row is None:
+                row = OptionTrainingOutcome(
+                    event_id=event.id,
+                    symbol=event.symbol.upper(),
+                    triggered_at=event.triggered_at,
+                    status="pending",
+                    compute_status="pending",
+                    computed_at=datetime.utcnow(),
+                )
+                db.add(row)
+                rows_by_event_id[event.id] = row
+
+            try:
+                outcome = _compute_training_outcome_with_cache(event)
+                if outcome:
+                    _apply_training_outcome_payload(row, event, outcome)
+                else:
+                    raise ValueError("Training outcome could not be computed from event recipe or price history.")
+            except Exception as exc:
+                _mark_training_outcome_error(row, event, exc)
+
+        db.commit()
+        outcomes = [
+            _training_outcome_payload(rows_by_event_id[event.id])
+            for event in exceptional_events
+            if event.id in rows_by_event_id and rows_by_event_id[event.id].compute_status == "ok"
+        ]
+
+    outcomes.sort(key=lambda row: str(row.get("triggered_at") or ""), reverse=True)
 
     matured = [row for row in outcomes if row.get("status") == "matured"]
     matured_option_returns = [
