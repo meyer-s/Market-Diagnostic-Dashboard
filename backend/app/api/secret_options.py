@@ -20,6 +20,10 @@ from app.models.option_training_outcomes import OptionTrainingOutcome
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import option_quote_from_row
+from app.services.option_trade_reminders import (
+    skip_trade_sell_reminder,
+    sync_trade_sell_reminder,
+)
 from app.services.stock_price_cache import get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
@@ -1155,6 +1159,8 @@ def create_position(payload: OptionPositionCreate):
             source_match_notes=attribution["source_match_notes"],
         )
         db.add(position)
+        db.flush()
+        sync_trade_sell_reminder(db, position)
         db.commit()
         db.refresh(position)
         return _json_safe({"position": _serialize_position(position)})
@@ -1217,6 +1223,7 @@ def update_position(position_id: int, payload: OptionPositionCreate):
         position.source_match_method = attribution["source_match_method"]
         position.source_match_confidence = attribution["source_match_confidence"]
         position.source_match_notes = attribution["source_match_notes"]
+        sync_trade_sell_reminder(db, position)
 
         db.commit()
         db.refresh(position)
@@ -1380,6 +1387,7 @@ def close_position(position_id: int, request: ClosePositionRequest):
             source_match_notes=position.source_match_notes,
         )
         db.add(closed)
+        skip_trade_sell_reminder(db, position.id, "Position was closed before the reminder fired.")
         
         # Delete active position
         db.delete(position)

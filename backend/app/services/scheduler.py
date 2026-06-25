@@ -13,6 +13,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.services.ingestion.etl_runner import ETLRunner
 from app.services.market_context.agriculture_adapters import refresh_agriculture_report_caches
 from app.services.options_alerts import run_options_alert_scan
+from app.services.option_trade_reminders import send_due_trade_sell_reminders
 from app.services.market_diagnostic_runner import run_market_diagnostic
 from app.services.sector_projection import (
     compute_sector_projections,
@@ -228,6 +229,18 @@ def scheduled_market_diagnostic_publish_job():
         logger.error("Market Diagnostic runner failed: %s", exc, exc_info=True)
 
 
+def scheduled_option_trade_reminders_job():
+    """Send due Discord reminders for scanner-attributed option trades."""
+    try:
+        with scheduler_job_lock("option_trade_sell_reminders") as acquired:
+            if not acquired:
+                return
+            stats = send_due_trade_sell_reminders()
+            logger.info("Option trade sell reminder job completed: %s", stats)
+    except Exception as exc:
+        logger.error("Option trade sell reminder job failed: %s", exc, exc_info=True)
+
+
 def start_scheduler():
     """
     Initialize and start the background scheduler.
@@ -283,6 +296,20 @@ def start_scheduler():
             CronTrigger(minute="*/30", timezone="America/New_York"),
             id="options_alerts",
             name="Options Alert Scan",
+            replace_existing=True,
+        )
+
+    if scheduler.get_job("option_trade_sell_reminders") is None:
+        scheduler.add_job(
+            scheduled_option_trade_reminders_job,
+            CronTrigger(
+                day_of_week="mon-fri",
+                hour="9-16",
+                minute="5,35",
+                timezone="America/New_York",
+            ),
+            id="option_trade_sell_reminders",
+            name="Option Trade Sell Reminders",
             replace_existing=True,
         )
 

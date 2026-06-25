@@ -27,8 +27,10 @@ from app.api import secret_options
 from app.core.db import Base
 from app.models.closed_positions import ClosedPosition
 from app.models.option_training_outcomes import OptionTrainingOutcome
+from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
 from app.models.option_positions import OptionPosition
+from app.services import option_trade_reminders
 
 
 class _FakeQuery:
@@ -177,6 +179,52 @@ def test_create_position_rejects_duplicate_resubmission(secret_options_client) -
     assert "Duplicate open position" in second.json()["detail"]
 
 
+def test_create_scanner_attributed_position_schedules_sell_reminder(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_local = secret_options_client
+    with session_local() as db:
+        db.add(
+            OptionAlertEvent(
+                symbol="SYY",
+                triggered_at=datetime(2026, 6, 1, 14, 30),
+                iv_percentile=4.0,
+                selected_option_type="call",
+                selected_expiry="2026-07-17",
+                selected_strike=80.0,
+                selected_premium=1.35,
+                message="Setup: 1x ATM CALL\nContract: 2026-07-17 80.0 CALL\nHold: 21 trading days\nEst Prem: $1.35",
+            )
+        )
+        db.commit()
+        event = db.query(OptionAlertEvent).one()
+
+    monkeypatch.setattr(
+        secret_options,
+        "_resolve_signal_attribution",
+        lambda *_args, **_kwargs: {
+            "source_event_id": event.id,
+            "source_triggered_at": event.triggered_at,
+            "source_match_method": "exact",
+            "source_match_confidence": 1.0,
+            "source_match_notes": "test",
+        },
+    )
+
+    response = client.post("/secret/options/positions", json=_position_payload())
+
+    assert response.status_code == 200
+    with session_local() as db:
+        reminder = db.query(OptionTradeReminder).one()
+        assert reminder.position_id == response.json()["position"]["id"]
+        assert reminder.source_event_id == event.id
+        assert reminder.symbol == "SYY"
+        assert reminder.reminder_date == date(2026, 6, 22)
+        assert reminder.hold_days == 21
+        assert reminder.status == "pending"
+
+
 def test_close_position_rejects_duplicate_closed_trade(secret_options_client) -> None:
     client, session_local = secret_options_client
     with session_local() as db:
@@ -223,6 +271,77 @@ def test_close_position_rejects_duplicate_closed_trade(secret_options_client) ->
 
     assert response.status_code == 409
     assert "Duplicate closed position" in response.json()["detail"]
+
+
+def test_due_sell_reminders_send_once(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _client, session_local = secret_options_client
+
+    @contextmanager
+    def _testing_db_session():
+        db = session_local()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    with session_local() as db:
+        position = OptionPosition(
+            trade_date=date(2026, 6, 1),
+            account="Active Trading",
+            action="Buy to Open",
+            contracts=1,
+            symbol="SYY",
+            expiration=date(2026, 7, 17),
+            strike=80.0,
+            option_type="call",
+            fill_price=1.35,
+            total_cost=135.0,
+            source_event_id=42,
+        )
+        db.add(position)
+        db.flush()
+        db.add(
+            OptionTradeReminder(
+                position_id=position.id,
+                source_event_id=42,
+                symbol="SYY",
+                option_type="call",
+                expiration=date(2026, 7, 17),
+                strike=80.0,
+                contracts=1,
+                fill_price=1.35,
+                reminder_date=date(2026, 6, 22),
+                hold_days=21,
+                status="pending",
+                attempts=0,
+            )
+        )
+        db.commit()
+
+    sent_messages: list[str] = []
+
+    def _fake_send(message: str) -> tuple[bool, None]:
+        sent_messages.append(message)
+        return True, None
+
+    monkeypatch.setattr(option_trade_reminders, "get_db_session", _testing_db_session)
+    monkeypatch.setattr(option_trade_reminders, "_send_discord_message", _fake_send)
+
+    first = option_trade_reminders.send_due_trade_sell_reminders(today=date(2026, 6, 22))
+    second = option_trade_reminders.send_due_trade_sell_reminders(today=date(2026, 6, 22))
+
+    assert first == {"checked": 1, "sent": 1, "skipped": 0, "error": 0}
+    assert second == {"checked": 0, "sent": 0, "skipped": 0, "error": 0}
+    assert len(sent_messages) == 1
+    assert "Time to review/sell SYY" in sent_messages[0]
+    with session_local() as db:
+        reminder = db.query(OptionTradeReminder).one()
+        assert reminder.status == "sent"
+        assert reminder.attempts == 1
+        assert reminder.sent_at is not None
 
 
 def test_update_and_delete_closed_position(secret_options_client) -> None:
