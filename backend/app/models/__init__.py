@@ -16,5 +16,6 @@ from .closed_positions import ClosedPosition
 from .institutional_flow_event import InstitutionalFlowEvent
 from .market_data_observation import MarketDataObservation
 from .option_training_outcomes import OptionTrainingOutcome
+from .option_trade_reminders import OptionTradeReminder
 from .stock_price_bar import StockPriceBar
 from .stock_projection_snapshot import StockProjectionSnapshot
