@@ -1382,6 +1382,198 @@ def calculate_take_profit(current_price: float, return_pct: float, volatility: f
     return target
 
 
+def _latest_series_value(fundamentals: Optional[dict], key: str) -> Optional[float]:
+    if not isinstance(fundamentals, dict):
+        return None
+    series_payload = fundamentals.get(key)
+    if not isinstance(series_payload, dict):
+        return None
+    series = series_payload.get("series")
+    if not isinstance(series, list) or not series:
+        return None
+    last_point = series[-1]
+    if not isinstance(last_point, dict):
+        return None
+    value = last_point.get("value")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(parsed) or math.isinf(parsed):
+        return None
+    return parsed
+
+
+def _sanity_profile_for_horizon(horizon_days: int) -> dict[str, float]:
+    if horizon_days <= 21:
+        return {
+            "max_cap_growth_multiple": 1.60,
+            "analyst_gap_multiple": 1.30,
+            "max_implied_pe": 80.0,
+        }
+    if horizon_days <= 63:
+        return {
+            "max_cap_growth_multiple": 1.90,
+            "analyst_gap_multiple": 1.45,
+            "max_implied_pe": 95.0,
+        }
+    if horizon_days <= 126:
+        return {
+            "max_cap_growth_multiple": 2.35,
+            "analyst_gap_multiple": 1.65,
+            "max_implied_pe": 115.0,
+        }
+    return {
+        "max_cap_growth_multiple": 3.00,
+        "analyst_gap_multiple": 2.00,
+        "max_implied_pe": 140.0,
+    }
+
+
+def _compute_projection_targets(
+    current_price: float,
+    raw_upper_reference: float,
+    horizon_days: int,
+    analyst_target: Optional[float] = None,
+    fundamentals: Optional[dict] = None,
+) -> dict[str, Any]:
+    if current_price <= 0:
+        return {
+            "raw_upper_reference": raw_upper_reference,
+            "valuation_adjusted_target": raw_upper_reference,
+            "trade_target": raw_upper_reference,
+            "speculative_extension": None,
+            "sanity_flags": [],
+            "implied_market_cap": {
+                "current": None,
+                "raw_upper_reference": None,
+                "valuation_adjusted_target": None,
+                "trade_target": None,
+                "speculative_extension": None,
+            },
+            "target_regime": "technical_extension",
+        }
+
+    profile = _sanity_profile_for_horizon(horizon_days)
+    sanity_flags: list[dict[str, Any]] = []
+
+    max_cap_growth_multiple = float(profile["max_cap_growth_multiple"])
+    analyst_gap_multiple = float(profile["analyst_gap_multiple"])
+    max_implied_pe = float(profile["max_implied_pe"])
+
+    cap_limited_target = current_price * max_cap_growth_multiple
+
+    valid_analyst_target = None
+    if analyst_target is not None:
+        try:
+            parsed_analyst = float(analyst_target)
+            if parsed_analyst > 0:
+                valid_analyst_target = parsed_analyst
+        except (TypeError, ValueError):
+            valid_analyst_target = None
+
+    if raw_upper_reference > cap_limited_target:
+        sanity_flags.append(
+            {
+                "type": "implied_market_cap_outlier",
+                "severity": "high",
+                "message": "Raw extension implies market-cap growth beyond horizon sanity band.",
+                "threshold": round(max_cap_growth_multiple, 2),
+                "value": round(raw_upper_reference / current_price, 2),
+            }
+        )
+
+    if valid_analyst_target and raw_upper_reference > valid_analyst_target * analyst_gap_multiple:
+        severity = "high" if raw_upper_reference > valid_analyst_target * (analyst_gap_multiple * 1.2) else "medium"
+        sanity_flags.append(
+            {
+                "type": "analyst_dislocation",
+                "severity": severity,
+                "message": "Raw extension is materially above analyst consensus anchor.",
+                "threshold": round(analyst_gap_multiple, 2),
+                "value": round(raw_upper_reference / valid_analyst_target, 2),
+            }
+        )
+
+    current_pe = _latest_series_value(fundamentals, "pe_ratio")
+    if current_pe is None:
+        current_pe = _latest_series_value(fundamentals, "pe_ratio_annual")
+    implied_raw_pe = None
+    implied_adjusted_pe = None
+    if current_pe and current_pe > 0:
+        implied_raw_pe = current_pe * (raw_upper_reference / current_price)
+        if implied_raw_pe > max_implied_pe:
+            sanity_flags.append(
+                {
+                    "type": "implied_pe_outlier",
+                    "severity": "medium",
+                    "message": "Raw extension implies an extreme forward valuation multiple.",
+                    "threshold": round(max_implied_pe, 2),
+                    "value": round(implied_raw_pe, 2),
+                }
+            )
+
+    valuation_candidates: list[tuple[float, float]] = [(cap_limited_target, 0.45)]
+    if valid_analyst_target is not None:
+        valuation_candidates.append((valid_analyst_target, 0.55))
+
+    weighted_sum = sum(value * weight for value, weight in valuation_candidates)
+    weight_total = sum(weight for _, weight in valuation_candidates)
+    valuation_anchor = weighted_sum / weight_total if weight_total > 0 else cap_limited_target
+    valuation_adjusted_target = min(raw_upper_reference, max(current_price, valuation_anchor))
+
+    if current_pe and current_pe > 0:
+        implied_adjusted_pe = current_pe * (valuation_adjusted_target / current_price)
+        if implied_adjusted_pe > max_implied_pe:
+            pe_capped_target = current_price * (max_implied_pe / current_pe)
+            valuation_adjusted_target = min(valuation_adjusted_target, pe_capped_target)
+            implied_adjusted_pe = current_pe * (valuation_adjusted_target / current_price)
+
+    has_high_flag = any(flag.get("severity") == "high" for flag in sanity_flags)
+    trade_target = min(raw_upper_reference, valuation_adjusted_target) if has_high_flag else raw_upper_reference
+
+    speculative_extension = None
+    if raw_upper_reference > trade_target * 1.03:
+        speculative_extension = raw_upper_reference
+
+    current_market_cap = _latest_series_value(fundamentals, "market_cap")
+    if current_market_cap is None:
+        current_market_cap = _latest_series_value(fundamentals, "market_cap_annual")
+
+    def _scale_market_cap(target_price: Optional[float]) -> Optional[float]:
+        if current_market_cap is None or target_price is None or current_price <= 0:
+            return None
+        return current_market_cap * (target_price / current_price)
+
+    if speculative_extension is not None:
+        target_regime = "speculative_extension"
+    elif has_high_flag:
+        target_regime = "valuation_adjusted"
+    elif sanity_flags:
+        target_regime = "technical_extension_flagged"
+    else:
+        target_regime = "technical_extension"
+
+    if not sanity_flags and valid_analyst_target is None and current_market_cap is None:
+        target_regime = "technical_extension_unanchored"
+
+    return {
+        "raw_upper_reference": raw_upper_reference,
+        "valuation_adjusted_target": valuation_adjusted_target,
+        "trade_target": trade_target,
+        "speculative_extension": speculative_extension,
+        "sanity_flags": sanity_flags,
+        "implied_market_cap": {
+            "current": _scale_market_cap(current_price),
+            "raw_upper_reference": _scale_market_cap(raw_upper_reference),
+            "valuation_adjusted_target": _scale_market_cap(valuation_adjusted_target),
+            "trade_target": _scale_market_cap(trade_target),
+            "speculative_extension": _scale_market_cap(speculative_extension),
+        },
+        "target_regime": target_regime,
+    }
+
+
 def calculate_stop_loss(current_price: float, volatility: float, risk_score: float, horizon_days: int) -> float:
     """
     Calculate stop loss based on:
@@ -1500,7 +1692,15 @@ def calculate_technical_indicators(df: pd.DataFrame, lookback_days: int = 252) -
     }
 
 
-def compute_stock_projection(ticker: str, df: pd.DataFrame, spy_df: pd.DataFrame, horizon_days: int, system_state: str) -> dict:
+def compute_stock_projection(
+    ticker: str,
+    df: pd.DataFrame,
+    spy_df: pd.DataFrame,
+    horizon_days: int,
+    system_state: str,
+    analyst_target: Optional[float] = None,
+    fundamentals: Optional[dict] = None,
+) -> dict:
     """Compute projection scores for a single stock at a given horizon"""
     
     if len(df) < horizon_days:
@@ -1571,12 +1771,21 @@ def compute_stock_projection(ticker: str, df: pd.DataFrame, spy_df: pd.DataFrame
     atr_20 = calculate_atr(df, 20)
     
     # Take profit: based on positive return + volatility adjustment
-    take_profit = calculate_take_profit(
+    raw_upper_reference = calculate_take_profit(
         current_price,
         total_return,
         volatility,
         horizon_days
     )
+
+    target_meta = _compute_projection_targets(
+        current_price=current_price,
+        raw_upper_reference=raw_upper_reference,
+        horizon_days=horizon_days,
+        analyst_target=analyst_target,
+        fundamentals=fundamentals,
+    )
+    trade_target = float(target_meta["trade_target"])
     
     # Stop loss: based on volatility and risk score
     stop_loss = calculate_stop_loss(
@@ -1597,7 +1806,17 @@ def compute_stock_projection(ticker: str, df: pd.DataFrame, spy_df: pd.DataFrame
         "max_drawdown": round(max_drawdown, 2),
         "conviction": round(conviction, 2),
         "current_price": round(current_price, 2),
-        "take_profit": round(take_profit, 2),
+        # Backward-compatible alias; canonical field is trade_target.
+        "take_profit": round(trade_target, 2),
+        "raw_upper_reference": round(float(target_meta["raw_upper_reference"]), 2),
+        "valuation_adjusted_target": round(float(target_meta["valuation_adjusted_target"]), 2),
+        "trade_target": round(trade_target, 2),
+        "speculative_extension": round(float(target_meta["speculative_extension"]), 2)
+        if target_meta.get("speculative_extension") is not None
+        else None,
+        "sanity_flags": target_meta.get("sanity_flags", []),
+        "implied_market_cap": target_meta.get("implied_market_cap", {}),
+        "target_regime": target_meta.get("target_regime"),
         "stop_loss": round(stop_loss, 2),
     }
 
@@ -1749,12 +1968,33 @@ def get_stock_projections(
                 },
             })
 
+        try:
+            fundamentals = compute_fundamentals(stock, df)
+        except Exception as exc:
+            fundamentals = {}
+            data_warnings.append({
+                "type": "fundamentals_unavailable",
+                "details": {
+                    "symbol": ticker,
+                    "source": "Yahoo Finance",
+                    "message": str(exc),
+                },
+            })
+
         # Compute projections for each horizon
         projections = {}
         for horizon_name, horizon_days in HORIZONS.items():
             try:
                 effective_days = T_WINDOW_DAYS if horizon_days == 0 else horizon_days
-                projection = compute_stock_projection(ticker, df, spy_df, effective_days, system_state)
+                projection = compute_stock_projection(
+                    ticker,
+                    df,
+                    spy_df,
+                    effective_days,
+                    system_state,
+                    analyst_target=analyst_target,
+                    fundamentals=fundamentals,
+                )
                 projection.update({
                     "ticker": ticker,
                     "name": stock_name,
@@ -1797,19 +2037,6 @@ def get_stock_projections(
                 "type": "technical_unavailable",
                 "details": {
                     "symbol": ticker,
-                    "message": str(exc),
-                },
-            })
-
-        try:
-            fundamentals = compute_fundamentals(stock, df)
-        except Exception as exc:
-            fundamentals = {}
-            data_warnings.append({
-                "type": "fundamentals_unavailable",
-                "details": {
-                    "symbol": ticker,
-                    "source": "Yahoo Finance",
                     "message": str(exc),
                 },
             })

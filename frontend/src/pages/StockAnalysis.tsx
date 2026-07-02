@@ -55,6 +55,25 @@ interface StockProjection {
   conviction: number;
   current_price: number;
   take_profit: number;
+  raw_upper_reference?: number;
+  valuation_adjusted_target?: number;
+  trade_target?: number;
+  speculative_extension?: number | null;
+  sanity_flags?: Array<{
+    type: string;
+    severity?: string;
+    message?: string;
+    threshold?: number;
+    value?: number;
+  }>;
+  implied_market_cap?: {
+    current?: number | null;
+    raw_upper_reference?: number | null;
+    valuation_adjusted_target?: number | null;
+    trade_target?: number | null;
+    speculative_extension?: number | null;
+  };
+  target_regime?: string;
   stop_loss: number;
 }
 
@@ -898,6 +917,15 @@ export default function StockAnalysis() {
           {/* Fundamentals Summary */}
           {projections["T"] && (
             <div className="surface-card-strong p-4 sm:p-6">
+              {(() => {
+                const projectionNow = projections["T"];
+                const tradeTarget = projectionNow.trade_target ?? projectionNow.take_profit;
+                const rawUpper = projectionNow.raw_upper_reference ?? projectionNow.take_profit;
+                const hasSpeculativeGap = rawUpper > tradeTarget * 1.03;
+                const sanityFlagCount = projectionNow.sanity_flags?.length ?? 0;
+
+                return (
+                  <>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1">
@@ -922,9 +950,21 @@ export default function StockAnalysis() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-stealth-400">Current Price</p>
-                  <p className="text-2xl font-bold text-blue-400">${projections["T"].current_price.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-blue-400">${projectionNow.current_price.toFixed(2)}</p>
                 </div>
               </div>
+
+              {sanityFlagCount > 0 && (
+                <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  <p className="font-semibold uppercase tracking-[0.14em] text-amber-300">Projection Sanity</p>
+                  <p className="mt-1">
+                    {projectionNow.target_regime
+                      ? `Regime: ${projectionNow.target_regime.replace(/_/g, " ")}. `
+                      : ""}
+                    {projectionNow.sanity_flags?.map((flag) => flag.message || flag.type.replace(/_/g, " ")).join("; ")}
+                  </p>
+                </div>
+              )}
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
                 <div className="surface-card-muted p-3">
@@ -951,40 +991,56 @@ export default function StockAnalysis() {
                 </div>
                 <div className="surface-card-muted p-3">
                   <p className="text-stealth-400 mb-1" title="Confidence level in the composite projection (0-100)">Conviction</p>
-                  <p className="font-semibold text-purple-300">{Math.round(projections["T"].conviction)}%</p>
+                  <p className="font-semibold text-purple-300">{Math.round(projectionNow.conviction)}%</p>
                 </div>
                 <div className="surface-card-muted p-3">
-                  <p className="text-stealth-400 mb-1" title="Upper reference band derived from volatility">Upper Reference</p>
-                  <p className="font-semibold text-green-400">${projections["T"].take_profit.toFixed(2)}</p>
+                  <p className="text-stealth-400 mb-1" title="Actionable target after sanity checks">Trade Target</p>
+                  <p className="font-semibold text-green-400">${tradeTarget.toFixed(2)}</p>
+                  {hasSpeculativeGap && (
+                    <p className="mt-1 text-[10px] text-amber-300">Raw ext ${rawUpper.toFixed(2)}</p>
+                  )}
                 </div>
                 <div className="surface-card-muted p-3">
                   <p className="text-stealth-400 mb-1" title="Lower reference band derived from volatility">Lower Reference</p>
                   <p className="font-semibold text-red-400">
-                    ${Math.max(0, projections["T"].stop_loss).toFixed(2)}
+                    ${Math.max(0, projectionNow.stop_loss).toFixed(2)}
                   </p>
                 </div>
                 <div className="surface-card-muted p-3">
                   <p className="text-stealth-400 mb-1" title="Volatility and max drawdown">Risk</p>
                   <p className="font-semibold text-stealth-100">
-                    Vol {projections["T"].volatility.toFixed(1)}% / DD {projections["T"].max_drawdown.toFixed(1)}%
+                    Vol {projectionNow.volatility.toFixed(1)}% / DD {projectionNow.max_drawdown.toFixed(1)}%
                   </p>
                 </div>
               </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
           {/* Price Analysis & Conviction Grid */}
           {projections[selectedHorizon] && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              {(() => {
+                const selectedProjection = projections[selectedHorizon];
+                const tradeTarget = selectedProjection.trade_target ?? selectedProjection.take_profit;
+
+                return (
               <PriceAnalysisChart
-                currentPrice={projections[selectedHorizon].current_price}
-                takeProfit={projections[selectedHorizon].take_profit}
-                stopLoss={projections[selectedHorizon].stop_loss}
-                trailingReturn={projections[selectedHorizon].trailing_return_pct}
+                currentPrice={selectedProjection.current_price}
+                takeProfit={tradeTarget}
+                rawUpperReference={selectedProjection.raw_upper_reference ?? selectedProjection.take_profit}
+                stopLoss={selectedProjection.stop_loss}
+                trailingReturn={selectedProjection.trailing_return_pct}
                 horizon={selectedHorizon.toUpperCase()}
                 analystTarget={analystTarget}
                 analystCount={analystCount}
+                targetRegime={selectedProjection.target_regime}
+                sanityFlags={selectedProjection.sanity_flags}
               />
+                );
+              })()}
               <ConvictionSnapshot
                 conviction={projections[selectedHorizon].conviction}
                 score={projections[selectedHorizon].score_total}
@@ -1802,7 +1858,9 @@ export default function StockAnalysis() {
                 <div className="secondary-card p-4">
                   <h4 className="font-semibold mb-2">Reference Bands</h4>
                   <ul className="space-y-2 text-xs">
-                    <li><strong>Take Profit:</strong> Calculated from projected return with volatility and horizon adjustments. Represents upside potential.</li>
+                      <li><strong>Raw Upper Reference:</strong> Calculated from projected return with volatility and horizon adjustments. Signals expansion energy.</li>
+                      <li><strong>Trade Target:</strong> Actionable upper reference after valuation and market-cap sanity checks when needed.</li>
+                      <li><strong>Speculative Extension:</strong> Raw upside shown separately when it exceeds trade target and enters dislocation territory.</li>
                     <li><strong>Lower Reference:</strong> Based on volatility (ATR), risk score, and time horizon. Serves as a downside context band.</li>
                     <li><strong>Range Ratio:</strong> Upper band distance divided by lower band distance. Higher values indicate wider asymmetry.</li>
                   </ul>

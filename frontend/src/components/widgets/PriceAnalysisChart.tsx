@@ -8,25 +8,39 @@
 interface PriceAnalysisChartProps {
   currentPrice: number;
   takeProfit: number;
+  rawUpperReference?: number | null;
   stopLoss: number;
   trailingReturn: number;
   horizon: string;
   analystTarget?: number | null;
   analystCount?: number | null;
+  targetRegime?: string | null;
+  sanityFlags?: Array<{
+    type: string;
+    severity?: string;
+    message?: string;
+    threshold?: number;
+    value?: number;
+  }>;
 }
 
 export function PriceAnalysisChart({
   currentPrice,
   takeProfit,
+  rawUpperReference,
   stopLoss,
   trailingReturn,
   horizon,
   analystTarget,
   analystCount,
+  targetRegime,
+  sanityFlags,
 }: PriceAnalysisChartProps) {
   // Calculate percentages for visualization
   const safeStopLoss = Math.max(0, stopLoss);
+  const rawUpper = rawUpperReference && rawUpperReference > 0 ? rawUpperReference : takeProfit;
   const tpUpside = ((takeProfit - currentPrice) / currentPrice) * 100;
+  const rawUpside = ((rawUpper - currentPrice) / currentPrice) * 100;
   const slDownside = ((currentPrice - safeStopLoss) / currentPrice) * 100;
   const trailingPercent = trailingReturn;
 
@@ -40,6 +54,9 @@ export function PriceAnalysisChart({
   const tpHeight = (tpUpside / maxRange) * 100;
   
   const modelTarget = takeProfit;
+  const hasRawExtensionGap = rawUpper > takeProfit * 1.03;
+  const normalizedTargetRegime = (targetRegime || "technical_extension").replace(/_/g, " ");
+  const highSeverityFlags = (sanityFlags || []).filter((flag) => flag.severity === "high");
   const hasAnalystTarget =
     analystTarget !== null && analystTarget !== undefined && analystTarget > 0;
   const analystDiffPct = hasAnalystTarget
@@ -88,6 +105,14 @@ export function PriceAnalysisChart({
             </span>
           </div>
         )}
+        <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
+          <span>Target Regime: <span className="text-gray-200 capitalize">{normalizedTargetRegime}</span></span>
+          {highSeverityFlags.length > 0 && (
+            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-300">
+              valuation caution
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="mb-3">
@@ -114,13 +139,33 @@ export function PriceAnalysisChart({
               />
             </div>
             <div className="text-center">
-              <p className="text-xs text-green-400 font-semibold">Take Profit</p>
+              <p className="text-xs text-green-400 font-semibold">Trade Target</p>
               <p className="text-xs text-green-300">${takeProfit.toFixed(2)}</p>
               <p className="text-xs text-green-200">+{tpUpside.toFixed(1)}%</p>
+              {hasRawExtensionGap && (
+                <p className="mt-0.5 text-[10px] text-amber-300">
+                  Raw ext ${rawUpper.toFixed(2)} (+{rawUpside.toFixed(1)}%)
+                </p>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {hasRawExtensionGap && (
+        <div className="mb-3 rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-200">
+          Raw extension is shown for signal context and may not be valuation-adjusted.
+        </div>
+      )}
+
+      {sanityFlags && sanityFlags.length > 0 && (
+        <div className="mb-3 rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Sanity Flags</p>
+          <p className="mt-1 text-xs text-amber-200">
+            {sanityFlags.map((flag) => flag.message || flag.type.replace(/_/g, " ")).join("; ")}
+          </p>
+        </div>
+      )}
       
       {/* Stats */}
       <div className="grid grid-cols-2 gap-1 text-xs">
