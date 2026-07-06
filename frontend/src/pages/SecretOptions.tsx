@@ -163,7 +163,6 @@ interface EvaluationInsight {
 }
 
 type EvalUrgency = EvaluationInsight["urgency"];
-type TimelineMode = "scanner" | "dte";
 type TimelineFilter = "all" | "matched" | EvalUrgency;
 
 interface TimelineLane {
@@ -833,7 +832,6 @@ export default function SecretOptions() {
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
   const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
-  const [timelineMode, setTimelineMode] = useState<TimelineMode>("scanner");
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [hoveredPositionId, setHoveredPositionId] = useState<number | null>(null);
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: SortDirection }>({
@@ -1447,30 +1445,45 @@ export default function SecretOptions() {
     return eventMap;
   }, [trainingOutcomes]);
 
+  const trainingOutcomeBySymbolType = useMemo(() => {
+    const outcomeMap = new Map<string, TrainingOutcomeRow>();
+    trainingOutcomes.forEach((row) => {
+      const key = `${row.symbol.trim().toUpperCase()}|${row.option_type.trim().toLowerCase()}`;
+      if (!outcomeMap.has(key)) {
+        outcomeMap.set(key, row);
+      }
+    });
+    return outcomeMap;
+  }, [trainingOutcomes]);
+
   const evaluationByPositionId = useMemo(() => {
     const result: Record<number, EvaluationInsight> = {};
     const now = new Date();
 
     positions.forEach(({ position }) => {
       const eventId = position.source_event_id;
-      if (!eventId) return;
-
-      const matched = trainingOutcomeByEventId.get(eventId);
+      const directMatch = eventId ? trainingOutcomeByEventId.get(eventId) : null;
+      const fallbackKey = `${position.symbol.trim().toUpperCase()}|${position.option_type.trim().toLowerCase()}`;
+      const matched = directMatch || trainingOutcomeBySymbolType.get(fallbackKey);
       if (!matched) return;
 
       const anchorDate =
-        toDate(matched.triggered_at) ||
         toDate(position.source_triggered_at) ||
         toDate(position.trade_date);
       if (!anchorDate) return;
 
       const insight = buildEvaluationInsight(matched.hold_days, anchorDate, now);
       if (!insight) return;
-      result[position.id] = insight;
+      result[position.id] = {
+        ...insight,
+        detail: directMatch
+          ? `Linked horizon ${matched.hold_days}d`
+          : `Historical ${position.symbol.toUpperCase()} ${position.option_type.toUpperCase()} template • ${matched.hold_days}d`,
+      };
     });
 
     return result;
-  }, [positions, trainingOutcomeByEventId]);
+  }, [positions, trainingOutcomeByEventId, trainingOutcomeBySymbolType]);
 
   const evaluationSummary = useMemo(() => {
     const values = Object.values(evaluationByPositionId);
@@ -1482,67 +1495,22 @@ export default function SecretOptions() {
     };
   }, [evaluationByPositionId]);
 
-  const linkedPositionByEventId = useMemo(() => {
-    const linked = new Map<number, PositionPayload>();
-    positions.forEach((item) => {
-      const eventId = item.position.source_event_id;
-      if (!eventId || linked.has(eventId)) return;
-      linked.set(eventId, item);
-    });
-    return linked;
-  }, [positions]);
-
   const timelineLanes = useMemo(() => {
-    if (timelineMode === "scanner") {
-      return trainingOutcomes.slice(0, 60).map((outcome) => {
-        const linkedPosition = linkedPositionByEventId.get(outcome.event_id) || null;
-        const matched = Boolean(linkedPosition);
-        const anchorDate = toDate(outcome.triggered_at) || toDate(outcome.entry_date) || new Date();
-        const insight = buildEvaluationInsight(outcome.hold_days, anchorDate, new Date());
-        const totalDays = Math.max(1, insight?.holdDays ?? Math.max(1, outcome.hold_days));
-        const elapsedDays = insight?.elapsedDays ?? 0;
-        const remainingDays = insight?.daysRemaining ?? totalDays;
-        const progressPct = insight?.progressPct ?? 0;
-        const urgency = insight?.urgency ?? deriveUrgencyFromDays(remainingDays);
-        const attention = buildGreeksAttention(linkedPosition?.metrics.greeks ?? null, remainingDays);
-
-        return {
-          laneId: `scanner-${outcome.event_id}`,
-          linkedPositionId: linkedPosition?.position.id ?? null,
-          eventId: outcome.event_id,
-          symbol: outcome.symbol,
-          optionType: outcome.option_type,
-          contracts: linkedPosition?.position.contracts ?? 1,
-          matched,
-          urgency,
-          totalDays,
-          elapsedDays,
-          remainingDays,
-          progressPct,
-          label: insight?.label ?? `${outcome.hold_days}d hold`,
-          detail: matched
-            ? `Tracked in portfolio • ${outcome.status}`
-            : `Training outcome only • ${outcome.status}`,
-          pillClass: insight?.pillClass ?? "border-gray-500/40 bg-gray-700/20 text-gray-200",
-          barClass: insight?.barClass ?? "bg-slate-300",
-          attentionStrength: attention.strength,
-          attentionSpreadDays: attention.spreadDays,
-          greeksHint: matched ? attention.hint : "Template candidate",
-        } as TimelineLane;
-      });
-    }
-
     return sortedPositions.map(({ position, metrics }) => {
       const evaluation = evaluationByPositionId[position.id] || null;
       const dteNow = metrics.dte ?? null;
       const dteEntry = position.dte_at_entry ?? null;
-      const totalDays = Math.max(1, dteEntry ?? dteNow ?? evaluation?.holdDays ?? 1);
-      const remainingDays = dteNow ?? totalDays;
-      const elapsedDays = dteEntry !== null && dteNow !== null
-        ? Math.max(0, dteEntry - dteNow)
-        : Math.max(0, totalDays - remainingDays);
-      const progressPct = Math.max(0, Math.min(100, (elapsedDays / totalDays) * 100));
-      const urgency = deriveUrgencyFromDays(remainingDays);
+      const totalDays = Math.max(1, evaluation?.holdDays ?? dteEntry ?? dteNow ?? 1);
+      const remainingDays = evaluation?.daysRemaining ?? dteNow ?? totalDays;
+      const elapsedDays = evaluation
+        ? evaluation.elapsedDays
+        : dteEntry !== null && dteNow !== null
+          ? Math.max(0, dteEntry - dteNow)
+          : Math.max(0, totalDays - remainingDays);
+      const progressPct = evaluation
+        ? evaluation.progressPct
+        : Math.max(0, Math.min(100, (elapsedDays / totalDays) * 100));
+      const urgency = evaluation?.urgency ?? deriveUrgencyFromDays(remainingDays);
       const attention = buildGreeksAttention(metrics.greeks, remainingDays);
 
       const urgencyStyle =
@@ -1562,22 +1530,22 @@ export default function SecretOptions() {
         symbol: position.symbol,
         optionType: position.option_type,
         contracts: position.contracts,
-        matched: position.source_event_id !== null && position.source_event_id !== undefined,
+        matched: Boolean(evaluation),
         urgency,
         totalDays,
         elapsedDays,
         remainingDays,
         progressPct,
-        label: dteLabel,
-        detail: dteEntry !== null ? `Entry DTE ${dteEntry}` : "Portfolio DTE progression",
-        pillClass: urgencyStyle.pillClass,
-        barClass: urgencyStyle.barClass,
+        label: evaluation?.label ?? dteLabel,
+        detail: evaluation?.detail ?? (dteEntry !== null ? `Entry DTE ${dteEntry}` : "Portfolio DTE progression"),
+        pillClass: evaluation?.pillClass ?? urgencyStyle.pillClass,
+        barClass: evaluation?.barClass ?? urgencyStyle.barClass,
         attentionStrength: attention.strength,
         attentionSpreadDays: attention.spreadDays,
         greeksHint: attention.hint,
       } as TimelineLane;
     });
-  }, [sortedPositions, evaluationByPositionId, timelineMode, trainingOutcomes, linkedPositionByEventId]);
+  }, [sortedPositions, evaluationByPositionId]);
 
   const filteredTimelineLanes = useMemo(() => {
     return timelineLanes.filter((lane) => {
@@ -1604,11 +1572,6 @@ export default function SecretOptions() {
     }
     return ticks;
   }, [timelineHorizonDays]);
-
-  const scannerRowsForInlinePanel = useMemo(
-    () => trainingOutcomes.slice(0, 10),
-    [trainingOutcomes]
-  );
 
   const totals = useMemo(() => {
     let totalCost = 0;
@@ -1956,29 +1919,9 @@ export default function SecretOptions() {
           <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-xs uppercase tracking-[0.18em] text-gray-500">Convexity Timeline</div>
-              <div className="text-xs text-gray-400">
-                {timelineMode === "scanner"
-                  ? "Scanner view: exceptional/training triggers, highlighting what is already tracked versus template-only candidates."
-                  : "DTE view: active portfolio decay clock and option-expiration progression."}
-              </div>
+              <div className="text-xs text-gray-400">Portfolio view combining linked outcomes and historical symbol/type training windows.</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center rounded-full border border-gray-600 bg-gray-800/90 p-0.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setTimelineMode("scanner")}
-                  className={`rounded-full px-2.5 py-1 ${timelineMode === "scanner" ? "bg-indigo-600 text-white" : "text-gray-300"}`}
-                >
-                  Scanner Window
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTimelineMode("dte")}
-                  className={`rounded-full px-2.5 py-1 ${timelineMode === "dte" ? "bg-sky-600 text-white" : "text-gray-300"}`}
-                >
-                  DTE Window
-                </button>
-              </div>
               {([
                 ["all", "All"],
                 ["matched", "Matched"],
@@ -2088,92 +2031,6 @@ export default function SecretOptions() {
               })
             )}
           </div>
-        </div>
-
-        <div className="mb-4 rounded-xl border border-indigo-500/25 bg-indigo-950/10 p-3">
-          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-indigo-300">Scanner Results</div>
-              <div className="text-xs text-gray-400">Use training outcomes directly as trade templates with one click.</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                loadTrainingOutcomes();
-                setShowTrainingOutcomes(true);
-              }}
-              className="rounded-full border border-indigo-400/45 bg-indigo-500/20 px-3 py-1 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30"
-            >
-              Open Full Outcomes
-            </button>
-          </div>
-
-          {loadingTrainingOutcomes ? (
-            <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-xs text-gray-500">
-              Loading scanner outcomes...
-            </div>
-          ) : scannerRowsForInlinePanel.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-xs text-gray-500">
-              No scanner outcomes available in the current lookback.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs text-gray-300">
-                <thead className="border-b border-gray-700 text-[10px] uppercase tracking-[0.14em] text-gray-500">
-                  <tr>
-                    <th className="px-2.5 py-2 text-left">Symbol</th>
-                    <th className="px-2.5 py-2 text-left">Type</th>
-                    <th className="px-2.5 py-2 text-left">Hold</th>
-                    <th className="px-2.5 py-2 text-left">Entry</th>
-                    <th className="px-2.5 py-2 text-left">Entry Prem</th>
-                    <th className="px-2.5 py-2 text-left">Return %</th>
-                    <th className="px-2.5 py-2 text-left">Status</th>
-                    <th className="px-2.5 py-2 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {scannerRowsForInlinePanel.map((row) => (
-                    <tr key={`inline-outcome-${row.event_id}`} className="hover:bg-indigo-500/5">
-                      <td className="px-2.5 py-2 font-semibold text-gray-100">{row.symbol}</td>
-                      <td className="px-2.5 py-2 uppercase">{row.option_type}</td>
-                      <td className="px-2.5 py-2">{row.hold_days}d</td>
-                      <td className="px-2.5 py-2">{formatDate(row.entry_date)}</td>
-                      <td className="px-2.5 py-2">
-                        {row.entry_option_price_est !== null && row.entry_option_price_est !== undefined
-                          ? formatCurrency(row.entry_option_price_est, 2)
-                          : "—"}
-                      </td>
-                      <td className={`px-2.5 py-2 ${(row.option_return_pct_est ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                        {row.option_return_pct_est !== null && row.option_return_pct_est !== undefined
-                          ? `${formatSigned(row.option_return_pct_est, 1)}%`
-                          : "—"}
-                      </td>
-                      <td className="px-2.5 py-2">
-                        <span
-                          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                            row.status === "matured"
-                              ? "border border-emerald-600/50 bg-emerald-500/20 text-emerald-300"
-                              : "border border-amber-600/50 bg-amber-500/20 text-amber-300"
-                          }`}
-                        >
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-2.5 py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => prefillTradeFromTrainingOutcome(row)}
-                          className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-200 hover:bg-emerald-500/25"
-                        >
-                          Prefill Trade
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
 
         {loading ? (
@@ -2424,7 +2281,7 @@ export default function SecretOptions() {
                             <span className="text-[10px] text-gray-500">{evaluation.detail}</span>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-500">No scanner match</span>
+                          <span className="text-xs text-gray-500">No linked or historical template</span>
                         )}
                       </td>
                       <td
