@@ -181,6 +181,9 @@ interface TimelineLane {
   detail: string;
   pillClass: string;
   barClass: string;
+  attentionStrength: number;
+  attentionSpreadDays: number;
+  greeksHint: string;
 }
 
 interface RawPositionPayload {
@@ -381,6 +384,49 @@ const deriveUrgencyFromDays = (daysRemaining: number): EvalUrgency => {
   if (daysRemaining === 0) return "due";
   if (daysRemaining <= 5) return "watch";
   return "calm";
+};
+
+const clampRange = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const toDateInputString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const addDays = (base: Date, days: number) => {
+  const next = new Date(base);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const buildGreeksAttention = (
+  greeks: PositionMetrics["greeks"],
+  remainingDays: number
+): { strength: number; spreadDays: number; hint: string } => {
+  const absTheta = Math.abs(greeks?.theta ?? 0);
+  const absGamma = Math.abs(greeks?.gamma ?? 0);
+  const thetaNorm = clampRange(absTheta / 8, 0, 1);
+  const gammaNorm = clampRange(absGamma / 0.06, 0, 1);
+  const timePressure = remainingDays <= 0 ? 1 : remainingDays <= 5 ? 0.9 : remainingDays <= 15 ? 0.65 : 0.4;
+
+  let strength = 0.45 * thetaNorm + 0.35 * gammaNorm + 0.2 * timePressure;
+  if (remainingDays > 21) {
+    strength *= 0.8;
+  }
+  strength = clampRange(strength, 0.2, 1);
+
+  const spreadDays = clampRange(4 + Math.max(0, remainingDays) / 3, 4, 18);
+
+  const hint =
+    strength >= 0.8
+      ? "High attention"
+      : strength >= 0.55
+        ? "Watch closely"
+        : "Monitor";
+
+  return { strength, spreadDays, hint };
 };
 
 const clampUnit = (value: number) => Math.max(-1, Math.min(1, value));
@@ -1200,6 +1246,44 @@ export default function SecretOptions() {
     }
   };
 
+  const prefillTradeFromTrainingOutcome = (row: TrainingOutcomeRow) => {
+    const now = new Date();
+    const suggestedHoldDays = Math.max(7, Math.round(row.hold_days || 14));
+    const expiration = row.exit_date ? toDate(row.exit_date) : addDays(now, suggestedHoldDays);
+    const strike = Number.isFinite(row.entry_underlying) ? Number(row.entry_underlying).toFixed(2) : "";
+    const fillPrice =
+      row.entry_option_price_est !== null && row.entry_option_price_est !== undefined
+        ? Number(row.entry_option_price_est).toFixed(2)
+        : "";
+    const totalCost = fillPrice ? (Number(fillPrice) * 100).toFixed(2) : "";
+
+    setEditingPositionId(null);
+    setFormError(null);
+    setFormData({
+      ...initialFormState,
+      trade_date: toDateInputString(now),
+      symbol: row.symbol?.toUpperCase() || "",
+      expiration: expiration ? toDateInputString(expiration) : "",
+      strike,
+      option_type: row.option_type?.toLowerCase() === "put" ? "put" : "call",
+      contracts: "1",
+      fill_price: fillPrice,
+      total_cost: totalCost,
+      underlying_at_entry:
+        row.entry_underlying !== null && row.entry_underlying !== undefined
+          ? Number(row.entry_underlying).toFixed(2)
+          : "",
+      dte_at_entry: String(suggestedHoldDays),
+      underlying_reference:
+        row.entry_underlying !== null && row.entry_underlying !== undefined
+          ? Number(row.entry_underlying).toFixed(2)
+          : "",
+      account: "Scanner Template",
+      action: "Buy to Open",
+    });
+    setShowAddModal(true);
+  };
+
   useEffect(() => {
     loadPositions();
     loadClosedPositions();
@@ -1417,6 +1501,7 @@ export default function SecretOptions() {
           ? evaluation.progressPct
           : Math.max(0, Math.min(100, (elapsedDays / totalDays) * 100));
         const urgency = evaluation?.urgency ?? deriveUrgencyFromDays(remainingDays);
+        const attention = buildGreeksAttention(metrics.greeks, remainingDays);
 
         return {
           id: position.id,
@@ -1433,6 +1518,9 @@ export default function SecretOptions() {
           detail: evaluation?.detail ?? (matched ? "Scanner-linked" : "Using option DTE fallback"),
           pillClass: evaluation?.pillClass ?? "border-gray-500/40 bg-gray-700/20 text-gray-200",
           barClass: evaluation?.barClass ?? "bg-slate-300",
+          attentionStrength: attention.strength,
+          attentionSpreadDays: attention.spreadDays,
+          greeksHint: attention.hint,
         } as TimelineLane;
       }
 
@@ -1443,6 +1531,7 @@ export default function SecretOptions() {
         : Math.max(0, totalDays - remainingDays);
       const progressPct = Math.max(0, Math.min(100, (elapsedDays / totalDays) * 100));
       const urgency = deriveUrgencyFromDays(remainingDays);
+      const attention = buildGreeksAttention(metrics.greeks, remainingDays);
 
       const urgencyStyle =
         urgency === "overdue"
@@ -1469,6 +1558,9 @@ export default function SecretOptions() {
         detail: dteEntry !== null ? `Entry DTE ${dteEntry}` : "DTE progression",
         pillClass: urgencyStyle.pillClass,
         barClass: urgencyStyle.barClass,
+        attentionStrength: attention.strength,
+        attentionSpreadDays: attention.spreadDays,
+        greeksHint: attention.hint,
       } as TimelineLane;
     });
   }, [sortedPositions, evaluationByPositionId, timelineMode]);
@@ -1498,6 +1590,11 @@ export default function SecretOptions() {
     }
     return ticks;
   }, [timelineHorizonDays]);
+
+  const scannerRowsForInlinePanel = useMemo(
+    () => trainingOutcomes.slice(0, 10),
+    [trainingOutcomes]
+  );
 
   const totals = useMemo(() => {
     let totalCost = 0;
@@ -1910,6 +2007,9 @@ export default function SecretOptions() {
               filteredTimelineLanes.map((lane) => {
                 const laneWidthPct = Math.max(4, (lane.totalDays / timelineHorizonDays) * 100);
                 const elapsedWidthPct = Math.max(0, Math.min(laneWidthPct, laneWidthPct * (lane.progressPct / 100)));
+                const decisionLeftPct = (lane.totalDays / timelineHorizonDays) * 100;
+                const attentionSpreadPct = Math.max(5, (lane.attentionSpreadDays / timelineHorizonDays) * 100);
+                const attentionOpacity = 0.08 + lane.attentionStrength * 0.25;
                 const laneIsFocused = hoveredPositionId === lane.id || selectedId === lane.id;
                 return (
                   <div
@@ -1927,6 +2027,7 @@ export default function SecretOptions() {
                         {lane.optionType} • {lane.contracts} ctr
                         {lane.matched ? " • linked" : " • unlinked"}
                       </div>
+                      <div className="text-[10px] text-gray-500">{lane.greeksHint}</div>
                     </div>
                     <div className="relative h-8 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
                       <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
@@ -1936,6 +2037,14 @@ export default function SecretOptions() {
                       })}
                       <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
                       <div className={`absolute inset-y-1 left-0 rounded-sm ${lane.barClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+                      <div
+                        className="absolute inset-y-0"
+                        style={{
+                          left: `${Math.max(0, decisionLeftPct - attentionSpreadPct / 2)}%`,
+                          width: `${Math.min(100, attentionSpreadPct)}%`,
+                          background: `radial-gradient(circle at center, rgba(129, 230, 217, ${attentionOpacity}) 0%, rgba(129, 230, 217, 0.03) 60%, rgba(129, 230, 217, 0) 100%)`,
+                        }}
+                      />
                       <div className="absolute inset-y-0 flex items-center" style={{ left: `min(${laneWidthPct}%, calc(100% - 8px))` }}>
                         <div className={`h-2 w-2 -translate-x-1/2 rounded-full ${lane.barClass}`} />
                       </div>
@@ -1948,6 +2057,92 @@ export default function SecretOptions() {
               })
             )}
           </div>
+        </div>
+
+        <div className="mb-4 rounded-xl border border-indigo-500/25 bg-indigo-950/10 p-3">
+          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-indigo-300">Scanner Results</div>
+              <div className="text-xs text-gray-400">Use training outcomes directly as trade templates with one click.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                loadTrainingOutcomes();
+                setShowTrainingOutcomes(true);
+              }}
+              className="rounded-full border border-indigo-400/45 bg-indigo-500/20 px-3 py-1 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30"
+            >
+              Open Full Outcomes
+            </button>
+          </div>
+
+          {loadingTrainingOutcomes ? (
+            <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-xs text-gray-500">
+              Loading scanner outcomes...
+            </div>
+          ) : scannerRowsForInlinePanel.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-xs text-gray-500">
+              No scanner outcomes available in the current lookback.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs text-gray-300">
+                <thead className="border-b border-gray-700 text-[10px] uppercase tracking-[0.14em] text-gray-500">
+                  <tr>
+                    <th className="px-2.5 py-2 text-left">Symbol</th>
+                    <th className="px-2.5 py-2 text-left">Type</th>
+                    <th className="px-2.5 py-2 text-left">Hold</th>
+                    <th className="px-2.5 py-2 text-left">Entry</th>
+                    <th className="px-2.5 py-2 text-left">Entry Prem</th>
+                    <th className="px-2.5 py-2 text-left">Return %</th>
+                    <th className="px-2.5 py-2 text-left">Status</th>
+                    <th className="px-2.5 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {scannerRowsForInlinePanel.map((row) => (
+                    <tr key={`inline-outcome-${row.event_id}`} className="hover:bg-indigo-500/5">
+                      <td className="px-2.5 py-2 font-semibold text-gray-100">{row.symbol}</td>
+                      <td className="px-2.5 py-2 uppercase">{row.option_type}</td>
+                      <td className="px-2.5 py-2">{row.hold_days}d</td>
+                      <td className="px-2.5 py-2">{formatDate(row.entry_date)}</td>
+                      <td className="px-2.5 py-2">
+                        {row.entry_option_price_est !== null && row.entry_option_price_est !== undefined
+                          ? formatCurrency(row.entry_option_price_est, 2)
+                          : "—"}
+                      </td>
+                      <td className={`px-2.5 py-2 ${(row.option_return_pct_est ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                        {row.option_return_pct_est !== null && row.option_return_pct_est !== undefined
+                          ? `${formatSigned(row.option_return_pct_est, 1)}%`
+                          : "—"}
+                      </td>
+                      <td className="px-2.5 py-2">
+                        <span
+                          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                            row.status === "matured"
+                              ? "border border-emerald-600/50 bg-emerald-500/20 text-emerald-300"
+                              : "border border-amber-600/50 bg-amber-500/20 text-amber-300"
+                          }`}
+                        >
+                          {row.status}
+                        </span>
+                      </td>
+                      <td className="px-2.5 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => prefillTradeFromTrainingOutcome(row)}
+                          className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-200 hover:bg-emerald-500/25"
+                        >
+                          Prefill Trade
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {loading ? (
