@@ -415,6 +415,344 @@ const buildGreeksAttention = (
   return { strength, spreadDays, hint };
 };
 
+const TIMELINE_EXPLORATION_VARIANTS = [
+  "control",
+  "deadlineRibbon",
+  "countdownBlocks",
+  "focusWindow",
+  "pressureRails",
+  "rulerTicks",
+  "urgencyCapsule",
+  "calendarCells",
+  "decisionGate",
+  "elapsedBand",
+  "expiryThermometer",
+  "signalStack",
+  "compactNeedle",
+  "windowBridge",
+] as const;
+
+type TimelineExplorationVariant = (typeof TIMELINE_EXPLORATION_VARIANTS)[number];
+
+const getTimelineExplorationVariant = (rowIndex: number): TimelineExplorationVariant => {
+  if (rowIndex === 0) return "control";
+  const explorationVariants = TIMELINE_EXPLORATION_VARIANTS.slice(1);
+  return explorationVariants[(rowIndex - 1) % explorationVariants.length] ?? "deadlineRibbon";
+};
+
+const getUrgencyTextClass = (urgency: EvalUrgency | undefined) => {
+  if (urgency === "overdue") return "text-rose-200";
+  if (urgency === "due") return "text-amber-200";
+  if (urgency === "watch") return "text-yellow-200";
+  return "text-emerald-200";
+};
+
+function TimelineExplorationCell({
+  variant,
+  position,
+  metrics,
+  lane,
+  timelineHorizonDays,
+}: {
+  variant: TimelineExplorationVariant;
+  position: OptionPosition;
+  metrics: PositionMetrics;
+  lane: TimelineLane | undefined;
+  timelineHorizonDays: number;
+}) {
+  const progressPct = clampRange(lane?.progressPct ?? 0, 0, 100);
+  const laneWidthPct = lane ? Math.max(4, (lane.totalDays / timelineHorizonDays) * 100) : 100;
+  const elapsedWidthPct = lane ? Math.max(0, Math.min(laneWidthPct, laneWidthPct * (progressPct / 100))) : 0;
+  const decisionLeftPct = lane ? Math.min(100, Math.max(0, (lane.totalDays / timelineHorizonDays) * 100)) : 100;
+  const attentionSpreadPct = lane ? Math.max(5, (lane.attentionSpreadDays / timelineHorizonDays) * 100) : 0;
+  const attentionLeftPct = Math.max(0, Math.min(100, decisionLeftPct - attentionSpreadPct / 2));
+  const attentionOpacity = lane ? 0.08 + lane.attentionStrength * 0.25 : 0.1;
+  const remainingDays = lane?.remainingDays ?? metrics.dte ?? null;
+  const completedCells = Math.max(0, Math.min(8, Math.round(progressPct / 12.5)));
+  const pressurePct = clampRange((lane?.attentionStrength ?? 0.2) * 100, 0, 100);
+  const label = lane?.label ?? "No window";
+  const detail = lane?.detail ?? "Portfolio DTE progression";
+  const accentClass = lane?.barClass ?? "bg-gray-500";
+  const urgencyTextClass = getUrgencyTextClass(lane?.urgency);
+  const dteLabel = metrics.dte !== null && metrics.dte !== undefined ? `${metrics.dte} DTE` : "DTE n/a";
+  const metaLabel = `${formatDate(position.expiration)} / ${dteLabel}`;
+
+  if (variant === "deadlineRibbon") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+        </div>
+        <div className="relative h-6 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
+          <div className="absolute inset-y-0 left-0 bg-gray-700/45" style={{ width: `${laneWidthPct}%` }} />
+          <div className={`absolute inset-y-0 left-0 ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+          <div
+            className="absolute inset-y-0 border-x border-cyan-200/30"
+            style={{
+              left: `${attentionLeftPct}%`,
+              width: `${Math.min(100 - attentionLeftPct, attentionSpreadPct)}%`,
+              background: `linear-gradient(90deg, rgba(45, 212, 191, 0), rgba(45, 212, 191, ${attentionOpacity}), rgba(45, 212, 191, 0))`,
+            }}
+          />
+          <div className="absolute inset-y-0 left-0 w-px bg-white/60" />
+          <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+            <span className={`h-4 w-1 -translate-x-1/2 rounded-full ${accentClass}`} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "countdownBlocks") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>
+            {remainingDays !== null ? `${remainingDays}d left` : label}
+          </span>
+        </div>
+        <div className="grid grid-cols-8 gap-1">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div
+              key={index}
+              className={`h-5 rounded border ${
+                index < completedCells
+                  ? `${accentClass} border-transparent`
+                  : index >= 6
+                    ? "border-amber-400/25 bg-amber-500/10"
+                    : "border-gray-700 bg-gray-900/75"
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "focusWindow") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+        </div>
+        <div className="relative h-7 overflow-hidden rounded-md border border-gray-700 bg-gray-950">
+          <div className="absolute inset-y-2 left-0 rounded-full bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
+          <div
+            className="absolute inset-y-0 rounded-md border border-cyan-300/30 bg-cyan-300/10"
+            style={{ left: `${attentionLeftPct}%`, width: `${Math.min(100 - attentionLeftPct, attentionSpreadPct)}%` }}
+          />
+          <div className={`absolute inset-y-2 left-0 rounded-full ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+          <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+            <span className="h-5 w-5 -translate-x-1/2 rounded-full border border-cyan-200/50 bg-stealth-950 shadow-[0_0_14px_rgba(94,234,212,0.45)]" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "pressureRails") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{lane?.greeksHint ?? label}</span>
+        </div>
+        <div className="space-y-1">
+          <div className="relative h-2 rounded-full bg-gray-800">
+            <div className={`h-full rounded-full ${accentClass}`} style={{ width: `${progressPct}%` }} />
+          </div>
+          <div className="relative h-2 rounded-full bg-gray-800">
+            <div className="h-full rounded-full bg-cyan-300" style={{ width: `${pressurePct}%` }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "rulerTicks") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+        </div>
+        <div
+          className="relative h-6 rounded-md border border-gray-700 bg-gray-900/70"
+          style={{
+            backgroundImage: "linear-gradient(90deg, rgba(148,163,184,0.18) 1px, transparent 1px)",
+            backgroundSize: "12.5% 100%",
+          }}
+        >
+          <div className={`absolute inset-y-1 left-0 rounded-sm ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+          <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+            <span className={`h-5 w-0.5 -translate-x-1/2 rounded-full ${accentClass}`} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "urgencyCapsule") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className="shrink-0 text-gray-500">{Math.round(progressPct)}%</span>
+        </div>
+        <div className={`flex h-7 items-center justify-between rounded-full border border-gray-700 bg-gray-900/80 px-2`}>
+          <span className={`text-[10px] font-semibold ${urgencyTextClass}`}>{label}</span>
+          <span className="text-[10px] text-gray-400">{detail}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "calendarCells") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+        </div>
+        <div className="grid grid-cols-6 gap-1">
+          {Array.from({ length: 6 }).map((_, index) => {
+            const cellPct = ((index + 1) / 6) * 100;
+            return (
+              <div
+                key={index}
+                className={`h-6 rounded-sm border ${
+                  progressPct >= cellPct
+                    ? `${accentClass} border-transparent`
+                    : Math.abs(cellPct - decisionLeftPct) <= 18
+                      ? "border-cyan-300/30 bg-cyan-300/10"
+                      : "border-gray-700 bg-gray-900/70"
+                }`}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "decisionGate") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+        </div>
+        <div className="relative h-7 rounded-md border border-gray-700 bg-gray-900/70">
+          <div className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-gray-700" />
+          <div className={`absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+          <div className="absolute inset-y-1 rounded-sm border border-cyan-300/35 bg-cyan-300/10" style={{ left: `${decisionLeftPct}%`, width: "8px" }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "elapsedBand") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+        </div>
+        <div className="relative h-6 overflow-hidden rounded-md border border-gray-700 bg-gray-950">
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-yellow-500/10 to-rose-500/15" />
+          <div className="absolute inset-y-1 left-0 rounded-r-full bg-gray-950/75" style={{ width: `${100 - progressPct}%`, left: `${progressPct}%` }} />
+          <div className={`absolute bottom-0 left-0 h-1 ${accentClass}`} style={{ width: `${progressPct}%` }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "expiryThermometer") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{remainingDays !== null ? `${remainingDays}d` : label}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-2 items-end overflow-hidden rounded-full bg-gray-800">
+            <div className={`mt-auto w-full rounded-full ${accentClass}`} style={{ height: `${Math.max(10, progressPct)}%` }} />
+          </div>
+          <div className="relative h-5 flex-1 rounded-full bg-gray-900/80">
+            <div className={`h-full rounded-full ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+            <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+              <span className="h-3 w-3 -translate-x-1/2 rounded-full border border-white/50 bg-gray-950" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "signalStack") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{lane?.greeksHint ?? label}</span>
+        </div>
+        <div className="grid grid-cols-[1fr_1fr_1fr] gap-1">
+          <div className="rounded border border-gray-700 bg-gray-900/70 px-1.5 py-1">
+            <div className="text-[9px] text-gray-500">time</div>
+            <div className="text-[10px] font-semibold text-gray-200">{Math.round(progressPct)}%</div>
+          </div>
+          <div className="rounded border border-gray-700 bg-gray-900/70 px-1.5 py-1">
+            <div className="text-[9px] text-gray-500">left</div>
+            <div className={`text-[10px] font-semibold ${urgencyTextClass}`}>{remainingDays ?? "n/a"}d</div>
+          </div>
+          <div className="rounded border border-gray-700 bg-gray-900/70 px-1.5 py-1">
+            <div className="text-[9px] text-gray-500">press</div>
+            <div className="text-[10px] font-semibold text-cyan-200">{Math.round(pressurePct)}%</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "compactNeedle") {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+        </div>
+        <div className="relative h-6 rounded-md border border-gray-700 bg-gray-900/70">
+          <div className="absolute inset-x-2 top-1/2 h-1 -translate-y-1/2 rounded-full bg-gray-700" />
+          <div className="absolute inset-y-0 flex items-center" style={{ left: `${progressPct}%` }}>
+            <span className={`h-6 w-1 -translate-x-1/2 rounded-full ${accentClass}`} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+        <span className="truncate text-gray-500">{metaLabel}</span>
+        <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+      </div>
+      <div className="relative h-7 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
+        <div className="absolute inset-y-1 left-0 rounded-l-md bg-gray-700/65" style={{ width: `${laneWidthPct}%` }} />
+        <div
+          className="absolute inset-y-0 rounded-md border border-cyan-300/30 bg-cyan-300/10"
+          style={{ left: `${attentionLeftPct}%`, width: `${Math.min(100 - attentionLeftPct, attentionSpreadPct)}%` }}
+        />
+        <div className={`absolute inset-y-1 left-0 rounded-l-md ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-gray-500">{detail}</div>
+      </div>
+    </div>
+  );
+}
+
 const clampUnit = (value: number) => Math.max(-1, Math.min(1, value));
 const countAxisRules = (axis: { debug?: { rules?: unknown[] } } | null | undefined): number => {
   const rules = axis?.debug?.rules;
@@ -1824,7 +2162,7 @@ export default function SecretOptions() {
           <div className="text-sm text-gray-400">Loading positions...</div>
         ) : (
           <div className="max-h-[68vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
-            <div className="sticky top-0 z-10 grid min-w-[760px] grid-cols-[170px_minmax(280px,1fr)_150px_58px] items-center gap-2 border-b border-gray-700 bg-stealth-900/95 px-2 py-2 text-[10px] uppercase text-gray-500 backdrop-blur">
+            <div className="sticky top-0 z-10 grid min-w-0 grid-cols-[155px_minmax(0,1fr)] items-center gap-2 border-b border-gray-700 bg-stealth-900/95 px-2 py-2 text-[10px] uppercase text-gray-500 backdrop-blur md:min-w-[760px] md:grid-cols-[170px_minmax(280px,1fr)_150px_58px]">
               <button
                 type="button"
                 className="text-left"
@@ -1838,15 +2176,16 @@ export default function SecretOptions() {
                 Position {sortArrow(positionSort.key === "symbol", positionSort.direction)}
               </button>
               <span>Timeline / Evaluation Window</span>
-              <span>Stats</span>
-              <span className="text-center">Actions</span>
+              <span className="hidden md:block">Stats</span>
+              <span className="hidden text-center md:block">Actions</span>
             </div>
 
-            <div className="min-w-[760px] divide-y divide-gray-800">
-              {sortedPositions.map((item) => {
+            <div className="min-w-0 divide-y divide-gray-800 md:min-w-[760px]">
+              {sortedPositions.map((item, rowIndex) => {
                 const { position, metrics } = item;
                 const evaluation = evaluationByPositionId[position.id] || null;
                 const lane = timelineLaneByPositionId.get(position.id);
+                const timelineVariant = getTimelineExplorationVariant(rowIndex);
                 const heat = attributionHeat(position.source_event_id, position.source_match_confidence);
                 const tooltip = buildAttributionTooltip(
                   position.source_event_id,
@@ -1872,7 +2211,7 @@ export default function SecretOptions() {
                 return (
                   <Fragment key={position.id}>
                     <div
-                      className={`grid cursor-pointer grid-cols-[170px_minmax(280px,1fr)_150px_58px] items-center gap-2 px-2 py-1.5 transition-colors ${
+                      className={`grid cursor-pointer grid-cols-[155px_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 transition-colors md:grid-cols-[170px_minmax(280px,1fr)_150px_58px] ${
                         rowActive || rowHovered
                           ? "bg-indigo-500/12"
                           : `${heat.rowTint} hover:bg-gray-900/40`
@@ -1899,34 +2238,44 @@ export default function SecretOptions() {
                         </div>
                       </div>
 
-                      <div className="min-w-0">
-                        <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] text-gray-500">
-                          <span>{formatDate(position.expiration)} / {metrics.dte ?? "—"} DTE</span>
-                          <span className={lane?.pillClass ?? "text-gray-500"}>{lane?.label ?? "No window"}</span>
+                      {timelineVariant === "control" ? (
+                        <div className="min-w-0">
+                          <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] text-gray-500">
+                            <span>{formatDate(position.expiration)} / {metrics.dte ?? "—"} DTE</span>
+                            <span className={lane?.pillClass ?? "text-gray-500"}>{lane?.label ?? "No window"}</span>
+                          </div>
+                          <div className="relative h-5 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
+                            <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
+                            <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
+                            <div className={`absolute inset-y-1 left-0 rounded-sm ${lane?.barClass ?? "bg-gray-600"}`} style={{ width: `${elapsedWidthPct}%` }} />
+                            {lane ? (
+                              <>
+                                <div
+                                  className="absolute inset-y-0"
+                                  style={{
+                                    left: `${Math.max(0, decisionLeftPct - attentionSpreadPct / 2)}%`,
+                                    width: `${Math.min(100, attentionSpreadPct)}%`,
+                                    background: `radial-gradient(circle at center, rgba(129, 230, 217, ${attentionOpacity}) 0%, rgba(129, 230, 217, 0.03) 60%, rgba(129, 230, 217, 0) 100%)`,
+                                  }}
+                                />
+                                <div className="absolute inset-y-0 flex items-center" style={{ left: `min(${laneWidthPct}%, calc(100% - 8px))` }}>
+                                  <div className={`h-2 w-2 -translate-x-1/2 rounded-full ${lane.barClass}`} />
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="relative h-5 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
-                          <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
-                          <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
-                          <div className={`absolute inset-y-1 left-0 rounded-sm ${lane?.barClass ?? "bg-gray-600"}`} style={{ width: `${elapsedWidthPct}%` }} />
-                          {lane ? (
-                            <>
-                              <div
-                                className="absolute inset-y-0"
-                                style={{
-                                  left: `${Math.max(0, decisionLeftPct - attentionSpreadPct / 2)}%`,
-                                  width: `${Math.min(100, attentionSpreadPct)}%`,
-                                  background: `radial-gradient(circle at center, rgba(129, 230, 217, ${attentionOpacity}) 0%, rgba(129, 230, 217, 0.03) 60%, rgba(129, 230, 217, 0) 100%)`,
-                                }}
-                              />
-                              <div className="absolute inset-y-0 flex items-center" style={{ left: `min(${laneWidthPct}%, calc(100% - 8px))` }}>
-                                <div className={`h-2 w-2 -translate-x-1/2 rounded-full ${lane.barClass}`} />
-                              </div>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
+                      ) : (
+                        <TimelineExplorationCell
+                          variant={timelineVariant}
+                          position={position}
+                          metrics={metrics}
+                          lane={lane}
+                          timelineHorizonDays={timelineHorizonDays}
+                        />
+                      )}
 
-                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-[11px]">
+                      <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-[11px] md:grid">
                         <div
                           className={`font-semibold ${
                             (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
@@ -1947,7 +2296,7 @@ export default function SecretOptions() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="hidden items-center justify-end gap-1 md:flex">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1971,6 +2320,26 @@ export default function SecretOptions() {
 
                     {isExpanded ? (
                       <div className="border-t border-gray-800 bg-gray-950/35 px-3 py-2">
+                        <div className="mb-2 flex gap-2 md:hidden">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditModal(position);
+                            }}
+                            className="rounded bg-sky-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-sky-600"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCloseModal(position.id);
+                            }}
+                            className="rounded bg-rose-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-600"
+                          >
+                            Close
+                          </button>
+                        </div>
                         <div className="grid gap-2 text-[11px] text-gray-400 md:grid-cols-4">
                           <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
                             <div className="text-[9px] uppercase tracking-wide text-gray-500">Pricing</div>
