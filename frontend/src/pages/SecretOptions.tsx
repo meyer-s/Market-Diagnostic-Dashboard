@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   LineChart,
   Line,
@@ -163,8 +163,6 @@ interface EvaluationInsight {
 }
 
 type EvalUrgency = EvaluationInsight["urgency"];
-type TimelineFilter = "all" | "matched" | EvalUrgency;
-
 interface TimelineLane {
   laneId: string;
   linkedPositionId: number | null;
@@ -387,27 +385,7 @@ const deriveUrgencyFromDays = (daysRemaining: number): EvalUrgency => {
   return "calm";
 };
 
-const urgencyRank = (urgency: EvalUrgency) => {
-  if (urgency === "overdue") return 0;
-  if (urgency === "due") return 1;
-  if (urgency === "watch") return 2;
-  return 3;
-};
-
 const clampRange = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-
-const toDateInputString = (date: Date) => {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const addDays = (base: Date, days: number) => {
-  const next = new Date(base);
-  next.setDate(next.getDate() + days);
-  return next;
-};
 
 const buildGreeksAttention = (
   greeks: PositionMetrics["greeks"],
@@ -834,6 +812,7 @@ const normalizePositionMetrics = (
 export default function SecretOptions() {
   const [positions, setPositions] = useState<PositionPayload[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [expandedPositionId, setExpandedPositionId] = useState<number | null>(null);
   const [greeksData, setGreeksData] = useState<GreeksPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingGreeks, setLoadingGreeks] = useState(false);
@@ -859,7 +838,6 @@ export default function SecretOptions() {
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
   const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
-  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [hoveredPositionId, setHoveredPositionId] = useState<number | null>(null);
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: SortDirection }>({
     key: "symbol",
@@ -901,6 +879,7 @@ export default function SecretOptions() {
       setPositions(normalizedPositions);
       if (normalizedPositions.length > 0 && selectedId === null) {
         setSelectedId(normalizedPositions[0].position.id);
+        setExpandedPositionId(normalizedPositions[0].position.id);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load positions");
@@ -1273,44 +1252,6 @@ export default function SecretOptions() {
     }
   };
 
-  const prefillTradeFromTrainingOutcome = (row: TrainingOutcomeRow) => {
-    const now = new Date();
-    const suggestedHoldDays = Math.max(7, Math.round(row.hold_days || 14));
-    const expiration = row.exit_date ? toDate(row.exit_date) : addDays(now, suggestedHoldDays);
-    const strike = Number.isFinite(row.entry_underlying) ? Number(row.entry_underlying).toFixed(2) : "";
-    const fillPrice =
-      row.entry_option_price_est !== null && row.entry_option_price_est !== undefined
-        ? Number(row.entry_option_price_est).toFixed(2)
-        : "";
-    const totalCost = fillPrice ? (Number(fillPrice) * 100).toFixed(2) : "";
-
-    setEditingPositionId(null);
-    setFormError(null);
-    setFormData({
-      ...initialFormState,
-      trade_date: toDateInputString(now),
-      symbol: row.symbol?.toUpperCase() || "",
-      expiration: expiration ? toDateInputString(expiration) : "",
-      strike,
-      option_type: row.option_type?.toLowerCase() === "put" ? "put" : "call",
-      contracts: "1",
-      fill_price: fillPrice,
-      total_cost: totalCost,
-      underlying_at_entry:
-        row.entry_underlying !== null && row.entry_underlying !== undefined
-          ? Number(row.entry_underlying).toFixed(2)
-          : "",
-      dte_at_entry: String(suggestedHoldDays),
-      underlying_reference:
-        row.entry_underlying !== null && row.entry_underlying !== undefined
-          ? Number(row.entry_underlying).toFixed(2)
-          : "",
-      account: "Scanner Template",
-      action: "Buy to Open",
-    });
-    setShowAddModal(true);
-  };
-
   useEffect(() => {
     loadPositions();
     loadClosedPositions();
@@ -1574,54 +1515,21 @@ export default function SecretOptions() {
     });
   }, [sortedPositions, evaluationByPositionId]);
 
-  const filteredTimelineLanes = useMemo(() => {
-    const filtered = timelineLanes.filter((lane) => {
-      if (timelineFilter === "all") return true;
-      if (timelineFilter === "matched") return lane.matched;
-      return lane.urgency === timelineFilter;
-    });
-    return filtered.sort((left, right) => {
-      const urgencyDiff = urgencyRank(left.urgency) - urgencyRank(right.urgency);
-      if (urgencyDiff !== 0) return urgencyDiff;
-      const remainingDiff = left.remainingDays - right.remainingDays;
-      if (remainingDiff !== 0) return remainingDiff;
-      return right.attentionStrength - left.attentionStrength;
-    });
-  }, [timelineFilter, timelineLanes]);
-
-  const primaryTimelineLanes = useMemo(
-    () =>
-      filteredTimelineLanes.filter(
-        (lane) => !(lane.urgency === "calm" && lane.remainingDays > 21 && lane.attentionStrength < 0.55)
-      ),
-    [filteredTimelineLanes]
-  );
-
-  const compactTimelineLanes = useMemo(
-    () =>
-      filteredTimelineLanes.filter(
-        (lane) => lane.urgency === "calm" && lane.remainingDays > 21 && lane.attentionStrength < 0.55
-      ),
-    [filteredTimelineLanes]
-  );
-
   const timelineHorizonDays = useMemo(() => {
-    if (!filteredTimelineLanes.length) return 30;
-    const maxDays = Math.max(...filteredTimelineLanes.map((lane) => lane.totalDays));
+    if (!timelineLanes.length) return 30;
+    const maxDays = Math.max(...timelineLanes.map((lane) => lane.totalDays));
     return Math.max(10, maxDays);
-  }, [filteredTimelineLanes]);
+  }, [timelineLanes]);
 
-  const timelineTicks = useMemo(() => {
-    const step = timelineHorizonDays > 45 ? 10 : 5;
-    const ticks: number[] = [];
-    for (let value = 0; value <= timelineHorizonDays; value += step) {
-      ticks.push(value);
-    }
-    if (ticks[ticks.length - 1] !== timelineHorizonDays) {
-      ticks.push(timelineHorizonDays);
-    }
-    return ticks;
-  }, [timelineHorizonDays]);
+  const timelineLaneByPositionId = useMemo(() => {
+    const lanes = new Map<number, TimelineLane>();
+    timelineLanes.forEach((lane) => {
+      if (lane.linkedPositionId !== null) {
+        lanes.set(lane.linkedPositionId, lane);
+      }
+    });
+    return lanes;
+  }, [timelineLanes]);
 
   const totals = useMemo(() => {
     let totalCost = 0;
@@ -1939,469 +1847,244 @@ export default function SecretOptions() {
           </div>
         </div>
 
-        <div className="mb-3 rounded-xl border border-stealth-700 bg-stealth-950/45 p-2.5">
-          <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Convexity Timeline</div>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {([
-                ["all", "All"],
-                ["matched", "Matched"],
-                ["watch", "Watch"],
-                ["due", "Due"],
-                ["overdue", "Overdue"],
-              ] as Array<[TimelineFilter, string]>).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setTimelineFilter(value)}
-                    className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${
-                    timelineFilter === value
-                      ? "border-indigo-400/70 bg-indigo-500/20 text-indigo-200"
-                      : "border-gray-600 bg-gray-800/80 text-gray-300 hover:border-gray-500"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-[132px_minmax(0,1fr)] items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-gray-500">
-            <span>Trade</span>
-            <div className="relative h-5">
-              {timelineTicks.map((tick) => {
-                const left = (tick / timelineHorizonDays) * 100;
-                return (
-                  <div key={`tick-${tick}`} className="absolute top-0 -translate-x-1/2" style={{ left: `${left}%` }}>
-                    <span>{tick}d</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mt-1.5 max-h-[210px] space-y-1.5 overflow-y-auto pr-1">
-            {filteredTimelineLanes.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-xs text-gray-500">
-                No timeline lanes for this filter.
-              </div>
-            ) : (
-              primaryTimelineLanes.map((lane) => {
-                const laneWidthPct = Math.max(4, (lane.totalDays / timelineHorizonDays) * 100);
-                const elapsedWidthPct = Math.max(0, Math.min(laneWidthPct, laneWidthPct * (lane.progressPct / 100)));
-                const decisionLeftPct = (lane.totalDays / timelineHorizonDays) * 100;
-                const attentionSpreadPct = Math.max(5, (lane.attentionSpreadDays / timelineHorizonDays) * 100);
-                const attentionOpacity = 0.08 + lane.attentionStrength * 0.25;
-                const laneIsFocused =
-                  lane.linkedPositionId !== null &&
-                  (hoveredPositionId === lane.linkedPositionId || selectedId === lane.linkedPositionId);
-                return (
-                  <div
-                    key={`timeline-${lane.laneId}`}
-                    className={`grid cursor-pointer grid-cols-[132px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2 py-1 transition-colors ${
-                      laneIsFocused ? "border-indigo-400/60 bg-indigo-500/10" : "border-gray-700 bg-gray-800/50 hover:bg-gray-800/80"
-                    }`}
-                    onMouseEnter={() => setHoveredPositionId(lane.linkedPositionId)}
-                    onMouseLeave={() => setHoveredPositionId(null)}
-                    onClick={() => {
-                      if (lane.linkedPositionId !== null) {
-                        setSelectedId(lane.linkedPositionId);
-                        return;
-                      }
-                      if (lane.eventId !== null) {
-                        const trainingRow = trainingOutcomeByEventId.get(lane.eventId);
-                        if (trainingRow) {
-                          prefillTradeFromTrainingOutcome(trainingRow);
-                        }
-                      }
-                    }}
-                  >
-                    <div>
-                      <div className="text-xs font-semibold text-gray-100">{lane.symbol}</div>
-                      <div className="text-[10px] uppercase tracking-wide text-gray-500">
-                        {lane.optionType} • {lane.contracts} ctr
-                        {lane.matched ? " • linked" : " • unlinked"}
-                      </div>
-                      <div className="text-[10px] text-gray-500">{lane.greeksHint}</div>
-                    </div>
-                      <div className="relative h-7 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
-                      <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
-                      {timelineTicks.map((tick) => {
-                        const left = (tick / timelineHorizonDays) * 100;
-                        return <div key={`grid-${lane.laneId}-${tick}`} className="absolute inset-y-0 w-px bg-gray-700/70" style={{ left: `${left}%` }} />;
-                      })}
-                      <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
-                      <div className={`absolute inset-y-1 left-0 rounded-sm ${lane.barClass}`} style={{ width: `${elapsedWidthPct}%` }} />
-                      <div
-                        className="absolute inset-y-0"
-                        style={{
-                          left: `${Math.max(0, decisionLeftPct - attentionSpreadPct / 2)}%`,
-                          width: `${Math.min(100, attentionSpreadPct)}%`,
-                          background: `radial-gradient(circle at center, rgba(129, 230, 217, ${attentionOpacity}) 0%, rgba(129, 230, 217, 0.03) 60%, rgba(129, 230, 217, 0) 100%)`,
-                        }}
-                      />
-                      <div className="absolute inset-y-0 flex items-center" style={{ left: `min(${laneWidthPct}%, calc(100% - 8px))` }}>
-                        <div className={`h-2 w-2 -translate-x-1/2 rounded-full ${lane.barClass}`} />
-                      </div>
-                      <div className="absolute inset-y-0 right-1 flex items-center">
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${lane.pillClass}`}>{lane.label}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {compactTimelineLanes.length > 0 && (
-            <div className="mt-2 rounded-lg border border-gray-700/70 bg-gray-950/35 p-2">
-              <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-gray-500">Background Windows</div>
-              <div className="max-h-[150px] space-y-1 overflow-y-auto pr-1">
-                {compactTimelineLanes.map((lane) => {
-                  const laneIsFocused =
-                    lane.linkedPositionId !== null &&
-                    (hoveredPositionId === lane.linkedPositionId || selectedId === lane.linkedPositionId);
-                  const laneWidthPct = Math.max(4, (lane.totalDays / timelineHorizonDays) * 100);
-                  const elapsedWidthPct = Math.max(0, Math.min(laneWidthPct, laneWidthPct * (lane.progressPct / 100)));
-                  return (
-                    <div
-                      key={`compact-${lane.laneId}`}
-                      className={`grid cursor-pointer grid-cols-[92px_1fr_88px] items-center gap-2 rounded-md px-2 py-1 transition-colors ${
-                        laneIsFocused ? "bg-indigo-500/10" : "hover:bg-gray-800/55"
-                      }`}
-                      onMouseEnter={() => setHoveredPositionId(lane.linkedPositionId)}
-                      onMouseLeave={() => setHoveredPositionId(null)}
-                      onClick={() => lane.linkedPositionId !== null && setSelectedId(lane.linkedPositionId)}
-                    >
-                      <div>
-                        <div className="text-[11px] font-semibold text-gray-200">{lane.symbol}</div>
-                        <div className="text-[9px] uppercase tracking-wide text-gray-500">{lane.optionType}</div>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-gray-800/90">
-                        <div className="h-full rounded-full bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
-                        <div className={`-mt-2 h-2 rounded-full ${lane.barClass}`} style={{ width: `${elapsedWidthPct}%` }} />
-                      </div>
-                      <div className="truncate text-right text-[10px] text-gray-400">{lane.label}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
         {loading ? (
           <div className="text-sm text-gray-400">Loading positions...</div>
         ) : (
-          <div className="max-h-[58vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
-            <table className="min-w-full text-xs text-gray-300">
-              <thead className="sticky top-0 z-10 border-b border-gray-700 bg-stealth-900/95 text-[10px] uppercase text-gray-500 backdrop-blur">
-                <tr>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "symbol",
-                          direction: prev.key === "symbol" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Symbol {sortArrow(positionSort.key === "symbol", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "strike",
-                          direction: prev.key === "strike" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Strike {sortArrow(positionSort.key === "strike", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "expiration",
-                          direction: prev.key === "expiration" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Expiration {sortArrow(positionSort.key === "expiration", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "option_type",
-                          direction: prev.key === "option_type" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Type {sortArrow(positionSort.key === "option_type", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "contracts",
-                          direction: prev.key === "contracts" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Contracts {sortArrow(positionSort.key === "contracts", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "fill_price",
-                          direction: prev.key === "fill_price" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Fill {sortArrow(positionSort.key === "fill_price", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "option_price",
-                          direction: prev.key === "option_price" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Option {sortArrow(positionSort.key === "option_price", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "underlying",
-                          direction: prev.key === "underlying" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Underlying {sortArrow(positionSort.key === "underlying", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "dte",
-                          direction: prev.key === "dte" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      DTE {sortArrow(positionSort.key === "dte", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">Eval</th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "pnl",
-                          direction: prev.key === "pnl" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      P&amp;L {sortArrow(positionSort.key === "pnl", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "delta",
-                          direction: prev.key === "delta" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Delta {sortArrow(positionSort.key === "delta", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-left">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPositionSort((prev) => ({
-                          key: "theta",
-                          direction: prev.key === "theta" && prev.direction === "asc" ? "desc" : "asc",
-                        }))
-                      }
-                    >
-                      Theta {sortArrow(positionSort.key === "theta", positionSort.direction)}
-                    </button>
-                  </th>
-                  <th className="px-2 py-2 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {sortedPositions.map((item) => {
-                  const { position, metrics } = item;
-                  const evaluation = evaluationByPositionId[position.id] || null;
-                  const heat = attributionHeat(position.source_event_id, position.source_match_confidence);
-                  const tooltip = buildAttributionTooltip(
-                    position.source_event_id,
-                    position.source_triggered_at,
-                    position.source_match_method,
-                    position.source_match_confidence,
-                    position.source_match_notes
-                  );
-                  const optionQuoteSource = formatDataSource(metrics.quote?.data_source, metrics.quote?.quote_source);
-                  const underlyingQuoteSource = formatDataSource(
-                    metrics.market?.data_source,
-                    metrics.market?.quote_source
-                  );
-                  const rowActive = position.id === selectedId;
-                  const rowHovered = position.id === hoveredPositionId;
-                  return (
-                    <tr
-                      key={position.id}
-                      className={`cursor-pointer ${
+          <div className="max-h-[68vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
+            <div className="sticky top-0 z-10 grid min-w-[860px] grid-cols-[180px_minmax(320px,1fr)_86px_86px_92px] items-center gap-2 border-b border-gray-700 bg-stealth-900/95 px-2 py-2 text-[10px] uppercase text-gray-500 backdrop-blur">
+              <button
+                type="button"
+                className="text-left"
+                onClick={() =>
+                  setPositionSort((prev) => ({
+                    key: "symbol",
+                    direction: prev.key === "symbol" && prev.direction === "asc" ? "desc" : "asc",
+                  }))
+                }
+              >
+                Position {sortArrow(positionSort.key === "symbol", positionSort.direction)}
+              </button>
+              <span>Timeline / Evaluation Window</span>
+              <button
+                type="button"
+                className="text-left"
+                onClick={() =>
+                  setPositionSort((prev) => ({
+                    key: "pnl",
+                    direction: prev.key === "pnl" && prev.direction === "asc" ? "desc" : "asc",
+                  }))
+                }
+              >
+                P&amp;L {sortArrow(positionSort.key === "pnl", positionSort.direction)}
+              </button>
+              <button
+                type="button"
+                className="text-left"
+                onClick={() =>
+                  setPositionSort((prev) => ({
+                    key: "delta",
+                    direction: prev.key === "delta" && prev.direction === "asc" ? "desc" : "asc",
+                  }))
+                }
+              >
+                Greeks {sortArrow(positionSort.key === "delta", positionSort.direction)}
+              </button>
+              <span className="text-center">Actions</span>
+            </div>
+
+            <div className="min-w-[860px] divide-y divide-gray-800">
+              {sortedPositions.map((item) => {
+                const { position, metrics } = item;
+                const evaluation = evaluationByPositionId[position.id] || null;
+                const lane = timelineLaneByPositionId.get(position.id);
+                const heat = attributionHeat(position.source_event_id, position.source_match_confidence);
+                const tooltip = buildAttributionTooltip(
+                  position.source_event_id,
+                  position.source_triggered_at,
+                  position.source_match_method,
+                  position.source_match_confidence,
+                  position.source_match_notes
+                );
+                const optionQuoteSource = formatDataSource(metrics.quote?.data_source, metrics.quote?.quote_source);
+                const underlyingQuoteSource = formatDataSource(
+                  metrics.market?.data_source,
+                  metrics.market?.quote_source
+                );
+                const rowActive = position.id === selectedId;
+                const rowHovered = position.id === hoveredPositionId;
+                const isExpanded = expandedPositionId === position.id;
+                const laneWidthPct = lane ? Math.max(4, (lane.totalDays / timelineHorizonDays) * 100) : 100;
+                const elapsedWidthPct = lane ? Math.max(0, Math.min(laneWidthPct, laneWidthPct * (lane.progressPct / 100))) : 0;
+                const decisionLeftPct = lane ? (lane.totalDays / timelineHorizonDays) * 100 : 100;
+                const attentionSpreadPct = lane ? Math.max(5, (lane.attentionSpreadDays / timelineHorizonDays) * 100) : 0;
+                const attentionOpacity = lane ? 0.08 + lane.attentionStrength * 0.25 : 0;
+
+                return (
+                  <Fragment key={position.id}>
+                    <div
+                      className={`grid cursor-pointer grid-cols-[180px_minmax(320px,1fr)_86px_86px_92px] items-center gap-2 px-2 py-2 transition-colors ${
                         rowActive || rowHovered
                           ? "bg-indigo-500/12"
                           : `${heat.rowTint} hover:bg-gray-900/40`
                       }`}
-                      onClick={() => setSelectedId(position.id)}
+                      onClick={() => {
+                        setSelectedId(position.id);
+                        setExpandedPositionId((current) => (current === position.id ? null : position.id));
+                      }}
                       onMouseEnter={() => setHoveredPositionId(position.id)}
                       onMouseLeave={() => setHoveredPositionId(null)}
                     >
-                      <td className="px-2 py-1.5">
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span
                             title={`${tooltip}\nLink quality: ${heat.quality}`}
-                            className={`inline-block h-5 w-1.5 rounded-full ${heat.marker}`}
+                            className={`inline-block h-8 w-1.5 shrink-0 rounded-full ${heat.marker}`}
                           />
-                          <span className="font-semibold text-gray-100">{position.symbol}</span>
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5">${formatNumber(position.strike, 2)}</td>
-                      <td className="px-2 py-1.5">{formatDate(position.expiration)}</td>
-                      <td className="px-2 py-1.5 uppercase">{position.option_type}</td>
-                      <td className="px-2 py-1.5">{position.contracts}</td>
-                      <td className="px-2 py-1.5">{formatCurrency(position.fill_price, 2)}</td>
-                      <td className="px-2 py-1.5">
-                        <div className="flex flex-col gap-0.5">
-                          <span>{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
-                          <span className="text-[10px] uppercase text-gray-500">{optionQuoteSource}</span>
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <div className="flex flex-col gap-0.5">
-                          <span>
-                            {metrics.market.current_price !== null
-                              ? formatCurrency(metrics.market.current_price, 2)
-                              : "—"}
-                          </span>
-                          <span className="text-[10px] uppercase text-gray-500">
-                            {underlyingQuoteSource}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5">{metrics.dte ?? "—"}</td>
-                      <td className="min-w-[150px] px-2 py-1.5">
-                        {evaluation ? (
-                          <div className="flex flex-col gap-1">
-                            <span
-                              className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${evaluation.pillClass}`}
-                            >
-                              {evaluation.label}
-                            </span>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-700">
-                              <div
-                                className={`h-full ${evaluation.barClass}`}
-                                style={{ width: `${evaluation.progressPct}%` }}
-                              />
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-gray-100">{position.symbol}</div>
+                            <div className="truncate text-[10px] uppercase tracking-wide text-gray-500">
+                              {position.option_type} ${formatNumber(position.strike, 2)} / {position.contracts} ctr
                             </div>
-                            <span className="text-[10px] text-gray-500">{evaluation.detail}</span>
                           </div>
-                        ) : (
-                          <span className="text-xs text-gray-500">No linked or historical template</span>
-                        )}
-                      </td>
-                      <td
-                        className={`px-2 py-1.5 font-semibold ${
+                        </div>
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-gray-500">
+                          <span>{formatDate(position.expiration)} / {metrics.dte ?? "—"} DTE</span>
+                          <span className={lane?.pillClass ?? "text-gray-500"}>{lane?.label ?? "No window"}</span>
+                        </div>
+                        <div className="relative h-7 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
+                          <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
+                          <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
+                          <div className={`absolute inset-y-1 left-0 rounded-sm ${lane?.barClass ?? "bg-gray-600"}`} style={{ width: `${elapsedWidthPct}%` }} />
+                          {lane ? (
+                            <>
+                              <div
+                                className="absolute inset-y-0"
+                                style={{
+                                  left: `${Math.max(0, decisionLeftPct - attentionSpreadPct / 2)}%`,
+                                  width: `${Math.min(100, attentionSpreadPct)}%`,
+                                  background: `radial-gradient(circle at center, rgba(129, 230, 217, ${attentionOpacity}) 0%, rgba(129, 230, 217, 0.03) 60%, rgba(129, 230, 217, 0) 100%)`,
+                                }}
+                              />
+                              <div className="absolute inset-y-0 flex items-center" style={{ left: `min(${laneWidthPct}%, calc(100% - 8px))` }}>
+                                <div className={`h-2 w-2 -translate-x-1/2 rounded-full ${lane.barClass}`} />
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div
+                        className={`text-xs font-semibold ${
                           (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
                         }`}
                       >
-                        {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
-                          ? formatCurrency(metrics.pnl.dollar, 0)
-                          : "—"}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {metrics.greeks ? metrics.greeks.theta.toFixed(3) : "—"}
-                      </td>
-                      <td className="px-2 py-1.5 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditModal(position);
-                            }}
-                            className="bg-sky-700 hover:bg-sky-600 text-white px-2 py-1 rounded text-xs font-medium"
-                          >
-                            Edit
-                          </button>
+                        <div>
+                          {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
+                            ? formatCurrency(metrics.pnl.dollar, 0)
+                            : "—"}
+                        </div>
+                        <div className="text-[10px] font-normal text-gray-500">
+                          {metrics.pnl?.percent !== null && metrics.pnl?.percent !== undefined ? `${formatSigned(metrics.pnl.percent, 1)}%` : "—"}
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-gray-300">
+                        <div>Δ {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}</div>
+                        <div className="text-gray-500">θ {metrics.greeks ? metrics.greeks.theta.toFixed(2) : "—"}</div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedId(position.id);
+                            setExpandedPositionId((current) => (current === position.id ? null : position.id));
+                          }}
+                          className="rounded border border-gray-600 px-2 py-1 text-[10px] font-semibold text-gray-200 hover:border-indigo-400 hover:text-indigo-200"
+                        >
+                          {isExpanded ? "Less" : "More"}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditModal(position);
+                          }}
+                          className="rounded bg-sky-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-sky-600"
+                        >
+                          Edit
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             openCloseModal(position.id);
                           }}
-                          className="bg-rose-700 hover:bg-rose-600 text-white px-2 py-1 rounded text-xs font-medium"
+                          className="rounded bg-rose-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-600"
                         >
-                          −
+                          -
                         </button>
+                      </div>
+                    </div>
+
+                    {isExpanded ? (
+                      <div className="border-t border-gray-800 bg-gray-950/35 px-3 py-2">
+                        <div className="grid gap-2 text-[11px] text-gray-400 md:grid-cols-4">
+                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Pricing</div>
+                            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
+                              <span>Fill</span><span className="text-gray-200">{formatCurrency(position.fill_price, 2)}</span>
+                              <span>Option</span><span className="text-gray-200">{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
+                              <span>Underlying</span><span className="text-gray-200">{metrics.market.current_price !== null ? formatCurrency(metrics.market.current_price, 2) : "—"}</span>
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Quote</div>
+                            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
+                              <span>Bid / Ask</span><span className="text-gray-200">
+                                {metrics.quote.bid !== null && metrics.quote.bid !== undefined ? formatCurrency(metrics.quote.bid, 2) : "n/a"} / {metrics.quote.ask !== null && metrics.quote.ask !== undefined ? formatCurrency(metrics.quote.ask, 2) : "n/a"}
+                              </span>
+                              <span>Spread</span><span className="text-gray-200">{metrics.quote.spread_pct !== null && metrics.quote.spread_pct !== undefined ? formatPercent(metrics.quote.spread_pct, 1) : "n/a"}</span>
+                              <span>OI / Vol</span><span className="text-gray-200">{metrics.quote.open_interest ?? "n/a"} / {metrics.quote.volume ?? "n/a"}</span>
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Window</div>
+                            <div className="mt-1 space-y-0.5">
+                              <div className="text-gray-200">{lane?.detail ?? evaluation?.detail ?? "No linked or historical template"}</div>
+                              <div>{lane?.greeksHint ?? "No Greek pressure hint"}</div>
+                              <div>{position.source_match_method || "unlinked"} / {position.source_match_confidence !== null && position.source_match_confidence !== undefined ? formatPercent(position.source_match_confidence * 100, 0) : "n/a"}</div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Greeks / Sources</div>
+                            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
+                              <span>Γ</span><span className="text-gray-200">{metrics.greeks ? metrics.greeks.gamma.toFixed(4) : "—"}</span>
+                              <span>Vega</span><span className="text-gray-200">{metrics.greeks ? metrics.greeks.vega.toFixed(2) : "—"}</span>
+                              <span>Opt src</span><span className="truncate text-gray-200">{optionQuoteSource}</span>
+                              <span>Und src</span><span className="truncate text-gray-200">{underlyingQuoteSource}</span>
+                            </div>
+                          </div>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot className="border-t border-gray-700 text-xs">
-                <tr>
-                  <td className="px-2 py-2 font-semibold text-gray-400" colSpan={10}>
-                    Table Total P&amp;L
-                  </td>
-                  <td
-                    className={`px-2 py-2 font-semibold ${
-                      totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"
-                    }`}
-                  >
-                    {formatCurrency(totals.totalPnl, 0)}
-                  </td>
-                  <td className="px-2 py-2 text-gray-500" colSpan={3}>
-                    {totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                      </div>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-gray-700 px-3 py-2 text-xs">
+              <span className="font-semibold text-gray-400">Total P&amp;L</span>
+              <span className={`font-semibold ${totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                {formatCurrency(totals.totalPnl, 0)}
+              </span>
+              <span className="text-gray-500">{totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}</span>
+            </div>
           </div>
         )}
       </div>
