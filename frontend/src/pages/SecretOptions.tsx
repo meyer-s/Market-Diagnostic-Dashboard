@@ -387,6 +387,13 @@ const deriveUrgencyFromDays = (daysRemaining: number): EvalUrgency => {
   return "calm";
 };
 
+const urgencyRank = (urgency: EvalUrgency) => {
+  if (urgency === "overdue") return 0;
+  if (urgency === "due") return 1;
+  if (urgency === "watch") return 2;
+  return 3;
+};
+
 const clampRange = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 const toDateInputString = (date: Date) => {
@@ -1548,12 +1555,35 @@ export default function SecretOptions() {
   }, [sortedPositions, evaluationByPositionId]);
 
   const filteredTimelineLanes = useMemo(() => {
-    return timelineLanes.filter((lane) => {
+    const filtered = timelineLanes.filter((lane) => {
       if (timelineFilter === "all") return true;
       if (timelineFilter === "matched") return lane.matched;
       return lane.urgency === timelineFilter;
     });
+    return filtered.sort((left, right) => {
+      const urgencyDiff = urgencyRank(left.urgency) - urgencyRank(right.urgency);
+      if (urgencyDiff !== 0) return urgencyDiff;
+      const remainingDiff = left.remainingDays - right.remainingDays;
+      if (remainingDiff !== 0) return remainingDiff;
+      return right.attentionStrength - left.attentionStrength;
+    });
   }, [timelineFilter, timelineLanes]);
+
+  const primaryTimelineLanes = useMemo(
+    () =>
+      filteredTimelineLanes.filter(
+        (lane) => !(lane.urgency === "calm" && lane.remainingDays > 21 && lane.attentionStrength < 0.55)
+      ),
+    [filteredTimelineLanes]
+  );
+
+  const compactTimelineLanes = useMemo(
+    () =>
+      filteredTimelineLanes.filter(
+        (lane) => lane.urgency === "calm" && lane.remainingDays > 21 && lane.attentionStrength < 0.55
+      ),
+    [filteredTimelineLanes]
+  );
 
   const timelineHorizonDays = useMemo(() => {
     if (!filteredTimelineLanes.length) return 30;
@@ -1903,15 +1933,6 @@ export default function SecretOptions() {
             >
               P/L History
             </button>
-            <button
-              onClick={() => {
-                loadTrainingOutcomes();
-                setShowTrainingOutcomes(true);
-              }}
-              className="bg-indigo-700 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
-            >
-              Scanner Outcomes
-            </button>
           </div>
         </div>
 
@@ -1965,7 +1986,7 @@ export default function SecretOptions() {
                 No timeline lanes for this filter.
               </div>
             ) : (
-              filteredTimelineLanes.map((lane) => {
+              primaryTimelineLanes.map((lane) => {
                 const laneWidthPct = Math.max(4, (lane.totalDays / timelineHorizonDays) * 100);
                 const elapsedWidthPct = Math.max(0, Math.min(laneWidthPct, laneWidthPct * (lane.progressPct / 100)));
                 const decisionLeftPct = (lane.totalDays / timelineHorizonDays) * 100;
@@ -2031,6 +2052,42 @@ export default function SecretOptions() {
               })
             )}
           </div>
+
+          {compactTimelineLanes.length > 0 && (
+            <div className="mt-3 rounded-lg border border-gray-700/70 bg-gray-950/35 p-2.5">
+              <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-gray-500">Background Windows</div>
+              <div className="space-y-1.5">
+                {compactTimelineLanes.map((lane) => {
+                  const laneIsFocused =
+                    lane.linkedPositionId !== null &&
+                    (hoveredPositionId === lane.linkedPositionId || selectedId === lane.linkedPositionId);
+                  const laneWidthPct = Math.max(4, (lane.totalDays / timelineHorizonDays) * 100);
+                  const elapsedWidthPct = Math.max(0, Math.min(laneWidthPct, laneWidthPct * (lane.progressPct / 100)));
+                  return (
+                    <div
+                      key={`compact-${lane.laneId}`}
+                      className={`grid cursor-pointer grid-cols-[92px_1fr_88px] items-center gap-2 rounded-md px-2 py-1 transition-colors ${
+                        laneIsFocused ? "bg-indigo-500/10" : "hover:bg-gray-800/55"
+                      }`}
+                      onMouseEnter={() => setHoveredPositionId(lane.linkedPositionId)}
+                      onMouseLeave={() => setHoveredPositionId(null)}
+                      onClick={() => lane.linkedPositionId !== null && setSelectedId(lane.linkedPositionId)}
+                    >
+                      <div>
+                        <div className="text-[11px] font-semibold text-gray-200">{lane.symbol}</div>
+                        <div className="text-[9px] uppercase tracking-wide text-gray-500">{lane.optionType}</div>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-gray-800/90">
+                        <div className="h-full rounded-full bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
+                        <div className={`-mt-2 h-2 rounded-full ${lane.barClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+                      </div>
+                      <div className="text-right text-[10px] text-gray-400">{lane.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -3449,6 +3506,26 @@ export default function SecretOptions() {
                 </table>
               </div>
             )}
+
+            <div className="rounded-lg border border-indigo-500/20 bg-indigo-950/10 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-indigo-300">Scanner Outcomes</div>
+                  <div className="text-xs text-gray-400">
+                    Review historical training outcomes and prefill a trade template without crowding the portfolio summary.
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    loadTrainingOutcomes();
+                    setShowTrainingOutcomes(true);
+                  }}
+                  className="rounded-full border border-indigo-400/45 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30"
+                >
+                  Open Scanner Outcomes
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
