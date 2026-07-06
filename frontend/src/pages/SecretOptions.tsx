@@ -1293,16 +1293,6 @@ export default function SecretOptions() {
   }, []);
 
   useEffect(() => {
-    if (timelineMode === "scanner" && timelineFilter === "all") {
-      setTimelineFilter("matched");
-      return;
-    }
-    if (timelineMode === "dte" && timelineFilter === "matched") {
-      setTimelineFilter("all");
-    }
-  }, [timelineMode, timelineFilter]);
-
-  useEffect(() => {
     if (selectedId !== null) {
       loadGreeks(selectedId);
     }
