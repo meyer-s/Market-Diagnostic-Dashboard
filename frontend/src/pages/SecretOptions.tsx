@@ -150,6 +150,39 @@ interface TrainingOutcomeResponse {
   summary: TrainingOutcomeSummary;
 }
 
+interface EvaluationInsight {
+  holdDays: number;
+  elapsedDays: number;
+  daysRemaining: number;
+  progressPct: number;
+  urgency: "calm" | "watch" | "due" | "overdue";
+  label: string;
+  detail: string;
+  pillClass: string;
+  barClass: string;
+}
+
+type EvalUrgency = EvaluationInsight["urgency"];
+type TimelineMode = "scanner" | "dte";
+type TimelineFilter = "all" | "matched" | EvalUrgency;
+
+interface TimelineLane {
+  id: number;
+  symbol: string;
+  optionType: string;
+  contracts: number;
+  matched: boolean;
+  urgency: EvalUrgency;
+  totalDays: number;
+  elapsedDays: number;
+  remainingDays: number;
+  progressPct: number;
+  label: string;
+  detail: string;
+  pillClass: string;
+  barClass: string;
+}
+
 interface RawPositionPayload {
   position: OptionPosition;
   metrics?: Partial<PositionMetrics> | null;
@@ -266,6 +299,88 @@ const formatDataSource = (source?: string | null, quoteSource?: string | null) =
         : source?.trim() || "Unknown";
   const detail = quoteSource?.trim();
   return detail ? `${provider} (${detail.replace(/_/g, " ")})` : provider;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDate = (value: string | null | undefined) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const buildEvaluationInsight = (
+  holdDaysRaw: number,
+  anchorDate: Date,
+  now: Date
+): EvaluationInsight | null => {
+  const holdDays = Number.isFinite(holdDaysRaw) ? Math.max(1, Math.round(holdDaysRaw)) : 0;
+  if (holdDays <= 0) return null;
+
+  const elapsedDays = Math.max(0, Math.floor((now.getTime() - anchorDate.getTime()) / DAY_MS));
+  const daysRemaining = holdDays - elapsedDays;
+  const progressPct = Math.max(0, Math.min(100, (elapsedDays / holdDays) * 100));
+
+  if (daysRemaining < 0) {
+    return {
+      holdDays,
+      elapsedDays,
+      daysRemaining,
+      progressPct,
+      urgency: "overdue",
+      label: `${Math.abs(daysRemaining)}d past eval`,
+      detail: `Suggested hold ${holdDays}d from trigger`,
+      pillClass: "border-rose-500/50 bg-rose-500/10 text-rose-200",
+      barClass: "bg-rose-400",
+    };
+  }
+
+  if (daysRemaining === 0) {
+    return {
+      holdDays,
+      elapsedDays,
+      daysRemaining,
+      progressPct,
+      urgency: "due",
+      label: "Evaluate today",
+      detail: `Reached ${holdDays}d scanner horizon`,
+      pillClass: "border-amber-500/50 bg-amber-500/10 text-amber-200",
+      barClass: "bg-amber-300",
+    };
+  }
+
+  if (daysRemaining <= 5) {
+    return {
+      holdDays,
+      elapsedDays,
+      daysRemaining,
+      progressPct,
+      urgency: "watch",
+      label: `${daysRemaining}d to eval`,
+      detail: `Scanner horizon ${holdDays}d`,
+      pillClass: "border-yellow-500/45 bg-yellow-500/10 text-yellow-200",
+      barClass: "bg-yellow-300",
+    };
+  }
+
+  return {
+    holdDays,
+    elapsedDays,
+    daysRemaining,
+    progressPct,
+    urgency: "calm",
+    label: `Evaluate in ${daysRemaining}d`,
+    detail: `Scanner horizon ${holdDays}d`,
+    pillClass: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+    barClass: "bg-emerald-300",
+  };
+};
+
+const deriveUrgencyFromDays = (daysRemaining: number): EvalUrgency => {
+  if (daysRemaining < 0) return "overdue";
+  if (daysRemaining === 0) return "due";
+  if (daysRemaining <= 5) return "watch";
+  return "calm";
 };
 
 const clampUnit = (value: number) => Math.max(-1, Math.min(1, value));
@@ -670,6 +785,9 @@ export default function SecretOptions() {
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
   const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
+  const [timelineMode, setTimelineMode] = useState<TimelineMode>("scanner");
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
+  const [hoveredPositionId, setHoveredPositionId] = useState<number | null>(null);
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: SortDirection }>({
     key: "symbol",
     direction: "asc",
@@ -1085,6 +1203,7 @@ export default function SecretOptions() {
   useEffect(() => {
     loadPositions();
     loadClosedPositions();
+    loadTrainingOutcomes();
   }, []);
 
   useEffect(() => {
@@ -1231,6 +1350,154 @@ export default function SecretOptions() {
     });
     return sorted;
   }, [positions, positionSort]);
+
+  const trainingOutcomeByEventId = useMemo(() => {
+    const eventMap = new Map<number, TrainingOutcomeRow>();
+    trainingOutcomes.forEach((row) => {
+      if (!eventMap.has(row.event_id)) {
+        eventMap.set(row.event_id, row);
+      }
+    });
+    return eventMap;
+  }, [trainingOutcomes]);
+
+  const evaluationByPositionId = useMemo(() => {
+    const result: Record<number, EvaluationInsight> = {};
+    const now = new Date();
+
+    positions.forEach(({ position }) => {
+      const eventId = position.source_event_id;
+      if (!eventId) return;
+
+      const matched = trainingOutcomeByEventId.get(eventId);
+      if (!matched) return;
+
+      const anchorDate =
+        toDate(matched.triggered_at) ||
+        toDate(position.source_triggered_at) ||
+        toDate(position.trade_date);
+      if (!anchorDate) return;
+
+      const insight = buildEvaluationInsight(matched.hold_days, anchorDate, now);
+      if (!insight) return;
+      result[position.id] = insight;
+    });
+
+    return result;
+  }, [positions, trainingOutcomeByEventId]);
+
+  const evaluationSummary = useMemo(() => {
+    const values = Object.values(evaluationByPositionId);
+    return {
+      matched: values.length,
+      due: values.filter((item) => item.urgency === "due").length,
+      watch: values.filter((item) => item.urgency === "watch").length,
+      overdue: values.filter((item) => item.urgency === "overdue").length,
+    };
+  }, [evaluationByPositionId]);
+
+  const timelineLanes = useMemo(() => {
+    return sortedPositions.map(({ position, metrics }) => {
+      const evaluation = evaluationByPositionId[position.id] || null;
+      const matched = Boolean(evaluation);
+      const dteNow = metrics.dte ?? null;
+      const dteEntry = position.dte_at_entry ?? null;
+
+      if (timelineMode === "scanner") {
+        const totalDays = Math.max(1, evaluation?.holdDays ?? dteNow ?? dteEntry ?? 1);
+        const elapsedDays = evaluation
+          ? evaluation.elapsedDays
+          : dteEntry !== null && dteNow !== null
+            ? Math.max(0, dteEntry - dteNow)
+            : 0;
+        const remainingDays = evaluation
+          ? evaluation.daysRemaining
+          : dteNow ?? totalDays;
+        const progressPct = evaluation
+          ? evaluation.progressPct
+          : Math.max(0, Math.min(100, (elapsedDays / totalDays) * 100));
+        const urgency = evaluation?.urgency ?? deriveUrgencyFromDays(remainingDays);
+
+        return {
+          id: position.id,
+          symbol: position.symbol,
+          optionType: position.option_type,
+          contracts: position.contracts,
+          matched,
+          urgency,
+          totalDays,
+          elapsedDays,
+          remainingDays,
+          progressPct,
+          label: evaluation?.label ?? (dteNow !== null ? `DTE ${dteNow}` : "No horizon"),
+          detail: evaluation?.detail ?? (matched ? "Scanner-linked" : "Using option DTE fallback"),
+          pillClass: evaluation?.pillClass ?? "border-gray-500/40 bg-gray-700/20 text-gray-200",
+          barClass: evaluation?.barClass ?? "bg-slate-300",
+        } as TimelineLane;
+      }
+
+      const totalDays = Math.max(1, dteEntry ?? dteNow ?? evaluation?.holdDays ?? 1);
+      const remainingDays = dteNow ?? totalDays;
+      const elapsedDays = dteEntry !== null && dteNow !== null
+        ? Math.max(0, dteEntry - dteNow)
+        : Math.max(0, totalDays - remainingDays);
+      const progressPct = Math.max(0, Math.min(100, (elapsedDays / totalDays) * 100));
+      const urgency = deriveUrgencyFromDays(remainingDays);
+
+      const urgencyStyle =
+        urgency === "overdue"
+          ? { pillClass: "border-rose-500/50 bg-rose-500/10 text-rose-200", barClass: "bg-rose-400" }
+          : urgency === "due"
+            ? { pillClass: "border-amber-500/50 bg-amber-500/10 text-amber-200", barClass: "bg-amber-300" }
+            : urgency === "watch"
+              ? { pillClass: "border-yellow-500/45 bg-yellow-500/10 text-yellow-200", barClass: "bg-yellow-300" }
+              : { pillClass: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200", barClass: "bg-emerald-300" };
+
+      const dteLabel = remainingDays < 0 ? `${Math.abs(remainingDays)}d post-exp` : `${remainingDays}d to exp`;
+      return {
+        id: position.id,
+        symbol: position.symbol,
+        optionType: position.option_type,
+        contracts: position.contracts,
+        matched,
+        urgency,
+        totalDays,
+        elapsedDays,
+        remainingDays,
+        progressPct,
+        label: dteLabel,
+        detail: dteEntry !== null ? `Entry DTE ${dteEntry}` : "DTE progression",
+        pillClass: urgencyStyle.pillClass,
+        barClass: urgencyStyle.barClass,
+      } as TimelineLane;
+    });
+  }, [sortedPositions, evaluationByPositionId, timelineMode]);
+
+  const filteredTimelineLanes = useMemo(() => {
+    return timelineLanes.filter((lane) => {
+      if (timelineFilter === "all") return true;
+      if (timelineFilter === "matched") return lane.matched;
+      return lane.urgency === timelineFilter;
+    });
+  }, [timelineFilter, timelineLanes]);
+
+  const timelineHorizonDays = useMemo(() => {
+    if (!filteredTimelineLanes.length) return 30;
+    const maxDays = Math.max(...filteredTimelineLanes.map((lane) => lane.totalDays));
+    return Math.max(10, maxDays);
+  }, [filteredTimelineLanes]);
+
+  const timelineTicks = useMemo(() => {
+    const step = timelineHorizonDays > 45 ? 10 : 5;
+    const ticks: number[] = [];
+    for (let value = 0; value <= timelineHorizonDays; value += step) {
+      ticks.push(value);
+    }
+    if (ticks[ticks.length - 1] !== timelineHorizonDays) {
+      ticks.push(timelineHorizonDays);
+    }
+    return ticks;
+  }, [timelineHorizonDays]);
 
   const totals = useMemo(() => {
     let totalCost = 0;
@@ -1524,8 +1791,22 @@ export default function SecretOptions() {
           <div>
             <h2 className="text-base font-semibold">Position Summary</h2>
             <p className="text-xs text-gray-500">
-              Click a row to inspect Greeks. Click column headers to sort.
+              Click a row to inspect Greeks. Scanner-matched rows include visual evaluation horizons.
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="rounded-full border border-indigo-500/35 bg-indigo-500/10 px-2 py-1 text-indigo-200">
+                Matched: {evaluationSummary.matched}
+              </span>
+              <span className="rounded-full border border-yellow-500/35 bg-yellow-500/10 px-2 py-1 text-yellow-200">
+                Watch (&lt;=5d): {evaluationSummary.watch}
+              </span>
+              <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-1 text-amber-200">
+                Due: {evaluationSummary.due}
+              </span>
+              <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-1 text-rose-200">
+                Overdue: {evaluationSummary.overdue}
+              </span>
+            </div>
           </div>
           <div className="flex gap-2">
             <button
@@ -1557,6 +1838,115 @@ export default function SecretOptions() {
             >
               Scanner Outcomes
             </button>
+          </div>
+        </div>
+
+        <div className="mb-4 rounded-xl border border-gray-700 bg-gray-900/45 p-3">
+          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">Convexity Timeline</div>
+              <div className="text-xs text-gray-400">Gantt-style horizon view for evaluation urgency and window progression.</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center rounded-full border border-gray-600 bg-gray-800/90 p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setTimelineMode("scanner")}
+                  className={`rounded-full px-2.5 py-1 ${timelineMode === "scanner" ? "bg-indigo-600 text-white" : "text-gray-300"}`}
+                >
+                  Scanner Window
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimelineMode("dte")}
+                  className={`rounded-full px-2.5 py-1 ${timelineMode === "dte" ? "bg-sky-600 text-white" : "text-gray-300"}`}
+                >
+                  DTE Window
+                </button>
+              </div>
+              {([
+                ["all", "All"],
+                ["matched", "Matched"],
+                ["watch", "Watch"],
+                ["due", "Due"],
+                ["overdue", "Overdue"],
+              ] as Array<[TimelineFilter, string]>).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setTimelineFilter(value)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                    timelineFilter === value
+                      ? "border-indigo-400/70 bg-indigo-500/20 text-indigo-200"
+                      : "border-gray-600 bg-gray-800/80 text-gray-300 hover:border-gray-500"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[160px_minmax(0,1fr)] items-center gap-3 text-[10px] uppercase tracking-[0.16em] text-gray-500">
+            <span>Trade</span>
+            <div className="relative h-5">
+              {timelineTicks.map((tick) => {
+                const left = (tick / timelineHorizonDays) * 100;
+                return (
+                  <div key={`tick-${tick}`} className="absolute top-0 -translate-x-1/2" style={{ left: `${left}%` }}>
+                    <span>{tick}d</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-2 space-y-1.5">
+            {filteredTimelineLanes.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-xs text-gray-500">
+                No timeline lanes for this filter.
+              </div>
+            ) : (
+              filteredTimelineLanes.map((lane) => {
+                const laneWidthPct = Math.max(4, (lane.totalDays / timelineHorizonDays) * 100);
+                const elapsedWidthPct = Math.max(0, Math.min(laneWidthPct, laneWidthPct * (lane.progressPct / 100)));
+                const laneIsFocused = hoveredPositionId === lane.id || selectedId === lane.id;
+                return (
+                  <div
+                    key={`timeline-${lane.id}`}
+                    className={`grid cursor-pointer grid-cols-[160px_minmax(0,1fr)] items-center gap-3 rounded-lg border px-2.5 py-1.5 transition-colors ${
+                      laneIsFocused ? "border-indigo-400/60 bg-indigo-500/10" : "border-gray-700 bg-gray-800/50 hover:bg-gray-800/80"
+                    }`}
+                    onMouseEnter={() => setHoveredPositionId(lane.id)}
+                    onMouseLeave={() => setHoveredPositionId(null)}
+                    onClick={() => setSelectedId(lane.id)}
+                  >
+                    <div>
+                      <div className="text-xs font-semibold text-gray-100">{lane.symbol}</div>
+                      <div className="text-[10px] uppercase tracking-wide text-gray-500">
+                        {lane.optionType} • {lane.contracts} ctr
+                        {lane.matched ? " • linked" : " • unlinked"}
+                      </div>
+                    </div>
+                    <div className="relative h-8 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
+                      <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
+                      {timelineTicks.map((tick) => {
+                        const left = (tick / timelineHorizonDays) * 100;
+                        return <div key={`grid-${lane.id}-${tick}`} className="absolute inset-y-0 w-px bg-gray-700/70" style={{ left: `${left}%` }} />;
+                      })}
+                      <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
+                      <div className={`absolute inset-y-1 left-0 rounded-sm ${lane.barClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+                      <div className="absolute inset-y-0 flex items-center" style={{ left: `min(${laneWidthPct}%, calc(100% - 8px))` }}>
+                        <div className={`h-2 w-2 -translate-x-1/2 rounded-full ${lane.barClass}`} />
+                      </div>
+                      <div className="absolute inset-y-0 right-1 flex items-center">
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${lane.pillClass}`}>{lane.label}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -1684,6 +2074,7 @@ export default function SecretOptions() {
                       DTE {sortArrow(positionSort.key === "dte", positionSort.direction)}
                     </button>
                   </th>
+                  <th className="px-3 py-2 text-left">Eval Window</th>
                   <th className="px-3 py-2 text-left">
                     <button
                       type="button"
@@ -1729,6 +2120,7 @@ export default function SecretOptions() {
               <tbody className="divide-y divide-gray-800">
                 {sortedPositions.map((item) => {
                   const { position, metrics } = item;
+                  const evaluation = evaluationByPositionId[position.id] || null;
                   const heat = attributionHeat(position.source_event_id, position.source_match_confidence);
                   const tooltip = buildAttributionTooltip(
                     position.source_event_id,
@@ -1743,13 +2135,18 @@ export default function SecretOptions() {
                     metrics.market?.quote_source
                   );
                   const rowActive = position.id === selectedId;
+                  const rowHovered = position.id === hoveredPositionId;
                   return (
                     <tr
                       key={position.id}
                       className={`cursor-pointer ${
-                        rowActive ? "bg-gray-900/60" : `${heat.rowTint} hover:bg-gray-900/40`
+                        rowActive || rowHovered
+                          ? "bg-indigo-500/12"
+                          : `${heat.rowTint} hover:bg-gray-900/40`
                       }`}
                       onClick={() => setSelectedId(position.id)}
+                      onMouseEnter={() => setHoveredPositionId(position.id)}
+                      onMouseLeave={() => setHoveredPositionId(null)}
                     >
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
@@ -1784,6 +2181,26 @@ export default function SecretOptions() {
                         </div>
                       </td>
                       <td className="px-3 py-2">{metrics.dte ?? "—"}</td>
+                      <td className="px-3 py-2 min-w-[180px]">
+                        {evaluation ? (
+                          <div className="flex flex-col gap-1">
+                            <span
+                              className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${evaluation.pillClass}`}
+                            >
+                              {evaluation.label}
+                            </span>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-700">
+                              <div
+                                className={`h-full ${evaluation.barClass}`}
+                                style={{ width: `${evaluation.progressPct}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-gray-500">{evaluation.detail}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-500">No scanner match</span>
+                        )}
+                      </td>
                       <td
                         className={`px-3 py-2 font-semibold ${
                           (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
@@ -1827,7 +2244,7 @@ export default function SecretOptions() {
               </tbody>
               <tfoot className="border-t border-gray-700 text-xs">
                 <tr>
-                  <td className="px-3 py-2 font-semibold text-gray-400" colSpan={9}>
+                  <td className="px-3 py-2 font-semibold text-gray-400" colSpan={10}>
                     Table Total P&amp;L
                   </td>
                   <td
