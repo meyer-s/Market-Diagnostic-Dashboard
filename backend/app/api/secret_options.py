@@ -153,6 +153,122 @@ def _is_exceptional_training_event(event: OptionAlertEvent) -> bool:
     return iv_percentile <= 5.0 or (iv_percentile <= 10.0 and (spread_ok or edr_ok))
 
 
+def _has_green_marker_event(event: OptionAlertEvent) -> bool:
+    plain = _strip_ansi(event.message)
+    if not plain:
+        return False
+    marker_tokens = ("🟢", "🟩", ":green_circle:")
+    return any(token in plain for token in marker_tokens)
+
+
+def _is_training_candidate_event(event: OptionAlertEvent, include_green_marker: bool) -> bool:
+    if _is_exceptional_training_event(event):
+        return True
+    if include_green_marker and _has_green_marker_event(event):
+        return True
+    return False
+
+
+def _collect_training_outcomes(
+    lookback_days: int,
+    limit: int,
+    include_green_marker: bool,
+    force_recompute: bool,
+) -> dict[str, object]:
+    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+    with get_db_session() as db:
+        events = (
+            db.query(OptionAlertEvent)
+            .filter(OptionAlertEvent.triggered_at >= cutoff)
+            .order_by(OptionAlertEvent.triggered_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        candidate_events = [
+            event for event in events if _is_training_candidate_event(event, include_green_marker)
+        ]
+        existing_rows = (
+            db.query(OptionTrainingOutcome)
+            .filter(OptionTrainingOutcome.event_id.in_([event.id for event in candidate_events]))
+            .all()
+            if candidate_events
+            else []
+        )
+        rows_by_event_id = {row.event_id: row for row in existing_rows}
+
+        for event in candidate_events:
+            row = rows_by_event_id.get(event.id)
+            needs_compute = _training_outcome_needs_compute(row)
+            if not force_recompute and not needs_compute:
+                continue
+
+            if row is None:
+                row = OptionTrainingOutcome(
+                    event_id=event.id,
+                    symbol=event.symbol.upper(),
+                    triggered_at=event.triggered_at,
+                    status="pending",
+                    compute_status="pending",
+                    computed_at=datetime.utcnow(),
+                )
+                db.add(row)
+                rows_by_event_id[event.id] = row
+
+            try:
+                outcome = _compute_training_outcome_with_cache(event)
+                if outcome:
+                    _apply_training_outcome_payload(row, event, outcome)
+                else:
+                    raise ValueError("Training outcome could not be computed from event recipe or price history.")
+            except Exception as exc:
+                _mark_training_outcome_error(row, event, exc)
+
+        db.commit()
+        outcomes = [
+            _training_outcome_payload(rows_by_event_id[event.id])
+            for event in candidate_events
+            if event.id in rows_by_event_id and rows_by_event_id[event.id].compute_status == "ok"
+        ]
+
+    outcomes.sort(key=lambda row: str(row.get("triggered_at") or ""), reverse=True)
+
+    matured = [row for row in outcomes if row.get("status") == "matured"]
+    matured_option_returns = [
+        float(row["option_return_pct_est"])
+        for row in matured
+        if row.get("option_return_pct_est") is not None
+    ]
+    matured_option_pnl = [
+        float(row["option_pnl_per_contract_est"])
+        for row in matured
+        if row.get("option_pnl_per_contract_est") is not None
+    ]
+    winners = [value for value in matured_option_returns if value > 0]
+
+    green_marker_total = sum(1 for event in candidate_events if _has_green_marker_event(event))
+
+    summary = {
+        "sample_size": len(outcomes),
+        "matured": len(matured),
+        "pending": len(outcomes) - len(matured),
+        "win_rate_pct": (len(winners) / len(matured_option_returns) * 100.0) if matured_option_returns else None,
+        "avg_option_return_pct": (sum(matured_option_returns) / len(matured_option_returns)) if matured_option_returns else None,
+        "total_option_pnl_per_contract": sum(matured_option_pnl) if matured_option_pnl else None,
+        "include_green_marker": include_green_marker,
+        "force_recompute": force_recompute,
+        "lookback_days": lookback_days,
+        "event_limit": limit,
+        "candidate_events": len(candidate_events),
+        "green_marker_rows": green_marker_total,
+    }
+
+    return {
+        "outcomes": outcomes,
+        "summary": summary,
+    }
+
+
 def _extract_training_recipe(message: Optional[str]) -> Dict[str, Optional[float | int | str]]:
     plain = _strip_ansi(message)
     setup_match = _SETUP_RE.search(plain)
@@ -1580,89 +1696,36 @@ def backfill_signal_attribution(limit: int = Query(1000, ge=1, le=10000)):
 def get_training_outcomes(
     lookback_days: int = Query(365, ge=30, le=1825),
     limit: int = Query(200, ge=1, le=1000),
+    include_green_marker: bool = Query(True),
 ):
     """
     Evaluate exceptional scanner training examples by holding for the
     suggested horizon and estimating option outcomes.
     """
-    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
-    with get_db_session() as db:
-        events = (
-            db.query(OptionAlertEvent)
-            .filter(OptionAlertEvent.triggered_at >= cutoff)
-            .order_by(OptionAlertEvent.triggered_at.desc())
-            .limit(limit)
-            .all()
-        )
+    payload = _collect_training_outcomes(
+        lookback_days=lookback_days,
+        limit=limit,
+        include_green_marker=include_green_marker,
+        force_recompute=False,
+    )
+    return _json_safe(payload)
 
-        exceptional_events = [event for event in events if _is_exceptional_training_event(event)]
-        existing_rows = (
-            db.query(OptionTrainingOutcome)
-            .filter(OptionTrainingOutcome.event_id.in_([event.id for event in exceptional_events]))
-            .all()
-            if exceptional_events
-            else []
-        )
-        rows_by_event_id = {row.event_id: row for row in existing_rows}
 
-        for event in exceptional_events:
-            row = rows_by_event_id.get(event.id)
-            if not _training_outcome_needs_compute(row):
-                continue
-
-            if row is None:
-                row = OptionTrainingOutcome(
-                    event_id=event.id,
-                    symbol=event.symbol.upper(),
-                    triggered_at=event.triggered_at,
-                    status="pending",
-                    compute_status="pending",
-                    computed_at=datetime.utcnow(),
-                )
-                db.add(row)
-                rows_by_event_id[event.id] = row
-
-            try:
-                outcome = _compute_training_outcome_with_cache(event)
-                if outcome:
-                    _apply_training_outcome_payload(row, event, outcome)
-                else:
-                    raise ValueError("Training outcome could not be computed from event recipe or price history.")
-            except Exception as exc:
-                _mark_training_outcome_error(row, event, exc)
-
-        db.commit()
-        outcomes = [
-            _training_outcome_payload(rows_by_event_id[event.id])
-            for event in exceptional_events
-            if event.id in rows_by_event_id and rows_by_event_id[event.id].compute_status == "ok"
-        ]
-
-    outcomes.sort(key=lambda row: str(row.get("triggered_at") or ""), reverse=True)
-
-    matured = [row for row in outcomes if row.get("status") == "matured"]
-    matured_option_returns = [
-        float(row["option_return_pct_est"])
-        for row in matured
-        if row.get("option_return_pct_est") is not None
-    ]
-    matured_option_pnl = [
-        float(row["option_pnl_per_contract_est"])
-        for row in matured
-        if row.get("option_pnl_per_contract_est") is not None
-    ]
-    winners = [value for value in matured_option_returns if value > 0]
-
-    summary = {
-        "sample_size": len(outcomes),
-        "matured": len(matured),
-        "pending": len(outcomes) - len(matured),
-        "win_rate_pct": (len(winners) / len(matured_option_returns) * 100.0) if matured_option_returns else None,
-        "avg_option_return_pct": (sum(matured_option_returns) / len(matured_option_returns)) if matured_option_returns else None,
-        "total_option_pnl_per_contract": sum(matured_option_pnl) if matured_option_pnl else None,
-    }
-
-    return _json_safe({
-        "outcomes": outcomes,
-        "summary": summary,
-    })
+@router.post("/training-outcomes/backfill")
+def backfill_training_outcomes(
+    lookback_days: int = Query(3650, ge=30, le=3650),
+    limit: int = Query(5000, ge=1, le=10000),
+    include_green_marker: bool = Query(True),
+    force_recompute: bool = Query(False),
+):
+    """
+    Recompute historical scanner training outcomes from old discord/trigger events,
+    including green-marker events when requested.
+    """
+    payload = _collect_training_outcomes(
+        lookback_days=lookback_days,
+        limit=limit,
+        include_green_marker=include_green_marker,
+        force_recompute=force_recompute,
+    )
+    return _json_safe(payload)

@@ -167,7 +167,9 @@ type TimelineMode = "scanner" | "dte";
 type TimelineFilter = "all" | "matched" | EvalUrgency;
 
 interface TimelineLane {
-  id: number;
+  laneId: string;
+  linkedPositionId: number | null;
+  eventId: number | null;
   symbol: string;
   optionType: string;
   contracts: number;
@@ -1109,7 +1111,7 @@ export default function SecretOptions() {
     setLoadingTrainingOutcomes(true);
     try {
       const data = await apiFetch<TrainingOutcomeResponse>(
-        "/secret/options/training-outcomes?lookback_days=365&limit=300"
+        "/secret/options/training-outcomes?lookback_days=1825&limit=1000&include_green_marker=true"
       );
       setTrainingOutcomes(data.outcomes || []);
       setTrainingSummary(data.summary || null);
@@ -1289,6 +1291,16 @@ export default function SecretOptions() {
     loadClosedPositions();
     loadTrainingOutcomes();
   }, []);
+
+  useEffect(() => {
+    if (timelineMode === "scanner" && timelineFilter === "all") {
+      setTimelineFilter("matched");
+      return;
+    }
+    if (timelineMode === "dte" && timelineFilter === "matched") {
+      setTimelineFilter("all");
+    }
+  }, [timelineMode, timelineFilter]);
 
   useEffect(() => {
     if (selectedId !== null) {
@@ -1480,50 +1492,60 @@ export default function SecretOptions() {
     };
   }, [evaluationByPositionId]);
 
-  const timelineLanes = useMemo(() => {
-    return sortedPositions.map(({ position, metrics }) => {
-      const evaluation = evaluationByPositionId[position.id] || null;
-      const matched = Boolean(evaluation);
-      const dteNow = metrics.dte ?? null;
-      const dteEntry = position.dte_at_entry ?? null;
+  const linkedPositionByEventId = useMemo(() => {
+    const linked = new Map<number, PositionPayload>();
+    positions.forEach((item) => {
+      const eventId = item.position.source_event_id;
+      if (!eventId || linked.has(eventId)) return;
+      linked.set(eventId, item);
+    });
+    return linked;
+  }, [positions]);
 
-      if (timelineMode === "scanner") {
-        const totalDays = Math.max(1, evaluation?.holdDays ?? dteNow ?? dteEntry ?? 1);
-        const elapsedDays = evaluation
-          ? evaluation.elapsedDays
-          : dteEntry !== null && dteNow !== null
-            ? Math.max(0, dteEntry - dteNow)
-            : 0;
-        const remainingDays = evaluation
-          ? evaluation.daysRemaining
-          : dteNow ?? totalDays;
-        const progressPct = evaluation
-          ? evaluation.progressPct
-          : Math.max(0, Math.min(100, (elapsedDays / totalDays) * 100));
-        const urgency = evaluation?.urgency ?? deriveUrgencyFromDays(remainingDays);
-        const attention = buildGreeksAttention(metrics.greeks, remainingDays);
+  const timelineLanes = useMemo(() => {
+    if (timelineMode === "scanner") {
+      return trainingOutcomes.slice(0, 60).map((outcome) => {
+        const linkedPosition = linkedPositionByEventId.get(outcome.event_id) || null;
+        const matched = Boolean(linkedPosition);
+        const anchorDate = toDate(outcome.triggered_at) || toDate(outcome.entry_date) || new Date();
+        const insight = buildEvaluationInsight(outcome.hold_days, anchorDate, new Date());
+        const totalDays = Math.max(1, insight?.holdDays ?? Math.max(1, outcome.hold_days));
+        const elapsedDays = insight?.elapsedDays ?? 0;
+        const remainingDays = insight?.daysRemaining ?? totalDays;
+        const progressPct = insight?.progressPct ?? 0;
+        const urgency = insight?.urgency ?? deriveUrgencyFromDays(remainingDays);
+        const attention = buildGreeksAttention(linkedPosition?.metrics.greeks ?? null, remainingDays);
 
         return {
-          id: position.id,
-          symbol: position.symbol,
-          optionType: position.option_type,
-          contracts: position.contracts,
+          laneId: `scanner-${outcome.event_id}`,
+          linkedPositionId: linkedPosition?.position.id ?? null,
+          eventId: outcome.event_id,
+          symbol: outcome.symbol,
+          optionType: outcome.option_type,
+          contracts: linkedPosition?.position.contracts ?? 1,
           matched,
           urgency,
           totalDays,
           elapsedDays,
           remainingDays,
           progressPct,
-          label: evaluation?.label ?? (dteNow !== null ? `DTE ${dteNow}` : "No horizon"),
-          detail: evaluation?.detail ?? (matched ? "Scanner-linked" : "Using option DTE fallback"),
-          pillClass: evaluation?.pillClass ?? "border-gray-500/40 bg-gray-700/20 text-gray-200",
-          barClass: evaluation?.barClass ?? "bg-slate-300",
+          label: insight?.label ?? `${outcome.hold_days}d hold`,
+          detail: matched
+            ? `Tracked in portfolio • ${outcome.status}`
+            : `Training outcome only • ${outcome.status}`,
+          pillClass: insight?.pillClass ?? "border-gray-500/40 bg-gray-700/20 text-gray-200",
+          barClass: insight?.barClass ?? "bg-slate-300",
           attentionStrength: attention.strength,
           attentionSpreadDays: attention.spreadDays,
-          greeksHint: attention.hint,
+          greeksHint: matched ? attention.hint : "Template candidate",
         } as TimelineLane;
-      }
+      });
+    }
 
+    return sortedPositions.map(({ position, metrics }) => {
+      const evaluation = evaluationByPositionId[position.id] || null;
+      const dteNow = metrics.dte ?? null;
+      const dteEntry = position.dte_at_entry ?? null;
       const totalDays = Math.max(1, dteEntry ?? dteNow ?? evaluation?.holdDays ?? 1);
       const remainingDays = dteNow ?? totalDays;
       const elapsedDays = dteEntry !== null && dteNow !== null
@@ -1544,18 +1566,20 @@ export default function SecretOptions() {
 
       const dteLabel = remainingDays < 0 ? `${Math.abs(remainingDays)}d post-exp` : `${remainingDays}d to exp`;
       return {
-        id: position.id,
+        laneId: `position-${position.id}`,
+        linkedPositionId: position.id,
+        eventId: position.source_event_id ?? null,
         symbol: position.symbol,
         optionType: position.option_type,
         contracts: position.contracts,
-        matched,
+        matched: position.source_event_id !== null && position.source_event_id !== undefined,
         urgency,
         totalDays,
         elapsedDays,
         remainingDays,
         progressPct,
         label: dteLabel,
-        detail: dteEntry !== null ? `Entry DTE ${dteEntry}` : "DTE progression",
+        detail: dteEntry !== null ? `Entry DTE ${dteEntry}` : "Portfolio DTE progression",
         pillClass: urgencyStyle.pillClass,
         barClass: urgencyStyle.barClass,
         attentionStrength: attention.strength,
@@ -1563,7 +1587,7 @@ export default function SecretOptions() {
         greeksHint: attention.hint,
       } as TimelineLane;
     });
-  }, [sortedPositions, evaluationByPositionId, timelineMode]);
+  }, [sortedPositions, evaluationByPositionId, timelineMode, trainingOutcomes, linkedPositionByEventId]);
 
   const filteredTimelineLanes = useMemo(() => {
     return timelineLanes.filter((lane) => {
@@ -1942,7 +1966,11 @@ export default function SecretOptions() {
           <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-xs uppercase tracking-[0.18em] text-gray-500">Convexity Timeline</div>
-              <div className="text-xs text-gray-400">Gantt-style horizon view for evaluation urgency and window progression.</div>
+              <div className="text-xs text-gray-400">
+                {timelineMode === "scanner"
+                  ? "Scanner view: exceptional/training triggers, highlighting what is already tracked versus template-only candidates."
+                  : "DTE view: active portfolio decay clock and option-expiration progression."}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center rounded-full border border-gray-600 bg-gray-800/90 p-0.5 text-[11px]">
@@ -2010,16 +2038,29 @@ export default function SecretOptions() {
                 const decisionLeftPct = (lane.totalDays / timelineHorizonDays) * 100;
                 const attentionSpreadPct = Math.max(5, (lane.attentionSpreadDays / timelineHorizonDays) * 100);
                 const attentionOpacity = 0.08 + lane.attentionStrength * 0.25;
-                const laneIsFocused = hoveredPositionId === lane.id || selectedId === lane.id;
+                const laneIsFocused =
+                  lane.linkedPositionId !== null &&
+                  (hoveredPositionId === lane.linkedPositionId || selectedId === lane.linkedPositionId);
                 return (
                   <div
-                    key={`timeline-${lane.id}`}
+                    key={`timeline-${lane.laneId}`}
                     className={`grid cursor-pointer grid-cols-[160px_minmax(0,1fr)] items-center gap-3 rounded-lg border px-2.5 py-1.5 transition-colors ${
                       laneIsFocused ? "border-indigo-400/60 bg-indigo-500/10" : "border-gray-700 bg-gray-800/50 hover:bg-gray-800/80"
                     }`}
-                    onMouseEnter={() => setHoveredPositionId(lane.id)}
+                    onMouseEnter={() => setHoveredPositionId(lane.linkedPositionId)}
                     onMouseLeave={() => setHoveredPositionId(null)}
-                    onClick={() => setSelectedId(lane.id)}
+                    onClick={() => {
+                      if (lane.linkedPositionId !== null) {
+                        setSelectedId(lane.linkedPositionId);
+                        return;
+                      }
+                      if (lane.eventId !== null) {
+                        const trainingRow = trainingOutcomeByEventId.get(lane.eventId);
+                        if (trainingRow) {
+                          prefillTradeFromTrainingOutcome(trainingRow);
+                        }
+                      }
+                    }}
                   >
                     <div>
                       <div className="text-xs font-semibold text-gray-100">{lane.symbol}</div>
@@ -2033,7 +2074,7 @@ export default function SecretOptions() {
                       <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
                       {timelineTicks.map((tick) => {
                         const left = (tick / timelineHorizonDays) * 100;
-                        return <div key={`grid-${lane.id}-${tick}`} className="absolute inset-y-0 w-px bg-gray-700/70" style={{ left: `${left}%` }} />;
+                        return <div key={`grid-${lane.laneId}-${tick}`} className="absolute inset-y-0 w-px bg-gray-700/70" style={{ left: `${left}%` }} />;
                       })}
                       <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
                       <div className={`absolute inset-y-1 left-0 rounded-sm ${lane.barClass}`} style={{ width: `${elapsedWidthPct}%` }} />
