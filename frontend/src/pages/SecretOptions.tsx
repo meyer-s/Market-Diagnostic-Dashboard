@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   LineChart,
   Line,
@@ -635,6 +635,26 @@ const buildGreeksSummary = (
     ],
   };
 };
+
+function PortfolioStat({
+  label,
+  value,
+  detail,
+  tone = "text-gray-100",
+}: {
+  label: string;
+  value: ReactNode;
+  detail?: ReactNode;
+  tone?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-stealth-700 bg-stealth-900/70 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">{label}</div>
+      <div className={`mt-1 text-base font-semibold leading-tight ${tone}`}>{value}</div>
+      {detail ? <div className="mt-1 min-h-4 text-[11px] leading-snug text-stealth-400">{detail}</div> : null}
+    </div>
+  );
+}
 
 const initialFormState = {
   trade_date: "",
@@ -1812,92 +1832,75 @@ export default function SecretOptions() {
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto text-gray-100">
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-bold">Options Performance (Private)</h1>
-        <span className="text-xs text-gray-500">/secret/options</span>
+    <div className="page-shell-wide space-y-3 text-gray-100 md:space-y-4">
+      <div className="surface-card-strong p-3 sm:p-4">
+        <div className="grid gap-3 xl:grid-cols-[minmax(260px,0.42fr)_minmax(0,1fr)] xl:items-center">
+          <div className="flex flex-wrap items-end justify-between gap-2 xl:block">
+            <div>
+              <p className="page-kicker">Private</p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-white md:text-2xl">Options Performance</h1>
+            </div>
+            <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stealth-400">
+              /secret/options
+            </span>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <PortfolioStat label="Cost" value={formatCurrency(totals.totalCost)} />
+            <PortfolioStat
+              label="P&L"
+              value={formatCurrency(totals.totalPnl)}
+              tone={totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"}
+              detail={totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}
+            />
+            <PortfolioStat label="Open" value={totals.count} />
+            <PortfolioStat
+              label="Linked"
+              value={`${openAttribution.linked}/${openAttribution.total}`}
+              detail={
+                <>
+                  {formatPercent(openAttribution.coverage, 1)}
+                  {openAttribution.avgLinkConfidence !== null
+                    ? ` / ${formatPercent(openAttribution.avgLinkConfidence * 100, 0)} conf`
+                    : ""}
+                </>
+              }
+            />
+            <PortfolioStat
+              label="Quality"
+              value={closedAttribution.linked > 0 ? `${formatPercent(closedAttribution.linkedWinRate, 1)} win` : "n/a"}
+              tone={
+                closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
+                  ? "text-rose-300"
+                  : "text-emerald-300"
+              }
+              detail={
+                closedAttribution.linked > 0
+                  ? `n=${closedAttribution.linked} / ${
+                      closedAttribution.linkedAvgPercent !== null
+                        ? `${formatSigned(closedAttribution.linkedAvgPercent, 1)}% avg`
+                        : "avg n/a"
+                    }`
+                  : "No closed linked trades"
+              }
+            />
+          </div>
+        </div>
       </div>
-      <p className="text-sm text-gray-400 mb-6">
-        Tracks positions created from bot-driven signals. Metrics update from live option chains and price data.
-      </p>
 
       {error && (
-        <div className="bg-red-900/20 border border-red-700 text-red-300 text-sm rounded-lg p-3 mb-6">
+        <div className="rounded-lg border border-red-700 bg-red-900/20 p-3 text-sm text-red-300">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-          <div className="text-xs text-gray-500">Total Cost</div>
-          <div className="text-lg font-semibold">{formatCurrency(totals.totalCost)}</div>
-        </div>
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-          <div className="text-xs text-gray-500">Total P&amp;L</div>
-          <div
-            className={`text-lg font-semibold ${
-              totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"
-            }`}
-          >
-            {formatCurrency(totals.totalPnl)}
-          </div>
-          <div className="text-xs text-gray-400">
-            {totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}
-          </div>
-        </div>
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-          <div className="text-xs text-gray-500">Active Positions</div>
-          <div className="text-lg font-semibold">{totals.count}</div>
-        </div>
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-          <div className="text-xs text-gray-500">Sweep Linked</div>
-          <div className="text-lg font-semibold">
-            {openAttribution.linked}/{openAttribution.total}
-          </div>
-          <div className="text-xs text-gray-400">
-            {formatPercent(openAttribution.coverage, 1)} coverage
-            {openAttribution.avgLinkConfidence !== null
-              ? ` • ${formatPercent(openAttribution.avgLinkConfidence * 100, 0)} avg link conf`
-              : ""}
-          </div>
-        </div>
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-          <div className="text-xs text-gray-500">Signal Quality (Linked)</div>
-          <div
-            className={`text-lg font-semibold ${
-              closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
-                ? "text-rose-300"
-                : "text-emerald-300"
-            }`}
-          >
-            {closedAttribution.linked > 0
-              ? `${formatPercent(closedAttribution.linkedWinRate, 1)} win`
-              : "n/a"}
-          </div>
-          <div className="text-xs text-gray-400">
-            {closedAttribution.linked > 0
-              ? `n=${closedAttribution.linked} • ${
-                  closedAttribution.linkedAvgPercent !== null
-                    ? `${formatSigned(closedAttribution.linkedAvgPercent, 1)}% avg`
-                    : "avg n/a"
-                }${
-                  closedAttribution.linkedExpectancyDollar !== null
-                    ? ` • ${formatCurrency(closedAttribution.linkedExpectancyDollar, 0)} expectancy`
-                    : ""
-                }`
-              : "No closed linked trades yet"}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.42fr)]">
+        <section className="min-w-0 space-y-3">
+      <div className="surface-card-strong p-3">
+        <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-base font-semibold">Position Summary</h2>
-            <p className="text-xs text-gray-500">
-              Click a row to inspect Greeks. Scanner-matched rows include visual evaluation horizons.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+            <h2 className="text-base font-semibold text-stealth-100">Position Summary</h2>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
               <span className="rounded-full border border-indigo-500/35 bg-indigo-500/10 px-2 py-1 text-indigo-200">
                 Matched: {evaluationSummary.matched}
               </span>
@@ -1920,29 +1923,28 @@ export default function SecretOptions() {
                 setFormError(null);
                 setShowAddModal(true);
               }}
-              className="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5"
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
             >
-              <span className="text-lg leading-none">+</span> Add Trade
+              <span className="text-base leading-none">+</span> Add Trade
             </button>
             <button
               onClick={() => {
                 loadClosedPositions();
                 setShowClosedLog(true);
               }}
-              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+              className="rounded-lg bg-stealth-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-stealth-600"
             >
               P/L History
             </button>
           </div>
         </div>
 
-        <div className="mb-4 rounded-xl border border-gray-700 bg-gray-900/45 p-3">
-          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="mb-3 rounded-xl border border-stealth-700 bg-stealth-950/45 p-2.5">
+          <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">Convexity Timeline</div>
-              <div className="text-xs text-gray-400">Portfolio view combining linked outcomes and historical symbol/type training windows.</div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Convexity Timeline</div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {([
                 ["all", "All"],
                 ["matched", "Matched"],
@@ -1954,7 +1956,7 @@ export default function SecretOptions() {
                   key={value}
                   type="button"
                   onClick={() => setTimelineFilter(value)}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                    className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${
                     timelineFilter === value
                       ? "border-indigo-400/70 bg-indigo-500/20 text-indigo-200"
                       : "border-gray-600 bg-gray-800/80 text-gray-300 hover:border-gray-500"
@@ -1966,7 +1968,7 @@ export default function SecretOptions() {
             </div>
           </div>
 
-          <div className="grid grid-cols-[160px_minmax(0,1fr)] items-center gap-3 text-[10px] uppercase tracking-[0.16em] text-gray-500">
+          <div className="grid grid-cols-[132px_minmax(0,1fr)] items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-gray-500">
             <span>Trade</span>
             <div className="relative h-5">
               {timelineTicks.map((tick) => {
@@ -1980,7 +1982,7 @@ export default function SecretOptions() {
             </div>
           </div>
 
-          <div className="mt-2 space-y-1.5">
+          <div className="mt-1.5 max-h-[210px] space-y-1.5 overflow-y-auto pr-1">
             {filteredTimelineLanes.length === 0 ? (
               <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-xs text-gray-500">
                 No timeline lanes for this filter.
@@ -1998,7 +2000,7 @@ export default function SecretOptions() {
                 return (
                   <div
                     key={`timeline-${lane.laneId}`}
-                    className={`grid cursor-pointer grid-cols-[160px_minmax(0,1fr)] items-center gap-3 rounded-lg border px-2.5 py-1.5 transition-colors ${
+                    className={`grid cursor-pointer grid-cols-[132px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2 py-1 transition-colors ${
                       laneIsFocused ? "border-indigo-400/60 bg-indigo-500/10" : "border-gray-700 bg-gray-800/50 hover:bg-gray-800/80"
                     }`}
                     onMouseEnter={() => setHoveredPositionId(lane.linkedPositionId)}
@@ -2024,7 +2026,7 @@ export default function SecretOptions() {
                       </div>
                       <div className="text-[10px] text-gray-500">{lane.greeksHint}</div>
                     </div>
-                    <div className="relative h-8 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
+                      <div className="relative h-7 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
                       <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
                       {timelineTicks.map((tick) => {
                         const left = (tick / timelineHorizonDays) * 100;
@@ -2054,9 +2056,9 @@ export default function SecretOptions() {
           </div>
 
           {compactTimelineLanes.length > 0 && (
-            <div className="mt-3 rounded-lg border border-gray-700/70 bg-gray-950/35 p-2.5">
-              <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-gray-500">Background Windows</div>
-              <div className="space-y-1.5">
+            <div className="mt-2 rounded-lg border border-gray-700/70 bg-gray-950/35 p-2">
+              <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-gray-500">Background Windows</div>
+              <div className="max-h-[150px] space-y-1 overflow-y-auto pr-1">
                 {compactTimelineLanes.map((lane) => {
                   const laneIsFocused =
                     lane.linkedPositionId !== null &&
@@ -2081,7 +2083,7 @@ export default function SecretOptions() {
                         <div className="h-full rounded-full bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
                         <div className={`-mt-2 h-2 rounded-full ${lane.barClass}`} style={{ width: `${elapsedWidthPct}%` }} />
                       </div>
-                      <div className="text-right text-[10px] text-gray-400">{lane.label}</div>
+                      <div className="truncate text-right text-[10px] text-gray-400">{lane.label}</div>
                     </div>
                   );
                 })}
@@ -2093,11 +2095,11 @@ export default function SecretOptions() {
         {loading ? (
           <div className="text-sm text-gray-400">Loading positions...</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm text-gray-300">
-              <thead className="text-xs uppercase text-gray-500 border-b border-gray-700">
+          <div className="max-h-[58vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
+            <table className="min-w-full text-xs text-gray-300">
+              <thead className="sticky top-0 z-10 border-b border-gray-700 bg-stealth-900/95 text-[10px] uppercase text-gray-500 backdrop-blur">
                 <tr>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2110,7 +2112,7 @@ export default function SecretOptions() {
                       Symbol {sortArrow(positionSort.key === "symbol", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2123,7 +2125,7 @@ export default function SecretOptions() {
                       Strike {sortArrow(positionSort.key === "strike", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2136,7 +2138,7 @@ export default function SecretOptions() {
                       Expiration {sortArrow(positionSort.key === "expiration", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2149,7 +2151,7 @@ export default function SecretOptions() {
                       Type {sortArrow(positionSort.key === "option_type", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2162,7 +2164,7 @@ export default function SecretOptions() {
                       Contracts {sortArrow(positionSort.key === "contracts", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2175,7 +2177,7 @@ export default function SecretOptions() {
                       Fill {sortArrow(positionSort.key === "fill_price", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2188,7 +2190,7 @@ export default function SecretOptions() {
                       Option {sortArrow(positionSort.key === "option_price", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2201,7 +2203,7 @@ export default function SecretOptions() {
                       Underlying {sortArrow(positionSort.key === "underlying", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2214,8 +2216,8 @@ export default function SecretOptions() {
                       DTE {sortArrow(positionSort.key === "dte", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">Eval Window</th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">Eval</th>
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2228,7 +2230,7 @@ export default function SecretOptions() {
                       P&amp;L {sortArrow(positionSort.key === "pnl", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2241,7 +2243,7 @@ export default function SecretOptions() {
                       Delta {sortArrow(positionSort.key === "delta", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left">
+                  <th className="px-2 py-2 text-left">
                     <button
                       type="button"
                       onClick={() =>
@@ -2254,7 +2256,7 @@ export default function SecretOptions() {
                       Theta {sortArrow(positionSort.key === "theta", positionSort.direction)}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-center">Actions</th>
+                  <th className="px-2 py-2 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
@@ -2288,7 +2290,7 @@ export default function SecretOptions() {
                       onMouseEnter={() => setHoveredPositionId(position.id)}
                       onMouseLeave={() => setHoveredPositionId(null)}
                     >
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-1.5">
                         <div className="flex items-center gap-2">
                           <span
                             title={`${tooltip}\nLink quality: ${heat.quality}`}
@@ -2297,18 +2299,18 @@ export default function SecretOptions() {
                           <span className="font-semibold text-gray-100">{position.symbol}</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2">${formatNumber(position.strike, 2)}</td>
-                      <td className="px-3 py-2">{formatDate(position.expiration)}</td>
-                      <td className="px-3 py-2 uppercase">{position.option_type}</td>
-                      <td className="px-3 py-2">{position.contracts}</td>
-                      <td className="px-3 py-2">{formatCurrency(position.fill_price, 2)}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-1.5">${formatNumber(position.strike, 2)}</td>
+                      <td className="px-2 py-1.5">{formatDate(position.expiration)}</td>
+                      <td className="px-2 py-1.5 uppercase">{position.option_type}</td>
+                      <td className="px-2 py-1.5">{position.contracts}</td>
+                      <td className="px-2 py-1.5">{formatCurrency(position.fill_price, 2)}</td>
+                      <td className="px-2 py-1.5">
                         <div className="flex flex-col gap-0.5">
                           <span>{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
                           <span className="text-[10px] uppercase text-gray-500">{optionQuoteSource}</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-1.5">
                         <div className="flex flex-col gap-0.5">
                           <span>
                             {metrics.market.current_price !== null
@@ -2320,8 +2322,8 @@ export default function SecretOptions() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-3 py-2">{metrics.dte ?? "—"}</td>
-                      <td className="px-3 py-2 min-w-[180px]">
+                      <td className="px-2 py-1.5">{metrics.dte ?? "—"}</td>
+                      <td className="min-w-[150px] px-2 py-1.5">
                         {evaluation ? (
                           <div className="flex flex-col gap-1">
                             <span
@@ -2342,7 +2344,7 @@ export default function SecretOptions() {
                         )}
                       </td>
                       <td
-                        className={`px-3 py-2 font-semibold ${
+                        className={`px-2 py-1.5 font-semibold ${
                           (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
                         }`}
                       >
@@ -2350,13 +2352,13 @@ export default function SecretOptions() {
                           ? formatCurrency(metrics.pnl.dollar, 0)
                           : "—"}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-1.5">
                         {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-1.5">
                         {metrics.greeks ? metrics.greeks.theta.toFixed(3) : "—"}
                       </td>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-2 py-1.5 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={(e) => {
@@ -2384,17 +2386,17 @@ export default function SecretOptions() {
               </tbody>
               <tfoot className="border-t border-gray-700 text-xs">
                 <tr>
-                  <td className="px-3 py-2 font-semibold text-gray-400" colSpan={10}>
+                  <td className="px-2 py-2 font-semibold text-gray-400" colSpan={10}>
                     Table Total P&amp;L
                   </td>
                   <td
-                    className={`px-3 py-2 font-semibold ${
+                    className={`px-2 py-2 font-semibold ${
                       totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"
                     }`}
                   >
                     {formatCurrency(totals.totalPnl, 0)}
                   </td>
-                  <td className="px-3 py-2 text-gray-500" colSpan={3}>
+                  <td className="px-2 py-2 text-gray-500" colSpan={3}>
                     {totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}
                   </td>
                 </tr>
@@ -2404,25 +2406,30 @@ export default function SecretOptions() {
         )}
       </div>
 
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-        <div className="flex items-center justify-between mb-4">
+        </section>
+
+        <aside className="min-w-0 xl:sticky xl:top-4">
+      <div className="surface-card-strong max-h-none overflow-y-visible p-3 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+        <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold">Greeks Curves</h2>
-            <p className="text-xs text-gray-500">
-              Based on current underlying and implied or historical volatility.
-            </p>
+            <h2 className="text-base font-semibold text-stealth-100">Selected Greeks</h2>
+            {selected ? (
+              <p className="mt-1 text-xs text-stealth-400">
+                {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
+              </p>
+            ) : null}
           </div>
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex shrink-0 flex-col items-end gap-2">
             {selectedStockAnalysisPath && selectedSymbol && (
               <Link
                 to={selectedStockAnalysisPath}
-                className="rounded-md bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-600"
+                className="rounded-md bg-sky-700 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-600"
               >
                 View {selectedSymbol} Analysis
               </Link>
             )}
             {selected && (
-              <div className="text-xs text-gray-400 text-right">
+              <div className="text-right text-[10px] leading-snug text-gray-400">
                 <div>
                   Vol source: {selected.metrics.volatility_source || "n/a"}{" "}
                   {selected.metrics.volatility ? `(${formatPercent(selected.metrics.volatility * 100, 1)})` : ""}
@@ -2458,14 +2465,14 @@ export default function SecretOptions() {
           </div>
         </div>
 
-        <div className="mb-4">
+        <div className="mb-3">
           {loadingGreeks ? (
             <div className="text-sm text-gray-400">Loading Greeks...</div>
           ) : greeksData && greeksData.price_curve.length > 0 ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="bg-gray-900 rounded-lg border border-gray-700 p-3">
-                <h3 className="text-sm font-semibold mb-2">Delta vs Price</h3>
-                <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
+            <div className="grid grid-cols-1 gap-3">
+              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2.5">
+                <h3 className="mb-1.5 text-xs font-semibold">Delta vs Price</h3>
+                <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.price_curve}>
                       <XAxis
@@ -2540,9 +2547,9 @@ export default function SecretOptions() {
                 </div>
               </div>
 
-              <div className="bg-gray-900 rounded-lg border border-gray-700 p-3">
-                <h3 className="text-sm font-semibold mb-2">Gamma vs Price</h3>
-                <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
+              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2.5">
+                <h3 className="mb-1.5 text-xs font-semibold">Gamma vs Price</h3>
+                <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.price_curve}>
                       <XAxis
@@ -2617,9 +2624,9 @@ export default function SecretOptions() {
                 </div>
               </div>
 
-              <div className="bg-gray-900 rounded-lg border border-gray-700 p-3 lg:col-span-2">
-                <h3 className="text-sm font-semibold mb-2">Theta vs Time</h3>
-                <div className="h-48" style={{ minWidth: 0, minHeight: 0 }}>
+              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2.5">
+                <h3 className="mb-1.5 text-xs font-semibold">Theta vs Time</h3>
+                <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.theta_curve}>
                       <XAxis
@@ -2661,8 +2668,8 @@ export default function SecretOptions() {
         </div>
 
         {greeksData?.model_info && (
-          <div className="mb-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700/50">
-            <div className="text-xs text-gray-400 grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="mb-3 rounded-lg border border-gray-700/50 bg-gray-900/50 p-2.5">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-gray-400">
               {greeksData.model_info.model && (
                 <div>
                   <span className="text-gray-500">Model:</span>{" "}
@@ -2710,12 +2717,12 @@ export default function SecretOptions() {
         )}
 
         {greekSummary && (
-          <div className="mb-4 p-3 bg-gray-900/60 rounded-lg border border-gray-700">
-            <div className="text-[10px] uppercase text-gray-500 tracking-wide mb-2">
+          <div className="mb-3 rounded-lg border border-gray-700 bg-gray-900/60 p-2.5">
+            <div className="mb-1.5 text-[10px] uppercase tracking-wide text-gray-500">
               Deterministic Snapshot
             </div>
             <div
-              className={`text-sm font-semibold leading-relaxed ${
+              className={`text-sm font-semibold leading-snug ${
                 greekSummary.tone === "bullish"
                   ? "text-emerald-300"
                   : greekSummary.tone === "bearish"
@@ -2747,11 +2754,11 @@ export default function SecretOptions() {
                 Time: {greekSummary.thetaDirection}
               </span>
             </div>
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-1 gap-2 2xl:grid-cols-2">
               {greekSummary.details.map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-md border border-gray-700/70 bg-gray-900/40 px-2.5 py-2"
+                  className="rounded-md border border-gray-700/70 bg-gray-900/40 px-2.5 py-1.5"
                 >
                   <div className="text-[11px] uppercase tracking-wide text-gray-500">{item.label}</div>
                   <div className="text-sm font-medium text-gray-100">{item.value}</div>
@@ -2763,8 +2770,8 @@ export default function SecretOptions() {
         )}
 
         {selected && (
-          <div className="mb-4 p-3 bg-gray-900/40 rounded-lg border border-gray-700/60">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="mb-1 rounded-lg border border-gray-700/60 bg-gray-900/40 p-2.5">
+            <div className="grid grid-cols-1 gap-2 2xl:grid-cols-3">
               <label className="text-xs text-amber-300">
                 Strike (ITM line)
                 <input
@@ -2814,6 +2821,8 @@ export default function SecretOptions() {
           </div>
         )}
 
+      </div>
+        </aside>
       </div>
 
       {/* Trade Modal */}
