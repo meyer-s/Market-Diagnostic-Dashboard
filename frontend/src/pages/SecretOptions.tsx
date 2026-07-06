@@ -1894,7 +1894,7 @@ export default function SecretOptions() {
         </div>
       )}
 
-      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.42fr)]">
+      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_440px]">
         <section className="min-w-0 space-y-3">
       <div className="surface-card-strong p-3">
         <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -2409,70 +2409,54 @@ export default function SecretOptions() {
         </section>
 
         <aside className="min-w-0 xl:sticky xl:top-4">
-      <div className="surface-card-strong max-h-none overflow-y-visible p-3 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-        <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="surface-card-strong max-h-none overflow-y-visible p-2.5 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+        <div className="mb-2 flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-base font-semibold text-stealth-100">Selected Greeks</h2>
+            <h2 className="text-sm font-semibold text-stealth-100">Selected Greeks</h2>
             {selected ? (
-              <p className="mt-1 text-xs text-stealth-400">
+              <p className="mt-0.5 text-[11px] font-medium text-stealth-300">
                 {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
               </p>
             ) : null}
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
             {selectedStockAnalysisPath && selectedSymbol && (
               <Link
                 to={selectedStockAnalysisPath}
-                className="rounded-md bg-sky-700 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-600"
+                className="rounded-md bg-sky-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-sky-600"
               >
-                View {selectedSymbol} Analysis
+                {selectedSymbol} Analysis
               </Link>
-            )}
-            {selected && (
-              <div className="text-right text-[10px] leading-snug text-gray-400">
-                <div>
-                  Vol source: {selected.metrics.volatility_source || "n/a"}{" "}
-                  {selected.metrics.volatility ? `(${formatPercent(selected.metrics.volatility * 100, 1)})` : ""}
-                </div>
-                <div>Option price: {selected.metrics.option_price_source || "n/a"}</div>
-                <div>
-                  Option quote source:{" "}
-                  {formatDataSource(selected.metrics.quote?.data_source, selected.metrics.quote?.quote_source)}
-                </div>
-                <div>
-                  Underlying source:{" "}
-                  {formatDataSource(selected.metrics.market?.data_source, selected.metrics.market?.quote_source)}
-                </div>
-                <div>
-                  Quote: bid{" "}
-                  {selected.metrics.quote?.bid !== null && selected.metrics.quote?.bid !== undefined
-                    ? formatCurrency(selected.metrics.quote.bid, 2)
-                    : "n/a"}{" "}
-                  / ask{" "}
-                  {selected.metrics.quote?.ask !== null && selected.metrics.quote?.ask !== undefined
-                    ? formatCurrency(selected.metrics.quote.ask, 2)
-                    : "n/a"}
-                </div>
-                <div>
-                  Spread:{" "}
-                  {selected.metrics.quote?.spread_pct !== null && selected.metrics.quote?.spread_pct !== undefined
-                    ? formatPercent(selected.metrics.quote.spread_pct, 1)
-                    : "n/a"}{" "}
-                  | OI/Vol: {selected.metrics.quote?.open_interest ?? "n/a"} / {selected.metrics.quote?.volume ?? "n/a"}
-                </div>
-              </div>
             )}
           </div>
         </div>
 
-        <div className="mb-3">
+        {selected && (
+          <details className="mb-2 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1 text-[10px] text-gray-400">
+            <summary className="cursor-pointer list-none truncate">
+              Vol {selected.metrics.volatility ? formatPercent(selected.metrics.volatility * 100, 1) : "n/a"} / Bid{" "}
+              {selected.metrics.quote?.bid !== null && selected.metrics.quote?.bid !== undefined ? formatCurrency(selected.metrics.quote.bid, 2) : "n/a"} / Ask{" "}
+              {selected.metrics.quote?.ask !== null && selected.metrics.quote?.ask !== undefined ? formatCurrency(selected.metrics.quote.ask, 2) : "n/a"}
+            </summary>
+            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 border-t border-gray-700/60 pt-1">
+              <span>Vol: {selected.metrics.volatility_source || "n/a"}</span>
+              <span>Opt: {selected.metrics.option_price_source || "n/a"}</span>
+              <span>Quote: {formatDataSource(selected.metrics.quote?.data_source, selected.metrics.quote?.quote_source)}</span>
+              <span>Underlying: {formatDataSource(selected.metrics.market?.data_source, selected.metrics.market?.quote_source)}</span>
+              <span>Spread: {selected.metrics.quote?.spread_pct !== null && selected.metrics.quote?.spread_pct !== undefined ? formatPercent(selected.metrics.quote.spread_pct, 1) : "n/a"}</span>
+              <span>OI/Vol: {selected.metrics.quote?.open_interest ?? "n/a"} / {selected.metrics.quote?.volume ?? "n/a"}</span>
+            </div>
+          </details>
+        )}
+
+        <div className="mb-2">
           {loadingGreeks ? (
             <div className="text-sm text-gray-400">Loading Greeks...</div>
           ) : greeksData && greeksData.price_curve.length > 0 ? (
-            <div className="grid grid-cols-1 gap-3">
-              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2.5">
-                <h3 className="mb-1.5 text-xs font-semibold">Delta vs Price</h3>
-                <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
+                <h3 className="mb-1 text-[11px] font-semibold">Delta</h3>
+                <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.price_curve}>
                       <XAxis
@@ -2547,9 +2531,9 @@ export default function SecretOptions() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2.5">
-                <h3 className="mb-1.5 text-xs font-semibold">Gamma vs Price</h3>
-                <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
+              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
+                <h3 className="mb-1 text-[11px] font-semibold">Gamma</h3>
+                <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.price_curve}>
                       <XAxis
@@ -2624,9 +2608,9 @@ export default function SecretOptions() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2.5">
-                <h3 className="mb-1.5 text-xs font-semibold">Theta vs Time</h3>
-                <div className="h-36" style={{ minWidth: 0, minHeight: 0 }}>
+              <div className="col-span-2 rounded-lg border border-gray-700 bg-gray-900 p-2">
+                <h3 className="mb-1 text-[11px] font-semibold">Theta</h3>
+                <div className="h-24" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.theta_curve}>
                       <XAxis
@@ -2668,73 +2652,48 @@ export default function SecretOptions() {
         </div>
 
         {greeksData?.model_info && (
-          <div className="mb-3 rounded-lg border border-gray-700/50 bg-gray-900/50 p-2.5">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-gray-400">
-              {greeksData.model_info.model && (
-                <div>
-                  <span className="text-gray-500">Model:</span>{" "}
-                  <span className="text-gray-300">{greeksData.model_info.model}</span>
-                </div>
-              )}
-              {greeksData.model_info.risk_free_rate !== undefined && (
-                <div>
-                  <span className="text-gray-500">Risk-free rate:</span>{" "}
-                  <span className="text-gray-300">{formatPercent(greeksData.model_info.risk_free_rate * 100, 2)}</span>
-                </div>
-              )}
-              {greeksData.model_info.volatility !== undefined && (
-                <div>
-                  <span className="text-gray-500">Vol (σ):</span>{" "}
-                  <span className="text-gray-300">{formatPercent(greeksData.model_info.volatility * 100, 1)}</span>
-                </div>
-              )}
-              {greeksData.model_info.volatility_source && (
-                <div>
-                  <span className="text-gray-500">Vol source:</span>{" "}
-                  <span className="text-gray-300">{greeksData.model_info.volatility_source}</span>
-                </div>
-              )}
-              {selectedSpotPrice !== null && (
-                <div>
-                  <span className="text-gray-500">Chart spot:</span>{" "}
-                  <span className="text-gray-300">{formatCurrency(selectedSpotPrice)}</span>
-                </div>
-              )}
-              {greeksData.model_info.spot_price !== undefined && greeksData.model_info.spot_price !== null && (
-                <div>
-                  <span className="text-gray-500">Model spot:</span>{" "}
-                  <span className="text-gray-300">{formatCurrency(greeksData.model_info.spot_price)}</span>
-                </div>
-              )}
-              {greeksData.model_info.dte !== undefined && (
-                <div>
-                  <span className="text-gray-500">DTE:</span>{" "}
-                  <span className="text-gray-300">{greeksData.model_info.dte} days</span>
-                </div>
-              )}
-            </div>
+          <div className="mb-2 flex flex-wrap gap-1.5 text-[10px] text-gray-300">
+            {greeksData.model_info.model && (
+              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">{greeksData.model_info.model}</span>
+            )}
+            {greeksData.model_info.volatility !== undefined && (
+              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+                Vol {formatPercent(greeksData.model_info.volatility * 100, 1)}
+              </span>
+            )}
+            {greeksData.model_info.dte !== undefined && (
+              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">DTE {greeksData.model_info.dte}</span>
+            )}
+            {selectedSpotPrice !== null && (
+              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+                Spot {formatCurrency(selectedSpotPrice)}
+              </span>
+            )}
+            {greeksData.model_info.risk_free_rate !== undefined && (
+              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+                Rf {formatPercent(greeksData.model_info.risk_free_rate * 100, 2)}
+              </span>
+            )}
           </div>
         )}
 
         {greekSummary && (
-          <div className="mb-3 rounded-lg border border-gray-700 bg-gray-900/60 p-2.5">
-            <div className="mb-1.5 text-[10px] uppercase tracking-wide text-gray-500">
-              Deterministic Snapshot
-            </div>
-            <div
-              className={`text-sm font-semibold leading-snug ${
-                greekSummary.tone === "bullish"
-                  ? "text-emerald-300"
-                  : greekSummary.tone === "bearish"
-                    ? "text-rose-300"
-                    : "text-gray-200"
-              }`}
-            >
-              {greekSummary.overall}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+          <div className="mb-2 rounded-lg border border-gray-700 bg-gray-900/60 p-2">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
+              <div
+                className={`text-xs font-semibold ${
+                  greekSummary.tone === "bullish"
+                    ? "text-emerald-300"
+                    : greekSummary.tone === "bearish"
+                      ? "text-rose-300"
+                      : "text-gray-200"
+                }`}
+              >
+                {capitalizeWord(greekSummary.tone)} / {greekSummary.thetaDirection}
+              </div>
+              <div className="flex flex-wrap gap-1 text-[10px]">
               <span
-                className={`px-2 py-0.5 rounded-full border ${
+                className={`rounded-full border px-1.5 py-0.5 ${
                   greekSummary.tone === "bullish"
                     ? "border-emerald-700/60 bg-emerald-900/30 text-emerald-200"
                     : greekSummary.tone === "bearish"
@@ -2742,27 +2701,27 @@ export default function SecretOptions() {
                       : "border-gray-700 bg-gray-800 text-gray-300"
                 }`}
               >
-                Direction: {greekSummary.tone}
+                {greekSummary.tone}
               </span>
               <span
-                className={`px-2 py-0.5 rounded-full border ${
+                className={`rounded-full border px-1.5 py-0.5 ${
                   greekSummary.thetaDirection === "decay"
                     ? "border-amber-700/60 bg-amber-900/30 text-amber-200"
                     : "border-emerald-700/60 bg-emerald-900/30 text-emerald-200"
                 }`}
               >
-                Time: {greekSummary.thetaDirection}
+                {greekSummary.thetaDirection}
               </span>
+              </div>
             </div>
-            <div className="mt-2 grid grid-cols-1 gap-2 2xl:grid-cols-2">
-              {greekSummary.details.map((item) => (
+            <div className="grid grid-cols-4 gap-1.5">
+              {greekSummary.details.slice(0, 4).map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-md border border-gray-700/70 bg-gray-900/40 px-2.5 py-1.5"
+                  className="min-w-0 rounded-md border border-gray-700/70 bg-gray-900/40 px-2 py-1.5"
                 >
-                  <div className="text-[11px] uppercase tracking-wide text-gray-500">{item.label}</div>
-                  <div className="text-sm font-medium text-gray-100">{item.value}</div>
-                  <div className="text-[11px] leading-snug text-gray-400 mt-0.5">{item.note}</div>
+                  <div className="truncate text-[9px] uppercase tracking-wide text-gray-500">{item.label}</div>
+                  <div className="truncate text-xs font-semibold text-gray-100">{item.value}</div>
                 </div>
               ))}
             </div>
@@ -2771,9 +2730,9 @@ export default function SecretOptions() {
 
         {selected && (
           <div className="mb-1 rounded-lg border border-gray-700/60 bg-gray-900/40 p-2.5">
-            <div className="grid grid-cols-1 gap-2 2xl:grid-cols-3">
-              <label className="text-xs text-amber-300">
-                Strike (ITM line)
+            <div className="grid grid-cols-3 gap-1.5">
+              <label className="min-w-0 text-[10px] text-amber-300">
+                Strike
                 <input
                   type="number"
                   value={selected.position.strike}
@@ -2781,8 +2740,8 @@ export default function SecretOptions() {
                   className="mt-1 w-full bg-gray-900 border border-amber-700/70 rounded px-2 py-1.5 text-xs text-amber-100"
                 />
               </label>
-              <label className="text-xs text-emerald-300">
-                Profit-take price
+              <label className="min-w-0 text-[10px] text-emerald-300">
+                Profit
                 <input
                   type="number"
                   step="0.01"
@@ -2799,8 +2758,8 @@ export default function SecretOptions() {
                   className="mt-1 w-full bg-gray-900 border border-emerald-700/70 rounded px-2 py-1.5 text-xs text-emerald-100"
                 />
               </label>
-              <label className="text-xs text-rose-300">
-                Loss-cut price
+              <label className="min-w-0 text-[10px] text-rose-300">
+                Loss
                 <input
                   type="number"
                   step="0.01"
