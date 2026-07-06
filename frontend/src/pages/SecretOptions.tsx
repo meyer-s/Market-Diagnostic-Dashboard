@@ -417,19 +417,13 @@ const buildGreeksAttention = (
 
 const TIMELINE_EXPLORATION_VARIANTS = [
   "control",
-  "deadlineRibbon",
-  "countdownBlocks",
-  "focusWindow",
-  "pressureRails",
-  "rulerTicks",
-  "urgencyCapsule",
-  "calendarCells",
-  "decisionGate",
-  "elapsedBand",
-  "expiryThermometer",
-  "signalStack",
-  "compactNeedle",
-  "windowBridge",
+  "semanticRail",
+  "decisionBand",
+  "pressureStack",
+  "confidenceRail",
+  "timeBuckets",
+  "urgencyNeedle",
+  "gateQueue",
 ] as const;
 
 type TimelineExplorationVariant = (typeof TIMELINE_EXPLORATION_VARIANTS)[number];
@@ -437,7 +431,7 @@ type TimelineExplorationVariant = (typeof TIMELINE_EXPLORATION_VARIANTS)[number]
 const getTimelineExplorationVariant = (rowIndex: number): TimelineExplorationVariant => {
   if (rowIndex === 0) return "control";
   const explorationVariants = TIMELINE_EXPLORATION_VARIANTS.slice(1);
-  return explorationVariants[(rowIndex - 1) % explorationVariants.length] ?? "deadlineRibbon";
+  return explorationVariants[(rowIndex - 1) % explorationVariants.length] ?? "semanticRail";
 };
 
 const getUrgencyTextClass = (urgency: EvalUrgency | undefined) => {
@@ -445,6 +439,20 @@ const getUrgencyTextClass = (urgency: EvalUrgency | undefined) => {
   if (urgency === "due") return "text-amber-200";
   if (urgency === "watch") return "text-yellow-200";
   return "text-emerald-200";
+};
+
+const getUrgencyBorderClass = (urgency: EvalUrgency | undefined) => {
+  if (urgency === "overdue") return "border-rose-500/55";
+  if (urgency === "due") return "border-amber-500/55";
+  if (urgency === "watch") return "border-yellow-500/45";
+  return "border-emerald-500/40";
+};
+
+const getUrgencyWashClass = (urgency: EvalUrgency | undefined) => {
+  if (urgency === "overdue") return "bg-rose-500/14";
+  if (urgency === "due") return "bg-amber-500/14";
+  if (urgency === "watch") return "bg-yellow-500/12";
+  return "bg-emerald-500/10";
 };
 
 function TimelineExplorationCell({
@@ -463,172 +471,158 @@ function TimelineExplorationCell({
   const progressPct = clampRange(lane?.progressPct ?? 0, 0, 100);
   const laneWidthPct = lane ? Math.max(4, (lane.totalDays / timelineHorizonDays) * 100) : 100;
   const elapsedWidthPct = lane ? Math.max(0, Math.min(laneWidthPct, laneWidthPct * (progressPct / 100))) : 0;
-  const decisionLeftPct = lane ? Math.min(100, Math.max(0, (lane.totalDays / timelineHorizonDays) * 100)) : 100;
+  const decisionLeftPct = lane ? clampRange((lane.totalDays / timelineHorizonDays) * 100, 0, 100) : 100;
   const attentionSpreadPct = lane ? Math.max(5, (lane.attentionSpreadDays / timelineHorizonDays) * 100) : 0;
-  const attentionLeftPct = Math.max(0, Math.min(100, decisionLeftPct - attentionSpreadPct / 2));
+  const attentionLeftPct = clampRange(decisionLeftPct - attentionSpreadPct / 2, 0, 100);
+  const attentionWidthPct = Math.min(100 - attentionLeftPct, attentionSpreadPct);
   const attentionOpacity = lane ? 0.08 + lane.attentionStrength * 0.25 : 0.1;
   const remainingDays = lane?.remainingDays ?? metrics.dte ?? null;
-  const completedCells = Math.max(0, Math.min(8, Math.round(progressPct / 12.5)));
+  const remainingWidthPct = lane ? Math.max(0, decisionLeftPct - elapsedWidthPct) : 100;
+  const overdueWidthPct = lane && lane.remainingDays < 0 ? clampRange((Math.abs(lane.remainingDays) / timelineHorizonDays) * 100, 3, 20) : 0;
+  const sourceConfidence = clampRange(position.source_match_confidence ?? (lane?.matched ? 0.65 : 0.15), 0, 1);
+  const sourceConfidencePct = sourceConfidence * 100;
+  const completedCells = Math.max(0, Math.min(6, Math.round(progressPct / (100 / 6))));
+  const currentCell = Math.max(0, Math.min(5, Math.floor(progressPct / (100 / 6))));
   const pressurePct = clampRange((lane?.attentionStrength ?? 0.2) * 100, 0, 100);
   const label = lane?.label ?? "No window";
   const detail = lane?.detail ?? "Portfolio DTE progression";
   const accentClass = lane?.barClass ?? "bg-gray-500";
   const urgencyTextClass = getUrgencyTextClass(lane?.urgency);
+  const urgencyBorderClass = getUrgencyBorderClass(lane?.urgency);
+  const urgencyWashClass = getUrgencyWashClass(lane?.urgency);
   const dteLabel = metrics.dte !== null && metrics.dte !== undefined ? `${metrics.dte} DTE` : "DTE n/a";
   const metaLabel = `${formatDate(position.expiration)} / ${dteLabel}`;
+  const accessibleSummary = `${position.symbol} ${label}. ${detail}. ${Math.round(progressPct)} percent elapsed. ${remainingDays ?? "unknown"} days remaining. Greek pressure ${Math.round(pressurePct)} percent. Source confidence ${Math.round(sourceConfidencePct)} percent.`;
 
-  if (variant === "deadlineRibbon") {
+  if (variant === "semanticRail") {
     return (
-      <div className="min-w-0">
+      <div className="min-w-0" aria-label={accessibleSummary}>
         <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
           <span className="truncate text-gray-500">{metaLabel}</span>
           <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
         </div>
-        <div className="relative h-6 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
-          <div className="absolute inset-y-0 left-0 bg-gray-700/45" style={{ width: `${laneWidthPct}%` }} />
-          <div className={`absolute inset-y-0 left-0 ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+        <div className="relative h-6 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70" title="Full rail = expected hold window, fill = elapsed, cyan band = Greek pressure window, vertical mark = evaluation gate">
+          <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/65" style={{ width: `${laneWidthPct}%` }} />
+          <div className={`absolute inset-y-1 left-0 rounded-sm ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
           <div
             className="absolute inset-y-0 border-x border-cyan-200/30"
             style={{
               left: `${attentionLeftPct}%`,
-              width: `${Math.min(100 - attentionLeftPct, attentionSpreadPct)}%`,
+              width: `${attentionWidthPct}%`,
               background: `linear-gradient(90deg, rgba(45, 212, 191, 0), rgba(45, 212, 191, ${attentionOpacity}), rgba(45, 212, 191, 0))`,
             }}
           />
-          <div className="absolute inset-y-0 left-0 w-px bg-white/60" />
+          {overdueWidthPct > 0 ? (
+            <div className="absolute inset-y-1 rounded-sm bg-rose-500/45" style={{ left: `${decisionLeftPct}%`, width: `${overdueWidthPct}%` }} title="Overdue time beyond gate" />
+          ) : null}
+          <div className="absolute inset-y-0 left-0 w-px bg-white/55" title="Today" />
           <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
-            <span className={`h-4 w-1 -translate-x-1/2 rounded-full ${accentClass}`} />
+            <span className={`h-4 w-1 -translate-x-1/2 rounded-full ${accentClass}`} title="Evaluation gate" />
           </div>
         </div>
       </div>
     );
   }
 
-  if (variant === "countdownBlocks") {
+  if (variant === "decisionBand") {
     return (
-      <div className="min-w-0">
+      <div className="min-w-0" aria-label={accessibleSummary}>
         <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
           <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>
-            {remainingDays !== null ? `${remainingDays}d left` : label}
-          </span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{remainingDays !== null ? `${remainingDays}d` : label}</span>
         </div>
-        <div className="grid grid-cols-8 gap-1">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <div
-              key={index}
-              className={`h-5 rounded border ${
-                index < completedCells
-                  ? `${accentClass} border-transparent`
-                  : index >= 6
-                    ? "border-amber-400/25 bg-amber-500/10"
-                    : "border-gray-700 bg-gray-900/75"
-              }`}
-            />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (variant === "focusWindow") {
-    return (
-      <div className="min-w-0">
-        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-          <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
-        </div>
-        <div className="relative h-7 overflow-hidden rounded-md border border-gray-700 bg-gray-950">
-          <div className="absolute inset-y-2 left-0 rounded-full bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
-          <div
-            className="absolute inset-y-0 rounded-md border border-cyan-300/30 bg-cyan-300/10"
-            style={{ left: `${attentionLeftPct}%`, width: `${Math.min(100 - attentionLeftPct, attentionSpreadPct)}%` }}
-          />
-          <div className={`absolute inset-y-2 left-0 rounded-full ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
-          <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
-            <span className="h-5 w-5 -translate-x-1/2 rounded-full border border-cyan-200/50 bg-stealth-950 shadow-[0_0_14px_rgba(94,234,212,0.45)]" />
+        <div className={`relative h-7 overflow-hidden rounded-md border ${urgencyBorderClass} bg-gray-900/70`} title="Left block = elapsed, dark block = remaining, outlined window = action zone, red tail = already late">
+          <div className={`absolute inset-y-0 left-0 ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+          <div className="absolute inset-y-0 bg-gray-700/45" style={{ left: `${elapsedWidthPct}%`, width: `${remainingWidthPct}%` }} />
+          <div className={`absolute inset-y-0 border-x ${urgencyBorderClass} ${urgencyWashClass}`} style={{ left: `${attentionLeftPct}%`, width: `${attentionWidthPct}%` }} />
+          {overdueWidthPct > 0 ? (
+            <div className="absolute inset-y-0 bg-rose-500/50" style={{ left: `${decisionLeftPct}%`, width: `${overdueWidthPct}%` }} />
+          ) : null}
+          <div className="absolute inset-y-1 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+            <span className={`h-5 w-1 -translate-x-1/2 rounded ${accentClass}`} />
           </div>
         </div>
       </div>
     );
   }
 
-  if (variant === "pressureRails") {
+  if (variant === "pressureStack") {
     return (
-      <div className="min-w-0">
+      <div className="min-w-0" aria-label={accessibleSummary}>
         <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
           <span className="truncate text-gray-500">{metaLabel}</span>
           <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{lane?.greeksHint ?? label}</span>
         </div>
-        <div className="space-y-1">
-          <div className="relative h-2 rounded-full bg-gray-800">
+        <div className="grid grid-cols-[10px_minmax(0,1fr)] items-center gap-x-1 gap-y-1 text-[9px] text-gray-500" title="T = elapsed time, θ = Greek pressure, C = source confidence">
+          <span>T</span>
+          <div className="h-2 rounded-full bg-gray-800">
             <div className={`h-full rounded-full ${accentClass}`} style={{ width: `${progressPct}%` }} />
           </div>
-          <div className="relative h-2 rounded-full bg-gray-800">
+          <span>θ</span>
+          <div className="h-2 rounded-full bg-gray-800">
             <div className="h-full rounded-full bg-cyan-300" style={{ width: `${pressurePct}%` }} />
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (variant === "rulerTicks") {
-    return (
-      <div className="min-w-0">
-        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-          <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
-        </div>
-        <div
-          className="relative h-6 rounded-md border border-gray-700 bg-gray-900/70"
-          style={{
-            backgroundImage: "linear-gradient(90deg, rgba(148,163,184,0.18) 1px, transparent 1px)",
-            backgroundSize: "12.5% 100%",
-          }}
-        >
-          <div className={`absolute inset-y-1 left-0 rounded-sm ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
-          <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
-            <span className={`h-5 w-0.5 -translate-x-1/2 rounded-full ${accentClass}`} />
+          <span>C</span>
+          <div className="h-2 rounded-full bg-gray-800">
+            <div className="h-full rounded-full bg-indigo-300" style={{ width: `${sourceConfidencePct}%` }} />
           </div>
         </div>
       </div>
     );
   }
 
-  if (variant === "urgencyCapsule") {
+  if (variant === "confidenceRail") {
+    const filledConfidenceBlocks = Math.round(sourceConfidence * 4);
     return (
-      <div className="min-w-0">
+      <div className="min-w-0" aria-label={accessibleSummary}>
         <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
           <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className="shrink-0 text-gray-500">{Math.round(progressPct)}%</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
         </div>
-        <div className={`flex h-7 items-center justify-between rounded-full border border-gray-700 bg-gray-900/80 px-2`}>
-          <span className={`text-[10px] font-semibold ${urgencyTextClass}`}>{label}</span>
-          <span className="text-[10px] text-gray-400">{detail}</span>
+        <div className="grid grid-cols-[34px_minmax(0,1fr)] items-center gap-2" title="Blocks = link confidence, rail = time to gate">
+          <div className="grid grid-cols-2 gap-0.5">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <span
+                key={index}
+                className={`h-2 rounded-sm ${index < filledConfidenceBlocks ? "bg-indigo-300" : "bg-gray-700/70"}`}
+              />
+            ))}
+          </div>
+          <div className="relative h-5 rounded-md bg-gray-900/80">
+            <div className="absolute inset-y-1 left-0 rounded-full bg-gray-700/65" style={{ width: `${laneWidthPct}%` }} />
+            <div className={`absolute inset-y-1 left-0 rounded-full ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+            <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+              <span className={`h-4 w-1 -translate-x-1/2 rounded-full ${accentClass}`} />
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (variant === "calendarCells") {
+  if (variant === "timeBuckets") {
     return (
-      <div className="min-w-0">
+      <div className="min-w-0" aria-label={accessibleSummary}>
         <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
           <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{remainingDays !== null ? `${remainingDays}d` : label}</span>
         </div>
-        <div className="grid grid-cols-6 gap-1">
+        <div className="grid grid-cols-6 gap-1" title="Each cell = one slice of the expected window, filled cells = elapsed, outlined cell = current slice, final colored edge = gate urgency">
           {Array.from({ length: 6 }).map((_, index) => {
-            const cellPct = ((index + 1) / 6) * 100;
+            const isElapsed = index < completedCells;
+            const isCurrent = index === currentCell;
+            const isGateCell = index === 5;
             return (
               <div
                 key={index}
                 className={`h-6 rounded-sm border ${
-                  progressPct >= cellPct
+                  isElapsed
                     ? `${accentClass} border-transparent`
-                    : Math.abs(cellPct - decisionLeftPct) <= 18
-                      ? "border-cyan-300/30 bg-cyan-300/10"
-                      : "border-gray-700 bg-gray-900/70"
+                    : isCurrent
+                      ? `${urgencyWashClass} ${urgencyBorderClass}`
+                      : isGateCell
+                        ? `${urgencyWashClass} ${urgencyBorderClass}`
+                        : "border-gray-700 bg-gray-900/70"
                 }`}
               />
             );
@@ -638,96 +632,26 @@ function TimelineExplorationCell({
     );
   }
 
-  if (variant === "decisionGate") {
+  if (variant === "urgencyNeedle") {
     return (
-      <div className="min-w-0">
+      <div className="min-w-0" aria-label={accessibleSummary}>
         <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
           <span className="truncate text-gray-500">{metaLabel}</span>
           <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
         </div>
-        <div className="relative h-7 rounded-md border border-gray-700 bg-gray-900/70">
-          <div className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-gray-700" />
-          <div className={`absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
-          <div className="absolute inset-y-1 rounded-sm border border-cyan-300/35 bg-cyan-300/10" style={{ left: `${decisionLeftPct}%`, width: "8px" }} />
-        </div>
-      </div>
-    );
-  }
-
-  if (variant === "elapsedBand") {
-    return (
-      <div className="min-w-0">
-        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-          <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
-        </div>
-        <div className="relative h-6 overflow-hidden rounded-md border border-gray-700 bg-gray-950">
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-yellow-500/10 to-rose-500/15" />
-          <div className="absolute inset-y-1 left-0 rounded-r-full bg-gray-950/75" style={{ width: `${100 - progressPct}%`, left: `${progressPct}%` }} />
-          <div className={`absolute bottom-0 left-0 h-1 ${accentClass}`} style={{ width: `${progressPct}%` }} />
-        </div>
-      </div>
-    );
-  }
-
-  if (variant === "expiryThermometer") {
-    return (
-      <div className="min-w-0">
-        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-          <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{remainingDays !== null ? `${remainingDays}d` : label}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-2 items-end overflow-hidden rounded-full bg-gray-800">
-            <div className={`mt-auto w-full rounded-full ${accentClass}`} style={{ height: `${Math.max(10, progressPct)}%` }} />
-          </div>
-          <div className="relative h-5 flex-1 rounded-full bg-gray-900/80">
-            <div className={`h-full rounded-full ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
-            <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
-              <span className="h-3 w-3 -translate-x-1/2 rounded-full border border-white/50 bg-gray-950" />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (variant === "signalStack") {
-    return (
-      <div className="min-w-0">
-        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-          <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{lane?.greeksHint ?? label}</span>
-        </div>
-        <div className="grid grid-cols-[1fr_1fr_1fr] gap-1">
-          <div className="rounded border border-gray-700 bg-gray-900/70 px-1.5 py-1">
-            <div className="text-[9px] text-gray-500">time</div>
-            <div className="text-[10px] font-semibold text-gray-200">{Math.round(progressPct)}%</div>
-          </div>
-          <div className="rounded border border-gray-700 bg-gray-900/70 px-1.5 py-1">
-            <div className="text-[9px] text-gray-500">left</div>
-            <div className={`text-[10px] font-semibold ${urgencyTextClass}`}>{remainingDays ?? "n/a"}d</div>
-          </div>
-          <div className="rounded border border-gray-700 bg-gray-900/70 px-1.5 py-1">
-            <div className="text-[9px] text-gray-500">press</div>
-            <div className="text-[10px] font-semibold text-cyan-200">{Math.round(pressurePct)}%</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (variant === "compactNeedle") {
-    return (
-      <div className="min-w-0">
-        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-          <span className="truncate text-gray-500">{metaLabel}</span>
-          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
-        </div>
-        <div className="relative h-6 rounded-md border border-gray-700 bg-gray-900/70">
-          <div className="absolute inset-x-2 top-1/2 h-1 -translate-y-1/2 rounded-full bg-gray-700" />
+        <div
+          className="relative h-6 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70"
+          style={{
+            backgroundImage: "linear-gradient(90deg, rgba(16,185,129,0.18) 0%, rgba(234,179,8,0.2) 68%, rgba(244,63,94,0.24) 100%)",
+          }}
+          title="Gradient = urgency increases through time, needle = current position, vertical mark = gate"
+        >
+          <div className="absolute inset-y-2 left-0 rounded-full bg-gray-950/50" style={{ width: `${laneWidthPct}%` }} />
           <div className="absolute inset-y-0 flex items-center" style={{ left: `${progressPct}%` }}>
             <span className={`h-6 w-1 -translate-x-1/2 rounded-full ${accentClass}`} />
+          </div>
+          <div className="absolute inset-y-1 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+            <span className="h-4 w-px -translate-x-1/2 bg-white/60" />
           </div>
         </div>
       </div>
@@ -735,19 +659,24 @@ function TimelineExplorationCell({
   }
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" aria-label={accessibleSummary}>
       <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
         <span className="truncate text-gray-500">{metaLabel}</span>
         <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{label}</span>
       </div>
-      <div className="relative h-7 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
-        <div className="absolute inset-y-1 left-0 rounded-l-md bg-gray-700/65" style={{ width: `${laneWidthPct}%` }} />
+      <div className={`relative h-7 overflow-hidden rounded-md border ${urgencyBorderClass} bg-gray-900/70`} title="Queue position: elapsed side, action gate, remaining side, pressure glow">
+        <div className="absolute inset-y-2 left-0 rounded-full bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
+        <div className={`absolute inset-y-2 left-0 rounded-full ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
         <div
-          className="absolute inset-y-0 rounded-md border border-cyan-300/30 bg-cyan-300/10"
-          style={{ left: `${attentionLeftPct}%`, width: `${Math.min(100 - attentionLeftPct, attentionSpreadPct)}%` }}
+          className={`absolute inset-y-0 ${urgencyWashClass}`}
+          style={{ left: `${attentionLeftPct}%`, width: `${attentionWidthPct}%` }}
         />
-        <div className={`absolute inset-y-1 left-0 rounded-l-md ${accentClass}`} style={{ width: `${elapsedWidthPct}%` }} />
-        <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-gray-500">{detail}</div>
+        <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+          <span className={`h-7 w-2 -translate-x-1/2 rounded-sm ${accentClass}`} />
+        </div>
+        {overdueWidthPct > 0 ? (
+          <div className="absolute inset-y-1 rounded-r-md bg-rose-500/55" style={{ left: `${decisionLeftPct}%`, width: `${overdueWidthPct}%` }} />
+        ) : null}
       </div>
     </div>
   );
