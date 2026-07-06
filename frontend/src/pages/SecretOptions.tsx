@@ -1851,7 +1851,7 @@ export default function SecretOptions() {
           <div className="text-sm text-gray-400">Loading positions...</div>
         ) : (
           <div className="max-h-[68vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
-            <div className="sticky top-0 z-10 grid min-w-[860px] grid-cols-[180px_minmax(320px,1fr)_86px_86px_92px] items-center gap-2 border-b border-gray-700 bg-stealth-900/95 px-2 py-2 text-[10px] uppercase text-gray-500 backdrop-blur">
+            <div className="sticky top-0 z-10 grid min-w-[760px] grid-cols-[170px_minmax(280px,1fr)_150px_58px] items-center gap-2 border-b border-gray-700 bg-stealth-900/95 px-2 py-2 text-[10px] uppercase text-gray-500 backdrop-blur">
               <button
                 type="button"
                 className="text-left"
@@ -1865,34 +1865,11 @@ export default function SecretOptions() {
                 Position {sortArrow(positionSort.key === "symbol", positionSort.direction)}
               </button>
               <span>Timeline / Evaluation Window</span>
-              <button
-                type="button"
-                className="text-left"
-                onClick={() =>
-                  setPositionSort((prev) => ({
-                    key: "pnl",
-                    direction: prev.key === "pnl" && prev.direction === "asc" ? "desc" : "asc",
-                  }))
-                }
-              >
-                P&amp;L {sortArrow(positionSort.key === "pnl", positionSort.direction)}
-              </button>
-              <button
-                type="button"
-                className="text-left"
-                onClick={() =>
-                  setPositionSort((prev) => ({
-                    key: "delta",
-                    direction: prev.key === "delta" && prev.direction === "asc" ? "desc" : "asc",
-                  }))
-                }
-              >
-                Greeks {sortArrow(positionSort.key === "delta", positionSort.direction)}
-              </button>
+              <span>Stats</span>
               <span className="text-center">Actions</span>
             </div>
 
-            <div className="min-w-[860px] divide-y divide-gray-800">
+            <div className="min-w-[760px] divide-y divide-gray-800">
               {sortedPositions.map((item) => {
                 const { position, metrics } = item;
                 const evaluation = evaluationByPositionId[position.id] || null;
@@ -1922,7 +1899,7 @@ export default function SecretOptions() {
                 return (
                   <Fragment key={position.id}>
                     <div
-                      className={`grid cursor-pointer grid-cols-[180px_minmax(320px,1fr)_86px_86px_92px] items-center gap-2 px-2 py-2 transition-colors ${
+                      className={`grid cursor-pointer grid-cols-[170px_minmax(280px,1fr)_150px_58px] items-center gap-2 px-2 py-1.5 transition-colors ${
                         rowActive || rowHovered
                           ? "bg-indigo-500/12"
                           : `${heat.rowTint} hover:bg-gray-900/40`
@@ -1938,7 +1915,7 @@ export default function SecretOptions() {
                         <div className="flex items-center gap-2">
                           <span
                             title={`${tooltip}\nLink quality: ${heat.quality}`}
-                            className={`inline-block h-8 w-1.5 shrink-0 rounded-full ${heat.marker}`}
+                            className={`inline-block h-7 w-1.5 shrink-0 rounded-full ${heat.marker}`}
                           />
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-gray-100">{position.symbol}</div>
@@ -1950,11 +1927,11 @@ export default function SecretOptions() {
                       </div>
 
                       <div className="min-w-0">
-                        <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-gray-500">
+                        <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] text-gray-500">
                           <span>{formatDate(position.expiration)} / {metrics.dte ?? "—"} DTE</span>
                           <span className={lane?.pillClass ?? "text-gray-500"}>{lane?.label ?? "No window"}</span>
                         </div>
-                        <div className="relative h-7 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
+                        <div className="relative h-5 overflow-hidden rounded-md border border-gray-700 bg-gray-900/70">
                           <div className="absolute inset-y-0 left-0 w-px bg-white/60" title="Today" />
                           <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/60" style={{ width: `${laneWidthPct}%` }} />
                           <div className={`absolute inset-y-1 left-0 rounded-sm ${lane?.barClass ?? "bg-gray-600"}`} style={{ width: `${elapsedWidthPct}%` }} />
@@ -1976,44 +1953,34 @@ export default function SecretOptions() {
                         </div>
                       </div>
 
-                      <div
-                        className={`text-xs font-semibold ${
-                          (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
-                        }`}
-                      >
-                        <div>
-                          {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
-                            ? formatCurrency(metrics.pnl.dollar, 0)
-                            : "—"}
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-[11px]">
+                        <div
+                          className={`font-semibold ${
+                            (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
+                          }`}
+                        >
+                          <div>
+                            {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
+                              ? formatCurrency(metrics.pnl.dollar, 0)
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] font-normal text-gray-500">
+                            {metrics.pnl?.percent !== null && metrics.pnl?.percent !== undefined ? `${formatSigned(metrics.pnl.percent, 1)}%` : "—"}
+                          </div>
                         </div>
-                        <div className="text-[10px] font-normal text-gray-500">
-                          {metrics.pnl?.percent !== null && metrics.pnl?.percent !== undefined ? `${formatSigned(metrics.pnl.percent, 1)}%` : "—"}
+                        <div className="text-gray-300">
+                          <div>Δ {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}</div>
+                          <div className="text-gray-500">θ {metrics.greeks ? metrics.greeks.theta.toFixed(2) : "—"}</div>
                         </div>
-                      </div>
-
-                      <div className="text-[11px] text-gray-300">
-                        <div>Δ {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}</div>
-                        <div className="text-gray-500">θ {metrics.greeks ? metrics.greeks.theta.toFixed(2) : "—"}</div>
                       </div>
 
                       <div className="flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setSelectedId(position.id);
-                            setExpandedPositionId((current) => (current === position.id ? null : position.id));
-                          }}
-                          className="rounded border border-gray-600 px-2 py-1 text-[10px] font-semibold text-gray-200 hover:border-indigo-400 hover:text-indigo-200"
-                        >
-                          {isExpanded ? "Less" : "More"}
-                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             openEditModal(position);
                           }}
-                          className="rounded bg-sky-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-sky-600"
+                          className="rounded bg-sky-700 px-1.5 py-1 text-[10px] font-semibold text-white hover:bg-sky-600"
                         >
                           Edit
                         </button>
@@ -2022,7 +1989,7 @@ export default function SecretOptions() {
                             e.stopPropagation();
                             openCloseModal(position.id);
                           }}
-                          className="rounded bg-rose-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-600"
+                          className="rounded bg-rose-700 px-1.5 py-1 text-[10px] font-semibold text-white hover:bg-rose-600"
                         >
                           -
                         </button>
@@ -2136,7 +2103,7 @@ export default function SecretOptions() {
           {loadingGreeks ? (
             <div className="text-sm text-gray-400">Loading Greeks...</div>
           ) : greeksData && greeksData.price_curve.length > 0 ? (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
                 <h3 className="mb-1 text-[11px] font-semibold">Delta</h3>
                 <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
@@ -2291,7 +2258,7 @@ export default function SecretOptions() {
                 </div>
               </div>
 
-              <div className="col-span-2 rounded-lg border border-gray-700 bg-gray-900 p-2">
+              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
                 <h3 className="mb-1 text-[11px] font-semibold">Theta</h3>
                 <div className="h-24" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
