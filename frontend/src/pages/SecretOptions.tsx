@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -613,26 +613,6 @@ const buildGreeksSummary = (
     ],
   };
 };
-
-function PortfolioStat({
-  label,
-  value,
-  detail,
-  tone = "text-gray-100",
-}: {
-  label: string;
-  value: ReactNode;
-  detail?: ReactNode;
-  tone?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-stealth-700 bg-stealth-900/70 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">{label}</div>
-      <div className={`mt-1 text-base font-semibold leading-tight ${tone}`}>{value}</div>
-      {detail ? <div className="mt-1 min-h-4 text-[11px] leading-snug text-stealth-400">{detail}</div> : null}
-    </div>
-  );
-}
 
 const initialFormState = {
   trade_date: "",
@@ -1740,60 +1720,15 @@ export default function SecretOptions() {
   };
 
   return (
-    <div className="page-shell-wide space-y-3 text-gray-100 md:space-y-4">
-      <div className="surface-card-strong p-3 sm:p-4">
-        <div className="grid gap-3 xl:grid-cols-[minmax(260px,0.42fr)_minmax(0,1fr)] xl:items-center">
-          <div className="flex flex-wrap items-end justify-between gap-2 xl:block">
-            <div>
-              <p className="page-kicker">Private</p>
-              <h1 className="mt-1 text-xl font-semibold tracking-tight text-white md:text-2xl">Options Performance</h1>
-            </div>
-            <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stealth-400">
-              /secret/options
-            </span>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            <PortfolioStat label="Cost" value={formatCurrency(totals.totalCost)} />
-            <PortfolioStat
-              label="P&L"
-              value={formatCurrency(totals.totalPnl)}
-              tone={totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"}
-              detail={totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}
-            />
-            <PortfolioStat label="Open" value={totals.count} />
-            <PortfolioStat
-              label="Linked"
-              value={`${openAttribution.linked}/${openAttribution.total}`}
-              detail={
-                <>
-                  {formatPercent(openAttribution.coverage, 1)}
-                  {openAttribution.avgLinkConfidence !== null
-                    ? ` / ${formatPercent(openAttribution.avgLinkConfidence * 100, 0)} conf`
-                    : ""}
-                </>
-              }
-            />
-            <PortfolioStat
-              label="Quality"
-              value={closedAttribution.linked > 0 ? `${formatPercent(closedAttribution.linkedWinRate, 1)} win` : "n/a"}
-              tone={
-                closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
-                  ? "text-rose-300"
-                  : "text-emerald-300"
-              }
-              detail={
-                closedAttribution.linked > 0
-                  ? `n=${closedAttribution.linked} / ${
-                      closedAttribution.linkedAvgPercent !== null
-                        ? `${formatSigned(closedAttribution.linkedAvgPercent, 1)}% avg`
-                        : "avg n/a"
-                    }`
-                  : "No closed linked trades"
-              }
-            />
-          </div>
+    <div className="page-shell-wide space-y-2.5 text-gray-100 md:space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stealth-500">Private</span>
+          <h1 className="text-lg font-semibold leading-none tracking-tight text-white md:text-xl">Options Performance</h1>
         </div>
+        <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stealth-400">
+          /secret/options
+        </span>
       </div>
 
       {error && (
@@ -1806,20 +1741,58 @@ export default function SecretOptions() {
         <section className="min-w-0 space-y-3">
       <div className="surface-card-strong p-3">
         <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-stealth-100">Position Summary</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
-              <span className="rounded-full border border-indigo-500/35 bg-indigo-500/10 px-2 py-1 text-indigo-200">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-stealth-100">Position Summary</h2>
+              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-stealth-400">
+                Open {totals.count}
+              </span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+              <span className="rounded-full border border-indigo-500/35 bg-indigo-500/10 px-2 py-0.5 text-indigo-200">
                 Matched: {evaluationSummary.matched}
               </span>
-              <span className="rounded-full border border-yellow-500/35 bg-yellow-500/10 px-2 py-1 text-yellow-200">
+              <span className="rounded-full border border-yellow-500/35 bg-yellow-500/10 px-2 py-0.5 text-yellow-200">
                 Watch (&lt;=5d): {evaluationSummary.watch}
               </span>
-              <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-1 text-amber-200">
+              <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-amber-200">
                 Due: {evaluationSummary.due}
               </span>
-              <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-1 text-rose-200">
+              <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-0.5 text-rose-200">
                 Overdue: {evaluationSummary.overdue}
+              </span>
+              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-0.5 text-stealth-300">
+                Cost {formatCurrency(totals.totalCost)}
+              </span>
+              <span
+                className={`rounded-full border px-2 py-0.5 ${
+                  totals.totalPnl >= 0
+                    ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-200"
+                    : "border-rose-500/35 bg-rose-500/10 text-rose-200"
+                }`}
+              >
+                P&L {formatCurrency(totals.totalPnl)}
+                {totals.percent !== null ? ` (${formatSigned(totals.percent, 1)}%)` : ""}
+              </span>
+              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-0.5 text-stealth-300">
+                Linked {openAttribution.linked}/{openAttribution.total}
+                {" / "}
+                {formatPercent(openAttribution.coverage, 1)}
+                {openAttribution.avgLinkConfidence !== null
+                  ? ` / ${formatPercent(openAttribution.avgLinkConfidence * 100, 0)} conf`
+                  : ""}
+              </span>
+              <span
+                className={`rounded-full border px-2 py-0.5 ${
+                  closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
+                    ? "border-rose-500/35 bg-rose-500/10 text-rose-200"
+                    : "border-emerald-500/35 bg-emerald-500/10 text-emerald-200"
+                }`}
+              >
+                Quality {closedAttribution.linked > 0 ? `${formatPercent(closedAttribution.linkedWinRate, 1)} win` : "n/a"}
+                {closedAttribution.linked > 0 && closedAttribution.linkedAvgPercent !== null
+                  ? ` / ${formatSigned(closedAttribution.linkedAvgPercent, 1)}% avg`
+                  : ""}
               </span>
             </div>
           </div>
