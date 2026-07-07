@@ -110,6 +110,36 @@ def test_quote_payload_preserves_market_data_source() -> None:
     assert payload["ask"] == 1.3
 
 
+def test_legacy_discord_training_recipe_derives_gate() -> None:
+    message = """
+---
+**CVS** — S&P 500 (SPY/IVV)
+
+**Directional Bias**
+- **Short-term Bearish** — 20d return -7.0%, price below 50D MA
+- **1m**: Bearish (-6.6%)
+---
+"""
+
+    recipe = secret_options._extract_training_recipe(message)
+
+    assert recipe["option_type"] == "put"
+    assert recipe["hold_days"] == 14
+
+
+def test_legacy_discord_training_recipe_uses_twenty_day_fallback() -> None:
+    message = """
+**Options Alert - S&P 500 (IVV)**
+`NKE`
+- Direction hint: **Calls** (20d return +15.2%, price above 50D MA)
+"""
+
+    recipe = secret_options._extract_training_recipe(message)
+
+    assert recipe["option_type"] == "call"
+    assert recipe["hold_days"] == 7
+
+
 @pytest.fixture()
 def secret_options_client(monkeypatch: pytest.MonkeyPatch):
     engine = create_engine(
@@ -464,3 +494,85 @@ def test_training_outcomes_are_persisted(secret_options_client, monkeypatch: pyt
         assert row.event_id == event_id
         assert row.compute_status == "ok"
         assert row.status == "matured"
+
+
+def test_training_outcomes_include_linked_non_candidate_events(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_local = secret_options_client
+    with session_local() as db:
+        event = OptionAlertEvent(
+            symbol="ORCL",
+            triggered_at=datetime(2026, 6, 1, 14, 30),
+            iv30=30.0,
+            hv30=35.0,
+            iv_percentile=25.0,
+            avg_edr=75.0,
+            message="Bias      : NEUTRAL\nHORIZONS\n  1m +1.9%  3m -21.4%",
+        )
+        db.add(event)
+        db.flush()
+        db.add(
+            OptionPosition(
+                trade_date=date(2026, 6, 2),
+                account="Active Trading",
+                action="Buy to Open",
+                contracts=1,
+                symbol="ORCL",
+                expiration=date(2026, 9, 18),
+                strike=155.0,
+                option_type="call",
+                fill_price=14.77,
+                total_cost=1477.0,
+                source_event_id=event.id,
+                source_triggered_at=event.triggered_at,
+                source_match_method="manual_event_id",
+                source_match_confidence=0.92,
+            )
+        )
+        db.commit()
+        event_id = event.id
+
+    calls = {"count": 0}
+
+    def _fake_compute(event: OptionAlertEvent, linked_trade: dict[str, object]) -> dict[str, object]:
+        calls["count"] += 1
+        assert linked_trade["option_type"] == "call"
+        assert linked_trade["strike"] == 155.0
+        return {
+            "event_id": event.id,
+            "symbol": "ORCL",
+            "triggered_at": event.triggered_at.isoformat(),
+            "option_type": "call",
+            "contract_expiry": "2026-09-18",
+            "contract_strike": 155.0,
+            "hold_days": 21,
+            "entry_date": "2026-06-01",
+            "exit_date": None,
+            "entry_underlying": 150.0,
+            "exit_underlying": None,
+            "underlying_directional_return_pct": None,
+            "entry_option_price_est": 14.77,
+            "exit_option_price_est": None,
+            "option_return_pct_est": None,
+            "option_pnl_per_contract_est": None,
+            "recommended_exit_date": "2026-06-22",
+            "days_elapsed_calendar": 1,
+            "status": "pending",
+        }
+
+    monkeypatch.setattr(secret_options, "_compute_training_outcome_for_linked_event", _fake_compute)
+
+    response = client.get("/secret/options/training-outcomes", params={"lookback_days": 365, "limit": 50})
+
+    assert response.status_code == 200
+    assert calls["count"] == 1
+    body = response.json()
+    assert body["outcomes"][0]["event_id"] == event_id
+    assert body["summary"]["linked_event_rows"] == 1
+    with session_local() as db:
+        row = db.query(OptionTrainingOutcome).one()
+        assert row.event_id == event_id
+        assert row.hold_days == 21
+        assert row.compute_status == "ok"

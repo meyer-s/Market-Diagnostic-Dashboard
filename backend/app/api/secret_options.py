@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 import math
 from numbers import Real
 import re
+from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 import pandas as pd
@@ -125,13 +126,68 @@ def _nullable_equals(column: Any, value: Any) -> Any:
 
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-_SETUP_RE = re.compile(r"Setup\s*:\s*1x ATM\s+(CALL|PUT)", re.IGNORECASE)
+_SETUP_RE = re.compile(r"Setup\s*:\s*1x\s+(?:ATM|optimized)\s+(CALL|PUT)", re.IGNORECASE)
 _CONTRACT_RE = re.compile(
     r"Contract\s*:\s*(\d{4}-\d{2}-\d{2})\s+([0-9]+(?:\.[0-9]+)?)\s+(CALL|PUT)",
     re.IGNORECASE,
 )
 _HOLD_RE = re.compile(r"Hold\s*:\s*(\d+)\s*trading\s*days", re.IGNORECASE)
 _PREMIUM_RE = re.compile(r"Est\s+Prem\s*:\s*\$\s*([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
+_TWENTY_DAY_RETURN_RE = re.compile(r"\b20d\s+return\s+([+-]?\d+(?:\.\d+)?)%", re.IGNORECASE)
+
+
+def _training_hold_days_from_return(value: float) -> int:
+    magnitude = abs(float(value))
+    if magnitude >= 12:
+        return 7
+    if magnitude >= 8:
+        return 10
+    if magnitude >= 4:
+        return 14
+    if magnitude >= 1.5:
+        return 21
+    return 28
+
+
+def _extract_training_return(plain: str) -> Optional[float]:
+    horizon_patterns = (
+        # Markdown legacy format: - **1m**: Bearish (-6.6%)
+        r"\b1m\b\**\s*:\s*[A-Za-z+\-\s]+\(([+-]?\d+(?:\.\d+)?)%\)",
+        # ANSI compact format: 1m +26.6%
+        r"\b1m\b\s+([+-]?\d+(?:\.\d+)?)%",
+    )
+    for pattern in horizon_patterns:
+        match = re.search(pattern, plain, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+
+    match = _TWENTY_DAY_RETURN_RE.search(plain)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def _infer_training_option_type(plain: str) -> Optional[str]:
+    for raw_line in plain.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        lower = line.lower()
+        if "direction hint" in lower:
+            if "calls" in lower or "bullish" in lower:
+                return "call"
+            if "puts" in lower or "bearish" in lower:
+                return "put"
+        if re.search(r"\bbias\s*:", lower):
+            if "bullish" in lower:
+                return "call"
+            if "bearish" in lower:
+                return "put"
+        if re.match(r"[-* ]*\*\*(?:short-term\s+)?bullish\*\*", line, re.IGNORECASE):
+            return "call"
+        if re.match(r"[-* ]*\*\*(?:short-term\s+)?bearish\*\*", line, re.IGNORECASE):
+            return "put"
+    return None
 
 
 def _strip_ansi(value: Optional[str]) -> str:
@@ -169,14 +225,131 @@ def _is_training_candidate_event(event: OptionAlertEvent, include_green_marker: 
     return False
 
 
+def _linked_trade_payload(position: OptionPosition | ClosedPosition, kind: str) -> Dict[str, object]:
+    return {
+        "kind": kind,
+        "id": position.id,
+        "trade_date": position.trade_date,
+        "symbol": position.symbol.upper(),
+        "option_type": position.option_type.lower() if position.option_type else None,
+        "expiration": position.expiration,
+        "strike": position.strike,
+        "fill_price": position.fill_price,
+        "source_event_id": position.source_event_id,
+    }
+
+
+def _collect_linked_trades_by_event_id(db, cutoff_day: date) -> Dict[int, list[Dict[str, object]]]:
+    linked: Dict[int, list[Dict[str, object]]] = {}
+    open_positions = (
+        db.query(OptionPosition)
+        .filter(
+            OptionPosition.source_event_id.isnot(None),
+            OptionPosition.trade_date >= cutoff_day,
+        )
+        .all()
+    )
+    closed_positions = (
+        db.query(ClosedPosition)
+        .filter(
+            ClosedPosition.source_event_id.isnot(None),
+            ClosedPosition.trade_date >= cutoff_day,
+        )
+        .all()
+    )
+    for position in open_positions:
+        linked.setdefault(int(position.source_event_id), []).append(_linked_trade_payload(position, "open"))
+    for position in closed_positions:
+        linked.setdefault(int(position.source_event_id), []).append(_linked_trade_payload(position, "closed"))
+    return linked
+
+
+def _best_linked_trade_for_event(
+    event: OptionAlertEvent,
+    linked_trades: list[Dict[str, object]],
+) -> Optional[Dict[str, object]]:
+    if not linked_trades:
+        return None
+    if not event.triggered_at:
+        return sorted(linked_trades, key=lambda item: str(item.get("trade_date") or ""))[0]
+    event_day = event.triggered_at.date()
+    return min(
+        linked_trades,
+        key=lambda item: abs(((item.get("trade_date") or event_day) - event_day).days),
+    )
+
+
+def _compute_training_outcome_for_linked_event(
+    event: OptionAlertEvent,
+    linked_trade: Dict[str, object],
+) -> Optional[Dict[str, object]]:
+    recipe = _extract_training_recipe(event.message)
+    hold_days = recipe.get("hold_days")
+    if not isinstance(hold_days, int) or hold_days <= 0:
+        return None
+
+    option_type = (
+        event.selected_option_type
+        or linked_trade.get("option_type")
+        or recipe.get("option_type")
+    )
+    if not option_type:
+        return None
+    option_type = str(option_type).lower()
+    contract_expiry = event.selected_expiry or linked_trade.get("expiration") or recipe.get("contract_expiry")
+    if isinstance(contract_expiry, date):
+        contract_expiry = contract_expiry.isoformat()
+    contract_strike = event.selected_strike
+    if contract_strike is None:
+        contract_strike = linked_trade.get("strike") or recipe.get("contract_strike")
+    selected_premium = event.selected_premium
+    if selected_premium is None:
+        selected_premium = linked_trade.get("fill_price") or recipe.get("est_premium")
+
+    synthetic_message = "\n".join(
+        [
+            event.message or "",
+            f"Setup: 1x optimized {option_type.upper()}",
+            (
+                f"Contract: {contract_expiry} {float(contract_strike):.2f} {option_type.upper()}"
+                if contract_expiry and contract_strike is not None
+                else ""
+            ),
+            f"Hold: {hold_days} trading days",
+            f"Est Prem: ${float(selected_premium):.2f}" if selected_premium is not None else "",
+        ]
+    )
+    event_for_compute = SimpleNamespace(
+        id=event.id,
+        symbol=event.symbol,
+        triggered_at=event.triggered_at,
+        iv30=event.iv30,
+        hv30=event.hv30,
+        selected_option_type=option_type,
+        selected_expiry=contract_expiry,
+        selected_strike=float(contract_strike) if contract_strike is not None else None,
+        selected_premium=float(selected_premium) if selected_premium is not None else None,
+        message=synthetic_message,
+    )
+    trigger_day = event.triggered_at.date() if event.triggered_at else date.today()
+    days = max(30, (date.today() - trigger_day).days + 14)
+    history = get_or_refresh_daily_frame(event.symbol, days=days)
+    return _compute_training_outcome(event_for_compute, history=history)
+
+
 def _collect_training_outcomes(
     lookback_days: int,
     limit: int,
     include_green_marker: bool,
+    include_linked: bool,
     force_recompute: bool,
 ) -> dict[str, object]:
     cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+    cutoff_day = cutoff.date()
     with get_db_session() as db:
+        linked_trades_by_event_id = (
+            _collect_linked_trades_by_event_id(db, cutoff_day) if include_linked else {}
+        )
         events = (
             db.query(OptionAlertEvent)
             .filter(OptionAlertEvent.triggered_at >= cutoff)
@@ -184,9 +357,32 @@ def _collect_training_outcomes(
             .limit(limit)
             .all()
         )
+        events_by_id = {event.id: event for event in events}
+        missing_linked_event_ids = [
+            event_id for event_id in linked_trades_by_event_id.keys() if event_id not in events_by_id
+        ]
+        if missing_linked_event_ids:
+            linked_events = (
+                db.query(OptionAlertEvent)
+                .filter(
+                    OptionAlertEvent.id.in_(missing_linked_event_ids),
+                    OptionAlertEvent.triggered_at >= cutoff,
+                )
+                .all()
+            )
+            for event in linked_events:
+                events_by_id[event.id] = event
+        events = sorted(
+            events_by_id.values(),
+            key=lambda event: event.triggered_at or datetime.min,
+            reverse=True,
+        )
 
         candidate_events = [
-            event for event in events if _is_training_candidate_event(event, include_green_marker)
+            event
+            for event in events
+            if _is_training_candidate_event(event, include_green_marker)
+            or event.id in linked_trades_by_event_id
         ]
         existing_rows = (
             db.query(OptionTrainingOutcome)
@@ -216,7 +412,15 @@ def _collect_training_outcomes(
                 rows_by_event_id[event.id] = row
 
             try:
-                outcome = _compute_training_outcome_with_cache(event)
+                linked_trade = _best_linked_trade_for_event(
+                    event,
+                    linked_trades_by_event_id.get(event.id, []),
+                )
+                outcome = (
+                    _compute_training_outcome_for_linked_event(event, linked_trade)
+                    if linked_trade is not None
+                    else _compute_training_outcome_with_cache(event)
+                )
                 if outcome:
                     _apply_training_outcome_payload(row, event, outcome)
                 else:
@@ -256,11 +460,13 @@ def _collect_training_outcomes(
         "avg_option_return_pct": (sum(matured_option_returns) / len(matured_option_returns)) if matured_option_returns else None,
         "total_option_pnl_per_contract": sum(matured_option_pnl) if matured_option_pnl else None,
         "include_green_marker": include_green_marker,
+        "include_linked": include_linked,
         "force_recompute": force_recompute,
         "lookback_days": lookback_days,
         "event_limit": limit,
         "candidate_events": len(candidate_events),
         "green_marker_rows": green_marker_total,
+        "linked_event_rows": sum(1 for event in candidate_events if event.id in linked_trades_by_event_id),
     }
 
     return {
@@ -282,7 +488,12 @@ def _extract_training_recipe(message: Optional[str]) -> Dict[str, Optional[float
     contract_type = contract_match.group(3).lower() if contract_match else None
     if option_type is None:
         option_type = contract_type
+    if option_type is None:
+        option_type = _infer_training_option_type(plain)
     hold_days = int(hold_match.group(1)) if hold_match else None
+    if hold_days is None:
+        trend_return = _extract_training_return(plain)
+        hold_days = _training_hold_days_from_return(trend_return) if trend_return is not None else None
     est_premium = float(premium_match.group(1)) if premium_match else None
 
     return {
@@ -1697,6 +1908,7 @@ def get_training_outcomes(
     lookback_days: int = Query(365, ge=30, le=1825),
     limit: int = Query(200, ge=1, le=1000),
     include_green_marker: bool = Query(True),
+    include_linked: bool = Query(True),
 ):
     """
     Evaluate exceptional scanner training examples by holding for the
@@ -1706,6 +1918,7 @@ def get_training_outcomes(
         lookback_days=lookback_days,
         limit=limit,
         include_green_marker=include_green_marker,
+        include_linked=include_linked,
         force_recompute=False,
     )
     return _json_safe(payload)
@@ -1716,6 +1929,7 @@ def backfill_training_outcomes(
     lookback_days: int = Query(3650, ge=30, le=3650),
     limit: int = Query(5000, ge=1, le=10000),
     include_green_marker: bool = Query(True),
+    include_linked: bool = Query(True),
     force_recompute: bool = Query(False),
 ):
     """
@@ -1726,6 +1940,7 @@ def backfill_training_outcomes(
         lookback_days=lookback_days,
         limit=limit,
         include_green_marker=include_green_marker,
+        include_linked=include_linked,
         force_recompute=force_recompute,
     )
     return _json_safe(payload)
