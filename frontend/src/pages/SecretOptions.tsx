@@ -2385,14 +2385,16 @@ export default function SecretOptions() {
 
                     {isExpanded ? (
                       <div className="border-t border-gray-800 bg-gray-950/35 px-3 py-2">
-                        <div className={`mb-2 flex justify-end ${showRowActions ? "md:hidden" : ""}`}>
-                          <PositionActionButtons
-                            position={position}
-                            mode="expanded"
-                            onEdit={openEditModal}
-                            onClose={openCloseModal}
-                          />
-                        </div>
+                        {showRowActions ? (
+                          <div className="mb-2 flex justify-end md:hidden">
+                            <PositionActionButtons
+                              position={position}
+                              mode="expanded"
+                              onEdit={openEditModal}
+                              onClose={openCloseModal}
+                            />
+                          </div>
+                        ) : null}
                         <div
                           className={`mb-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
                             lane?.urgency === "overdue"
