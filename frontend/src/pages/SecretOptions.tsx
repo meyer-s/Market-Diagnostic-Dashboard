@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { Link } from "react-router-dom";
 import { createPortal } from "react-dom";
+import { HelpCircle, Pencil, Settings2, Trash2 } from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
@@ -163,6 +164,7 @@ interface EvaluationInsight {
 }
 
 type EvalUrgency = EvaluationInsight["urgency"];
+type PositionFilter = "all" | "matched" | "watch" | "due" | "overdue" | "lowConfidence" | "losing";
 interface TimelineLane {
   laneId: string;
   linkedPositionId: number | null;
@@ -303,6 +305,20 @@ const formatDataSource = (source?: string | null, quoteSource?: string | null) =
   return detail ? `${provider} (${detail.replace(/_/g, " ")})` : provider;
 };
 
+const formatRelativeTime = (value: string | Date | null | undefined) => {
+  if (!value) return "n/a";
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "n/a";
+  const diffMs = Math.max(0, Date.now() - parsed.getTime());
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const toDate = (value: string | null | undefined) => {
@@ -434,6 +450,37 @@ const getStatusTextClass = (
   if (remainingDays !== null && remainingDays <= 10) return "text-lime-200";
   if (remainingDays !== null && remainingDays <= 21) return "text-emerald-200";
   return "text-emerald-300";
+};
+
+const buildPositionDiagnosis = (
+  position: OptionPosition,
+  metrics: PositionMetrics,
+  lane: TimelineLane | null | undefined
+) => {
+  const symbol = position.symbol.toUpperCase();
+  const pnlPct = metrics.pnl?.percent ?? null;
+  const dte = metrics.dte ?? lane?.remainingDays ?? null;
+  const spreadPct = metrics.quote?.spread_pct ?? null;
+  const theta = metrics.greeks?.theta ?? null;
+  const pnlText = pnlPct !== null && pnlPct !== undefined ? `${formatSigned(pnlPct, 1)}% P/L` : "P/L unavailable";
+  const dteText = dte !== null && dte !== undefined ? `${dte} DTE` : "DTE unavailable";
+
+  if (lane?.urgency === "overdue") {
+    return `${symbol} is ${Math.abs(lane.remainingDays)} days past its modeled evaluation window. Reassess exit, roll, or thesis continuation.`;
+  }
+  if (lane?.urgency === "due") {
+    return `${symbol} is in its evaluation window today. Review the thesis against ${pnlText}, ${dteText}, and current spread.`;
+  }
+  if (lane?.urgency === "watch") {
+    return `${symbol} is approaching its model review gate. Prepare an exit, roll, or hold decision before the window closes.`;
+  }
+  if (theta !== null && theta <= -8) {
+    return `${symbol} is still in monitor status, but theta decay is elevated. Track time risk before the next gate.`;
+  }
+  if (spreadPct !== null && spreadPct >= 20) {
+    return `${symbol} is monitor status with a wide bid/ask spread. Use caution before sizing or exiting.`;
+  }
+  return `${symbol} remains monitor status. No immediate model action; keep an eye on ${pnlText} and ${dteText}.`;
 };
 
 function PositionTimelineCell({
@@ -1017,6 +1064,10 @@ export default function SecretOptions() {
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
   const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
   const [hoveredPositionId, setHoveredPositionId] = useState<number | null>(null);
+  const [showRowActions, setShowRowActions] = useState(false);
+  const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
+  const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
+  const [greeksLoadedAt, setGreeksLoadedAt] = useState<Date | null>(null);
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: SortDirection }>({
     key: "symbol",
     direction: "asc",
@@ -1055,6 +1106,7 @@ export default function SecretOptions() {
         metrics: normalizePositionMetrics(item.metrics),
       }));
       setPositions(normalizedPositions);
+      setPositionsLoadedAt(new Date());
       if (normalizedPositions.length > 0 && selectedId === null) {
         setSelectedId(normalizedPositions[0].position.id);
         setExpandedPositionId(normalizedPositions[0].position.id);
@@ -1071,8 +1123,10 @@ export default function SecretOptions() {
     try {
       const data = await apiFetch<GreeksPayload>(`/secret/options/greeks/${positionId}`);
       setGreeksData(data);
+      setGreeksLoadedAt(new Date());
     } catch {
       setGreeksData(null);
+      setGreeksLoadedAt(null);
     } finally {
       setLoadingGreeks(false);
     }
@@ -1450,6 +1504,10 @@ export default function SecretOptions() {
   const selectedStockAnalysisPath = selectedSymbol
     ? `/stock-analysis/${encodeURIComponent(selectedSymbol)}?symbol=${encodeURIComponent(selectedSymbol)}`
     : null;
+  const positionGridColumns = showRowActions
+    ? "md:grid-cols-[170px_minmax(280px,1fr)_150px_64px]"
+    : "md:grid-cols-[170px_minmax(280px,1fr)_150px]";
+  const positionTableWidth = showRowActions ? "md:min-w-[770px]" : "md:min-w-[700px]";
 
   const greekSummary = useMemo(() => {
     const greeks = greeksData?.current_greeks ?? selected?.metrics.greeks ?? null;
@@ -1641,6 +1699,15 @@ export default function SecretOptions() {
     };
   }, [evaluationByPositionId]);
 
+  const filterCounts = useMemo(() => {
+    return {
+      lowConfidence: positions.filter(
+        ({ position }) => !position.source_event_id || (position.source_match_confidence ?? 0) < 0.6
+      ).length,
+      losing: positions.filter(({ metrics }) => (metrics.pnl?.dollar ?? 0) < 0).length,
+    };
+  }, [positions]);
+
   const timelineLanes = useMemo(() => {
     return sortedPositions.map(({ position, metrics }) => {
       const evaluation = evaluationByPositionId[position.id] || null;
@@ -1703,6 +1770,29 @@ export default function SecretOptions() {
     return lanes;
   }, [timelineLanes]);
 
+  const filteredPositions = useMemo(() => {
+    if (positionFilter === "all") {
+      return sortedPositions;
+    }
+    return sortedPositions.filter(({ position, metrics }) => {
+      const lane = timelineLaneByPositionId.get(position.id);
+      switch (positionFilter) {
+        case "matched":
+          return Boolean(evaluationByPositionId[position.id]);
+        case "watch":
+        case "due":
+        case "overdue":
+          return lane?.urgency === positionFilter;
+        case "lowConfidence":
+          return !position.source_event_id || (position.source_match_confidence ?? 0) < 0.6;
+        case "losing":
+          return (metrics.pnl?.dollar ?? 0) < 0;
+        default:
+          return true;
+      }
+    });
+  }, [sortedPositions, positionFilter, timelineLaneByPositionId, evaluationByPositionId]);
+
   const totals = useMemo(() => {
     let totalCost = 0;
     let totalPnl = 0;
@@ -1741,6 +1831,10 @@ export default function SecretOptions() {
     selectedSpotWeight?.fundamental !== null && selectedSpotWeight?.fundamental !== undefined
       ? clampUnit(selectedSpotWeight.fundamental - currentSpotLean)
       : projectedSpotGap;
+  const selectedTimelineLane = selected ? timelineLaneByPositionId.get(selected.position.id) ?? null : null;
+  const selectedDiagnosis = selected
+    ? buildPositionDiagnosis(selected.position, selected.metrics, selectedTimelineLane)
+    : null;
 
   const chartPriceDomain = useMemo(() => {
     if (!greeksData?.price_curve?.length) {
@@ -1911,6 +2005,24 @@ export default function SecretOptions() {
     return { marker: "bg-rose-400", rowTint: "bg-rose-950/10", quality: "low" };
   };
 
+  const toggleFilter = (filter: PositionFilter) => {
+    setPositionFilter((current) => (current === filter ? "all" : filter));
+  };
+
+  const filterChipClass = (filter: PositionFilter, classes: string) =>
+    `rounded-full border px-2 py-0.5 transition ${classes} ${
+      positionFilter === filter ? "ring-1 ring-white/45 shadow-[0_0_14px_rgba(125,211,252,0.16)]" : "hover:border-white/35"
+    }`;
+
+  const activeFilterLabel =
+    positionFilter === "all"
+      ? null
+      : positionFilter === "lowConfidence"
+        ? "Low confidence"
+        : positionFilter === "losing"
+          ? "Losing positions"
+          : capitalizeWord(positionFilter);
+
   return (
     <div className="page-shell-wide space-y-2.5 text-gray-100 md:space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 px-1">
@@ -1941,40 +2053,85 @@ export default function SecretOptions() {
               </span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-              <span className="rounded-full border border-indigo-500/35 bg-indigo-500/10 px-2 py-0.5 text-indigo-200">
+              <button
+                type="button"
+                onClick={() => toggleFilter("matched")}
+                aria-pressed={positionFilter === "matched"}
+                title="Matched = open positions with a model or historical evaluation window."
+                className={filterChipClass("matched", "border-indigo-500/35 bg-indigo-500/10 text-indigo-200")}
+              >
                 Matched: {evaluationSummary.matched}
-              </span>
-              <span className="rounded-full border border-yellow-500/35 bg-yellow-500/10 px-2 py-0.5 text-yellow-200">
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleFilter("watch")}
+                aria-pressed={positionFilter === "watch"}
+                title="Watch = model evaluation gate is within five days."
+                className={filterChipClass("watch", "border-yellow-500/35 bg-yellow-500/10 text-yellow-200")}
+              >
                 Watch (&lt;=5d): {evaluationSummary.watch}
-              </span>
-              <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleFilter("due")}
+                aria-pressed={positionFilter === "due"}
+                title="Due = the modeled evaluation gate is today."
+                className={filterChipClass("due", "border-amber-500/35 bg-amber-500/10 text-amber-200")}
+              >
                 Due: {evaluationSummary.due}
-              </span>
-              <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-0.5 text-rose-200">
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleFilter("overdue")}
+                aria-pressed={positionFilter === "overdue"}
+                title="Overdue = current time is past the modeled evaluation gate."
+                className={filterChipClass("overdue", "border-rose-500/35 bg-rose-500/10 text-rose-200")}
+              >
                 Overdue: {evaluationSummary.overdue}
-              </span>
+              </button>
               <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-0.5 text-stealth-300">
                 Cost {formatCurrency(totals.totalCost)}
               </span>
-              <span
-                className={`rounded-full border px-2 py-0.5 ${
+              <button
+                type="button"
+                onClick={() => toggleFilter("losing")}
+                aria-pressed={positionFilter === "losing"}
+                title="Filter to open positions with negative live P/L."
+                className={filterChipClass(
+                  "losing",
                   totals.totalPnl >= 0
                     ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-200"
                     : "border-rose-500/35 bg-rose-500/10 text-rose-200"
-                }`}
+                )}
               >
                 P&L {formatCurrency(totals.totalPnl)}
                 {totals.percent !== null ? ` (${formatSigned(totals.percent, 1)}%)` : ""}
-              </span>
-              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-0.5 text-stealth-300">
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleFilter("matched")}
+                aria-pressed={positionFilter === "matched"}
+                title="Linked = positions matched to scanner/model templates. Confidence is the reliability of the match."
+                className={filterChipClass("matched", "border-stealth-700 bg-stealth-900/70 text-stealth-300")}
+              >
                 Linked {openAttribution.linked}/{openAttribution.total}
                 {" / "}
                 {formatPercent(openAttribution.coverage, 1)}
                 {openAttribution.avgLinkConfidence !== null
                   ? ` / ${formatPercent(openAttribution.avgLinkConfidence * 100, 0)} conf`
                   : ""}
-              </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleFilter("lowConfidence")}
+                aria-pressed={positionFilter === "lowConfidence"}
+                title="Low confidence = unlinked positions or source matches below 60% confidence."
+                className={filterChipClass("lowConfidence", "border-stealth-700 bg-stealth-900/70 text-stealth-300")}
+              >
+                Low conf: {filterCounts.lowConfidence}
+              </button>
               <span
+                title="Quality = historical win rate and average result for linked closed trades."
                 className={`rounded-full border px-2 py-0.5 ${
                   closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
                     ? "border-rose-500/35 bg-rose-500/10 text-rose-200"
@@ -1988,7 +2145,7 @@ export default function SecretOptions() {
               </span>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               onClick={() => {
                 setEditingPositionId(null);
@@ -2009,14 +2166,45 @@ export default function SecretOptions() {
             >
               P/L History
             </button>
+            <button
+              type="button"
+              aria-pressed={showRowActions}
+              title={showRowActions ? "Hide row action buttons" : "Show row action buttons"}
+              onClick={() => setShowRowActions((current) => !current)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                showRowActions
+                  ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100"
+                  : "border-stealth-600 bg-stealth-900/70 text-stealth-300 hover:border-stealth-500 hover:text-stealth-100"
+              }`}
+            >
+              <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Manage
+            </button>
           </div>
         </div>
+
+        {activeFilterLabel ? (
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2.5 py-1.5 text-[11px] text-sky-100">
+            <span>
+              Showing {filteredPositions.length}/{positions.length} positions: {activeFilterLabel}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPositionFilter("all")}
+              className="rounded border border-sky-300/35 px-2 py-0.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-400/10"
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="text-sm text-gray-400">Loading positions...</div>
         ) : (
           <div className="max-h-[68vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
-            <div className="sticky top-0 z-10 grid min-w-0 grid-cols-[155px_minmax(0,1fr)] items-center gap-2 border-b border-gray-700 bg-stealth-900/95 px-2 py-2 text-[10px] uppercase text-gray-500 backdrop-blur md:min-w-[760px] md:grid-cols-[170px_minmax(280px,1fr)_150px_58px]">
+            <div
+              className={`sticky top-0 z-10 grid min-w-0 grid-cols-[155px_minmax(0,1fr)] items-center gap-2 border-b border-gray-700 bg-stealth-900/95 px-2 py-2 text-[10px] uppercase text-gray-500 backdrop-blur ${positionTableWidth} ${positionGridColumns}`}
+            >
               <button
                 type="button"
                 className="text-left"
@@ -2029,13 +2217,28 @@ export default function SecretOptions() {
               >
                 Position {sortArrow(positionSort.key === "symbol", positionSort.direction)}
               </button>
-              <span>Timeline / Evaluation Window</span>
+              <span className="inline-flex items-center gap-1">
+                Timeline / Evaluation Window
+                <span
+                  className="inline-flex"
+                  role="img"
+                  aria-label="Timeline legend"
+                  title="Rail = time until expiration. Muted band = modeled hold window. Mint fill = elapsed model window. Thin tick = today. Thick tick = evaluation gate. Rose tail = past gate. Dots = source confidence."
+                >
+                  <HelpCircle className="h-3.5 w-3.5 text-sky-300/80" aria-hidden="true" />
+                </span>
+              </span>
               <span className="hidden md:block">Stats</span>
-              <span className="hidden text-center md:block">Actions</span>
+              {showRowActions ? <span className="hidden text-center md:block">Actions</span> : null}
             </div>
 
-            <div className="min-w-0 divide-y divide-gray-800 md:min-w-[760px]">
-              {sortedPositions.map((item) => {
+            <div className={`min-w-0 divide-y divide-gray-800 ${positionTableWidth}`}>
+              {filteredPositions.length === 0 ? (
+                <div className="px-3 py-8 text-center text-xs text-gray-400">
+                  No positions match the active filter.
+                </div>
+              ) : null}
+              {filteredPositions.map((item) => {
                 const { position, metrics } = item;
                 const evaluation = evaluationByPositionId[position.id] || null;
                 const lane = timelineLaneByPositionId.get(position.id);
@@ -2055,14 +2258,50 @@ export default function SecretOptions() {
                 const rowActive = position.id === selectedId;
                 const rowHovered = position.id === hoveredPositionId;
                 const isExpanded = expandedPositionId === position.id;
+                const rowDiagnosis = buildPositionDiagnosis(position, metrics, lane);
+                const renderPositionActions = (mode: "row" | "expanded") => {
+                  const buttonSize = mode === "row" ? "h-7 w-7" : "h-8 w-8";
+                  const iconSize = mode === "row" ? "h-3.5 w-3.5" : "h-4 w-4";
+
+                  return (
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditModal(position);
+                        }}
+                        aria-label={`Edit ${position.symbol} position`}
+                        title={`Edit ${position.symbol}`}
+                        className={`inline-flex ${buttonSize} items-center justify-center rounded-md border border-sky-500/35 bg-sky-500/12 text-sky-200 transition hover:border-sky-300/70 hover:bg-sky-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50`}
+                      >
+                        <Pencil className={iconSize} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openCloseModal(position.id);
+                        }}
+                        aria-label={`Close ${position.symbol} position`}
+                        title={`Close ${position.symbol}`}
+                        className={`inline-flex ${buttonSize} items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50`}
+                      >
+                        <Trash2 className={iconSize} aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                };
 
                 return (
                   <Fragment key={position.id}>
                     <div
-                      className={`grid cursor-pointer grid-cols-[155px_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 transition-colors md:grid-cols-[170px_minmax(280px,1fr)_150px_58px] ${
-                        rowActive || rowHovered
-                          ? "bg-indigo-500/12"
-                          : `${heat.rowTint} hover:bg-gray-900/40`
+                      className={`relative grid cursor-pointer grid-cols-[155px_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 transition-colors ${positionGridColumns} ${
+                        rowActive
+                          ? "bg-sky-500/12 shadow-[inset_3px_0_0_rgba(125,211,252,0.9)] ring-1 ring-inset ring-sky-400/25"
+                          : rowHovered
+                            ? "bg-indigo-500/12"
+                            : `${heat.rowTint} hover:bg-gray-900/40`
                       }`}
                       onClick={() => {
                         setSelectedId(position.id);
@@ -2092,12 +2331,13 @@ export default function SecretOptions() {
                         lane={lane}
                       />
 
-                      <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-[11px] md:grid">
+                      <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-[11px] tabular-nums md:grid">
                         <div
                           className={`font-semibold ${
                             (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
                           }`}
                         >
+                          <div className="text-[9px] font-medium uppercase tracking-wide text-gray-500">P/L</div>
                           <div>
                             {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
                               ? formatCurrency(metrics.pnl.dollar, 0)
@@ -2108,54 +2348,36 @@ export default function SecretOptions() {
                           </div>
                         </div>
                         <div className="text-gray-300">
+                          <div className="text-[9px] uppercase tracking-wide text-gray-500">Greeks</div>
                           <div>Δ {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}</div>
                           <div className="text-gray-500">θ {metrics.greeks ? metrics.greeks.theta.toFixed(2) : "—"}</div>
                         </div>
                       </div>
 
-                      <div className="hidden items-center justify-end gap-1 md:flex">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditModal(position);
-                          }}
-                          className="rounded bg-sky-700 px-1.5 py-1 text-[10px] font-semibold text-white hover:bg-sky-600"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openCloseModal(position.id);
-                          }}
-                          className="rounded bg-rose-700 px-1.5 py-1 text-[10px] font-semibold text-white hover:bg-rose-600"
-                        >
-                          -
-                        </button>
-                      </div>
+                      {showRowActions ? (
+                        <div className="hidden items-center justify-end md:flex">
+                          {renderPositionActions("row")}
+                        </div>
+                      ) : null}
                     </div>
 
                     {isExpanded ? (
                       <div className="border-t border-gray-800 bg-gray-950/35 px-3 py-2">
-                        <div className="mb-2 flex gap-2 md:hidden">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditModal(position);
-                            }}
-                            className="rounded bg-sky-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-sky-600"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openCloseModal(position.id);
-                            }}
-                            className="rounded bg-rose-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-600"
-                          >
-                            Close
-                          </button>
+                        <div className={`mb-2 flex justify-end ${showRowActions ? "md:hidden" : ""}`}>
+                          {renderPositionActions("expanded")}
+                        </div>
+                        <div
+                          className={`mb-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
+                            lane?.urgency === "overdue"
+                              ? "border-rose-500/35 bg-rose-500/10 text-rose-100"
+                              : lane?.urgency === "due"
+                                ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
+                                : lane?.urgency === "watch"
+                                  ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-100"
+                                  : "border-gray-700/70 bg-gray-900/45 text-gray-300"
+                          }`}
+                        >
+                          {rowDiagnosis}
                         </div>
                         <div className="grid gap-2 text-[11px] text-gray-400 md:grid-cols-4">
                           <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
@@ -2225,7 +2447,11 @@ export default function SecretOptions() {
             <h2 className="text-sm font-semibold text-stealth-100">Selected Greeks</h2>
             {selected ? (
               <p className="mt-0.5 text-[11px] font-medium text-stealth-300">
-                {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
+                Selected: {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
+                {" · "}
+                {formatDate(selected.position.expiration)}
+                {" · "}
+                {selected.metrics.dte ?? "n/a"} DTE
               </p>
             ) : null}
           </div>
@@ -2240,6 +2466,22 @@ export default function SecretOptions() {
             )}
           </div>
         </div>
+
+        {selectedDiagnosis && (
+          <div
+            className={`mb-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
+              selectedTimelineLane?.urgency === "overdue"
+                ? "border-rose-500/35 bg-rose-500/10 text-rose-100"
+                : selectedTimelineLane?.urgency === "due"
+                  ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
+                  : selectedTimelineLane?.urgency === "watch"
+                    ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-100"
+                    : "border-gray-700/70 bg-gray-900/45 text-gray-300"
+            }`}
+          >
+            {selectedDiagnosis}
+          </div>
+        )}
 
         {selected && (
           <details className="mb-2 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1 text-[10px] text-gray-400">
@@ -2259,13 +2501,30 @@ export default function SecretOptions() {
           </details>
         )}
 
+        {selected && (
+          <div className="mb-2 flex flex-wrap gap-1.5 text-[10px] text-gray-300">
+            <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+              Quote {formatRelativeTime(selected.metrics.market.last_updated)}
+            </span>
+            <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+              Greeks {formatRelativeTime(greeksLoadedAt)}
+            </span>
+            <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+              Positions {formatRelativeTime(positionsLoadedAt)}
+            </span>
+            <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+              Source {formatDataSource(selected.metrics.quote?.data_source, selected.metrics.quote?.quote_source)}
+            </span>
+          </div>
+        )}
+
         <div className="mb-2">
           {loadingGreeks ? (
             <div className="text-sm text-gray-400">Loading Greeks...</div>
           ) : greeksData && greeksData.price_curve.length > 0 ? (
             <div className="grid grid-cols-1 gap-2">
               <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
-                <h3 className="mb-1 text-[11px] font-semibold">Delta</h3>
+                <h3 className="mb-1 text-[11px] font-semibold">Delta - directional exposure</h3>
                 <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.price_curve}>
@@ -2342,7 +2601,7 @@ export default function SecretOptions() {
               </div>
 
               <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
-                <h3 className="mb-1 text-[11px] font-semibold">Gamma</h3>
+                <h3 className="mb-1 text-[11px] font-semibold">Gamma - convexity</h3>
                 <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.price_curve}>
@@ -2419,7 +2678,7 @@ export default function SecretOptions() {
               </div>
 
               <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
-                <h3 className="mb-1 text-[11px] font-semibold">Theta</h3>
+                <h3 className="mb-1 text-[11px] font-semibold">Theta - daily decay</h3>
                 <div className="h-24" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={greeksData.theta_curve}>
@@ -2540,6 +2799,7 @@ export default function SecretOptions() {
 
         {selected && (
           <div className="mb-1 rounded-lg border border-gray-700/60 bg-gray-900/40 p-2.5">
+            <div className="mb-1.5 text-[9px] uppercase tracking-wide text-gray-500">Visualization targets</div>
             <div className="grid grid-cols-3 gap-1.5">
               <label className="min-w-0 text-[10px] text-amber-300">
                 Strike
@@ -2551,7 +2811,7 @@ export default function SecretOptions() {
                 />
               </label>
               <label className="min-w-0 text-[10px] text-emerald-300">
-                Profit
+                Profit Target
                 <input
                   type="number"
                   step="0.01"
@@ -2569,7 +2829,7 @@ export default function SecretOptions() {
                 />
               </label>
               <label className="min-w-0 text-[10px] text-rose-300">
-                Loss
+                Loss Threshold
                 <input
                   type="number"
                   step="0.01"
@@ -3261,20 +3521,24 @@ export default function SecretOptions() {
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-400">{pos.notes || "—"}</td>
                         <td className="px-3 py-2">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex justify-end gap-1.5">
                             <button
                               type="button"
                               onClick={() => openClosedEditModal(pos)}
-                              className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:border-emerald-500 hover:text-emerald-200"
+                              aria-label={`Edit closed ${pos.symbol} trade`}
+                              title={`Edit ${pos.symbol}`}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-500/35 bg-sky-500/12 text-sky-200 transition hover:border-sky-300/70 hover:bg-sky-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50"
                             >
-                              Edit
+                              <Pencil className="h-4 w-4" aria-hidden="true" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteClosedPosition(pos)}
-                              className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:border-rose-500 hover:text-rose-200"
+                              aria-label={`Delete closed ${pos.symbol} trade`}
+                              title={`Delete ${pos.symbol}`}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50"
                             >
-                              Delete
+                              <Trash2 className="h-4 w-4" aria-hidden="true" />
                             </button>
                           </div>
                         </td>
