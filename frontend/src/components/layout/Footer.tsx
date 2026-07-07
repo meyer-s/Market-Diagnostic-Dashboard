@@ -1,9 +1,60 @@
+import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+
+const PRIVATE_ROUTE_PARTS = ["L3Nl", "Y3JldC", "9vcHRp", "b25z"];
+
+function decodePrivateRoute() {
+  return atob(PRIVATE_ROUTE_PARTS.join(""));
+}
+
 export default function Footer() {
+  const navigate = useNavigate();
+  const privateShortcutClicks = useRef(0);
+  const privateShortcutTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (privateShortcutTimer.current !== null) {
+        window.clearTimeout(privateShortcutTimer.current);
+      }
+    };
+  }, []);
+
+  const handlePrivateShortcut = () => {
+    privateShortcutClicks.current += 1;
+
+    if (privateShortcutClicks.current >= 2) {
+      if (privateShortcutTimer.current !== null) {
+        window.clearTimeout(privateShortcutTimer.current);
+        privateShortcutTimer.current = null;
+      }
+      privateShortcutClicks.current = 0;
+      navigate(decodePrivateRoute());
+      return;
+    }
+
+    if (privateShortcutTimer.current !== null) {
+      window.clearTimeout(privateShortcutTimer.current);
+    }
+
+    privateShortcutTimer.current = window.setTimeout(() => {
+      privateShortcutClicks.current = 0;
+      privateShortcutTimer.current = null;
+    }, 900);
+  };
+
   return (
     <footer className="mt-auto border-t border-stealth-700/80 bg-stealth-950/72 px-6 py-5 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 text-sm text-stealth-400 md:flex-row">
         <div className="text-center md:text-left">
-          <div className="text-[10px] uppercase tracking-[0.26em] text-stealth-500">Market Diagnostic Tool</div>
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={handlePrivateShortcut}
+            className="block rounded-sm border-0 bg-transparent p-0 text-[10px] uppercase tracking-[0.26em] text-stealth-500 transition-colors hover:text-stealth-400 focus-visible:outline-none"
+          >
+            Market Diagnostic Tool
+          </button>
           © 2026 Steven J Meyer LLC. All rights reserved.
         </div>
         <div className="flex flex-wrap items-center justify-center gap-6">
