@@ -2049,7 +2049,7 @@ export default function SecretOptions() {
   };
 
   const filterChipClass = (filter: PositionFilter, classes: string) =>
-    `rounded-full border px-2 py-0.5 transition ${classes} ${
+    `inline-flex h-6 items-center rounded-md border px-2 text-[10px] font-medium transition ${classes} ${
       positionFilter === filter ? "ring-1 ring-white/45 shadow-[0_0_14px_rgba(125,211,252,0.16)]" : "hover:border-white/35"
     }`;
 
@@ -2091,98 +2091,113 @@ export default function SecretOptions() {
                 Open {totals.count}
               </span>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-              <button
-                type="button"
-                onClick={() => toggleFilter("matched")}
-                aria-pressed={positionFilter === "matched"}
-                title="Matched = open positions with a model or historical evaluation window."
-                className={filterChipClass("matched", "border-indigo-500/35 bg-indigo-500/10 text-indigo-200")}
-              >
-                Matched: {evaluationSummary.matched}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleFilter("watch")}
-                aria-pressed={positionFilter === "watch"}
-                title="Watch = model evaluation gate is within five days."
-                className={filterChipClass("watch", "border-yellow-500/35 bg-yellow-500/10 text-yellow-200")}
-              >
-                Watch (&lt;=5d): {evaluationSummary.watch}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleFilter("due")}
-                aria-pressed={positionFilter === "due"}
-                title="Due = the modeled evaluation gate is today."
-                className={filterChipClass("due", "border-amber-500/35 bg-amber-500/10 text-amber-200")}
-              >
-                Due: {evaluationSummary.due}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleFilter("overdue")}
-                aria-pressed={positionFilter === "overdue"}
-                title="Overdue = current time is past the modeled evaluation gate."
-                className={filterChipClass("overdue", "border-rose-500/35 bg-rose-500/10 text-rose-200")}
-              >
-                Overdue: {evaluationSummary.overdue}
-              </button>
-              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-0.5 text-stealth-300">
-                Cost {formatCurrency(totals.totalCost)}
-              </span>
-              <button
-                type="button"
-                onClick={() => toggleFilter("losing")}
-                aria-pressed={positionFilter === "losing"}
-                title="Filter to open positions with negative live P/L."
-                className={filterChipClass(
-                  "losing",
-                  totals.totalPnl >= 0
-                    ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-200"
-                    : "border-rose-500/35 bg-rose-500/10 text-rose-200"
-                )}
-              >
-                P&L {formatCurrency(totals.totalPnl)}
-                {totals.percent !== null ? ` (${formatSigned(totals.percent, 1)}%)` : ""}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleFilter("matched")}
-                aria-pressed={positionFilter === "matched"}
-                title="Linked = positions matched to scanner/model templates. Confidence is the reliability of the match."
-                className={filterChipClass("matched", "border-stealth-700 bg-stealth-900/70 text-stealth-300")}
-              >
-                Linked {openAttribution.linked}/{openAttribution.total}
-                {" / "}
-                {formatPercent(openAttribution.coverage, 1)}
-                {openAttribution.avgLinkConfidence !== null
-                  ? ` / ${formatPercent(openAttribution.avgLinkConfidence * 100, 0)} conf`
-                  : ""}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleFilter("lowConfidence")}
-                aria-pressed={positionFilter === "lowConfidence"}
-                title="Low confidence = unlinked positions or source matches below 60% confidence."
-                className={filterChipClass("lowConfidence", "border-stealth-700 bg-stealth-900/70 text-stealth-300")}
-              >
-                Low conf: {filterCounts.lowConfidence}
-              </button>
-              <span
-                title="Quality = historical win rate and average result for linked closed trades."
-                className={`rounded-full border px-2 py-0.5 ${
-                  closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
-                    ? "border-rose-500/35 bg-rose-500/10 text-rose-200"
-                    : "border-emerald-500/35 bg-emerald-500/10 text-emerald-200"
-                }`}
-              >
-                Quality {closedAttribution.linked > 0 ? `${formatPercent(closedAttribution.linkedWinRate, 1)} win` : "n/a"}
-                {closedAttribution.linked > 0 && closedAttribution.linkedAvgPercent !== null
-                  ? ` / ${formatSigned(closedAttribution.linkedAvgPercent, 1)}% avg`
-                  : ""}
-              </span>
-            </div>
+            {positions.length > 0 ? (
+              <div className="mt-2 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(evaluationSummary.matched > 0 || positionFilter === "matched") ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleFilter("matched")}
+                      aria-pressed={positionFilter === "matched"}
+                      title="Matched = open positions with a model or historical evaluation window."
+                      className={filterChipClass("matched", "border-indigo-500/35 bg-indigo-500/10 text-indigo-200")}
+                    >
+                      Matched {evaluationSummary.matched}
+                    </button>
+                  ) : null}
+                  {(evaluationSummary.watch > 0 || positionFilter === "watch") ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleFilter("watch")}
+                      aria-pressed={positionFilter === "watch"}
+                      title="Watch = model evaluation gate is within five days."
+                      className={filterChipClass("watch", "border-yellow-500/35 bg-yellow-500/10 text-yellow-200")}
+                    >
+                      Watch {evaluationSummary.watch}
+                    </button>
+                  ) : null}
+                  {(evaluationSummary.due > 0 || positionFilter === "due") ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleFilter("due")}
+                      aria-pressed={positionFilter === "due"}
+                      title="Due = the modeled evaluation gate is today."
+                      className={filterChipClass("due", "border-amber-500/35 bg-amber-500/10 text-amber-200")}
+                    >
+                      Due {evaluationSummary.due}
+                    </button>
+                  ) : null}
+                  {(evaluationSummary.overdue > 0 || positionFilter === "overdue") ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleFilter("overdue")}
+                      aria-pressed={positionFilter === "overdue"}
+                      title="Overdue = current time is past the modeled evaluation gate."
+                      className={filterChipClass("overdue", "border-rose-500/35 bg-rose-500/10 text-rose-200")}
+                    >
+                      Overdue {evaluationSummary.overdue}
+                    </button>
+                  ) : null}
+                  {(filterCounts.losing > 0 || positionFilter === "losing") ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleFilter("losing")}
+                      aria-pressed={positionFilter === "losing"}
+                      title="Filter to open positions with negative live P/L."
+                      className={filterChipClass("losing", "border-rose-500/35 bg-rose-500/10 text-rose-200")}
+                    >
+                      Losing {filterCounts.losing}
+                    </button>
+                  ) : null}
+                  {(filterCounts.lowConfidence > 0 || positionFilter === "lowConfidence") ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleFilter("lowConfidence")}
+                      aria-pressed={positionFilter === "lowConfidence"}
+                      title="Low confidence = unlinked positions or source matches below 60% confidence."
+                      className={filterChipClass("lowConfidence", "border-stealth-700 bg-stealth-900/70 text-stealth-300")}
+                    >
+                      Low conf {filterCounts.lowConfidence}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-none text-stealth-400 tabular-nums">
+                  <span title="Total premium paid for open positions.">
+                    Cost <span className="text-stealth-200">{formatCurrency(totals.totalCost, 0)}</span>
+                  </span>
+                  <span title="Live total open-position P/L.">
+                    P/L{" "}
+                    <span className={totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                      {formatCurrency(totals.totalPnl, 0)}
+                      {totals.percent !== null ? ` ${formatSigned(totals.percent, 1)}%` : ""}
+                    </span>
+                  </span>
+                  <span title="Linked = positions matched to scanner/model templates. Confidence is the reliability of the match.">
+                    Linked{" "}
+                    <span className="text-stealth-200">
+                      {openAttribution.linked}/{openAttribution.total} · {formatPercent(openAttribution.coverage, 0)}
+                    </span>
+                  </span>
+                  {closedAttribution.linked > 0 ? (
+                    <span title="Quality = historical win rate and average result for linked closed trades.">
+                      Q{" "}
+                      <span
+                        className={
+                          closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
+                            ? "text-rose-300"
+                            : "text-emerald-300"
+                        }
+                      >
+                        {formatPercent(closedAttribution.linkedWinRate, 0)}
+                        {closedAttribution.linkedAvgPercent !== null
+                          ? ` / ${formatSigned(closedAttribution.linkedAvgPercent, 1)}%`
+                          : ""}
+                      </span>
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <button
