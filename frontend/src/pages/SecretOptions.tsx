@@ -433,22 +433,14 @@ function PositionTimelineCell({
   position,
   metrics,
   lane,
-  timelineHorizonDays,
 }: {
   position: OptionPosition;
   metrics: PositionMetrics;
   lane: TimelineLane | undefined;
-  timelineHorizonDays: number;
 }) {
   const progressPct = clampRange(lane?.progressPct ?? 0, 0, 100);
-  const laneWidthPct = lane ? Math.max(4, (lane.totalDays / timelineHorizonDays) * 100) : 100;
-  const elapsedWidthPct = lane ? Math.max(0, Math.min(laneWidthPct, laneWidthPct * (progressPct / 100))) : 0;
-  const decisionLeftPct = lane ? clampRange((lane.totalDays / timelineHorizonDays) * 100, 0, 100) : 100;
-  const attentionSpreadPct = lane ? Math.max(5, (lane.attentionSpreadDays / timelineHorizonDays) * 100) : 0;
-  const attentionLeftPct = clampRange(decisionLeftPct - attentionSpreadPct / 2, 0, 100);
-  const attentionWidthPct = Math.min(100 - attentionLeftPct, attentionSpreadPct);
   const remainingDays = lane?.remainingDays ?? metrics.dte ?? null;
-  const overdueWidthPct = lane && lane.remainingDays < 0 ? clampRange((Math.abs(lane.remainingDays) / timelineHorizonDays) * 100, 3, 20) : 0;
+  const overdueDays = Math.max(0, lane?.remainingDays !== undefined ? -lane.remainingDays : 0);
   const sourceConfidence = clampRange(position.source_match_confidence ?? (lane?.matched ? 0.65 : 0.15), 0, 1);
   const sourceConfidencePct = sourceConfidence * 100;
   const pressurePct = clampRange((lane?.attentionStrength ?? 0.2) * 100, 0, 100);
@@ -458,7 +450,7 @@ function PositionTimelineCell({
   const label = lane?.label ?? "No window";
   const detail = lane?.detail ?? "Portfolio DTE progression";
   const statusLabel = isLowConfidence && urgency === "calm" ? "monitor" : label;
-  const urgencyTextClass = getUrgencyTextClass(urgency);
+  const urgencyTextClass = isLowConfidence && urgency === "calm" ? "text-gray-400" : getUrgencyTextClass(urgency);
   const urgencyBorderClass = getUrgencyBorderClass(urgency);
   const dteLabel = metrics.dte !== null && metrics.dte !== undefined ? `${metrics.dte} DTE` : "DTE n/a";
   const metaLabel = `${formatDate(position.expiration)} / ${dteLabel}`;
@@ -467,13 +459,19 @@ function PositionTimelineCell({
   const railTrackClass = isLowConfidence ? "bg-gray-700/35" : "bg-gray-700/65";
   const elapsedFillClass = isLowConfidence ? "bg-emerald-300/45" : "bg-emerald-300";
   const gateClass = urgency === "overdue" ? "bg-rose-400" : urgency === "due" ? "bg-amber-300" : "bg-emerald-300";
+  const overdueTailPct = urgency === "overdue" ? clampRange((overdueDays / Math.max(lane?.totalDays ?? 14, 1)) * 100, 8, 18) : 0;
+  const gateLeftPct = urgency === "overdue" ? 100 - overdueTailPct : 100;
+  const elapsedDisplayPct = urgency === "overdue" ? gateLeftPct : Math.min(progressPct, gateLeftPct);
+  const pressureWidthPct =
+    urgency === "due" ? 24 : urgency === "overdue" ? 18 : urgency === "watch" ? 18 : pressurePct >= 55 ? 14 : 0;
+  const pressureLeftPct = clampRange(gateLeftPct - pressureWidthPct, 0, 100);
   const pressureBandClass =
     urgency === "due"
       ? "border-amber-200/35 bg-amber-300/20"
       : urgency === "overdue"
         ? "border-rose-200/35 bg-rose-400/15"
         : "border-cyan-200/30 bg-cyan-300/12";
-  const showPressureBand = urgency !== "calm" || pressurePct >= 55;
+  const showPressureBand = pressureWidthPct > 0;
 
   return (
     <div className="min-w-0" aria-label={accessibleSummary}>
@@ -482,24 +480,19 @@ function PositionTimelineCell({
         <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{statusLabel}</span>
       </div>
       <div
-        className={isLowConfidence ? "grid grid-cols-[30px_minmax(0,1fr)] items-center gap-1.5" : "grid grid-cols-1"}
+        className={isLowConfidence ? "grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5" : "grid grid-cols-1"}
       >
         {isLowConfidence ? (
           <div
-            className="flex items-center gap-0.5"
+            className="grid gap-0.5 justify-self-center"
             title={`Source confidence ${Math.round(sourceConfidencePct)}%`}
           >
-            <span className="rounded border border-indigo-400/35 bg-indigo-400/10 px-1 text-[9px] font-semibold text-indigo-200">
-              C
-            </span>
-            <span className="grid gap-0.5">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <span
-                  key={index}
-                  className={`h-1 w-1 rounded-full ${index < filledConfidencePips ? "bg-indigo-300" : "bg-gray-700"}`}
-                />
-              ))}
-            </span>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <span
+                key={index}
+                className={`h-1 w-1 rounded-full ${index < filledConfidencePips ? "bg-indigo-300" : "bg-gray-700"}`}
+              />
+            ))}
           </div>
         ) : null}
         <div
@@ -508,23 +501,23 @@ function PositionTimelineCell({
           }`}
           title="Rail = expected hold window, emerald fill = elapsed time, band = pressure zone, gate = decision point, red tail = overdue time"
         >
-          <div className={`absolute inset-y-1 left-0 rounded-sm ${railTrackClass}`} style={{ width: `${laneWidthPct}%` }} />
-          <div className={`absolute inset-y-1 left-0 rounded-sm ${elapsedFillClass}`} style={{ width: `${elapsedWidthPct}%` }} />
+          <div className={`absolute inset-y-1 left-0 rounded-sm ${railTrackClass}`} style={{ width: `${gateLeftPct}%` }} />
+          <div className={`absolute inset-y-1 left-0 rounded-sm ${elapsedFillClass}`} style={{ width: `${elapsedDisplayPct}%` }} />
           {showPressureBand ? (
             <div
               className={`absolute inset-y-0 border-x ${pressureBandClass}`}
-              style={{ left: `${attentionLeftPct}%`, width: `${attentionWidthPct}%` }}
+              style={{ left: `${pressureLeftPct}%`, width: `${Math.min(100 - pressureLeftPct, pressureWidthPct)}%` }}
             />
           ) : null}
-          {overdueWidthPct > 0 ? (
+          {overdueTailPct > 0 ? (
             <div
               className="absolute inset-y-1 rounded-sm bg-rose-500/55"
-              style={{ left: `${decisionLeftPct}%`, width: `${overdueWidthPct}%` }}
+              style={{ left: `${gateLeftPct}%`, width: `${overdueTailPct}%` }}
               title="Overdue time beyond gate"
             />
           ) : null}
           <div className="absolute inset-y-0 left-0 w-px bg-white/50" title="Today" />
-          <div className="absolute inset-y-0 flex items-center" style={{ left: `${decisionLeftPct}%` }}>
+          <div className="absolute inset-y-0 flex items-center" style={{ left: `${gateLeftPct}%` }}>
             <span className={`h-4 w-1 -translate-x-1/2 rounded-full ${gateClass}`} title="Evaluation gate" />
           </div>
         </div>
@@ -1613,12 +1606,6 @@ export default function SecretOptions() {
     });
   }, [sortedPositions, evaluationByPositionId]);
 
-  const timelineHorizonDays = useMemo(() => {
-    if (!timelineLanes.length) return 30;
-    const maxDays = Math.max(...timelineLanes.map((lane) => lane.totalDays));
-    return Math.max(10, maxDays);
-  }, [timelineLanes]);
-
   const timelineLaneByPositionId = useMemo(() => {
     const lanes = new Map<number, TimelineLane>();
     timelineLanes.forEach((lane) => {
@@ -2016,7 +2003,6 @@ export default function SecretOptions() {
                         position={position}
                         metrics={metrics}
                         lane={lane}
-                        timelineHorizonDays={timelineHorizonDays}
                       />
 
                       <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-[11px] md:grid">
