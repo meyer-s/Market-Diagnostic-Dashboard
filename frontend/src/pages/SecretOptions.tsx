@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -483,7 +483,7 @@ const buildPositionDiagnosis = (
   return `${symbol} remains monitor status. No immediate model action; keep an eye on ${pnlText} and ${dteText}.`;
 };
 
-function PositionTimelineCell({
+const PositionTimelineCell = memo(function PositionTimelineCell({
   position,
   metrics,
   lane,
@@ -620,7 +620,7 @@ function PositionTimelineCell({
       </div>
     </div>
   );
-}
+});
 
 function TimelinePressureStack({
   position,
@@ -656,6 +656,50 @@ function TimelinePressureStack({
       <div className="h-1.5 rounded-full bg-gray-800" title="Source confidence">
         <div className="h-full rounded-full bg-indigo-300" style={{ width: `${sourceConfidence * 100}%` }} />
       </div>
+    </div>
+  );
+}
+
+function PositionActionButtons({
+  position,
+  mode,
+  onEdit,
+  onClose,
+}: {
+  position: OptionPosition;
+  mode: "row" | "expanded";
+  onEdit: (position: OptionPosition) => void;
+  onClose: (positionId: number) => void;
+}) {
+  const buttonSize = mode === "row" ? "h-7 w-7" : "h-8 w-8";
+  const iconSize = mode === "row" ? "h-3.5 w-3.5" : "h-4 w-4";
+
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit(position);
+        }}
+        aria-label={`Edit ${position.symbol} position`}
+        title={`Edit ${position.symbol}`}
+        className={`inline-flex ${buttonSize} items-center justify-center rounded-md border border-sky-500/35 bg-sky-500/12 text-sky-200 transition hover:border-sky-300/70 hover:bg-sky-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50`}
+      >
+        <Pencil className={iconSize} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose(position.id);
+        }}
+        aria-label={`Close ${position.symbol} position`}
+        title={`Close ${position.symbol}`}
+        className={`inline-flex ${buttonSize} items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50`}
+      >
+        <Trash2 className={iconSize} aria-hidden="true" />
+      </button>
     </div>
   );
 }
@@ -1063,7 +1107,6 @@ export default function SecretOptions() {
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
   const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
-  const [hoveredPositionId, setHoveredPositionId] = useState<number | null>(null);
   const [showRowActions, setShowRowActions] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
@@ -1793,6 +1836,18 @@ export default function SecretOptions() {
     });
   }, [sortedPositions, positionFilter, timelineLaneByPositionId, evaluationByPositionId]);
 
+  useEffect(() => {
+    if (loading || filteredPositions.length === 0) {
+      return;
+    }
+    const selectedIsVisible = filteredPositions.some(({ position }) => position.id === selectedId);
+    if (!selectedIsVisible) {
+      const nextPositionId = filteredPositions[0].position.id;
+      setSelectedId(nextPositionId);
+      setExpandedPositionId(nextPositionId);
+    }
+  }, [filteredPositions, loading, selectedId]);
+
   const totals = useMemo(() => {
     let totalCost = 0;
     let totalPnl = 0;
@@ -2256,42 +2311,8 @@ export default function SecretOptions() {
                   metrics.market?.quote_source
                 );
                 const rowActive = position.id === selectedId;
-                const rowHovered = position.id === hoveredPositionId;
                 const isExpanded = expandedPositionId === position.id;
                 const rowDiagnosis = buildPositionDiagnosis(position, metrics, lane);
-                const renderPositionActions = (mode: "row" | "expanded") => {
-                  const buttonSize = mode === "row" ? "h-7 w-7" : "h-8 w-8";
-                  const iconSize = mode === "row" ? "h-3.5 w-3.5" : "h-4 w-4";
-
-                  return (
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditModal(position);
-                        }}
-                        aria-label={`Edit ${position.symbol} position`}
-                        title={`Edit ${position.symbol}`}
-                        className={`inline-flex ${buttonSize} items-center justify-center rounded-md border border-sky-500/35 bg-sky-500/12 text-sky-200 transition hover:border-sky-300/70 hover:bg-sky-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50`}
-                      >
-                        <Pencil className={iconSize} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openCloseModal(position.id);
-                        }}
-                        aria-label={`Close ${position.symbol} position`}
-                        title={`Close ${position.symbol}`}
-                        className={`inline-flex ${buttonSize} items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50`}
-                      >
-                        <Trash2 className={iconSize} aria-hidden="true" />
-                      </button>
-                    </div>
-                  );
-                };
 
                 return (
                   <Fragment key={position.id}>
@@ -2299,16 +2320,12 @@ export default function SecretOptions() {
                       className={`relative grid cursor-pointer grid-cols-[155px_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 transition-colors ${positionGridColumns} ${
                         rowActive
                           ? "bg-sky-500/12 shadow-[inset_3px_0_0_rgba(125,211,252,0.9)] ring-1 ring-inset ring-sky-400/25"
-                          : rowHovered
-                            ? "bg-indigo-500/12"
-                            : `${heat.rowTint} hover:bg-gray-900/40`
+                          : `${heat.rowTint} hover:bg-gray-900/40`
                       }`}
                       onClick={() => {
                         setSelectedId(position.id);
                         setExpandedPositionId((current) => (current === position.id ? null : position.id));
                       }}
-                      onMouseEnter={() => setHoveredPositionId(position.id)}
-                      onMouseLeave={() => setHoveredPositionId(null)}
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -2356,7 +2373,12 @@ export default function SecretOptions() {
 
                       {showRowActions ? (
                         <div className="hidden items-center justify-end md:flex">
-                          {renderPositionActions("row")}
+                          <PositionActionButtons
+                            position={position}
+                            mode="row"
+                            onEdit={openEditModal}
+                            onClose={openCloseModal}
+                          />
                         </div>
                       ) : null}
                     </div>
@@ -2364,7 +2386,12 @@ export default function SecretOptions() {
                     {isExpanded ? (
                       <div className="border-t border-gray-800 bg-gray-950/35 px-3 py-2">
                         <div className={`mb-2 flex justify-end ${showRowActions ? "md:hidden" : ""}`}>
-                          {renderPositionActions("expanded")}
+                          <PositionActionButtons
+                            position={position}
+                            mode="expanded"
+                            onEdit={openEditModal}
+                            onClose={openCloseModal}
+                          />
                         </div>
                         <div
                           className={`mb-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
@@ -2526,7 +2553,13 @@ export default function SecretOptions() {
               <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
                 <h3 className="mb-1 text-[11px] font-semibold">Delta - directional exposure</h3>
                 <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer
+                    width="100%"
+                    height="100%"
+                    minWidth={1}
+                    minHeight={1}
+                    initialDimension={{ width: 360, height: 112 }}
+                  >
                     <LineChart data={greeksData.price_curve}>
                       <XAxis
                         dataKey="price"
@@ -2603,7 +2636,13 @@ export default function SecretOptions() {
               <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
                 <h3 className="mb-1 text-[11px] font-semibold">Gamma - convexity</h3>
                 <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer
+                    width="100%"
+                    height="100%"
+                    minWidth={1}
+                    minHeight={1}
+                    initialDimension={{ width: 360, height: 112 }}
+                  >
                     <LineChart data={greeksData.price_curve}>
                       <XAxis
                         dataKey="price"
@@ -2680,7 +2719,13 @@ export default function SecretOptions() {
               <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
                 <h3 className="mb-1 text-[11px] font-semibold">Theta - daily decay</h3>
                 <div className="h-24" style={{ minWidth: 0, minHeight: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer
+                    width="100%"
+                    height="100%"
+                    minWidth={1}
+                    minHeight={1}
+                    initialDimension={{ width: 360, height: 96 }}
+                  >
                     <LineChart data={greeksData.theta_curve}>
                       <XAxis
                         dataKey="days"
