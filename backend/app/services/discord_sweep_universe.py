@@ -23,13 +23,19 @@ SP500_IVV_URL = (
     "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/"
     "1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund"
 )
+SP500_IVV_PRODUCT_ID = "239726"
 R2K_IWM_URL = (
     "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
     "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund"
 )
+R2K_IWM_PRODUCT_ID = "239710"
 R2K_WIKIPEDIA_URL = "https://en.wikipedia.org/wiki/Russell_2000_Index"
 SP600_WIKIPEDIA_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_600_companies"
 
+ISHARES_PRODUCT_DATA_URL = (
+    "https://www.blackrock.com/varnish-api/blk-one01-product-data/"
+    "product-data/api/v2/get-product-data"
+)
 CBOE_INTRADAY_OPTIONS_VOLUME_URL = (
     "https://www.cboe.com/us/options/market_statistics/intraday_contract_volume/"
 )
@@ -117,12 +123,29 @@ FINVIZ_HEADERS = {
     "User-Agent": "Mozilla/5.0",
 }
 
+ISHARES_PRODUCT_DATA_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; MarketDashboardDiscordSweep/1.0)",
+    "Accept": "application/json",
+    "Referer": "https://www.ishares.com/us/products/",
+}
+
+ISHARES_LISTED_EQUITY_EXCHANGES = {
+    "NASDAQ",
+    "NYSE",
+    "NYSE ARCA",
+    "NYSE MKT LLC",
+    "NYSE MKT",
+    "NYSE AMERICAN",
+    "NYSE AMERICAN LLC",
+}
+
 EQUITY_SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9]{0,4}(?:-[A-Z])?$")
 
 _CACHE: Dict[str, Tuple[datetime, List[str], List[str]]] = {}
 _STATIC_TTL = timedelta(hours=6)
 _DYNAMIC_TTL = timedelta(minutes=30)
 _ALL_OPTIONABLE_MIN_EXPECTED = 1200
+_RUSSELL2000_MIN_EXPECTED = 1200
 
 
 @dataclass
@@ -206,6 +229,11 @@ def _build_sp500() -> Tuple[List[str], List[str]]:
     preset = _symbols_from_preset("sp500")
     if preset:
         return preset, ["Loaded from local ticker preset: sp500."]
+
+    fallback = _fetch_ishares_product_data_tickers(SP500_IVV_PRODUCT_ID)
+    if fallback:
+        return fallback, ["Loaded from iShares IVV product-data holdings."]
+
     fallback = _fetch_ishares_tickers(SP500_IVV_URL)
     notes = ["Loaded from iShares IVV holdings CSV."] if fallback else ["Failed to load S&P 500 symbols."]
     return fallback, notes
@@ -223,9 +251,25 @@ def _build_russell2000() -> Tuple[List[str], List[str]]:
     if preset:
         return preset, ["Loaded from local ticker preset: russell2000."]
 
-    symbols = _fetch_ishares_tickers(R2K_IWM_URL)
+    notes: List[str] = []
+
+    symbols = _fetch_ishares_product_data_tickers(R2K_IWM_PRODUCT_ID)
+    if len(symbols) >= _RUSSELL2000_MIN_EXPECTED:
+        return symbols, ["Loaded from iShares IWM product-data holdings."]
     if symbols:
+        notes.append(
+            f"iShares IWM product-data holdings returned only {len(symbols)} symbols; "
+            f"expected at least {_RUSSELL2000_MIN_EXPECTED}."
+        )
+
+    symbols = _fetch_ishares_tickers(R2K_IWM_URL)
+    if len(symbols) >= _RUSSELL2000_MIN_EXPECTED:
         return symbols, ["Loaded from iShares IWM holdings CSV."]
+    if symbols:
+        notes.append(
+            f"iShares IWM holdings CSV returned only {len(symbols)} symbols; "
+            f"expected at least {_RUSSELL2000_MIN_EXPECTED}."
+        )
 
     wiki_symbols = _fetch_wikipedia_constituent_symbols(R2K_WIKIPEDIA_URL, min_expected=1200)
     if wiki_symbols:
@@ -247,11 +291,12 @@ def _build_russell2000() -> Tuple[List[str], List[str]]:
     proxy_symbols = _fetch_wikipedia_constituent_symbols(SP600_WIKIPEDIA_URL, min_expected=450)
     if proxy_symbols:
         return proxy_symbols, [
+            *notes,
             "Loaded S&P 600 proxy universe (small-cap fallback).",
             "Primary Russell 2000 sources were unavailable.",
         ]
 
-    return [], ["Failed to load Russell 2000 symbols."]
+    return [], notes + ["Failed to load Russell 2000 symbols."]
 
 
 def _build_sector_etfs() -> Tuple[List[str], List[str]]:
@@ -501,7 +546,12 @@ def _fetch_ishares_tickers(url: str) -> List[str]:
         logger.warning("Failed to fetch iShares holdings from %s: %s", url, exc)
         return []
 
-    lines = response.text.splitlines()
+    text = response.text or ""
+    if text.lstrip().lower().startswith(("<!doctype html", "<html")):
+        logger.warning("iShares holdings URL returned HTML instead of CSV: %s", url)
+        return []
+
+    lines = text.splitlines()
     header_idx = None
     for idx, line in enumerate(lines):
         if line.startswith("Ticker,"):
@@ -516,6 +566,80 @@ def _fetch_ishares_tickers(url: str) -> List[str]:
         return []
 
     return _unique_symbols(str(value) for value in tickers.dropna().astype(str).tolist())
+
+
+def _fetch_ishares_product_data_tickers(product_id: str) -> List[str]:
+    params = {
+        "appSubType": "ISHARES",
+        "appType": "PRODUCT_PAGE",
+        "component": "holdings",
+        "locale": "en_US",
+        "portfolioId": product_id,
+        "targetSite": "us-ishares",
+        "userType": "individual",
+        "excludeContent": "true",
+        "includeConfig": "true",
+    }
+    try:
+        response = requests.get(
+            ISHARES_PRODUCT_DATA_URL,
+            params=params,
+            headers=ISHARES_PRODUCT_DATA_HEADERS,
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        logger.warning("Failed to fetch iShares product-data holdings for %s: %s", product_id, exc)
+        return []
+
+    return _extract_ishares_product_data_tickers(payload)
+
+
+def _extract_ishares_product_data_tickers(payload: dict) -> List[str]:
+    try:
+        holdings = payload["componentsByNameMap"]["holdings"]
+        container = holdings["containersByNameMap"]["all"]
+        data_points = container["dataPointsByNameMap"]
+    except (KeyError, TypeError):
+        return []
+
+    tickers = _data_point_values(data_points, "ticker")
+    if not tickers:
+        return []
+
+    asset_classes = _data_point_values(data_points, "assetClass")
+    exchanges = _data_point_values(data_points, "exchange")
+    if len(asset_classes) == len(tickers) and len(exchanges) == len(tickers):
+        listed_equities = [
+            ticker
+            for ticker, asset_class, exchange in zip(tickers, asset_classes, exchanges)
+            if _is_ishares_listed_equity(asset_class, exchange)
+        ]
+        if listed_equities:
+            return _unique_symbols(listed_equities)
+
+    return _unique_symbols(tickers)
+
+
+def _data_point_values(data_points: dict, key: str) -> List[object]:
+    point = data_points.get(key)
+    if not isinstance(point, dict):
+        return []
+    for field in ("value", "formattedValue"):
+        value = point.get(field)
+        if isinstance(value, list):
+            return value
+        if value not in (None, ""):
+            return [value]
+    return []
+
+
+def _is_ishares_listed_equity(asset_class: object, exchange: object) -> bool:
+    if str(asset_class or "").strip().lower() != "equity":
+        return False
+    exchange_name = str(exchange or "").strip().upper()
+    return exchange_name in ISHARES_LISTED_EQUITY_EXCHANGES
 
 
 def _fetch_wikipedia_constituent_symbols(url: str, min_expected: int) -> List[str]:

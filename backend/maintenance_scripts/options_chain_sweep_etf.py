@@ -1,48 +1,20 @@
 import argparse
-import io
 from typing import List, Optional
-
-import pandas as pd
-import requests
 
 from maintenance_scripts.options_chain_sweep import _scan_tickers
 from app.services.options_alerts import _send_webhook
-
-SP500_IVV_URL = (
-    "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/"
-    "1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund"
-)
-R2K_IWM_URL = (
-    "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
-    "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund"
-)
+from app.services.discord_sweep_universe import resolve_sweep_universe
 
 
-def _fetch_ishares_tickers(url: str) -> List[str]:
+def _resolve_tickers(selection: str) -> List[str]:
     try:
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
-    except Exception:
+        universe = resolve_sweep_universe(selection)
+    except Exception as exc:
+        print(f"Failed to resolve {selection} universe: {exc}")
         return []
-
-    lines = response.text.splitlines()
-    header_idx = None
-    for i, line in enumerate(lines):
-        if line.startswith("Ticker,"):
-            header_idx = i
-            break
-    if header_idx is None:
-        return []
-
-    frame = pd.read_csv(io.StringIO("\n".join(lines[header_idx:])))
-    tickers = frame.get("Ticker")
-    if tickers is None:
-        return []
-    return [
-        value.strip()
-        for value in tickers.dropna().astype(str).tolist()
-        if value.strip() and value.strip().upper() != "NAN"
-    ]
+    if universe.notes:
+        print(f"{universe.label} source: {' | '.join(universe.notes[:2])}")
+    return universe.tickers
 
 
 def _run_sweep(
@@ -75,7 +47,7 @@ def main() -> None:
             f"{'' if max_count is None else f', max {max_count}'}."
         )
         r2k_hits = _run_sweep(
-            _fetch_ishares_tickers(R2K_IWM_URL),
+            _resolve_tickers("RUSSELL2000"),
             "Russell 2000 (IWM)",
             args.threshold,
             max_count,
@@ -89,7 +61,7 @@ def main() -> None:
             f"{'' if max_count is None else f', max {max_count}'}."
         )
         hits = _run_sweep(
-            _fetch_ishares_tickers(SP500_IVV_URL),
+            _resolve_tickers("SP500"),
             "S&P 500 (IVV)",
             args.threshold,
             max_count,
@@ -102,7 +74,7 @@ def main() -> None:
         f"{'' if max_count is None else f', max {max_count}'}."
     )
     hits = _run_sweep(
-        _fetch_ishares_tickers(SP500_IVV_URL),
+        _resolve_tickers("SP500"),
         "S&P 500 (IVV)",
         args.threshold,
         max_count,
@@ -113,7 +85,7 @@ def main() -> None:
         return
 
     r2k_hits = _run_sweep(
-        _fetch_ishares_tickers(R2K_IWM_URL),
+        _resolve_tickers("RUSSELL2000"),
         "Russell 2000 (IWM)",
         args.threshold,
         max_count,
