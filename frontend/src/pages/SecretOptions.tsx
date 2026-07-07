@@ -42,6 +42,9 @@ interface OptionPosition {
   source_match_method: string | null;
   source_match_confidence: number | null;
   source_match_notes: string | null;
+  evaluation_hold_days: number | null;
+  evaluation_due_date: string | null;
+  evaluation_source: string | null;
 }
 
 interface PositionMetrics {
@@ -1694,22 +1697,31 @@ export default function SecretOptions() {
     positions.forEach(({ position }) => {
       const eventId = position.source_event_id;
       const directMatch = eventId ? trainingOutcomeByEventId.get(eventId) : null;
+      const linkedHoldDays =
+        typeof position.evaluation_hold_days === "number" &&
+        Number.isFinite(position.evaluation_hold_days) &&
+        position.evaluation_hold_days > 0
+          ? position.evaluation_hold_days
+          : null;
       const fallbackKey = `${position.symbol.trim().toUpperCase()}|${position.option_type.trim().toLowerCase()}`;
-      const matched = directMatch || trainingOutcomeBySymbolType.get(fallbackKey);
-      if (!matched) return;
+      const historicalMatch = trainingOutcomeBySymbolType.get(fallbackKey);
+      const holdDays = directMatch?.hold_days ?? linkedHoldDays ?? historicalMatch?.hold_days ?? null;
+      if (!holdDays) return;
 
       const anchorDate =
         toDate(position.source_triggered_at) ||
         toDate(position.trade_date);
       if (!anchorDate) return;
 
-      const insight = buildEvaluationInsight(matched.hold_days, anchorDate, now);
+      const insight = buildEvaluationInsight(holdDays, anchorDate, now);
       if (!insight) return;
       result[position.id] = {
         ...insight,
         detail: directMatch
-          ? `Linked horizon ${matched.hold_days}d`
-          : `Historical ${position.symbol.toUpperCase()} ${position.option_type.toUpperCase()} template • ${matched.hold_days}d`,
+          ? `Linked horizon ${directMatch.hold_days}d`
+          : linkedHoldDays
+            ? `Linked horizon ${linkedHoldDays}d`
+            : `Historical ${position.symbol.toUpperCase()} ${position.option_type.toUpperCase()} template • ${holdDays}d`,
       };
     });
 

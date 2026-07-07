@@ -60,7 +60,7 @@ def test_positions_endpoint_replaces_non_finite_metrics(monkeypatch: pytest.Monk
     monkeypatch.setattr(
         secret_options,
         "_serialize_position",
-        lambda _position: {
+        lambda _position, _evaluation_window=None: {
             "id": 1,
             "symbol": "TEST",
             "trade_date": "2026-06-17",
@@ -245,9 +245,13 @@ def test_create_scanner_attributed_position_schedules_sell_reminder(
     response = client.post("/secret/options/positions", json=_position_payload())
 
     assert response.status_code == 200
+    body = response.json()
+    assert body["position"]["evaluation_hold_days"] == 21
+    assert body["position"]["evaluation_due_date"] == "2026-06-22"
+    assert body["position"]["evaluation_source"] == "sell_reminder"
     with session_local() as db:
         reminder = db.query(OptionTradeReminder).one()
-        assert reminder.position_id == response.json()["position"]["id"]
+        assert reminder.position_id == body["position"]["id"]
         assert reminder.source_event_id == event.id
         assert reminder.symbol == "SYY"
         assert reminder.reminder_date == date(2026, 6, 22)

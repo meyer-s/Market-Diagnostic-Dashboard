@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.api.stock_projection import compute_historical_volatility
 from app.models.option_positions import OptionPosition
 from app.models.closed_positions import ClosedPosition
+from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
 from app.models.option_training_outcomes import OptionTrainingOutcome
 from app.services.market_data.factory import get_market_data_provider
@@ -1138,7 +1139,52 @@ def _compute_position_metrics(
     }
 
 
-def _serialize_position(position: OptionPosition) -> Dict[str, object]:
+def _position_evaluation_window(db: Any, position: OptionPosition) -> Dict[str, object]:
+    empty = {
+        "evaluation_hold_days": None,
+        "evaluation_due_date": None,
+        "evaluation_source": None,
+    }
+    source_event_id = getattr(position, "source_event_id", None)
+    if source_event_id is None:
+        return empty
+
+    position_id = getattr(position, "id", None)
+    reminder = None
+    if position_id is not None:
+        reminder = (
+            db.query(OptionTradeReminder)
+            .filter(OptionTradeReminder.position_id == position_id)
+            .first()
+        )
+    if reminder and reminder.hold_days:
+        return {
+            "evaluation_hold_days": reminder.hold_days,
+            "evaluation_due_date": reminder.reminder_date.isoformat() if reminder.reminder_date else None,
+            "evaluation_source": "sell_reminder",
+        }
+
+    event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == source_event_id).first()
+    if not event:
+        return empty
+
+    recipe = _extract_training_recipe(event.message)
+    hold_days = recipe.get("hold_days")
+    if not isinstance(hold_days, int) or hold_days <= 0:
+        return empty
+
+    anchor = event.triggered_at.date() if event.triggered_at else position.trade_date
+    return {
+        "evaluation_hold_days": hold_days,
+        "evaluation_due_date": (anchor + timedelta(days=hold_days)).isoformat(),
+        "evaluation_source": "scanner_event",
+    }
+
+
+def _serialize_position(
+    position: OptionPosition,
+    evaluation_window: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
     return {
         "id": position.id,
         "trade_date": position.trade_date.isoformat(),
@@ -1163,6 +1209,11 @@ def _serialize_position(position: OptionPosition) -> Dict[str, object]:
         "source_match_method": position.source_match_method,
         "source_match_confidence": position.source_match_confidence,
         "source_match_notes": position.source_match_notes,
+        **(evaluation_window or {
+            "evaluation_hold_days": None,
+            "evaluation_due_date": None,
+            "evaluation_source": None,
+        }),
     }
 
 
@@ -1420,7 +1471,7 @@ def get_positions():
                     metrics = _empty_position_metrics(str(perr))
                 payload.append(
                     {
-                        "position": _serialize_position(position),
+                        "position": _serialize_position(position, _position_evaluation_window(db, position)),
                         "metrics": metrics,
                     }
                 )
@@ -1490,7 +1541,7 @@ def create_position(payload: OptionPositionCreate):
         sync_trade_sell_reminder(db, position)
         db.commit()
         db.refresh(position)
-        return _json_safe({"position": _serialize_position(position)})
+        return _json_safe({"position": _serialize_position(position, _position_evaluation_window(db, position))})
 
 
 @router.put("/positions/{position_id}")
@@ -1554,7 +1605,7 @@ def update_position(position_id: int, payload: OptionPositionCreate):
 
         db.commit()
         db.refresh(position)
-        return _json_safe({"position": _serialize_position(position)})
+        return _json_safe({"position": _serialize_position(position, _position_evaluation_window(db, position))})
 
 
 @router.get("/greeks/{position_id}")
