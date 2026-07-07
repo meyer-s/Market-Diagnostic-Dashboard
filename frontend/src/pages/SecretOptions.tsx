@@ -498,7 +498,6 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   const pressurePct = clampRange((lane?.attentionStrength ?? 0.2) * 100, 0, 100);
   const urgency = lane?.urgency ?? deriveUrgencyFromDays(remainingDays ?? 999);
   const isLowConfidence = sourceConfidence < 0.6 || !lane?.matched;
-  const filledConfidencePips = Math.max(0, Math.min(3, Math.round(sourceConfidence * 3)));
   const label = lane?.label ?? "No window";
   const detail = lane?.detail ?? "Portfolio DTE progression";
   const statusLabel = isLowConfidence && urgency === "calm" ? "monitor" : label;
@@ -552,22 +551,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
         <span className="truncate text-gray-500">{metaLabel}</span>
         <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{statusLabel}</span>
       </div>
-      <div
-        className={isLowConfidence ? "grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5" : "grid grid-cols-1"}
-      >
-        {isLowConfidence ? (
-          <div
-            className="grid gap-0.5 justify-self-center"
-            title={`Source confidence ${Math.round(sourceConfidencePct)}%`}
-          >
-            {Array.from({ length: 3 }).map((_, index) => (
-              <span
-                key={index}
-                className={`h-1 w-1 rounded-full ${index < filledConfidencePips ? "bg-indigo-300/70" : "bg-gray-700/70"}`}
-              />
-            ))}
-          </div>
-        ) : null}
+      <div className="grid grid-cols-1">
         <div className="grid grid-cols-6 gap-1 sm:hidden" title="Mobile buckets: rail slices to expiration, muted model window, mint elapsed, thin today marker, thick evaluation gate">
           {bucketCells.map((cell) => (
             <div
@@ -2278,7 +2262,7 @@ export default function SecretOptions() {
                   className="inline-flex"
                   role="img"
                   aria-label="Timeline legend"
-                  title="Rail = time until expiration. Muted band = modeled hold window. Mint fill = elapsed model window. Thin tick = today. Thick tick = evaluation gate. Rose tail = past gate. Dots = source confidence."
+                  title="Rail = time until expiration. Muted band = modeled hold window. Mint fill = elapsed model window. Thin tick = today. Thick tick = evaluation gate. Rose tail = past gate."
                 >
                   <HelpCircle className="h-3.5 w-3.5 text-sky-300/80" aria-hidden="true" />
                 </span>
