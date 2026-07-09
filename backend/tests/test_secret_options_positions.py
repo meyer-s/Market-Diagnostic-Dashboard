@@ -317,6 +317,7 @@ def test_linked_position_volatility_signal_tracks_entry_to_current(
         {"current_price": 100.0},
         {"implied_volatility": 0.33},
         hv30=32.0,
+        include_chain_snapshot=True,
     )
 
     assert signal["entry"]["contract_iv"] == 25.0
@@ -327,6 +328,58 @@ def test_linked_position_volatility_signal_tracks_entry_to_current(
     assert signal["trend"]["iv_hv_spread_change"] == 6.0
     assert signal["trend"]["contract_iv_state"] == "expanding"
     assert signal["trend"]["value_state"] == "expanding"
+
+
+def test_volatility_signal_avoids_chain_scan_by_default(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _client, session_local = secret_options_client
+    with session_local() as db:
+        event = OptionAlertEvent(
+            symbol="SYY",
+            triggered_at=datetime(2026, 6, 1, 14, 30),
+            iv30=20.0,
+            hv30=30.0,
+            selected_option_type="call",
+            selected_expiry="2026-07-17",
+            selected_strike=80.0,
+            selected_premium=1.35,
+            selected_implied_volatility=0.25,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+        position = OptionPosition(
+            trade_date=date(2026, 6, 1),
+            contracts=2,
+            symbol="SYY",
+            expiration=date(2026, 7, 17),
+            strike=80.0,
+            option_type="call",
+            fill_price=1.35,
+            total_cost=270.0,
+            underlying_at_entry=78.5,
+            source_event_id=event.id,
+        )
+
+    def _fail_chain_scan(*_args, **_kwargs):
+        raise AssertionError("chain scan should be opt-in")
+
+    monkeypatch.setattr(secret_options, "compute_optionality_metrics", _fail_chain_scan)
+
+    signal = secret_options._compute_volatility_signal(
+        position,
+        object(),
+        {"current_price": 100.0},
+        {"implied_volatility": 0.33},
+        hv30=32.0,
+    )
+
+    assert signal["entry"]["iv30"] == 20.0
+    assert signal["current"]["contract_iv"] == 33.0
+    assert signal["current"]["hv30"] == 32.0
+    assert signal["current"]["iv30"] is None
 
 
 def test_close_position_rejects_duplicate_closed_trade(secret_options_client) -> None:

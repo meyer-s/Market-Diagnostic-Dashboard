@@ -1060,6 +1060,7 @@ def _compute_volatility_signal(
     market: Dict[str, object],
     quote: Dict[str, object],
     hv30: Optional[float],
+    include_chain_snapshot: bool = False,
 ) -> Dict[str, object]:
     current_contract_iv = _as_percent_vol(quote.get("implied_volatility"))
     signal = _empty_volatility_signal()
@@ -1091,7 +1092,7 @@ def _compute_volatility_signal(
 
     spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
     current_metrics: Dict[str, object] = {}
-    if source_event_id is not None and spot and _is_finite_number(spot) and float(spot) > 0:
+    if include_chain_snapshot and source_event_id is not None and spot and _is_finite_number(spot) and float(spot) > 0:
         try:
             current_metrics = compute_optionality_metrics(
                 provider,
@@ -1164,6 +1165,7 @@ def _compute_volatility_signal(
 def _compute_position_metrics(
     position: OptionPosition,
     provider: Optional[MarketDataProvider] = None,
+    include_chain_snapshot: bool = False,
 ) -> Dict[str, object]:
     provider = provider or get_market_data_provider()
     market = _market_data_for_symbol(provider, position.symbol)
@@ -1260,7 +1262,14 @@ def _compute_position_metrics(
         iv_source = "default"
     
     volatility_source = iv_source
-    volatility_signal = _compute_volatility_signal(position, provider, market, quote, hv30)
+    volatility_signal = _compute_volatility_signal(
+        position,
+        provider,
+        market,
+        quote,
+        hv30,
+        include_chain_snapshot=include_chain_snapshot,
+    )
 
     dte = max((position.expiration - date.today()).days, 0)
     time_to_expiry = max(dte, 0) / 365.0
