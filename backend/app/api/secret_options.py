@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 import traceback
 from pydantic import BaseModel
 
-from app.api.stock_projection import compute_historical_volatility
+from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.models.option_positions import OptionPosition
 from app.models.closed_positions import ClosedPosition
 from app.models.option_trade_reminders import OptionTradeReminder
@@ -972,6 +972,8 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
         },
         "volatility": None,
         "volatility_source": None,
+        "hv30": None,
+        "volatility_signal": _empty_volatility_signal(),
         "dte": None,
         "greeks": None,
         "pnl": {
@@ -983,6 +985,180 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
     if error:
         payload["error"] = error
     return payload
+
+
+def _as_percent_vol(value: object) -> Optional[float]:
+    if value is None or not _is_finite_number(value):
+        return None
+    numeric = float(value)
+    if numeric <= 0:
+        return None
+    if numeric <= 5:
+        numeric *= 100
+    return round(numeric, 2)
+
+
+def _pct_point_change(current: object, entry: object) -> Optional[float]:
+    if current is None or entry is None:
+        return None
+    if not _is_finite_number(current) or not _is_finite_number(entry):
+        return None
+    return round(float(current) - float(entry), 2)
+
+
+def _iv_hv_spread(iv30: object, hv30: object) -> Optional[float]:
+    return _pct_point_change(iv30, hv30)
+
+
+def _vol_trend_state(change: Optional[float], threshold: float = 1.0) -> str:
+    if change is None:
+        return "unknown"
+    if change >= threshold:
+        return "expanding"
+    if change <= -threshold:
+        return "contracting"
+    return "stable"
+
+
+def _empty_volatility_signal(error: Optional[str] = None) -> Dict[str, object]:
+    payload: Dict[str, object] = {
+        "entry": None,
+        "current": {
+            "iv30": None,
+            "hv30": None,
+            "iv_hv_spread": None,
+            "iv_percentile": None,
+            "avg_edr": None,
+            "contract_iv": None,
+            "data_source": None,
+            "quote_source": None,
+            "pricing_basis": None,
+            "expiries_scanned": None,
+            "as_of": datetime.utcnow().isoformat(),
+        },
+        "trend": {
+            "iv30_change": None,
+            "hv30_change": None,
+            "iv_hv_spread_change": None,
+            "iv_percentile_change": None,
+            "avg_edr_change": None,
+            "contract_iv_change": None,
+            "algorithm_state": "unknown",
+            "contract_iv_state": "unknown",
+            "value_state": "unknown",
+            "headline": "Volatility baseline unavailable",
+        },
+    }
+    if error:
+        payload["error"] = error
+    return payload
+
+
+def _compute_volatility_signal(
+    position: OptionPosition,
+    provider: MarketDataProvider,
+    market: Dict[str, object],
+    quote: Dict[str, object],
+    hv30: Optional[float],
+) -> Dict[str, object]:
+    current_contract_iv = _as_percent_vol(quote.get("implied_volatility"))
+    signal = _empty_volatility_signal()
+    signal["current"]["contract_iv"] = current_contract_iv
+    signal["current"]["hv30"] = round(float(hv30), 2) if hv30 is not None and _is_finite_number(hv30) else None
+
+    source_event_id = getattr(position, "source_event_id", None)
+    entry_event = None
+    if source_event_id is not None:
+        try:
+            with get_db_session() as db:
+                entry_event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == source_event_id).first()
+        except Exception:
+            entry_event = None
+
+    if entry_event is not None:
+        entry_iv30 = round(float(entry_event.iv30), 2) if _is_finite_number(entry_event.iv30) else None
+        entry_hv30 = round(float(entry_event.hv30), 2) if _is_finite_number(entry_event.hv30) else None
+        signal["entry"] = {
+            "event_id": entry_event.id,
+            "triggered_at": entry_event.triggered_at.isoformat() if entry_event.triggered_at else None,
+            "iv30": entry_iv30,
+            "hv30": entry_hv30,
+            "iv_hv_spread": _iv_hv_spread(entry_iv30, entry_hv30),
+            "iv_percentile": round(float(entry_event.iv_percentile), 1) if _is_finite_number(entry_event.iv_percentile) else None,
+            "avg_edr": round(float(entry_event.avg_edr), 2) if _is_finite_number(entry_event.avg_edr) else None,
+            "contract_iv": _as_percent_vol(entry_event.selected_implied_volatility),
+        }
+
+    spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
+    current_metrics: Dict[str, object] = {}
+    if source_event_id is not None and spot and _is_finite_number(spot) and float(spot) > 0:
+        try:
+            current_metrics = compute_optionality_metrics(
+                provider,
+                position.symbol,
+                float(spot),
+                hv30,
+                max_expiries=3,
+                strike_thresholds=[0.08, 0.15],
+            )
+        except Exception as exc:
+            signal["error"] = str(exc)
+            current_metrics = {}
+
+    current_iv30 = current_metrics.get("iv30")
+    current_hv30 = current_metrics.get("hv30", hv30)
+    current_iv_percentile = current_metrics.get("iv_percentile")
+    current_avg_edr = current_metrics.get("avg_edr")
+    current_spread = _iv_hv_spread(current_iv30, current_hv30)
+
+    signal["current"] = {
+        **signal["current"],
+        "iv30": round(float(current_iv30), 2) if _is_finite_number(current_iv30) else None,
+        "hv30": round(float(current_hv30), 2) if _is_finite_number(current_hv30) else signal["current"]["hv30"],
+        "iv_hv_spread": current_spread,
+        "iv_percentile": round(float(current_iv_percentile), 1) if _is_finite_number(current_iv_percentile) else None,
+        "avg_edr": round(float(current_avg_edr), 2) if _is_finite_number(current_avg_edr) else None,
+        "contract_iv": current_contract_iv,
+        "data_source": current_metrics.get("data_source"),
+        "quote_source": current_metrics.get("quote_source"),
+        "pricing_basis": current_metrics.get("pricing_basis"),
+        "expiries_scanned": current_metrics.get("expiries_scanned"),
+        "as_of": datetime.utcnow().isoformat(),
+    }
+
+    entry = signal.get("entry") or {}
+    iv30_change = _pct_point_change(signal["current"].get("iv30"), entry.get("iv30"))
+    hv30_change = _pct_point_change(signal["current"].get("hv30"), entry.get("hv30"))
+    spread_change = _pct_point_change(signal["current"].get("iv_hv_spread"), entry.get("iv_hv_spread"))
+    iv_percentile_change = _pct_point_change(signal["current"].get("iv_percentile"), entry.get("iv_percentile"))
+    avg_edr_change = _pct_point_change(signal["current"].get("avg_edr"), entry.get("avg_edr"))
+    contract_iv_change = _pct_point_change(signal["current"].get("contract_iv"), entry.get("contract_iv"))
+    contract_state = _vol_trend_state(contract_iv_change)
+    algorithm_state = _vol_trend_state(spread_change)
+    value_state = contract_state if contract_state != "unknown" else algorithm_state
+
+    if contract_iv_change is not None:
+        headline = f"Contract IV {contract_state} {contract_iv_change:+.1f} pts"
+    elif spread_change is not None:
+        headline = f"IV/HV spread {algorithm_state} {spread_change:+.1f} pts"
+    elif signal["current"].get("iv30") is not None and signal["current"].get("hv30") is not None:
+        headline = "Current IV/HV computed"
+    else:
+        headline = "Volatility baseline unavailable"
+
+    signal["trend"] = {
+        "iv30_change": iv30_change,
+        "hv30_change": hv30_change,
+        "iv_hv_spread_change": spread_change,
+        "iv_percentile_change": iv_percentile_change,
+        "avg_edr_change": avg_edr_change,
+        "contract_iv_change": contract_iv_change,
+        "algorithm_state": algorithm_state,
+        "contract_iv_state": contract_state,
+        "value_state": value_state,
+        "headline": headline,
+    }
+    return signal
 
 
 def _compute_position_metrics(
@@ -1084,6 +1260,7 @@ def _compute_position_metrics(
         iv_source = "default"
     
     volatility_source = iv_source
+    volatility_signal = _compute_volatility_signal(position, provider, market, quote, hv30)
 
     dte = max((position.expiration - date.today()).days, 0)
     time_to_expiry = max(dte, 0) / 365.0
@@ -1129,6 +1306,8 @@ def _compute_position_metrics(
         "quote": quote,
         "volatility": volatility,
         "volatility_source": volatility_source,
+        "hv30": hv30,
+        "volatility_signal": volatility_signal,
         "dte": dte,
         "greeks": greeks,
         "pnl": {

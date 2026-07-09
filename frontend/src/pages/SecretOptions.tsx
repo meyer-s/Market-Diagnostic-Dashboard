@@ -47,6 +47,44 @@ interface OptionPosition {
   evaluation_source: string | null;
 }
 
+type VolatilityState = "expanding" | "contracting" | "stable" | "unknown";
+
+interface VolatilitySnapshot {
+  event_id?: number | null;
+  triggered_at?: string | null;
+  iv30: number | null;
+  hv30: number | null;
+  iv_hv_spread: number | null;
+  iv_percentile: number | null;
+  avg_edr: number | null;
+  contract_iv: number | null;
+  data_source?: string | null;
+  quote_source?: string | null;
+  pricing_basis?: string | null;
+  expiries_scanned?: number | null;
+  as_of?: string | null;
+}
+
+interface VolatilityTrend {
+  iv30_change: number | null;
+  hv30_change: number | null;
+  iv_hv_spread_change: number | null;
+  iv_percentile_change: number | null;
+  avg_edr_change: number | null;
+  contract_iv_change: number | null;
+  algorithm_state: VolatilityState;
+  contract_iv_state: VolatilityState;
+  value_state: VolatilityState;
+  headline: string;
+}
+
+interface VolatilitySignal {
+  entry: VolatilitySnapshot | null;
+  current: VolatilitySnapshot;
+  trend: VolatilityTrend;
+  error?: string | null;
+}
+
 interface PositionMetrics {
   market: {
     current_price: number | null;
@@ -77,6 +115,8 @@ interface PositionMetrics {
   };
   volatility: number | null;
   volatility_source: string | null;
+  hv30: number | null;
+  volatility_signal: VolatilitySignal;
   dte: number | null;
   greeks: {
     delta: number;
@@ -291,6 +331,134 @@ const formatSigned = (value: number | null | undefined, digits = 2) => {
   return `${sign}${value.toFixed(digits)}`;
 };
 
+const formatVolPct = (value: number | null | undefined, digits = 1) => formatPercent(value, digits);
+
+const formatPointChange = (value: number | null | undefined, digits = 1) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+  return `${formatSigned(value, digits)} pts`;
+};
+
+const emptyVolatilitySnapshot = (): VolatilitySnapshot => ({
+  iv30: null,
+  hv30: null,
+  iv_hv_spread: null,
+  iv_percentile: null,
+  avg_edr: null,
+  contract_iv: null,
+});
+
+const emptyVolatilitySignal = (): VolatilitySignal => ({
+  entry: null,
+  current: emptyVolatilitySnapshot(),
+  trend: {
+    iv30_change: null,
+    hv30_change: null,
+    iv_hv_spread_change: null,
+    iv_percentile_change: null,
+    avg_edr_change: null,
+    contract_iv_change: null,
+    algorithm_state: "unknown",
+    contract_iv_state: "unknown",
+    value_state: "unknown",
+    headline: "Volatility baseline unavailable",
+  },
+});
+
+const normalizeVolatilitySnapshot = (
+  snapshot: Partial<VolatilitySnapshot> | null | undefined
+): VolatilitySnapshot | null => {
+  if (!snapshot) return null;
+  return {
+    ...emptyVolatilitySnapshot(),
+    ...snapshot,
+    iv30: snapshot.iv30 ?? null,
+    hv30: snapshot.hv30 ?? null,
+    iv_hv_spread: snapshot.iv_hv_spread ?? null,
+    iv_percentile: snapshot.iv_percentile ?? null,
+    avg_edr: snapshot.avg_edr ?? null,
+    contract_iv: snapshot.contract_iv ?? null,
+  };
+};
+
+const normalizeVolatilitySignal = (
+  signal: Partial<VolatilitySignal> | null | undefined
+): VolatilitySignal => {
+  const empty = emptyVolatilitySignal();
+  const trend = (signal?.trend ?? {}) as Partial<VolatilityTrend>;
+  return {
+    entry: normalizeVolatilitySnapshot(signal?.entry),
+    current: normalizeVolatilitySnapshot(signal?.current) ?? empty.current,
+    trend: {
+      ...empty.trend,
+      ...trend,
+      algorithm_state: trend.algorithm_state ?? "unknown",
+      contract_iv_state: trend.contract_iv_state ?? "unknown",
+      value_state: trend.value_state ?? "unknown",
+      headline: trend.headline ?? empty.trend.headline,
+    },
+    error: signal?.error ?? null,
+  };
+};
+
+const getVolatilityStateClasses = (state: VolatilityState) => {
+  if (state === "expanding") {
+    return {
+      label: "Expanding",
+      text: "text-emerald-300",
+      border: "border-emerald-500/35",
+      bg: "bg-emerald-500/10",
+    };
+  }
+  if (state === "contracting") {
+    return {
+      label: "Contracting",
+      text: "text-rose-300",
+      border: "border-rose-500/35",
+      bg: "bg-rose-500/10",
+    };
+  }
+  if (state === "stable") {
+    return {
+      label: "Stable",
+      text: "text-sky-200",
+      border: "border-sky-500/30",
+      bg: "bg-sky-500/10",
+    };
+  }
+  return {
+    label: "Unknown",
+    text: "text-gray-400",
+    border: "border-gray-700/70",
+    bg: "bg-gray-900/45",
+  };
+};
+
+const buildVolatilityRead = (signal: VolatilitySignal) => {
+  const state = signal.trend.value_state;
+  const classes = getVolatilityStateClasses(state);
+  const contractChange = signal.trend.contract_iv_change;
+  const spreadChange = signal.trend.iv_hv_spread_change;
+  const currentSpread = signal.current.iv_hv_spread;
+  const currentIv30 = signal.current.iv30;
+  const currentHv30 = signal.current.hv30;
+  const label =
+    contractChange !== null && contractChange !== undefined
+      ? `IV ${formatPointChange(contractChange)}`
+      : spreadChange !== null && spreadChange !== undefined
+        ? `IV/HV ${formatPointChange(spreadChange)}`
+        : signal.trend.headline || classes.label;
+  const detail =
+    currentSpread !== null && currentSpread !== undefined
+      ? `spread ${formatPointChange(currentSpread)}`
+      : currentIv30 !== null && currentHv30 !== null
+        ? `IV30 ${formatVolPct(currentIv30)} / HV30 ${formatVolPct(currentHv30)}`
+        : "no scanner baseline";
+
+  return { ...classes, label, detail };
+};
+
 const capitalizeWord = (value: string) => {
   if (!value) return value;
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
@@ -465,17 +633,25 @@ const buildPositionDiagnosis = (
   const dte = metrics.dte ?? lane?.remainingDays ?? null;
   const spreadPct = metrics.quote?.spread_pct ?? null;
   const theta = metrics.greeks?.theta ?? null;
+  const volatilityRead = buildVolatilityRead(metrics.volatility_signal);
+  const volatilityState = metrics.volatility_signal.trend.value_state;
   const pnlText = pnlPct !== null && pnlPct !== undefined ? `${formatSigned(pnlPct, 1)}% P/L` : "P/L unavailable";
   const dteText = dte !== null && dte !== undefined ? `${dte} DTE` : "DTE unavailable";
 
   if (lane?.urgency === "overdue") {
-    return `${symbol} is ${Math.abs(lane.remainingDays)} days past its modeled evaluation window. Reassess exit, roll, or thesis continuation.`;
+    return `${symbol} is ${Math.abs(lane.remainingDays)} days past its modeled evaluation window. Reassess exit, roll, or thesis continuation against ${volatilityRead.label}.`;
   }
   if (lane?.urgency === "due") {
-    return `${symbol} is in its evaluation window today. Review the thesis against ${pnlText}, ${dteText}, and current spread.`;
+    return `${symbol} is in its evaluation window today. Review the thesis against ${pnlText}, ${dteText}, and ${volatilityRead.label}.`;
   }
   if (lane?.urgency === "watch") {
     return `${symbol} is approaching its model review gate. Prepare an exit, roll, or hold decision before the window closes.`;
+  }
+  if (volatilityState === "contracting") {
+    return `${symbol} remains monitor status, but volatility is contracting. Confirm the thesis can still outrun time decay.`;
+  }
+  if (volatilityState === "expanding") {
+    return `${symbol} remains monitor status with volatility expansion supporting option value. Track whether the move is still thesis-driven.`;
   }
   if (theta !== null && theta <= -8) {
     return `${symbol} is still in monitor status, but theta decay is elevated. Track time risk before the next gate.`;
@@ -483,7 +659,7 @@ const buildPositionDiagnosis = (
   if (spreadPct !== null && spreadPct >= 20) {
     return `${symbol} is monitor status with a wide bid/ask spread. Use caution before sizing or exiting.`;
   }
-  return `${symbol} remains monitor status. No immediate model action; keep an eye on ${pnlText} and ${dteText}.`;
+  return `${symbol} remains monitor status. No immediate model action; keep an eye on ${pnlText}, ${dteText}, and IV/HV.`;
 };
 
 const PositionTimelineCell = memo(function PositionTimelineCell({
@@ -521,7 +697,8 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   const elapsedExpectedPct = Math.min(todayPct, gatePct);
   const overdueTailPct = todayPct > gatePct ? todayPct - gatePct : 0;
   const modelWindowPct = Math.max(gatePct, 5);
-  const accessibleSummary = `${position.symbol} ${label}. ${detail}. ${Math.round(todayPct)} percent through expiration timeline. ${Math.round(gatePct)} percent to evaluation gate. ${remainingDays ?? "unknown"} days remaining. Greek pressure ${Math.round(pressurePct)} percent. Source confidence ${Math.round(sourceConfidencePct)} percent.`;
+  const volRead = buildVolatilityRead(metrics.volatility_signal);
+  const accessibleSummary = `${position.symbol} ${label}. ${detail}. ${Math.round(todayPct)} percent through expiration timeline. ${Math.round(gatePct)} percent to evaluation gate. ${remainingDays ?? "unknown"} days remaining. Volatility ${volRead.label}. Source confidence ${Math.round(sourceConfidencePct)} percent.`;
   const railBorderClass = urgency === "calm" || urgency === "watch" ? "border-gray-700" : urgencyBorderClass;
   const railTrackClass = isLowConfidence ? "bg-gray-700/35" : "bg-gray-700/65";
   const elapsedFillClass = isLowConfidence ? "bg-emerald-300/45" : "bg-emerald-300";
@@ -609,6 +786,114 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   );
 });
 
+function VolatilitySignalCard({
+  metrics,
+  className = "",
+}: {
+  metrics: PositionMetrics;
+  className?: string;
+}) {
+  const signal = metrics.volatility_signal;
+  const read = buildVolatilityRead(signal);
+  const source = signal.current.data_source
+    ? formatDataSource(signal.current.data_source, signal.current.quote_source)
+    : metrics.volatility_source || "n/a";
+
+  const rows: {
+    label: string;
+    entry: number | null | undefined;
+    current: number | null | undefined;
+    change: number | null | undefined;
+    kind: "percent" | "points";
+  }[] = [
+    {
+      label: "Contract IV",
+      entry: signal.entry?.contract_iv,
+      current: signal.current.contract_iv,
+      change: signal.trend.contract_iv_change,
+      kind: "percent",
+    },
+    {
+      label: "IV30",
+      entry: signal.entry?.iv30,
+      current: signal.current.iv30,
+      change: signal.trend.iv30_change,
+      kind: "percent",
+    },
+    {
+      label: "HV30",
+      entry: signal.entry?.hv30,
+      current: signal.current.hv30 ?? metrics.hv30,
+      change: signal.trend.hv30_change,
+      kind: "percent",
+    },
+    {
+      label: "IV/HV",
+      entry: signal.entry?.iv_hv_spread,
+      current: signal.current.iv_hv_spread,
+      change: signal.trend.iv_hv_spread_change,
+      kind: "points",
+    },
+    {
+      label: "IV pct",
+      entry: signal.entry?.iv_percentile,
+      current: signal.current.iv_percentile,
+      change: signal.trend.iv_percentile_change,
+      kind: "percent",
+    },
+    {
+      label: "EDR",
+      entry: signal.entry?.avg_edr,
+      current: signal.current.avg_edr,
+      change: signal.trend.avg_edr_change,
+      kind: "percent",
+    },
+  ];
+
+  const formatValue = (value: number | null | undefined, kind: "percent" | "points") =>
+    kind === "points" ? formatPointChange(value, 1) : formatVolPct(value, 1);
+
+  return (
+    <div className={`rounded-md border border-gray-700/70 bg-gray-900/45 p-2 ${className}`}>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div className="text-[9px] uppercase tracking-wide text-gray-500">Volatility Signal</div>
+        <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${read.border} ${read.bg} ${read.text}`}>
+          {read.label}
+        </span>
+      </div>
+      <div className="space-y-1 text-[10px]">
+        {rows.map((row) => (
+          <div key={row.label} className="grid grid-cols-[62px_minmax(0,1fr)_54px] items-center gap-1">
+            <span className="truncate text-gray-500">{row.label}</span>
+            <span className="truncate text-gray-200">
+              {row.entry !== null && row.entry !== undefined
+                ? `${formatValue(row.entry, row.kind)} -> ${formatValue(row.current, row.kind)}`
+                : row.current !== null && row.current !== undefined
+                  ? `now ${formatValue(row.current, row.kind)}`
+                  : "n/a"}
+            </span>
+            <span
+              className={`text-right tabular-nums ${
+                (row.change ?? 0) > 0
+                  ? "text-emerald-300"
+                  : (row.change ?? 0) < 0
+                    ? "text-rose-300"
+                    : "text-gray-500"
+              }`}
+            >
+              {formatPointChange(row.change, 1)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-gray-800 pt-1 text-[9px] text-gray-500">
+        <span className="truncate">{signal.entry ? "entry scanner -> current chain" : "current only"}</span>
+        <span className="truncate">{source}</span>
+      </div>
+    </div>
+  );
+}
+
 function TimelinePressureStack({
   position,
   metrics,
@@ -626,7 +911,10 @@ function TimelinePressureStack({
       : Math.max(0, lane?.elapsedDays ?? 0);
   const expirationTotalDays = Math.max(1, dteAtEntry ?? elapsedToTodayDays + Math.max(0, dteNow ?? 0), lane?.totalDays ?? 1);
   const timePct = clampRange((elapsedToTodayDays / expirationTotalDays) * 100, 0, 100);
-  const pressurePct = clampRange((lane?.attentionStrength ?? buildGreeksAttention(metrics.greeks, metrics.dte ?? 999).strength) * 100, 0, 100);
+  const volState = metrics.volatility_signal.trend.value_state;
+  const volPressure =
+    volState === "contracting" ? 0.85 : volState === "expanding" ? 0.65 : volState === "stable" ? 0.35 : 0.2;
+  const pressurePct = clampRange(Math.max(lane?.attentionStrength ?? 0.2, volPressure) * 100, 0, 100);
   const sourceConfidence = clampRange(position.source_match_confidence ?? (lane?.matched ? 0.65 : 0.15), 0, 1);
 
   return (
@@ -635,8 +923,8 @@ function TimelinePressureStack({
       <div className="h-1.5 rounded-full bg-gray-800" title="Time elapsed toward expiration">
         <div className="h-full rounded-full bg-emerald-300" style={{ width: `${timePct}%` }} />
       </div>
-      <span>θ</span>
-      <div className="h-1.5 rounded-full bg-gray-800" title="Greek/time pressure">
+      <span>V</span>
+      <div className="h-1.5 rounded-full bg-gray-800" title="Volatility/time pressure">
         <div className="h-full rounded-full bg-cyan-300" style={{ width: `${pressurePct}%` }} />
       </div>
       <span>C</span>
@@ -1055,6 +1343,8 @@ const normalizePositionMetrics = (
     },
     volatility: metrics?.volatility ?? null,
     volatility_source: metrics?.volatility_source ?? null,
+    hv30: metrics?.hv30 ?? null,
+    volatility_signal: normalizeVolatilitySignal(metrics?.volatility_signal),
     dte: metrics?.dte ?? null,
     greeks: safeGreeks,
     pnl: {
@@ -2316,11 +2606,7 @@ export default function SecretOptions() {
                   position.source_match_confidence,
                   position.source_match_notes
                 );
-                const optionQuoteSource = formatDataSource(metrics.quote?.data_source, metrics.quote?.quote_source);
-                const underlyingQuoteSource = formatDataSource(
-                  metrics.market?.data_source,
-                  metrics.market?.quote_source
-                );
+                const volatilityRead = buildVolatilityRead(metrics.volatility_signal);
                 const rowActive = position.id === selectedId;
                 const isExpanded = expandedPositionId === position.id;
                 const rowDiagnosis = buildPositionDiagnosis(position, metrics, lane);
@@ -2375,10 +2661,10 @@ export default function SecretOptions() {
                             {metrics.pnl?.percent !== null && metrics.pnl?.percent !== undefined ? `${formatSigned(metrics.pnl.percent, 1)}%` : "—"}
                           </div>
                         </div>
-                        <div className="text-gray-300">
-                          <div className="text-[9px] uppercase tracking-wide text-gray-500">Greeks</div>
-                          <div>Δ {metrics.greeks ? metrics.greeks.delta.toFixed(3) : "—"}</div>
-                          <div className="text-gray-500">θ {metrics.greeks ? metrics.greeks.theta.toFixed(2) : "—"}</div>
+                        <div className={`${volatilityRead.text}`}>
+                          <div className="text-[9px] uppercase tracking-wide text-gray-500">Vol</div>
+                          <div className="truncate">{volatilityRead.label}</div>
+                          <div className="truncate text-[10px] font-normal text-gray-500">{volatilityRead.detail}</div>
                         </div>
                       </div>
 
@@ -2444,21 +2730,13 @@ export default function SecretOptions() {
                             <div className="text-[9px] uppercase tracking-wide text-gray-500">Window</div>
                             <div className="mt-1 space-y-0.5">
                               <div className="text-gray-200">{lane?.detail ?? evaluation?.detail ?? "No linked or historical template"}</div>
-                              <div>{lane?.greeksHint ?? "No Greek pressure hint"}</div>
+                              <div>{volatilityRead.label}</div>
                               <div>{position.source_match_method || "unlinked"} / {position.source_match_confidence !== null && position.source_match_confidence !== undefined ? formatPercent(position.source_match_confidence * 100, 0) : "n/a"}</div>
                             </div>
                             <TimelinePressureStack position={position} metrics={metrics} lane={lane} />
                           </div>
 
-                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Greeks / Sources</div>
-                            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
-                              <span>Γ</span><span className="text-gray-200">{metrics.greeks ? metrics.greeks.gamma.toFixed(4) : "—"}</span>
-                              <span>Vega</span><span className="text-gray-200">{metrics.greeks ? metrics.greeks.vega.toFixed(2) : "—"}</span>
-                              <span>Opt src</span><span className="truncate text-gray-200">{optionQuoteSource}</span>
-                              <span>Und src</span><span className="truncate text-gray-200">{underlyingQuoteSource}</span>
-                            </div>
-                          </div>
+                          <VolatilitySignalCard metrics={metrics} />
                         </div>
                       </div>
                     ) : null}
@@ -2484,7 +2762,7 @@ export default function SecretOptions() {
       <div className="surface-card-strong max-h-none overflow-y-visible p-2.5 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
         <div className="mb-2 flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-stealth-100">Selected Greeks</h2>
+            <h2 className="text-sm font-semibold text-stealth-100">Selected Volatility</h2>
             {selected ? (
               <p className="mt-0.5 text-[11px] font-medium text-stealth-300">
                 Selected: {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
@@ -2524,38 +2802,22 @@ export default function SecretOptions() {
         )}
 
         {selected && (
-          <details className="mb-2 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1 text-[10px] text-gray-400">
-            <summary className="cursor-pointer list-none truncate">
-              Vol {selected.metrics.volatility ? formatPercent(selected.metrics.volatility * 100, 1) : "n/a"} / Bid{" "}
-              {selected.metrics.quote?.bid !== null && selected.metrics.quote?.bid !== undefined ? formatCurrency(selected.metrics.quote.bid, 2) : "n/a"} / Ask{" "}
-              {selected.metrics.quote?.ask !== null && selected.metrics.quote?.ask !== undefined ? formatCurrency(selected.metrics.quote.ask, 2) : "n/a"}
-            </summary>
-            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 border-t border-gray-700/60 pt-1">
-              <span>Vol: {selected.metrics.volatility_source || "n/a"}</span>
-              <span>Opt: {selected.metrics.option_price_source || "n/a"}</span>
-              <span>Quote: {formatDataSource(selected.metrics.quote?.data_source, selected.metrics.quote?.quote_source)}</span>
-              <span>Underlying: {formatDataSource(selected.metrics.market?.data_source, selected.metrics.market?.quote_source)}</span>
-              <span>Spread: {selected.metrics.quote?.spread_pct !== null && selected.metrics.quote?.spread_pct !== undefined ? formatPercent(selected.metrics.quote.spread_pct, 1) : "n/a"}</span>
-              <span>OI/Vol: {selected.metrics.quote?.open_interest ?? "n/a"} / {selected.metrics.quote?.volume ?? "n/a"}</span>
-            </div>
-          </details>
-        )}
-
-        {selected && (
-          <div className="mb-2 flex flex-wrap gap-1.5 text-[10px] text-gray-300">
-            <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
-              Quote {formatRelativeTime(selected.metrics.market.last_updated)}
-            </span>
-            <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
-              Greeks {formatRelativeTime(greeksLoadedAt)}
-            </span>
-            <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
-              Positions {formatRelativeTime(positionsLoadedAt)}
-            </span>
-            <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
-              Source {formatDataSource(selected.metrics.quote?.data_source, selected.metrics.quote?.quote_source)}
-            </span>
-          </div>
+          <>
+            <VolatilitySignalCard metrics={selected.metrics} className="mb-2" />
+            <details className="mb-2 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1 text-[10px] text-gray-400">
+              <summary className="cursor-pointer list-none truncate">
+                Data: quote {formatRelativeTime(selected.metrics.market.last_updated)} / positions {formatRelativeTime(positionsLoadedAt)}
+              </summary>
+              <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 border-t border-gray-700/60 pt-1">
+                <span>Model vol: {selected.metrics.volatility ? formatPercent(selected.metrics.volatility * 100, 1) : "n/a"}</span>
+                <span>Model src: {selected.metrics.volatility_source || "n/a"}</span>
+                <span>Bid / Ask: {selected.metrics.quote?.bid !== null && selected.metrics.quote?.bid !== undefined ? formatCurrency(selected.metrics.quote.bid, 2) : "n/a"} / {selected.metrics.quote?.ask !== null && selected.metrics.quote?.ask !== undefined ? formatCurrency(selected.metrics.quote.ask, 2) : "n/a"}</span>
+                <span>Spread: {selected.metrics.quote?.spread_pct !== null && selected.metrics.quote?.spread_pct !== undefined ? formatPercent(selected.metrics.quote.spread_pct, 1) : "n/a"}</span>
+                <span>Quote: {formatDataSource(selected.metrics.quote?.data_source, selected.metrics.quote?.quote_source)}</span>
+                <span>Greeks: {formatRelativeTime(greeksLoadedAt)}</span>
+              </div>
+            </details>
+          </>
         )}
 
         <div className="mb-2">

@@ -259,6 +259,76 @@ def test_create_scanner_attributed_position_schedules_sell_reminder(
         assert reminder.status == "pending"
 
 
+def test_linked_position_volatility_signal_tracks_entry_to_current(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _client, session_local = secret_options_client
+    with session_local() as db:
+        event = OptionAlertEvent(
+            symbol="SYY",
+            triggered_at=datetime(2026, 6, 1, 14, 30),
+            iv30=20.0,
+            hv30=30.0,
+            iv_percentile=5.0,
+            avg_edr=40.0,
+            selected_option_type="call",
+            selected_expiry="2026-07-17",
+            selected_strike=80.0,
+            selected_premium=1.35,
+            selected_implied_volatility=0.25,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+        position = OptionPosition(
+            trade_date=date(2026, 6, 1),
+            account="Active Trading",
+            action="Buy to Open",
+            contracts=2,
+            symbol="SYY",
+            expiration=date(2026, 7, 17),
+            strike=80.0,
+            option_type="call",
+            fill_price=1.35,
+            total_cost=270.0,
+            underlying_at_entry=78.5,
+            source_event_id=event.id,
+        )
+
+    monkeypatch.setattr(
+        secret_options,
+        "compute_optionality_metrics",
+        lambda *_args, **_kwargs: {
+            "iv30": 28.0,
+            "hv30": 32.0,
+            "iv_percentile": 15.0,
+            "avg_edr": 45.0,
+            "data_source": "ibkr_option_chain",
+            "quote_source": "delayed",
+            "pricing_basis": "bid_ask_mid_then_last",
+            "expiries_scanned": 3,
+        },
+    )
+
+    signal = secret_options._compute_volatility_signal(
+        position,
+        object(),
+        {"current_price": 100.0},
+        {"implied_volatility": 0.33},
+        hv30=32.0,
+    )
+
+    assert signal["entry"]["contract_iv"] == 25.0
+    assert signal["entry"]["iv_hv_spread"] == -10.0
+    assert signal["current"]["contract_iv"] == 33.0
+    assert signal["current"]["iv_hv_spread"] == -4.0
+    assert signal["trend"]["contract_iv_change"] == 8.0
+    assert signal["trend"]["iv_hv_spread_change"] == 6.0
+    assert signal["trend"]["contract_iv_state"] == "expanding"
+    assert signal["trend"]["value_state"] == "expanding"
+
+
 def test_close_position_rejects_duplicate_closed_trade(secret_options_client) -> None:
     client, session_local = secret_options_client
     with session_local() as db:
