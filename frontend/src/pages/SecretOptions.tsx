@@ -435,14 +435,26 @@ const getVolatilityStateClasses = (state: VolatilityState) => {
   };
 };
 
+const getContractHvSpread = (snapshot: VolatilitySnapshot | null, hvFallback?: number | null) => {
+  const contractIv = snapshot?.contract_iv ?? null;
+  const hv30 = snapshot?.hv30 ?? hvFallback ?? null;
+  if (contractIv === null || contractIv === undefined || hv30 === null || hv30 === undefined) {
+    return null;
+  }
+  return Number((contractIv - hv30).toFixed(2));
+};
+
 const buildVolatilityRead = (signal: VolatilitySignal) => {
   const state = signal.trend.value_state;
   const classes = getVolatilityStateClasses(state);
   const contractChange = signal.trend.contract_iv_change;
   const spreadChange = signal.trend.iv_hv_spread_change;
   const currentSpread = signal.current.iv_hv_spread;
+  const currentContractHvSpread = getContractHvSpread(signal.current);
   const currentIv30 = signal.current.iv30;
   const currentHv30 = signal.current.hv30;
+  const entryContractIv = signal.entry?.contract_iv;
+  const currentContractIv = signal.current.contract_iv;
   const label =
     contractChange !== null && contractChange !== undefined
       ? `IV ${formatPointChange(contractChange)}`
@@ -450,11 +462,19 @@ const buildVolatilityRead = (signal: VolatilitySignal) => {
         ? `IV/HV ${formatPointChange(spreadChange)}`
         : signal.trend.headline || classes.label;
   const detail =
-    currentSpread !== null && currentSpread !== undefined
+    entryContractIv !== null && entryContractIv !== undefined && currentContractIv !== null && currentContractIv !== undefined
+      ? `contract ${formatVolPct(entryContractIv)} -> ${formatVolPct(currentContractIv)}`
+      : currentContractHvSpread !== null
+        ? `contract IV/HV ${formatPointChange(currentContractHvSpread)}`
+        : currentSpread !== null && currentSpread !== undefined
       ? `spread ${formatPointChange(currentSpread)}`
       : currentIv30 !== null && currentHv30 !== null
         ? `IV30 ${formatVolPct(currentIv30)} / HV30 ${formatVolPct(currentHv30)}`
-        : "no scanner baseline";
+        : currentContractIv !== null && currentContractIv !== undefined
+          ? `contract IV ${formatVolPct(currentContractIv)}`
+          : currentHv30 !== null && currentHv30 !== undefined
+            ? `HV30 ${formatVolPct(currentHv30)}`
+            : "vol pending";
 
   return { ...classes, label, detail };
 };
@@ -798,6 +818,12 @@ function VolatilitySignalCard({
   const source = signal.current.data_source
     ? formatDataSource(signal.current.data_source, signal.current.quote_source)
     : metrics.volatility_source || "n/a";
+  const entryContractHvSpread = getContractHvSpread(signal.entry);
+  const currentContractHvSpread = getContractHvSpread(signal.current, metrics.hv30);
+  const contractHvSpreadChange =
+    entryContractHvSpread !== null && currentContractHvSpread !== null
+      ? Number((currentContractHvSpread - entryContractHvSpread).toFixed(2))
+      : null;
 
   const rows: {
     label: string;
@@ -814,11 +840,18 @@ function VolatilitySignalCard({
       kind: "percent",
     },
     {
-      label: "IV30",
-      entry: signal.entry?.iv30,
-      current: signal.current.iv30,
-      change: signal.trend.iv30_change,
-      kind: "percent",
+      label: "Held IV/HV",
+      entry: entryContractHvSpread,
+      current: currentContractHvSpread,
+      change: contractHvSpreadChange,
+      kind: "points",
+    },
+    {
+      label: "Scan IV/HV",
+      entry: signal.entry?.iv_hv_spread,
+      current: signal.current.iv_hv_spread,
+      change: signal.trend.iv_hv_spread_change,
+      kind: "points",
     },
     {
       label: "HV30",
@@ -826,13 +859,6 @@ function VolatilitySignalCard({
       current: signal.current.hv30 ?? metrics.hv30,
       change: signal.trend.hv30_change,
       kind: "percent",
-    },
-    {
-      label: "IV/HV",
-      entry: signal.entry?.iv_hv_spread,
-      current: signal.current.iv_hv_spread,
-      change: signal.trend.iv_hv_spread_change,
-      kind: "points",
     },
     {
       label: "IV pct",
@@ -867,7 +893,9 @@ function VolatilitySignalCard({
             <span className="truncate text-gray-500">{row.label}</span>
             <span className="truncate text-gray-200">
               {row.entry !== null && row.entry !== undefined
-                ? `${formatValue(row.entry, row.kind)} -> ${formatValue(row.current, row.kind)}`
+                ? row.current !== null && row.current !== undefined
+                  ? `${formatValue(row.entry, row.kind)} -> ${formatValue(row.current, row.kind)}`
+                  : `entry ${formatValue(row.entry, row.kind)}`
                 : row.current !== null && row.current !== undefined
                   ? `now ${formatValue(row.current, row.kind)}`
                   : "n/a"}
