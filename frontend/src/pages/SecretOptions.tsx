@@ -2109,6 +2109,11 @@ export default function SecretOptions() {
     };
   }, [evaluationByPositionId]);
 
+  const visibleOptionalityClusters = useMemo(
+    () => optionalityClusters.filter((cluster) => cluster.group !== "Unclassified"),
+    [optionalityClusters]
+  );
+
   const filterCounts = useMemo(() => {
     return {
       lowConfidence: positions.filter(
@@ -2620,7 +2625,7 @@ export default function SecretOptions() {
           </div>
         </div>
 
-        {optionalityClusters.length > 0 ? (
+        {visibleOptionalityClusters.length > 0 ? (
           <div className="mb-2 rounded-lg border border-stealth-700/80 bg-stealth-950/35 px-2.5 py-2">
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <div className="text-[9px] font-semibold uppercase tracking-wide text-stealth-500">
@@ -2635,7 +2640,7 @@ export default function SecretOptions() {
               </button>
             </div>
             <div className="grid gap-1.5 md:grid-cols-3">
-              {optionalityClusters.slice(0, 3).map((cluster) => (
+              {visibleOptionalityClusters.slice(0, 3).map((cluster) => (
                 <div
                   key={cluster.group}
                   className="min-w-0 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1.5"

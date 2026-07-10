@@ -425,6 +425,19 @@ def test_optionality_clusters_group_hospitality_hits() -> None:
     assert clusters["Hospitality & Travel"]["avg_iv_hv_spread"] == -10.5
 
 
+def test_optionality_clusters_prioritize_classified_groups() -> None:
+    events = [
+        OptionAlertEvent(id=idx, symbol=f"ZZZ{idx}", triggered_at=datetime(2026, 7, 9, 14, 0))
+        for idx in range(1, 7)
+    ]
+    events.append(OptionAlertEvent(id=7, symbol="MGM", triggered_at=datetime(2026, 7, 9, 14, 0)))
+
+    payload = build_optionality_cluster_payload(events, today=date(2026, 7, 10), lookback_days=21)
+
+    assert payload["clusters"][0]["group"] == "Hospitality & Travel"
+    assert any(row["group"] == "Unclassified" for row in payload["clusters"])
+
+
 def test_close_position_rejects_duplicate_closed_trade(secret_options_client) -> None:
     client, session_local = secret_options_client
     with session_local() as db:
