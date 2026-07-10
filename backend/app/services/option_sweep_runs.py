@@ -25,6 +25,8 @@ from maintenance_scripts.options_chain_sweep import _scan_tickers
 
 ACTIVE_STATUSES = {"queued", "running"}
 STALE_SWEEP_PROGRESS_MINUTES = float(os.getenv("OPTION_SWEEP_STALE_MINUTES", "30"))
+_DASHBOARD_SWEEP_CONTROLS: dict[int, threading.Event] = {}
+_DASHBOARD_SWEEP_CONTROLS_LOCK = threading.Lock()
 
 
 def _csv_symbols(value: Optional[str]) -> list[str]:
@@ -70,6 +72,22 @@ def _serialize_run(run: OptionSweepRun) -> dict[str, object]:
 
 def _run_last_seen(run: OptionSweepRun) -> Optional[datetime]:
     return run.updated_at or run.started_at
+
+
+def _register_dashboard_sweep(run_id: int, stop_event: threading.Event) -> None:
+    with _DASHBOARD_SWEEP_CONTROLS_LOCK:
+        _DASHBOARD_SWEEP_CONTROLS[run_id] = stop_event
+
+
+def _clear_dashboard_sweep(run_id: int, stop_event: threading.Event) -> None:
+    with _DASHBOARD_SWEEP_CONTROLS_LOCK:
+        if _DASHBOARD_SWEEP_CONTROLS.get(run_id) is stop_event:
+            _DASHBOARD_SWEEP_CONTROLS.pop(run_id, None)
+
+
+def _dashboard_sweep_control(run_id: int) -> Optional[threading.Event]:
+    with _DASHBOARD_SWEEP_CONTROLS_LOCK:
+        return _DASHBOARD_SWEEP_CONTROLS.get(run_id)
 
 
 def expire_stale_sweep_runs(stale_after_hours: Optional[float] = None) -> int:
@@ -320,7 +338,7 @@ def _dashboard_progress_callback(run_id: int, label: str, status_every: int, sta
     return _callback
 
 
-def _run_dashboard_sweep(run_id: int, universe_key: str, threshold: float) -> None:
+def _run_dashboard_sweep(run_id: int, universe_key: str, threshold: float, stop_event: threading.Event) -> None:
     try:
         universe = resolve_sweep_universe(universe_key)
         tickers = universe.tickers
@@ -370,6 +388,7 @@ def _run_dashboard_sweep(run_id: int, universe_key: str, threshold: float) -> No
             capture_hit_symbols=True,
             capture_hit_details=True,
             progress_callback=_dashboard_progress_callback(run_id, label, status_every, status_min_seconds),
+            should_stop=stop_event.is_set,
             rate_limit_backoff_seconds=rate_limit_backoff_seconds,
             rate_limit_backoff_multiplier=rate_limit_backoff_multiplier,
             rate_limit_backoff_max_seconds=rate_limit_backoff_max_seconds,
@@ -387,7 +406,7 @@ def _run_dashboard_sweep(run_id: int, universe_key: str, threshold: float) -> No
             hits = int(hits_result or 0)
         finish_sweep_run(
             run_id,
-            status="completed",
+            status="stopped" if stop_event.is_set() else "completed",
             total_symbols=len(tickers),
             hits=int(hits),
             hit_symbols=hit_symbols,
@@ -397,10 +416,13 @@ def _run_dashboard_sweep(run_id: int, universe_key: str, threshold: float) -> No
         if hit_symbols:
             preview = ", ".join(hit_symbols[:12])
             details = f" Hit symbols: {preview}{'' if len(hit_symbols) <= 12 else f' (+{len(hit_symbols) - 12} more)'}."
-        _send_webhook(f":white_check_mark: Dashboard options sweep finished. {label} scanned {len(tickers)}. Hits: {hits}.{details}")
+        status_label = "stopped" if stop_event.is_set() else "finished"
+        _send_webhook(f":white_check_mark: Dashboard options sweep {status_label}. {label} scanned {len(tickers)}. Hits: {hits}.{details}")
     except Exception as exc:
         fail_sweep_run(run_id, str(exc))
         _send_webhook(f":warning: Dashboard options sweep failed. {universe_key}: {exc}")
+    finally:
+        _clear_dashboard_sweep(run_id, stop_event)
 
 
 def start_dashboard_sweep(universe_key: str, threshold: float) -> dict[str, object]:
@@ -432,9 +454,52 @@ def start_dashboard_sweep(universe_key: str, threshold: float) -> dict[str, obje
         trigger_source="dashboard",
         status="queued",
     )
-    thread = threading.Thread(target=_run_dashboard_sweep, args=(run.id, canonical, threshold), daemon=True)
+    stop_event = threading.Event()
+    _register_dashboard_sweep(run.id, stop_event)
+    thread = threading.Thread(target=_run_dashboard_sweep, args=(run.id, canonical, threshold, stop_event), daemon=True)
     thread.start()
     return _serialize_run(run)
+
+
+def request_stop_dashboard_sweep(run_id: int) -> dict[str, object]:
+    expire_stale_sweep_runs()
+    with get_db_session() as db:
+        run = db.query(OptionSweepRun).filter(OptionSweepRun.id == run_id).first()
+        if run is None:
+            raise LookupError(f"Scanner run #{run_id} was not found.")
+        if run.status not in ACTIVE_STATUSES:
+            return {
+                "stopped": False,
+                "message": f"Scanner run #{run_id} is already {run.status}.",
+                "run": _serialize_run(run),
+            }
+
+    control = _dashboard_sweep_control(run_id)
+    if control is not None:
+        control.set()
+        _set_run_status(
+            run_id,
+            last_event="stop_requested",
+            last_error="Stop requested from dashboard.",
+        )
+        message = f"Stop requested for scanner run #{run_id}."
+    else:
+        _set_run_status(
+            run_id,
+            status="stopped",
+            last_event="stopped",
+            last_error="Stop requested, but no local scanner thread was registered.",
+            completed=True,
+        )
+        message = f"Scanner run #{run_id} was marked stopped."
+
+    with get_db_session() as db:
+        run = db.query(OptionSweepRun).filter(OptionSweepRun.id == run_id).first()
+        return {
+            "stopped": True,
+            "message": message,
+            "run": _serialize_run(run),
+        }
 
 
 def _ranked_opportunity_from_event(

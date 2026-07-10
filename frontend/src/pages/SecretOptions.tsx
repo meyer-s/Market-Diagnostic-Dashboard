@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Link } from "react-router-dom";
 import { createPortal } from "react-dom";
-import { Activity, HelpCircle, Pencil, Play, RefreshCw, Settings2, Trash2 } from "lucide-react";
+import { Activity, HelpCircle, Pencil, Play, RefreshCw, Settings2, Square, Trash2 } from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
@@ -1729,6 +1729,7 @@ export default function SecretOptions() {
   const [scannerUniverse, setScannerUniverse] = useState("SP500");
   const [scannerThreshold, setScannerThreshold] = useState("30");
   const [scannerRunning, setScannerRunning] = useState(false);
+  const [scannerStopping, setScannerStopping] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [scannerNotice, setScannerNotice] = useState<string | null>(null);
   const [selectedScannerRunId, setSelectedScannerRunId] = useState<number | null>(null);
@@ -1813,20 +1814,26 @@ export default function SecretOptions() {
     }
   };
 
-  const loadScannerRunDetail = async (runId: number | null) => {
+  const loadScannerRunDetail = async (runId: number | null, options?: { quiet?: boolean }) => {
     if (!runId) {
       setScannerRunDetail(null);
       return;
     }
-    setLoadingScannerRunDetail(true);
+    if (!options?.quiet) {
+      setLoadingScannerRunDetail(true);
+    }
     try {
       const data = await apiFetch<ScannerRunDetailResponse>(`/secret/options/scanner-run/${runId}`);
       setScannerRunDetail(data);
     } catch (err: unknown) {
       console.error("Failed to load scanner run detail:", err);
-      setScannerRunDetail(null);
+      if (!options?.quiet) {
+        setScannerRunDetail(null);
+      }
     } finally {
-      setLoadingScannerRunDetail(false);
+      if (!options?.quiet) {
+        setLoadingScannerRunDetail(false);
+      }
     }
   };
 
@@ -1839,14 +1846,15 @@ export default function SecretOptions() {
       if (data.supported_universes.length > 0 && !data.supported_universes.some((item) => item.key === scannerUniverse)) {
         setScannerUniverse(data.supported_universes[0].key);
       }
+      const selectedStillExists = data.runs.find((run) => run.id === selectedScannerRunId) || null;
       const preferredRun =
-        data.runs.find((run) => run.id === selectedScannerRunId)
-        || data.runs.find((run) => run.hits > 0 && run.status === "completed")
+        selectedStillExists
+        || data.runs.find((run) => run.hits > 0 && (run.status === "completed" || run.status === "stopped"))
         || data.runs[0]
         || null;
       const preferredRunId = preferredRun?.id ?? null;
       setSelectedScannerRunId(preferredRunId);
-      await loadScannerRunDetail(preferredRunId);
+      await loadScannerRunDetail(preferredRunId, { quiet: scannerRunDetail?.run.id === preferredRunId });
     } catch (err: unknown) {
       console.error("Failed to load scanner summary:", err);
     }
@@ -2113,6 +2121,30 @@ export default function SecretOptions() {
       setScannerError(err instanceof Error ? err.message : "Failed to start scanner.");
     } finally {
       setScannerRunning(false);
+    }
+  };
+
+  const handleStopScanner = async () => {
+    if (!activeScannerRun || scannerStopping) return;
+    setScannerStopping(true);
+    setScannerError(null);
+    setScannerNotice(null);
+    try {
+      const data = await apiFetch<{ stopped: boolean; message: string; run: ScannerRun }>(
+        `/secret/options/scanner-run/${activeScannerRun.id}/stop`,
+        { method: "POST" }
+      );
+      setScannerNotice(data.message || `Stop requested for ${activeScannerRun.universe_label} sweep #${activeScannerRun.id}.`);
+      setSelectedScannerRunId(data.run.id);
+      setScannerRunDetail((current) =>
+        current?.run.id === data.run.id ? { ...current, run: data.run } : current
+      );
+      await loadScannerSummary();
+      window.setTimeout(loadScannerSummary, 2500);
+    } catch (err: unknown) {
+      setScannerError(err instanceof Error ? err.message : "Failed to stop scanner.");
+    } finally {
+      setScannerStopping(false);
     }
   };
 
@@ -2497,6 +2529,11 @@ export default function SecretOptions() {
   const recentScannerRuns = scannerData?.runs ?? [];
   const selectedScannerRun = scannerRunDetail?.run ?? recentScannerRuns.find((run) => run.id === selectedScannerRunId) ?? null;
   const selectedScannerHits = scannerRunDetail?.hits ?? [];
+  const selectedScannerRunActive = selectedScannerRun ? isActiveScannerRun(selectedScannerRun) : false;
+  const selectedScannerRunProgress =
+    selectedScannerRun && selectedScannerRun.total_symbols > 0
+      ? Math.max(0, Math.min(100, (selectedScannerRun.scanned_symbols / selectedScannerRun.total_symbols) * 100))
+      : 0;
 
   const filterCounts = useMemo(() => {
     return {
@@ -3317,7 +3354,7 @@ export default function SecretOptions() {
               Runs the same options sweep used by Discord and preserves Discord hit output.
             </div>
           </div>
-          <div className="grid gap-2 sm:grid-cols-[minmax(150px,1fr)_96px_auto] lg:w-[520px]">
+          <div className="grid gap-2 sm:grid-cols-[minmax(150px,1fr)_96px_auto] lg:w-[620px]">
             <select
               value={scannerUniverse}
               onChange={(event) => setScannerUniverse(event.target.value)}
@@ -3341,15 +3378,28 @@ export default function SecretOptions() {
               className="rounded-md border border-stealth-700 bg-stealth-950 px-2 py-1.5 text-xs text-stealth-100 disabled:opacity-60"
               aria-label="IV percentile threshold"
             />
-            <button
-              type="button"
-              onClick={handleRunScanner}
-              disabled={scannerRunning || Boolean(activeScannerRun)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-stealth-700 disabled:text-stealth-400"
-            >
-              <Play className="h-3.5 w-3.5" aria-hidden="true" />
-              {activeScannerRun ? "Running" : scannerRunning ? "Starting" : "Run Scan"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleRunScanner}
+                disabled={scannerRunning || Boolean(activeScannerRun)}
+                className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-stealth-700 disabled:text-stealth-400"
+              >
+                <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                {activeScannerRun ? "Running" : scannerRunning ? "Starting" : "Run Scan"}
+              </button>
+              {activeScannerRun ? (
+                <button
+                  type="button"
+                  onClick={handleStopScanner}
+                  disabled={scannerStopping}
+                  className="inline-flex min-w-[82px] items-center justify-center gap-1.5 rounded-md border border-rose-500/45 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:border-rose-400/70 hover:bg-rose-500/25 disabled:opacity-60"
+                >
+                  <Square className="h-3 w-3" aria-hidden="true" />
+                  {scannerStopping ? "Stopping" : "Stop"}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -3364,7 +3414,84 @@ export default function SecretOptions() {
           </div>
         ) : null}
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.8fr)_minmax(300px,0.9fr)]">
+        <div className="grid gap-3 xl:grid-cols-[280px_minmax(0,1fr)_minmax(280px,0.82fr)]">
+          <div className="min-w-0 rounded-lg border border-stealth-800/80 bg-stealth-950/25 p-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Run History</div>
+                <div className="text-[10px] text-stealth-500">Select scan</div>
+              </div>
+              <button
+                type="button"
+                onClick={loadScannerSummary}
+                className="text-[10px] font-medium text-sky-300 hover:text-sky-200"
+              >
+                Refresh
+              </button>
+            </div>
+            {recentScannerRuns.length === 0 ? (
+              <div className="min-h-[220px] rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+                No persisted scanner runs yet.
+              </div>
+            ) : (
+              <div className="max-h-[460px] space-y-2 overflow-y-auto pr-1">
+                {recentScannerRuns.slice(0, 8).map((run) => {
+                  const scanned = run.total_symbols > 0 ? `${run.scanned_symbols}/${run.total_symbols}` : `${run.scanned_symbols}`;
+                  const progress =
+                    run.total_symbols > 0
+                      ? Math.max(0, Math.min(100, (run.scanned_symbols / run.total_symbols) * 100))
+                      : 0;
+                  const runActive = isActiveScannerRun(run);
+                  const progressWidth = Math.max(runActive ? 4 : 0, progress);
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => handleSelectScannerRun(run.id)}
+                      className={`block min-h-[88px] w-full rounded-md border px-2 py-2 text-left transition-colors duration-200 ${
+                        selectedScannerRunId === run.id
+                          ? "border-sky-500/35 bg-sky-500/10"
+                          : "border-stealth-800/70 bg-stealth-950/20 hover:border-stealth-700 hover:bg-stealth-900/30"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 truncate text-xs font-semibold text-stealth-100">
+                          {run.universe_label}
+                          <span className="ml-1 text-[10px] font-normal uppercase text-stealth-500">{run.trigger_source}</span>
+                        </div>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scannerStatusClass(run.status)}`}>
+                          {run.status}
+                        </span>
+                      </div>
+                      <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-stealth-900">
+                        <div
+                          className={`h-full rounded-full transition-[width] duration-700 ease-out ${
+                            runActive ? "bg-sky-300/80" : "bg-emerald-300/70"
+                          }`}
+                          style={{ width: `${progressWidth}%` }}
+                        />
+                        {runActive ? (
+                          <div className="absolute inset-y-0 left-0 w-1/2 animate-[updatesIndeterminate_1200ms_ease-in-out_infinite] motion-reduce:animate-none rounded-full bg-sky-200/20" />
+                        ) : null}
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-stealth-400 tabular-nums">
+                        <span>{formatRelativeTime(run.started_at)} · {scanned} scanned</span>
+                        <span>{run.hits} hits / {run.errors} errors</span>
+                      </div>
+                      <div className="mt-1 min-h-[14px] truncate text-[10px] text-stealth-500">
+                        {run.hit_symbols.length > 0
+                          ? `${run.hit_symbols.slice(0, 8).join(" ")}${run.hit_symbols.length > 8 ? ` +${run.hit_symbols.length - 8}` : ""}`
+                          : runActive
+                            ? "Waiting for first persisted hit"
+                            : ""}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="min-w-0">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
@@ -3375,37 +3502,37 @@ export default function SecretOptions() {
                     : "No scan selected"}
                 </div>
               </div>
-              <select
-                value={selectedScannerRunId ?? ""}
-                onChange={(event) => {
-                  if (!event.target.value) return;
-                  const runId = Number(event.target.value);
-                  if (Number.isFinite(runId)) {
-                    handleSelectScannerRun(runId);
-                  }
-                }}
-                className="max-w-[220px] rounded-md border border-stealth-700 bg-stealth-950 px-2 py-1 text-[11px] text-stealth-100"
-                aria-label="Select scanner run"
-              >
-                {recentScannerRuns.length === 0 ? (
-                  <option value="">No scans</option>
-                ) : (
-                  recentScannerRuns.map((run) => (
-                    <option key={run.id} value={run.id}>
-                      #{run.id} {run.universe_label} · {run.hits} hits · {run.status}
-                    </option>
-                  ))
-                )}
-              </select>
+              {selectedScannerRun ? (
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scannerStatusClass(selectedScannerRun.status)}`}>
+                  {selectedScannerRun.status}
+                </span>
+              ) : null}
             </div>
+            {selectedScannerRunActive ? (
+              <div className="mb-2 rounded-md border border-sky-500/20 bg-sky-500/10 px-2.5 py-2">
+                <div className="flex items-center justify-between gap-2 text-[10px] text-sky-100 tabular-nums">
+                  <span>Scanning {selectedScannerRun?.scanned_symbols ?? 0}/{selectedScannerRun?.total_symbols ?? 0}</span>
+                  <span>{selectedScannerRunProgress.toFixed(0)}%</span>
+                </div>
+                <div className="relative mt-1.5 h-1.5 overflow-hidden rounded-full bg-stealth-950/80">
+                  <div
+                    className="h-full rounded-full bg-sky-300/80 transition-[width] duration-700 ease-out"
+                    style={{ width: `${Math.max(4, selectedScannerRunProgress)}%` }}
+                  />
+                  <div className="absolute inset-y-0 left-0 w-1/2 animate-[updatesIndeterminate_1200ms_ease-in-out_infinite] motion-reduce:animate-none rounded-full bg-white/15" />
+                </div>
+              </div>
+            ) : null}
             {loadingScannerRunDetail ? (
-              <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+              <div className="min-h-[220px] rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
                 Loading selected scan...
               </div>
             ) : selectedScannerHits.length === 0 ? (
-              <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+              <div className="flex min-h-[220px] items-center rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
                 {selectedScannerRun
-                  ? "No persisted hit cards found for this scan."
+                  ? selectedScannerRunActive
+                    ? "Running. Hit cards will appear here as Discord alerts persist."
+                    : "No persisted hit cards found for this scan."
                   : "Select a scanner run to inspect its hits."}
               </div>
             ) : (
@@ -3453,21 +3580,25 @@ export default function SecretOptions() {
             )}
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 rounded-lg border border-stealth-800/80 bg-stealth-950/25 p-2">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Repeated Names</div>
-              <div className="text-[10px] text-stealth-500">
-                {scannerData?.summary.event_count ?? 0} hits / {scannerData?.summary.symbol_count ?? 0} names
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Repeated Names</div>
+                <div className="text-[10px] text-stealth-500">All runs / 45d</div>
+              </div>
+              <div className="text-right text-[10px] text-stealth-500">
+                <div>{scannerData?.summary.event_count ?? 0} hits</div>
+                <div>{scannerData?.summary.symbol_count ?? 0} names</div>
               </div>
             </div>
             {topScannerSymbols.length === 0 ? (
-              <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+              <div className="min-h-[220px] rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
                 No recent scanner hits in the current lookback.
               </div>
             ) : (
-              <div className="divide-y divide-stealth-800/80">
+              <div className="max-h-[460px] divide-y divide-stealth-800/80 overflow-y-auto pr-1">
                 {topScannerSymbols.slice(0, 8).map((symbol) => (
-                  <div key={symbol.symbol} className="grid grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-2 py-1.5 text-xs">
+                  <div key={symbol.symbol} className="grid min-h-[54px] grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-2 py-1.5 text-xs">
                     <Link
                       to={`/stock-analysis/${encodeURIComponent(symbol.symbol)}?symbol=${encodeURIComponent(symbol.symbol)}`}
                       className="font-semibold text-sky-200 hover:text-sky-100"
@@ -3490,67 +3621,6 @@ export default function SecretOptions() {
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-
-          <div className="min-w-0">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Run History</div>
-              <button
-                type="button"
-                onClick={loadScannerSummary}
-                className="text-[10px] font-medium text-sky-300 hover:text-sky-200"
-              >
-                Refresh
-              </button>
-            </div>
-            {recentScannerRuns.length === 0 ? (
-              <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
-                No persisted scanner runs yet.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {recentScannerRuns.slice(0, 5).map((run) => {
-                  const scanned = run.total_symbols > 0 ? `${run.scanned_symbols}/${run.total_symbols}` : `${run.scanned_symbols}`;
-                  const progress =
-                    run.total_symbols > 0
-                      ? Math.max(0, Math.min(100, (run.scanned_symbols / run.total_symbols) * 100))
-                      : 0;
-                  return (
-                    <button
-                      key={run.id}
-                      type="button"
-                      onClick={() => handleSelectScannerRun(run.id)}
-                      className={`block w-full border-b border-stealth-800/80 pb-2 text-left last:border-b-0 last:pb-0 ${
-                        selectedScannerRunId === run.id ? "rounded-md bg-sky-500/10 px-2 py-1.5" : ""
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0 truncate text-xs font-semibold text-stealth-100">
-                          {run.universe_label}
-                          <span className="ml-1 text-[10px] font-normal uppercase text-stealth-500">{run.trigger_source}</span>
-                        </div>
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scannerStatusClass(run.status)}`}>
-                          {run.status}
-                        </span>
-                      </div>
-                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stealth-900">
-                        <div className="h-full rounded-full bg-emerald-300/70" style={{ width: `${progress}%` }} />
-                      </div>
-                      <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-stealth-400 tabular-nums">
-                        <span>{formatRelativeTime(run.started_at)} · {scanned} scanned</span>
-                        <span>{run.hits} hits / {run.errors} errors</span>
-                      </div>
-                      {run.hit_symbols.length > 0 ? (
-                        <div className="mt-1 truncate text-[10px] text-stealth-500">
-                          {run.hit_symbols.slice(0, 8).join(" ")}
-                          {run.hit_symbols.length > 8 ? ` +${run.hit_symbols.length - 8}` : ""}
-                        </div>
-                      ) : null}
-                    </button>
-                  );
-                })}
               </div>
             )}
           </div>

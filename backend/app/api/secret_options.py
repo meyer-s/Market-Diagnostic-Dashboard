@@ -34,7 +34,12 @@ from app.services.option_trade_reminders import (
     sync_trade_sell_reminder,
 )
 from app.services.optionality_clusters import build_optionality_cluster_payload
-from app.services.option_sweep_runs import build_scanner_run_detail, build_scanner_summary, start_dashboard_sweep
+from app.services.option_sweep_runs import (
+    build_scanner_run_detail,
+    build_scanner_summary,
+    request_stop_dashboard_sweep,
+    start_dashboard_sweep,
+)
 from app.services.stock_price_cache import get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
@@ -1840,6 +1845,14 @@ def run_scanner_from_dashboard(payload: ScannerRunRequest):
 def get_scanner_run(run_id: int):
     try:
         return _json_safe(build_scanner_run_detail(run_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/scanner-run/{run_id}/stop")
+def stop_scanner_run(run_id: int):
+    try:
+        return _json_safe(request_stop_dashboard_sweep(run_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

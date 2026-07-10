@@ -711,6 +711,49 @@ def test_dashboard_scanner_run_endpoint_queues_sweep(
     assert response.json()["status"] == "queued"
 
 
+def test_dashboard_scanner_stop_endpoint_requests_stop(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _session_local = secret_options_client
+
+    def _fake_stop(run_id: int) -> dict[str, object]:
+        assert run_id == 42
+        return {
+            "stopped": True,
+            "message": "Stop requested for scanner run #42.",
+            "run": {
+                "id": 42,
+                "universe_key": "SP500",
+                "universe_label": "S&P 500",
+                "threshold": 30.0,
+                "trigger_source": "dashboard",
+                "status": "running",
+                "total_symbols": 503,
+                "scanned_symbols": 20,
+                "hits": 0,
+                "errors": 0,
+                "rate_limit_errors": 0,
+                "hit_symbols": [],
+                "notes": None,
+                "last_event": "stop_requested",
+                "last_symbol": None,
+                "last_error": "Stop requested from dashboard.",
+                "started_at": "2026-07-10T10:00:00",
+                "completed_at": None,
+                "updated_at": "2026-07-10T10:01:00",
+            },
+        }
+
+    monkeypatch.setattr(secret_options, "request_stop_dashboard_sweep", _fake_stop)
+
+    response = client.post("/secret/options/scanner-run/42/stop")
+
+    assert response.status_code == 200
+    assert response.json()["stopped"] is True
+    assert response.json()["run"]["last_event"] == "stop_requested"
+
+
 def test_opportunity_backtest_compares_closed_trades(secret_options_client) -> None:
     client, session_local = secret_options_client
     now = datetime.utcnow()
