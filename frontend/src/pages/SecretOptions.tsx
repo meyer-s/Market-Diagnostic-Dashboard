@@ -237,6 +237,41 @@ interface ScannerTopSymbol {
   sector: string;
   avg_iv_percentile: number | null;
   avg_iv_hv_spread: number | null;
+  avg_opportunity_score: number | null;
+}
+
+interface ScannerRankedOpportunity {
+  event_id: number;
+  symbol: string;
+  triggered_at: string | null;
+  group: string;
+  sector: string;
+  score: number;
+  base_score: number;
+  grade: string | null;
+  model_version: string;
+  components: Record<string, number | null | undefined>;
+  reasons: string[];
+  iv_percentile: number | null;
+  iv30: number | null;
+  hv30: number | null;
+  iv_hv_spread: number | null;
+  avg_edr: number | null;
+  selected_contract: {
+    expiry: string | null;
+    dte: number | null;
+    strike: number | null;
+    option_type: string | null;
+    premium: number | null;
+    spread_pct: number | null;
+    open_interest: number | null;
+    volume: number | null;
+    implied_volatility: number | null;
+    contract_score: number | null;
+    reward_risk: number | null;
+    convexity_profit_pct: number | null;
+    convexity_probability_itm: number | null;
+  };
 }
 
 interface ScannerRun {
@@ -282,6 +317,7 @@ interface ScannerSummaryResponse {
   generated_at: string;
   summary: ScannerSummary;
   top_symbols: ScannerTopSymbol[];
+  ranked_opportunities: ScannerRankedOpportunity[];
   runs: ScannerRun[];
   supported_universes: ScannerUniverse[];
 }
@@ -597,6 +633,24 @@ const scannerStatusClass = (status: string) => {
 };
 
 const isActiveScannerRun = (run: ScannerRun) => run.status === "queued" || run.status === "running";
+
+const opportunityScoreClass = (score: number | null | undefined) => {
+  if (score === null || score === undefined || Number.isNaN(score)) {
+    return "border-stealth-700 bg-stealth-800 text-stealth-300";
+  }
+  if (score >= 85) return "border-emerald-400/50 bg-emerald-500/15 text-emerald-100";
+  if (score >= 75) return "border-lime-400/45 bg-lime-500/15 text-lime-100";
+  if (score >= 65) return "border-sky-400/45 bg-sky-500/15 text-sky-100";
+  if (score >= 50) return "border-amber-400/45 bg-amber-500/15 text-amber-100";
+  return "border-stealth-700 bg-stealth-900 text-stealth-300";
+};
+
+const opportunityComponentLabels: Array<{ key: string; label: string; tone: string }> = [
+  { key: "cheapness", label: "cheap", tone: "bg-emerald-300" },
+  { key: "volatility_edge", label: "edge", tone: "bg-cyan-300" },
+  { key: "contract_quality", label: "contract", tone: "bg-sky-300" },
+  { key: "recurrence", label: "repeat", tone: "bg-violet-300" },
+];
 
 const capitalizeWord = (value: string) => {
   if (!value) return value;
@@ -2261,6 +2315,7 @@ export default function SecretOptions() {
     { key: "ALL", label: "All Optionable Equities" },
   ];
   const topScannerSymbols = scannerData?.top_symbols ?? [];
+  const rankedScannerOpportunities = scannerData?.ranked_opportunities ?? [];
   const recentScannerRuns = scannerData?.runs ?? [];
 
   const filterCounts = useMemo(() => {
@@ -3102,7 +3157,78 @@ export default function SecretOptions() {
           </div>
         ) : null}
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.85fr)]">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.8fr)_minmax(300px,0.9fr)]">
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Ranked Opportunities</div>
+              <div className="text-[10px] text-stealth-500">heuristic v1</div>
+            </div>
+            {rankedScannerOpportunities.length === 0 ? (
+              <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+                No ranked opportunities in the current lookback.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {rankedScannerOpportunities.slice(0, 6).map((opportunity) => {
+                  const contract = opportunity.selected_contract;
+                  const contractLabel =
+                    contract.option_type && contract.strike !== null && contract.strike !== undefined
+                      ? `${contract.option_type.toUpperCase()} ${formatNumber(contract.strike, 2)}`
+                      : "contract pending";
+                  return (
+                    <div key={opportunity.event_id} className="rounded-lg border border-stealth-800/80 bg-stealth-950/30 p-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Link
+                              to={`/stock-analysis/${encodeURIComponent(opportunity.symbol)}?symbol=${encodeURIComponent(opportunity.symbol)}`}
+                              className="text-sm font-semibold text-sky-200 hover:text-sky-100"
+                            >
+                              {opportunity.symbol}
+                            </Link>
+                            <span className="truncate text-[10px] text-stealth-500">{opportunity.group}</span>
+                          </div>
+                          <div className="mt-0.5 truncate text-[10px] text-stealth-400">
+                            {contractLabel} · IV pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
+                          </div>
+                        </div>
+                        <div className={`shrink-0 rounded-md border px-2 py-1 text-right ${opportunityScoreClass(opportunity.score)}`}>
+                          <div className="text-sm font-semibold tabular-nums">{opportunity.score.toFixed(0)}</div>
+                          <div className="text-[9px] font-semibold uppercase">{opportunity.grade || "rank"}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 grid grid-cols-4 gap-1.5">
+                        {opportunityComponentLabels.map((component) => {
+                          const rawValue = opportunity.components?.[component.key];
+                          const value =
+                            rawValue === null || rawValue === undefined || Number.isNaN(Number(rawValue))
+                              ? 0
+                              : Math.max(0, Math.min(100, Number(rawValue)));
+                          return (
+                            <div key={component.key} className="min-w-0">
+                              <div className="mb-1 flex justify-between gap-1 text-[9px] uppercase text-stealth-500">
+                                <span className="truncate">{component.label}</span>
+                                <span className="tabular-nums">{value.toFixed(0)}</span>
+                              </div>
+                              <div className="h-1.5 overflow-hidden rounded-full bg-stealth-900">
+                                <div className={`h-full rounded-full ${component.tone}`} style={{ width: `${value}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-stealth-500">
+                        <span>{formatRelativeTime(opportunity.triggered_at)}</span>
+                        <span>{contract.reward_risk !== null && contract.reward_risk !== undefined ? `${contract.reward_risk.toFixed(2)}R` : "RR n/a"}</span>
+                        <span>{contract.convexity_profit_pct !== null && contract.convexity_profit_pct !== undefined ? `convexity ${formatSigned(contract.convexity_profit_pct, 0)}%` : "convexity n/a"}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="min-w-0">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Repeated Names</div>
@@ -3132,7 +3258,11 @@ export default function SecretOptions() {
                       <div className="font-semibold text-stealth-100">
                         {symbol.hits}x{symbol.recent_hits > 0 ? ` / ${symbol.recent_hits} wk` : ""}
                       </div>
-                      <div className="text-[10px] text-stealth-500">IV/HV {formatPointChange(symbol.avg_iv_hv_spread, 1)}</div>
+                      <div className="text-[10px] text-stealth-500">
+                        {symbol.avg_opportunity_score !== null && symbol.avg_opportunity_score !== undefined
+                          ? `score ${symbol.avg_opportunity_score.toFixed(0)}`
+                          : `IV/HV ${formatPointChange(symbol.avg_iv_hv_spread, 1)}`}
+                      </div>
                     </div>
                   </div>
                 ))}

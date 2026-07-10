@@ -453,6 +453,17 @@ def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -
                     iv30=18.0,
                     hv30=31.0,
                     iv_percentile=5.0,
+                    avg_edr=28.0,
+                    selected_spread_pct=12.0,
+                    selected_volume=24,
+                    selected_open_interest=350,
+                    selected_contract_score=4.5,
+                    selected_reward_risk=1.9,
+                    selected_convexity_profit_pct=93.0,
+                    selected_convexity_probability_itm=0.57,
+                    opportunity_score=86.0,
+                    opportunity_grade="A+",
+                    opportunity_model_version="heuristic_v1",
                     delivered=True,
                 ),
                 OptionAlertEvent(
@@ -461,6 +472,17 @@ def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -
                     iv30=19.0,
                     hv30=29.0,
                     iv_percentile=7.0,
+                    avg_edr=32.0,
+                    selected_spread_pct=18.0,
+                    selected_volume=12,
+                    selected_open_interest=180,
+                    selected_contract_score=3.1,
+                    selected_reward_risk=1.4,
+                    selected_convexity_profit_pct=70.0,
+                    selected_convexity_probability_itm=0.53,
+                    opportunity_score=74.0,
+                    opportunity_grade="B",
+                    opportunity_model_version="heuristic_v1",
                     delivered=True,
                 ),
                 OptionAlertEvent(
@@ -469,6 +491,17 @@ def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -
                     iv30=20.0,
                     hv30=28.0,
                     iv_percentile=9.0,
+                    avg_edr=40.0,
+                    selected_spread_pct=25.0,
+                    selected_volume=4,
+                    selected_open_interest=75,
+                    selected_contract_score=1.2,
+                    selected_reward_risk=0.9,
+                    selected_convexity_profit_pct=38.0,
+                    selected_convexity_probability_itm=0.45,
+                    opportunity_score=56.0,
+                    opportunity_grade="C",
+                    opportunity_model_version="heuristic_v1",
                     delivered=False,
                 ),
                 OptionSweepRun(
@@ -501,6 +534,12 @@ def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -
     assert body["top_symbols"][0]["symbol"] == "MGM"
     assert body["top_symbols"][0]["hits"] == 2
     assert body["top_symbols"][0]["group"] == "Hospitality & Travel"
+    assert body["top_symbols"][0]["avg_opportunity_score"] == 80.0
+    assert body["ranked_opportunities"][0]["symbol"] == "MGM"
+    assert body["ranked_opportunities"][0]["score"] > body["ranked_opportunities"][1]["score"]
+    assert body["ranked_opportunities"][0]["grade"] in {"A", "A+"}
+    assert set(body["ranked_opportunities"][0]["components"]) >= {"cheapness", "volatility_edge", "contract_quality", "recurrence"}
+    assert body["ranked_opportunities"][0]["selected_contract"]["reward_risk"] == 1.9
     assert body["runs"][0]["universe_key"] == "SP500"
     assert body["runs"][0]["hit_symbols"] == ["MGM", "HLT"]
 

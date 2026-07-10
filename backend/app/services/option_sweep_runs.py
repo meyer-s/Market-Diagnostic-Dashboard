@@ -17,6 +17,7 @@ from app.services.discord_sweep_universe import (
     resolve_sweep_universe,
 )
 from app.services.optionality_clusters import classify_optionality_symbol
+from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_opportunity_score, opportunity_grade
 from app.services.options_alerts import _send_webhook
 from app.utils.db_helpers import get_db_session
 from maintenance_scripts.options_chain_sweep import _scan_tickers
@@ -408,6 +409,8 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
         )
 
     by_symbol: dict[str, dict[str, Any]] = {}
+    event_records: list[dict[str, Any]] = []
+    group_recent_counts: Counter[str] = Counter()
     delivered = 0
     failed = 0
     latest_event_at = None
@@ -426,6 +429,17 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
         spread = None
         if event.iv30 is not None and event.hv30 is not None:
             spread = float(event.iv30) - float(event.hv30)
+        if triggered_at and triggered_at >= recent_cutoff:
+            group_recent_counts[classification.group] += 1
+        event_records.append(
+            {
+                "event": event,
+                "symbol": symbol,
+                "classification": classification,
+                "triggered_at": triggered_at,
+                "iv_hv_spread": spread,
+            }
+        )
         row = by_symbol.setdefault(
             symbol,
             {
@@ -437,6 +451,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
                 "sector": classification.sector,
                 "_iv_percentiles": [],
                 "_spreads": [],
+                "_opportunity_scores": [],
             },
         )
         row["hits"] += 1
@@ -448,13 +463,19 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             row["_iv_percentiles"].append(float(event.iv_percentile))
         if spread is not None:
             row["_spreads"].append(spread)
+        if event.opportunity_score is not None:
+            row["_opportunity_scores"].append(float(event.opportunity_score))
 
     top_symbols = []
     for row in by_symbol.values():
         iv_values = row.pop("_iv_percentiles")
         spread_values = row.pop("_spreads")
+        opportunity_values = row.pop("_opportunity_scores")
         row["avg_iv_percentile"] = round(sum(iv_values) / len(iv_values), 2) if iv_values else None
         row["avg_iv_hv_spread"] = round(sum(spread_values) / len(spread_values), 2) if spread_values else None
+        row["avg_opportunity_score"] = (
+            round(sum(opportunity_values) / len(opportunity_values), 2) if opportunity_values else None
+        )
         row["latest_triggered_at"] = (
             row["latest_triggered_at"].isoformat() if row["latest_triggered_at"] else None
         )
@@ -465,6 +486,83 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             int(row["hits"]),
             row["latest_triggered_at"] or "",
         ),
+        reverse=True,
+    )
+
+    ranked_by_symbol: dict[str, dict[str, Any]] = {}
+    for record in event_records:
+        event = record["event"]
+        symbol = record["symbol"]
+        row = by_symbol.get(symbol)
+        if not row:
+            continue
+        classification = record["classification"]
+        score_payload = compute_opportunity_score(
+            iv_percentile=event.iv_percentile,
+            iv30=event.iv30,
+            hv30=event.hv30,
+            avg_edr=event.avg_edr,
+            selected_spread_pct=event.selected_spread_pct,
+            selected_open_interest=event.selected_open_interest,
+            selected_volume=event.selected_volume,
+            selected_reward_risk=event.selected_reward_risk,
+            selected_convexity_profit_pct=event.selected_convexity_profit_pct,
+            selected_convexity_probability_itm=event.selected_convexity_probability_itm,
+            selected_contract_score=event.selected_contract_score,
+            symbol_recent_hits=int(row["recent_hits"]),
+            symbol_total_hits=int(row["hits"]),
+            group_recent_hits=group_recent_counts[classification.group],
+        )
+        base_score = float(event.opportunity_score) if event.opportunity_score is not None else float(score_payload["base_score"])
+        rank_score = float(score_payload["rank_score"])
+        triggered_at = record["triggered_at"]
+        opportunity = {
+            "event_id": event.id,
+            "symbol": symbol,
+            "triggered_at": triggered_at.isoformat() if triggered_at else None,
+            "group": classification.group,
+            "sector": classification.sector,
+            "score": rank_score,
+            "base_score": round(base_score, 2),
+            "grade": score_payload.get("grade") or opportunity_grade(rank_score),
+            "model_version": event.opportunity_model_version or OPPORTUNITY_MODEL_VERSION,
+            "components": score_payload.get("components") or {},
+            "reasons": score_payload.get("reasons") or [],
+            "iv_percentile": event.iv_percentile,
+            "iv30": event.iv30,
+            "hv30": event.hv30,
+            "iv_hv_spread": record["iv_hv_spread"],
+            "avg_edr": event.avg_edr,
+            "selected_contract": {
+                "expiry": event.selected_expiry,
+                "dte": event.selected_dte,
+                "strike": event.selected_strike,
+                "option_type": event.selected_option_type,
+                "premium": event.selected_premium,
+                "spread_pct": event.selected_spread_pct,
+                "open_interest": event.selected_open_interest,
+                "volume": event.selected_volume,
+                "implied_volatility": event.selected_implied_volatility,
+                "contract_score": event.selected_contract_score,
+                "reward_risk": event.selected_reward_risk,
+                "convexity_profit_pct": event.selected_convexity_profit_pct,
+                "convexity_probability_itm": event.selected_convexity_probability_itm,
+            },
+        }
+        current = ranked_by_symbol.get(symbol)
+        if (
+            current is None
+            or rank_score > float(current["score"])
+            or (
+                rank_score == float(current["score"])
+                and (opportunity["triggered_at"] or "") > (current.get("triggered_at") or "")
+            )
+        ):
+            ranked_by_symbol[symbol] = opportunity
+
+    ranked_opportunities = sorted(
+        ranked_by_symbol.values(),
+        key=lambda row: (float(row["score"]), row.get("triggered_at") or ""),
         reverse=True,
     )
 
@@ -490,6 +588,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             "avg_hit_rate": avg_hit_rate,
         },
         "top_symbols": top_symbols[:12],
+        "ranked_opportunities": ranked_opportunities[:12],
         "runs": run_rows,
         "supported_universes": [
             {"key": key, "label": label}

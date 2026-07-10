@@ -11,6 +11,7 @@ from app.api.stock_projection import compute_historical_volatility, compute_opti
 from app.models.options_alerts import OptionAlertWatch, OptionAlertEvent
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
+from app.services.options_opportunity import opportunity_event_fields
 from app.services.options_quotes import select_atm_contract, select_optimal_contract
 from app.utils.db_helpers import get_db_session
 
@@ -943,6 +944,13 @@ def run_options_alert_scan() -> dict:
                     delivery_channel=channel,
                     delivery_error=error,
                     **_selected_contract_event_fields(selected_contract),
+                    **opportunity_event_fields(
+                        iv_percentile=iv_percentile,
+                        iv30=iv30,
+                        hv30=metrics.get("hv30"),
+                        avg_edr=metrics.get("avg_edr"),
+                        selected_contract=selected_contract,
+                    ),
                 )
                 db.add(event)
                 watch.last_triggered_at = datetime.utcnow()

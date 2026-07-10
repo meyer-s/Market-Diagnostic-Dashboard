@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 
 from app.core.db import Base
 
@@ -42,6 +42,16 @@ class OptionAlertEvent(Base):
     selected_open_interest = Column(Integer, nullable=True)
     selected_implied_volatility = Column(Float, nullable=True)
     selected_last_trade_at = Column(String, nullable=True)
+    selected_contract_score = Column(Float, nullable=True)
+    selected_reward_risk = Column(Float, nullable=True)
+    selected_convexity_profit_pct = Column(Float, nullable=True)
+    selected_convexity_probability_itm = Column(Float, nullable=True)
+    selected_planned_loss_pct = Column(Float, nullable=True)
+    selected_target_profit_pct = Column(Float, nullable=True)
+    opportunity_score = Column(Float, nullable=True)
+    opportunity_grade = Column(String, nullable=True)
+    opportunity_model_version = Column(String, nullable=True)
+    opportunity_components = Column(Text, nullable=True)
     message = Column(String)
     delivered = Column(Boolean, default=False)
     delivery_channel = Column(String, nullable=True)

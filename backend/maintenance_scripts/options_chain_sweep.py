@@ -20,6 +20,7 @@ from app.services.options_alerts import (
 )
 from app.models.options_alerts import OptionAlertEvent
 from app.services.market_data.factory import get_market_data_provider
+from app.services.options_opportunity import opportunity_event_fields
 from app.services.options_alerts import _send_webhook, _get_current_price
 from app.utils.db_helpers import get_db_session
 
@@ -276,6 +277,13 @@ def _scan_tickers(
                     delivery_channel=channel,
                     delivery_error=error,
                     **_selected_contract_event_fields(selected_contract),
+                    **opportunity_event_fields(
+                        iv_percentile=iv_percentile,
+                        iv30=iv30,
+                        hv30=metrics.get("hv30"),
+                        avg_edr=metrics.get("avg_edr"),
+                        selected_contract=selected_contract,
+                    ),
                 )
             )
             db.commit()
