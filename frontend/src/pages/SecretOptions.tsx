@@ -877,9 +877,9 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
     `${formatPercent(opportunity.iv30, 1)} / ${formatPercent(opportunity.hv30, 1)} / ${formatPercent(opportunity.avg_edr, 1)}`;
 
   const detailRow = (label: string, value: string | number | null | undefined, className = "text-stealth-100") => (
-    <div className="flex items-baseline justify-between gap-3 text-[10px]">
-      <span className="uppercase tracking-wide text-stealth-500">{label}</span>
-      <span className={`min-w-0 truncate text-right tabular-nums ${className}`}>{value ?? "—"}</span>
+    <div className="flex items-start justify-between gap-3 text-[10px]">
+      <span className="shrink-0 uppercase tracking-wide text-stealth-500">{label}</span>
+      <span className={`min-w-0 max-w-[72%] break-words text-right tabular-nums ${className}`}>{value ?? "—"}</span>
     </div>
   );
 
@@ -889,9 +889,9 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
       <div className="min-w-0 border-t border-stealth-800/70 pt-2">
         <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">{title}</div>
         <div className="space-y-1">
-          {rows.slice(0, 5).map((row) => detailRow(row.label, row.value))}
-          {lines.slice(0, 3).map((line, index) => (
-            <div key={`${title}-${index}`} className="text-[10px] leading-snug text-stealth-300">
+          {rows.map((row) => detailRow(row.label, row.value))}
+          {lines.map((line, index) => (
+            <div key={`${title}-${index}`} className="break-words text-[10px] leading-snug text-stealth-300">
               {line}
             </div>
           ))}
@@ -901,8 +901,8 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
   };
 
   return (
-    <div className="border-t border-stealth-800/80 bg-stealth-950/40 px-3 py-3">
-      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr]">
+    <div className="overflow-x-hidden bg-stealth-950/40 px-3 py-3 sm:px-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr]">
         <div className="space-y-2">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Mispricing</div>
           {detailRow("Consensus", scannerAlertValue(sections, "MISPRICING", "Consensus") || "Cheap", "text-emerald-200")}
@@ -957,7 +957,7 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
         </div>
       </div>
 
-      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
         {sectionBlock("Direction", directionSection?.rows || [], directionSection?.lines || [])}
         {sectionBlock("Momentum", macdSection?.rows || [], macdSection?.lines || [])}
         {sectionBlock("Horizons", horizonsSection?.rows || [], horizonsSection?.lines || [])}
@@ -1971,7 +1971,13 @@ export default function SecretOptions() {
   const [zoneInputsByPosition, setZoneInputsByPosition] = useState<Record<number, ZoneInputs>>({});
   const [spotWeightBySymbol, setSpotWeightBySymbol] = useState<Record<string, SpotWeighting>>({});
 
-  const anyModalOpen = showAddModal || showCloseModal || showClosedLog || showClosedEditModal || showTrainingOutcomes;
+  const anyModalOpen =
+    showAddModal ||
+    showCloseModal ||
+    showClosedLog ||
+    showClosedEditModal ||
+    showTrainingOutcomes ||
+    expandedScannerHitId !== null;
   const renderModal = (node: JSX.Element) => {
     if (typeof document === "undefined") {
       return null;
@@ -2766,11 +2772,46 @@ export default function SecretOptions() {
   const recentScannerRuns = scannerData?.runs ?? [];
   const selectedScannerRun = scannerRunDetail?.run ?? recentScannerRuns.find((run) => run.id === selectedScannerRunId) ?? null;
   const selectedScannerHits = scannerRunDetail?.hits ?? [];
+  const selectedScannerHit = useMemo(
+    () => selectedScannerHits.find((hit) => hit.event_id === expandedScannerHitId) ?? null,
+    [expandedScannerHitId, selectedScannerHits]
+  );
+  const selectedScannerHitContract = selectedScannerHit?.selected_contract ?? null;
+  const selectedScannerHitContractLabel =
+    selectedScannerHitContract?.option_type &&
+    selectedScannerHitContract.strike !== null &&
+    selectedScannerHitContract.strike !== undefined
+      ? `${selectedScannerHitContract.option_type.toUpperCase()} ${formatNumber(selectedScannerHitContract.strike, 2)}${
+          selectedScannerHitContract.expiry ? ` / ${formatDate(selectedScannerHitContract.expiry)}` : ""
+        }${
+          selectedScannerHitContract.dte !== null && selectedScannerHitContract.dte !== undefined
+            ? ` / ${selectedScannerHitContract.dte} DTE`
+            : ""
+        }`
+      : "contract pending";
   const selectedScannerRunActive = selectedScannerRun ? isActiveScannerRun(selectedScannerRun) : false;
   const selectedScannerRunProgress =
     selectedScannerRun && selectedScannerRun.total_symbols > 0
       ? Math.max(0, Math.min(100, (selectedScannerRun.scanned_symbols / selectedScannerRun.total_symbols) * 100))
       : 0;
+
+  useEffect(() => {
+    if (expandedScannerHitId === null) return;
+    if (!selectedScannerHits.some((hit) => hit.event_id === expandedScannerHitId)) {
+      setExpandedScannerHitId(null);
+    }
+  }, [expandedScannerHitId, selectedScannerHits]);
+
+  useEffect(() => {
+    if (expandedScannerHitId === null) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExpandedScannerHitId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [expandedScannerHitId]);
 
   const filterCounts = useMemo(() => {
     return {
@@ -3777,7 +3818,7 @@ export default function SecretOptions() {
                   : "Select a scanner run to inspect its hits."}
               </div>
             ) : (
-              <div className="max-h-[460px] overflow-y-auto rounded-lg border border-stealth-800/80 bg-stealth-950/25">
+              <div className="max-h-[460px] overflow-x-hidden overflow-y-auto rounded-lg border border-stealth-800/80 bg-stealth-950/25">
                 <div className="sticky top-0 z-10 grid grid-cols-[64px_minmax(0,1fr)_64px] gap-2 border-b border-stealth-800 bg-stealth-950/95 px-2 py-1.5 text-[9px] uppercase tracking-wide text-stealth-500">
                   <span>Symbol</span>
                   <span>Setup</span>
@@ -3786,27 +3827,29 @@ export default function SecretOptions() {
                 <div className="divide-y divide-stealth-800/80">
                 {selectedScannerHits.map((opportunity) => {
                   const contract = opportunity.selected_contract;
-                  const isExpanded = expandedScannerHitId === opportunity.event_id;
+                  const isSelected = expandedScannerHitId === opportunity.event_id;
                   const contractLabel =
                     contract.option_type && contract.strike !== null && contract.strike !== undefined
                       ? `${contract.option_type.toUpperCase()} ${formatNumber(contract.strike, 2)}`
                       : "contract pending";
                   return (
                     <Fragment key={opportunity.event_id}>
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setExpandedScannerHitId((current) => current === opportunity.event_id ? null : opportunity.event_id)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setExpandedScannerHitId((current) => current === opportunity.event_id ? null : opportunity.event_id);
-                          }
-                        }}
-                        className={`grid cursor-pointer grid-cols-[64px_minmax(0,1fr)_64px] gap-2 px-2 py-2 text-xs transition-colors ${
-                          isExpanded ? "bg-sky-500/10" : "hover:bg-stealth-900/35"
-                        }`}
-                      >
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          aria-haspopup="dialog"
+                          aria-label={`Open scanner hit details for ${opportunity.symbol}`}
+                          onClick={() => setExpandedScannerHitId(opportunity.event_id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setExpandedScannerHitId(opportunity.event_id);
+                            }
+                          }}
+                          className={`grid cursor-pointer grid-cols-[64px_minmax(0,1fr)_64px] gap-2 px-2 py-2 text-xs transition-colors ${
+                            isSelected ? "bg-sky-500/10" : "hover:bg-stealth-900/35"
+                          }`}
+                        >
                         <Link
                           to={`/stock-analysis/${encodeURIComponent(opportunity.symbol)}?symbol=${encodeURIComponent(opportunity.symbol)}`}
                           onClick={(event) => event.stopPropagation()}
@@ -3831,11 +3874,10 @@ export default function SecretOptions() {
                             {compactOpportunityGrade(opportunity.score, opportunity.grade)}
                           </div>
                           <ChevronDown
-                            className={`mt-1 h-3 w-3 text-stealth-500 transition-transform ${isExpanded ? "rotate-180 text-sky-300" : ""}`}
+                            className={`mt-1 h-3 w-3 -rotate-90 text-stealth-500 transition-colors ${isSelected ? "text-sky-300" : ""}`}
                           />
                         </div>
                       </div>
-                      {isExpanded ? <ScannerHitDetail opportunity={opportunity} /> : null}
                     </Fragment>
                   );
                 })}
@@ -4324,6 +4366,49 @@ export default function SecretOptions() {
       {optionalityClustersCard}
         </aside>
       </div>
+
+      {selectedScannerHit && renderModal(
+        <div
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-stretch justify-center overflow-x-hidden overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+          onClick={() => setExpandedScannerHitId(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="scanner-hit-detail-title"
+            className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-stealth-700 bg-stealth-950 shadow-2xl sm:max-h-[calc(100dvh-2rem)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-stealth-800 bg-stealth-950/95 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Scanner hit detail</div>
+                <h2 id="scanner-hit-detail-title" className="mt-0.5 truncate text-lg font-semibold text-stealth-100">
+                  {selectedScannerHit.symbol}
+                </h2>
+                <div className="mt-0.5 break-words text-xs text-stealth-400">
+                  {selectedScannerHit.group} · {selectedScannerHitContractLabel}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-start gap-2">
+                <div className={`rounded-md border px-2 py-1 text-sm font-semibold ${opportunityScoreClass(selectedScannerHit.score)}`}>
+                  {compactOpportunityGrade(selectedScannerHit.score, selectedScannerHit.grade)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpandedScannerHitId(null)}
+                  aria-label="Close scanner hit details"
+                  className="rounded-md border border-stealth-700 bg-stealth-900 px-2 py-1 text-sm text-stealth-300 transition hover:border-stealth-500 hover:text-stealth-100"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 overflow-x-hidden overflow-y-auto">
+              <ScannerHitDetail opportunity={selectedScannerHit} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Trade Modal */}
       {showAddModal && renderModal(
