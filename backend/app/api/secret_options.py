@@ -22,6 +22,13 @@ from app.models.option_training_outcomes import OptionTrainingOutcome
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import option_quote_from_row
+from app.services.options_opportunity import (
+    OPPORTUNITY_MODEL_VERSION,
+    compute_opportunity_score,
+    event_opportunity_signal_fields,
+    opportunity_fields_from_event,
+    opportunity_grade,
+)
 from app.services.option_trade_reminders import (
     skip_trade_sell_reminder,
     sync_trade_sell_reminder,
@@ -981,6 +988,7 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
         "volatility_source": None,
         "hv30": None,
         "volatility_signal": _empty_volatility_signal(),
+        "opportunity": None,
         "dte": None,
         "greeks": None,
         "pnl": {
@@ -1169,6 +1177,104 @@ def _compute_volatility_signal(
     return signal
 
 
+def _score_payload_for_event(event: OptionAlertEvent) -> Dict[str, object]:
+    selected_fields = event_opportunity_signal_fields(event)
+    score = compute_opportunity_score(
+        iv_percentile=event.iv_percentile,
+        iv30=event.iv30,
+        hv30=event.hv30,
+        avg_edr=event.avg_edr,
+        selected_spread_pct=event.selected_spread_pct,
+        selected_open_interest=event.selected_open_interest,
+        selected_volume=event.selected_volume,
+        selected_reward_risk=selected_fields.get("selected_reward_risk"),
+        selected_convexity_profit_pct=selected_fields.get("selected_convexity_profit_pct"),
+        selected_convexity_probability_itm=selected_fields.get("selected_convexity_probability_itm"),
+        selected_contract_score=selected_fields.get("selected_contract_score"),
+    )
+    if event.opportunity_score is not None and _is_finite_number(event.opportunity_score):
+        score["base_score"] = round(float(event.opportunity_score), 2)
+        score["grade"] = event.opportunity_grade or opportunity_grade(float(event.opportunity_score))
+    return score
+
+
+def _compute_position_opportunity_signal(
+    position: OptionPosition,
+    quote: Dict[str, object],
+    volatility_signal: Dict[str, object],
+) -> Optional[Dict[str, object]]:
+    source_event_id = getattr(position, "source_event_id", None)
+    if source_event_id is None:
+        return None
+
+    try:
+        with get_db_session() as db:
+            event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == source_event_id).first()
+    except Exception as exc:
+        return {"error": str(exc), "entry": None, "current": None}
+
+    if event is None:
+        return {
+            "error": f"Scanner event {source_event_id} not found.",
+            "entry": None,
+            "current": None,
+        }
+
+    selected_fields = event_opportunity_signal_fields(event)
+    entry_score = _score_payload_for_event(event)
+    current = volatility_signal.get("current") or {}
+    current_iv30 = current.get("iv30") or current.get("contract_iv") or event.iv30
+    current_hv30 = current.get("hv30") or event.hv30
+    current_iv_percentile = current.get("iv_percentile") or event.iv_percentile
+    current_avg_edr = current.get("avg_edr") or event.avg_edr
+    current_score = compute_opportunity_score(
+        iv_percentile=current_iv_percentile,
+        iv30=current_iv30,
+        hv30=current_hv30,
+        avg_edr=current_avg_edr,
+        selected_spread_pct=quote.get("spread_pct") if quote.get("spread_pct") is not None else event.selected_spread_pct,
+        selected_open_interest=quote.get("open_interest") if quote.get("open_interest") is not None else event.selected_open_interest,
+        selected_volume=quote.get("volume") if quote.get("volume") is not None else event.selected_volume,
+        selected_reward_risk=selected_fields.get("selected_reward_risk"),
+        selected_convexity_profit_pct=selected_fields.get("selected_convexity_profit_pct"),
+        selected_convexity_probability_itm=selected_fields.get("selected_convexity_probability_itm"),
+        selected_contract_score=selected_fields.get("selected_contract_score"),
+    )
+    entry_base = float(entry_score.get("base_score") or 0.0)
+    current_base = float(current_score.get("base_score") or 0.0)
+    score_change = round(current_base - entry_base, 2)
+    if score_change >= 3:
+        headline = f"Rank improving {score_change:+.1f}"
+    elif score_change <= -3:
+        headline = f"Rank fading {score_change:+.1f}"
+    else:
+        headline = "Rank stable"
+
+    return {
+        "event_id": event.id,
+        "model_version": OPPORTUNITY_MODEL_VERSION,
+        "computed_for_date": date.today().isoformat(),
+        "cadence": "daily_on_refresh",
+        "basis": "current quote, current HV30, linked scanner setup",
+        "entry": {
+            "score": entry_score.get("base_score"),
+            "rank_score": entry_score.get("rank_score"),
+            "grade": entry_score.get("grade"),
+            "components": entry_score.get("components"),
+            "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
+        },
+        "current": {
+            "score": current_score.get("base_score"),
+            "rank_score": current_score.get("rank_score"),
+            "grade": current_score.get("grade"),
+            "components": current_score.get("components"),
+            "reasons": current_score.get("reasons"),
+        },
+        "score_change": score_change,
+        "headline": headline,
+    }
+
+
 def _compute_position_metrics(
     position: OptionPosition,
     provider: Optional[MarketDataProvider] = None,
@@ -1277,6 +1383,7 @@ def _compute_position_metrics(
         hv30,
         include_chain_snapshot=include_chain_snapshot,
     )
+    opportunity_signal = _compute_position_opportunity_signal(position, quote, volatility_signal)
 
     dte = max((position.expiration - date.today()).days, 0)
     time_to_expiry = max(dte, 0) / 365.0
@@ -1324,6 +1431,7 @@ def _compute_position_metrics(
         "volatility_source": volatility_source,
         "hv30": hv30,
         "volatility_signal": volatility_signal,
+        "opportunity": opportunity_signal,
         "dte": dte,
         "greeks": greeks,
         "pnl": {
@@ -2197,6 +2305,178 @@ def backfill_signal_attribution(limit: int = Query(1000, ge=1, le=10000)):
             "closed_positions_checked": len(closed_positions),
             "closed_positions_linked": closed_linked,
         })
+
+
+def _apply_event_opportunity_fields(event: OptionAlertEvent, force: bool = False) -> bool:
+    fields = opportunity_fields_from_event(event)
+    changed = False
+    for key, value in fields.items():
+        if force or getattr(event, key, None) is None:
+            setattr(event, key, value)
+            changed = True
+    return changed
+
+
+def _trade_outcome_stats(rows: list[Dict[str, object]]) -> Dict[str, object]:
+    count = len(rows)
+    pnl_values = [
+        float(row["dollar_pnl"])
+        for row in rows
+        if row.get("dollar_pnl") is not None and _is_finite_number(row.get("dollar_pnl"))
+    ]
+    pct_values = [
+        float(row["percent_pnl"])
+        for row in rows
+        if row.get("percent_pnl") is not None and _is_finite_number(row.get("percent_pnl"))
+    ]
+    winners = [value for value in pnl_values if value > 0]
+    return {
+        "count": count,
+        "total_pnl": round(sum(pnl_values), 2) if pnl_values else 0.0,
+        "avg_pnl": round(sum(pnl_values) / len(pnl_values), 2) if pnl_values else None,
+        "avg_percent_pnl": round(sum(pct_values) / len(pct_values), 2) if pct_values else None,
+        "win_rate_pct": round(len(winners) / len(pnl_values) * 100.0, 2) if pnl_values else None,
+    }
+
+
+@router.post("/opportunity-scores/backfill")
+def backfill_opportunity_scores(
+    lookback_days: int = Query(3650, ge=30, le=3650),
+    limit: int = Query(5000, ge=1, le=20000),
+    force: bool = Query(False),
+):
+    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+    with get_db_session() as db:
+        events = (
+            db.query(OptionAlertEvent)
+            .filter(OptionAlertEvent.triggered_at >= cutoff)
+            .order_by(OptionAlertEvent.triggered_at.desc())
+            .limit(limit)
+            .all()
+        )
+        updated = 0
+        for event in events:
+            if _apply_event_opportunity_fields(event, force=force):
+                updated += 1
+                db.add(event)
+        db.commit()
+    return _json_safe(
+        {
+            "checked": len(events),
+            "updated": updated,
+            "lookback_days": lookback_days,
+            "force": force,
+            "model_version": OPPORTUNITY_MODEL_VERSION,
+        }
+    )
+
+
+@router.get("/opportunity-backtest")
+def get_opportunity_backtest(
+    lookback_days: int = Query(1825, ge=30, le=3650),
+    threshold: float = Query(65.0, ge=0, le=100),
+    limit: int = Query(1000, ge=1, le=5000),
+):
+    cutoff_day = date.today() - timedelta(days=lookback_days)
+    with get_db_session() as db:
+        closed_positions = (
+            db.query(ClosedPosition)
+            .filter(ClosedPosition.close_date >= cutoff_day)
+            .order_by(ClosedPosition.close_date.desc(), ClosedPosition.id.desc())
+            .limit(limit)
+            .all()
+        )
+        event_ids = sorted(
+            {
+                int(position.source_event_id)
+                for position in closed_positions
+                if position.source_event_id is not None
+            }
+        )
+        events = (
+            db.query(OptionAlertEvent)
+            .filter(OptionAlertEvent.id.in_(event_ids))
+            .all()
+            if event_ids
+            else []
+        )
+        events_by_id = {event.id: event for event in events}
+
+    rows: list[Dict[str, object]] = []
+    unscored = 0
+    for position in closed_positions:
+        event = events_by_id.get(position.source_event_id)
+        if event is None:
+            unscored += 1
+            continue
+        score = _score_payload_for_event(event)
+        score_value = float(score.get("base_score") or 0.0)
+        selected = score_value >= threshold
+        rows.append(
+            {
+                "closed_position_id": position.id,
+                "event_id": event.id,
+                "symbol": position.symbol,
+                "option_type": position.option_type,
+                "trade_date": position.trade_date.isoformat(),
+                "close_date": position.close_date.isoformat(),
+                "dollar_pnl": position.dollar_pnl,
+                "percent_pnl": position.percent_pnl,
+                "score": round(score_value, 2),
+                "rank_score": score.get("rank_score"),
+                "grade": score.get("grade"),
+                "selected_by_model": selected,
+                "components": score.get("components"),
+            }
+        )
+
+    selected_rows = [row for row in rows if row.get("selected_by_model")]
+    excluded_rows = [row for row in rows if not row.get("selected_by_model")]
+    all_stats = _trade_outcome_stats(rows)
+    selected_stats = _trade_outcome_stats(selected_rows)
+    excluded_stats = _trade_outcome_stats(excluded_rows)
+    avoided_loss = -sum(
+        float(row["dollar_pnl"])
+        for row in excluded_rows
+        if row.get("dollar_pnl") is not None and float(row["dollar_pnl"]) < 0
+    )
+    left_on_table = sum(
+        float(row["dollar_pnl"])
+        for row in excluded_rows
+        if row.get("dollar_pnl") is not None and float(row["dollar_pnl"]) > 0
+    )
+    grade_buckets: Dict[str, list[Dict[str, object]]] = {}
+    for row in rows:
+        grade_buckets.setdefault(str(row.get("grade") or "n/a"), []).append(row)
+
+    return _json_safe(
+        {
+            "threshold": threshold,
+            "lookback_days": lookback_days,
+            "model_version": OPPORTUNITY_MODEL_VERSION,
+            "summary": {
+                "closed_positions_checked": len(closed_positions),
+                "scored_trades": len(rows),
+                "unscored_trades": unscored,
+                "all_trades": all_stats,
+                "model_selected": selected_stats,
+                "model_excluded": excluded_stats,
+                "avg_percent_delta_vs_all": (
+                    round(float(selected_stats["avg_percent_pnl"]) - float(all_stats["avg_percent_pnl"]), 2)
+                    if selected_stats.get("avg_percent_pnl") is not None
+                    and all_stats.get("avg_percent_pnl") is not None
+                    else None
+                ),
+                "avoided_loss_from_excluded": round(avoided_loss, 2),
+                "excluded_winners_left_on_table": round(left_on_table, 2),
+                "grade_buckets": {
+                    grade: _trade_outcome_stats(bucket_rows)
+                    for grade, bucket_rows in sorted(grade_buckets.items())
+                },
+            },
+            "rows": sorted(rows, key=lambda row: (float(row["score"]), row["close_date"]), reverse=True)[:200],
+        }
+    )
 
 
 @router.get("/training-outcomes")

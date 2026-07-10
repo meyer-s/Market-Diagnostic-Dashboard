@@ -2,10 +2,18 @@ from __future__ import annotations
 
 import json
 from math import log10
+import re
 from typing import Any, Optional
 
 
 OPPORTUNITY_MODEL_VERSION = "heuristic_v1"
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_REWARD_RISK_RE = re.compile(r"Reward/Risk\s*:\s*([0-9]+(?:\.[0-9]+)?)R?", re.IGNORECASE)
+_HUMP_EXIT_RE = re.compile(r"Hump\s+Exit\s*:[^\n]*\(([+-]?[0-9]+(?:\.[0-9]+)?)%\)", re.IGNORECASE)
+_HUMP_PROB_RE = re.compile(r"Hump\s+Prob\s*:\s*ITM\s*([0-9]+(?:\.[0-9]+)?)%", re.IGNORECASE)
+_RISK_CUT_RE = re.compile(r"Risk\s+Cut\s*:[^\n]*\(-?([0-9]+(?:\.[0-9]+)?)%\)", re.IGNORECASE)
+_BASE_TGT_RE = re.compile(r"Base\s+Tgt\s*:\s*opt\s*\$?\s*([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
+_EST_PREM_RE = re.compile(r"Est\s+Prem\s*:\s*\$?\s*([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -54,6 +62,82 @@ def selected_contract_signal_fields(selected_contract: Optional[dict[str, Any]])
         "selected_convexity_probability_itm": selected_contract.get("convexity_probability_itm"),
         "selected_planned_loss_pct": selected_contract.get("planned_loss_pct"),
         "selected_target_profit_pct": selected_contract.get("target_profit_pct"),
+    }
+
+
+def extract_opportunity_signals_from_message(message: Optional[str]) -> dict[str, object]:
+    if not message:
+        return {}
+    plain = _ANSI_RE.sub("", message)
+    fields: dict[str, object] = {}
+
+    reward_match = _REWARD_RISK_RE.search(plain)
+    if reward_match:
+        fields["selected_reward_risk"] = _to_float(reward_match.group(1))
+
+    hump_match = _HUMP_EXIT_RE.search(plain)
+    if hump_match:
+        fields["selected_convexity_profit_pct"] = _to_float(hump_match.group(1))
+
+    probability_match = _HUMP_PROB_RE.search(plain)
+    if probability_match:
+        probability_pct = _to_float(probability_match.group(1))
+        fields["selected_convexity_probability_itm"] = (
+            probability_pct / 100.0 if probability_pct is not None else None
+        )
+
+    loss_match = _RISK_CUT_RE.search(plain)
+    if loss_match:
+        fields["selected_planned_loss_pct"] = _to_float(loss_match.group(1))
+
+    target_match = _BASE_TGT_RE.search(plain)
+    premium_match = _EST_PREM_RE.search(plain)
+    if target_match and premium_match:
+        target = _to_float(target_match.group(1))
+        premium = _to_float(premium_match.group(1))
+        if target is not None and premium is not None and premium > 0:
+            fields["selected_target_profit_pct"] = ((target / premium) - 1.0) * 100.0
+
+    return {key: value for key, value in fields.items() if value is not None}
+
+
+def event_opportunity_signal_fields(event: Any) -> dict[str, object]:
+    message_fields = extract_opportunity_signals_from_message(getattr(event, "message", None))
+    fields = {
+        "selected_contract_score": getattr(event, "selected_contract_score", None),
+        "selected_reward_risk": getattr(event, "selected_reward_risk", None),
+        "selected_convexity_profit_pct": getattr(event, "selected_convexity_profit_pct", None),
+        "selected_convexity_probability_itm": getattr(event, "selected_convexity_probability_itm", None),
+        "selected_planned_loss_pct": getattr(event, "selected_planned_loss_pct", None),
+        "selected_target_profit_pct": getattr(event, "selected_target_profit_pct", None),
+    }
+    for key, value in message_fields.items():
+        if fields.get(key) is None:
+            fields[key] = value
+    return fields
+
+
+def opportunity_fields_from_event(event: Any) -> dict[str, object]:
+    selected_fields = event_opportunity_signal_fields(event)
+    score = compute_opportunity_score(
+        iv_percentile=getattr(event, "iv_percentile", None),
+        iv30=getattr(event, "iv30", None),
+        hv30=getattr(event, "hv30", None),
+        avg_edr=getattr(event, "avg_edr", None),
+        selected_spread_pct=getattr(event, "selected_spread_pct", None),
+        selected_open_interest=getattr(event, "selected_open_interest", None),
+        selected_volume=getattr(event, "selected_volume", None),
+        selected_reward_risk=selected_fields.get("selected_reward_risk"),
+        selected_convexity_profit_pct=selected_fields.get("selected_convexity_profit_pct"),
+        selected_convexity_probability_itm=selected_fields.get("selected_convexity_probability_itm"),
+        selected_contract_score=selected_fields.get("selected_contract_score"),
+    )
+    return {
+        **selected_fields,
+        "opportunity_score": score["base_score"],
+        "opportunity_grade": opportunity_grade(float(score["base_score"])),
+        "opportunity_model_version": OPPORTUNITY_MODEL_VERSION,
+        "opportunity_components": json.dumps(score, sort_keys=True),
     }
 
 

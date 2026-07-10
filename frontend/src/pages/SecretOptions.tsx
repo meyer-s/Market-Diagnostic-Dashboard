@@ -85,6 +85,33 @@ interface VolatilitySignal {
   error?: string | null;
 }
 
+type OpportunityComponents = Record<string, number | null | undefined>;
+
+interface PositionOpportunity {
+  event_id: number | null;
+  model_version: string | null;
+  computed_for_date: string | null;
+  cadence: string | null;
+  basis: string | null;
+  entry: {
+    score: number | null;
+    rank_score: number | null;
+    grade: string | null;
+    components: OpportunityComponents | null;
+    triggered_at: string | null;
+  } | null;
+  current: {
+    score: number | null;
+    rank_score: number | null;
+    grade: string | null;
+    components: OpportunityComponents | null;
+    reasons: string[];
+  } | null;
+  score_change: number | null;
+  headline: string | null;
+  error?: string | null;
+}
+
 interface PositionMetrics {
   market: {
     current_price: number | null;
@@ -117,6 +144,7 @@ interface PositionMetrics {
   volatility_source: string | null;
   hv30: number | null;
   volatility_signal: VolatilitySignal;
+  opportunity: PositionOpportunity | null;
   dte: number | null;
   greeks: {
     delta: number;
@@ -192,6 +220,32 @@ interface TrainingOutcomeSummary {
 interface TrainingOutcomeResponse {
   outcomes: TrainingOutcomeRow[];
   summary: TrainingOutcomeSummary;
+}
+
+interface OpportunityBacktestStats {
+  count: number;
+  total_pnl: number;
+  avg_pnl: number | null;
+  avg_percent_pnl: number | null;
+  win_rate_pct: number | null;
+}
+
+interface OpportunityBacktestResponse {
+  threshold: number;
+  lookback_days: number;
+  model_version: string;
+  summary: {
+    closed_positions_checked: number;
+    scored_trades: number;
+    unscored_trades: number;
+    all_trades: OpportunityBacktestStats;
+    model_selected: OpportunityBacktestStats;
+    model_excluded: OpportunityBacktestStats;
+    avg_percent_delta_vs_all: number | null;
+    avoided_loss_from_excluded: number;
+    excluded_winners_left_on_table: number;
+    grade_buckets: Record<string, OpportunityBacktestStats>;
+  };
 }
 
 interface OptionalityClusterEvent {
@@ -651,6 +705,26 @@ const opportunityComponentLabels: Array<{ key: string; label: string; tone: stri
   { key: "contract_quality", label: "contract", tone: "bg-sky-300" },
   { key: "recurrence", label: "repeat", tone: "bg-violet-300" },
 ];
+
+const buildOpportunityRead = (opportunity: PositionOpportunity | null | undefined) => {
+  const score = opportunity?.current?.score ?? opportunity?.entry?.score ?? null;
+  const grade = opportunity?.current?.grade ?? opportunity?.entry?.grade ?? null;
+  const change = opportunity?.score_change ?? null;
+  const label = score !== null && score !== undefined ? `${score.toFixed(0)}${grade ? ` ${grade}` : ""}` : "unranked";
+  const detail =
+    change !== null && change !== undefined
+      ? `${opportunity?.headline || "Rank"} ${formatSigned(change, 1)}`
+      : opportunity?.error
+        ? "rank unavailable"
+        : "entry model score";
+  return {
+    score,
+    grade,
+    label,
+    detail,
+    className: opportunityScoreClass(score),
+  };
+};
 
 const capitalizeWord = (value: string) => {
   if (!value) return value;
@@ -1494,6 +1568,38 @@ const closedPositionSignature = (
     duplicateNumber(item.total_cost),
   ].join("|");
 
+const normalizeOpportunity = (value: PositionMetrics["opportunity"] | undefined): PositionOpportunity | null => {
+  if (!value) return null;
+  return {
+    event_id: value.event_id ?? null,
+    model_version: value.model_version ?? null,
+    computed_for_date: value.computed_for_date ?? null,
+    cadence: value.cadence ?? null,
+    basis: value.basis ?? null,
+    entry: value.entry
+      ? {
+          score: value.entry.score ?? null,
+          rank_score: value.entry.rank_score ?? null,
+          grade: value.entry.grade ?? null,
+          components: value.entry.components ?? null,
+          triggered_at: value.entry.triggered_at ?? null,
+        }
+      : null,
+    current: value.current
+      ? {
+          score: value.current.score ?? null,
+          rank_score: value.current.rank_score ?? null,
+          grade: value.current.grade ?? null,
+          components: value.current.components ?? null,
+          reasons: value.current.reasons ?? [],
+        }
+      : null,
+    score_change: value.score_change ?? null,
+    headline: value.headline ?? null,
+    error: value.error ?? null,
+  };
+};
+
 const normalizePositionMetrics = (
   metrics: RawPositionPayload["metrics"]
 ): PositionMetrics => {
@@ -1546,6 +1652,7 @@ const normalizePositionMetrics = (
     volatility_source: metrics?.volatility_source ?? null,
     hv30: metrics?.hv30 ?? null,
     volatility_signal: normalizeVolatilitySignal(metrics?.volatility_signal),
+    opportunity: normalizeOpportunity(metrics?.opportunity),
     dte: metrics?.dte ?? null,
     greeks: safeGreeks,
     pnl: {
@@ -1584,6 +1691,7 @@ export default function SecretOptions() {
   const [showTrainingOutcomes, setShowTrainingOutcomes] = useState(false);
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
+  const [opportunityBacktest, setOpportunityBacktest] = useState<OpportunityBacktestResponse | null>(null);
   const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
   const [optionalityClusters, setOptionalityClusters] = useState<OptionalityCluster[]>([]);
   const [scannerData, setScannerData] = useState<ScannerSummaryResponse | null>(null);
@@ -1902,12 +2010,17 @@ export default function SecretOptions() {
       const data = await apiFetch<TrainingOutcomeResponse>(
         "/secret/options/training-outcomes?lookback_days=1825&limit=1000&include_green_marker=true"
       );
+      const backtest = await apiFetch<OpportunityBacktestResponse>(
+        "/secret/options/opportunity-backtest?lookback_days=1825&threshold=65&limit=1000"
+      );
       setTrainingOutcomes(data.outcomes || []);
       setTrainingSummary(data.summary || null);
+      setOpportunityBacktest(backtest || null);
     } catch (err: unknown) {
       console.error("Failed to load training outcomes:", err);
       setTrainingOutcomes([]);
       setTrainingSummary(null);
+      setOpportunityBacktest(null);
     } finally {
       setLoadingTrainingOutcomes(false);
     }
@@ -2466,6 +2579,7 @@ export default function SecretOptions() {
   const selectedDiagnosis = selected
     ? buildPositionDiagnosis(selected.position, selected.metrics, selectedTimelineLane)
     : null;
+  const selectedOpportunityRead = selected ? buildOpportunityRead(selected.metrics.opportunity) : null;
 
   const chartPriceDomain = useMemo(() => {
     if (!greeksData?.price_curve?.length) {
@@ -2897,6 +3011,7 @@ export default function SecretOptions() {
                   position.source_match_notes
                 );
                 const volatilityRead = buildVolatilityRead(metrics.volatility_signal);
+                const opportunityRead = buildOpportunityRead(metrics.opportunity);
                 const rowActive = position.id === selectedId;
                 const isExpanded = expandedPositionId === position.id;
                 const rowDiagnosis = buildPositionDiagnosis(position, metrics, lane);
@@ -2935,7 +3050,7 @@ export default function SecretOptions() {
                         lane={lane}
                       />
 
-                      <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-[11px] tabular-nums md:grid">
+                      <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)] gap-x-2 text-[11px] tabular-nums md:grid">
                         <div
                           className={`font-semibold ${
                             (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
@@ -2950,6 +3065,11 @@ export default function SecretOptions() {
                           <div className="text-[10px] font-normal text-gray-500">
                             {metrics.pnl?.percent !== null && metrics.pnl?.percent !== undefined ? `${formatSigned(metrics.pnl.percent, 1)}%` : "—"}
                           </div>
+                        </div>
+                        <div>
+                          <div className="text-[9px] uppercase tracking-wide text-gray-500">Rank</div>
+                          <div className="truncate font-semibold text-gray-100">{opportunityRead.label}</div>
+                          <div className="truncate text-[10px] font-normal text-gray-500">{opportunityRead.detail}</div>
                         </div>
                         <div className={`${volatilityRead.text}`}>
                           <div className="text-[9px] uppercase tracking-wide text-gray-500">Vol</div>
@@ -2995,13 +3115,34 @@ export default function SecretOptions() {
                         >
                           {rowDiagnosis}
                         </div>
-                        <div className="grid gap-2 text-[11px] text-gray-400 md:grid-cols-4">
+                        <div className="grid gap-2 text-[11px] text-gray-400 md:grid-cols-5">
                           <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
                             <div className="text-[9px] uppercase tracking-wide text-gray-500">Pricing</div>
                             <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
                               <span>Fill</span><span className="text-gray-200">{formatCurrency(position.fill_price, 2)}</span>
                               <span>Option</span><span className="text-gray-200">{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
                               <span>Underlying</span><span className="text-gray-200">{metrics.market.current_price !== null ? formatCurrency(metrics.market.current_price, 2) : "—"}</span>
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Model Rank</div>
+                            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
+                              <span>Entry</span>
+                              <span className="text-gray-200">
+                                {metrics.opportunity?.entry?.score !== null && metrics.opportunity?.entry?.score !== undefined
+                                  ? `${metrics.opportunity.entry.score.toFixed(0)} ${metrics.opportunity.entry.grade || ""}`.trim()
+                                  : "n/a"}
+                              </span>
+                              <span>Now</span>
+                              <span className="text-gray-200">{opportunityRead.label}</span>
+                              <span>Change</span>
+                              <span className={metrics.opportunity?.score_change !== null && metrics.opportunity?.score_change !== undefined && metrics.opportunity.score_change >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                                {metrics.opportunity?.score_change !== null && metrics.opportunity?.score_change !== undefined ? formatSigned(metrics.opportunity.score_change, 1) : "n/a"}
+                              </span>
+                            </div>
+                            <div className="mt-1 truncate text-[10px] text-gray-500">
+                              {metrics.opportunity?.current?.reasons?.slice(0, 2).join(" / ") || metrics.opportunity?.basis || "score unavailable"}
                             </div>
                           </div>
 
@@ -3373,6 +3514,24 @@ export default function SecretOptions() {
 
         {selected && (
           <>
+            {selected.metrics.opportunity ? (
+              <div className="mb-2 rounded-md border border-gray-700/70 bg-gray-900/45 px-2.5 py-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[9px] uppercase tracking-wide text-gray-500">Opportunity Rank</div>
+                    <div className="text-xs font-semibold text-gray-100">{selectedOpportunityRead?.label ?? "unranked"}</div>
+                  </div>
+                  <div className={`rounded-md border px-2 py-1 text-right text-xs font-semibold ${opportunityScoreClass(selected.metrics.opportunity.current?.score ?? selected.metrics.opportunity.entry?.score)}`}>
+                    {selected.metrics.opportunity.score_change !== null && selected.metrics.opportunity.score_change !== undefined
+                      ? formatSigned(selected.metrics.opportunity.score_change, 1)
+                      : "—"}
+                  </div>
+                </div>
+                <div className="mt-1 truncate text-[10px] text-gray-500">
+                  {selected.metrics.opportunity.headline || selected.metrics.opportunity.basis || "Model rank available"}
+                </div>
+              </div>
+            ) : null}
             <VolatilitySignalCard metrics={selected.metrics} className="mb-2" />
             <details className="mb-2 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1 text-[10px] text-gray-400">
               <summary className="cursor-pointer list-none truncate">
@@ -4525,6 +4684,58 @@ export default function SecretOptions() {
                 </div>
               </div>
             </div>
+
+            {opportunityBacktest ? (
+              <div className="mb-4 rounded-lg border border-sky-500/20 bg-sky-950/10 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-sky-300">Your Trades vs Model Rank</div>
+                    <div className="text-xs text-gray-400">
+                      Closed linked trades filtered by current model threshold {opportunityBacktest.threshold.toFixed(0)}.
+                    </div>
+                  </div>
+                  <div className="text-[10px] uppercase text-gray-500">{opportunityBacktest.model_version}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                    <div className="text-[10px] text-gray-500">All linked</div>
+                    <div className={`text-sm font-semibold ${(opportunityBacktest.summary.all_trades.total_pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {formatCurrency(opportunityBacktest.summary.all_trades.total_pnl, 0)}
+                    </div>
+                    <div className="text-[10px] text-gray-500">
+                      {opportunityBacktest.summary.all_trades.count} trades / {formatPercent(opportunityBacktest.summary.all_trades.win_rate_pct, 0)}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                    <div className="text-[10px] text-gray-500">Model selected</div>
+                    <div className={`text-sm font-semibold ${(opportunityBacktest.summary.model_selected.total_pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {formatCurrency(opportunityBacktest.summary.model_selected.total_pnl, 0)}
+                    </div>
+                    <div className="text-[10px] text-gray-500">
+                      {opportunityBacktest.summary.model_selected.count} trades / {formatPercent(opportunityBacktest.summary.model_selected.win_rate_pct, 0)}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                    <div className="text-[10px] text-gray-500">Avg return delta</div>
+                    <div className={`text-sm font-semibold ${(opportunityBacktest.summary.avg_percent_delta_vs_all ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {opportunityBacktest.summary.avg_percent_delta_vs_all !== null && opportunityBacktest.summary.avg_percent_delta_vs_all !== undefined
+                        ? `${formatSigned(opportunityBacktest.summary.avg_percent_delta_vs_all, 1)}%`
+                        : "—"}
+                    </div>
+                    <div className="text-[10px] text-gray-500">selected vs all linked</div>
+                  </div>
+                  <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
+                    <div className="text-[10px] text-gray-500">Excluded tradeoff</div>
+                    <div className="text-sm font-semibold text-gray-100">
+                      {formatCurrency(opportunityBacktest.summary.avoided_loss_from_excluded, 0)}
+                    </div>
+                    <div className="text-[10px] text-gray-500">
+                      avoided / {formatCurrency(opportunityBacktest.summary.excluded_winners_left_on_table, 0)} left
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {loadingTrainingOutcomes ? (
               <div className="text-sm text-gray-400 text-center py-8">Loading scanner outcomes...</div>

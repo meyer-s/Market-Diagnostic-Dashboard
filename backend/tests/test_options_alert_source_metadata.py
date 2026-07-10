@@ -56,3 +56,5 @@ def test_alert_message_includes_scan_and_contract_sources() -> None:
 
     assert "Data Src  : ibkr_option_chain / delayed" in message
     assert "Data Src  : ibkr / delayed" in message
+    assert "OPPORTUNITY RANK" in message
+    assert "Score     :" in message

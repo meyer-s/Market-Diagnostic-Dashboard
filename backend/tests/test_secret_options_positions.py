@@ -587,6 +587,96 @@ def test_dashboard_scanner_run_endpoint_queues_sweep(
     assert response.json()["status"] == "queued"
 
 
+def test_opportunity_backtest_compares_closed_trades(secret_options_client) -> None:
+    client, session_local = secret_options_client
+    now = datetime.utcnow()
+    with session_local() as db:
+        strong_event = OptionAlertEvent(
+            symbol="MGM",
+            triggered_at=now,
+            iv30=18.0,
+            hv30=31.0,
+            iv_percentile=5.0,
+            avg_edr=28.0,
+            selected_spread_pct=12.0,
+            selected_volume=24,
+            selected_open_interest=350,
+            selected_reward_risk=1.9,
+            selected_convexity_profit_pct=93.0,
+            selected_convexity_probability_itm=0.57,
+            opportunity_score=86.0,
+            opportunity_grade="A+",
+            opportunity_model_version="heuristic_v1",
+        )
+        weak_event = OptionAlertEvent(
+            symbol="HLT",
+            triggered_at=now,
+            iv30=24.0,
+            hv30=26.0,
+            iv_percentile=24.0,
+            avg_edr=48.0,
+            selected_spread_pct=32.0,
+            selected_volume=1,
+            selected_open_interest=20,
+            selected_reward_risk=0.6,
+            selected_convexity_profit_pct=20.0,
+            selected_convexity_probability_itm=0.41,
+            opportunity_score=42.0,
+            opportunity_grade="Watch",
+            opportunity_model_version="heuristic_v1",
+        )
+        db.add_all([strong_event, weak_event])
+        db.flush()
+        db.add_all(
+            [
+                ClosedPosition(
+                    symbol="MGM",
+                    option_type="call",
+                    strike=100.0,
+                    expiration=date(2026, 9, 18),
+                    contracts=1,
+                    trade_date=date(2026, 7, 1),
+                    fill_price=2.0,
+                    total_cost=200.0,
+                    close_date=date(2026, 7, 8),
+                    exit_price=3.0,
+                    total_proceeds=300.0,
+                    dollar_pnl=100.0,
+                    percent_pnl=50.0,
+                    source_event_id=strong_event.id,
+                    source_triggered_at=strong_event.triggered_at,
+                ),
+                ClosedPosition(
+                    symbol="HLT",
+                    option_type="call",
+                    strike=200.0,
+                    expiration=date(2026, 9, 18),
+                    contracts=1,
+                    trade_date=date(2026, 7, 1),
+                    fill_price=4.0,
+                    total_cost=400.0,
+                    close_date=date(2026, 7, 8),
+                    exit_price=2.0,
+                    total_proceeds=200.0,
+                    dollar_pnl=-200.0,
+                    percent_pnl=-50.0,
+                    source_event_id=weak_event.id,
+                    source_triggered_at=weak_event.triggered_at,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.get("/secret/options/opportunity-backtest?lookback_days=365&threshold=65&limit=20")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["scored_trades"] == 2
+    assert body["summary"]["model_selected"]["count"] == 1
+    assert body["summary"]["model_selected"]["total_pnl"] == 100.0
+    assert body["summary"]["avoided_loss_from_excluded"] == 200.0
+
+
 def test_close_position_rejects_duplicate_closed_trade(secret_options_client) -> None:
     client, session_local = secret_options_client
     with session_local() as db:

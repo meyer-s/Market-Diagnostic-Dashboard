@@ -11,7 +11,7 @@ from app.api.stock_projection import compute_historical_volatility, compute_opti
 from app.models.options_alerts import OptionAlertWatch, OptionAlertEvent
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
-from app.services.options_opportunity import opportunity_event_fields
+from app.services.options_opportunity import compute_opportunity_score, opportunity_event_fields, selected_contract_signal_fields
 from app.services.options_quotes import select_atm_contract, select_optimal_contract
 from app.utils.db_helpers import get_db_session
 
@@ -718,6 +718,39 @@ def _is_exceptional_sweep_setup(
     return vote_ok and (ultra_cheap or strong_cheap)
 
 
+def _format_opportunity_rank_lines(
+    *,
+    iv_percentile: Optional[float],
+    iv30: Optional[float],
+    hv30: Optional[float],
+    avg_edr: Optional[float],
+    selected_contract: Optional[dict[str, object]],
+) -> list[str]:
+    selected_fields = selected_contract_signal_fields(selected_contract)
+    score = compute_opportunity_score(
+        iv_percentile=iv_percentile,
+        iv30=iv30,
+        hv30=hv30,
+        avg_edr=avg_edr,
+        selected_spread_pct=(selected_contract or {}).get("spread_pct"),
+        selected_open_interest=(selected_contract or {}).get("open_interest"),
+        selected_volume=(selected_contract or {}).get("volume"),
+        selected_reward_risk=selected_fields.get("selected_reward_risk"),
+        selected_convexity_profit_pct=selected_fields.get("selected_convexity_profit_pct"),
+        selected_convexity_probability_itm=selected_fields.get("selected_convexity_probability_itm"),
+        selected_contract_score=selected_fields.get("selected_contract_score"),
+    )
+    components = score.get("components") or {}
+    return [
+        f"  Score     : {float(score['rank_score']):.0f} / {score.get('grade') or 'n/a'}",
+        "  Drivers   : "
+        f"cheap {float(components.get('cheapness') or 0):.0f} | "
+        f"edge {float(components.get('volatility_edge') or 0):.0f} | "
+        f"contract {float(components.get('contract_quality') or 0):.0f} | "
+        f"exec {float(components.get('execution_quality') or 0):.0f}",
+    ]
+
+
 def _format_alert_message(
     label: str,
     symbol: str,
@@ -805,6 +838,15 @@ def _format_alert_message(
         iv_line,
         f"  IV/HV/EDR : {_format_value(iv30, 2)} / {_format_value(hv30, 2)} / {_format_value(avg_edr, 2)}",
         f"  Data Src  : {metrics_source_text}",
+        "",
+        _ansi("OPPORTUNITY RANK", section_title_color),
+        *_format_opportunity_rank_lines(
+            iv_percentile=iv_percentile,
+            iv30=iv30,
+            hv30=hv30,
+            avg_edr=avg_edr,
+            selected_contract=selected_contract,
+        ),
         "",
         _ansi("DIRECTION", section_title_color),
         f"  Bias      : {direction_colored}",
