@@ -29,8 +29,10 @@ from app.models.closed_positions import ClosedPosition
 from app.models.option_training_outcomes import OptionTrainingOutcome
 from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
+from app.models.option_sweep_runs import OptionSweepRun
 from app.models.option_positions import OptionPosition
 from app.services import option_trade_reminders
+from app.services import option_sweep_runs
 from app.services.optionality_clusters import build_optionality_cluster_payload, classify_optionality_symbol
 
 
@@ -162,6 +164,7 @@ def secret_options_client(monkeypatch: pytest.MonkeyPatch):
     app = FastAPI()
     app.include_router(secret_options.router)
     monkeypatch.setattr(secret_options, "get_db_session", _testing_db_session)
+    monkeypatch.setattr(option_sweep_runs, "get_db_session", _testing_db_session)
     monkeypatch.setattr(
         secret_options,
         "_resolve_signal_attribution",
@@ -436,6 +439,113 @@ def test_optionality_clusters_prioritize_classified_groups() -> None:
 
     assert payload["clusters"][0]["group"] == "Hospitality & Travel"
     assert any(row["group"] == "Unclassified" for row in payload["clusters"])
+
+
+def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -> None:
+    client, session_local = secret_options_client
+    now = datetime.utcnow()
+    with session_local() as db:
+        db.add_all(
+            [
+                OptionAlertEvent(
+                    symbol="MGM",
+                    triggered_at=now,
+                    iv30=18.0,
+                    hv30=31.0,
+                    iv_percentile=5.0,
+                    delivered=True,
+                ),
+                OptionAlertEvent(
+                    symbol="MGM",
+                    triggered_at=now,
+                    iv30=19.0,
+                    hv30=29.0,
+                    iv_percentile=7.0,
+                    delivered=True,
+                ),
+                OptionAlertEvent(
+                    symbol="HLT",
+                    triggered_at=now,
+                    iv30=20.0,
+                    hv30=28.0,
+                    iv_percentile=9.0,
+                    delivered=False,
+                ),
+                OptionSweepRun(
+                    universe_key="SP500",
+                    universe_label="S&P 500",
+                    threshold=30.0,
+                    trigger_source="dashboard",
+                    status="completed",
+                    total_symbols=500,
+                    scanned_symbols=500,
+                    hits=3,
+                    errors=1,
+                    rate_limit_errors=0,
+                    hit_symbols="MGM,HLT",
+                    started_at=now,
+                    completed_at=now,
+                    created_at=now,
+                    updated_at=now,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.get("/secret/options/scanner-summary?lookback_days=21&run_limit=5")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["event_count"] == 3
+    assert body["summary"]["delivered"] == 2
+    assert body["top_symbols"][0]["symbol"] == "MGM"
+    assert body["top_symbols"][0]["hits"] == 2
+    assert body["top_symbols"][0]["group"] == "Hospitality & Travel"
+    assert body["runs"][0]["universe_key"] == "SP500"
+    assert body["runs"][0]["hit_symbols"] == ["MGM", "HLT"]
+
+
+def test_dashboard_scanner_run_endpoint_queues_sweep(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _session_local = secret_options_client
+
+    def _fake_start(universe_key: str, threshold: float) -> dict[str, object]:
+        assert universe_key == "RUSSELL2000"
+        assert threshold == 25.0
+        return {
+            "id": 42,
+            "universe_key": universe_key,
+            "universe_label": "Russell 2000",
+            "threshold": threshold,
+            "trigger_source": "dashboard",
+            "status": "queued",
+            "total_symbols": 0,
+            "scanned_symbols": 0,
+            "hits": 0,
+            "errors": 0,
+            "rate_limit_errors": 0,
+            "hit_symbols": [],
+            "notes": None,
+            "last_event": None,
+            "last_symbol": None,
+            "last_error": None,
+            "started_at": "2026-07-10T10:00:00",
+            "completed_at": None,
+            "updated_at": "2026-07-10T10:00:00",
+        }
+
+    monkeypatch.setattr(secret_options, "start_dashboard_sweep", _fake_start)
+
+    response = client.post(
+        "/secret/options/scanner-run",
+        json={"universe_key": "RUSSELL2000", "threshold": 25.0},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["run"]["id"] == 42
+    assert response.json()["status"] == "queued"
 
 
 def test_close_position_rejects_duplicate_closed_trade(secret_options_client) -> None:

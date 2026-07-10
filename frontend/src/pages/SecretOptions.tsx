@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Link } from "react-router-dom";
 import { createPortal } from "react-dom";
-import { HelpCircle, Pencil, Settings2, Trash2 } from "lucide-react";
+import { Activity, HelpCircle, Pencil, Play, RefreshCw, Settings2, Trash2 } from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
@@ -226,6 +226,69 @@ interface OptionalityClusterResponse {
   bucket_days: number;
   generated_at: string;
   clusters: OptionalityCluster[];
+}
+
+interface ScannerTopSymbol {
+  symbol: string;
+  hits: number;
+  recent_hits: number;
+  latest_triggered_at: string | null;
+  group: string;
+  sector: string;
+  avg_iv_percentile: number | null;
+  avg_iv_hv_spread: number | null;
+}
+
+interface ScannerRun {
+  id: number;
+  universe_key: string;
+  universe_label: string;
+  threshold: number;
+  trigger_source: string;
+  status: string;
+  total_symbols: number;
+  scanned_symbols: number;
+  hits: number;
+  errors: number;
+  rate_limit_errors: number;
+  hit_symbols: string[];
+  notes: string | null;
+  last_event: string | null;
+  last_symbol: string | null;
+  last_error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
+}
+
+interface ScannerSummary {
+  event_count: number;
+  symbol_count: number;
+  delivered: number;
+  failed: number;
+  latest_event_at: string | null;
+  runs_returned: number;
+  active_runs: number;
+  avg_hit_rate: number | null;
+}
+
+interface ScannerUniverse {
+  key: string;
+  label: string;
+}
+
+interface ScannerSummaryResponse {
+  lookback_days: number;
+  generated_at: string;
+  summary: ScannerSummary;
+  top_symbols: ScannerTopSymbol[];
+  runs: ScannerRun[];
+  supported_universes: ScannerUniverse[];
+}
+
+interface ScannerRunResponse {
+  status: string;
+  run: ScannerRun;
 }
 
 interface EvaluationInsight {
@@ -518,6 +581,22 @@ const clusterMomentumClass = (momentum: number) => {
   if (momentum < 0) return "text-rose-300";
   return "text-gray-400";
 };
+
+const scannerStatusClass = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (normalized === "running" || normalized === "queued") {
+    return "border-sky-500/35 bg-sky-500/10 text-sky-200";
+  }
+  if (normalized === "completed") {
+    return "border-emerald-500/35 bg-emerald-500/10 text-emerald-200";
+  }
+  if (normalized === "stopped") {
+    return "border-amber-500/35 bg-amber-500/10 text-amber-200";
+  }
+  return "border-rose-500/35 bg-rose-500/10 text-rose-200";
+};
+
+const isActiveScannerRun = (run: ScannerRun) => run.status === "queued" || run.status === "running";
 
 const capitalizeWord = (value: string) => {
   if (!value) return value;
@@ -1453,6 +1532,12 @@ export default function SecretOptions() {
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
   const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
   const [optionalityClusters, setOptionalityClusters] = useState<OptionalityCluster[]>([]);
+  const [scannerData, setScannerData] = useState<ScannerSummaryResponse | null>(null);
+  const [scannerUniverse, setScannerUniverse] = useState("SP500");
+  const [scannerThreshold, setScannerThreshold] = useState("30");
+  const [scannerRunning, setScannerRunning] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
+  const [scannerNotice, setScannerNotice] = useState<string | null>(null);
   const [showRowActions, setShowRowActions] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
@@ -1529,6 +1614,20 @@ export default function SecretOptions() {
       setOptionalityClusters(data.clusters || []);
     } catch {
       setOptionalityClusters([]);
+    }
+  };
+
+  const loadScannerSummary = async () => {
+    try {
+      const data = await apiFetch<ScannerSummaryResponse>(
+        "/secret/options/scanner-summary?lookback_days=45&run_limit=8"
+      );
+      setScannerData(data);
+      if (data.supported_universes.length > 0 && !data.supported_universes.some((item) => item.key === scannerUniverse)) {
+        setScannerUniverse(data.supported_universes[0].key);
+      }
+    } catch (err: unknown) {
+      console.error("Failed to load scanner summary:", err);
     }
   };
 
@@ -1760,6 +1859,35 @@ export default function SecretOptions() {
     }
   };
 
+  const handleRunScanner = async () => {
+    if (scannerRunning) return;
+    const threshold = Number(scannerThreshold);
+    if (!Number.isFinite(threshold) || threshold <= 0 || threshold >= 100) {
+      setScannerError("Threshold must be between 1 and 99.");
+      return;
+    }
+    setScannerRunning(true);
+    setScannerError(null);
+    setScannerNotice(null);
+    try {
+      const data = await apiFetch<ScannerRunResponse>("/secret/options/scanner-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          universe_key: scannerUniverse,
+          threshold,
+        }),
+      });
+      setScannerNotice(`${data.run.universe_label} sweep queued as #${data.run.id}. Discord will receive progress and hits.`);
+      await loadScannerSummary();
+      window.setTimeout(loadScannerSummary, 2500);
+    } catch (err: unknown) {
+      setScannerError(err instanceof Error ? err.message : "Failed to start scanner.");
+    } finally {
+      setScannerRunning(false);
+    }
+  };
+
   const handleClosePosition = async () => {
     if (!closingPositionId || !exitPrice) {
       alert("Please enter an exit price");
@@ -1889,7 +2017,16 @@ export default function SecretOptions() {
     loadClosedPositions();
     loadTrainingOutcomes();
     loadOptionalityClusters();
+    loadScannerSummary();
   }, []);
+
+  useEffect(() => {
+    if (!scannerData?.runs.some(isActiveScannerRun)) {
+      return;
+    }
+    const timer = window.setInterval(loadScannerSummary, 15000);
+    return () => window.clearInterval(timer);
+  }, [scannerData?.summary.active_runs]);
 
   useEffect(() => {
     if (selectedId !== null) {
@@ -2113,6 +2250,18 @@ export default function SecretOptions() {
     () => optionalityClusters.filter((cluster) => cluster.group !== "Unclassified"),
     [optionalityClusters]
   );
+
+  const activeScannerRun = useMemo(
+    () => scannerData?.runs.find(isActiveScannerRun) ?? null,
+    [scannerData]
+  );
+  const scannerUniverses = scannerData?.supported_universes ?? [
+    { key: "SP500", label: "S&P 500" },
+    { key: "RUSSELL2000", label: "Russell 2000" },
+    { key: "ALL", label: "All Optionable Equities" },
+  ];
+  const topScannerSymbols = scannerData?.top_symbols ?? [];
+  const recentScannerRuns = scannerData?.runs ?? [];
 
   const filterCounts = useMemo(() => {
     return {
@@ -2625,48 +2774,6 @@ export default function SecretOptions() {
           </div>
         </div>
 
-        {visibleOptionalityClusters.length > 0 ? (
-          <div className="mb-2 rounded-lg border border-stealth-700/80 bg-stealth-950/35 px-2.5 py-2">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-              <div className="text-[9px] font-semibold uppercase tracking-wide text-stealth-500">
-                Optionality Clusters
-              </div>
-              <button
-                type="button"
-                onClick={loadOptionalityClusters}
-                className="text-[10px] font-medium text-sky-300 hover:text-sky-200"
-              >
-                Refresh
-              </button>
-            </div>
-            <div className="grid gap-1.5 md:grid-cols-3">
-              {visibleOptionalityClusters.slice(0, 3).map((cluster) => (
-                <div
-                  key={cluster.group}
-                  className="min-w-0 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1.5"
-                  title={`${cluster.group}: ${cluster.symbols.join(", ")}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="truncate text-[11px] font-semibold text-stealth-100">{cluster.group}</div>
-                    <div className={`shrink-0 text-[10px] font-semibold ${clusterMomentumClass(cluster.momentum)}`}>
-                      {cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}
-                    </div>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-stealth-400">
-                    <span className="truncate">
-                      {cluster.hits} hits · {cluster.symbols.slice(0, 4).join(" ")}
-                      {cluster.symbols.length > 4 ? ` +${cluster.symbols.length - 4}` : ""}
-                    </span>
-                    <span className="shrink-0 tabular-nums">
-                      IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
         {activeFilterLabel ? (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2.5 py-1.5 text-[11px] text-sky-100">
             <span>
@@ -2882,6 +2989,211 @@ export default function SecretOptions() {
             </div>
           </div>
         )}
+      </div>
+
+      <div className="surface-card-strong p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+              <h2 className="text-base font-semibold text-stealth-100">Optionality Clusters</h2>
+            </div>
+            <div className="mt-0.5 text-[11px] text-stealth-400">
+              45d scanner hits grouped by actionable sector/theme.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={loadOptionalityClusters}
+            className="inline-flex items-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2.5 py-1.5 text-[11px] font-semibold text-stealth-200 hover:border-sky-400/50 hover:text-sky-100"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            Refresh
+          </button>
+        </div>
+
+        {visibleOptionalityClusters.length === 0 ? (
+          <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+            No classified clusters in the current lookback.
+          </div>
+        ) : (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {visibleOptionalityClusters.slice(0, 6).map((cluster) => (
+              <div
+                key={cluster.group}
+                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-stealth-800/70 py-2 last:border-b-0"
+                title={`${cluster.group}: ${cluster.symbols.join(", ")}`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-300/80" />
+                    <div className="truncate text-sm font-semibold text-stealth-100">{cluster.group}</div>
+                    <div className={`shrink-0 text-[11px] font-semibold ${clusterMomentumClass(cluster.momentum)}`}>
+                      {cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}
+                    </div>
+                  </div>
+                  <div className="mt-1 truncate text-[11px] text-stealth-400">
+                    {cluster.symbols.slice(0, 6).join(" ")}
+                    {cluster.symbols.length > 6 ? ` +${cluster.symbols.length - 6}` : ""}
+                  </div>
+                </div>
+                <div className="text-right text-[11px] tabular-nums">
+                  <div className="font-semibold text-stealth-100">{cluster.hits} hits</div>
+                  <div className="text-stealth-400">IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="surface-card-strong p-3">
+        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-stealth-100">Scanner Control &amp; Outcomes</h2>
+            <div className="mt-0.5 text-[11px] text-stealth-400">
+              Runs the same options sweep used by Discord and preserves Discord hit output.
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(150px,1fr)_96px_auto] lg:w-[520px]">
+            <select
+              value={scannerUniverse}
+              onChange={(event) => setScannerUniverse(event.target.value)}
+              disabled={scannerRunning || Boolean(activeScannerRun)}
+              className="rounded-md border border-stealth-700 bg-stealth-950 px-2 py-1.5 text-xs text-stealth-100 disabled:opacity-60"
+            >
+              {scannerUniverses.map((universe) => (
+                <option key={universe.key} value={universe.key}>
+                  {universe.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="1"
+              max="99"
+              step="1"
+              value={scannerThreshold}
+              onChange={(event) => setScannerThreshold(event.target.value)}
+              disabled={scannerRunning || Boolean(activeScannerRun)}
+              className="rounded-md border border-stealth-700 bg-stealth-950 px-2 py-1.5 text-xs text-stealth-100 disabled:opacity-60"
+              aria-label="IV percentile threshold"
+            />
+            <button
+              type="button"
+              onClick={handleRunScanner}
+              disabled={scannerRunning || Boolean(activeScannerRun)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-stealth-700 disabled:text-stealth-400"
+            >
+              <Play className="h-3.5 w-3.5" aria-hidden="true" />
+              {activeScannerRun ? "Running" : scannerRunning ? "Starting" : "Run Scan"}
+            </button>
+          </div>
+        </div>
+
+        {scannerError ? (
+          <div className="mb-2 rounded-md border border-rose-500/35 bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-100">
+            {scannerError}
+          </div>
+        ) : null}
+        {scannerNotice ? (
+          <div className="mb-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-[11px] text-sky-100">
+            {scannerNotice}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.85fr)]">
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Repeated Names</div>
+              <div className="text-[10px] text-stealth-500">
+                {scannerData?.summary.event_count ?? 0} hits / {scannerData?.summary.symbol_count ?? 0} names
+              </div>
+            </div>
+            {topScannerSymbols.length === 0 ? (
+              <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+                No recent scanner hits in the current lookback.
+              </div>
+            ) : (
+              <div className="divide-y divide-stealth-800/80">
+                {topScannerSymbols.slice(0, 8).map((symbol) => (
+                  <div key={symbol.symbol} className="grid grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-2 py-1.5 text-xs">
+                    <Link
+                      to={`/stock-analysis/${encodeURIComponent(symbol.symbol)}?symbol=${encodeURIComponent(symbol.symbol)}`}
+                      className="font-semibold text-sky-200 hover:text-sky-100"
+                    >
+                      {symbol.symbol}
+                    </Link>
+                    <div className="min-w-0">
+                      <div className="truncate text-stealth-300">{symbol.group}</div>
+                      <div className="text-[10px] text-stealth-500">{formatRelativeTime(symbol.latest_triggered_at)}</div>
+                    </div>
+                    <div className="text-right tabular-nums">
+                      <div className="font-semibold text-stealth-100">
+                        {symbol.hits}x{symbol.recent_hits > 0 ? ` / ${symbol.recent_hits} wk` : ""}
+                      </div>
+                      <div className="text-[10px] text-stealth-500">IV/HV {formatPointChange(symbol.avg_iv_hv_spread, 1)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Run History</div>
+              <button
+                type="button"
+                onClick={loadScannerSummary}
+                className="text-[10px] font-medium text-sky-300 hover:text-sky-200"
+              >
+                Refresh
+              </button>
+            </div>
+            {recentScannerRuns.length === 0 ? (
+              <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+                No persisted scanner runs yet.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recentScannerRuns.slice(0, 5).map((run) => {
+                  const scanned = run.total_symbols > 0 ? `${run.scanned_symbols}/${run.total_symbols}` : `${run.scanned_symbols}`;
+                  const progress =
+                    run.total_symbols > 0
+                      ? Math.max(0, Math.min(100, (run.scanned_symbols / run.total_symbols) * 100))
+                      : 0;
+                  return (
+                    <div key={run.id} className="border-b border-stealth-800/80 pb-2 last:border-b-0 last:pb-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 truncate text-xs font-semibold text-stealth-100">
+                          {run.universe_label}
+                          <span className="ml-1 text-[10px] font-normal uppercase text-stealth-500">{run.trigger_source}</span>
+                        </div>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scannerStatusClass(run.status)}`}>
+                          {run.status}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stealth-900">
+                        <div className="h-full rounded-full bg-emerald-300/70" style={{ width: `${progress}%` }} />
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-stealth-400 tabular-nums">
+                        <span>{formatRelativeTime(run.started_at)} · {scanned} scanned</span>
+                        <span>{run.hits} hits / {run.errors} errors</span>
+                      </div>
+                      {run.hit_symbols.length > 0 ? (
+                        <div className="mt-1 truncate text-[10px] text-stealth-500">
+                          {run.hit_symbols.slice(0, 8).join(" ")}
+                          {run.hit_symbols.length > 8 ? ` +${run.hit_symbols.length - 8}` : ""}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
         </section>

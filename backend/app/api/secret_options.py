@@ -27,6 +27,7 @@ from app.services.option_trade_reminders import (
     sync_trade_sell_reminder,
 )
 from app.services.optionality_clusters import build_optionality_cluster_payload
+from app.services.option_sweep_runs import build_scanner_summary, start_dashboard_sweep
 from app.services.stock_price_cache import get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
@@ -112,6 +113,11 @@ class ClosedPositionUpdate(BaseModel):
     underlying_at_entry: Optional[float] = None
     underlying_at_exit: Optional[float] = None
     notes: Optional[str] = None
+
+
+class ScannerRunRequest(BaseModel):
+    universe_key: str = "SP500"
+    threshold: float = 30.0
 
 
 # Old Greeks functions removed - now using greeks_calculator module
@@ -1694,6 +1700,32 @@ def get_optionality_clusters(
                 min_hits=min_hits,
             )
         )
+
+
+@router.get("/scanner-summary")
+def get_scanner_summary(
+    lookback_days: int = Query(45, ge=7, le=3650),
+    run_limit: int = Query(8, ge=1, le=50),
+):
+    return _json_safe(build_scanner_summary(lookback_days=lookback_days, run_limit=run_limit))
+
+
+@router.post("/scanner-run")
+def run_scanner_from_dashboard(payload: ScannerRunRequest):
+    try:
+        return _json_safe(
+            {
+                "status": "queued",
+                "run": start_dashboard_sweep(
+                    payload.universe_key,
+                    payload.threshold,
+                ),
+            }
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.post("/positions")

@@ -13,6 +13,12 @@ import httpx
 # Import existing sweep logic
 from maintenance_scripts.options_chain_sweep import _scan_tickers
 from app.services.discord_sweep_universe import resolve_sweep_universe
+from app.services.option_sweep_runs import (
+    create_sweep_run,
+    fail_sweep_run,
+    finish_sweep_run,
+    update_sweep_run_from_progress,
+)
 
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
@@ -134,6 +140,21 @@ async def execute_sweep(
             )
             return
 
+        sweep_run_id: int | None = None
+        try:
+            sweep_run = create_sweep_run(
+                universe_key=universe.key,
+                universe_label=label,
+                threshold=threshold,
+                trigger_source="discord",
+                total_symbols=len(tickers),
+                notes=universe.notes,
+                status="running",
+            )
+            sweep_run_id = sweep_run.id
+        except Exception as exc:
+            print(f"[Discord Sweep] Failed to persist sweep run: {exc}")
+
         default_pause = 0.2
         if len(tickers) > 2000:
             default_pause = 0.02
@@ -175,7 +196,7 @@ async def execute_sweep(
             channel_id=channel_id,
         )
 
-        progress_callback = _build_progress_callback(
+        discord_progress_callback = _build_progress_callback(
             application_id=application_id,
             interaction_token=interaction_token,
             bot_token=bot_token,
@@ -185,23 +206,31 @@ async def execute_sweep(
             pause_seconds=pause_seconds,
         )
 
+        def progress_callback(payload: dict[str, Any]) -> None:
+            update_sweep_run_from_progress(sweep_run_id, payload)
+            discord_progress_callback(payload)
+
         # Run the existing scan function (scans all tickers, sends webhooks).
         print(f"[Discord Sweep] Starting scan of {len(tickers)} {label} tickers...")
-        hits_result = _scan_tickers(
-            tickers,
-            label,
-            threshold,
-            None,
-            pause_seconds=pause_seconds,
-            capture_hit_symbols=True,
-            capture_hit_details=True,
-            progress_callback=progress_callback,
-            should_stop=stop_event.is_set,
-            rate_limit_backoff_seconds=rate_limit_backoff_seconds,
-            rate_limit_backoff_multiplier=rate_limit_backoff_multiplier,
-            rate_limit_backoff_max_seconds=rate_limit_backoff_max_seconds,
-            rate_limit_max_retries=rate_limit_max_retries,
-        )
+        try:
+            hits_result = _scan_tickers(
+                tickers,
+                label,
+                threshold,
+                None,
+                pause_seconds=pause_seconds,
+                capture_hit_symbols=True,
+                capture_hit_details=True,
+                progress_callback=progress_callback,
+                should_stop=stop_event.is_set,
+                rate_limit_backoff_seconds=rate_limit_backoff_seconds,
+                rate_limit_backoff_multiplier=rate_limit_backoff_multiplier,
+                rate_limit_backoff_max_seconds=rate_limit_backoff_max_seconds,
+                rate_limit_max_retries=rate_limit_max_retries,
+            )
+        except Exception as exc:
+            fail_sweep_run(sweep_run_id, str(exc))
+            raise
         hits = 0
         hit_symbols: list[str] = []
         hit_details: list[dict[str, Any]] = []
@@ -215,6 +244,14 @@ async def execute_sweep(
         print(f"[Discord Sweep] Scan complete. Found {hits} cheap options.")
 
         total = len(tickers)
+        finish_sweep_run(
+            sweep_run_id,
+            status="stopped" if stop_event.is_set() else "completed",
+            total_symbols=total,
+            hits=int(hits),
+            hit_symbols=hit_symbols,
+            hit_details=hit_details,
+        )
         details = f"\nUniverse key: {universe.key}"
         if universe.notes:
             details += "\nNotes: " + " | ".join(universe.notes[:2])
