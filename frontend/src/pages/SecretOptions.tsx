@@ -358,6 +358,7 @@ interface ScannerSummary {
   latest_event_at: string | null;
   runs_returned: number;
   active_runs: number;
+  stale_runs_marked?: number;
   avg_hit_rate: number | null;
 }
 
@@ -379,6 +380,13 @@ interface ScannerSummaryResponse {
 interface ScannerRunResponse {
   status: string;
   run: ScannerRun;
+}
+
+interface ScannerRunDetailResponse {
+  run: ScannerRun;
+  hit_count: number;
+  matched_event_count: number;
+  hits: ScannerRankedOpportunity[];
 }
 
 interface EvaluationInsight {
@@ -683,10 +691,22 @@ const scannerStatusClass = (status: string) => {
   if (normalized === "stopped") {
     return "border-amber-500/35 bg-amber-500/10 text-amber-200";
   }
+  if (normalized === "stale") {
+    return "border-amber-500/35 bg-amber-500/10 text-amber-200";
+  }
   return "border-rose-500/35 bg-rose-500/10 text-rose-200";
 };
 
-const isActiveScannerRun = (run: ScannerRun) => run.status === "queued" || run.status === "running";
+const SCANNER_ACTIVE_STALE_MS = 12 * 60 * 60 * 1000;
+
+const isActiveScannerRun = (run: ScannerRun) => {
+  if (run.status !== "queued" && run.status !== "running") return false;
+  const timestamp = run.updated_at || run.started_at;
+  if (!timestamp) return true;
+  const parsed = new Date(timestamp).getTime();
+  if (Number.isNaN(parsed)) return true;
+  return Date.now() - parsed < SCANNER_ACTIVE_STALE_MS;
+};
 
 const opportunityScoreClass = (score: number | null | undefined) => {
   if (score === null || score === undefined || Number.isNaN(score)) {
@@ -699,24 +719,35 @@ const opportunityScoreClass = (score: number | null | undefined) => {
   return "border-stealth-700 bg-stealth-900 text-stealth-300";
 };
 
-const opportunityComponentLabels: Array<{ key: string; label: string; tone: string }> = [
-  { key: "cheapness", label: "cheap", tone: "bg-emerald-300" },
-  { key: "volatility_edge", label: "edge", tone: "bg-cyan-300" },
-  { key: "contract_quality", label: "contract", tone: "bg-sky-300" },
-  { key: "recurrence", label: "repeat", tone: "bg-violet-300" },
-];
+const compactOpportunityGrade = (score: number | null | undefined, fallback?: string | null) => {
+  if (score === null || score === undefined || Number.isNaN(score)) {
+    return fallback && fallback !== "Watch" ? fallback : "—";
+  }
+  if (score >= 90) return "A+";
+  if (score >= 85) return "A";
+  if (score >= 80) return "A-";
+  if (score >= 75) return "B+";
+  if (score >= 70) return "B";
+  if (score >= 65) return "B-";
+  if (score >= 60) return "C+";
+  if (score >= 55) return "C";
+  if (score >= 50) return "C-";
+  if (score >= 45) return "D+";
+  if (score >= 40) return "D";
+  return "D-";
+};
 
 const buildOpportunityRead = (opportunity: PositionOpportunity | null | undefined) => {
   const score = opportunity?.current?.score ?? opportunity?.entry?.score ?? null;
   const grade = opportunity?.current?.grade ?? opportunity?.entry?.grade ?? null;
   const change = opportunity?.score_change ?? null;
-  const label = score !== null && score !== undefined ? `${score.toFixed(0)}${grade ? ` ${grade}` : ""}` : "unranked";
+  const label = compactOpportunityGrade(score, grade);
   const detail =
     change !== null && change !== undefined
       ? `${opportunity?.headline || "Rank"} ${formatSigned(change, 1)}`
       : opportunity?.error
-        ? "rank unavailable"
-        : "entry model score";
+        ? "—"
+        : "—";
   return {
     score,
     grade,
@@ -1700,6 +1731,9 @@ export default function SecretOptions() {
   const [scannerRunning, setScannerRunning] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [scannerNotice, setScannerNotice] = useState<string | null>(null);
+  const [selectedScannerRunId, setSelectedScannerRunId] = useState<number | null>(null);
+  const [scannerRunDetail, setScannerRunDetail] = useState<ScannerRunDetailResponse | null>(null);
+  const [loadingScannerRunDetail, setLoadingScannerRunDetail] = useState(false);
   const [showRowActions, setShowRowActions] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
@@ -1779,6 +1813,23 @@ export default function SecretOptions() {
     }
   };
 
+  const loadScannerRunDetail = async (runId: number | null) => {
+    if (!runId) {
+      setScannerRunDetail(null);
+      return;
+    }
+    setLoadingScannerRunDetail(true);
+    try {
+      const data = await apiFetch<ScannerRunDetailResponse>(`/secret/options/scanner-run/${runId}`);
+      setScannerRunDetail(data);
+    } catch (err: unknown) {
+      console.error("Failed to load scanner run detail:", err);
+      setScannerRunDetail(null);
+    } finally {
+      setLoadingScannerRunDetail(false);
+    }
+  };
+
   const loadScannerSummary = async () => {
     try {
       const data = await apiFetch<ScannerSummaryResponse>(
@@ -1788,6 +1839,14 @@ export default function SecretOptions() {
       if (data.supported_universes.length > 0 && !data.supported_universes.some((item) => item.key === scannerUniverse)) {
         setScannerUniverse(data.supported_universes[0].key);
       }
+      const preferredRun =
+        data.runs.find((run) => run.id === selectedScannerRunId)
+        || data.runs.find((run) => run.hits > 0 && run.status === "completed")
+        || data.runs[0]
+        || null;
+      const preferredRunId = preferredRun?.id ?? null;
+      setSelectedScannerRunId(preferredRunId);
+      await loadScannerRunDetail(preferredRunId);
     } catch (err: unknown) {
       console.error("Failed to load scanner summary:", err);
     }
@@ -2046,6 +2105,8 @@ export default function SecretOptions() {
         }),
       });
       setScannerNotice(`${data.run.universe_label} sweep queued as #${data.run.id}. Discord will receive progress and hits.`);
+      setSelectedScannerRunId(data.run.id);
+      setScannerRunDetail({ run: data.run, hit_count: 0, matched_event_count: 0, hits: [] });
       await loadScannerSummary();
       window.setTimeout(loadScannerSummary, 2500);
     } catch (err: unknown) {
@@ -2053,6 +2114,11 @@ export default function SecretOptions() {
     } finally {
       setScannerRunning(false);
     }
+  };
+
+  const handleSelectScannerRun = async (runId: number) => {
+    setSelectedScannerRunId(runId);
+    await loadScannerRunDetail(runId);
   };
 
   const handleClosePosition = async () => {
@@ -2428,8 +2494,9 @@ export default function SecretOptions() {
     { key: "ALL", label: "All Optionable Equities" },
   ];
   const topScannerSymbols = scannerData?.top_symbols ?? [];
-  const rankedScannerOpportunities = scannerData?.ranked_opportunities ?? [];
   const recentScannerRuns = scannerData?.runs ?? [];
+  const selectedScannerRun = scannerRunDetail?.run ?? recentScannerRuns.find((run) => run.id === selectedScannerRunId) ?? null;
+  const selectedScannerHits = scannerRunDetail?.hits ?? [];
 
   const filterCounts = useMemo(() => {
     return {
@@ -3068,8 +3135,7 @@ export default function SecretOptions() {
                         </div>
                         <div>
                           <div className="text-[9px] uppercase tracking-wide text-gray-500">Rank</div>
-                          <div className="truncate font-semibold text-gray-100">{opportunityRead.label}</div>
-                          <div className="truncate text-[10px] font-normal text-gray-500">{opportunityRead.detail}</div>
+                          <div className="font-semibold text-gray-100">{opportunityRead.label}</div>
                         </div>
                         <div className={`${volatilityRead.text}`}>
                           <div className="text-[9px] uppercase tracking-wide text-gray-500">Vol</div>
@@ -3115,13 +3181,18 @@ export default function SecretOptions() {
                         >
                           {rowDiagnosis}
                         </div>
-                        <div className="grid gap-2 text-[11px] text-gray-400 md:grid-cols-5">
+                        <div className="grid gap-2 text-[11px] text-gray-400 md:grid-cols-4">
                           <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
                             <div className="text-[9px] uppercase tracking-wide text-gray-500">Pricing</div>
                             <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
                               <span>Fill</span><span className="text-gray-200">{formatCurrency(position.fill_price, 2)}</span>
                               <span>Option</span><span className="text-gray-200">{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
                               <span>Underlying</span><span className="text-gray-200">{metrics.market.current_price !== null ? formatCurrency(metrics.market.current_price, 2) : "—"}</span>
+                              <span>Bid / Ask</span><span className="text-gray-200">
+                                {metrics.quote.bid !== null && metrics.quote.bid !== undefined ? formatCurrency(metrics.quote.bid, 2) : "n/a"} / {metrics.quote.ask !== null && metrics.quote.ask !== undefined ? formatCurrency(metrics.quote.ask, 2) : "n/a"}
+                              </span>
+                              <span>Spread</span><span className="text-gray-200">{metrics.quote.spread_pct !== null && metrics.quote.spread_pct !== undefined ? formatPercent(metrics.quote.spread_pct, 1) : "n/a"}</span>
+                              <span>OI / Vol</span><span className="text-gray-200">{metrics.quote.open_interest ?? "n/a"} / {metrics.quote.volume ?? "n/a"}</span>
                             </div>
                           </div>
 
@@ -3131,11 +3202,15 @@ export default function SecretOptions() {
                               <span>Entry</span>
                               <span className="text-gray-200">
                                 {metrics.opportunity?.entry?.score !== null && metrics.opportunity?.entry?.score !== undefined
-                                  ? `${metrics.opportunity.entry.score.toFixed(0)} ${metrics.opportunity.entry.grade || ""}`.trim()
+                                  ? `${compactOpportunityGrade(metrics.opportunity.entry.score, metrics.opportunity.entry.grade)} (${metrics.opportunity.entry.score.toFixed(0)})`
                                   : "n/a"}
                               </span>
                               <span>Now</span>
-                              <span className="text-gray-200">{opportunityRead.label}</span>
+                              <span className="text-gray-200">
+                                {metrics.opportunity?.current?.score !== null && metrics.opportunity?.current?.score !== undefined
+                                  ? `${opportunityRead.label} (${metrics.opportunity.current.score.toFixed(0)})`
+                                  : opportunityRead.label}
+                              </span>
                               <span>Change</span>
                               <span className={metrics.opportunity?.score_change !== null && metrics.opportunity?.score_change !== undefined && metrics.opportunity.score_change >= 0 ? "text-emerald-300" : "text-rose-300"}>
                                 {metrics.opportunity?.score_change !== null && metrics.opportunity?.score_change !== undefined ? formatSigned(metrics.opportunity.score_change, 1) : "n/a"}
@@ -3143,17 +3218,6 @@ export default function SecretOptions() {
                             </div>
                             <div className="mt-1 truncate text-[10px] text-gray-500">
                               {metrics.opportunity?.current?.reasons?.slice(0, 2).join(" / ") || metrics.opportunity?.basis || "score unavailable"}
-                            </div>
-                          </div>
-
-                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Quote</div>
-                            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
-                              <span>Bid / Ask</span><span className="text-gray-200">
-                                {metrics.quote.bid !== null && metrics.quote.bid !== undefined ? formatCurrency(metrics.quote.bid, 2) : "n/a"} / {metrics.quote.ask !== null && metrics.quote.ask !== undefined ? formatCurrency(metrics.quote.ask, 2) : "n/a"}
-                              </span>
-                              <span>Spread</span><span className="text-gray-200">{metrics.quote.spread_pct !== null && metrics.quote.spread_pct !== undefined ? formatPercent(metrics.quote.spread_pct, 1) : "n/a"}</span>
-                              <span>OI / Vol</span><span className="text-gray-200">{metrics.quote.open_interest ?? "n/a"} / {metrics.quote.volume ?? "n/a"}</span>
                             </div>
                           </div>
 
@@ -3301,71 +3365,88 @@ export default function SecretOptions() {
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.8fr)_minmax(300px,0.9fr)]">
           <div className="min-w-0">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Ranked Opportunities</div>
-              <div className="text-[10px] text-stealth-500">heuristic v1</div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Selected Scan Hits</div>
+                <div className="text-[10px] text-stealth-500">
+                  {selectedScannerRun
+                    ? `${selectedScannerRun.universe_label} · ${formatRelativeTime(selectedScannerRun.started_at)}`
+                    : "No scan selected"}
+                </div>
+              </div>
+              <select
+                value={selectedScannerRunId ?? ""}
+                onChange={(event) => {
+                  if (!event.target.value) return;
+                  const runId = Number(event.target.value);
+                  if (Number.isFinite(runId)) {
+                    handleSelectScannerRun(runId);
+                  }
+                }}
+                className="max-w-[220px] rounded-md border border-stealth-700 bg-stealth-950 px-2 py-1 text-[11px] text-stealth-100"
+                aria-label="Select scanner run"
+              >
+                {recentScannerRuns.length === 0 ? (
+                  <option value="">No scans</option>
+                ) : (
+                  recentScannerRuns.map((run) => (
+                    <option key={run.id} value={run.id}>
+                      #{run.id} {run.universe_label} · {run.hits} hits · {run.status}
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
-            {rankedScannerOpportunities.length === 0 ? (
+            {loadingScannerRunDetail ? (
               <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
-                No ranked opportunities in the current lookback.
+                Loading selected scan...
+              </div>
+            ) : selectedScannerHits.length === 0 ? (
+              <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+                {selectedScannerRun
+                  ? "No persisted hit cards found for this scan."
+                  : "Select a scanner run to inspect its hits."}
               </div>
             ) : (
-              <div className="space-y-2">
-                {rankedScannerOpportunities.slice(0, 6).map((opportunity) => {
+              <div className="max-h-[460px] overflow-y-auto rounded-lg border border-stealth-800/80 bg-stealth-950/25">
+                <div className="sticky top-0 z-10 grid grid-cols-[64px_minmax(0,1fr)_48px] gap-2 border-b border-stealth-800 bg-stealth-950/95 px-2 py-1.5 text-[9px] uppercase tracking-wide text-stealth-500">
+                  <span>Symbol</span>
+                  <span>Setup</span>
+                  <span className="text-right">Rank</span>
+                </div>
+                <div className="divide-y divide-stealth-800/80">
+                {selectedScannerHits.map((opportunity) => {
                   const contract = opportunity.selected_contract;
                   const contractLabel =
                     contract.option_type && contract.strike !== null && contract.strike !== undefined
                       ? `${contract.option_type.toUpperCase()} ${formatNumber(contract.strike, 2)}`
                       : "contract pending";
                   return (
-                    <div key={opportunity.event_id} className="rounded-lg border border-stealth-800/80 bg-stealth-950/30 p-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <Link
-                              to={`/stock-analysis/${encodeURIComponent(opportunity.symbol)}?symbol=${encodeURIComponent(opportunity.symbol)}`}
-                              className="text-sm font-semibold text-sky-200 hover:text-sky-100"
-                            >
-                              {opportunity.symbol}
-                            </Link>
-                            <span className="truncate text-[10px] text-stealth-500">{opportunity.group}</span>
-                          </div>
-                          <div className="mt-0.5 truncate text-[10px] text-stealth-400">
-                            {contractLabel} · IV pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
-                          </div>
+                    <div key={opportunity.event_id} className="grid grid-cols-[64px_minmax(0,1fr)_48px] gap-2 px-2 py-2 text-xs">
+                      <Link
+                        to={`/stock-analysis/${encodeURIComponent(opportunity.symbol)}?symbol=${encodeURIComponent(opportunity.symbol)}`}
+                        className="font-semibold text-sky-200 hover:text-sky-100"
+                      >
+                        {opportunity.symbol}
+                      </Link>
+                      <div className="min-w-0">
+                        <div className="truncate text-stealth-200">
+                          {contractLabel}
+                          {contract.expiry ? ` · ${formatDate(contract.expiry)}` : ""}
+                          {contract.dte !== null && contract.dte !== undefined ? ` · ${contract.dte} DTE` : ""}
                         </div>
-                        <div className={`shrink-0 rounded-md border px-2 py-1 text-right ${opportunityScoreClass(opportunity.score)}`}>
-                          <div className="text-sm font-semibold tabular-nums">{opportunity.score.toFixed(0)}</div>
-                          <div className="text-[9px] font-semibold uppercase">{opportunity.grade || "rank"}</div>
+                        <div className="truncate text-[10px] text-stealth-500">
+                          {opportunity.group} · IV pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
+                          {contract.reward_risk !== null && contract.reward_risk !== undefined ? ` · ${contract.reward_risk.toFixed(2)}R` : ""}
+                          {contract.open_interest !== null && contract.open_interest !== undefined ? ` · OI ${contract.open_interest}` : ""}
                         </div>
                       </div>
-                      <div className="mt-2 grid grid-cols-4 gap-1.5">
-                        {opportunityComponentLabels.map((component) => {
-                          const rawValue = opportunity.components?.[component.key];
-                          const value =
-                            rawValue === null || rawValue === undefined || Number.isNaN(Number(rawValue))
-                              ? 0
-                              : Math.max(0, Math.min(100, Number(rawValue)));
-                          return (
-                            <div key={component.key} className="min-w-0">
-                              <div className="mb-1 flex justify-between gap-1 text-[9px] uppercase text-stealth-500">
-                                <span className="truncate">{component.label}</span>
-                                <span className="tabular-nums">{value.toFixed(0)}</span>
-                              </div>
-                              <div className="h-1.5 overflow-hidden rounded-full bg-stealth-900">
-                                <div className={`h-full rounded-full ${component.tone}`} style={{ width: `${value}%` }} />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-stealth-500">
-                        <span>{formatRelativeTime(opportunity.triggered_at)}</span>
-                        <span>{contract.reward_risk !== null && contract.reward_risk !== undefined ? `${contract.reward_risk.toFixed(2)}R` : "RR n/a"}</span>
-                        <span>{contract.convexity_profit_pct !== null && contract.convexity_profit_pct !== undefined ? `convexity ${formatSigned(contract.convexity_profit_pct, 0)}%` : "convexity n/a"}</span>
+                      <div className={`self-start rounded-md border px-1.5 py-1 text-center text-xs font-semibold ${opportunityScoreClass(opportunity.score)}`}>
+                        {compactOpportunityGrade(opportunity.score, opportunity.grade)}
                       </div>
                     </div>
                   );
                 })}
+                </div>
               </div>
             )}
           </div>
@@ -3435,7 +3516,14 @@ export default function SecretOptions() {
                       ? Math.max(0, Math.min(100, (run.scanned_symbols / run.total_symbols) * 100))
                       : 0;
                   return (
-                    <div key={run.id} className="border-b border-stealth-800/80 pb-2 last:border-b-0 last:pb-0">
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => handleSelectScannerRun(run.id)}
+                      className={`block w-full border-b border-stealth-800/80 pb-2 text-left last:border-b-0 last:pb-0 ${
+                        selectedScannerRunId === run.id ? "rounded-md bg-sky-500/10 px-2 py-1.5" : ""
+                      }`}
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0 truncate text-xs font-semibold text-stealth-100">
                           {run.universe_label}
@@ -3458,7 +3546,7 @@ export default function SecretOptions() {
                           {run.hit_symbols.length > 8 ? ` +${run.hit_symbols.length - 8}` : ""}
                         </div>
                       ) : null}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -3519,16 +3607,13 @@ export default function SecretOptions() {
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="text-[9px] uppercase tracking-wide text-gray-500">Opportunity Rank</div>
-                    <div className="text-xs font-semibold text-gray-100">{selectedOpportunityRead?.label ?? "unranked"}</div>
+                    <div className="text-xs font-semibold text-gray-100">{selectedOpportunityRead?.label ?? "—"}</div>
                   </div>
                   <div className={`rounded-md border px-2 py-1 text-right text-xs font-semibold ${opportunityScoreClass(selected.metrics.opportunity.current?.score ?? selected.metrics.opportunity.entry?.score)}`}>
                     {selected.metrics.opportunity.score_change !== null && selected.metrics.opportunity.score_change !== undefined
                       ? formatSigned(selected.metrics.opportunity.score_change, 1)
                       : "—"}
                   </div>
-                </div>
-                <div className="mt-1 truncate text-[10px] text-gray-500">
-                  {selected.metrics.opportunity.headline || selected.metrics.opportunity.basis || "Model rank available"}
                 </div>
               </div>
             ) : null}

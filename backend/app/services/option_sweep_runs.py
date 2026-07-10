@@ -24,6 +24,7 @@ from maintenance_scripts.options_chain_sweep import _scan_tickers
 
 
 ACTIVE_STATUSES = {"queued", "running"}
+STALE_SWEEP_RUN_HOURS = float(os.getenv("OPTION_SWEEP_STALE_HOURS", "12"))
 
 
 def _csv_symbols(value: Optional[str]) -> list[str]:
@@ -65,6 +66,41 @@ def _serialize_run(run: OptionSweepRun) -> dict[str, object]:
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
         "updated_at": run.updated_at.isoformat() if run.updated_at else None,
     }
+
+
+def _run_last_seen(run: OptionSweepRun) -> Optional[datetime]:
+    return run.updated_at or run.started_at
+
+
+def expire_stale_sweep_runs(stale_after_hours: Optional[float] = None) -> int:
+    """Close abandoned queued/running rows so stale state cannot block new scans."""
+    hours = STALE_SWEEP_RUN_HOURS if stale_after_hours is None else float(stale_after_hours)
+    cutoff = datetime.utcnow() - timedelta(hours=max(0.25, hours))
+    marked = 0
+    with get_db_session() as db:
+        runs = (
+            db.query(OptionSweepRun)
+            .filter(OptionSweepRun.status.in_(list(ACTIVE_STATUSES)))
+            .all()
+        )
+        now = datetime.utcnow()
+        for run in runs:
+            last_seen = _run_last_seen(run)
+            if last_seen is None or last_seen >= cutoff:
+                continue
+            run.status = "stale"
+            run.last_event = "stale"
+            run.last_error = (
+                f"Marked stale after no scanner progress since {last_seen.isoformat()}."
+            )
+            if run.completed_at is None:
+                run.completed_at = now
+            run.updated_at = now
+            db.add(run)
+            marked += 1
+        if marked:
+            db.commit()
+    return marked
 
 
 def _set_run_status(
@@ -358,13 +394,12 @@ def start_dashboard_sweep(universe_key: str, threshold: float) -> dict[str, obje
         raise ValueError(f"Unsupported universe '{universe_key}'. Supported: {supported}")
 
     threshold = max(1.0, min(99.0, float(threshold)))
-    stale_cutoff = datetime.utcnow() - timedelta(hours=12)
+    expire_stale_sweep_runs()
     with get_db_session() as db:
         active = (
             db.query(OptionSweepRun)
             .filter(
                 OptionSweepRun.status.in_(list(ACTIVE_STATUSES)),
-                OptionSweepRun.started_at >= stale_cutoff,
             )
             .order_by(OptionSweepRun.started_at.desc())
             .first()
@@ -386,10 +421,137 @@ def start_dashboard_sweep(universe_key: str, threshold: float) -> dict[str, obje
     return _serialize_run(run)
 
 
+def _ranked_opportunity_from_event(
+    event: OptionAlertEvent,
+    *,
+    symbol_recent_hits: int = 1,
+    symbol_total_hits: int = 1,
+    group_recent_hits: int = 1,
+) -> dict[str, object]:
+    symbol = str(event.symbol or "").strip().upper()
+    classification = classify_optionality_symbol(symbol)
+    spread = None
+    if event.iv30 is not None and event.hv30 is not None:
+        spread = float(event.iv30) - float(event.hv30)
+    score_payload = compute_opportunity_score(
+        iv_percentile=event.iv_percentile,
+        iv30=event.iv30,
+        hv30=event.hv30,
+        avg_edr=event.avg_edr,
+        selected_spread_pct=event.selected_spread_pct,
+        selected_open_interest=event.selected_open_interest,
+        selected_volume=event.selected_volume,
+        selected_reward_risk=event.selected_reward_risk,
+        selected_convexity_profit_pct=event.selected_convexity_profit_pct,
+        selected_convexity_probability_itm=event.selected_convexity_probability_itm,
+        selected_contract_score=event.selected_contract_score,
+        symbol_recent_hits=symbol_recent_hits,
+        symbol_total_hits=symbol_total_hits,
+        group_recent_hits=group_recent_hits,
+    )
+    rank_score = float(score_payload["rank_score"])
+    base_score = float(event.opportunity_score) if event.opportunity_score is not None else float(score_payload["base_score"])
+    triggered_at = event.triggered_at
+    return {
+        "event_id": event.id,
+        "symbol": symbol,
+        "triggered_at": triggered_at.isoformat() if triggered_at else None,
+        "group": classification.group,
+        "sector": classification.sector,
+        "score": round(rank_score, 2),
+        "base_score": round(base_score, 2),
+        "grade": score_payload.get("grade") or opportunity_grade(rank_score),
+        "model_version": event.opportunity_model_version or OPPORTUNITY_MODEL_VERSION,
+        "components": score_payload.get("components") or {},
+        "reasons": score_payload.get("reasons") or [],
+        "iv_percentile": event.iv_percentile,
+        "iv30": event.iv30,
+        "hv30": event.hv30,
+        "iv_hv_spread": spread,
+        "avg_edr": event.avg_edr,
+        "selected_contract": {
+            "expiry": event.selected_expiry,
+            "dte": event.selected_dte,
+            "strike": event.selected_strike,
+            "option_type": event.selected_option_type,
+            "premium": event.selected_premium,
+            "spread_pct": event.selected_spread_pct,
+            "open_interest": event.selected_open_interest,
+            "volume": event.selected_volume,
+            "implied_volatility": event.selected_implied_volatility,
+            "contract_score": event.selected_contract_score,
+            "reward_risk": event.selected_reward_risk,
+            "convexity_profit_pct": event.selected_convexity_profit_pct,
+            "convexity_probability_itm": event.selected_convexity_probability_itm,
+        },
+    }
+
+
+def build_scanner_run_detail(run_id: int) -> dict[str, object]:
+    expire_stale_sweep_runs()
+    with get_db_session() as db:
+        run = db.query(OptionSweepRun).filter(OptionSweepRun.id == run_id).first()
+        if run is None:
+            raise LookupError(f"Scanner run #{run_id} was not found.")
+
+        symbols = _csv_symbols(run.hit_symbols)
+        events: list[OptionAlertEvent] = []
+        if symbols and run.started_at:
+            window_start = run.started_at - timedelta(minutes=5)
+            window_end = (run.completed_at or run.updated_at or datetime.utcnow()) + timedelta(minutes=10)
+            events = (
+                db.query(OptionAlertEvent)
+                .filter(
+                    OptionAlertEvent.symbol.in_(symbols),
+                    OptionAlertEvent.triggered_at >= window_start,
+                    OptionAlertEvent.triggered_at <= window_end,
+                )
+                .order_by(OptionAlertEvent.triggered_at.asc(), OptionAlertEvent.id.asc())
+                .all()
+            )
+        serialized_run = _serialize_run(run)
+
+    symbol_order = {symbol: index for index, symbol in enumerate(symbols)}
+    filtered_events = [
+        event
+        for event in events
+        if str(event.symbol or "").strip().upper() in symbol_order
+    ]
+    symbol_counts = Counter(str(event.symbol or "").strip().upper() for event in filtered_events)
+    group_counts: Counter[str] = Counter()
+    for event in filtered_events:
+        symbol = str(event.symbol or "").strip().upper()
+        group_counts[classify_optionality_symbol(symbol).group] += 1
+
+    opportunities = [
+        _ranked_opportunity_from_event(
+            event,
+            symbol_recent_hits=symbol_counts[str(event.symbol or "").strip().upper()],
+            symbol_total_hits=symbol_counts[str(event.symbol or "").strip().upper()],
+            group_recent_hits=group_counts[classify_optionality_symbol(str(event.symbol or "").strip().upper()).group],
+        )
+        for event in filtered_events
+    ]
+    opportunities.sort(
+        key=lambda row: (
+            symbol_order.get(str(row["symbol"]), len(symbol_order)),
+            row.get("triggered_at") or "",
+            int(row["event_id"]),
+        )
+    )
+    return {
+        "run": serialized_run,
+        "hit_count": len(symbols),
+        "matched_event_count": len(opportunities),
+        "hits": opportunities,
+    }
+
+
 def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_limit: int = 2000) -> dict[str, object]:
     lookback_days = max(1, min(3650, int(lookback_days or 45)))
     run_limit = max(1, min(50, int(run_limit or 8)))
     event_limit = max(10, min(5000, int(event_limit or 500)))
+    stale_runs_marked = expire_stale_sweep_runs()
     cutoff = datetime.utcnow() - timedelta(days=lookback_days)
     recent_cutoff = datetime.utcnow() - timedelta(days=7)
 
@@ -585,6 +747,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             "latest_event_at": latest_event_at.isoformat() if latest_event_at else None,
             "runs_returned": len(run_rows),
             "active_runs": sum(1 for run in runs if run.status in ACTIVE_STATUSES),
+            "stale_runs_marked": stale_runs_marked,
             "avg_hit_rate": avg_hit_rate,
         },
         "top_symbols": top_symbols[:12],
