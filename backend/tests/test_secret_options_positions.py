@@ -31,6 +31,7 @@ from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
 from app.models.option_positions import OptionPosition
 from app.services import option_trade_reminders
+from app.services.optionality_clusters import build_optionality_cluster_payload, classify_optionality_symbol
 
 
 class _FakeQuery:
@@ -382,6 +383,48 @@ def test_volatility_signal_avoids_chain_scan_by_default(
     assert signal["current"]["iv30"] is None
 
 
+def test_optionality_clusters_group_hospitality_hits() -> None:
+    events = [
+        OptionAlertEvent(
+            id=1,
+            symbol="MGM",
+            triggered_at=datetime(2026, 7, 2, 14, 0),
+            iv30=18.0,
+            hv30=31.0,
+            iv_percentile=5.0,
+            avg_edr=30.0,
+        ),
+        OptionAlertEvent(
+            id=2,
+            symbol="HLT",
+            triggered_at=datetime(2026, 7, 9, 14, 0),
+            iv30=20.0,
+            hv30=28.0,
+            iv_percentile=8.0,
+            avg_edr=34.0,
+        ),
+        OptionAlertEvent(
+            id=3,
+            symbol="CRVL",
+            triggered_at=datetime(2026, 7, 3, 14, 0),
+            iv30=22.0,
+            hv30=30.0,
+            iv_percentile=12.0,
+            avg_edr=40.0,
+        ),
+    ]
+
+    payload = build_optionality_cluster_payload(events, today=date(2026, 7, 10), lookback_days=21)
+    clusters = {row["group"]: row for row in payload["clusters"]}
+
+    assert classify_optionality_symbol("HLT").group == "Hospitality & Travel"
+    assert classify_optionality_symbol("MGM").group == "Hospitality & Travel"
+    assert classify_optionality_symbol("CRVL").group == "Health Care Services"
+    assert clusters["Hospitality & Travel"]["symbols"] == ["HLT", "MGM"]
+    assert clusters["Hospitality & Travel"]["hits"] == 2
+    assert clusters["Hospitality & Travel"]["avg_iv_hv_spread"] == -10.5
+
+
 def test_close_position_rejects_duplicate_closed_trade(secret_options_client) -> None:
     client, session_local = secret_options_client
     with session_local() as db:
@@ -435,6 +478,7 @@ def test_due_sell_reminders_send_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _client, session_local = secret_options_client
+    monkeypatch.delenv("OPTIONS_TRADE_REMINDER_MENTION", raising=False)
 
     @contextmanager
     def _testing_db_session():
@@ -493,7 +537,7 @@ def test_due_sell_reminders_send_once(
     assert first == {"checked": 1, "sent": 1, "skipped": 0, "error": 0}
     assert second == {"checked": 0, "sent": 0, "skipped": 0, "error": 0}
     assert len(sent_messages) == 1
-    assert "Time to review/sell SYY" in sent_messages[0]
+    assert sent_messages[0].startswith("@_steve1234 Time to review/sell SYY")
     with session_local() as db:
         reminder = db.query(OptionTradeReminder).one()
         assert reminder.status == "sent"

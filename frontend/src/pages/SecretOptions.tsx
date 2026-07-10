@@ -194,6 +194,40 @@ interface TrainingOutcomeResponse {
   summary: TrainingOutcomeSummary;
 }
 
+interface OptionalityClusterEvent {
+  event_id: number;
+  symbol: string;
+  triggered_at: string | null;
+  sector: string;
+  group: string;
+  iv_percentile: number | null;
+  iv_hv_spread: number | null;
+  avg_edr: number | null;
+  selected_option_type: string | null;
+}
+
+interface OptionalityCluster {
+  group: string;
+  sector: string;
+  hits: number;
+  recent_hits: number;
+  prior_hits: number;
+  momentum: number;
+  symbols: string[];
+  avg_iv_percentile: number | null;
+  avg_iv_hv_spread: number | null;
+  latest_triggered_at: string | null;
+  strength_score: number;
+  events: OptionalityClusterEvent[];
+}
+
+interface OptionalityClusterResponse {
+  lookback_days: number;
+  bucket_days: number;
+  generated_at: string;
+  clusters: OptionalityCluster[];
+}
+
 interface EvaluationInsight {
   holdDays: number;
   elapsedDays: number;
@@ -477,6 +511,12 @@ const buildVolatilityRead = (signal: VolatilitySignal) => {
             : "vol pending";
 
   return { ...classes, label, detail };
+};
+
+const clusterMomentumClass = (momentum: number) => {
+  if (momentum > 0) return "text-emerald-300";
+  if (momentum < 0) return "text-rose-300";
+  return "text-gray-400";
 };
 
 const capitalizeWord = (value: string) => {
@@ -1412,6 +1452,7 @@ export default function SecretOptions() {
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
   const [loadingTrainingOutcomes, setLoadingTrainingOutcomes] = useState(false);
+  const [optionalityClusters, setOptionalityClusters] = useState<OptionalityCluster[]>([]);
   const [showRowActions, setShowRowActions] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
@@ -1477,6 +1518,17 @@ export default function SecretOptions() {
       setGreeksLoadedAt(null);
     } finally {
       setLoadingGreeks(false);
+    }
+  };
+
+  const loadOptionalityClusters = async () => {
+    try {
+      const data = await apiFetch<OptionalityClusterResponse>(
+        "/secret/options/optionality-clusters?lookback_days=45&bucket_days=7&min_hits=1"
+      );
+      setOptionalityClusters(data.clusters || []);
+    } catch {
+      setOptionalityClusters([]);
     }
   };
 
@@ -1836,6 +1888,7 @@ export default function SecretOptions() {
     loadPositions();
     loadClosedPositions();
     loadTrainingOutcomes();
+    loadOptionalityClusters();
   }, []);
 
   useEffect(() => {
@@ -2566,6 +2619,48 @@ export default function SecretOptions() {
             </button>
           </div>
         </div>
+
+        {optionalityClusters.length > 0 ? (
+          <div className="mb-2 rounded-lg border border-stealth-700/80 bg-stealth-950/35 px-2.5 py-2">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <div className="text-[9px] font-semibold uppercase tracking-wide text-stealth-500">
+                Optionality Clusters
+              </div>
+              <button
+                type="button"
+                onClick={loadOptionalityClusters}
+                className="text-[10px] font-medium text-sky-300 hover:text-sky-200"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="grid gap-1.5 md:grid-cols-3">
+              {optionalityClusters.slice(0, 3).map((cluster) => (
+                <div
+                  key={cluster.group}
+                  className="min-w-0 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1.5"
+                  title={`${cluster.group}: ${cluster.symbols.join(", ")}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="truncate text-[11px] font-semibold text-stealth-100">{cluster.group}</div>
+                    <div className={`shrink-0 text-[10px] font-semibold ${clusterMomentumClass(cluster.momentum)}`}>
+                      {cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}
+                    </div>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-stealth-400">
+                    <span className="truncate">
+                      {cluster.hits} hits · {cluster.symbols.slice(0, 4).join(" ")}
+                      {cluster.symbols.length > 4 ? ` +${cluster.symbols.length - 4}` : ""}
+                    </span>
+                    <span className="shrink-0 tabular-nums">
+                      IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {activeFilterLabel ? (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2.5 py-1.5 text-[11px] text-sky-100">

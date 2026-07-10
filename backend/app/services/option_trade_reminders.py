@@ -104,11 +104,22 @@ def _discord_webhook_url() -> Optional[str]:
     return os.getenv("OPTIONS_TRADE_REMINDER_DISCORD_WEBHOOK") or os.getenv("OPTIONS_ALERT_DISCORD_WEBHOOK")
 
 
+def _evaluation_mention() -> str:
+    raw = os.getenv("OPTIONS_TRADE_REMINDER_MENTION", "@_steve1234").strip()
+    if not raw:
+        return ""
+    if raw.startswith("<@") or raw.startswith("@"):
+        return raw
+    return f"@{raw}"
+
+
 def _format_reminder_message(reminder: OptionTradeReminder, position: OptionPosition) -> str:
     source = f" scanner event #{reminder.source_event_id}" if reminder.source_event_id else " scanner match"
     hold = f" after {reminder.hold_days} day hold" if reminder.hold_days is not None else ""
+    mention = _evaluation_mention()
+    prefix = f"{mention} " if mention else ""
     return (
-        f"Time to review/sell {reminder.symbol} {reminder.expiration.isoformat()} "
+        f"{prefix}Time to review/sell {reminder.symbol} {reminder.expiration.isoformat()} "
         f"${reminder.strike:g} {reminder.option_type.upper()} "
         f"({reminder.contracts} contract{'s' if reminder.contracts != 1 else ''} @ ${reminder.fill_price:g})"
         f"{hold}. Added from{source}; trade #{position.id}."
@@ -121,7 +132,11 @@ def _send_discord_message(message: str) -> tuple[bool, Optional[str]]:
         return False, "No Discord webhook configured"
 
     try:
-        response = requests.post(webhook_url, json={"content": message}, timeout=10)
+        response = requests.post(
+            webhook_url,
+            json={"content": message, "allowed_mentions": {"parse": ["users"]}},
+            timeout=10,
+        )
     except Exception as exc:
         return False, str(exc)
 

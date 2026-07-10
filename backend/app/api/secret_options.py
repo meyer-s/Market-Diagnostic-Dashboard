@@ -26,6 +26,7 @@ from app.services.option_trade_reminders import (
     skip_trade_sell_reminder,
     sync_trade_sell_reminder,
 )
+from app.services.optionality_clusters import build_optionality_cluster_payload
 from app.services.stock_price_cache import get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
@@ -1669,6 +1670,30 @@ def get_positions():
         traceback.print_exc()
         # Return a useful message to the caller to aid debugging (temporary)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(exc)}")
+
+
+@router.get("/optionality-clusters")
+def get_optionality_clusters(
+    lookback_days: int = Query(45, ge=7, le=365),
+    bucket_days: int = Query(7, ge=1, le=30),
+    min_hits: int = Query(1, ge=1, le=10),
+):
+    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+    with get_db_session() as db:
+        events = (
+            db.query(OptionAlertEvent)
+            .filter(OptionAlertEvent.triggered_at >= cutoff)
+            .order_by(OptionAlertEvent.triggered_at.desc())
+            .all()
+        )
+        return _json_safe(
+            build_optionality_cluster_payload(
+                events,
+                lookback_days=lookback_days,
+                bucket_days=bucket_days,
+                min_hits=min_hits,
+            )
+        )
 
 
 @router.post("/positions")
