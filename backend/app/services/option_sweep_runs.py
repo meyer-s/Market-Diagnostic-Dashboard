@@ -24,7 +24,7 @@ from maintenance_scripts.options_chain_sweep import _scan_tickers
 
 
 ACTIVE_STATUSES = {"queued", "running"}
-STALE_SWEEP_RUN_HOURS = float(os.getenv("OPTION_SWEEP_STALE_HOURS", "12"))
+STALE_SWEEP_PROGRESS_MINUTES = float(os.getenv("OPTION_SWEEP_STALE_MINUTES", "30"))
 
 
 def _csv_symbols(value: Optional[str]) -> list[str]:
@@ -74,10 +74,17 @@ def _run_last_seen(run: OptionSweepRun) -> Optional[datetime]:
 
 def expire_stale_sweep_runs(stale_after_hours: Optional[float] = None) -> int:
     """Close abandoned queued/running rows so stale state cannot block new scans."""
-    hours = STALE_SWEEP_RUN_HOURS if stale_after_hours is None else float(stale_after_hours)
-    cutoff = datetime.utcnow() - timedelta(hours=max(0.25, hours))
+    if stale_after_hours is None:
+        cutoff = datetime.utcnow() - timedelta(minutes=max(5.0, STALE_SWEEP_PROGRESS_MINUTES))
+    else:
+        cutoff = datetime.utcnow() - timedelta(hours=max(0.25, float(stale_after_hours)))
     marked = 0
     with get_db_session() as db:
+        latest_run = (
+            db.query(OptionSweepRun)
+            .order_by(desc(OptionSweepRun.started_at), desc(OptionSweepRun.id))
+            .first()
+        )
         runs = (
             db.query(OptionSweepRun)
             .filter(OptionSweepRun.status.in_(list(ACTIVE_STATUSES)))
@@ -86,13 +93,22 @@ def expire_stale_sweep_runs(stale_after_hours: Optional[float] = None) -> int:
         now = datetime.utcnow()
         for run in runs:
             last_seen = _run_last_seen(run)
-            if last_seen is None or last_seen >= cutoff:
+            superseded = (
+                latest_run is not None
+                and latest_run.id != run.id
+                and latest_run.started_at is not None
+                and run.started_at is not None
+                and latest_run.started_at > run.started_at
+            )
+            if not superseded and last_seen is not None and last_seen >= cutoff:
                 continue
             run.status = "stale"
             run.last_event = "stale"
-            run.last_error = (
-                f"Marked stale after no scanner progress since {last_seen.isoformat()}."
-            )
+            if superseded:
+                run.last_error = f"Marked stale because scanner run #{latest_run.id} started later."
+            else:
+                progress_label = last_seen.isoformat() if last_seen else "an unknown time"
+                run.last_error = f"Marked stale after no scanner progress since {progress_label}."
             if run.completed_at is None:
                 run.completed_at = now
             run.updated_at = now
