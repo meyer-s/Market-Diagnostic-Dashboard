@@ -450,7 +450,10 @@ def _collect_training_outcomes(
 
         db.commit()
         outcomes = [
-            _training_outcome_payload(rows_by_event_id[event.id])
+            {
+                **_training_outcome_payload(rows_by_event_id[event.id]),
+                **_opportunity_rank_payload_for_event(event),
+            }
             for event in candidate_events
             if event.id in rows_by_event_id and rows_by_event_id[event.id].compute_status == "ok"
         ]
@@ -1203,6 +1206,34 @@ def _score_payload_for_event(event: OptionAlertEvent) -> Dict[str, object]:
     return score
 
 
+def _opportunity_rank_payload_for_event(
+    event: Optional[OptionAlertEvent],
+    *,
+    prefix: str = "opportunity",
+) -> Dict[str, object]:
+    score_key = f"{prefix}_score"
+    grade_key = f"{prefix}_grade"
+    rank_key = f"{prefix}_rank_score"
+    model_key = f"{prefix}_model_version"
+    if event is None:
+        return {
+            score_key: None,
+            grade_key: None,
+            rank_key: None,
+            model_key: OPPORTUNITY_MODEL_VERSION,
+        }
+
+    score = _score_payload_for_event(event)
+    base_score = score.get("base_score")
+    rank_score = score.get("rank_score")
+    return {
+        score_key: round(float(base_score), 2) if _is_finite_number(base_score) else None,
+        grade_key: score.get("grade"),
+        rank_key: round(float(rank_score), 2) if _is_finite_number(rank_score) else None,
+        model_key: OPPORTUNITY_MODEL_VERSION,
+    }
+
+
 def _compute_position_opportunity_signal(
     position: OptionPosition,
     quote: Dict[str, object],
@@ -1525,7 +1556,10 @@ def _serialize_position(
     }
 
 
-def _serialize_closed_position(position: ClosedPosition) -> Dict[str, object]:
+def _serialize_closed_position(
+    position: ClosedPosition,
+    source_event: Optional[OptionAlertEvent] = None,
+) -> Dict[str, object]:
     return {
         "id": position.id,
         "symbol": position.symbol,
@@ -1552,6 +1586,7 @@ def _serialize_closed_position(position: ClosedPosition) -> Dict[str, object]:
         "source_match_method": position.source_match_method,
         "source_match_confidence": position.source_match_confidence,
         "source_match_notes": position.source_match_notes,
+        **_opportunity_rank_payload_for_event(source_event, prefix="source_opportunity"),
     }
 
 
@@ -2170,10 +2205,23 @@ def get_closed_positions(
             query = query.filter(ClosedPosition.symbol == symbol.upper())
         
         closed_positions = query.limit(limit).all()
+        event_ids = sorted(
+            {
+                int(pos.source_event_id)
+                for pos in closed_positions
+                if pos.source_event_id is not None
+            }
+        )
+        source_events = (
+            db.query(OptionAlertEvent).filter(OptionAlertEvent.id.in_(event_ids)).all()
+            if event_ids
+            else []
+        )
+        source_events_by_id = {event.id: event for event in source_events}
         
         results = []
         for pos in closed_positions:
-            results.append(_serialize_closed_position(pos))
+            results.append(_serialize_closed_position(pos, source_events_by_id.get(pos.source_event_id)))
         
         # Calculate summary stats
         total_pnl = sum(pos.dollar_pnl for pos in closed_positions)
@@ -2259,7 +2307,12 @@ def update_closed_position(closed_position_id: int, payload: ClosedPositionUpdat
 
         db.commit()
         db.refresh(position)
-        return _json_safe({"closed_position": _serialize_closed_position(position)})
+        source_event = (
+            db.query(OptionAlertEvent).filter(OptionAlertEvent.id == position.source_event_id).first()
+            if position.source_event_id is not None
+            else None
+        )
+        return _json_safe({"closed_position": _serialize_closed_position(position, source_event)})
 
 
 @router.delete("/closed-positions/{closed_position_id}")

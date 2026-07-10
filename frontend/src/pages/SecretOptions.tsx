@@ -188,6 +188,10 @@ interface ClosedPositionRow {
   source_match_method: string | null;
   source_match_confidence: number | null;
   source_match_notes: string | null;
+  source_opportunity_score: number | null;
+  source_opportunity_grade: string | null;
+  source_opportunity_rank_score: number | null;
+  source_opportunity_model_version: string | null;
 }
 
 interface TrainingOutcomeRow {
@@ -206,6 +210,10 @@ interface TrainingOutcomeRow {
   option_return_pct_est: number | null;
   option_pnl_per_contract_est: number | null;
   status: "matured" | "pending";
+  opportunity_score: number | null;
+  opportunity_grade: string | null;
+  opportunity_rank_score: number | null;
+  opportunity_model_version: string | null;
 }
 
 interface TrainingOutcomeSummary {
@@ -743,6 +751,37 @@ const compactOpportunityGrade = (score: number | null | undefined, fallback?: st
   if (score >= 45) return "D+";
   if (score >= 40) return "D";
   return "D-";
+};
+
+const OpportunityRankBadge = ({
+  score,
+  grade,
+  rankScore,
+  modelVersion,
+  className = "",
+}: {
+  score: number | null | undefined;
+  grade?: string | null;
+  rankScore?: number | null;
+  modelVersion?: string | null;
+  className?: string;
+}) => {
+  const label = compactOpportunityGrade(score, grade);
+  if (label === "—") return null;
+  const titleParts = [
+    `Grade ${label}`,
+    score !== null && score !== undefined && !Number.isNaN(score) ? `score ${score.toFixed(1)}` : null,
+    rankScore !== null && rankScore !== undefined && !Number.isNaN(rankScore) ? `rank ${rankScore.toFixed(1)}` : null,
+    modelVersion || null,
+  ].filter(Boolean);
+  return (
+    <span
+      title={titleParts.join(" · ")}
+      className={`inline-flex min-w-8 items-center justify-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${opportunityScoreClass(score)} ${className}`}
+    >
+      {label}
+    </span>
+  );
 };
 
 const buildOpportunityRead = (opportunity: PositionOpportunity | null | undefined) => {
@@ -4937,7 +4976,7 @@ export default function SecretOptions() {
                             }))
                           }
                         >
-                          Symbol {sortArrow(closedSort.key === "symbol", closedSort.direction)}
+                          Symbol / Rank {sortArrow(closedSort.key === "symbol", closedSort.direction)}
                         </button>
                       </th>
                       <th className="px-3 py-2 text-left">
@@ -5054,6 +5093,12 @@ export default function SecretOptions() {
                               className={`inline-block h-5 w-1.5 rounded-full ${heat.marker}`}
                             />
                             <span className="font-semibold">{pos.symbol}</span>
+                            <OpportunityRankBadge
+                              score={pos.source_opportunity_score}
+                              grade={pos.source_opportunity_grade}
+                              rankScore={pos.source_opportunity_rank_score}
+                              modelVersion={pos.source_opportunity_model_version}
+                            />
                           </div>
                         </td>
                         <td className="px-3 py-2">${formatNumber(pos.strike, 2)}</td>
@@ -5253,7 +5298,7 @@ export default function SecretOptions() {
                 <table className="min-w-full text-sm text-gray-300">
                   <thead className="text-xs uppercase text-gray-500 border-b border-gray-700">
                     <tr>
-                      <th className="px-3 py-2 text-left">Symbol</th>
+                      <th className="px-3 py-2 text-left">Symbol / Rank</th>
                       <th className="px-3 py-2 text-left">Type</th>
                       <th className="px-3 py-2 text-left">Hold</th>
                       <th className="px-3 py-2 text-left">Entry</th>
@@ -5269,7 +5314,17 @@ export default function SecretOptions() {
                   <tbody className="divide-y divide-gray-800">
                     {trainingOutcomes.map((row) => (
                       <tr key={row.event_id} className="hover:bg-gray-900/40">
-                        <td className="px-3 py-2 font-semibold text-gray-100">{row.symbol}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-100">{row.symbol}</span>
+                            <OpportunityRankBadge
+                              score={row.opportunity_score}
+                              grade={row.opportunity_grade}
+                              rankScore={row.opportunity_rank_score}
+                              modelVersion={row.opportunity_model_version}
+                            />
+                          </div>
+                        </td>
                         <td className="px-3 py-2 uppercase">{row.option_type}</td>
                         <td className="px-3 py-2">{row.hold_days}d</td>
                         <td className="px-3 py-2">{formatDate(row.entry_date)}</td>
