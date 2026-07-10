@@ -2835,6 +2835,64 @@ export default function SecretOptions() {
           ? "Losing positions"
           : capitalizeWord(positionFilter);
 
+  const optionalityClustersCard = (
+    <div className="surface-card-strong p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+            <h2 className="text-base font-semibold text-stealth-100">Optionality Clusters</h2>
+          </div>
+          <div className="mt-0.5 text-[11px] text-stealth-400">
+            45d scanner hits grouped by actionable sector/theme.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={loadOptionalityClusters}
+          className="inline-flex items-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2.5 py-1.5 text-[11px] font-semibold text-stealth-200 hover:border-sky-400/50 hover:text-sky-100"
+        >
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+
+      {visibleOptionalityClusters.length === 0 ? (
+        <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+          No classified clusters in the current lookback.
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {visibleOptionalityClusters.slice(0, 6).map((cluster) => (
+            <div
+              key={cluster.group}
+              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-stealth-800/70 py-2 last:border-b-0"
+              title={`${cluster.group}: ${cluster.symbols.join(", ")}`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-300/80" />
+                  <div className="truncate text-sm font-semibold text-stealth-100">{cluster.group}</div>
+                  <div className={`shrink-0 text-[11px] font-semibold ${clusterMomentumClass(cluster.momentum)}`}>
+                    {cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}
+                  </div>
+                </div>
+                <div className="mt-1 truncate text-[11px] text-stealth-400">
+                  {cluster.symbols.slice(0, 6).join(" ")}
+                  {cluster.symbols.length > 6 ? ` +${cluster.symbols.length - 6}` : ""}
+                </div>
+              </div>
+              <div className="text-right text-[11px] tabular-nums">
+                <div className="font-semibold text-stealth-100">{cluster.hits} hits</div>
+                <div className="text-stealth-400">IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="page-shell-wide space-y-2.5 text-gray-100 md:space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 px-1">
@@ -3252,62 +3310,6 @@ export default function SecretOptions() {
       </div>
 
       <div className="surface-card-strong p-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-emerald-300" aria-hidden="true" />
-              <h2 className="text-base font-semibold text-stealth-100">Optionality Clusters</h2>
-            </div>
-            <div className="mt-0.5 text-[11px] text-stealth-400">
-              45d scanner hits grouped by actionable sector/theme.
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={loadOptionalityClusters}
-            className="inline-flex items-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2.5 py-1.5 text-[11px] font-semibold text-stealth-200 hover:border-sky-400/50 hover:text-sky-100"
-          >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-            Refresh
-          </button>
-        </div>
-
-        {visibleOptionalityClusters.length === 0 ? (
-          <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
-            No classified clusters in the current lookback.
-          </div>
-        ) : (
-          <div className="grid gap-2 lg:grid-cols-2">
-            {visibleOptionalityClusters.slice(0, 6).map((cluster) => (
-              <div
-                key={cluster.group}
-                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-stealth-800/70 py-2 last:border-b-0"
-                title={`${cluster.group}: ${cluster.symbols.join(", ")}`}
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-300/80" />
-                    <div className="truncate text-sm font-semibold text-stealth-100">{cluster.group}</div>
-                    <div className={`shrink-0 text-[11px] font-semibold ${clusterMomentumClass(cluster.momentum)}`}>
-                      {cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}
-                    </div>
-                  </div>
-                  <div className="mt-1 truncate text-[11px] text-stealth-400">
-                    {cluster.symbols.slice(0, 6).join(" ")}
-                    {cluster.symbols.length > 6 ? ` +${cluster.symbols.length - 6}` : ""}
-                  </div>
-                </div>
-                <div className="text-right text-[11px] tabular-nums">
-                  <div className="font-semibold text-stealth-100">{cluster.hits} hits</div>
-                  <div className="text-stealth-400">IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="surface-card-strong p-3">
         <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-stealth-100">Scanner Control &amp; Outcomes</h2>
@@ -3557,7 +3559,7 @@ export default function SecretOptions() {
 
         </section>
 
-        <aside className="min-w-0 xl:sticky xl:top-4">
+        <aside className="min-w-0 space-y-3 xl:sticky xl:top-4">
       <div className="surface-card-strong max-h-none overflow-y-visible p-2.5 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
         <div className="mb-2 flex items-start justify-between gap-2">
           <div>
@@ -3985,6 +3987,7 @@ export default function SecretOptions() {
         )}
 
       </div>
+      {optionalityClustersCard}
         </aside>
       </div>
 
