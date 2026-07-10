@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Link } from "react-router-dom";
 import { createPortal } from "react-dom";
-import { Activity, HelpCircle, Pencil, Play, RefreshCw, Settings2, Square, Trash2 } from "lucide-react";
+import { Activity, ChevronDown, HelpCircle, Pencil, Play, RefreshCw, Settings2, Square, Trash2 } from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
@@ -306,6 +306,7 @@ interface ScannerRankedOpportunity {
   model_version: string;
   components: Record<string, number | null | undefined>;
   reasons: string[];
+  message?: string | null;
   iv_percentile: number | null;
   iv30: number | null;
   hv30: number | null;
@@ -317,14 +318,21 @@ interface ScannerRankedOpportunity {
     strike: number | null;
     option_type: string | null;
     premium: number | null;
+    price_source?: string | null;
+    bid?: number | null;
+    ask?: number | null;
+    last?: number | null;
     spread_pct: number | null;
     open_interest: number | null;
     volume: number | null;
     implied_volatility: number | null;
+    last_trade_at?: string | null;
     contract_score: number | null;
     reward_risk: number | null;
     convexity_profit_pct: number | null;
     convexity_probability_itm: number | null;
+    planned_loss_pct?: number | null;
+    target_profit_pct?: number | null;
   };
 }
 
@@ -772,6 +780,216 @@ const formatDataSource = (source?: string | null, quoteSource?: string | null) =
         : source?.trim() || "Unknown";
   const detail = quoteSource?.trim();
   return detail ? `${provider} (${detail.replace(/_/g, " ")})` : provider;
+};
+
+interface ParsedScannerAlertSection {
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+  lines: string[];
+}
+
+const scannerAlertHeaders = [
+  "MISPRICING",
+  "OPPORTUNITY RANK",
+  "DIRECTION",
+  "MACD 1W",
+  "HORIZONS",
+  "EXAMPLE TRADE",
+];
+
+const cleanScannerAlertMessage = (message?: string | null) =>
+  (message || "")
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .replace(/```ansi|```/gi, "")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed.length > 0 && !/^[-=─]{6,}$/.test(trimmed);
+    });
+
+const scannerHeaderForLine = (line: string) => {
+  const normalized = line.trim().toUpperCase();
+  return scannerAlertHeaders.find((header) => normalized.startsWith(header)) || null;
+};
+
+const parseScannerAlertSections = (message?: string | null): ParsedScannerAlertSection[] => {
+  const lines = cleanScannerAlertMessage(message);
+  const sections: ParsedScannerAlertSection[] = [];
+  let current: ParsedScannerAlertSection | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const header = scannerHeaderForLine(trimmed);
+    if (header) {
+      current = { title: trimmed, rows: [], lines: [] };
+      sections.push(current);
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+    const rowMatch = trimmed.match(/^([^:]{2,28})\s*:\s*(.+)$/);
+    if (rowMatch) {
+      current.rows.push({
+        label: rowMatch[1].trim(),
+        value: rowMatch[2].trim(),
+      });
+    } else {
+      current.lines.push(trimmed);
+    }
+  }
+
+  return sections;
+};
+
+const scannerAlertSection = (sections: ParsedScannerAlertSection[], title: string) =>
+  sections.find((section) => section.title.toUpperCase().startsWith(title.toUpperCase()));
+
+const scannerAlertValue = (
+  sections: ParsedScannerAlertSection[],
+  sectionTitle: string,
+  label: string
+) =>
+  scannerAlertSection(sections, sectionTitle)?.rows.find(
+    (row) => row.label.toLowerCase() === label.toLowerCase()
+  )?.value || null;
+
+const formatComponentLabel = (value: string) =>
+  value
+    .replace(/^selected_/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportunity }) => {
+  const contract = opportunity.selected_contract;
+  const sections = parseScannerAlertSections(opportunity.message);
+  const directionSection = scannerAlertSection(sections, "DIRECTION");
+  const macdSection = scannerAlertSection(sections, "MACD 1W");
+  const horizonsSection = scannerAlertSection(sections, "HORIZONS");
+  const exampleSection = scannerAlertSection(sections, "EXAMPLE TRADE");
+  const components = Object.entries(opportunity.components || {})
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]))
+    .sort((a, b) => b[1] - a[1]);
+  const dataSource = scannerAlertValue(sections, "MISPRICING", "Data Src") || contract.price_source || "—";
+  const ivHvEdr =
+    scannerAlertValue(sections, "MISPRICING", "IV/HV/EDR") ||
+    `${formatPercent(opportunity.iv30, 1)} / ${formatPercent(opportunity.hv30, 1)} / ${formatPercent(opportunity.avg_edr, 1)}`;
+
+  const detailRow = (label: string, value: string | number | null | undefined, className = "text-stealth-100") => (
+    <div className="flex items-baseline justify-between gap-3 text-[10px]">
+      <span className="uppercase tracking-wide text-stealth-500">{label}</span>
+      <span className={`min-w-0 truncate text-right tabular-nums ${className}`}>{value ?? "—"}</span>
+    </div>
+  );
+
+  const sectionBlock = (title: string, rows: Array<{ label: string; value: string }>, lines: string[] = []) => {
+    if (rows.length === 0 && lines.length === 0) return null;
+    return (
+      <div className="min-w-0 border-t border-stealth-800/70 pt-2">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">{title}</div>
+        <div className="space-y-1">
+          {rows.slice(0, 5).map((row) => detailRow(row.label, row.value))}
+          {lines.slice(0, 3).map((line, index) => (
+            <div key={`${title}-${index}`} className="text-[10px] leading-snug text-stealth-300">
+              {line}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="border-t border-stealth-800/80 bg-stealth-950/40 px-3 py-3">
+      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr]">
+        <div className="space-y-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Mispricing</div>
+          {detailRow("Consensus", scannerAlertValue(sections, "MISPRICING", "Consensus") || "Cheap", "text-emerald-200")}
+          {detailRow("IV pct", formatPercent(opportunity.iv_percentile, 1))}
+          {detailRow("IV/HV/EDR", ivHvEdr)}
+          {detailRow("Data", dataSource)}
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Rank Drivers</div>
+          {detailRow("Grade", compactOpportunityGrade(opportunity.score, opportunity.grade), opportunityScoreClass(opportunity.score).split(" ").filter((part) => part.startsWith("text-")).join(" ") || "text-stealth-100")}
+          {detailRow("Score", opportunity.score.toFixed(1))}
+          {opportunity.reasons.length > 0 ? (
+            <div className="text-[10px] leading-snug text-stealth-300">{opportunity.reasons.slice(0, 3).join(" / ")}</div>
+          ) : null}
+          {components.length > 0 ? (
+            <div className="space-y-1.5">
+              {components.slice(0, 5).map(([key, value]) => (
+                <div key={key}>
+                  <div className="mb-0.5 flex items-center justify-between gap-2 text-[9px] uppercase tracking-wide text-stealth-500">
+                    <span className="truncate">{formatComponentLabel(key)}</span>
+                    <span className="tabular-nums">{value.toFixed(0)}</span>
+                  </div>
+                  <div className="h-1 overflow-hidden rounded-full bg-stealth-900">
+                    <div className="h-full rounded-full bg-sky-300/70" style={{ width: `${Math.max(4, Math.min(100, value))}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Contract</div>
+          {detailRow(
+            "Selected",
+            contract.option_type && contract.strike !== null && contract.strike !== undefined
+              ? `${contract.option_type.toUpperCase()} ${formatNumber(contract.strike, 2)}${contract.expiry ? ` / ${formatDate(contract.expiry)}` : ""}`
+              : "contract pending"
+          )}
+          {detailRow("Bid / Ask", `${formatCurrency(contract.bid)} / ${formatCurrency(contract.ask)}`)}
+          {detailRow("Premium", formatCurrency(contract.premium))}
+          {detailRow("Spread", formatPercent(contract.spread_pct, 1))}
+          {detailRow(
+            "OI / Vol / IV",
+            `${contract.open_interest ?? "—"} / ${contract.volume ?? "—"} / ${
+              contract.implied_volatility !== null && contract.implied_volatility !== undefined
+                ? formatPercent(contract.implied_volatility * 100, 1)
+                : "—"
+            }`
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        {sectionBlock("Direction", directionSection?.rows || [], directionSection?.lines || [])}
+        {sectionBlock("Momentum", macdSection?.rows || [], macdSection?.lines || [])}
+        {sectionBlock("Horizons", horizonsSection?.rows || [], horizonsSection?.lines || [])}
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1.1fr_1fr]">
+        <div className="border-t border-stealth-800/70 pt-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Training Trade</div>
+          <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+            {detailRow("Hump exit", scannerAlertValue(sections, "EXAMPLE TRADE", "Hump Exit") || formatPercent(contract.convexity_profit_pct, 0))}
+            {detailRow("Hump prob", scannerAlertValue(sections, "EXAMPLE TRADE", "Hump Prob") || (contract.convexity_probability_itm !== null && contract.convexity_probability_itm !== undefined ? formatPercent(contract.convexity_probability_itm * 100, 0) : "—"))}
+            {detailRow("Base target", scannerAlertValue(sections, "EXAMPLE TRADE", "Base Tgt") || formatPercent(contract.target_profit_pct, 0))}
+            {detailRow("Risk cut", scannerAlertValue(sections, "EXAMPLE TRADE", "Risk Cut") || (contract.planned_loss_pct !== null && contract.planned_loss_pct !== undefined ? `-${formatPercent(contract.planned_loss_pct, 0)}` : "—"))}
+            {detailRow("Reward/risk", scannerAlertValue(sections, "EXAMPLE TRADE", "Reward/Risk") || (contract.reward_risk !== null && contract.reward_risk !== undefined ? `${contract.reward_risk.toFixed(2)}R` : "—"))}
+            {detailRow("Hold", scannerAlertValue(sections, "EXAMPLE TRADE", "Hold") || (contract.dte !== null && contract.dte !== undefined ? `${contract.dte} DTE` : "—"))}
+          </div>
+        </div>
+
+        {exampleSection && exampleSection.rows.length > 0 ? (
+          <div className="border-t border-stealth-800/70 pt-2">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Quote Context</div>
+            <div className="space-y-1">
+              {["Setup", "Quote", "OI/Vol/IV", "Est Prem", "Est G/L", "Stop/Tgt"].map((label) => {
+                const value = scannerAlertValue(sections, "EXAMPLE TRADE", label);
+                return value ? detailRow(label, value) : null;
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 };
 
 const formatRelativeTime = (value: string | Date | null | undefined) => {
@@ -1736,6 +1954,7 @@ export default function SecretOptions() {
   const [scannerRunDetail, setScannerRunDetail] = useState<ScannerRunDetailResponse | null>(null);
   const selectedScannerRunIdRef = useRef<number | null>(null);
   const scannerRunDetailRef = useRef<ScannerRunDetailResponse | null>(null);
+  const [expandedScannerHitId, setExpandedScannerHitId] = useState<number | null>(null);
   const [loadingScannerRunDetail, setLoadingScannerRunDetail] = useState(false);
   const [showRowActions, setShowRowActions] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
@@ -2306,6 +2525,10 @@ export default function SecretOptions() {
     const timer = window.setInterval(loadScannerSummary, 15000);
     return () => window.clearInterval(timer);
   }, [scannerData?.summary.active_runs]);
+
+  useEffect(() => {
+    setExpandedScannerHitId(null);
+  }, [selectedScannerRunId]);
 
   useEffect(() => {
     if (selectedId !== null) {
@@ -3555,7 +3778,7 @@ export default function SecretOptions() {
               </div>
             ) : (
               <div className="max-h-[460px] overflow-y-auto rounded-lg border border-stealth-800/80 bg-stealth-950/25">
-                <div className="sticky top-0 z-10 grid grid-cols-[64px_minmax(0,1fr)_48px] gap-2 border-b border-stealth-800 bg-stealth-950/95 px-2 py-1.5 text-[9px] uppercase tracking-wide text-stealth-500">
+                <div className="sticky top-0 z-10 grid grid-cols-[64px_minmax(0,1fr)_64px] gap-2 border-b border-stealth-800 bg-stealth-950/95 px-2 py-1.5 text-[9px] uppercase tracking-wide text-stealth-500">
                   <span>Symbol</span>
                   <span>Setup</span>
                   <span className="text-right">Rank</span>
@@ -3563,34 +3786,57 @@ export default function SecretOptions() {
                 <div className="divide-y divide-stealth-800/80">
                 {selectedScannerHits.map((opportunity) => {
                   const contract = opportunity.selected_contract;
+                  const isExpanded = expandedScannerHitId === opportunity.event_id;
                   const contractLabel =
                     contract.option_type && contract.strike !== null && contract.strike !== undefined
                       ? `${contract.option_type.toUpperCase()} ${formatNumber(contract.strike, 2)}`
                       : "contract pending";
                   return (
-                    <div key={opportunity.event_id} className="grid grid-cols-[64px_minmax(0,1fr)_48px] gap-2 px-2 py-2 text-xs">
-                      <Link
-                        to={`/stock-analysis/${encodeURIComponent(opportunity.symbol)}?symbol=${encodeURIComponent(opportunity.symbol)}`}
-                        className="font-semibold text-sky-200 hover:text-sky-100"
+                    <Fragment key={opportunity.event_id}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setExpandedScannerHitId((current) => current === opportunity.event_id ? null : opportunity.event_id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setExpandedScannerHitId((current) => current === opportunity.event_id ? null : opportunity.event_id);
+                          }
+                        }}
+                        className={`grid cursor-pointer grid-cols-[64px_minmax(0,1fr)_64px] gap-2 px-2 py-2 text-xs transition-colors ${
+                          isExpanded ? "bg-sky-500/10" : "hover:bg-stealth-900/35"
+                        }`}
                       >
-                        {opportunity.symbol}
-                      </Link>
-                      <div className="min-w-0">
-                        <div className="truncate text-stealth-200">
-                          {contractLabel}
-                          {contract.expiry ? ` · ${formatDate(contract.expiry)}` : ""}
-                          {contract.dte !== null && contract.dte !== undefined ? ` · ${contract.dte} DTE` : ""}
+                        <Link
+                          to={`/stock-analysis/${encodeURIComponent(opportunity.symbol)}?symbol=${encodeURIComponent(opportunity.symbol)}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="font-semibold text-sky-200 hover:text-sky-100"
+                        >
+                          {opportunity.symbol}
+                        </Link>
+                        <div className="min-w-0">
+                          <div className="truncate text-stealth-200">
+                            {contractLabel}
+                            {contract.expiry ? ` · ${formatDate(contract.expiry)}` : ""}
+                            {contract.dte !== null && contract.dte !== undefined ? ` · ${contract.dte} DTE` : ""}
+                          </div>
+                          <div className="truncate text-[10px] text-stealth-500">
+                            {opportunity.group} · IV pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
+                            {contract.reward_risk !== null && contract.reward_risk !== undefined ? ` · ${contract.reward_risk.toFixed(2)}R` : ""}
+                            {contract.open_interest !== null && contract.open_interest !== undefined ? ` · OI ${contract.open_interest}` : ""}
+                          </div>
                         </div>
-                        <div className="truncate text-[10px] text-stealth-500">
-                          {opportunity.group} · IV pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
-                          {contract.reward_risk !== null && contract.reward_risk !== undefined ? ` · ${contract.reward_risk.toFixed(2)}R` : ""}
-                          {contract.open_interest !== null && contract.open_interest !== undefined ? ` · OI ${contract.open_interest}` : ""}
+                        <div className="flex items-start justify-end gap-1">
+                          <div className={`rounded-md border px-1.5 py-1 text-center text-xs font-semibold ${opportunityScoreClass(opportunity.score)}`}>
+                            {compactOpportunityGrade(opportunity.score, opportunity.grade)}
+                          </div>
+                          <ChevronDown
+                            className={`mt-1 h-3 w-3 text-stealth-500 transition-transform ${isExpanded ? "rotate-180 text-sky-300" : ""}`}
+                          />
                         </div>
                       </div>
-                      <div className={`self-start rounded-md border px-1.5 py-1 text-center text-xs font-semibold ${opportunityScoreClass(opportunity.score)}`}>
-                        {compactOpportunityGrade(opportunity.score, opportunity.grade)}
-                      </div>
-                    </div>
+                      {isExpanded ? <ScannerHitDetail opportunity={opportunity} /> : null}
+                    </Fragment>
                   );
                 })}
                 </div>
