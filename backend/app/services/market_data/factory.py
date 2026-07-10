@@ -81,8 +81,8 @@ class FallbackMarketDataProvider:
         return self._call("option_chain", symbol, expiry, right=right, strikes=strikes)
 
 
-def get_market_data_provider() -> MarketDataProvider:
-    provider = os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower()
+def get_market_data_provider(provider_override: Optional[str] = None) -> MarketDataProvider:
+    provider = (provider_override or os.getenv("MARKET_DATA_PROVIDER", "yahoo")).strip().lower()
     if provider == "ibkr":
         primary: MarketDataProvider = IbkrCliProvider()
         fallback = os.getenv("MARKET_DATA_FALLBACK_PROVIDER", "").strip().lower()

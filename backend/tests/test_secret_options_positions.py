@@ -633,6 +633,187 @@ def test_scanner_run_detail_returns_hits_for_selected_run(secret_options_client)
     assert body["hits"][0]["score"] >= body["hits"][1]["score"]
 
 
+def test_scanner_run_detail_uses_direct_sweep_run_id(secret_options_client) -> None:
+    client, session_local = secret_options_client
+    now = datetime.utcnow()
+    with session_local() as db:
+        run = OptionSweepRun(
+            universe_key="SP500",
+            universe_label="S&P 500",
+            threshold=30.0,
+            trigger_source="dashboard",
+            status="running",
+            total_symbols=500,
+            scanned_symbols=80,
+            hits=2,
+            errors=0,
+            rate_limit_errors=0,
+            hit_symbols=None,
+            started_at=now - timedelta(minutes=5),
+            completed_at=None,
+            created_at=now - timedelta(minutes=5),
+            updated_at=now,
+        )
+        db.add(run)
+        db.flush()
+        db.add_all(
+            [
+                OptionAlertEvent(
+                    symbol="A",
+                    sweep_run_id=run.id,
+                    triggered_at=now - timedelta(minutes=2),
+                    iv30=34.0,
+                    hv30=56.0,
+                    iv_percentile=25.0,
+                    avg_edr=72.0,
+                    selected_expiry="2026-09-18",
+                    selected_dte=70,
+                    selected_strike=145.0,
+                    selected_option_type="call",
+                    selected_premium=4.15,
+                    opportunity_score=88.0,
+                    opportunity_grade="A",
+                    delivered=True,
+                ),
+                OptionAlertEvent(
+                    symbol="SJM",
+                    sweep_run_id=run.id,
+                    triggered_at=now - timedelta(minutes=1),
+                    iv30=22.0,
+                    hv30=30.0,
+                    iv_percentile=18.0,
+                    avg_edr=41.0,
+                    selected_expiry="2026-09-18",
+                    selected_dte=70,
+                    selected_strike=115.0,
+                    selected_option_type="call",
+                    selected_premium=3.15,
+                    opportunity_score=70.0,
+                    opportunity_grade="B",
+                    delivered=True,
+                ),
+            ]
+        )
+        db.commit()
+        run_id = run.id
+
+    response = client.get(f"/secret/options/scanner-run/{run_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hit_count"] == 2
+    assert body["matched_event_count"] == 2
+    assert [hit["symbol"] for hit in body["hits"]] == ["A", "SJM"]
+
+
+def test_scanner_run_detail_recovers_legacy_window_hits(secret_options_client) -> None:
+    client, session_local = secret_options_client
+    now = datetime.utcnow()
+    with session_local() as db:
+        db.add_all(
+            [
+                OptionAlertEvent(
+                    symbol="CVS",
+                    triggered_at=now - timedelta(minutes=2),
+                    iv30=24.0,
+                    hv30=38.0,
+                    iv_percentile=14.0,
+                    avg_edr=52.0,
+                    selected_expiry="2026-09-18",
+                    selected_dte=70,
+                    selected_strike=70.0,
+                    selected_option_type="call",
+                    selected_premium=2.1,
+                    opportunity_score=76.0,
+                    opportunity_grade="B",
+                    message="CVS - S&P 500\nMISPRICING",
+                    delivered=True,
+                ),
+                OptionAlertEvent(
+                    symbol="XYZ",
+                    triggered_at=now - timedelta(minutes=2),
+                    iv30=24.0,
+                    hv30=38.0,
+                    iv_percentile=14.0,
+                    avg_edr=52.0,
+                    message="XYZ - Russell 2000\nMISPRICING",
+                    delivered=True,
+                ),
+            ]
+        )
+        run = OptionSweepRun(
+            universe_key="SP500",
+            universe_label="S&P 500",
+            threshold=30.0,
+            trigger_source="dashboard",
+            status="stopped",
+            total_symbols=500,
+            scanned_symbols=120,
+            hits=1,
+            errors=0,
+            rate_limit_errors=0,
+            hit_symbols=None,
+            started_at=now - timedelta(minutes=5),
+            completed_at=now,
+            created_at=now - timedelta(minutes=5),
+            updated_at=now,
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    response = client.get(f"/secret/options/scanner-run/{run_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hit_count"] == 1
+    assert body["matched_event_count"] == 1
+    assert [hit["symbol"] for hit in body["hits"]] == ["CVS"]
+
+
+def test_sweep_progress_persists_hit_symbols(secret_options_client) -> None:
+    _client, session_local = secret_options_client
+    now = datetime.utcnow()
+    with session_local() as db:
+        run = OptionSweepRun(
+            universe_key="SP500",
+            universe_label="S&P 500",
+            threshold=30.0,
+            trigger_source="dashboard",
+            status="running",
+            total_symbols=500,
+            scanned_symbols=10,
+            hits=0,
+            errors=0,
+            rate_limit_errors=0,
+            started_at=now,
+            completed_at=None,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    option_sweep_runs.update_sweep_run_from_progress(
+        run_id,
+        {
+            "event": "progress",
+            "scanned": 25,
+            "total_expected": 500,
+            "hits": 2,
+            "hit_symbols": ["A", "SJM"],
+            "errors": 0,
+            "rate_limit_errors": 0,
+        },
+    )
+
+    with session_local() as db:
+        run = db.query(OptionSweepRun).filter(OptionSweepRun.id == run_id).one()
+        assert run.hit_symbols == "A,SJM"
+        assert run.hits == 2
+
+
 def test_scanner_summary_marks_stale_running_run(secret_options_client) -> None:
     client, session_local = secret_options_client
     now = datetime.utcnow()

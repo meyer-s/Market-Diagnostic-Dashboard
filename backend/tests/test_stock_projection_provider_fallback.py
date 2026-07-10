@@ -94,6 +94,15 @@ def test_cache_allows_yahoo_options_when_yahoo_is_active(monkeypatch) -> None:
     )
 
 
+def test_provider_override_can_force_yahoo_when_global_provider_is_ibkr(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_DATA_PROVIDER", "ibkr")
+    monkeypatch.setenv("MARKET_DATA_FALLBACK_PROVIDER", "yahoo")
+
+    provider = factory.get_market_data_provider("yahoo")
+
+    assert provider.name == "yahoo"
+
+
 def test_options_flow_exhausts_primary_expiries_before_fallback() -> None:
     provider = _FallbackWrapper()
 

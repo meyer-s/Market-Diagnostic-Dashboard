@@ -52,6 +52,7 @@ class OptionAlertEvent(Base):
     opportunity_grade = Column(String, nullable=True)
     opportunity_model_version = Column(String, nullable=True)
     opportunity_components = Column(Text, nullable=True)
+    sweep_run_id = Column(Integer, nullable=True, index=True)
     message = Column(String)
     delivered = Column(Boolean, default=False)
     delivery_channel = Column(String, nullable=True)

@@ -83,6 +83,14 @@ def _int_env(name: str, default: Optional[int]) -> Optional[int]:
     return value if value > 0 else None
 
 
+def _sweep_market_data_provider_key(default: str = "yahoo") -> str:
+    return (
+        os.getenv("OPTION_SWEEP_MARKET_DATA_PROVIDER")
+        or os.getenv("SWEEP_MARKET_DATA_PROVIDER")
+        or default
+    ).strip().lower() or default
+
+
 def _sweep_optionality_config(provider_name: str) -> dict[str, Any]:
     provider_key = (provider_name or "").strip().lower()
     if provider_key == "ibkr":
@@ -115,6 +123,8 @@ def _scan_tickers(
     rate_limit_backoff_multiplier: Optional[float] = None,
     rate_limit_backoff_max_seconds: Optional[float] = None,
     rate_limit_max_retries: Optional[int] = None,
+    market_data_provider: Optional[str] = None,
+    sweep_run_id: Optional[int] = None,
 ) -> int | tuple[int, list[str]] | tuple[int, list[dict[str, Any]]] | tuple[int, list[str], list[dict[str, Any]]]:
     hits = 0
     total = 0
@@ -124,7 +134,8 @@ def _scan_tickers(
     rate_limit_errors = 0
     consecutive_rate_limits = 0
     total_expected = min(len(tickers), max_count) if max_count else len(tickers)
-    provider = get_market_data_provider()
+    provider_key = (market_data_provider or _sweep_market_data_provider_key()).strip().lower()
+    provider = get_market_data_provider(provider_key)
     optionality_config = _sweep_optionality_config(getattr(provider, "name", "unknown"))
     rate_limit_backoff_seconds = (
         rate_limit_backoff_seconds
@@ -155,8 +166,10 @@ def _scan_tickers(
             "scanned": total,
             "total_expected": total_expected,
             "hits": hits,
+            "hit_symbols": list(hit_symbols),
             "errors": errors,
             "rate_limit_errors": rate_limit_errors,
+            "market_data_provider": provider_key,
         }
         payload.update(event)
         try:
@@ -272,6 +285,7 @@ def _scan_tickers(
                     hv30=metrics.get("hv30"),
                     iv_percentile=iv_percentile,
                     avg_edr=metrics.get("avg_edr"),
+                    sweep_run_id=sweep_run_id,
                     message=message,
                     delivered=delivered,
                     delivery_channel=channel,

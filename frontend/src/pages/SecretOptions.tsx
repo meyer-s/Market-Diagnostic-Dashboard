@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   LineChart,
   Line,
@@ -1734,6 +1734,8 @@ export default function SecretOptions() {
   const [scannerNotice, setScannerNotice] = useState<string | null>(null);
   const [selectedScannerRunId, setSelectedScannerRunId] = useState<number | null>(null);
   const [scannerRunDetail, setScannerRunDetail] = useState<ScannerRunDetailResponse | null>(null);
+  const selectedScannerRunIdRef = useRef<number | null>(null);
+  const scannerRunDetailRef = useRef<ScannerRunDetailResponse | null>(null);
   const [loadingScannerRunDetail, setLoadingScannerRunDetail] = useState(false);
   const [showRowActions, setShowRowActions] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
@@ -1814,9 +1816,19 @@ export default function SecretOptions() {
     }
   };
 
+  const setSelectedScannerRunIdStable = (runId: number | null) => {
+    selectedScannerRunIdRef.current = runId;
+    setSelectedScannerRunId(runId);
+  };
+
+  const setScannerRunDetailStable = (detail: ScannerRunDetailResponse | null) => {
+    scannerRunDetailRef.current = detail;
+    setScannerRunDetail(detail);
+  };
+
   const loadScannerRunDetail = async (runId: number | null, options?: { quiet?: boolean }) => {
     if (!runId) {
-      setScannerRunDetail(null);
+      setScannerRunDetailStable(null);
       return;
     }
     if (!options?.quiet) {
@@ -1824,11 +1836,11 @@ export default function SecretOptions() {
     }
     try {
       const data = await apiFetch<ScannerRunDetailResponse>(`/secret/options/scanner-run/${runId}`);
-      setScannerRunDetail(data);
+      setScannerRunDetailStable(data);
     } catch (err: unknown) {
       console.error("Failed to load scanner run detail:", err);
       if (!options?.quiet) {
-        setScannerRunDetail(null);
+        setScannerRunDetailStable(null);
       }
     } finally {
       if (!options?.quiet) {
@@ -1846,15 +1858,17 @@ export default function SecretOptions() {
       if (data.supported_universes.length > 0 && !data.supported_universes.some((item) => item.key === scannerUniverse)) {
         setScannerUniverse(data.supported_universes[0].key);
       }
-      const selectedStillExists = data.runs.find((run) => run.id === selectedScannerRunId) || null;
+      const currentSelectedRunId = selectedScannerRunIdRef.current;
+      const selectedStillExists = data.runs.find((run) => run.id === currentSelectedRunId) || null;
       const preferredRun =
         selectedStillExists
-        || data.runs.find((run) => run.hits > 0 && (run.status === "completed" || run.status === "stopped"))
         || data.runs[0]
         || null;
       const preferredRunId = preferredRun?.id ?? null;
-      setSelectedScannerRunId(preferredRunId);
-      await loadScannerRunDetail(preferredRunId, { quiet: scannerRunDetail?.run.id === preferredRunId });
+      setSelectedScannerRunIdStable(preferredRunId);
+      await loadScannerRunDetail(preferredRunId, {
+        quiet: scannerRunDetailRef.current?.run.id === preferredRunId,
+      });
     } catch (err: unknown) {
       console.error("Failed to load scanner summary:", err);
     }
@@ -2113,8 +2127,8 @@ export default function SecretOptions() {
         }),
       });
       setScannerNotice(`${data.run.universe_label} sweep queued as #${data.run.id}. Discord will receive progress and hits.`);
-      setSelectedScannerRunId(data.run.id);
-      setScannerRunDetail({ run: data.run, hit_count: 0, matched_event_count: 0, hits: [] });
+      setSelectedScannerRunIdStable(data.run.id);
+      setScannerRunDetailStable({ run: data.run, hit_count: 0, matched_event_count: 0, hits: [] });
       await loadScannerSummary();
       window.setTimeout(loadScannerSummary, 2500);
     } catch (err: unknown) {
@@ -2135,10 +2149,10 @@ export default function SecretOptions() {
         { method: "POST" }
       );
       setScannerNotice(data.message || `Stop requested for ${activeScannerRun.universe_label} sweep #${activeScannerRun.id}.`);
-      setSelectedScannerRunId(data.run.id);
-      setScannerRunDetail((current) =>
-        current?.run.id === data.run.id ? { ...current, run: data.run } : current
-      );
+      setSelectedScannerRunIdStable(data.run.id);
+      if (scannerRunDetailRef.current?.run.id === data.run.id) {
+        setScannerRunDetailStable({ ...scannerRunDetailRef.current, run: data.run });
+      }
       await loadScannerSummary();
       window.setTimeout(loadScannerSummary, 2500);
     } catch (err: unknown) {
@@ -2149,7 +2163,7 @@ export default function SecretOptions() {
   };
 
   const handleSelectScannerRun = async (runId: number) => {
-    setSelectedScannerRunId(runId);
+    setSelectedScannerRunIdStable(runId);
     await loadScannerRunDetail(runId);
   };
 
@@ -3481,9 +3495,11 @@ export default function SecretOptions() {
                       <div className="mt-1 min-h-[14px] truncate text-[10px] text-stealth-500">
                         {run.hit_symbols.length > 0
                           ? `${run.hit_symbols.slice(0, 8).join(" ")}${run.hit_symbols.length > 8 ? ` +${run.hit_symbols.length - 8}` : ""}`
-                          : runActive
-                            ? "Waiting for first persisted hit"
-                            : ""}
+                          : run.hits > 0
+                            ? `${run.hits} hits recorded`
+                            : runActive
+                              ? "Waiting for first persisted hit"
+                              : ""}
                       </div>
                     </button>
                   );
@@ -3532,7 +3548,9 @@ export default function SecretOptions() {
                 {selectedScannerRun
                   ? selectedScannerRunActive
                     ? "Running. Hit cards will appear here as Discord alerts persist."
-                    : "No persisted hit cards found for this scan."
+                    : selectedScannerRun.hits > 0
+                      ? `${selectedScannerRun.hits} hits recorded, but no linked hit cards were found for this scan.`
+                      : "No persisted hit cards found for this scan."
                   : "Select a scanner run to inspect its hits."}
               </div>
             ) : (

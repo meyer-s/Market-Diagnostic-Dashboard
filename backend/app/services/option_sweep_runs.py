@@ -21,6 +21,7 @@ from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_
 from app.services.options_alerts import _send_webhook
 from app.utils.db_helpers import get_db_session
 from maintenance_scripts.options_chain_sweep import _scan_tickers
+from maintenance_scripts.options_chain_sweep import _sweep_market_data_provider_key
 
 
 ACTIVE_STATUSES = {"queued", "running"}
@@ -242,6 +243,7 @@ def update_sweep_run_from_progress(run_id: Optional[int], payload: dict[str, Any
         hits=int(payload.get("hits") or 0),
         errors=int(payload.get("errors") or 0),
         rate_limit_errors=int(payload.get("rate_limit_errors") or 0),
+        hit_symbols=payload.get("hit_symbols") if isinstance(payload.get("hit_symbols"), list) else None,
         last_event=event,
         last_symbol=str(payload.get("symbol") or "") or None,
         last_error=str(payload.get("error") or "") or None,
@@ -286,13 +288,13 @@ def fail_sweep_run(run_id: Optional[int], error: str) -> None:
     )
 
 
-def _dashboard_pause_seconds(total_tickers: int) -> float:
+def _dashboard_pause_seconds(total_tickers: int, provider_key: str) -> float:
     default_pause = 0.2
     if total_tickers > 2000:
         default_pause = 0.02
     elif total_tickers > 1000:
         default_pause = 0.05
-    if os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower() == "ibkr":
+    if provider_key == "ibkr":
         default_pause = float(os.getenv("IBKR_SWEEP_PAUSE_SECONDS", "0.25"))
     return float(os.getenv("DISCORD_SWEEP_PAUSE_SECONDS", default_pause))
 
@@ -349,8 +351,8 @@ def _run_dashboard_sweep(run_id: int, universe_key: str, threshold: float, stop_
             _send_webhook(f":warning: Options sweep aborted. {message}")
             return
 
-        pause_seconds = _dashboard_pause_seconds(len(tickers))
-        provider_name = os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower() or "yahoo"
+        provider_name = _sweep_market_data_provider_key()
+        pause_seconds = _dashboard_pause_seconds(len(tickers), provider_name)
         status_every = int(os.getenv("DISCORD_SWEEP_STATUS_EVERY_TICKERS", "100"))
         status_min_seconds = float(os.getenv("DISCORD_SWEEP_STATUS_MIN_SECONDS", "60"))
         rate_limit_backoff_seconds = float(
@@ -393,6 +395,8 @@ def _run_dashboard_sweep(run_id: int, universe_key: str, threshold: float, stop_
             rate_limit_backoff_multiplier=rate_limit_backoff_multiplier,
             rate_limit_backoff_max_seconds=rate_limit_backoff_max_seconds,
             rate_limit_max_retries=rate_limit_max_retries,
+            market_data_provider=provider_name,
+            sweep_run_id=run_id,
         )
         hits = 0
         hit_symbols: list[str] = []
@@ -576,27 +580,55 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
             raise LookupError(f"Scanner run #{run_id} was not found.")
 
         symbols = _csv_symbols(run.hit_symbols)
-        events: list[OptionAlertEvent] = []
+        events: list[OptionAlertEvent] = (
+            db.query(OptionAlertEvent)
+            .filter(OptionAlertEvent.sweep_run_id == run_id)
+            .order_by(OptionAlertEvent.triggered_at.asc(), OptionAlertEvent.id.asc())
+            .all()
+        )
         if symbols and run.started_at:
             window_start = run.started_at - timedelta(minutes=5)
             window_end = (run.completed_at or run.updated_at or datetime.utcnow()) + timedelta(minutes=10)
-            events = (
-                db.query(OptionAlertEvent)
-                .filter(
-                    OptionAlertEvent.symbol.in_(symbols),
-                    OptionAlertEvent.triggered_at >= window_start,
-                    OptionAlertEvent.triggered_at <= window_end,
+            if not events:
+                events = (
+                    db.query(OptionAlertEvent)
+                    .filter(
+                        OptionAlertEvent.symbol.in_(symbols),
+                        OptionAlertEvent.triggered_at >= window_start,
+                        OptionAlertEvent.triggered_at <= window_end,
+                    )
+                    .order_by(OptionAlertEvent.triggered_at.asc(), OptionAlertEvent.id.asc())
+                    .all()
                 )
+        elif run.hits and run.started_at and not events:
+            window_start = run.started_at - timedelta(minutes=5)
+            window_end = (run.completed_at or run.updated_at or datetime.utcnow()) + timedelta(minutes=10)
+            legacy_query = db.query(OptionAlertEvent).filter(
+                OptionAlertEvent.triggered_at >= window_start,
+                OptionAlertEvent.triggered_at <= window_end,
+            )
+            if run.universe_label:
+                legacy_query = legacy_query.filter(OptionAlertEvent.message.ilike(f"%{run.universe_label}%"))
+            events = (
+                legacy_query
                 .order_by(OptionAlertEvent.triggered_at.asc(), OptionAlertEvent.id.asc())
+                .limit(max(int(run.hits or 0), 25))
                 .all()
             )
         serialized_run = _serialize_run(run)
+
+    if not symbols:
+        symbols = []
+        for event in events:
+            symbol = str(event.symbol or "").strip().upper()
+            if symbol and symbol not in symbols:
+                symbols.append(symbol)
 
     symbol_order = {symbol: index for index, symbol in enumerate(symbols)}
     filtered_events = [
         event
         for event in events
-        if str(event.symbol or "").strip().upper() in symbol_order
+        if not symbol_order or str(event.symbol or "").strip().upper() in symbol_order
     ]
     symbol_counts = Counter(str(event.symbol or "").strip().upper() for event in filtered_events)
     group_counts: Counter[str] = Counter()
@@ -622,7 +654,7 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
     )
     return {
         "run": serialized_run,
-        "hit_count": len(symbols),
+        "hit_count": max(int(serialized_run.get("hits") or 0), len(symbols), len(opportunities)),
         "matched_event_count": len(opportunities),
         "hits": opportunities,
     }

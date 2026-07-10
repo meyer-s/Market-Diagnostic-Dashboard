@@ -12,6 +12,7 @@ import httpx
 
 # Import existing sweep logic
 from maintenance_scripts.options_chain_sweep import _scan_tickers
+from maintenance_scripts.options_chain_sweep import _sweep_market_data_provider_key
 from app.services.discord_sweep_universe import resolve_sweep_universe
 from app.services.option_sweep_runs import (
     create_sweep_run,
@@ -160,10 +161,10 @@ async def execute_sweep(
             default_pause = 0.02
         elif len(tickers) > 1000:
             default_pause = 0.05
-        if os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower() == "ibkr":
+        provider_name = _sweep_market_data_provider_key()
+        if provider_name == "ibkr":
             default_pause = float(os.getenv("IBKR_SWEEP_PAUSE_SECONDS", "0.25"))
         pause_seconds = float(os.getenv("DISCORD_SWEEP_PAUSE_SECONDS", default_pause))
-        provider_name = os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower() or "yahoo"
         status_every = int(os.getenv("DISCORD_SWEEP_STATUS_EVERY_TICKERS", "100"))
         status_min_seconds = float(os.getenv("DISCORD_SWEEP_STATUS_MIN_SECONDS", "60"))
         rate_limit_backoff_seconds = float(
@@ -227,6 +228,8 @@ async def execute_sweep(
                 rate_limit_backoff_multiplier=rate_limit_backoff_multiplier,
                 rate_limit_backoff_max_seconds=rate_limit_backoff_max_seconds,
                 rate_limit_max_retries=rate_limit_max_retries,
+                market_data_provider=provider_name,
+                sweep_run_id=sweep_run_id,
             )
         except Exception as exc:
             fail_sweep_run(sweep_run_id, str(exc))
