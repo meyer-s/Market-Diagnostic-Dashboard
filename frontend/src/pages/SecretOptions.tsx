@@ -2011,7 +2011,7 @@ export default function SecretOptions() {
         "/secret/options/training-outcomes?lookback_days=1825&limit=1000&include_green_marker=true"
       );
       const backtest = await apiFetch<OpportunityBacktestResponse>(
-        "/secret/options/opportunity-backtest?lookback_days=1825&threshold=65&limit=1000"
+        "/secret/options/opportunity-backtest?lookback_days=1825&threshold=50&limit=1000"
       );
       setTrainingOutcomes(data.outcomes || []);
       setTrainingSummary(data.summary || null);
@@ -4691,7 +4691,7 @@ export default function SecretOptions() {
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em] text-sky-300">Your Trades vs Model Rank</div>
                     <div className="text-xs text-gray-400">
-                      Closed linked trades filtered by current model threshold {opportunityBacktest.threshold.toFixed(0)}.
+                      Closed linked trades filtered by current model threshold {opportunityBacktest.threshold.toFixed(0)} (C or better).
                     </div>
                   </div>
                   <div className="text-[10px] uppercase text-gray-500">{opportunityBacktest.model_version}</div>

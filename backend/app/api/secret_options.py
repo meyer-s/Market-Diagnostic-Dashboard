@@ -2374,7 +2374,7 @@ def backfill_opportunity_scores(
 @router.get("/opportunity-backtest")
 def get_opportunity_backtest(
     lookback_days: int = Query(1825, ge=30, le=3650),
-    threshold: float = Query(65.0, ge=0, le=100),
+    threshold: float = Query(50.0, ge=0, le=100),
     limit: int = Query(1000, ge=1, le=5000),
 ):
     cutoff_day = date.today() - timedelta(days=lookback_days)
