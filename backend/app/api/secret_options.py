@@ -22,6 +22,7 @@ from app.models.option_training_outcomes import OptionTrainingOutcome
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import option_quote_from_row
+from app.services.options_review_window import ReviewWindow, compute_review_window, parse_review_window
 from app.services.options_opportunity import (
     OPPORTUNITY_MODEL_VERSION,
     compute_opportunity_score,
@@ -307,6 +308,12 @@ def _compute_training_outcome_for_linked_event(
     hold_days = recipe.get("hold_days")
     if not isinstance(hold_days, int) or hold_days <= 0:
         return None
+    review_min_hold_days = getattr(event, "review_min_hold_days", None) or recipe.get("review_min_hold_days")
+    review_max_hold_days = getattr(event, "review_max_hold_days", None) or recipe.get("review_max_hold_days") or hold_days
+    if not isinstance(review_min_hold_days, int) or review_min_hold_days <= 0:
+        review_min_hold_days = max(1, min(hold_days, round(hold_days * 0.4)))
+    if not isinstance(review_max_hold_days, int) or review_max_hold_days < review_min_hold_days:
+        review_max_hold_days = hold_days
 
     option_type = (
         event.selected_option_type
@@ -335,7 +342,8 @@ def _compute_training_outcome_for_linked_event(
                 if contract_expiry and contract_strike is not None
                 else ""
             ),
-            f"Hold: {hold_days} trading days",
+            f"Review Window: {review_min_hold_days}-{review_max_hold_days} trading days",
+            f"Hold: {review_max_hold_days} trading days",
             f"Est Prem: ${float(selected_premium):.2f}" if selected_premium is not None else "",
         ]
     )
@@ -349,6 +357,9 @@ def _compute_training_outcome_for_linked_event(
         selected_expiry=contract_expiry,
         selected_strike=float(contract_strike) if contract_strike is not None else None,
         selected_premium=float(selected_premium) if selected_premium is not None else None,
+        review_min_hold_days=review_min_hold_days,
+        review_max_hold_days=review_max_hold_days,
+        review_window_basis=getattr(event, "review_window_basis", None),
         message=synthetic_message,
     )
     trigger_day = event.triggered_at.date() if event.triggered_at else date.today()
@@ -504,6 +515,7 @@ def _extract_training_recipe(message: Optional[str]) -> Dict[str, Optional[float
     contract_match = _CONTRACT_RE.search(plain)
     hold_match = _HOLD_RE.search(plain)
     premium_match = _PREMIUM_RE.search(plain)
+    review_window = parse_review_window(plain)
 
     option_type = setup_match.group(1).lower() if setup_match else None
     contract_expiry = contract_match.group(1) if contract_match else None
@@ -513,16 +525,21 @@ def _extract_training_recipe(message: Optional[str]) -> Dict[str, Optional[float
         option_type = contract_type
     if option_type is None:
         option_type = _infer_training_option_type(plain)
-    hold_days = int(hold_match.group(1)) if hold_match else None
+    hold_days = review_window.max_hold_days if review_window else int(hold_match.group(1)) if hold_match else None
     if hold_days is None:
         trend_return = _extract_training_return(plain)
         hold_days = _training_hold_days_from_return(trend_return) if trend_return is not None else None
+    min_hold_days = review_window.min_hold_days if review_window else (
+        max(1, min(hold_days, round(hold_days * 0.4))) if isinstance(hold_days, int) else None
+    )
     est_premium = float(premium_match.group(1)) if premium_match else None
 
     return {
         "option_type": option_type,
         "contract_expiry": contract_expiry,
         "contract_strike": contract_strike,
+        "review_min_hold_days": min_hold_days,
+        "review_max_hold_days": hold_days,
         "hold_days": hold_days,
         "est_premium": est_premium,
     }
@@ -535,9 +552,15 @@ def _compute_training_outcome(
     recipe = _extract_training_recipe(event.message)
     option_type = event.selected_option_type or recipe.get("option_type")
     hold_days = recipe.get("hold_days")
+    review_min_hold_days = getattr(event, "review_min_hold_days", None) or recipe.get("review_min_hold_days")
+    review_max_hold_days = getattr(event, "review_max_hold_days", None) or recipe.get("review_max_hold_days") or hold_days
 
     if not option_type or not isinstance(hold_days, int) or hold_days <= 0:
         return None
+    if not isinstance(review_min_hold_days, int) or review_min_hold_days <= 0:
+        review_min_hold_days = max(1, min(hold_days, round(hold_days * 0.4)))
+    if not isinstance(review_max_hold_days, int) or review_max_hold_days < review_min_hold_days:
+        review_max_hold_days = hold_days
 
     trigger_day = event.triggered_at.date() if event.triggered_at else date.today()
     start_day = trigger_day - timedelta(days=7)
@@ -571,6 +594,8 @@ def _compute_training_outcome(
             "symbol": event.symbol,
             "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
             "option_type": option_type,
+            "review_min_hold_days": review_min_hold_days,
+            "review_max_hold_days": review_max_hold_days,
             "hold_days": hold_days,
             "entry_date": trigger_day.isoformat(),
             "exit_date": None,
@@ -603,6 +628,8 @@ def _compute_training_outcome(
             "symbol": event.symbol,
             "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
             "option_type": option_type,
+            "review_min_hold_days": review_min_hold_days,
+            "review_max_hold_days": review_max_hold_days,
             "hold_days": hold_days,
             "entry_date": entry_date.date().isoformat(),
             "exit_date": None,
@@ -628,6 +655,8 @@ def _compute_training_outcome(
             "symbol": event.symbol,
             "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
             "option_type": option_type,
+            "review_min_hold_days": review_min_hold_days,
+            "review_max_hold_days": review_max_hold_days,
             "hold_days": hold_days,
             "entry_date": entry_date.date().isoformat(),
             "exit_date": None,
@@ -696,6 +725,8 @@ def _compute_training_outcome(
         "option_type": option_type,
         "contract_expiry": contract_expiry.isoformat() if contract_expiry else None,
         "contract_strike": strike,
+        "review_min_hold_days": review_min_hold_days,
+        "review_max_hold_days": review_max_hold_days,
         "hold_days": hold_days,
         "entry_date": entry_date.date().isoformat(),
         "exit_date": exit_date.date().isoformat(),
@@ -1480,9 +1511,12 @@ def _compute_position_metrics(
 
 def _position_evaluation_window(db: Any, position: OptionPosition) -> Dict[str, object]:
     empty = {
+        "evaluation_min_hold_days": None,
         "evaluation_hold_days": None,
+        "evaluation_start_date": None,
         "evaluation_due_date": None,
         "evaluation_source": None,
+        "evaluation_window_basis": None,
     }
     source_event_id = getattr(position, "source_event_id", None)
     if source_event_id is None:
@@ -1497,10 +1531,15 @@ def _position_evaluation_window(db: Any, position: OptionPosition) -> Dict[str, 
             .first()
         )
     if reminder and reminder.hold_days:
+        min_hold_days = reminder.min_hold_days or max(1, min(reminder.hold_days, round(reminder.hold_days * 0.4)))
+        anchor = reminder.reminder_date - timedelta(days=reminder.hold_days)
         return {
+            "evaluation_min_hold_days": min_hold_days,
             "evaluation_hold_days": reminder.hold_days,
+            "evaluation_start_date": (anchor + timedelta(days=min_hold_days)).isoformat(),
             "evaluation_due_date": reminder.reminder_date.isoformat() if reminder.reminder_date else None,
             "evaluation_source": "sell_reminder",
+            "evaluation_window_basis": "linked sell reminder",
         }
 
     event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == source_event_id).first()
@@ -1508,15 +1547,36 @@ def _position_evaluation_window(db: Any, position: OptionPosition) -> Dict[str, 
         return empty
 
     recipe = _extract_training_recipe(event.message)
-    hold_days = recipe.get("hold_days")
-    if not isinstance(hold_days, int) or hold_days <= 0:
+    field_min_hold_days = getattr(event, "review_min_hold_days", None)
+    field_max_hold_days = getattr(event, "review_max_hold_days", None)
+    if isinstance(field_min_hold_days, int) and isinstance(field_max_hold_days, int) and field_max_hold_days >= field_min_hold_days > 0:
+        review_window = ReviewWindow(
+            min_hold_days=field_min_hold_days,
+            max_hold_days=field_max_hold_days,
+            basis=getattr(event, "review_window_basis", None) or "scanner event fields",
+        )
+    else:
+        parsed_window = parse_review_window(event.message)
+        review_window = parsed_window or (
+            ReviewWindow(
+                min_hold_days=int(recipe["review_min_hold_days"]),
+                max_hold_days=int(recipe["hold_days"]),
+                basis="scanner event recipe",
+            )
+            if isinstance(recipe.get("review_min_hold_days"), int) and isinstance(recipe.get("hold_days"), int)
+            else None
+        )
+    if review_window is None:
         return empty
 
     anchor = event.triggered_at.date() if event.triggered_at else position.trade_date
     return {
-        "evaluation_hold_days": hold_days,
-        "evaluation_due_date": (anchor + timedelta(days=hold_days)).isoformat(),
+        "evaluation_min_hold_days": review_window.min_hold_days,
+        "evaluation_hold_days": review_window.max_hold_days,
+        "evaluation_start_date": (anchor + timedelta(days=review_window.min_hold_days)).isoformat(),
+        "evaluation_due_date": (anchor + timedelta(days=review_window.max_hold_days)).isoformat(),
         "evaluation_source": "scanner_event",
+        "evaluation_window_basis": review_window.basis,
     }
 
 
@@ -1549,9 +1609,12 @@ def _serialize_position(
         "source_match_confidence": position.source_match_confidence,
         "source_match_notes": position.source_match_notes,
         **(evaluation_window or {
+            "evaluation_min_hold_days": None,
             "evaluation_hold_days": None,
+            "evaluation_start_date": None,
             "evaluation_due_date": None,
             "evaluation_source": None,
+            "evaluation_window_basis": None,
         }),
     }
 
@@ -1680,6 +1743,8 @@ def _training_outcome_payload(row: OptionTrainingOutcome) -> Dict[str, object]:
         "option_type": row.option_type,
         "contract_expiry": row.contract_expiry.isoformat() if row.contract_expiry else None,
         "contract_strike": row.contract_strike,
+        "review_min_hold_days": row.review_min_hold_days,
+        "review_max_hold_days": row.review_max_hold_days,
         "hold_days": row.hold_days,
         "entry_date": row.entry_date.isoformat() if row.entry_date else None,
         "exit_date": row.exit_date.isoformat() if row.exit_date else None,
@@ -1712,6 +1777,12 @@ def _apply_training_outcome_payload(
         float(outcome["contract_strike"]) if outcome.get("contract_strike") is not None else None
     )
     row.hold_days = int(outcome["hold_days"]) if outcome.get("hold_days") is not None else None
+    row.review_min_hold_days = (
+        int(outcome["review_min_hold_days"]) if outcome.get("review_min_hold_days") is not None else None
+    )
+    row.review_max_hold_days = (
+        int(outcome["review_max_hold_days"]) if outcome.get("review_max_hold_days") is not None else row.hold_days
+    )
     row.entry_date = _parse_iso_date(outcome.get("entry_date"))
     row.exit_date = _parse_iso_date(outcome.get("exit_date"))
     row.recommended_exit_date = _parse_iso_date(outcome.get("recommended_exit_date"))
@@ -1771,6 +1842,10 @@ def _mark_training_outcome_error(
     row.contract_strike = float(contract_strike) if isinstance(contract_strike, (int, float)) else None
     hold_days = recipe.get("hold_days")
     row.hold_days = int(hold_days) if isinstance(hold_days, int) else None
+    review_min_hold_days = getattr(event, "review_min_hold_days", None) or recipe.get("review_min_hold_days")
+    review_max_hold_days = getattr(event, "review_max_hold_days", None) or recipe.get("review_max_hold_days")
+    row.review_min_hold_days = int(review_min_hold_days) if isinstance(review_min_hold_days, int) else None
+    row.review_max_hold_days = int(review_max_hold_days) if isinstance(review_max_hold_days, int) else row.hold_days
     row.status = "error"
     row.compute_status = "error"
     row.compute_error = f"{type(error).__name__}: {str(error)[:450]}"
@@ -2391,6 +2466,228 @@ def _apply_event_opportunity_fields(event: OptionAlertEvent, force: bool = False
     return changed
 
 
+def _selected_dte_for_review(event: OptionAlertEvent) -> Optional[int]:
+    if isinstance(event.selected_dte, int) and event.selected_dte > 0:
+        return event.selected_dte
+    expiry = _parse_iso_date(event.selected_expiry)
+    if expiry is None:
+        return None
+    anchor = event.triggered_at.date() if event.triggered_at else date.today()
+    dte = (expiry - anchor).days
+    return dte if dte > 0 else None
+
+
+def _computed_review_window_for_event(event: OptionAlertEvent) -> Optional[ReviewWindow]:
+    recipe = _extract_training_recipe(event.message)
+    base_hold_days = recipe.get("hold_days")
+    if not isinstance(base_hold_days, int) or base_hold_days <= 0:
+        return None
+    trend_return = _extract_training_return(_strip_ansi(event.message))
+    return compute_review_window(
+        base_hold_days=base_hold_days,
+        iv30=event.iv30,
+        hv30=event.hv30,
+        iv_percentile=event.iv_percentile,
+        avg_edr=event.avg_edr,
+        trend_return=trend_return,
+        selected_dte=_selected_dte_for_review(event),
+    )
+
+
+def _apply_review_window_to_event(event: OptionAlertEvent, review_window: ReviewWindow, force: bool = False) -> bool:
+    changed = False
+    updates = {
+        "review_min_hold_days": review_window.min_hold_days,
+        "review_max_hold_days": review_window.max_hold_days,
+        "review_window_basis": review_window.basis,
+    }
+    for key, value in updates.items():
+        if force or getattr(event, key, None) != value:
+            setattr(event, key, value)
+            changed = True
+    return changed
+
+
+def _linked_review_backfill_event_ids(db: Any, cutoff_day: date, limit: int) -> list[int]:
+    event_ids: set[int] = set()
+    for (event_id,) in (
+        db.query(OptionPosition.source_event_id)
+        .filter(
+            OptionPosition.source_event_id.isnot(None),
+            OptionPosition.trade_date >= cutoff_day,
+        )
+        .all()
+    ):
+        event_ids.add(int(event_id))
+    for (event_id,) in (
+        db.query(ClosedPosition.source_event_id)
+        .filter(
+            ClosedPosition.source_event_id.isnot(None),
+            ClosedPosition.trade_date >= cutoff_day,
+        )
+        .all()
+    ):
+        event_ids.add(int(event_id))
+    for (event_id,) in (
+        db.query(OptionTrainingOutcome.event_id)
+        .filter(OptionTrainingOutcome.triggered_at >= datetime.combine(cutoff_day, time.min))
+        .all()
+    ):
+        event_ids.add(int(event_id))
+    return sorted(event_ids)[:limit]
+
+
+def _backfill_review_windows(
+    *,
+    lookback_days: int = 3650,
+    limit: int = 5000,
+    linked_only: bool = True,
+    force: bool = False,
+    recompute_training: bool = True,
+    dry_run: bool = False,
+) -> Dict[str, object]:
+    cutoff_day = date.today() - timedelta(days=lookback_days)
+    cutoff_dt = datetime.combine(cutoff_day, time.min)
+    with get_db_session() as db:
+        if linked_only:
+            event_ids = _linked_review_backfill_event_ids(db, cutoff_day, limit)
+            events = (
+                db.query(OptionAlertEvent)
+                .filter(OptionAlertEvent.id.in_(event_ids))
+                .order_by(OptionAlertEvent.triggered_at.desc(), OptionAlertEvent.id.desc())
+                .all()
+                if event_ids
+                else []
+            )
+        else:
+            events = (
+                db.query(OptionAlertEvent)
+                .filter(OptionAlertEvent.triggered_at >= cutoff_dt)
+                .order_by(OptionAlertEvent.triggered_at.desc(), OptionAlertEvent.id.desc())
+                .limit(limit)
+                .all()
+            )
+
+        event_by_id = {int(event.id): event for event in events}
+        updated_events = 0
+        skipped_no_recipe = 0
+        samples: list[Dict[str, object]] = []
+        for event in events:
+            review_window = _computed_review_window_for_event(event)
+            if review_window is None:
+                skipped_no_recipe += 1
+                continue
+            before = {
+                "min": event.review_min_hold_days,
+                "max": event.review_max_hold_days,
+            }
+            changed = force or before["min"] != review_window.min_hold_days or before["max"] != review_window.max_hold_days
+            if changed:
+                updated_events += 1
+                if not dry_run:
+                    _apply_review_window_to_event(event, review_window, force=True)
+                    db.add(event)
+                if len(samples) < 20:
+                    samples.append(
+                        {
+                            "event_id": event.id,
+                            "symbol": event.symbol,
+                            "before": before,
+                            "after": {
+                                "min": review_window.min_hold_days,
+                                "max": review_window.max_hold_days,
+                                "basis": review_window.basis,
+                            },
+                        }
+                    )
+
+        reminder_updates = 0
+        event_id_list = list(event_by_id.keys())
+        open_positions = (
+            db.query(OptionPosition)
+            .filter(
+                OptionPosition.source_event_id.in_(event_id_list),
+                OptionPosition.source_event_id.isnot(None),
+            )
+            .all()
+            if event_by_id
+            else []
+        )
+        if not dry_run:
+            for position in open_positions:
+                before = (
+                    db.query(OptionTradeReminder)
+                    .filter(OptionTradeReminder.position_id == position.id)
+                    .first()
+                )
+                before_pair = (before.min_hold_days, before.hold_days) if before else None
+                reminder = sync_trade_sell_reminder(db, position)
+                after_pair = (reminder.min_hold_days, reminder.hold_days) if reminder else None
+                if before_pair != after_pair:
+                    reminder_updates += 1
+
+        linked_trades_by_event_id = _collect_linked_trades_by_event_id(db, cutoff_day)
+        training_rows = (
+            db.query(OptionTrainingOutcome)
+            .filter(OptionTrainingOutcome.event_id.in_(event_id_list))
+            .all()
+            if event_by_id
+            else []
+        )
+        recomputed_training = 0
+        stamped_training = 0
+        failed_training = 0
+        if not dry_run:
+            for row in training_rows:
+                event = event_by_id.get(int(row.event_id))
+                if event is None:
+                    continue
+                if recompute_training:
+                    linked_trade = _best_linked_trade_for_event(event, linked_trades_by_event_id.get(int(event.id), []))
+                    try:
+                        outcome = (
+                            _compute_training_outcome_for_linked_event(event, linked_trade)
+                            if linked_trade
+                            else _compute_training_outcome_with_cache(event)
+                        )
+                        if outcome:
+                            _apply_training_outcome_payload(row, event, outcome)
+                            db.add(row)
+                            recomputed_training += 1
+                        else:
+                            failed_training += 1
+                    except Exception as exc:
+                        _mark_training_outcome_error(row, event, exc)
+                        db.add(row)
+                        failed_training += 1
+                else:
+                    row.review_min_hold_days = event.review_min_hold_days
+                    row.review_max_hold_days = event.review_max_hold_days
+                    db.add(row)
+                    stamped_training += 1
+
+            db.commit()
+
+    return {
+        "checked_events": len(events),
+        "updated_events": updated_events,
+        "skipped_no_recipe": skipped_no_recipe,
+        "open_positions_checked": len(open_positions),
+        "reminders_updated": reminder_updates,
+        "training_rows_checked": len(training_rows),
+        "training_rows_recomputed": recomputed_training,
+        "training_rows_stamped": stamped_training,
+        "training_rows_failed": failed_training,
+        "lookback_days": lookback_days,
+        "limit": limit,
+        "linked_only": linked_only,
+        "force": force,
+        "recompute_training": recompute_training,
+        "dry_run": dry_run,
+        "samples": samples,
+    }
+
+
 def _trade_outcome_stats(rows: list[Dict[str, object]]) -> Dict[str, object]:
     count = len(rows)
     pnl_values = [
@@ -2442,6 +2739,31 @@ def backfill_opportunity_scores(
             "force": force,
             "model_version": OPPORTUNITY_MODEL_VERSION,
         }
+    )
+
+
+@router.post("/review-windows/backfill")
+def backfill_review_windows(
+    lookback_days: int = Query(3650, ge=30, le=3650),
+    limit: int = Query(5000, ge=1, le=20000),
+    linked_only: bool = Query(True),
+    force: bool = Query(False),
+    recompute_training: bool = Query(True),
+    dry_run: bool = Query(False),
+):
+    """
+    Backfill computed min/max review windows onto historical sweep events, then
+    refresh linked reminders and evaluated training outcomes from those windows.
+    """
+    return _json_safe(
+        _backfill_review_windows(
+            lookback_days=lookback_days,
+            limit=limit,
+            linked_only=linked_only,
+            force=force,
+            recompute_training=recompute_training,
+            dry_run=dry_run,
+        )
     )
 
 

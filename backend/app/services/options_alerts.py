@@ -13,6 +13,7 @@ from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.options_opportunity import compute_opportunity_score, opportunity_event_fields, selected_contract_signal_fields
 from app.services.options_quotes import select_atm_contract, select_optimal_contract
+from app.services.options_review_window import ReviewWindow, compute_review_window
 from app.utils.db_helpers import get_db_session
 
 ESC = "\u001b"
@@ -296,6 +297,36 @@ def _hold_days_from_returns(horizon_returns: Optional[dict[str, Optional[float]]
     return 28
 
 
+def _trend_return_for_review(horizon_returns: Optional[dict[str, Optional[float]]]) -> Optional[float]:
+    if not horizon_returns:
+        return None
+    return horizon_returns.get("1m") if horizon_returns.get("1m") is not None else horizon_returns.get("3m")
+
+
+def _review_window_for_plan(
+    *,
+    base_hold_days: int,
+    iv30: Optional[float],
+    hv30: Optional[float],
+    iv_percentile: Optional[float],
+    avg_edr: Optional[float],
+    horizon_returns: Optional[dict[str, Optional[float]]],
+    selected_contract: Optional[dict[str, object]],
+) -> ReviewWindow:
+    selected_dte = None
+    if selected_contract and isinstance(selected_contract.get("dte"), int):
+        selected_dte = int(selected_contract["dte"])
+    return compute_review_window(
+        base_hold_days=base_hold_days,
+        iv30=iv30,
+        hv30=hv30,
+        iv_percentile=iv_percentile,
+        avg_edr=avg_edr,
+        trend_return=_trend_return_for_review(horizon_returns),
+        selected_dte=selected_dte,
+    )
+
+
 def _contract_side_from_direction(direction: str) -> str:
     return "PUT" if direction.lower() == "puts" else "CALL"
 
@@ -424,10 +455,11 @@ def _build_training_trade_lines(
     provider: Optional[MarketDataProvider] = None,
     symbol: Optional[str] = None,
     selected_contract: Optional[dict[str, object]] = None,
+    review_window: Optional[ReviewWindow] = None,
 ) -> list[str]:
     plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, history)
     price = plan["price"]
-    hold_days = int(plan["hold_days"])
+    base_hold_days = int(plan["hold_days"])
     target_move = float(plan["target_move"])
     stop_move = float(plan["stop_move"])
     contract_side = str(plan["contract_side"])
@@ -444,13 +476,25 @@ def _build_training_trade_lines(
             current_price=float(price) if isinstance(price, (int, float)) else None,
             contract_side=contract_side,
             target_dte=60,
-            min_remaining_after_hold=hold_days + 3,
-            hold_days=hold_days,
+            min_remaining_after_hold=base_hold_days + 3,
+            hold_days=base_hold_days,
             target_move_pct=target_move,
             stop_move_pct=stop_move,
             iv30=iv30,
             hv30=hv30,
         )
+
+    if review_window is None:
+        review_window = _review_window_for_plan(
+            base_hold_days=base_hold_days,
+            iv30=iv30,
+            hv30=hv30,
+            iv_percentile=iv_percentile,
+            avg_edr=avg_edr,
+            horizon_returns=horizon_returns,
+            selected_contract=selected_contract,
+        )
+    hold_days = review_window.max_hold_days
 
     if selected_contract:
         est_premium = float(selected_contract["premium"])
@@ -540,7 +584,8 @@ def _build_training_trade_lines(
             f"  Est Prem  : ${est_premium:.2f} ({premium_source})",
             f"  Est G/L   : +${est_profit:.0f} / -${est_loss:.0f}",
             f"  Stop/Tgt  : {stop_target_text}",
-            f"  Hold      : {hold_days} trading days (30-90 DTE scan)",
+            f"  Review Window: {review_window.min_hold_days}-{review_window.max_hold_days} trading days",
+            f"  Hold      : {hold_days} trading days (max review gate, 30-90 DTE scan)",
         ]
     )
     return lines
@@ -772,6 +817,7 @@ def _format_alert_message(
     analyzer_url: Optional[str] = None,
     options_data_source: Optional[object] = None,
     options_quote_source: Optional[object] = None,
+    review_window: Optional[ReviewWindow] = None,
 ) -> str:
     threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
     exceptional = _is_exceptional_sweep_setup(
@@ -812,6 +858,7 @@ def _format_alert_message(
         provider=provider,
         symbol=symbol,
         selected_contract=selected_contract,
+        review_window=review_window,
     )
     section_title_color = 97 if exceptional else 37
     separator_line = (
@@ -942,6 +989,15 @@ def run_options_alert_scan() -> dict:
                     iv30=iv30,
                     hv30=hv30,
                 )
+                review_window = _review_window_for_plan(
+                    base_hold_days=hold_days,
+                    iv30=iv30,
+                    hv30=metrics.get("hv30"),
+                    iv_percentile=iv_percentile,
+                    avg_edr=avg_edr,
+                    horizon_returns=horizon_returns,
+                    selected_contract=selected_contract,
+                )
                 if watch.last_triggered_at:
                     cooldown = timedelta(minutes=watch.cooldown_minutes or 0)
                     if datetime.utcnow() - watch.last_triggered_at < cooldown:
@@ -969,6 +1025,7 @@ def run_options_alert_scan() -> dict:
                     analyzer_url=analyzer_url,
                     options_data_source=metrics.get("data_source"),
                     options_quote_source=metrics.get("quote_source"),
+                    review_window=review_window,
                 )
                 delivered, channel, error = _send_webhook(
                     message,
@@ -985,6 +1042,9 @@ def run_options_alert_scan() -> dict:
                     delivered=delivered,
                     delivery_channel=channel,
                     delivery_error=error,
+                    review_min_hold_days=review_window.min_hold_days,
+                    review_max_hold_days=review_window.max_hold_days,
+                    review_window_basis=review_window.basis,
                     **_selected_contract_event_fields(selected_contract),
                     **opportunity_event_fields(
                         iv_percentile=iv_percentile,

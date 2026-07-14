@@ -19,6 +19,8 @@ class OptionTrainingOutcome(Base):
     contract_expiry = Column(Date, nullable=True)
     contract_strike = Column(Float, nullable=True)
     hold_days = Column(Integer, nullable=True)
+    review_min_hold_days = Column(Integer, nullable=True)
+    review_max_hold_days = Column(Integer, nullable=True)
 
     entry_date = Column(Date, nullable=True)
     exit_date = Column(Date, nullable=True)

@@ -128,6 +128,19 @@ def test_legacy_discord_training_recipe_derives_gate() -> None:
 
     assert recipe["option_type"] == "put"
     assert recipe["hold_days"] == 14
+    assert recipe["review_min_hold_days"] == 6
+    assert recipe["review_max_hold_days"] == 14
+
+
+def test_training_recipe_extracts_review_window() -> None:
+    message = "Setup: 1x optimized CALL\nReview Window: 3-8 trading days\nHold: 8 trading days"
+
+    recipe = secret_options._extract_training_recipe(message)
+
+    assert recipe["option_type"] == "call"
+    assert recipe["review_min_hold_days"] == 3
+    assert recipe["review_max_hold_days"] == 8
+    assert recipe["hold_days"] == 8
 
 
 def test_legacy_discord_training_recipe_uses_twenty_day_fallback() -> None:
@@ -228,7 +241,10 @@ def test_create_scanner_attributed_position_schedules_sell_reminder(
                 selected_expiry="2026-07-17",
                 selected_strike=80.0,
                 selected_premium=1.35,
-                message="Setup: 1x ATM CALL\nContract: 2026-07-17 80.0 CALL\nHold: 21 trading days\nEst Prem: $1.35",
+                review_min_hold_days=7,
+                review_max_hold_days=21,
+                review_window_basis="test window",
+                message="Setup: 1x ATM CALL\nContract: 2026-07-17 80.0 CALL\nReview Window: 7-21 trading days\nHold: 21 trading days\nEst Prem: $1.35",
             )
         )
         db.commit()
@@ -250,7 +266,9 @@ def test_create_scanner_attributed_position_schedules_sell_reminder(
 
     assert response.status_code == 200
     body = response.json()
+    assert body["position"]["evaluation_min_hold_days"] == 7
     assert body["position"]["evaluation_hold_days"] == 21
+    assert body["position"]["evaluation_start_date"] == "2026-06-08"
     assert body["position"]["evaluation_due_date"] == "2026-06-22"
     assert body["position"]["evaluation_source"] == "sell_reminder"
     with session_local() as db:
@@ -259,8 +277,90 @@ def test_create_scanner_attributed_position_schedules_sell_reminder(
         assert reminder.source_event_id == event.id
         assert reminder.symbol == "SYY"
         assert reminder.reminder_date == date(2026, 6, 22)
+        assert reminder.min_hold_days == 7
         assert reminder.hold_days == 21
         assert reminder.status == "pending"
+
+
+def test_review_window_backfill_updates_linked_event_reminder_and_outcome(
+    secret_options_client,
+) -> None:
+    client, session_local = secret_options_client
+    with session_local() as db:
+        event = OptionAlertEvent(
+            symbol="SYY",
+            triggered_at=datetime(2026, 6, 1, 14, 30),
+            iv30=42.0,
+            hv30=34.0,
+            iv_percentile=4.0,
+            avg_edr=2.4,
+            selected_option_type="call",
+            selected_expiry="2026-07-17",
+            selected_dte=46,
+            selected_strike=80.0,
+            selected_premium=1.35,
+            message=(
+                "Setup: 1x ATM CALL\n"
+                "Contract: 2026-07-17 80.0 CALL\n"
+                "HORIZONS\n  1m +9.5%\n"
+                "Hold: 21 trading days\n"
+                "Est Prem: $1.35"
+            ),
+        )
+        db.add(event)
+        db.flush()
+        position = OptionPosition(
+            trade_date=date(2026, 6, 2),
+            account="ACTIVE",
+            action="BUY",
+            contracts=1,
+            symbol="SYY",
+            expiration=date(2026, 7, 17),
+            strike=80.0,
+            option_type="call",
+            fill_price=1.35,
+            total_cost=135.0,
+            source_event_id=event.id,
+            source_triggered_at=event.triggered_at,
+            source_match_method="exact",
+            source_match_confidence=1.0,
+        )
+        db.add(position)
+        db.add(
+            OptionTrainingOutcome(
+                event_id=event.id,
+                symbol="SYY",
+                triggered_at=event.triggered_at,
+                option_type="call",
+                hold_days=21,
+                entry_date=date(2026, 6, 2),
+                recommended_exit_date=date(2026, 6, 23),
+                status="pending",
+                compute_status="ok",
+                computed_at=datetime(2026, 6, 2, 15, 0),
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/secret/options/review-windows/backfill?lookback_days=3650&recompute_training=false"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["updated_events"] == 1
+    assert body["reminders_updated"] == 1
+    assert body["training_rows_stamped"] == 1
+    with session_local() as db:
+        event = db.query(OptionAlertEvent).one()
+        reminder = db.query(OptionTradeReminder).one()
+        outcome = db.query(OptionTrainingOutcome).one()
+        assert event.review_min_hold_days is not None
+        assert event.review_max_hold_days == 21
+        assert reminder.min_hold_days == event.review_min_hold_days
+        assert reminder.hold_days == event.review_max_hold_days
+        assert outcome.review_min_hold_days == event.review_min_hold_days
+        assert outcome.review_max_hold_days == event.review_max_hold_days
 
 
 def test_linked_position_volatility_signal_tracks_entry_to_current(

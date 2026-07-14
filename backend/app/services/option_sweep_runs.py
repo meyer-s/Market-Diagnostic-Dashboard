@@ -18,6 +18,7 @@ from app.services.discord_sweep_universe import (
 )
 from app.services.optionality_clusters import classify_optionality_symbol
 from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_opportunity_score, opportunity_grade
+from app.services.options_review_window import parse_review_window
 from app.services.options_alerts import _send_webhook
 from app.utils.db_helpers import get_db_session
 from maintenance_scripts.options_chain_sweep import _scan_tickers
@@ -68,6 +69,23 @@ def _serialize_run(run: OptionSweepRun) -> dict[str, object]:
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
         "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+    }
+
+
+def _review_window_payload(event: OptionAlertEvent) -> dict[str, object]:
+    min_hold = event.review_min_hold_days
+    max_hold = event.review_max_hold_days
+    basis = event.review_window_basis
+    if not (isinstance(min_hold, int) and isinstance(max_hold, int) and max_hold >= min_hold > 0):
+        parsed = parse_review_window(event.message)
+        if parsed:
+            min_hold = parsed.min_hold_days
+            max_hold = parsed.max_hold_days
+            basis = parsed.basis
+    return {
+        "min_hold_days": min_hold,
+        "max_hold_days": max_hold,
+        "basis": basis,
     }
 
 
@@ -555,6 +573,7 @@ def _ranked_opportunity_from_event(
         "hv30": event.hv30,
         "iv_hv_spread": spread,
         "avg_edr": event.avg_edr,
+        "review_window": _review_window_payload(event),
         "selected_contract": {
             "expiry": event.selected_expiry,
             "dte": event.selected_dte,
@@ -816,6 +835,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             "hv30": event.hv30,
             "iv_hv_spread": record["iv_hv_spread"],
             "avg_edr": event.avg_edr,
+            "review_window": _review_window_payload(event),
             "selected_contract": {
                 "expiry": event.selected_expiry,
                 "dte": event.selected_dte,

@@ -14,6 +14,7 @@ from app.services.options_alerts import (
     _direction_hint,
     _format_alert_message,
     _is_iv_data_valid,
+    _review_window_for_plan,
     _select_training_contract,
     _selected_contract_event_fields,
     _training_plan_inputs,
@@ -244,6 +245,15 @@ def _scan_tickers(
             hv30=hv30,
             max_expiries=optionality_config.get("contract_max_expiries"),
         )
+        review_window = _review_window_for_plan(
+            base_hold_days=hold_days,
+            iv30=iv30,
+            hv30=metrics.get("hv30"),
+            iv_percentile=iv_percentile,
+            avg_edr=metrics.get("avg_edr"),
+            horizon_returns=horizon_returns,
+            selected_contract=selected_contract,
+        )
         analyzer_url = _build_stock_analyzer_url(symbol)
         message = _format_alert_message(
             label,
@@ -266,6 +276,7 @@ def _scan_tickers(
             analyzer_url=analyzer_url,
             options_data_source=metrics.get("data_source"),
             options_quote_source=metrics.get("quote_source"),
+            review_window=review_window,
         )
         delivered, channel, error = _send_webhook(
             message,
@@ -290,6 +301,9 @@ def _scan_tickers(
                     delivered=delivered,
                     delivery_channel=channel,
                     delivery_error=error,
+                    review_min_hold_days=review_window.min_hold_days,
+                    review_max_hold_days=review_window.max_hold_days,
+                    review_window_basis=review_window.basis,
                     **_selected_contract_event_fields(selected_contract),
                     **opportunity_event_fields(
                         iv_percentile=iv_percentile,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -13,31 +12,25 @@ from sqlalchemy.orm import Session
 from app.models.option_positions import OptionPosition
 from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
+from app.services.options_review_window import ReviewWindow, parse_review_window
 from app.utils.db_helpers import get_db_session
 
 logger = logging.getLogger(__name__)
 
-_HOLD_RE = re.compile(r"Hold\s*:\s*(\d+)\s*trading\s*days", re.IGNORECASE)
+
+def _review_window_from_event(event: OptionAlertEvent) -> Optional[ReviewWindow]:
+    min_hold = getattr(event, "review_min_hold_days", None)
+    max_hold = getattr(event, "review_max_hold_days", None)
+    if isinstance(min_hold, int) and isinstance(max_hold, int) and min_hold > 0 and max_hold >= min_hold:
+        return ReviewWindow(min_hold, max_hold, "event fields")
+    return parse_review_window(event.message)
 
 
-def _hold_days_from_event(event: OptionAlertEvent) -> Optional[int]:
-    if not event.message:
-        return None
-    match = _HOLD_RE.search(event.message)
-    if not match:
-        return None
-    try:
-        hold_days = int(match.group(1))
-    except ValueError:
-        return None
-    return hold_days if hold_days > 0 else None
-
-
-def _reminder_date_for_position(position: OptionPosition, event: OptionAlertEvent) -> tuple[date, Optional[int]]:
-    hold_days = _hold_days_from_event(event)
-    if hold_days is not None:
+def _reminder_date_for_position(position: OptionPosition, event: OptionAlertEvent) -> tuple[date, Optional[ReviewWindow]]:
+    review_window = _review_window_from_event(event)
+    if review_window is not None:
         anchor = event.triggered_at.date() if event.triggered_at else position.trade_date
-        return anchor + timedelta(days=hold_days), hold_days
+        return anchor + timedelta(days=review_window.max_hold_days), review_window
     return position.expiration, None
 
 
@@ -64,7 +57,7 @@ def sync_trade_sell_reminder(db: Session, position: OptionPosition) -> Optional[
             existing.updated_at = datetime.utcnow()
         return existing
 
-    reminder_date, hold_days = _reminder_date_for_position(position, event)
+    reminder_date, review_window = _reminder_date_for_position(position, event)
     reminder = existing or OptionTradeReminder(position_id=position.id)
     if reminder.status == "sent":
         return reminder
@@ -77,7 +70,8 @@ def sync_trade_sell_reminder(db: Session, position: OptionPosition) -> Optional[
     reminder.contracts = position.contracts
     reminder.fill_price = position.fill_price
     reminder.reminder_date = reminder_date
-    reminder.hold_days = hold_days
+    reminder.min_hold_days = review_window.min_hold_days if review_window else None
+    reminder.hold_days = review_window.max_hold_days if review_window else None
     reminder.status = "pending"
     reminder.last_error = None
     reminder.updated_at = datetime.utcnow()
@@ -115,7 +109,10 @@ def _evaluation_mention() -> str:
 
 def _format_reminder_message(reminder: OptionTradeReminder, position: OptionPosition) -> str:
     source = f" scanner event #{reminder.source_event_id}" if reminder.source_event_id else " scanner match"
-    hold = f" after {reminder.hold_days} day hold" if reminder.hold_days is not None else ""
+    if reminder.hold_days is not None and reminder.min_hold_days is not None:
+        hold = f" after review window {reminder.min_hold_days}-{reminder.hold_days} days"
+    else:
+        hold = f" after {reminder.hold_days} day hold" if reminder.hold_days is not None else ""
     mention = _evaluation_mention()
     prefix = f"{mention} " if mention else ""
     return (

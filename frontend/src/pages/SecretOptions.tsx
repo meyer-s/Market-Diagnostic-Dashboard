@@ -42,9 +42,12 @@ interface OptionPosition {
   source_match_method: string | null;
   source_match_confidence: number | null;
   source_match_notes: string | null;
+  evaluation_min_hold_days: number | null;
   evaluation_hold_days: number | null;
+  evaluation_start_date: string | null;
   evaluation_due_date: string | null;
   evaluation_source: string | null;
+  evaluation_window_basis: string | null;
 }
 
 type VolatilityState = "expanding" | "contracting" | "stable" | "unknown";
@@ -199,6 +202,8 @@ interface TrainingOutcomeRow {
   symbol: string;
   triggered_at: string | null;
   option_type: string;
+  review_min_hold_days: number | null;
+  review_max_hold_days: number | null;
   hold_days: number;
   entry_date: string;
   exit_date: string | null;
@@ -320,6 +325,11 @@ interface ScannerRankedOpportunity {
   hv30: number | null;
   iv_hv_spread: number | null;
   avg_edr: number | null;
+  review_window?: {
+    min_hold_days: number | null;
+    max_hold_days: number | null;
+    basis: string | null;
+  } | null;
   selected_contract: {
     expiry: string | null;
     dte: number | null;
@@ -406,9 +416,11 @@ interface ScannerRunDetailResponse {
 }
 
 interface EvaluationInsight {
+  minHoldDays: number;
   holdDays: number;
   elapsedDays: number;
   daysRemaining: number;
+  windowStartRemainingDays: number;
   progressPct: number;
   urgency: "calm" | "watch" | "due" | "overdue";
   label: string;
@@ -428,6 +440,8 @@ interface TimelineLane {
   contracts: number;
   matched: boolean;
   urgency: EvalUrgency;
+  minHoldDays: number;
+  maxHoldDays: number;
   totalDays: number;
   elapsedDays: number;
   remainingDays: number;
@@ -911,6 +925,11 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
     .filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]))
     .sort((a, b) => b[1] - a[1]);
   const dataSource = scannerAlertValue(sections, "MISPRICING", "Data Src") || contract.price_source || "—";
+  const reviewWindowLabel =
+    scannerAlertValue(sections, "EXAMPLE TRADE", "Review Window") ||
+    (opportunity.review_window?.min_hold_days && opportunity.review_window?.max_hold_days
+      ? `${opportunity.review_window.min_hold_days}-${opportunity.review_window.max_hold_days} trading days`
+      : null);
   const ivHvEdr =
     scannerAlertValue(sections, "MISPRICING", "IV/HV/EDR") ||
     `${formatPercent(opportunity.iv30, 1)} / ${formatPercent(opportunity.hv30, 1)} / ${formatPercent(opportunity.avg_edr, 1)}`;
@@ -1011,7 +1030,8 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
             {detailRow("Base target", scannerAlertValue(sections, "EXAMPLE TRADE", "Base Tgt") || formatPercent(contract.target_profit_pct, 0))}
             {detailRow("Risk cut", scannerAlertValue(sections, "EXAMPLE TRADE", "Risk Cut") || (contract.planned_loss_pct !== null && contract.planned_loss_pct !== undefined ? `-${formatPercent(contract.planned_loss_pct, 0)}` : "—"))}
             {detailRow("Reward/risk", scannerAlertValue(sections, "EXAMPLE TRADE", "Reward/Risk") || (contract.reward_risk !== null && contract.reward_risk !== undefined ? `${contract.reward_risk.toFixed(2)}R` : "—"))}
-            {detailRow("Hold", scannerAlertValue(sections, "EXAMPLE TRADE", "Hold") || (contract.dte !== null && contract.dte !== undefined ? `${contract.dte} DTE` : "—"))}
+            {detailRow("Window", reviewWindowLabel)}
+            {detailRow("Gate", scannerAlertValue(sections, "EXAMPLE TRADE", "Hold") || (contract.dte !== null && contract.dte !== undefined ? `${contract.dte} DTE` : "—"))}
           </div>
         </div>
 
@@ -1056,24 +1076,31 @@ const toDate = (value: string | null | undefined) => {
 const buildEvaluationInsight = (
   holdDaysRaw: number,
   anchorDate: Date,
-  now: Date
+  now: Date,
+  minHoldDaysRaw?: number | null
 ): EvaluationInsight | null => {
   const holdDays = Number.isFinite(holdDaysRaw) ? Math.max(1, Math.round(holdDaysRaw)) : 0;
   if (holdDays <= 0) return null;
+  const minHoldDays = Number.isFinite(minHoldDaysRaw ?? NaN)
+    ? Math.max(1, Math.min(holdDays, Math.round(minHoldDaysRaw as number)))
+    : Math.max(1, Math.min(holdDays, Math.round(holdDays * 0.4)));
 
   const elapsedDays = Math.max(0, Math.floor((now.getTime() - anchorDate.getTime()) / DAY_MS));
   const daysRemaining = holdDays - elapsedDays;
+  const windowStartRemainingDays = minHoldDays - elapsedDays;
   const progressPct = Math.max(0, Math.min(100, (elapsedDays / holdDays) * 100));
 
   if (daysRemaining < 0) {
     return {
+      minHoldDays,
       holdDays,
       elapsedDays,
       daysRemaining,
+      windowStartRemainingDays,
       progressPct,
       urgency: "overdue",
       label: `${Math.abs(daysRemaining)}d past eval`,
-      detail: `Suggested hold ${holdDays}d from trigger`,
+      detail: `Review window ${minHoldDays}-${holdDays}d from trigger`,
       pillClass: "border-rose-500/50 bg-rose-500/10 text-rose-200",
       barClass: "bg-rose-400",
     };
@@ -1081,40 +1108,62 @@ const buildEvaluationInsight = (
 
   if (daysRemaining === 0) {
     return {
+      minHoldDays,
       holdDays,
       elapsedDays,
       daysRemaining,
+      windowStartRemainingDays,
       progressPct,
       urgency: "due",
       label: "Evaluate today",
-      detail: `Reached ${holdDays}d scanner horizon`,
+      detail: `Reached ${minHoldDays}-${holdDays}d review window`,
       pillClass: "border-amber-500/50 bg-amber-500/10 text-amber-200",
       barClass: "bg-amber-300",
     };
   }
 
-  if (daysRemaining <= 5) {
+  if (windowStartRemainingDays > 0) {
     return {
+      minHoldDays,
       holdDays,
       elapsedDays,
       daysRemaining,
+      windowStartRemainingDays,
+      progressPct,
+      urgency: "calm",
+      label: `${windowStartRemainingDays}d to window`,
+      detail: `Opportunity window opens at ${minHoldDays}d; gate ${holdDays}d`,
+      pillClass: "border-sky-500/40 bg-sky-500/10 text-sky-200",
+      barClass: "bg-sky-300",
+    };
+  }
+
+  if (daysRemaining <= 5) {
+    return {
+      minHoldDays,
+      holdDays,
+      elapsedDays,
+      daysRemaining,
+      windowStartRemainingDays,
       progressPct,
       urgency: "watch",
       label: `${daysRemaining}d to eval`,
-      detail: `Scanner horizon ${holdDays}d`,
+      detail: `Inside ${minHoldDays}-${holdDays}d opportunity window`,
       pillClass: "border-yellow-500/45 bg-yellow-500/10 text-yellow-200",
       barClass: "bg-yellow-300",
     };
   }
 
   return {
+    minHoldDays,
     holdDays,
     elapsedDays,
     daysRemaining,
+    windowStartRemainingDays,
     progressPct,
     urgency: "calm",
     label: `Evaluate in ${daysRemaining}d`,
-    detail: `Scanner horizon ${holdDays}d`,
+    detail: `Inside ${minHoldDays}-${holdDays}d opportunity window`,
     pillClass: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
     barClass: "bg-emerald-300",
   };
@@ -1246,16 +1295,18 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
       ? Math.max(0, dteAtEntry - dteNow)
       : Math.max(0, lane?.elapsedDays ?? 0);
   const expirationTotalDays = Math.max(1, dteAtEntry ?? elapsedToTodayDays + Math.max(0, dteNow ?? 0), lane?.totalDays ?? 1);
-  const expectedWindowDays = Math.max(1, Math.min(lane?.totalDays ?? expirationTotalDays, expirationTotalDays));
+  const minWindowDays = Math.max(1, Math.min(lane?.minHoldDays ?? 1, expirationTotalDays));
+  const expectedWindowDays = Math.max(minWindowDays, Math.min(lane?.maxHoldDays ?? lane?.totalDays ?? expirationTotalDays, expirationTotalDays));
   const todayPct = clampRange((elapsedToTodayDays / expirationTotalDays) * 100, 0, 100);
+  const opportunityStartPct = clampRange((minWindowDays / expirationTotalDays) * 100, 0, 98);
   const gatePct = clampRange((expectedWindowDays / expirationTotalDays) * 100, 3, 100);
-  const elapsedExpectedPct = Math.min(todayPct, gatePct);
+  const opportunityWidthPct = Math.max(2, gatePct - opportunityStartPct);
+  const elapsedOpportunityPct = clampRange(todayPct - opportunityStartPct, 0, opportunityWidthPct);
   const overdueTailPct = todayPct > gatePct ? todayPct - gatePct : 0;
-  const modelWindowPct = Math.max(gatePct, 5);
   const volRead = buildVolatilityRead(metrics.volatility_signal);
-  const accessibleSummary = `${position.symbol} ${label}. ${detail}. ${Math.round(todayPct)} percent through expiration timeline. ${Math.round(gatePct)} percent to evaluation gate. ${remainingDays ?? "unknown"} days remaining. Volatility ${volRead.label}. Source confidence ${Math.round(sourceConfidencePct)} percent.`;
+  const accessibleSummary = `${position.symbol} ${label}. ${detail}. ${Math.round(todayPct)} percent through expiration timeline. Opportunity window ${minWindowDays} to ${expectedWindowDays} days from trigger. ${remainingDays ?? "unknown"} days remaining. Volatility ${volRead.label}. Source confidence ${Math.round(sourceConfidencePct)} percent.`;
   const railBorderClass = urgency === "calm" || urgency === "watch" ? "border-gray-700" : urgencyBorderClass;
-  const railTrackClass = isLowConfidence ? "bg-gray-700/35" : "bg-gray-700/65";
+  const railTrackClass = isLowConfidence ? "bg-cyan-400/15" : "bg-cyan-400/25";
   const elapsedFillClass = isLowConfidence ? "bg-emerald-300/45" : "bg-emerald-300";
   const gateClass = urgency === "overdue" ? "bg-rose-400" : urgency === "due" ? "bg-amber-300" : "bg-emerald-300";
   const pressureWidthPct =
@@ -1273,11 +1324,13 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
     const endPct = ((index + 1) / 6) * 100;
     const midPct = (startPct + endPct) / 2;
     const isOverdue = overdueTailPct > 0 && midPct > gatePct && midPct <= todayPct;
-    const isElapsed = midPct <= elapsedExpectedPct;
-    const isModelWindow = midPct <= modelWindowPct;
+    const isOpportunityWindow = midPct >= opportunityStartPct && midPct <= gatePct;
+    const isElapsedOpportunity = isOpportunityWindow && midPct <= todayPct;
+    const isPrematureElapsed = midPct < opportunityStartPct && midPct <= todayPct;
     const hasToday = todayPct >= startPct && todayPct <= endPct;
+    const hasWindowStart = opportunityStartPct >= startPct && opportunityStartPct <= endPct;
     const hasGate = gatePct >= startPct && gatePct <= endPct;
-    return { index, isOverdue, isElapsed, isModelWindow, hasToday, hasGate };
+    return { index, isOverdue, isElapsedOpportunity, isOpportunityWindow, isPrematureElapsed, hasToday, hasWindowStart, hasGate };
   });
 
   return (
@@ -1287,21 +1340,24 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
         <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{statusLabel}</span>
       </div>
       <div className="grid grid-cols-1">
-        <div className="grid grid-cols-6 gap-1 sm:hidden" title="Mobile buckets: rail slices to expiration, muted model window, mint elapsed, thin today marker, thick evaluation gate">
+        <div className="grid grid-cols-6 gap-1 sm:hidden" title="Mobile buckets: rail slices to expiration, cyan opportunity window, mint elapsed window, thin today marker, thick evaluation gate">
           {bucketCells.map((cell) => (
             <div
               key={cell.index}
               className={`relative h-5 overflow-hidden rounded-sm border ${
                 cell.isOverdue
                   ? "border-rose-400/45 bg-rose-500/40"
-                  : cell.isElapsed
+                  : cell.isElapsedOpportunity
                     ? "border-transparent bg-emerald-300/80"
-                    : cell.isModelWindow
-                      ? "border-gray-700 bg-gray-700/55"
+                    : cell.isOpportunityWindow
+                      ? "border-cyan-400/35 bg-cyan-400/20"
+                      : cell.isPrematureElapsed
+                        ? "border-gray-700 bg-gray-700/45"
                       : "border-gray-700 bg-gray-900/75"
               }`}
             >
               {cell.hasToday ? <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/65" /> : null}
+              {cell.hasWindowStart ? <span className="absolute inset-y-0 left-0 w-1 bg-cyan-300/80" /> : null}
               {cell.hasGate ? <span className={`absolute inset-y-0 right-0 w-1 ${gateClass}`} /> : null}
             </div>
           ))}
@@ -1310,11 +1366,17 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
           className={`relative hidden h-6 overflow-hidden rounded-md border ${railBorderClass} bg-gray-900/70 sm:block ${
             isLowConfidence ? "opacity-80" : ""
           }`}
-          title="Rail = full time to expiration, muted band = expected hold window, emerald fill = elapsed hold window, thin line = today, thick marker = evaluation gate, red tail = past gate"
+          title="Rail = full time to expiration, cyan band = acceptable opportunity window, emerald fill = elapsed opportunity window, thin line = today, thick marker = evaluation gate, red tail = past gate"
         >
           <div className="absolute inset-y-1 left-0 w-full rounded-sm bg-gray-800/70" />
-          <div className={`absolute inset-y-1 left-0 rounded-sm ${railTrackClass}`} style={{ width: `${modelWindowPct}%` }} />
-          <div className={`absolute inset-y-1 left-0 rounded-sm ${elapsedFillClass}`} style={{ width: `${elapsedExpectedPct}%` }} />
+          <div
+            className={`absolute inset-y-1 rounded-sm ${railTrackClass}`}
+            style={{ left: `${opportunityStartPct}%`, width: `${opportunityWidthPct}%` }}
+          />
+          <div
+            className={`absolute inset-y-1 rounded-sm ${elapsedFillClass}`}
+            style={{ left: `${opportunityStartPct}%`, width: `${elapsedOpportunityPct}%` }}
+          />
           {showPressureBand ? (
             <div
               className={`absolute inset-y-0 border-x ${pressureBandClass}`}
@@ -1330,6 +1392,9 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
           ) : null}
           <div className="absolute inset-y-0 flex items-center" style={{ left: `${todayPct}%` }}>
             <span className="h-5 w-px -translate-x-1/2 bg-white/65" title="Today" />
+          </div>
+          <div className="absolute inset-y-0 flex items-center" style={{ left: `${opportunityStartPct}%` }}>
+            <span className="h-4 w-1 -translate-x-1/2 rounded-full bg-cyan-300/80" title="Opportunity window opens" />
           </div>
           <div className="absolute inset-y-0 flex items-center" style={{ left: `${gatePct}%` }}>
             <span className={`h-5 w-1.5 -translate-x-1/2 rounded-full ${gateClass}`} title="Evaluation gate" />
@@ -2758,9 +2823,20 @@ export default function SecretOptions() {
         position.evaluation_hold_days > 0
           ? position.evaluation_hold_days
           : null;
+      const linkedMinHoldDays =
+        typeof position.evaluation_min_hold_days === "number" &&
+        Number.isFinite(position.evaluation_min_hold_days) &&
+        position.evaluation_min_hold_days > 0
+          ? position.evaluation_min_hold_days
+          : null;
       const fallbackKey = `${position.symbol.trim().toUpperCase()}|${position.option_type.trim().toLowerCase()}`;
       const historicalMatch = trainingOutcomeBySymbolType.get(fallbackKey);
       const holdDays = directMatch?.hold_days ?? linkedHoldDays ?? historicalMatch?.hold_days ?? null;
+      const minHoldDays =
+        directMatch?.review_min_hold_days ??
+        linkedMinHoldDays ??
+        historicalMatch?.review_min_hold_days ??
+        (holdDays ? Math.max(1, Math.min(holdDays, Math.round(holdDays * 0.4))) : null);
       if (!holdDays) return;
 
       const anchorDate =
@@ -2768,15 +2844,15 @@ export default function SecretOptions() {
         toDate(position.trade_date);
       if (!anchorDate) return;
 
-      const insight = buildEvaluationInsight(holdDays, anchorDate, now);
+      const insight = buildEvaluationInsight(holdDays, anchorDate, now, minHoldDays);
       if (!insight) return;
       result[position.id] = {
         ...insight,
         detail: directMatch
-          ? `Linked horizon ${directMatch.hold_days}d`
+          ? `Linked window ${directMatch.review_min_hold_days ?? insight.minHoldDays}-${directMatch.hold_days}d`
           : linkedHoldDays
-            ? `Linked horizon ${linkedHoldDays}d`
-            : `Historical ${position.symbol.toUpperCase()} ${position.option_type.toUpperCase()} template • ${holdDays}d`,
+            ? `Linked window ${insight.minHoldDays}-${linkedHoldDays}d`
+            : `Historical ${position.symbol.toUpperCase()} ${position.option_type.toUpperCase()} template • ${insight.minHoldDays}-${holdDays}d`,
       };
     });
 
@@ -2866,7 +2942,13 @@ export default function SecretOptions() {
       const evaluation = evaluationByPositionId[position.id] || null;
       const dteNow = metrics.dte ?? null;
       const dteEntry = position.dte_at_entry ?? null;
-      const totalDays = Math.max(1, evaluation?.holdDays ?? dteEntry ?? dteNow ?? 1);
+      const fallbackElapsed =
+        dteEntry !== null && dteNow !== null ? Math.max(0, dteEntry - dteNow) : evaluation?.elapsedDays ?? 0;
+      const totalDays = Math.max(
+        1,
+        dteEntry ?? fallbackElapsed + Math.max(0, dteNow ?? 0),
+        evaluation?.holdDays ?? 1
+      );
       const remainingDays = evaluation?.daysRemaining ?? dteNow ?? totalDays;
       const elapsedDays = evaluation
         ? evaluation.elapsedDays
@@ -2898,6 +2980,8 @@ export default function SecretOptions() {
         contracts: position.contracts,
         matched: Boolean(evaluation),
         urgency,
+        minHoldDays: evaluation?.minHoldDays ?? Math.max(1, Math.min(totalDays, Math.round(totalDays * 0.4))),
+        maxHoldDays: evaluation?.holdDays ?? totalDays,
         totalDays,
         elapsedDays,
         remainingDays,
@@ -3462,7 +3546,7 @@ export default function SecretOptions() {
                   className="inline-flex"
                   role="img"
                   aria-label="Timeline legend"
-                  title="Rail = time until expiration. Muted band = modeled hold window. Mint fill = elapsed model window. Thin tick = today. Thick tick = evaluation gate. Rose tail = past gate."
+                  title="Rail = time until expiration. Cyan band = opportunity window. Mint fill = elapsed opportunity window. Thin tick = today. Thick tick = evaluation gate. Rose tail = past gate."
                 >
                   <HelpCircle className="h-3.5 w-3.5 text-sky-300/80" aria-hidden="true" />
                 </span>
@@ -5300,7 +5384,7 @@ export default function SecretOptions() {
                     <tr>
                       <th className="px-3 py-2 text-left">Symbol / Rank</th>
                       <th className="px-3 py-2 text-left">Type</th>
-                      <th className="px-3 py-2 text-left">Hold</th>
+                      <th className="px-3 py-2 text-left">Window</th>
                       <th className="px-3 py-2 text-left">Entry</th>
                       <th className="px-3 py-2 text-left">Exit</th>
                       <th className="px-3 py-2 text-left">Underlying Dir %</th>
@@ -5326,7 +5410,11 @@ export default function SecretOptions() {
                           </div>
                         </td>
                         <td className="px-3 py-2 uppercase">{row.option_type}</td>
-                        <td className="px-3 py-2">{row.hold_days}d</td>
+                        <td className="px-3 py-2">
+                          {row.review_min_hold_days && row.review_max_hold_days
+                            ? `${row.review_min_hold_days}-${row.review_max_hold_days}d`
+                            : `${row.hold_days}d`}
+                        </td>
                         <td className="px-3 py-2">{formatDate(row.entry_date)}</td>
                         <td className="px-3 py-2">{row.exit_date ? formatDate(row.exit_date) : "—"}</td>
                         <td className={`px-3 py-2 ${(row.underlying_directional_return_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>

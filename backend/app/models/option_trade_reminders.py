@@ -18,6 +18,7 @@ class OptionTradeReminder(Base):
     contracts = Column(Integer, nullable=False)
     fill_price = Column(Float, nullable=False)
     reminder_date = Column(Date, index=True, nullable=False)
+    min_hold_days = Column(Integer, nullable=True)
     hold_days = Column(Integer, nullable=True)
     status = Column(String, index=True, nullable=False, default="pending")
     attempts = Column(Integer, nullable=False, default=0)
