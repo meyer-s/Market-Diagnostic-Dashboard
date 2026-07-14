@@ -1306,7 +1306,8 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   const volRead = buildVolatilityRead(metrics.volatility_signal);
   const accessibleSummary = `${position.symbol} ${label}. ${detail}. ${Math.round(todayPct)} percent through expiration timeline. Opportunity window ${minWindowDays} to ${expectedWindowDays} days from trigger. ${remainingDays ?? "unknown"} days remaining. Volatility ${volRead.label}. Source confidence ${Math.round(sourceConfidencePct)} percent.`;
   const railBorderClass = urgency === "calm" || urgency === "watch" ? "border-gray-700" : urgencyBorderClass;
-  const railTrackClass = isLowConfidence ? "bg-cyan-400/15" : "bg-cyan-400/25";
+  const railTrackClass = isLowConfidence ? "bg-cyan-400/15" : "bg-cyan-400/22";
+  const bracketClass = isLowConfidence ? "bg-cyan-200/45" : "bg-cyan-200/75";
   const elapsedFillClass = isLowConfidence ? "bg-emerald-300/45" : "bg-emerald-300";
   const gateClass = urgency === "overdue" ? "bg-rose-400" : urgency === "due" ? "bg-amber-300" : "bg-emerald-300";
   const pressureWidthPct =
@@ -1366,7 +1367,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
           className={`relative hidden h-6 overflow-hidden rounded-md border ${railBorderClass} bg-gray-900/70 sm:block ${
             isLowConfidence ? "opacity-80" : ""
           }`}
-          title="Rail = full time to expiration, cyan band = acceptable opportunity window, emerald fill = elapsed opportunity window, thin line = today, thick marker = evaluation gate, red tail = past gate"
+          title="Rail = full time to expiration, bracket = expected hold window, cyan shade = acceptable hold zone, emerald fill = elapsed hold window, thin line = today, red tail = past gate"
         >
           <div className="absolute inset-y-1 left-0 w-full rounded-sm bg-gray-800/70" />
           <div
@@ -1377,6 +1378,18 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
             className={`absolute inset-y-1 rounded-sm ${elapsedFillClass}`}
             style={{ left: `${opportunityStartPct}%`, width: `${elapsedOpportunityPct}%` }}
           />
+          <div
+            className="pointer-events-none absolute inset-y-0"
+            style={{ left: `${opportunityStartPct}%`, width: `${opportunityWidthPct}%` }}
+            title="Expected hold window"
+          >
+            <span className={`absolute inset-y-0 left-0 w-px ${bracketClass}`} />
+            <span className={`absolute inset-y-0 right-0 w-px ${bracketClass}`} />
+            <span className={`absolute left-0 top-0 h-px w-2.5 ${bracketClass}`} />
+            <span className={`absolute right-0 top-0 h-px w-2.5 ${bracketClass}`} />
+            <span className={`absolute bottom-0 left-0 h-px w-2.5 ${bracketClass}`} />
+            <span className={`absolute bottom-0 right-0 h-px w-2.5 ${bracketClass}`} />
+          </div>
           {showPressureBand ? (
             <div
               className={`absolute inset-y-0 border-x ${pressureBandClass}`}
@@ -1394,10 +1407,10 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
             <span className="h-5 w-px -translate-x-1/2 bg-white/65" title="Today" />
           </div>
           <div className="absolute inset-y-0 flex items-center" style={{ left: `${opportunityStartPct}%` }}>
-            <span className="h-4 w-1 -translate-x-1/2 rounded-full bg-cyan-300/80" title="Opportunity window opens" />
+            <span className="h-5 w-px -translate-x-1/2 bg-cyan-100/85" title="Opportunity window opens" />
           </div>
           <div className="absolute inset-y-0 flex items-center" style={{ left: `${gatePct}%` }}>
-            <span className={`h-5 w-1.5 -translate-x-1/2 rounded-full ${gateClass}`} title="Evaluation gate" />
+            <span className={`h-5 w-px -translate-x-1/2 ${gateClass}`} title="Evaluation gate" />
           </div>
           <div className="absolute inset-y-0 right-0 w-0.5 bg-gray-400/45" title="Expiration" />
         </div>
