@@ -1073,6 +1073,37 @@ const toDate = (value: string | null | undefined) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const addDays = (date: Date, days: number) => new Date(date.getTime() + days * DAY_MS);
+
+const formatHoldDateWindow = (
+  position: OptionPosition,
+  evaluation: EvaluationInsight | null | undefined,
+  lane: TimelineLane | null | undefined
+) => {
+  const minHoldDays = evaluation?.minHoldDays ?? lane?.minHoldDays ?? position.evaluation_min_hold_days ?? null;
+  const maxHoldDays = evaluation?.holdDays ?? lane?.maxHoldDays ?? position.evaluation_hold_days ?? null;
+  if (!minHoldDays || !maxHoldDays) return null;
+
+  const anchorDate =
+    toDate(position.evaluation_start_date) ||
+    toDate(position.source_triggered_at) ||
+    toDate(position.trade_date);
+  const maxDate = toDate(position.evaluation_due_date) || (anchorDate ? addDays(anchorDate, maxHoldDays) : null);
+  const minDate = anchorDate ? addDays(anchorDate, minHoldDays) : null;
+
+  if (minDate && maxDate) {
+    return {
+      range: `${formatDate(minDate)} - ${formatDate(maxDate)}`,
+      detail: `${minHoldDays}-${maxHoldDays}d hold window`,
+    };
+  }
+
+  return {
+    range: `${minHoldDays}-${maxHoldDays} trading days`,
+    detail: "Hold window",
+  };
+};
+
 const buildEvaluationInsight = (
   holdDaysRaw: number,
   anchorDate: Date,
@@ -1307,7 +1338,9 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   const accessibleSummary = `${position.symbol} ${label}. ${detail}. ${Math.round(todayPct)} percent through expiration timeline. Opportunity window ${minWindowDays} to ${expectedWindowDays} days from trigger. ${remainingDays ?? "unknown"} days remaining. Volatility ${volRead.label}. Source confidence ${Math.round(sourceConfidencePct)} percent.`;
   const railBorderClass = urgency === "calm" || urgency === "watch" ? "border-gray-700" : urgencyBorderClass;
   const railTrackClass = isLowConfidence ? "bg-cyan-400/15" : "bg-cyan-400/22";
-  const bracketClass = isLowConfidence ? "bg-cyan-200/45" : "bg-cyan-200/75";
+  const bracketBorderClass = isLowConfidence ? "border-cyan-100/35" : "border-cyan-100/70";
+  const bracketFillClass = isLowConfidence ? "bg-cyan-100/5" : "bg-cyan-100/10";
+  const bracketGlowClass = isLowConfidence ? "" : "shadow-[0_0_10px_rgba(165,243,252,0.18)]";
   const elapsedFillClass = isLowConfidence ? "bg-emerald-300/45" : "bg-emerald-300";
   const gateClass = urgency === "overdue" ? "bg-rose-400" : urgency === "due" ? "bg-amber-300" : "bg-emerald-300";
   const pressureWidthPct =
@@ -1379,16 +1412,18 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
             style={{ left: `${opportunityStartPct}%`, width: `${elapsedOpportunityPct}%` }}
           />
           <div
-            className="pointer-events-none absolute inset-y-0"
+            className="pointer-events-none absolute inset-y-[2px]"
             style={{ left: `${opportunityStartPct}%`, width: `${opportunityWidthPct}%` }}
             title="Expected hold window"
           >
-            <span className={`absolute inset-y-0 left-0 w-px ${bracketClass}`} />
-            <span className={`absolute inset-y-0 right-0 w-px ${bracketClass}`} />
-            <span className={`absolute left-0 top-0 h-px w-2.5 ${bracketClass}`} />
-            <span className={`absolute right-0 top-0 h-px w-2.5 ${bracketClass}`} />
-            <span className={`absolute bottom-0 left-0 h-px w-2.5 ${bracketClass}`} />
-            <span className={`absolute bottom-0 right-0 h-px w-2.5 ${bracketClass}`} />
+            <span
+              className={`absolute inset-y-0 left-0 w-5 rounded-l-md border-y border-l ${bracketBorderClass} ${bracketFillClass} ${bracketGlowClass}`}
+            />
+            <span
+              className={`absolute inset-y-0 right-0 w-5 rounded-r-md border-y border-r ${bracketBorderClass} ${bracketFillClass} ${bracketGlowClass}`}
+            />
+            <span className={`absolute inset-y-[3px] left-0 w-px rounded-full ${isLowConfidence ? "bg-cyan-50/30" : "bg-cyan-50/60"}`} />
+            <span className={`absolute inset-y-[3px] right-0 w-px rounded-full ${isLowConfidence ? "bg-cyan-50/30" : "bg-cyan-50/60"}`} />
           </div>
           {showPressureBand ? (
             <div
@@ -3591,6 +3626,7 @@ export default function SecretOptions() {
                 const rowActive = position.id === selectedId;
                 const isExpanded = expandedPositionId === position.id;
                 const rowDiagnosis = buildPositionDiagnosis(position, metrics, lane);
+                const holdDateWindow = formatHoldDateWindow(position, evaluation, lane);
 
                 return (
                   <Fragment key={position.id}>
@@ -3728,6 +3764,15 @@ export default function SecretOptions() {
                             <div className="mt-1 truncate text-[10px] text-gray-500">
                               {metrics.opportunity?.current?.reasons?.slice(0, 2).join(" / ") || metrics.opportunity?.basis || "score unavailable"}
                             </div>
+                            {holdDateWindow ? (
+                              <div className="mt-2 border-t border-gray-800/80 pt-1.5 text-[10px]">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="uppercase tracking-wide text-gray-500">Hold</span>
+                                  <span className="truncate text-right font-medium text-cyan-100">{holdDateWindow.range}</span>
+                                </div>
+                                <div className="mt-0.5 truncate text-gray-500">{holdDateWindow.detail}</div>
+                              </div>
+                            ) : null}
                           </div>
 
                           <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
