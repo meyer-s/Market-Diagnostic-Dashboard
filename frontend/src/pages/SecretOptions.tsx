@@ -10,16 +10,20 @@ import {
   ReferenceLine,
   usePlotArea,
 } from "recharts";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { createPortal } from "react-dom";
 import {
   Activity,
+  ArrowLeft,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   HelpCircle,
+  History,
+  MoreVertical,
   Pencil,
   Play,
+  Plus,
   RefreshCw,
   Settings2,
   SlidersHorizontal,
@@ -689,7 +693,9 @@ interface EvaluationInsight {
 }
 
 type EvalUrgency = EvaluationInsight["urgency"];
-type PositionFilter = "all" | "matched" | "watch" | "due" | "overdue" | "lowConfidence" | "losing";
+type PositionFilter = "all" | "attention" | "matched" | "watch" | "due" | "overdue" | "lowConfidence" | "losing";
+type MobileOptionsWorkspace = "positions" | "scanner" | "insights";
+type MobileScannerView = "history" | "hits" | "repeated" | "earnings";
 interface TimelineLane {
   laneId: string;
   linkedPositionId: number | null;
@@ -1600,6 +1606,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   decisionHistory,
   suggestedWindow,
   isInteractive = false,
+  showHeader = true,
 }: {
   position: OptionPosition;
   metrics: PositionMetrics;
@@ -1607,6 +1614,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   decisionHistory?: PositionDecisionWindowRevision[];
   suggestedWindow?: SuggestedDecisionWindow | null;
   isInteractive?: boolean;
+  showHeader?: boolean;
 }) {
   const remainingDays = lane?.remainingDays ?? metrics.dte ?? null;
   const sourceConfidence = clampRange(position.source_match_confidence ?? (lane?.matched ? 0.65 : 0.15), 0, 1);
@@ -1711,10 +1719,12 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
 
   return (
     <div className="min-w-0" aria-label={accessibleSummary}>
-      <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-        <span className="truncate text-gray-500">{metaLabel}</span>
-        <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{statusLabel}</span>
-      </div>
+      {showHeader ? (
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span className="truncate text-gray-500">{metaLabel}</span>
+          <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{statusLabel}</span>
+        </div>
+      ) : null}
       <div className={`relative h-6 overflow-visible rounded-md border border-gray-700 bg-gray-900/75 ${isLowConfidence ? "opacity-80" : ""}`}>
         <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/35" style={{ width: `${todayPct}%` }} title="Elapsed contract life" />
         {priorWindows.map((window, index) => {
@@ -1972,6 +1982,130 @@ function PositionActionButtons({
       >
         <Trash2 className={iconSize} aria-hidden="true" />
       </button>
+    </div>
+  );
+}
+
+function MobilePositionCard({
+  item,
+  lane,
+  decisionHistory,
+  suggestedWindow,
+  selected,
+  refreshing,
+  refreshed,
+  showActions,
+  onOpen,
+  onEdit,
+  onClose,
+}: {
+  item: PositionPayload;
+  lane: TimelineLane | undefined;
+  decisionHistory?: PositionDecisionWindowRevision[];
+  suggestedWindow?: SuggestedDecisionWindow | null;
+  selected: boolean;
+  refreshing: boolean;
+  refreshed: boolean;
+  showActions: boolean;
+  onOpen: () => void;
+  onEdit: (position: OptionPosition) => void;
+  onClose: (positionId: number) => void;
+}) {
+  const { position, metrics } = item;
+  const opportunity = buildOpportunityRead(metrics.opportunity);
+  const volatility = buildVolatilityRead(metrics.volatility_signal);
+  const pnl = metrics.pnl?.dollar;
+  const confidence = !position.source_event_id || (position.source_match_confidence ?? 0) < 0.6
+    ? "Low confidence"
+    : (position.source_match_confidence ?? 0) >= 0.85
+      ? "High confidence"
+      : "Medium confidence";
+  const statusLabel = lane?.label ?? (metrics.dte !== null ? `${metrics.dte}d to expiration` : "Monitor");
+  const statusClass = getStatusTextClass(lane?.urgency ?? "calm", lane?.remainingDays ?? metrics.dte, false);
+
+  return (
+    <div
+      id={`position-card-${position.id}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${position.symbol} position inspector. ${statusLabel}.`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      className={`relative min-h-11 rounded-xl border p-3 text-left transition active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
+        selected
+          ? "border-sky-400/45 bg-sky-500/10"
+          : "border-stealth-700/80 bg-stealth-950/35 hover:border-stealth-600"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-base font-semibold text-stealth-100">{position.symbol}</div>
+          <div className="mt-0.5 truncate text-xs text-stealth-400">
+            {position.option_type.toUpperCase()} ${formatNumber(position.strike, 2)} · {formatDate(position.expiration)} · {metrics.dte ?? "—"} DTE
+          </div>
+        </div>
+        <div className="shrink-0 text-right tabular-nums">
+          <div className={`text-xs font-semibold ${statusClass}`}>{statusLabel}</div>
+          <div className={`mt-0.5 text-sm font-semibold ${pnl !== null && pnl !== undefined && pnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+            {pnl !== null && pnl !== undefined ? formatCurrency(pnl, 0) : "—"}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <PositionTimelineCell
+          position={position}
+          metrics={metrics}
+          lane={lane}
+          decisionHistory={decisionHistory}
+          suggestedWindow={suggestedWindow}
+          isInteractive={selected}
+          showHeader={false}
+        />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-1 text-stealth-300">
+          Rank {opportunity.label}
+        </span>
+        <span className={`rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-1 ${volatility.text}`}>
+          {volatility.label}
+        </span>
+        <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-1 text-stealth-300">
+          {confidence}
+        </span>
+      </div>
+
+      {showActions ? (
+        <div className="mt-3 flex items-center justify-end gap-2 border-t border-stealth-800 pt-3" onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => onEdit(position)}
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-sm font-semibold text-sky-100"
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" /> Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => onClose(position.id)}
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 text-sm font-semibold text-rose-100"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" /> Close
+          </button>
+        </div>
+      ) : null}
+
+      {(refreshing || refreshed) ? (
+        <span
+          className={`pointer-events-none absolute inset-y-2 right-0 w-1 rounded-l-full ${refreshing ? "animate-pulse bg-amber-300/85 motion-reduce:animate-none" : "bg-emerald-400/75"}`}
+          aria-hidden="true"
+        />
+      ) : null}
     </div>
   );
 }
@@ -2432,6 +2566,7 @@ const normalizePositionMetrics = (
 };
 
 export default function SecretOptions() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [positions, setPositions] = useState<PositionPayload[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<number | null>(null);
@@ -2515,6 +2650,16 @@ export default function SecretOptions() {
   const [decisionReviewSubmitting, setDecisionReviewSubmitting] = useState(false);
   const [confirmingDecisionReview, setConfirmingDecisionReview] = useState(false);
   const [showRiskEvidence, setShowRiskEvidence] = useState(false);
+  const [mobileWorkspace, setMobileWorkspace] = useState<MobileOptionsWorkspace>("positions");
+  const [mobileScannerView, setMobileScannerView] = useState<MobileScannerView>("hits");
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [mobileMonitoringOpen, setMobileMonitoringOpen] = useState(false);
+  const [mobileClustersExpanded, setMobileClustersExpanded] = useState(false);
+  const mobileInspectorBackRef = useRef<HTMLButtonElement | null>(null);
+  const [isMobileWorkflow, setIsMobileWorkflow] = useState(
+    () => typeof window !== "undefined" && !window.matchMedia("(min-width: 1280px)").matches
+  );
   // The API refreshes the position snapshot as one batch, but the UI renders
   // that shared lifecycle on each affected row so status stays attached to the
   // data it describes instead of looking like a page-wide warning.
@@ -2527,13 +2672,22 @@ export default function SecretOptions() {
     showClosedLog ||
     showClosedEditModal ||
     showTrainingOutcomes ||
-    expandedScannerHitId !== null;
+    expandedScannerHitId !== null ||
+    (mobileInspectorOpen && isMobileWorkflow);
   const renderModal = (node: JSX.Element) => {
     if (typeof document === "undefined") {
       return null;
     }
     return createPortal(node, document.body);
   };
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1280px)");
+    const syncViewport = () => setIsMobileWorkflow(!media.matches);
+    syncViewport();
+    media.addEventListener("change", syncViewport);
+    return () => media.removeEventListener("change", syncViewport);
+  }, []);
 
   useEffect(() => {
     if (!anyModalOpen) return;
@@ -2543,6 +2697,52 @@ export default function SecretOptions() {
       document.body.style.overflow = previousOverflow;
     };
   }, [anyModalOpen]);
+
+  const mobilePositionParam = searchParams.get("position")?.trim().toUpperCase() ?? null;
+
+  useEffect(() => {
+    if (!mobilePositionParam) {
+      setMobileInspectorOpen(false);
+      return;
+    }
+    const requested = positions.find(
+      ({ position }) => position.symbol.trim().toUpperCase() === mobilePositionParam
+    );
+    if (!requested) return;
+    setSelectedId(requested.position.id);
+    setMobileInspectorOpen(true);
+  }, [mobilePositionParam, positions]);
+
+  const openMobileInspector = (position: OptionPosition) => {
+    setSelectedId(position.id);
+    setExpandedPositionId(position.id);
+    setMobileInspectorOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.set("position", position.symbol.trim().toUpperCase());
+    setSearchParams(next, { replace: false });
+  };
+
+  const closeMobileInspector = () => {
+    const returnPositionId = selectedId;
+    setMobileInspectorOpen(false);
+    setShowRiskEvidence(false);
+    const next = new URLSearchParams(searchParams);
+    next.delete("position");
+    setSearchParams(next, { replace: true });
+    window.setTimeout(() => document.getElementById(`position-card-${returnPositionId}`)?.focus(), 0);
+  };
+
+  useEffect(() => {
+    if (!mobileInspectorOpen || !isMobileWorkflow) return;
+    mobileInspectorBackRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMobileInspector();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  // Search params intentionally drive this lightweight mobile route. Closing
+  // restores the list in place instead of unmounting its filters or scroll.
+  }, [mobileInspectorOpen, isMobileWorkflow]);
 
   useEffect(() => {
     if (listRefreshStatusTimerRef.current !== null) {
@@ -3894,6 +4094,8 @@ export default function SecretOptions() {
     return sortedPositions.filter(({ position, metrics }) => {
       const lane = timelineLaneByPositionId.get(position.id);
       switch (positionFilter) {
+        case "attention":
+          return lane?.urgency === "watch" || lane?.urgency === "due" || lane?.urgency === "overdue";
         case "matched":
           return Boolean(evaluationByPositionId[position.id]);
         case "watch":
@@ -3909,6 +4111,28 @@ export default function SecretOptions() {
       }
     });
   }, [sortedPositions, positionFilter, timelineLaneByPositionId, evaluationByPositionId]);
+
+  const mobileNeedsAttention = useMemo(
+    () => filteredPositions.filter(({ position }) => {
+      const urgency = timelineLaneByPositionId.get(position.id)?.urgency;
+      return urgency === "watch" || urgency === "due" || urgency === "overdue";
+    }),
+    [filteredPositions, timelineLaneByPositionId]
+  );
+
+  const mobileMonitoring = useMemo(
+    () => filteredPositions.filter(({ position }) => {
+      const urgency = timelineLaneByPositionId.get(position.id)?.urgency;
+      return urgency !== "watch" && urgency !== "due" && urgency !== "overdue";
+    }),
+    [filteredPositions, timelineLaneByPositionId]
+  );
+
+  const reviewSoonCount = evaluationSummary.watch + evaluationSummary.due;
+  const mobileEarningsRuns = useMemo(
+    () => recentScannerRuns.filter((run) => /earning/i.test(`${run.universe_label} ${run.universe_key}`)),
+    [recentScannerRuns]
+  );
 
   useEffect(() => {
     if (loading || filteredPositions.length === 0) {
@@ -4175,11 +4399,48 @@ export default function SecretOptions() {
   const activeFilterLabel =
     positionFilter === "all"
       ? null
+      : positionFilter === "attention"
+        ? "Needs attention"
       : positionFilter === "lowConfidence"
         ? "Low confidence"
         : positionFilter === "losing"
           ? "Losing positions"
           : capitalizeWord(positionFilter);
+
+  const openAddTrade = () => {
+    setEditingPositionId(null);
+    resetForm();
+    setFormError(null);
+    setShowAddModal(true);
+    setMobileActionsOpen(false);
+  };
+
+  const openProfitLossHistory = () => {
+    void loadClosedPositions();
+    void loadLearningSummary();
+    setShowClosedLog(true);
+    setMobileActionsOpen(false);
+  };
+
+  const mobilePositionCard = (item: PositionPayload) => {
+    const { position } = item;
+    return (
+      <MobilePositionCard
+        key={position.id}
+        item={item}
+        lane={timelineLaneByPositionId.get(position.id)}
+        decisionHistory={decisionReviewsByPosition[position.id]?.history ?? decisionWindowsByPosition[String(position.id)]}
+        suggestedWindow={thesisAssessmentsByPosition[position.id]?.suggested_window ?? null}
+        selected={selectedId === position.id}
+        refreshing={listRefreshPending}
+        refreshed={listRefreshSettled}
+        showActions={showRowActions}
+        onOpen={() => openMobileInspector(position)}
+        onEdit={openEditModal}
+        onClose={openCloseModal}
+      />
+    );
+  };
 
   const optionalityClustersCard = (
     <div className="surface-card-strong p-3">
@@ -4241,7 +4502,7 @@ export default function SecretOptions() {
 
   return (
     <div className="page-shell-wide space-y-2.5 text-gray-100 md:space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+      <div className="hidden flex-wrap items-center justify-between gap-2 px-1 xl:flex">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stealth-500">Private</span>
           <h1 className="text-lg font-semibold leading-none tracking-tight text-white md:text-xl">Options Performance</h1>
@@ -4257,7 +4518,192 @@ export default function SecretOptions() {
         </div>
       )}
 
+      {isMobileWorkflow ? (
+      <div className="space-y-3 xl:hidden">
+        <div className="flex items-center justify-between gap-3 px-1">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-white">Options Performance</h1>
+            <p className="mt-0.5 text-xs text-stealth-400">Decision windows, scanner evidence, and portfolio learning</p>
+          </div>
+          <div className="relative flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={openAddTrade}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white active:bg-emerald-600"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" /> Add
+            </button>
+            <button
+              type="button"
+              aria-label="Open position actions"
+              aria-expanded={mobileActionsOpen}
+              onClick={() => setMobileActionsOpen((current) => !current)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-stealth-600 bg-stealth-900/70 text-stealth-200"
+            >
+              <MoreVertical className="h-5 w-5" aria-hidden="true" />
+            </button>
+            {mobileActionsOpen ? (
+              <div className="absolute right-0 top-12 z-40 w-56 overflow-hidden rounded-xl border border-stealth-700 bg-stealth-950 p-1.5 shadow-2xl">
+                <button type="button" onClick={() => { void refreshPositionList(); setMobileActionsOpen(false); }} disabled={listRefreshPending} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-stealth-200 disabled:opacity-50">
+                  <RefreshCw className={`h-4 w-4 ${listRefreshPending ? "animate-spin" : ""}`} aria-hidden="true" /> {listRefreshPending ? "Refreshing list" : "Refresh list"}
+                </button>
+                <button type="button" onClick={openProfitLossHistory} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-stealth-200">
+                  <History className="h-4 w-4" aria-hidden="true" /> P/L history
+                </button>
+                <button type="button" onClick={() => { setShowRowActions((current) => !current); setMobileActionsOpen(false); }} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-stealth-200">
+                  <Settings2 className="h-4 w-4" aria-hidden="true" /> {showRowActions ? "Done managing" : "Manage positions"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <nav className="sticky top-16 z-30 grid grid-cols-3 rounded-xl border border-stealth-700/80 bg-stealth-950/95 p-1 shadow-lg backdrop-blur" aria-label="Options workspaces">
+          {(["positions", "scanner", "insights"] as MobileOptionsWorkspace[]).map((workspace) => (
+            <button
+              key={workspace}
+              type="button"
+              onClick={() => setMobileWorkspace(workspace)}
+              aria-current={mobileWorkspace === workspace ? "page" : undefined}
+              className={`min-h-11 rounded-lg px-2 text-sm font-semibold capitalize transition ${mobileWorkspace === workspace ? "bg-sky-500/15 text-sky-100 shadow-inner" : "text-stealth-400"}`}
+            >
+              {workspace}
+            </button>
+          ))}
+        </nav>
+
+        {mobileWorkspace === "positions" ? (
+          <div className="space-y-3">
+            <section className="surface-card-strong p-3" aria-labelledby="mobile-position-summary">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 id="mobile-position-summary" className="text-base font-semibold text-stealth-100">Position summary</h2>
+                  <div className="mt-1 text-xs text-stealth-400 tabular-nums">
+                    P/L <span className={totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"}>{formatCurrency(totals.totalPnl, 0)}</span>
+                    <span className="mx-1.5 text-stealth-700">·</span>Cost {formatCurrency(totals.totalCost, 0)}
+                    <span className="mx-1.5 text-stealth-700">·</span>Linked {openAttribution.linked}/{openAttribution.total}
+                  </div>
+                </div>
+                <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-1 text-[10px] uppercase tracking-wide text-stealth-400">{totals.count} open</span>
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-1.5">
+                {[
+                  { label: "Review", value: reviewSoonCount, filter: "attention" as PositionFilter, tone: "text-yellow-200" },
+                  { label: "Overdue", value: evaluationSummary.overdue, filter: "overdue" as PositionFilter, tone: "text-rose-200" },
+                  { label: "Losing", value: filterCounts.losing, filter: "losing" as PositionFilter, tone: "text-rose-200" },
+                  { label: "Low conf", value: filterCounts.lowConfidence, filter: "lowConfidence" as PositionFilter, tone: "text-stealth-200" },
+                ].map((metric) => (
+                  <button key={metric.label} type="button" onClick={() => toggleFilter(metric.filter)} aria-pressed={positionFilter === metric.filter} className={`min-h-14 rounded-lg border px-1.5 py-2 text-center ${positionFilter === metric.filter ? "border-sky-400/55 bg-sky-500/10" : "border-stealth-800 bg-stealth-950/30"}`}>
+                    <span className={`block text-lg font-semibold tabular-nums ${metric.tone}`}>{metric.value}</span>
+                    <span className="block text-[10px] text-stealth-500">{metric.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" aria-label="Position filters">
+              {[
+                ["all", "All"], ["attention", "Review soon"], ["losing", "Losing"], ["lowConfidence", "Low confidence"],
+              ].map(([filter, label]) => (
+                <button key={filter} type="button" onClick={() => setPositionFilter(filter as PositionFilter)} className={`min-h-10 shrink-0 rounded-full border px-3 text-xs font-semibold ${positionFilter === filter ? "border-sky-400/55 bg-sky-500/15 text-sky-100" : "border-stealth-700 bg-stealth-900/60 text-stealth-400"}`}>{label}</button>
+              ))}
+            </div>
+
+            {loading && positions.length === 0 ? (
+              <div className="surface-card-strong p-6 text-center text-sm text-stealth-400">Loading positions…</div>
+            ) : filteredPositions.length === 0 ? (
+              <div className="surface-card-strong p-6 text-center text-sm text-stealth-400">No positions match this filter.</div>
+            ) : (
+              <>
+                {mobileNeedsAttention.length > 0 ? (
+                  <section aria-labelledby="mobile-needs-attention" className="space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                      <h2 id="mobile-needs-attention" className="text-sm font-semibold text-stealth-100">Needs attention</h2>
+                      <span className="text-xs text-stealth-500">{mobileNeedsAttention.length}</span>
+                    </div>
+                    {mobileNeedsAttention.map(mobilePositionCard)}
+                  </section>
+                ) : null}
+                {mobileMonitoring.length > 0 ? (
+                  <section aria-labelledby="mobile-monitoring" className="space-y-2">
+                    <button type="button" onClick={() => setMobileMonitoringOpen((current) => !current)} aria-expanded={mobileMonitoringOpen || mobileNeedsAttention.length === 0 || positionFilter !== "all"} className="flex min-h-11 w-full items-center justify-between px-1 text-left">
+                      <span id="mobile-monitoring" className="text-sm font-semibold text-stealth-100">Monitoring <span className="font-normal text-stealth-500">{mobileMonitoring.length}</span></span>
+                      <ChevronDown className={`h-4 w-4 text-stealth-400 transition-transform ${(mobileMonitoringOpen || mobileNeedsAttention.length === 0 || positionFilter !== "all") ? "rotate-180" : ""}`} aria-hidden="true" />
+                    </button>
+                    {(mobileMonitoringOpen || mobileNeedsAttention.length === 0 || positionFilter !== "all") ? mobileMonitoring.map(mobilePositionCard) : (
+                      <div className="rounded-xl border border-dashed border-stealth-700 px-3 py-3 text-xs text-stealth-500">Calm positions are collapsed to keep urgent reviews first.</div>
+                    )}
+                  </section>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {mobileWorkspace === "scanner" ? (
+          <div className="space-y-3">
+            <section className="surface-card-strong p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div><h2 className="text-base font-semibold text-stealth-100">Scanner workspace</h2><p className="mt-0.5 text-xs text-stealth-400">Run a sweep, then inspect its evidence.</p></div>
+                <button type="button" onClick={handleRunScanner} disabled={scannerRunning || Boolean(activeScannerRun)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white disabled:bg-stealth-700 disabled:text-stealth-400"><Play className="h-4 w-4" aria-hidden="true" />{activeScannerRun ? "Running" : "Run"}</button>
+              </div>
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+                <select value={scannerUniverse} onChange={(event) => setScannerUniverse(event.target.value)} disabled={scannerRunning || Boolean(activeScannerRun)} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100">{scannerUniverses.map((universe) => <option key={universe.key} value={universe.key}>{universe.label}</option>)}</select>
+                <input type="number" min="1" max="99" step="1" value={scannerThreshold} onChange={(event) => setScannerThreshold(event.target.value)} disabled={scannerRunning || Boolean(activeScannerRun)} aria-label="IV percentile threshold" className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100" />
+              </div>
+              {scannerError ? <div className="mt-2 rounded-lg border border-rose-500/35 bg-rose-500/10 p-2 text-xs text-rose-100">{scannerError}</div> : null}
+              {scannerNotice ? <div className="mt-2 rounded-lg border border-sky-500/30 bg-sky-500/10 p-2 text-xs text-sky-100">{scannerNotice}</div> : null}
+            </section>
+
+            {activeScannerRun ? (
+              <section className="sticky top-[7.75rem] z-20 rounded-xl border border-sky-500/35 bg-stealth-950/95 p-3 shadow-xl backdrop-blur">
+                <div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold text-sky-100">{activeScannerRun.universe_label}</span><span className="text-stealth-300 tabular-nums">{activeScannerRun.scanned_symbols}/{activeScannerRun.total_symbols}</span></div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stealth-800"><div className="h-full rounded-full bg-sky-300 transition-[width]" style={{ width: `${Math.max(3, activeScannerRun.total_symbols > 0 ? activeScannerRun.scanned_symbols / activeScannerRun.total_symbols * 100 : 0)}%` }} /></div>
+                <button type="button" onClick={handleStopScanner} disabled={scannerStopping} className="mt-2 text-xs font-semibold text-rose-200">{scannerStopping ? "Stopping…" : "Stop scan"}</button>
+              </section>
+            ) : null}
+
+            <div className="grid grid-cols-4 rounded-xl border border-stealth-700 bg-stealth-950/70 p-1" role="tablist" aria-label="Scanner views">
+              {(["history", "hits", "repeated", "earnings"] as MobileScannerView[]).map((view) => <button key={view} type="button" role="tab" aria-selected={mobileScannerView === view} onClick={() => setMobileScannerView(view)} className={`min-h-10 rounded-lg px-1 text-[11px] font-semibold capitalize ${mobileScannerView === view ? "bg-sky-500/15 text-sky-100" : "text-stealth-500"}`}>{view}</button>)}
+            </div>
+
+            <section className="surface-card-strong p-3">
+              {mobileScannerView === "history" ? (
+                <div className="space-y-2">{recentScannerRuns.length === 0 ? <p className="text-sm text-stealth-400">No scanner runs yet.</p> : recentScannerRuns.slice(0, 8).map((run) => <button key={run.id} type="button" onClick={() => void handleSelectScannerRun(run.id)} className={`w-full rounded-lg border p-3 text-left ${selectedScannerRunId === run.id ? "border-sky-500/40 bg-sky-500/10" : "border-stealth-800 bg-stealth-950/30"}`}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-stealth-100">{run.universe_label}</span><span className={`rounded-full border px-2 py-0.5 text-[10px] ${scannerStatusClass(run.status)}`}>{run.status}</span></div><div className="mt-1 flex justify-between text-xs text-stealth-500"><span>{formatRelativeTime(run.started_at)}</span><span>{run.hits} hits · {run.scanned_symbols} scanned</span></div></button>)}</div>
+              ) : null}
+              {mobileScannerView === "hits" ? (
+                <div className="space-y-2">{loadingScannerRunDetail ? <p className="text-sm text-stealth-400">Loading scan hits…</p> : selectedScannerHits.length === 0 ? <p className="text-sm text-stealth-400">Select a completed run to inspect its hits.</p> : selectedScannerHits.map((hit) => { const contract = hit.selected_contract; const match = presentScannerPositionMatch(hit.position_match); return <button key={hit.event_id} type="button" onClick={() => setExpandedScannerHitId(hit.event_id)} className="w-full rounded-lg border border-stealth-800 bg-stealth-950/30 p-3 text-left"><div className="flex items-start justify-between gap-2"><div><span className="text-base font-semibold text-sky-100">{hit.symbol}</span><p className="mt-0.5 text-xs text-stealth-400">{contract.option_type?.toUpperCase() ?? "Option"} {contract.strike !== null ? formatNumber(contract.strike, 2) : "pending"} · {hit.group}</p></div><span className={`rounded border px-2 py-1 text-xs font-semibold ${opportunityScoreClass(hit.score)}`}>{hit.grade ?? hit.score.toFixed(0)}</span></div>{match ? <div className={`mt-2 rounded-md border px-2 py-1 text-xs ${scannerPositionMatchBadgeClass[match.tone]}`}>{match.badgeLabel} · {match.classificationLabel}</div> : null}</button>; })}</div>
+              ) : null}
+              {mobileScannerView === "repeated" ? (
+                <div className="space-y-2">{topScannerSymbols.length === 0 ? <p className="text-sm text-stealth-400">No repeat evidence in the current lookback.</p> : topScannerSymbols.slice(0, 10).map((symbol) => <div key={symbol.symbol} className="flex items-center justify-between border-b border-stealth-800 py-2 last:border-0"><div><div className="font-semibold text-stealth-100">{symbol.symbol}</div><div className="text-xs text-stealth-500">{symbol.group} · {formatRelativeTime(symbol.latest_triggered_at)}</div></div><div className="text-right"><div className="text-sm font-semibold text-stealth-100">{symbol.hits} hits</div><div className="text-xs text-emerald-300">+{symbol.recent_hits} recent</div></div></div>)}</div>
+              ) : null}
+              {mobileScannerView === "earnings" ? (
+                <div className="space-y-2">{mobileEarningsRuns.length === 0 ? <p className="text-sm leading-relaxed text-stealth-400">No earnings-window scanner run is available in the recent history.</p> : mobileEarningsRuns.map((run) => <button key={run.id} type="button" onClick={() => void handleSelectScannerRun(run.id)} className="w-full rounded-lg border border-stealth-800 bg-stealth-950/30 p-3 text-left"><div className="font-semibold text-stealth-100">{run.universe_label}</div><div className="mt-1 text-xs text-stealth-500">{run.hits} hits · {formatRelativeTime(run.started_at)}</div></button>)}</div>
+              ) : null}
+            </section>
+          </div>
+        ) : null}
+
+        {mobileWorkspace === "insights" ? (
+          <div className="space-y-3">
+            <section className="surface-card-strong p-3">
+              <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold text-stealth-100">Optionality clusters</h2><p className="mt-0.5 text-xs text-stealth-400">Where repeat scanner evidence is concentrating.</p></div><button type="button" onClick={() => void loadOptionalityClusters()} className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-stealth-700 text-stealth-300" aria-label="Refresh optionality clusters"><RefreshCw className="h-4 w-4" aria-hidden="true" /></button></div>
+              <div className="mt-3 space-y-1">{visibleOptionalityClusters.length === 0 ? <p className="py-3 text-sm text-stealth-400">No classified clusters in the current lookback.</p> : visibleOptionalityClusters.slice(0, mobileClustersExpanded ? visibleOptionalityClusters.length : 4).map((cluster) => <div key={cluster.group} className="flex items-center justify-between gap-3 border-b border-stealth-800 py-3 last:border-0"><div className="min-w-0"><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-300" /><span className="truncate font-semibold text-stealth-100">{cluster.group}</span><span className={`text-xs ${clusterMomentumClass(cluster.momentum)}`}>{cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}</span></div><div className="mt-1 truncate text-xs text-stealth-500">{cluster.symbols.slice(0, 6).join(" ")}</div></div><div className="shrink-0 text-right"><div className="text-sm font-semibold text-stealth-100">{cluster.hits} hits</div><div className="text-xs text-stealth-500">IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}</div></div></div>)}</div>
+              {visibleOptionalityClusters.length > 4 ? <button type="button" onClick={() => setMobileClustersExpanded((current) => !current)} className="mt-2 min-h-11 w-full rounded-lg border border-stealth-700 text-sm font-semibold text-stealth-200">{mobileClustersExpanded ? "Show less" : `View all ${visibleOptionalityClusters.length}`}</button> : null}
+            </section>
+            <section className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{scannerData?.summary.symbol_count ?? 0}</span><span className="mt-1 block text-[10px] text-stealth-500">Symbols / 45d</span></div>
+              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{learningSummary?.sample.actual_closed_trades ?? 0}</span><span className="mt-1 block text-[10px] text-stealth-500">Closed lessons</span></div>
+              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{learningSummary?.promotion_readiness.remaining_cycles ?? "—"}</span><span className="mt-1 block text-[10px] text-stealth-500">Cycles needed</span></div>
+            </section>
+          </div>
+        ) : null}
+      </div>
+      ) : null}
+
+      {(!isMobileWorkflow || mobileInspectorOpen) ? (
       <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_440px]">
+        {!isMobileWorkflow ? (
         <section className="min-w-0 space-y-3">
       <div className="surface-card-strong p-3">
         <span className="sr-only" role="status" aria-live="polite">
@@ -5036,10 +5482,21 @@ export default function SecretOptions() {
       </div>
 
         </section>
+        ) : null}
 
-        <aside className="min-w-0 space-y-3 xl:sticky xl:top-4">
-      <div className="surface-card-strong max-h-none overflow-y-visible p-2.5 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-        <div className="mb-2 flex items-start justify-between gap-2">
+        <aside className={`${mobileInspectorOpen ? "fixed inset-0 z-[70] block overflow-y-auto bg-stealth-950 pb-[calc(5.5rem+env(safe-area-inset-bottom))]" : "hidden"} min-w-0 xl:sticky xl:top-4 xl:z-auto xl:block xl:space-y-3 xl:overflow-visible xl:bg-transparent xl:pb-0`}>
+      <div className="surface-card-strong min-h-[100dvh] max-h-none overflow-y-visible rounded-none border-0 p-3 xl:min-h-0 xl:rounded-xl xl:border xl:p-2.5 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+        <div className="sticky top-0 z-20 -mx-3 -mt-3 mb-3 flex min-h-16 items-center gap-3 border-b border-stealth-800 bg-stealth-950/95 px-3 py-2 backdrop-blur xl:hidden">
+          <button ref={mobileInspectorBackRef} type="button" onClick={closeMobileInspector} aria-label="Back to positions" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-stealth-700 text-stealth-200">
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-base font-semibold text-stealth-100">{selected?.position.symbol ?? "Position"} decision</div>
+            {selected ? <div className="truncate text-xs text-stealth-400">{selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)} · {selected.metrics.dte ?? "—"} DTE</div> : null}
+          </div>
+          {selected ? <div className={`shrink-0 text-sm font-semibold tabular-nums ${(selected.metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{selected.metrics.pnl?.dollar !== null && selected.metrics.pnl?.dollar !== undefined ? formatCurrency(selected.metrics.pnl.dollar, 0) : "—"}</div> : null}
+        </div>
+        <div className="mb-2 hidden items-start justify-between gap-2 xl:flex">
           <div>
             <h2 className="text-sm font-semibold text-stealth-100">Position inspector</h2>
             {selected ? (
@@ -5116,7 +5573,7 @@ export default function SecretOptions() {
                 disabled={confirmingDecisionReview || loadingThesisAssessment || !selectedThesisAssessment?.assessment || selectedAssessmentConfirmed}
                 onClick={confirmAutomaticAssessment}
                 title="Append the current automatic grade to the decision journal. No order is submitted."
-                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-emerald-600/55 bg-emerald-900/35 px-2 py-1.5 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-800/45 disabled:opacity-50"
+                className="hidden min-h-9 items-center justify-center gap-1.5 rounded-md border border-emerald-600/55 bg-emerald-900/35 px-2 py-1.5 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-800/45 disabled:opacity-50 xl:inline-flex"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                 {confirmingDecisionReview ? "Confirming..." : selectedAssessmentConfirmed ? "Grade confirmed" : "Confirm grade"}
@@ -5124,7 +5581,7 @@ export default function SecretOptions() {
               <button
                 type="button"
                 onClick={() => openDecisionReviewModal(selected.position, "override")}
-                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-sky-600/55 bg-sky-900/35 px-2 py-1.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-800/55"
+                className="hidden min-h-9 items-center justify-center gap-1.5 rounded-md border border-sky-600/55 bg-sky-900/35 px-2 py-1.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-800/55 xl:inline-flex"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
                 Override decision
@@ -5780,9 +6237,16 @@ export default function SecretOptions() {
         )}
 
       </div>
-      {optionalityClustersCard}
+      {selected ? (
+        <div className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 gap-2 border-t border-stealth-700 bg-stealth-950/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur xl:hidden">
+          <button type="button" disabled={confirmingDecisionReview || loadingThesisAssessment || !selectedThesisAssessment?.assessment || selectedAssessmentConfirmed} onClick={confirmAutomaticAssessment} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-emerald-600/55 bg-emerald-900/40 px-2 text-sm font-semibold text-emerald-100 disabled:opacity-50"><CheckCircle2 className="h-4 w-4" aria-hidden="true" />{confirmingDecisionReview ? "Confirming…" : selectedAssessmentConfirmed ? "Confirmed" : "Confirm grade"}</button>
+          <button type="button" onClick={() => openDecisionReviewModal(selected.position, "override")} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-sky-600/55 bg-sky-900/40 px-2 text-sm font-semibold text-sky-100"><SlidersHorizontal className="h-4 w-4" aria-hidden="true" />Override</button>
+        </div>
+      ) : null}
+      {!isMobileWorkflow ? <div>{optionalityClustersCard}</div> : null}
         </aside>
       </div>
+      ) : null}
 
       {selectedScannerHit && renderModal(
         <div

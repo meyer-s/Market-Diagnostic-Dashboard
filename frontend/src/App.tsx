@@ -7,6 +7,7 @@ import { AppRoutes, getAnalyticsNameForPath } from "./routes/registry";
 
 function AppWithAnalytics() {
   const location = useLocation();
+  const hideOptionsWorkflowFooter = location.pathname === "/secret/options";
 
   useEffect(() => {
     trackPageView(
@@ -23,7 +24,9 @@ function AppWithAnalytics() {
         <AppRoutes />
       </main>
 
-      <Footer />
+      <div className={hideOptionsWorkflowFooter ? "hidden xl:block" : undefined}>
+        <Footer />
+      </div>
     </div>
   );
 }
