@@ -3522,6 +3522,9 @@ export default function SecretOptions() {
     ? "md:grid-cols-[170px_minmax(280px,1fr)_150px_64px]"
     : "md:grid-cols-[170px_minmax(280px,1fr)_150px]";
   const positionTableWidth = showRowActions ? "md:min-w-[770px]" : "md:min-w-[700px]";
+  // Mobile keeps the compact two-column scan pattern, but gives the timeline
+  // most of the row. The wider identity track returns at sm and desktop.
+  const positionMobileGrid = "grid-cols-[120px_minmax(0,1fr)] sm:grid-cols-[155px_minmax(0,1fr)]";
 
   const greekSummary = useMemo(() => {
     const greeks = greeksData?.current_greeks ?? selected?.metrics.greeks ?? null;
@@ -4451,7 +4454,7 @@ export default function SecretOptions() {
         ) : (
           <div className="max-h-[68vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
             <div
-              className={`sticky top-0 z-10 grid min-w-0 grid-cols-[155px_minmax(0,1fr)] items-center gap-2 border-b border-gray-700 bg-stealth-900/95 px-2 py-2 text-[10px] uppercase text-gray-500 backdrop-blur ${positionTableWidth} ${positionGridColumns}`}
+              className={`sticky top-0 z-10 grid min-w-0 items-center gap-1.5 border-b border-gray-700 bg-stealth-900/95 px-1.5 py-2 text-[10px] uppercase text-gray-500 backdrop-blur sm:gap-2 sm:px-2 ${positionMobileGrid} ${positionTableWidth} ${positionGridColumns}`}
             >
               <button
                 type="button"
@@ -4509,7 +4512,7 @@ export default function SecretOptions() {
                 return (
                   <Fragment key={position.id}>
                     <div
-                      className={`relative grid cursor-pointer grid-cols-[155px_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 transition-colors ${positionGridColumns} ${
+                      className={`relative grid cursor-pointer items-center gap-1.5 px-1.5 py-1.5 transition-colors sm:gap-2 sm:px-2 ${positionMobileGrid} ${positionGridColumns} ${
                         rowActive
                           ? "bg-sky-500/12 shadow-[inset_3px_0_0_rgba(125,211,252,0.9)] ring-1 ring-inset ring-sky-400/25"
                           : `${heat.rowTint} hover:bg-gray-900/40`
