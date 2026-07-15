@@ -22,6 +22,7 @@ from app.services.options_alerts import (
 from app.models.options_alerts import OptionAlertEvent
 from app.services.market_data.factory import get_market_data_provider
 from app.services.options_opportunity import opportunity_event_fields
+from app.services.scanner_repeat_evidence import record_scanner_recurrence_events
 from app.services.options_alerts import _send_webhook, _get_current_price
 from app.utils.db_helpers import get_db_session
 
@@ -289,8 +290,7 @@ def _scan_tickers(
                 f"channel={channel or 'n/a'} error={error or 'unknown'}"
             )
         with get_db_session() as db:
-            db.add(
-                OptionAlertEvent(
+            event = OptionAlertEvent(
                     symbol=symbol,
                     iv30=iv30,
                     hv30=metrics.get("hv30"),
@@ -313,7 +313,9 @@ def _scan_tickers(
                         selected_contract=selected_contract,
                     ),
                 )
-            )
+            db.add(event)
+            db.flush()
+            record_scanner_recurrence_events(db, event)
             db.commit()
         hits += 1
         hit_symbols.append(symbol)

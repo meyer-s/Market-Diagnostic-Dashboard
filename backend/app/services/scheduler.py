@@ -14,6 +14,10 @@ from app.services.ingestion.etl_runner import ETLRunner
 from app.services.market_context.agriculture_adapters import refresh_agriculture_report_caches
 from app.services.options_alerts import run_options_alert_scan
 from app.services.option_trade_reminders import send_due_trade_sell_reminders
+from app.services.option_decision_jobs import (
+    refresh_due_option_assessments,
+    update_option_learning_outcomes,
+)
 from app.services.market_diagnostic_runner import run_market_diagnostic
 from app.services.sector_projection import (
     compute_sector_projections,
@@ -241,6 +245,30 @@ def scheduled_option_trade_reminders_job():
         logger.error("Option trade sell reminder job failed: %s", exc, exc_info=True)
 
 
+def scheduled_option_thesis_assessment_job():
+    """Refresh due option decision grades without creating orders."""
+    try:
+        with scheduler_job_lock("option_thesis_assessments") as acquired:
+            if not acquired:
+                return
+            stats = refresh_due_option_assessments()
+            logger.info("Option thesis assessment job completed: %s", stats)
+    except Exception as exc:
+        logger.error("Option thesis assessment job failed: %s", exc, exc_info=True)
+
+
+def scheduled_option_learning_job():
+    """Mature decision horizons and classify newly closed option trades."""
+    try:
+        with scheduler_job_lock("option_decision_learning") as acquired:
+            if not acquired:
+                return
+            stats = update_option_learning_outcomes()
+            logger.info("Option decision learning job completed: %s", stats)
+    except Exception as exc:
+        logger.error("Option decision learning job failed: %s", exc, exc_info=True)
+
+
 def start_scheduler():
     """
     Initialize and start the background scheduler.
@@ -310,6 +338,34 @@ def start_scheduler():
             ),
             id="option_trade_sell_reminders",
             name="Option Trade Sell Reminders",
+            replace_existing=True,
+        )
+
+    if scheduler.get_job("option_thesis_assessments") is None:
+        scheduler.add_job(
+            scheduled_option_thesis_assessment_job,
+            CronTrigger(
+                day_of_week="mon-fri",
+                hour="10,13,16",
+                minute=20,
+                timezone="America/New_York",
+            ),
+            id="option_thesis_assessments",
+            name="Automatic Option Thesis Assessments",
+            replace_existing=True,
+        )
+
+    if scheduler.get_job("option_decision_learning") is None:
+        scheduler.add_job(
+            scheduled_option_learning_job,
+            CronTrigger(
+                day_of_week="mon-fri",
+                hour=18,
+                minute=10,
+                timezone="America/New_York",
+            ),
+            id="option_decision_learning",
+            name="Option Decision Outcome Learning",
             replace_existing=True,
         )
 

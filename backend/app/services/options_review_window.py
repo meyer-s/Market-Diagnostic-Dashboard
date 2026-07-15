@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, timedelta
 from math import isfinite
 from typing import Optional
 
@@ -18,6 +19,17 @@ class ReviewWindow:
     basis: str
 
 
+@dataclass(frozen=True)
+class DecisionWindow:
+    next_review_date: Optional[date]
+    decision_deadline: date
+    next_review_sessions: int
+    max_hold_sessions: int
+    original_min_hold_days: int
+    original_max_hold_days: int
+    basis: str
+
+
 def _finite_float(value: object) -> Optional[float]:
     try:
         result = float(value)  # type: ignore[arg-type]
@@ -28,6 +40,28 @@ def _finite_float(value: object) -> Optional[float]:
 
 def _clamp_int(value: float, low: int, high: int) -> int:
     return max(low, min(high, int(round(value))))
+
+
+def _add_weekdays(anchor: date, sessions: int) -> date:
+    cursor = anchor
+    remaining = max(0, int(sessions))
+    while remaining:
+        cursor += timedelta(days=1)
+        if cursor.weekday() < 5:
+            remaining -= 1
+    return cursor
+
+
+def _available_weekdays(anchor: date, through: date) -> int:
+    if through <= anchor:
+        return 0
+    sessions = 0
+    cursor = anchor
+    while cursor < through:
+        cursor += timedelta(days=1)
+        if cursor.weekday() < 5 and cursor <= through:
+            sessions += 1
+    return sessions
 
 
 def compute_review_window(
@@ -90,6 +124,105 @@ def compute_review_window(
         f"trend {trend:.1f}%, speed {speed_score:.1f}"
     )
     return ReviewWindow(min_hold_days=min_hold, max_hold_days=max_hold, basis=basis)
+
+
+def compute_decision_window(
+    *,
+    as_of: date,
+    expiration: date,
+    initial_window: ReviewWindow,
+    verdict: str,
+    urgency: str,
+    contract_status: str,
+) -> DecisionWindow:
+    """Rebase the entry window into an actionable, decision-aware hold window.
+
+    The original scanner window is the ceiling. Current decision risk may only
+    shorten it, never extend it. The deadline is the maximum recommended hold
+    for the exact contract; the next review is an earlier process checkpoint.
+    """
+
+    original_max = max(1, int(initial_window.max_hold_days or 1))
+    original_min = max(1, min(original_max, int(initial_window.min_hold_days or 1)))
+    normalized_verdict = str(verdict or "manual_review").lower()
+    normalized_urgency = str(urgency or "medium").lower()
+    normalized_contract = str(contract_status or "marginal").lower()
+
+    if normalized_verdict in {"close", "replacement_candidate"} or expiration <= as_of:
+        reason = "close decision" if expiration > as_of else "contract expired"
+        return DecisionWindow(
+            next_review_date=None,
+            decision_deadline=as_of,
+            next_review_sessions=0,
+            max_hold_sessions=0,
+            original_min_hold_days=original_min,
+            original_max_hold_days=original_max,
+            basis=(
+                f"Initial {original_min}-{original_max} session window ({initial_window.basis}); "
+                f"{reason} reduces maximum recommended hold to today."
+            ),
+        )
+
+    buffered_stop = expiration - timedelta(days=14)
+    hard_stop = buffered_stop if buffered_stop > as_of else expiration - timedelta(days=1)
+    available_sessions = _available_weekdays(as_of, hard_stop)
+    if available_sessions <= 0:
+        available_sessions = max(1, _available_weekdays(as_of, expiration))
+
+    decision_caps = {
+        "reduce": 3,
+        "manual_review": 2,
+        "conditional_hold": 5,
+    }
+    urgency_caps = {"critical": 2, "high": 3, "medium": 5}
+    contract_caps = {"nonviable": 1, "marginal": 5}
+
+    max_hold = min(
+        original_max,
+        available_sessions,
+        decision_caps.get(normalized_verdict, original_max),
+        urgency_caps.get(normalized_urgency, original_max),
+        contract_caps.get(normalized_contract, original_max),
+    )
+    max_hold = max(1, max_hold)
+
+    review_cap = original_min
+    if normalized_verdict in {"reduce", "manual_review"}:
+        review_cap = 1
+    elif normalized_verdict == "conditional_hold":
+        review_cap = min(review_cap, 2)
+    if normalized_urgency in {"critical", "high"}:
+        review_cap = 1
+    elif normalized_urgency == "medium":
+        review_cap = min(review_cap, 2)
+    if normalized_contract == "nonviable":
+        review_cap = 1
+
+    next_review_sessions = max(1, min(original_min, review_cap, max_hold))
+    deadline = min(_add_weekdays(as_of, max_hold), expiration)
+    next_review = min(_add_weekdays(as_of, next_review_sessions), deadline)
+    modifiers = ", ".join(
+        item
+        for item in (
+            normalized_verdict.replace("_", " "),
+            f"{normalized_urgency} urgency",
+            f"{normalized_contract} contract",
+            "14-day expiry buffer" if buffered_stop > as_of else "expiry hard stop",
+        )
+        if item
+    )
+    return DecisionWindow(
+        next_review_date=next_review,
+        decision_deadline=deadline,
+        next_review_sessions=next_review_sessions,
+        max_hold_sessions=max_hold,
+        original_min_hold_days=original_min,
+        original_max_hold_days=original_max,
+        basis=(
+            f"Initial {original_min}-{original_max} session window ({initial_window.basis}); "
+            f"rebased from {as_of.isoformat()} and shortened by {modifiers}."
+        ),
+    )
 
 
 def parse_review_window(message: Optional[str]) -> Optional[ReviewWindow]:

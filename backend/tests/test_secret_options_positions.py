@@ -27,12 +27,25 @@ from app.api import secret_options
 from app.core.db import Base
 from app.models.closed_positions import ClosedPosition
 from app.models.option_training_outcomes import OptionTrainingOutcome
+from app.models.option_position_reviews import OptionPositionReview
+from app.models.option_decision_learning import (
+    OptionPositionEvent,
+    OptionPositionMandate,
+    OptionThesisAssessment,
+    OptionTradeOutcome,
+)
 from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
 from app.models.option_sweep_runs import OptionSweepRun
 from app.models.option_positions import OptionPosition
 from app.services import option_trade_reminders
 from app.services import option_sweep_runs
+from app.services.option_decision_learning import create_trade_outcome, learning_summary
+from app.services.scanner_repeat_evidence import (
+    load_scanner_repeat_evidence_context,
+    position_match_for_event,
+    record_scanner_recurrence_events,
+)
 from app.services.optionality_clusters import build_optionality_cluster_payload, classify_optionality_symbol
 
 
@@ -57,9 +70,30 @@ def _fake_db_session():
 def test_positions_endpoint_replaces_non_finite_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     app = FastAPI()
     app.include_router(secret_options.router)
+    with secret_options._POSITION_METRICS_CACHE_LOCK:
+        secret_options._POSITION_METRICS_CACHE.clear()
+    compute_count = 0
+    scheduled_refreshes = 0
+
+    def compute_metrics(_position, _provider=None):
+        nonlocal compute_count
+        compute_count += 1
+        return {
+            "market": {"current_price": float("nan")},
+            "volatility": float("inf"),
+            "greeks": {"delta": float("-inf")},
+        }
+
+    def schedule_refresh(_positions):
+        nonlocal scheduled_refreshes
+        if not _positions:
+            return False
+        scheduled_refreshes += 1
+        return True
 
     monkeypatch.setattr(secret_options, "get_db_session", _fake_db_session)
     monkeypatch.setattr(secret_options, "_seed_positions", lambda _db: None)
+    monkeypatch.setattr(secret_options, "_schedule_position_metrics_refresh", schedule_refresh)
     monkeypatch.setattr(
         secret_options,
         "_serialize_position",
@@ -75,20 +109,42 @@ def test_positions_endpoint_replaces_non_finite_metrics(monkeypatch: pytest.Monk
     monkeypatch.setattr(
         secret_options,
         "_compute_position_metrics",
-        lambda _position, _provider=None: {
-            "market": {"current_price": float("nan")},
-            "volatility": float("inf"),
-            "greeks": {"delta": float("-inf")},
-        },
+        compute_metrics,
     )
 
     response = TestClient(app).get("/secret/options/positions")
 
     assert response.status_code == 200
-    metrics = response.json()["positions"][0]["metrics"]
+    response_body = response.json()
+    metrics = response_body["positions"][0]["metrics"]
     assert metrics["market"]["current_price"] is None
     assert metrics["volatility"] is None
     assert metrics["greeks"]["delta"] is None
+    assert response_body["metrics_cache"]["status"] == "fresh"
+    assert compute_count == 1
+
+    forced_response = TestClient(app).get("/secret/options/positions?refresh=true")
+
+    assert forced_response.status_code == 200
+    assert forced_response.json()["metrics_cache"]["status"] == "stale"
+    assert forced_response.json()["metrics_cache"]["refresh_in_progress"] is True
+    assert compute_count == 1
+    assert scheduled_refreshes == 1
+
+    with secret_options._POSITION_METRICS_CACHE_LOCK:
+        cache_key = next(iter(secret_options._POSITION_METRICS_CACHE))
+        _cached_at, cached_metrics = secret_options._POSITION_METRICS_CACHE[cache_key]
+        secret_options._POSITION_METRICS_CACHE[cache_key] = (0.0, cached_metrics)
+
+    stale_response = TestClient(app).get("/secret/options/positions")
+
+    assert stale_response.status_code == 200
+    assert stale_response.json()["metrics_cache"]["status"] == "stale"
+    assert stale_response.json()["metrics_cache"]["refresh_in_progress"] is True
+    assert compute_count == 1
+    assert scheduled_refreshes == 2
+    with secret_options._POSITION_METRICS_CACHE_LOCK:
+        secret_options._POSITION_METRICS_CACHE.clear()
 
 
 def test_quote_payload_preserves_market_data_source() -> None:
@@ -224,6 +280,334 @@ def test_create_position_rejects_duplicate_resubmission(secret_options_client) -
     assert first.status_code == 200
     assert second.status_code == 409
     assert "Duplicate open position" in second.json()["detail"]
+
+
+def _decision_review_payload() -> dict[str, object]:
+    return {
+        "review_date": "2026-07-15",
+        "trade_role": "catalyst",
+        "original_thesis": "Earnings should reset the revenue outlook higher.",
+        "contract_thesis": "The August call should retain enough time after the event.",
+        "expected_path": "Hold the earnings gap and make a new high within five sessions.",
+        "catalyst": "Quarterly earnings",
+        "confirmation_condition": "Close above 82 within five sessions.",
+        "invalidation_condition": "Close below 76 or surrender the earnings gap.",
+        "risk_budget": 400.0,
+        "evidence_since_last": "The event passed; the gap is holding so far.",
+        "thesis_status": "intact",
+        "fresh_entry_answer": "yes_smaller",
+        "portfolio_fit": "Bullish exposure is already elevated.",
+        "verdict": "reduce",
+        "target_contracts": 1,
+        "quality": "yellow",
+        "urgency": "high",
+        "confidence": "medium",
+        "continuation_condition": "Keep one only while the gap holds.",
+        "next_review_date": "2026-07-17",
+        "decision_deadline": "2026-07-22",
+        "decision_notes": "Use a limit order for the reduction.",
+    }
+
+
+def test_decision_reviews_are_append_only_and_capture_market_snapshot(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_local = secret_options_client
+    created = client.post(
+        "/secret/options/positions",
+        json={**_position_payload(), "expiration": "2026-08-21"},
+    )
+    position_id = created.json()["position"]["id"]
+    monkeypatch.setattr(
+        secret_options,
+        "_compute_position_metrics",
+        lambda *_args, **_kwargs: {
+            "market": {"current_price": 79.5, "last_updated": "2026-07-15T15:30:00Z"},
+            "option_price": 1.1,
+            "quote": {"implied_volatility": 0.31, "quality": "live"},
+            "volatility": 0.3,
+            "dte": 2,
+            "greeks": {"delta": 0.45, "theta": -0.08},
+            "pnl": {"dollar": -50.0, "percent": -18.52},
+        },
+    )
+
+    first = client.post(
+        f"/secret/options/positions/{position_id}/decision-reviews",
+        json=_decision_review_payload(),
+    )
+    second_payload = {
+        **_decision_review_payload(),
+        "review_date": "2026-07-18",
+        "evidence_since_last": "The gap failed on the third session.",
+        "thesis_status": "weakened",
+        "fresh_entry_answer": "no_underlying_valid",
+        "verdict": "close",
+        "target_contracts": 0,
+        "quality": "red",
+        "urgency": "critical",
+        "next_review_date": None,
+        "decision_deadline": "2026-07-18",
+    }
+    second = client.post(
+        f"/secret/options/positions/{position_id}/decision-reviews",
+        json=second_payload,
+    )
+    history = client.get(f"/secret/options/positions/{position_id}/decision-reviews")
+    rail_windows = client.get("/secret/options/decision-review-windows")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert history.status_code == 200
+    assert rail_windows.status_code == 200
+    first_review = first.json()["review"]
+    second_review = second.json()["review"]
+    assert first_review["review_type"] == "mandate"
+    assert first_review["snapshot"]["remaining_capital"] == pytest.approx(220.0)
+    assert first_review["snapshot"]["market_data_as_of"] == "2026-07-15T15:30:00"
+    assert second_review["review_type"] == "reassessment"
+    assert second_review["supersedes_review_id"] == first_review["id"]
+    assert history.json()["review_count"] == 2
+    assert [row["review_sequence"] for row in history.json()["history"]] == [2, 1]
+    assert history.json()["latest_review"]["evidence_since_last"] == "The gap failed on the third session."
+    assert rail_windows.json()["window_count"] == 2
+    assert rail_windows.json()["windows_by_position"][str(position_id)] == [
+        {
+            "id": second_review["id"],
+            "position_id": position_id,
+            "review_sequence": 2,
+            "review_date": "2026-07-18",
+            "next_review_date": None,
+            "decision_deadline": "2026-07-18",
+        },
+        {
+            "id": first_review["id"],
+            "position_id": position_id,
+            "review_sequence": 1,
+            "review_date": "2026-07-15",
+            "next_review_date": "2026-07-17",
+            "decision_deadline": "2026-07-22",
+        },
+    ]
+    with session_local() as db:
+        assert db.query(OptionPositionReview).count() == 2
+
+
+def test_automatic_assessment_prefills_review_and_close_learning(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_local = secret_options_client
+    created = client.post("/secret/options/positions", json=_position_payload())
+    position_id = created.json()["position"]["id"]
+    metrics_compute_count = 0
+
+    def position_metrics(*_args, **_kwargs):
+        nonlocal metrics_compute_count
+        metrics_compute_count += 1
+        return {
+            "market": {
+                "current_price": 79.5,
+                "last_updated": "2026-07-15T15:30:00Z",
+                "data_source": "test",
+            },
+            "option_price": 1.1,
+            "quote": {
+                "bid": 1.0,
+                "ask": 1.2,
+                "spread_pct": 18.18,
+                "implied_volatility": 0.31,
+                "quality": "live",
+            },
+            "volatility": 0.3,
+            "dte": 30,
+            "greeks": {"delta": 0.45, "theta": -0.08},
+            "pnl": {"dollar": -50.0, "percent": -18.52},
+            "technical_snapshot": {
+                "price": 79.5,
+                "sma20": 78.0,
+                "sma50": 77.0,
+                "sma20_slope_pct": 1.0,
+                "rsi14": 55.0,
+                "macd_hist": 0.2,
+            },
+        }
+
+    monkeypatch.setattr(
+        secret_options,
+        "_compute_position_metrics",
+        position_metrics,
+    )
+
+    assessment_response = client.get(
+        f"/secret/options/positions/{position_id}/thesis-assessment"
+    )
+
+    assert assessment_response.status_code == 200
+    assessment_body = assessment_response.json()
+    assert assessment_body["automated_execution_enabled"] is False
+    assert assessment_body["assessment"]["proposed_verdict"] in {
+        "hold",
+        "conditional_hold",
+        "reduce",
+        "replacement_candidate",
+        "manual_review",
+    }
+    assert assessment_body["review_defaults"]["selected_assessment_id"] == assessment_body["assessment"]["id"]
+    assert assessment_body["mandate"]["threshold_origin"] == "system_draft"
+    assert assessment_body["suggested_window"]["decision_deadline"] >= date.today().isoformat()
+    if assessment_body["suggested_window"]["next_review_date"]:
+        assert assessment_body["suggested_window"]["next_review_date"] > date.today().isoformat()
+    assert assessment_body["suggested_window"]["decision_deadline"] in assessment_body["review_defaults"]["continuation_condition"]
+
+    cached_assessment_response = client.get(
+        f"/secret/options/positions/{position_id}/thesis-assessment"
+    )
+
+    assert cached_assessment_response.status_code == 200
+    assert cached_assessment_response.json()["assessment"]["id"] == assessment_body["assessment"]["id"]
+    assert metrics_compute_count == 1
+
+    review_response = client.post(
+        f"/secret/options/positions/{position_id}/decision-reviews",
+        json={
+            "review_date": "2026-07-15",
+            "selected_assessment_id": assessment_body["assessment"]["id"],
+            "threshold_approval_status": "approved",
+        },
+    )
+
+    assert review_response.status_code == 200
+    review_body = review_response.json()
+    assert review_body["review"]["decision_source"] == "human_confirmed_auto"
+    assert review_body["review"]["human_override"] == "none"
+    assert review_body["mandate"]["confirmation_status"] == "confirmed"
+    assert review_body["mandate"]["threshold_approval_status"] == "approved"
+    assert review_body["automated_execution_enabled"] is False
+
+    close_response = client.request(
+        "DELETE",
+        f"/secret/options/positions/{position_id}",
+        json={"exit_price": 1.25, "close_date": "2026-07-15", "notes": "test close"},
+    )
+
+    assert close_response.status_code == 200
+    close_body = close_response.json()
+    assert close_body["learning_outcome"]["source_position_id"] == position_id
+    closed_log = client.get("/secret/options/closed-positions?limit=10").json()
+    assert closed_log["closed_positions"][0]["learning_outcome"]["primary_lesson"]
+    lifecycle = client.get(f"/secret/options/positions/{position_id}/lifecycle-events").json()
+    assert {row["event_type"] for row in lifecycle["events"]} >= {"opened", "assessed", "reviewed", "closed"}
+    with session_local() as db:
+        assert db.query(OptionPositionMandate).count() == 2
+        assert db.query(OptionThesisAssessment).count() == 1
+        assert db.query(OptionTradeOutcome).count() == 1
+        assert db.query(OptionPositionEvent).count() >= 4
+
+
+def test_decision_review_status_keeps_review_date_and_deadline_separate(secret_options_client) -> None:
+    _client, session_local = secret_options_client
+    position = OptionPosition(
+        trade_date=date(2026, 6, 1),
+        contracts=2,
+        symbol="SYY",
+        expiration=date(2026, 8, 21),
+        strike=80.0,
+        option_type="call",
+        fill_price=1.35,
+        total_cost=270.0,
+    )
+    with session_local() as db:
+        db.add(position)
+        db.commit()
+        db.refresh(position)
+        review = OptionPositionReview(
+            position_id=position.id,
+            review_sequence=1,
+            review_date=date(2026, 7, 10),
+            review_type="mandate",
+            symbol="SYY",
+            expiration=position.expiration,
+            strike=position.strike,
+            option_type="call",
+            contracts_snapshot=2,
+            trade_role="trend",
+            original_thesis="Trend continuation.",
+            contract_thesis="Enough time for continuation.",
+            confirmation_condition="New high.",
+            invalidation_condition="Close below support.",
+            thesis_status="intact",
+            fresh_entry_answer="conditional",
+            verdict="conditional_hold",
+            target_contracts=2,
+            quality="yellow",
+            urgency="high",
+            confidence="medium",
+            next_review_date=date(2026, 7, 12),
+            decision_deadline=date(2026, 7, 20),
+            underlying_price_snapshot=79.5,
+            option_price_snapshot=1.1,
+        )
+
+    status = secret_options._position_review_status(review, position, today=date(2026, 7, 15))
+
+    assert status["window_status"] == "review_overdue"
+    assert status["review_due"] is True
+    assert status["decision_deadline_missed"] is False
+    assert "The active decision deadline has passed." not in status["addition_blockers"]
+
+
+def test_latest_decision_review_replaces_old_modeled_process_window(secret_options_client) -> None:
+    _client, session_local = secret_options_client
+    with session_local() as db:
+        position = OptionPosition(
+            trade_date=date(2026, 6, 1),
+            contracts=2,
+            symbol="SYY",
+            expiration=date(2026, 8, 21),
+            strike=80.0,
+            option_type="call",
+            fill_price=1.35,
+            total_cost=270.0,
+        )
+        db.add(position)
+        db.flush()
+        db.add(
+            OptionPositionReview(
+                position_id=position.id,
+                review_sequence=1,
+                review_date=date(2026, 7, 15),
+                review_type="mandate",
+                symbol="SYY",
+                expiration=position.expiration,
+                strike=position.strike,
+                option_type="call",
+                contracts_snapshot=2,
+                trade_role="trend",
+                thesis_status="intact",
+                fresh_entry_answer="conditional",
+                verdict="conditional_hold",
+                target_contracts=2,
+                quality="yellow",
+                urgency="high",
+                confidence="medium",
+                continuation_condition="Require a new high within five sessions.",
+                next_review_date=date(2026, 7, 20),
+                decision_deadline=date(2026, 7, 22),
+            )
+        )
+        db.commit()
+        db.refresh(position)
+
+        window = secret_options._position_evaluation_window(db, position)
+
+    assert window["evaluation_source"] == "decision_review"
+    assert window["evaluation_start_date"] == "2026-07-15"
+    assert window["evaluation_due_date"] == "2026-07-20"
+    assert window["evaluation_decision_deadline"] == "2026-07-22"
+    assert window["evaluation_hold_days"] == 5
+    assert window["evaluation_window_basis"] == "Require a new high within five sessions."
 
 
 def test_create_scanner_attributed_position_schedules_sell_reminder(
@@ -731,6 +1115,266 @@ def test_scanner_run_detail_returns_hits_for_selected_run(secret_options_client)
     assert [hit["symbol"] for hit in body["hits"]] == ["MGM", "HLT"]
     assert body["hits"][0]["selected_contract"]["reward_risk"] == 1.9
     assert body["hits"][0]["score"] >= body["hits"][1]["score"]
+
+
+def test_scanner_summary_adds_exact_held_contract_repeat_evidence_without_writing(secret_options_client) -> None:
+    client, session_local = secret_options_client
+    source_at = datetime.utcnow() - timedelta(days=5)
+    current_at = datetime.utcnow()
+    with session_local() as db:
+        source_event = OptionAlertEvent(
+            symbol="GIS",
+            triggered_at=source_at,
+            selected_expiry="2026-09-18",
+            selected_strike=40.0,
+            selected_option_type="CALL",
+            opportunity_score=61.0,
+            selected_contract_score=2.0,
+            selected_reward_risk=1.1,
+        )
+        db.add(source_event)
+        db.flush()
+        position = OptionPosition(
+            trade_date=source_at.date(),
+            account="test",
+            action="Buy to Open",
+            contracts=4,
+            symbol="GIS",
+            expiration=date(2026, 9, 18),
+            strike=40.0,
+            option_type="call",
+            fill_price=0.8,
+            total_cost=320.0,
+            source_event_id=source_event.id,
+        )
+        current_event = OptionAlertEvent(
+            symbol="GIS",
+            triggered_at=current_at,
+            selected_expiry="2026-09-18",
+            selected_strike=40.000001,
+            selected_option_type="call",
+            opportunity_score=70.0,
+            selected_contract_score=3.0,
+            selected_reward_risk=1.4,
+        )
+        db.add_all([position, current_event])
+        db.commit()
+        current_event_id = current_event.id
+        position_id = position.id
+
+    response = client.get("/secret/options/scanner-summary?lookback_days=21&run_limit=5")
+
+    assert response.status_code == 200
+    opportunity = next(
+        row for row in response.json()["ranked_opportunities"] if row["event_id"] == current_event_id
+    )
+    match = opportunity["position_match"]
+    assert match["match_type"] == "exact_contract"
+    assert match["classification"] == "strengthened"
+    assert match["position_id"] == position_id
+    assert match["held_contracts"] == 4
+    assert match["repeat_count"] == 1
+    assert match["previous_event_id"] is not None
+    assert match["deltas"]["base_score"] == 9.0
+    assert match["assessment_refresh_recommended"] is True
+    with session_local() as db:
+        assert db.query(OptionPositionEvent).filter(OptionPositionEvent.position_id == position_id).count() == 0
+
+
+def test_scanner_repeat_evidence_handles_missing_drift_opposite_direction_and_duplicate_lots(
+    secret_options_client,
+) -> None:
+    _client, session_local = secret_options_client
+    now = datetime.utcnow()
+    with session_local() as db:
+        db.add_all(
+            [
+                OptionPosition(
+                    trade_date=(now - timedelta(days=2)).date(),
+                    contracts=2,
+                    symbol="SJM",
+                    expiration=date(2026, 9, 18),
+                    strike=115.0,
+                    option_type="call",
+                    fill_price=2.0,
+                    total_cost=400.0,
+                ),
+                OptionPosition(
+                    trade_date=(now - timedelta(days=2)).date(),
+                    contracts=3,
+                    symbol="SJM",
+                    expiration=date(2026, 9, 18),
+                    strike=115.0,
+                    option_type="call",
+                    fill_price=2.1,
+                    total_cost=630.0,
+                ),
+            ]
+        )
+        missing = OptionAlertEvent(symbol="SJM", triggered_at=now, opportunity_score=55.0)
+        drift = OptionAlertEvent(
+            symbol="SJM",
+            triggered_at=now + timedelta(minutes=1),
+            selected_expiry="2026-10-16",
+            selected_strike=120.0,
+            selected_option_type="call",
+            opportunity_score=57.0,
+        )
+        opposite = OptionAlertEvent(
+            symbol="SJM",
+            triggered_at=now + timedelta(minutes=2),
+            selected_expiry="2026-09-18",
+            selected_strike=115.0,
+            selected_option_type="put",
+            opportunity_score=58.0,
+        )
+        exact = OptionAlertEvent(
+            symbol="SJM",
+            triggered_at=now + timedelta(minutes=3),
+            selected_expiry="2026-09-18",
+            selected_strike=115.0,
+            selected_option_type="call",
+            opportunity_score=60.0,
+        )
+        db.add_all([missing, drift, opposite, exact])
+        db.commit()
+        context = load_scanner_repeat_evidence_context(db, events=[missing, drift, opposite, exact])
+        missing_match = position_match_for_event(missing, context)
+        drift_match = position_match_for_event(drift, context)
+        opposite_match = position_match_for_event(opposite, context)
+        exact_match = position_match_for_event(exact, context)
+
+    assert missing_match["classification"] == "still_qualifies"
+    assert missing_match["contract_comparison_status"] == "unavailable"
+    assert drift_match["classification"] == "contract_drift"
+    assert opposite_match["classification"] == "contradiction"
+    assert exact_match["match_type"] == "exact_contract"
+    assert exact_match["held_contracts"] == 5
+    assert len(exact_match["position_ids"]) == 2
+
+
+def test_scanner_recurrence_journal_is_db_idempotent_and_counts_distinct_sweeps(secret_options_client) -> None:
+    _client, session_local = secret_options_client
+    now = datetime.utcnow()
+    with session_local() as db:
+        source = OptionAlertEvent(
+            symbol="KMI",
+            triggered_at=now - timedelta(days=3),
+            selected_expiry="2026-09-18",
+            selected_strike=34.0,
+            selected_option_type="call",
+            opportunity_score=55.0,
+        )
+        db.add(source)
+        db.flush()
+        source_id = source.id
+        position = OptionPosition(
+            trade_date=(now - timedelta(days=3)).date(),
+            contracts=3,
+            symbol="KMI",
+            expiration=date(2026, 9, 18),
+            strike=34.0,
+            option_type="call",
+            fill_price=0.5,
+            total_cost=150.0,
+            source_event_id=source.id,
+        )
+        first_same_sweep = OptionAlertEvent(
+            symbol="KMI",
+            triggered_at=now - timedelta(minutes=1),
+            sweep_run_id=77,
+            selected_expiry="2026-09-18",
+            selected_strike=34.0,
+            selected_option_type="call",
+            opportunity_score=60.0,
+        )
+        current = OptionAlertEvent(
+            symbol="KMI",
+            triggered_at=now,
+            sweep_run_id=77,
+            selected_expiry="2026-09-18",
+            selected_strike=34.0,
+            selected_option_type="call",
+            opportunity_score=62.0,
+        )
+        db.add_all([position, first_same_sweep, current])
+        db.flush()
+        context = load_scanner_repeat_evidence_context(db, events=[current])
+        match = position_match_for_event(current, context)
+        record_scanner_recurrence_events(db, current)
+        record_scanner_recurrence_events(db, current)
+        db.commit()
+        position_id = position.id
+        current_id = current.id
+
+    assert match["repeat_count"] == 1
+    assert match["previous_event_id"] == source_id
+    with session_local() as db:
+        rows = (
+            db.query(OptionPositionEvent)
+            .filter(
+                OptionPositionEvent.position_id == position_id,
+                OptionPositionEvent.related_alert_event_id == current_id,
+            )
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].quantity_before == rows[0].quantity_after == 3
+
+
+def test_closed_trade_learning_keeps_scanner_recurrence_as_actual_outcome_cohort(secret_options_client) -> None:
+    _client, session_local = secret_options_client
+    with session_local() as db:
+        position = OptionPosition(
+            trade_date=date(2026, 6, 1),
+            contracts=1,
+            symbol="PNC",
+            expiration=date(2026, 8, 21),
+            strike=260.0,
+            option_type="call",
+            fill_price=4.0,
+            total_cost=400.0,
+        )
+        db.add(position)
+        db.flush()
+        db.add(
+            OptionPositionEvent(
+                position_id=position.id,
+                event_type="scanner_recurrence",
+                event_at=datetime(2026, 6, 10),
+                source="scanner",
+                related_alert_event_id=991,
+                details_json='{"classification":"strengthened","scanner_event_id":991}',
+            )
+        )
+        closed = ClosedPosition(
+            source_position_id=position.id,
+            symbol="PNC",
+            option_type="call",
+            strike=260.0,
+            expiration=date(2026, 8, 21),
+            contracts=1,
+            trade_date=date(2026, 6, 1),
+            fill_price=4.0,
+            total_cost=400.0,
+            underlying_at_entry=250.0,
+            close_date=date(2026, 6, 20),
+            exit_price=5.0,
+            total_proceeds=500.0,
+            underlying_at_exit=255.0,
+            dollar_pnl=100.0,
+            percent_pnl=25.0,
+        )
+        db.add(closed)
+        db.flush()
+        outcome = create_trade_outcome(db, closed)
+        summary = learning_summary(db)
+        db.commit()
+
+    assert outcome is not None
+    assert summary["scanner_recurrence_outcomes"]["cohorts"]["strengthened_seen"]["sample_count"] == 1
+    assert summary["scanner_recurrence_outcomes"]["cohorts"]["strengthened_seen"]["average_percent_pnl"] == 25.0
+    assert summary["scanner_recurrence_outcomes"]["automatic_weight_changes"] is False
 
 
 def test_scanner_run_detail_uses_direct_sweep_run_id(secret_options_client) -> None:

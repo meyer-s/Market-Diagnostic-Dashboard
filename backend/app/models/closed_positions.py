@@ -33,6 +33,7 @@ class ClosedPosition(Base):
     percent_pnl = Column(Float, nullable=False)
     
     # Metadata
+    source_position_id = Column(Integer, nullable=True, index=True)
     account = Column(String, nullable=True)
     notes = Column(String, nullable=True)
     source_event_id = Column(Integer, nullable=True, index=True)

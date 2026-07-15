@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi.testclient import TestClient
 import pytest
 
 from app.core.config import settings
 from app.main import app
 from app.services.scheduler_lock import scheduler_job_lock
+from app.services import scheduler_worker
 
 
 def test_scheduler_lock_only_allows_single_holder() -> None:
@@ -46,3 +49,23 @@ def test_web_lifespan_starts_scheduler_when_flag_enabled(monkeypatch: pytest.Mon
 
     assert calls["start"] == 1
     assert calls["stop"] == 1
+
+
+def test_scheduler_worker_registers_jobs_before_startup_etl(monkeypatch: pytest.MonkeyPatch) -> None:
+    order: list[str] = []
+
+    class StartupProbeComplete(RuntimeError):
+        pass
+
+    async def _probe_initial_etl() -> None:
+        order.append("initial_etl")
+        raise StartupProbeComplete
+
+    monkeypatch.setattr(scheduler_worker, "start_scheduler", lambda: order.append("start_scheduler"))
+    monkeypatch.setattr(scheduler_worker, "run_initial_etl", _probe_initial_etl)
+    monkeypatch.setattr(scheduler_worker, "stop_scheduler", lambda: order.append("stop_scheduler"))
+
+    with pytest.raises(StartupProbeComplete):
+        asyncio.run(scheduler_worker.run_scheduler_worker())
+
+    assert order == ["start_scheduler", "initial_etl", "stop_scheduler"]

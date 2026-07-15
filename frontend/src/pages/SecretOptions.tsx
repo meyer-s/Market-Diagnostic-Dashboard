@@ -12,13 +12,31 @@ import {
 } from "recharts";
 import { Link } from "react-router-dom";
 import { createPortal } from "react-dom";
-import { Activity, ChevronDown, HelpCircle, Pencil, Play, RefreshCw, Settings2, Square, Trash2 } from "lucide-react";
+import {
+  Activity,
+  CalendarClock,
+  CheckCircle2,
+  ChevronDown,
+  HelpCircle,
+  Pencil,
+  Play,
+  RefreshCw,
+  Settings2,
+  SlidersHorizontal,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
 import { getFamilyColor } from "../theme/metricColors";
 import { buildHolisticSummary } from "../utils/holisticSummary";
 import { buildSummaryInputFromSnapshot, type TechnicalDataLike, type FundamentalsLike, type OptionalityLike } from "../utils/summaryInput";
+import {
+  presentScannerPositionMatch,
+  type ScannerPositionMatch,
+  type ScannerPositionMatchTone,
+} from "../utils/scannerPositionMatch";
 
 interface OptionPosition {
   id: number;
@@ -46,6 +64,7 @@ interface OptionPosition {
   evaluation_hold_days: number | null;
   evaluation_start_date: string | null;
   evaluation_due_date: string | null;
+  evaluation_decision_deadline: string | null;
   evaluation_source: string | null;
   evaluation_window_basis: string | null;
 }
@@ -167,8 +186,246 @@ interface PositionPayload {
   metrics: PositionMetrics;
 }
 
+interface PositionDecisionReview {
+  id: number;
+  position_id: number;
+  supersedes_review_id: number | null;
+  review_sequence: number;
+  review_date: string;
+  review_type: "mandate" | "reassessment";
+  selected_assessment_id?: number | null;
+  decision_source?: string;
+  human_override?: string;
+  override_reason?: string | null;
+  threshold_approval_status?: string;
+  symbol: string;
+  expiration: string;
+  strike: number;
+  option_type: string;
+  contracts_snapshot: number;
+  trade_role: string;
+  original_thesis: string | null;
+  contract_thesis: string | null;
+  expected_path: string | null;
+  catalyst: string | null;
+  confirmation_condition: string | null;
+  invalidation_condition: string | null;
+  risk_budget: number | null;
+  evidence_since_last: string | null;
+  thesis_status: string;
+  fresh_entry_answer: string;
+  portfolio_fit: string | null;
+  data_quality_notes: string | null;
+  verdict: string;
+  target_contracts: number;
+  quality: string;
+  urgency: string;
+  confidence: string;
+  continuation_condition: string | null;
+  next_review_date: string | null;
+  decision_deadline: string | null;
+  decision_notes: string | null;
+  snapshot: {
+    underlying_price: number | null;
+    option_price: number | null;
+    remaining_capital: number | null;
+    pnl_dollar: number | null;
+    pnl_percent: number | null;
+    dte: number | null;
+    delta: number | null;
+    theta: number | null;
+    implied_volatility: number | null;
+    quote_quality: string | null;
+    market_data_as_of: string | null;
+  };
+  created_at: string | null;
+}
+
+interface PositionDecisionStatus {
+  window_status: string;
+  review_due: boolean;
+  decision_deadline_missed: boolean;
+  additions_blocked: boolean;
+  addition_blockers: string[];
+  warnings: string[];
+  missing_mandate_fields: string[];
+}
+
+interface PositionDecisionReviewResponse {
+  position_id: number;
+  review_count: number;
+  latest_review: PositionDecisionReview | null;
+  status: PositionDecisionStatus;
+  history: PositionDecisionReview[];
+}
+
+interface PositionDecisionWindowRevision {
+  id: number;
+  position_id: number;
+  review_sequence: number;
+  review_date: string;
+  next_review_date: string | null;
+  decision_deadline: string | null;
+}
+
+interface PositionDecisionWindowResponse {
+  position_count: number;
+  window_count: number;
+  windows_by_position: Record<string, PositionDecisionWindowRevision[]>;
+}
+
+interface OptionPositionMandate {
+  id: number;
+  mandate_version: number;
+  confirmation_status: string;
+  threshold_origin: string;
+  threshold_approval_status: string;
+  trade_role: string;
+  original_thesis: string | null;
+  contract_thesis: string | null;
+  expected_path: string | null;
+  catalyst: string | null;
+  confirmation_condition: string | null;
+  invalidation_condition: string | null;
+  decision_deadline: string | null;
+  risk_budget: number | null;
+}
+
+interface PositionThesisAssessment {
+  id: number;
+  position_id: number;
+  trigger: string;
+  as_of: string | null;
+  grader_version: string;
+  data_quality_status: string;
+  company_thesis_status: string;
+  security_thesis_readiness: string;
+  path_status: string;
+  contract_status: string;
+  portfolio_fit_status: string;
+  proposed_verdict: string;
+  proposed_target_contracts: number;
+  target_contracts_min: number;
+  target_contracts_max: number;
+  quality: string;
+  urgency: string;
+  confidence: string;
+  continuation_condition: string | null;
+  next_review_date: string | null;
+  decision_deadline: string | null;
+  vetoes: Array<{ code: string; hard?: boolean; detail: string }>;
+  reasons: string[];
+  missing_inputs: string[];
+}
+
+interface SuggestedDecisionWindow {
+  as_of_date: string;
+  next_review_date: string | null;
+  decision_deadline: string;
+  next_review_sessions: number;
+  max_hold_sessions: number;
+  original_min_hold_days: number;
+  original_max_hold_days: number;
+  basis: string;
+  source_assessment_id: number;
+  decision_source: "latest_review" | "automatic_assessment";
+  verdict: string;
+  urgency: string;
+  rebased: boolean;
+  continuation_condition: string;
+}
+
+interface PositionThesisAssessmentResponse {
+  position_id: number;
+  mandate: OptionPositionMandate;
+  assessment: PositionThesisAssessment;
+  suggested_window: SuggestedDecisionWindow;
+  review_defaults: Record<string, string | number | null | undefined>;
+  risk_policy: {
+    id: number;
+    policy_version: number;
+    name: string;
+    active: boolean;
+    approval_status: string;
+    portfolio_capital: number | null;
+    default_trade_risk_budget: number | null;
+    max_single_position_premium_pct: number | null;
+    max_directional_premium_pct: number | null;
+    max_expiry_bucket_premium_pct: number | null;
+    max_option_spread_pct: number | null;
+    min_dte_for_add: number | null;
+  };
+  history: PositionThesisAssessment[];
+  automated_execution_enabled: false;
+  execution_note: string;
+}
+
+interface OptionTradeLearningOutcome {
+  id: number;
+  outcome_version: number;
+  outcome_status: string;
+  process_quality: string;
+  financial_outcome: string;
+  primary_lesson: string;
+  decision_alignment: string;
+  thesis_result: string;
+  contract_result: string;
+  timing_result?: string;
+  sizing_result: string;
+  portfolio_result?: string;
+  entry_execution_result?: string;
+  exit_discipline_result?: string;
+  event_result?: string;
+  review_discipline: string;
+}
+
+interface OptionLearningSummary {
+  sample: {
+    open_review_records: number;
+    automatic_assessments: number;
+    actual_closed_trades: number;
+    classified_trade_cycles: number;
+    matured_decision_horizons: number;
+  };
+  trade_outcomes: {
+    process_quality: Record<string, number>;
+    primary_lessons: Record<string, number>;
+    contract_results: Record<string, number>;
+    timing_results?: Record<string, number>;
+    portfolio_results?: Record<string, number>;
+    exit_discipline_results?: Record<string, number>;
+  };
+  scanner_recurrence_outcomes?: {
+    cohorts: Record<
+      "no_repeat" | "repeat_seen" | "strengthened_seen" | "contract_drift_seen",
+      {
+        sample_count: number;
+        profitable: number;
+        unprofitable: number;
+        flat: number;
+        average_percent_pnl: number | null;
+      }
+    >;
+    actual_closed_trades_only: boolean;
+    minimum_sample_before_comparison: number;
+    automatic_weight_changes: false;
+  };
+  promotion_readiness: {
+    minimum_independent_trade_cycles: number;
+    current_independent_trade_cycles: number;
+    remaining_cycles: number;
+    learned_review_model_allowed: boolean;
+    automatic_promotion: false;
+    status: string;
+  };
+  guardrails: {
+    automated_execution_enabled: false;
+  };
+}
+
 interface ClosedPositionRow {
   id: number;
+  source_position_id?: number | null;
   symbol: string;
   option_type: string;
   strike: number;
@@ -195,6 +452,7 @@ interface ClosedPositionRow {
   source_opportunity_grade: string | null;
   source_opportunity_rank_score: number | null;
   source_opportunity_model_version: string | null;
+  learning_outcome?: OptionTradeLearningOutcome | null;
 }
 
 interface TrainingOutcomeRow {
@@ -330,6 +588,7 @@ interface ScannerRankedOpportunity {
     max_hold_days: number | null;
     basis: string | null;
   } | null;
+  position_match?: ScannerPositionMatch | null;
   selected_contract: {
     expiry: string | null;
     dte: number | null;
@@ -458,6 +717,15 @@ interface TimelineLane {
 interface RawPositionPayload {
   position: OptionPosition;
   metrics?: Partial<PositionMetrics> | null;
+}
+
+interface PositionListResponse {
+  positions: RawPositionPayload[];
+  metrics_cache?: {
+    status: "fresh" | "stale";
+    age_seconds: number;
+    refresh_in_progress: boolean;
+  };
 }
 
 interface GreeksPayload {
@@ -914,8 +1182,23 @@ const formatComponentLabel = (value: string) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
+const scannerPositionMatchBadgeClass: Record<ScannerPositionMatchTone, string> = {
+  neutral: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+  positive: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  warning: "border-amber-500/35 bg-amber-500/10 text-amber-200",
+  negative: "border-rose-500/35 bg-rose-500/10 text-rose-200",
+};
+
+const scannerPositionMatchTextClass: Record<ScannerPositionMatchTone, string> = {
+  neutral: "text-sky-300",
+  positive: "text-emerald-300",
+  warning: "text-amber-300",
+  negative: "text-rose-300",
+};
+
 const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportunity }) => {
   const contract = opportunity.selected_contract;
+  const positionMatch = presentScannerPositionMatch(opportunity.position_match);
   const sections = parseScannerAlertSections(opportunity.message);
   const directionSection = scannerAlertSection(sections, "DIRECTION");
   const macdSection = scannerAlertSection(sections, "MACD 1W");
@@ -960,6 +1243,26 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
 
   return (
     <div className="overflow-x-hidden bg-stealth-950/40 px-3 py-3 sm:px-4">
+      {positionMatch ? (
+        <div
+          role="note"
+          aria-label={positionMatch.accessibleLabel}
+          className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-stealth-800/70 pb-2 text-[10px]"
+        >
+          <span
+            aria-hidden="true"
+            className={`rounded border px-1.5 py-0.5 font-semibold tracking-wide ${scannerPositionMatchBadgeClass[positionMatch.tone]}`}
+          >
+            {positionMatch.badgeLabel}
+          </span>
+          <span aria-hidden="true" className={scannerPositionMatchTextClass[positionMatch.tone]}>
+            {positionMatch.evidenceLine}
+          </span>
+          <span aria-hidden="true" className="ml-auto text-stealth-500">
+            Evidence only · no add signal
+          </span>
+        </div>
+      ) : null}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr]">
         <div className="space-y-2">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Mispricing</div>
@@ -1237,13 +1540,6 @@ const buildGreeksAttention = (
   return { strength, spreadDays, hint };
 };
 
-const getUrgencyBorderClass = (urgency: EvalUrgency | undefined) => {
-  if (urgency === "overdue") return "border-rose-500/55";
-  if (urgency === "due") return "border-amber-500/55";
-  if (urgency === "watch") return "border-yellow-500/45";
-  return "border-emerald-500/40";
-};
-
 const getStatusTextClass = (
   urgency: EvalUrgency,
   remainingDays: number | null,
@@ -1301,71 +1597,117 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   position,
   metrics,
   lane,
+  decisionHistory,
+  suggestedWindow,
+  isInteractive = false,
 }: {
   position: OptionPosition;
   metrics: PositionMetrics;
   lane: TimelineLane | undefined;
+  decisionHistory?: PositionDecisionWindowRevision[];
+  suggestedWindow?: SuggestedDecisionWindow | null;
+  isInteractive?: boolean;
 }) {
   const remainingDays = lane?.remainingDays ?? metrics.dte ?? null;
   const sourceConfidence = clampRange(position.source_match_confidence ?? (lane?.matched ? 0.65 : 0.15), 0, 1);
-  const sourceConfidencePct = sourceConfidence * 100;
-  const pressurePct = clampRange((lane?.attentionStrength ?? 0.2) * 100, 0, 100);
   const urgency = lane?.urgency ?? deriveUrgencyFromDays(remainingDays ?? 999);
   const isLowConfidence = sourceConfidence < 0.6 || !lane?.matched;
-  const label = lane?.label ?? "No window";
-  const detail = lane?.detail ?? "Portfolio DTE progression";
-  const statusLabel = isLowConfidence && urgency === "calm" ? "monitor" : label;
-  const urgencyTextClass = getStatusTextClass(urgency, remainingDays, statusLabel === "monitor");
-  const urgencyBorderClass = getUrgencyBorderClass(urgency);
   const dteLabel = metrics.dte !== null && metrics.dte !== undefined ? `${metrics.dte} DTE` : "DTE n/a";
   const metaLabel = `${formatDate(position.expiration)} / ${dteLabel}`;
-  const dteAtEntry = position.dte_at_entry ?? null;
-  const dteNow = metrics.dte ?? null;
-  const elapsedToTodayDays =
-    dteAtEntry !== null && dteNow !== null
-      ? Math.max(0, dteAtEntry - dteNow)
-      : Math.max(0, lane?.elapsedDays ?? 0);
-  const expirationTotalDays = Math.max(1, dteAtEntry ?? elapsedToTodayDays + Math.max(0, dteNow ?? 0), lane?.totalDays ?? 1);
-  const minWindowDays = Math.max(1, Math.min(lane?.minHoldDays ?? 1, expirationTotalDays));
-  const expectedWindowDays = Math.max(minWindowDays, Math.min(lane?.maxHoldDays ?? lane?.totalDays ?? expirationTotalDays, expirationTotalDays));
-  const todayPct = clampRange((elapsedToTodayDays / expirationTotalDays) * 100, 0, 100);
-  const opportunityStartPct = clampRange((minWindowDays / expirationTotalDays) * 100, 0, 98);
-  const gatePct = clampRange((expectedWindowDays / expirationTotalDays) * 100, 3, 100);
-  const opportunityWidthPct = Math.max(2, gatePct - opportunityStartPct);
-  const elapsedOpportunityPct = clampRange(todayPct - opportunityStartPct, 0, opportunityWidthPct);
-  const overdueTailPct = todayPct > gatePct ? todayPct - gatePct : 0;
-  const volRead = buildVolatilityRead(metrics.volatility_signal);
-  const accessibleSummary = `${position.symbol} ${label}. ${detail}. ${Math.round(todayPct)} percent through expiration timeline. Opportunity window ${minWindowDays} to ${expectedWindowDays} days from trigger. ${remainingDays ?? "unknown"} days remaining. Volatility ${volRead.label}. Source confidence ${Math.round(sourceConfidencePct)} percent.`;
-  const railBorderClass = urgency === "calm" || urgency === "watch" ? "border-gray-700" : urgencyBorderClass;
-  const railTrackClass = isLowConfidence ? "bg-cyan-400/15" : "bg-cyan-400/22";
-  const bracketBorderClass = isLowConfidence ? "border-cyan-100/35" : "border-cyan-100/70";
-  const bracketFillClass = isLowConfidence ? "bg-cyan-100/5" : "bg-cyan-100/10";
-  const bracketGlowClass = isLowConfidence ? "" : "shadow-[0_0_10px_rgba(165,243,252,0.18)]";
-  const elapsedFillClass = isLowConfidence ? "bg-emerald-300/45" : "bg-emerald-300";
-  const gateClass = urgency === "overdue" ? "bg-rose-400" : urgency === "due" ? "bg-amber-300" : "bg-emerald-300";
-  const pressureWidthPct =
-    urgency === "due" ? 24 : urgency === "overdue" ? 18 : urgency === "watch" ? 18 : pressurePct >= 55 ? 14 : 0;
-  const pressureLeftPct = clampRange(gatePct - pressureWidthPct, 0, 100);
-  const pressureBandClass =
-    urgency === "due"
-      ? "border-amber-200/35 bg-amber-300/20"
-      : urgency === "overdue"
-        ? "border-rose-200/35 bg-rose-400/15"
-        : "border-cyan-200/30 bg-cyan-300/12";
-  const showPressureBand = pressureWidthPct > 0;
-  const bucketCells = Array.from({ length: 6 }).map((_, index) => {
-    const startPct = (index / 6) * 100;
-    const endPct = ((index + 1) / 6) * 100;
-    const midPct = (startPct + endPct) / 2;
-    const isOverdue = overdueTailPct > 0 && midPct > gatePct && midPct <= todayPct;
-    const isOpportunityWindow = midPct >= opportunityStartPct && midPct <= gatePct;
-    const isElapsedOpportunity = isOpportunityWindow && midPct <= todayPct;
-    const isPrematureElapsed = midPct < opportunityStartPct && midPct <= todayPct;
-    const hasToday = todayPct >= startPct && todayPct <= endPct;
-    const hasWindowStart = opportunityStartPct >= startPct && opportunityStartPct <= endPct;
-    const hasGate = gatePct >= startPct && gatePct <= endPct;
-    return { index, isOverdue, isElapsedOpportunity, isOpportunityWindow, isPrematureElapsed, hasToday, hasWindowStart, hasGate };
-  });
+  const timelineStart = toDate(position.trade_date) ?? toDate(position.source_triggered_at) ?? new Date();
+  const timelineEnd = toDate(position.expiration) ?? addDays(timelineStart, Math.max(1, lane?.totalDays ?? 1));
+  const today = toDate(todayInputValue()) ?? new Date();
+  const timelineDuration = Math.max(DAY_MS, timelineEnd.getTime() - timelineStart.getTime());
+  const pointPct = (point: Date | null) =>
+    point ? clampRange(((point.getTime() - timelineStart.getTime()) / timelineDuration) * 100, 0, 100) : null;
+  const todayPct = pointPct(today) ?? 0;
+  const latestReview = decisionHistory?.[0] ?? null;
+  const latestReviewDate = toDate(latestReview?.review_date);
+  const latestCheckpoint = toDate(latestReview?.next_review_date);
+  const latestDeadline = toDate(latestReview?.decision_deadline);
+  const latestWindowCurrent = Boolean(
+    latestReview &&
+      latestDeadline &&
+      latestDeadline.getTime() >= today.getTime() &&
+      (!latestCheckpoint || latestCheckpoint.getTime() > today.getTime())
+  );
+  const useSuggestedWindow = Boolean(suggestedWindow && (!latestReview || suggestedWindow.rebased || !latestWindowCurrent));
+
+  const legacyMinDays = Math.max(1, lane?.minHoldDays ?? position.evaluation_min_hold_days ?? 1);
+  const legacyMaxDays = Math.max(legacyMinDays, lane?.maxHoldDays ?? position.evaluation_hold_days ?? legacyMinDays);
+  let activeStart: Date =
+    (position.evaluation_source === "decision_review" ? toDate(position.evaluation_start_date) : null) ?? timelineStart;
+  let activeCheckpoint: Date | null =
+    (position.evaluation_source === "decision_review" ? toDate(position.evaluation_due_date) : null) ??
+    addDays(timelineStart, legacyMinDays);
+  let activeDeadline: Date =
+    toDate(position.evaluation_decision_deadline) ??
+    (position.evaluation_source === "decision_review" ? toDate(position.evaluation_due_date) : null) ??
+    addDays(timelineStart, legacyMaxDays);
+  let activeKind: "modeled" | "confirmed" | "suggested" = "modeled";
+  let activeTitle = `Entry model: review after ${legacyMinDays}d; maximum hold ${legacyMaxDays}d`;
+
+  if (position.evaluation_source === "decision_review") {
+    activeKind = "confirmed";
+    activeTitle = `Confirmed decision window: ${formatDate(activeCheckpoint)} review; ${formatDate(activeDeadline)} maximum hold`;
+  }
+
+  if (latestReview && latestWindowCurrent && !useSuggestedWindow) {
+    activeStart = latestReviewDate ?? timelineStart;
+    activeCheckpoint = latestCheckpoint;
+    activeDeadline = latestDeadline ?? activeDeadline;
+    activeKind = "confirmed";
+    activeTitle = `Confirmed review #${latestReview.review_sequence}: ${formatDate(latestReview.next_review_date)} review; ${formatDate(latestReview.decision_deadline)} maximum hold`;
+  } else if (suggestedWindow) {
+    activeStart = toDate(suggestedWindow.as_of_date) ?? today;
+    activeCheckpoint = toDate(suggestedWindow.next_review_date);
+    activeDeadline = toDate(suggestedWindow.decision_deadline) ?? today;
+    activeKind = "suggested";
+    activeTitle = `Suggested from the ${suggestedWindow.original_min_hold_days}-${suggestedWindow.original_max_hold_days} session entry model: ${suggestedWindow.max_hold_sessions} session maximum hold`;
+  }
+
+  const activeStartPct = pointPct(activeStart) ?? 0;
+  const activeDeadlinePct = pointPct(activeDeadline) ?? activeStartPct;
+  const activeWidthPct = Math.max(1.5, activeDeadlinePct - activeStartPct);
+  const checkpointPct = pointPct(activeCheckpoint);
+  const activeOverdue = activeDeadline.getTime() < today.getTime();
+  const activeWindowClass = activeOverdue
+    ? "bg-rose-400/30 ring-1 ring-inset ring-rose-200/35"
+    : activeKind === "suggested"
+      ? "bg-sky-400/30 ring-1 ring-inset ring-sky-200/35"
+      : "bg-emerald-300/30 ring-1 ring-inset ring-emerald-100/30";
+  const bracketClass = activeOverdue
+    ? "border-rose-300/85"
+    : activeKind === "suggested"
+      ? "border-sky-200/85"
+      : "border-emerald-200/80";
+  const priorWindows = (decisionHistory ?? [])
+    .filter((review) => activeKind !== "confirmed" || review.id !== latestReview?.id)
+    .map((review) => ({
+      id: review.id,
+      sequence: review.review_sequence,
+      start: toDate(review.review_date),
+      checkpoint: toDate(review.next_review_date),
+      deadline: toDate(review.decision_deadline),
+    }))
+    .filter((window) => window.start && window.deadline);
+  const daysToCheckpoint = activeCheckpoint
+    ? Math.ceil((activeCheckpoint.getTime() - today.getTime()) / DAY_MS)
+    : null;
+  const daysToDeadline = Math.ceil((activeDeadline.getTime() - today.getTime()) / DAY_MS);
+  const statusLabel = activeOverdue
+    ? `${Math.abs(daysToDeadline)}d past decision`
+    : daysToCheckpoint === 0
+      ? "Review today"
+      : daysToCheckpoint !== null && daysToCheckpoint > 0
+        ? `Review in ${daysToCheckpoint}d`
+        : activeKind === "suggested"
+          ? "Decision due today"
+          : isLowConfidence && urgency === "calm"
+            ? "monitor"
+            : lane?.label ?? "monitor";
+  const urgencyTextClass = getStatusTextClass(activeOverdue ? "overdue" : urgency, remainingDays, statusLabel === "monitor");
+  const accessibleSummary = `${position.symbol}. ${activeKind} decision window from ${formatDate(activeStart)} to ${formatDate(activeDeadline)}. ${activeCheckpoint ? `Next review ${formatDate(activeCheckpoint)}.` : "No additional review before the decision deadline."} Today is marked by a capped vertical marker. ${priorWindows.length} prior window${priorWindows.length === 1 ? "" : "s"} shown.`;
 
   return (
     <div className="min-w-0" aria-label={accessibleSummary}>
@@ -1373,82 +1715,61 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
         <span className="truncate text-gray-500">{metaLabel}</span>
         <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{statusLabel}</span>
       </div>
-      <div className="grid grid-cols-1">
-        <div className="grid grid-cols-6 gap-1 sm:hidden" title="Mobile buckets: rail slices to expiration, cyan opportunity window, mint elapsed window, thin today marker, thick evaluation gate">
-          {bucketCells.map((cell) => (
+      <div className={`relative h-6 overflow-visible rounded-md border border-gray-700 bg-gray-900/75 ${isLowConfidence ? "opacity-80" : ""}`}>
+        <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/35" style={{ width: `${todayPct}%` }} title="Elapsed contract life" />
+        {priorWindows.map((window, index) => {
+          const startPct = pointPct(window.start) ?? 0;
+          const deadlinePct = pointPct(window.deadline) ?? startPct;
+          const leftPct = Math.min(startPct, deadlinePct);
+          const widthPct = Math.abs(deadlinePct - startPct);
+          const isInverted = deadlinePct < startPct;
+          const historyClass = isInverted
+            ? "bg-rose-300/[0.07] ring-1 ring-inset ring-rose-300/25"
+            : index === 0
+              ? "bg-sky-200/[0.09] ring-1 ring-inset ring-sky-200/25"
+              : index === 1
+                ? "bg-sky-200/[0.06] ring-1 ring-inset ring-sky-200/18"
+                : "bg-slate-200/[0.04] ring-1 ring-inset ring-slate-200/12";
+          const historyInset = Math.min(2 + index, 7);
+          return (
             <div
-              key={cell.index}
-              className={`relative h-5 overflow-hidden rounded-sm border ${
-                cell.isOverdue
-                  ? "border-rose-400/45 bg-rose-500/40"
-                  : cell.isElapsedOpportunity
-                    ? "border-transparent bg-emerald-300/80"
-                    : cell.isOpportunityWindow
-                      ? "border-cyan-400/35 bg-cyan-400/20"
-                      : cell.isPrematureElapsed
-                        ? "border-gray-700 bg-gray-700/45"
-                      : "border-gray-700 bg-gray-900/75"
-              }`}
-            >
-              {cell.hasToday ? <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/65" /> : null}
-              {cell.hasWindowStart ? <span className="absolute inset-y-0 left-0 w-1 bg-cyan-300/80" /> : null}
-              {cell.hasGate ? <span className={`absolute inset-y-0 right-0 w-1 ${gateClass}`} /> : null}
-            </div>
-          ))}
-        </div>
+              key={window.id}
+              className={`absolute z-10 rounded-[3px] ${historyClass}`}
+              style={{
+                left: `${leftPct}%`,
+                width: `max(4px, ${widthPct}%)`,
+                top: `${historyInset}px`,
+                bottom: `${historyInset}px`,
+              }}
+              title={`Prior window #${window.sequence}: ${formatDate(window.start)} to ${formatDate(window.deadline)}${window.checkpoint ? `; review ${formatDate(window.checkpoint)}` : ""}`}
+            />
+          );
+        })}
         <div
-          className={`relative hidden h-6 overflow-hidden rounded-md border ${railBorderClass} bg-gray-900/70 sm:block ${
-            isLowConfidence ? "opacity-80" : ""
-          }`}
-          title="Rail = full time to expiration, bracket = expected hold window, cyan shade = acceptable hold zone, emerald fill = elapsed hold window, thin line = today, red tail = past gate"
+          className={`absolute inset-y-1 z-20 rounded-[3px] ${activeWindowClass}`}
+          style={{ left: `${activeStartPct}%`, width: `${activeWidthPct}%` }}
+          title={activeTitle}
+        />
+        <div
+          className={`pointer-events-none absolute inset-y-0 z-30 transition-opacity duration-150 ${isInteractive ? "opacity-75" : "opacity-20"}`}
+          style={{ left: `${activeStartPct}%`, width: `${activeWidthPct}%` }}
         >
-          <div className="absolute inset-y-1 left-0 w-full rounded-sm bg-gray-800/70" />
-          <div
-            className={`absolute inset-y-1 rounded-sm ${railTrackClass}`}
-            style={{ left: `${opportunityStartPct}%`, width: `${opportunityWidthPct}%` }}
-          />
-          <div
-            className={`absolute inset-y-1 rounded-sm ${elapsedFillClass}`}
-            style={{ left: `${opportunityStartPct}%`, width: `${elapsedOpportunityPct}%` }}
-          />
-          <div
-            className="pointer-events-none absolute inset-y-[2px]"
-            style={{ left: `${opportunityStartPct}%`, width: `${opportunityWidthPct}%` }}
-            title="Expected hold window"
-          >
-            <span
-              className={`absolute inset-y-0 left-0 w-5 rounded-l-md border-y border-l ${bracketBorderClass} ${bracketFillClass} ${bracketGlowClass}`}
-            />
-            <span
-              className={`absolute inset-y-0 right-0 w-5 rounded-r-md border-y border-r ${bracketBorderClass} ${bracketFillClass} ${bracketGlowClass}`}
-            />
-            <span className={`absolute inset-y-[3px] left-0 w-px rounded-full ${isLowConfidence ? "bg-cyan-50/30" : "bg-cyan-50/60"}`} />
-            <span className={`absolute inset-y-[3px] right-0 w-px rounded-full ${isLowConfidence ? "bg-cyan-50/30" : "bg-cyan-50/60"}`} />
-          </div>
-          {showPressureBand ? (
-            <div
-              className={`absolute inset-y-0 border-x ${pressureBandClass}`}
-              style={{ left: `${pressureLeftPct}%`, width: `${Math.min(100 - pressureLeftPct, pressureWidthPct)}%` }}
-            />
-          ) : null}
-          {overdueTailPct > 0 ? (
-            <div
-              className="absolute inset-y-1 rounded-sm bg-rose-500/55"
-              style={{ left: `${gatePct}%`, width: `${overdueTailPct}%` }}
-              title="Overdue time beyond gate"
-            />
-          ) : null}
-          <div className="absolute inset-y-0 flex items-center" style={{ left: `${todayPct}%` }}>
-            <span className="h-5 w-px -translate-x-1/2 bg-white/65" title="Today" />
-          </div>
-          <div className="absolute inset-y-0 flex items-center" style={{ left: `${opportunityStartPct}%` }}>
-            <span className="h-5 w-px -translate-x-1/2 bg-cyan-100/85" title="Opportunity window opens" />
-          </div>
-          <div className="absolute inset-y-0 flex items-center" style={{ left: `${gatePct}%` }}>
-            <span className={`h-5 w-px -translate-x-1/2 ${gateClass}`} title="Evaluation gate" />
-          </div>
-          <div className="absolute inset-y-0 right-0 w-0.5 bg-gray-400/45" title="Expiration" />
+          <span className={`absolute inset-y-0 left-0 w-2 rounded-l-[2px] border-y border-l-2 ${bracketClass}`} />
+          <span className={`absolute inset-y-0 right-0 w-2 rounded-r-[2px] border-y border-r-2 ${bracketClass}`} />
         </div>
+        {checkpointPct !== null ? (
+          <span
+            className={`absolute inset-y-1 z-40 w-px -translate-x-1/2 transition-colors duration-150 ${isInteractive ? "bg-amber-300/75" : "bg-amber-300/35"}`}
+            style={{ left: `${checkpointPct}%` }}
+            title={`Next review: ${formatDate(activeCheckpoint)}`}
+          />
+        ) : null}
+        <span
+          className={`absolute top-1/2 z-50 h-[26px] w-px -translate-x-1/2 -translate-y-1/2 transition-colors duration-150 before:absolute before:left-1/2 before:top-0 before:h-px before:w-1.5 before:-translate-x-1/2 after:absolute after:bottom-0 after:left-1/2 after:h-px after:w-1.5 after:-translate-x-1/2 ${isInteractive ? "bg-slate-100/70 before:bg-slate-100/70 after:bg-slate-100/70" : "bg-slate-200/35 before:bg-slate-200/35 after:bg-slate-200/35"}`}
+          style={{ left: `${todayPct}%` }}
+          title={`Today: ${formatDate(today)}`}
+          aria-hidden="true"
+        />
       </div>
     </div>
   );
@@ -1889,6 +2210,52 @@ const initialClosedFormState = {
   notes: "",
 };
 
+const initialDecisionReviewFormState = {
+  selected_assessment_id: "",
+  review_date: "",
+  trade_role: "unclassified",
+  original_thesis: "",
+  contract_thesis: "",
+  expected_path: "",
+  catalyst: "",
+  confirmation_condition: "",
+  invalidation_condition: "",
+  risk_budget: "",
+  evidence_since_last: "",
+  thesis_status: "unassessed",
+  fresh_entry_answer: "unassessed",
+  portfolio_fit: "",
+  data_quality_notes: "",
+  verdict: "manual_review",
+  target_contracts: "",
+  quality: "unrated",
+  urgency: "medium",
+  confidence: "low",
+  continuation_condition: "",
+  next_review_date: "",
+  decision_deadline: "",
+  decision_notes: "",
+  override_reason: "",
+  threshold_approval_status: "draft",
+};
+
+type DecisionReviewMode = "override" | "window";
+
+const decisionLabel = (value: string | null | undefined) =>
+  (value || "unassessed")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+
+const todayInputValue = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+};
+
+const tomorrowInputValue = () => {
+  const tomorrow = addDays(new Date(), 1);
+  return new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+};
+
 type PositionFormPayload = {
   trade_date: string;
   account: string | null;
@@ -2111,7 +2478,15 @@ export default function SecretOptions() {
   const [showRowActions, setShowRowActions] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
+  const [positionsRefreshing, setPositionsRefreshing] = useState(false);
+  const positionsRefreshTimerRef = useRef<number | null>(null);
+  const [listRefreshInFlight, setListRefreshInFlight] = useState(false);
+  const [listRefreshSettled, setListRefreshSettled] = useState(false);
+  const listRefreshStatusTimerRef = useRef<number | null>(null);
+  const wasListRefreshPendingRef = useRef(false);
   const [greeksLoadedAt, setGreeksLoadedAt] = useState<Date | null>(null);
+  const [greeksPositionId, setGreeksPositionId] = useState<number | null>(null);
+  const greeksRequestRef = useRef(0);
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: SortDirection }>({
     key: "symbol",
     direction: "asc",
@@ -2122,10 +2497,33 @@ export default function SecretOptions() {
   });
   const [zoneInputsByPosition, setZoneInputsByPosition] = useState<Record<number, ZoneInputs>>({});
   const [spotWeightBySymbol, setSpotWeightBySymbol] = useState<Record<string, SpotWeighting>>({});
+  const [decisionReviewsByPosition, setDecisionReviewsByPosition] = useState<Record<number, PositionDecisionReviewResponse>>({});
+  const [decisionWindowsByPosition, setDecisionWindowsByPosition] = useState<Record<string, PositionDecisionWindowRevision[]>>({});
+  const [hoveredPositionId, setHoveredPositionId] = useState<number | null>(null);
+  const decisionReviewRequestsRef = useRef(new Set<number>());
+  const [loadingDecisionReview, setLoadingDecisionReview] = useState(false);
+  const [thesisAssessmentsByPosition, setThesisAssessmentsByPosition] = useState<Record<number, PositionThesisAssessmentResponse>>({});
+  const [loadingThesisAssessment, setLoadingThesisAssessment] = useState(false);
+  const [thesisAssessmentError, setThesisAssessmentError] = useState<string | null>(null);
+  const [learningSummary, setLearningSummary] = useState<OptionLearningSummary | null>(null);
+  const [portfolioCapitalInput, setPortfolioCapitalInput] = useState("");
+  const [riskPolicySaving, setRiskPolicySaving] = useState(false);
+  const [showDecisionReviewModal, setShowDecisionReviewModal] = useState(false);
+  const [decisionReviewMode, setDecisionReviewMode] = useState<DecisionReviewMode>("override");
+  const [decisionReviewForm, setDecisionReviewForm] = useState(initialDecisionReviewFormState);
+  const [decisionReviewError, setDecisionReviewError] = useState<string | null>(null);
+  const [decisionReviewSubmitting, setDecisionReviewSubmitting] = useState(false);
+  const [confirmingDecisionReview, setConfirmingDecisionReview] = useState(false);
+  const [showRiskEvidence, setShowRiskEvidence] = useState(false);
+  // The API refreshes the position snapshot as one batch, but the UI renders
+  // that shared lifecycle on each affected row so status stays attached to the
+  // data it describes instead of looking like a page-wide warning.
+  const listRefreshPending = listRefreshInFlight || positionsRefreshing;
 
   const anyModalOpen =
     showAddModal ||
     showCloseModal ||
+    showDecisionReviewModal ||
     showClosedLog ||
     showClosedEditModal ||
     showTrainingOutcomes ||
@@ -2146,11 +2544,43 @@ export default function SecretOptions() {
     };
   }, [anyModalOpen]);
 
-  const loadPositions = async () => {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    if (listRefreshStatusTimerRef.current !== null) {
+      window.clearTimeout(listRefreshStatusTimerRef.current);
+      listRefreshStatusTimerRef.current = null;
+    }
+    if (listRefreshPending) {
+      wasListRefreshPendingRef.current = true;
+      setListRefreshSettled(false);
+      return;
+    }
+    if (!wasListRefreshPendingRef.current) return;
+    wasListRefreshPendingRef.current = false;
+    setListRefreshSettled(true);
+    listRefreshStatusTimerRef.current = window.setTimeout(() => {
+      setListRefreshSettled(false);
+      listRefreshStatusTimerRef.current = null;
+    }, 2400);
+    return () => {
+      if (listRefreshStatusTimerRef.current !== null) {
+        window.clearTimeout(listRefreshStatusTimerRef.current);
+        listRefreshStatusTimerRef.current = null;
+      }
+    };
+  }, [listRefreshPending]);
+
+  const loadPositions = async (options: { quiet?: boolean; refreshAttempt?: number; force?: boolean } = {}) => {
+    const quiet = options.quiet ?? false;
+    const refreshAttempt = options.refreshAttempt ?? 0;
+    const force = options.force ?? false;
+    if (!quiet) {
+      setLoading(true);
+      setError(null);
+    }
     try {
-      const data = await apiFetch<{ positions: RawPositionPayload[] }>("/secret/options/positions");
+      const data = await apiFetch<PositionListResponse>(
+        `/secret/options/positions${force ? "?refresh=true" : ""}`
+      );
       const normalizedPositions: PositionPayload[] = (data.positions || []).map((item) => ({
         position: item.position,
         metrics: normalizePositionMetrics(item.metrics),
@@ -2161,24 +2591,150 @@ export default function SecretOptions() {
         setSelectedId(normalizedPositions[0].position.id);
         setExpandedPositionId(normalizedPositions[0].position.id);
       }
+      const cacheRefreshing = data.metrics_cache?.refresh_in_progress === true;
+      setPositionsRefreshing(cacheRefreshing);
+      if (positionsRefreshTimerRef.current !== null) {
+        window.clearTimeout(positionsRefreshTimerRef.current);
+        positionsRefreshTimerRef.current = null;
+      }
+      if (data.metrics_cache?.status === "stale" && cacheRefreshing && refreshAttempt < 10) {
+        positionsRefreshTimerRef.current = window.setTimeout(() => {
+          void loadPositions({ quiet: true, refreshAttempt: refreshAttempt + 1 });
+        }, 2000);
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load positions");
+      if (!quiet) {
+        setError(err instanceof Error ? err.message : "Failed to load positions");
+      }
     } finally {
-      setLoading(false);
+      if (!quiet) {
+        setLoading(false);
+      }
     }
   };
 
   const loadGreeks = async (positionId: number) => {
+    const requestId = ++greeksRequestRef.current;
     setLoadingGreeks(true);
     try {
       const data = await apiFetch<GreeksPayload>(`/secret/options/greeks/${positionId}`);
+      if (greeksRequestRef.current !== requestId) return;
       setGreeksData(data);
+      setGreeksPositionId(positionId);
       setGreeksLoadedAt(new Date());
     } catch {
+      if (greeksRequestRef.current !== requestId) return;
       setGreeksData(null);
+      setGreeksPositionId(null);
       setGreeksLoadedAt(null);
     } finally {
-      setLoadingGreeks(false);
+      if (greeksRequestRef.current === requestId) {
+        setLoadingGreeks(false);
+      }
+    }
+  };
+
+  const loadDecisionReviews = async (positionId: number) => {
+    if (decisionReviewRequestsRef.current.has(positionId)) return;
+    decisionReviewRequestsRef.current.add(positionId);
+    setLoadingDecisionReview(true);
+    try {
+      const data = await apiFetch<PositionDecisionReviewResponse>(
+        `/secret/options/positions/${positionId}/decision-reviews`
+      );
+      setDecisionReviewsByPosition((prev) => ({ ...prev, [positionId]: data }));
+    } catch (err: unknown) {
+      console.error("Failed to load decision reviews:", err);
+    } finally {
+      decisionReviewRequestsRef.current.delete(positionId);
+      setLoadingDecisionReview(false);
+    }
+  };
+
+  const loadDecisionReviewWindows = async () => {
+    try {
+      const data = await apiFetch<PositionDecisionWindowResponse>("/secret/options/decision-review-windows");
+      setDecisionWindowsByPosition(data.windows_by_position ?? {});
+    } catch (err: unknown) {
+      console.error("Failed to load decision review windows:", err);
+    }
+  };
+
+  const refreshPositionList = async () => {
+    if (listRefreshPending) return;
+    setListRefreshInFlight(true);
+    try {
+      await Promise.all([
+        loadPositions({ quiet: true, force: true }),
+        loadDecisionReviewWindows(),
+      ]);
+    } finally {
+      setListRefreshInFlight(false);
+    }
+  };
+
+  const loadThesisAssessment = async (positionId: number, force = false) => {
+    setLoadingThesisAssessment(true);
+    setThesisAssessmentError(null);
+    try {
+      const data = await apiFetch<PositionThesisAssessmentResponse>(
+        `/secret/options/positions/${positionId}/thesis-assessment${force ? "?force=true" : ""}`,
+        force ? { method: "POST" } : undefined
+      );
+      setThesisAssessmentsByPosition((prev) => ({ ...prev, [positionId]: data }));
+      setPortfolioCapitalInput((current) => current || String(data.risk_policy.portfolio_capital ?? ""));
+      return data;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to grade the position.";
+      setThesisAssessmentError(message);
+      console.error("Failed to load thesis assessment:", err);
+      return null;
+    } finally {
+      setLoadingThesisAssessment(false);
+    }
+  };
+
+  const loadLearningSummary = async () => {
+    try {
+      const data = await apiFetch<OptionLearningSummary>("/secret/options/learning-summary");
+      setLearningSummary(data);
+    } catch (err: unknown) {
+      console.error("Failed to load option learning summary:", err);
+    }
+  };
+
+  const approveRiskPolicy = async () => {
+    if (!selectedThesisAssessment) return;
+    const capital = Number(portfolioCapitalInput);
+    if (!Number.isFinite(capital) || capital <= 0) {
+      setThesisAssessmentError("Enter portfolio capital greater than zero before approving sizing guardrails.");
+      return;
+    }
+    const policy = selectedThesisAssessment.risk_policy;
+    setRiskPolicySaving(true);
+    setThesisAssessmentError(null);
+    try {
+      await apiFetch("/secret/options/risk-policy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "User-approved tracked options guardrails",
+          active: true,
+          approval_status: "approved",
+          portfolio_capital: capital,
+          default_trade_risk_budget: policy.default_trade_risk_budget,
+          max_single_position_premium_pct: policy.max_single_position_premium_pct ?? 30,
+          max_directional_premium_pct: policy.max_directional_premium_pct ?? 75,
+          max_expiry_bucket_premium_pct: policy.max_expiry_bucket_premium_pct ?? 45,
+          max_option_spread_pct: policy.max_option_spread_pct ?? 25,
+          min_dte_for_add: policy.min_dte_for_add ?? 21,
+        }),
+      });
+      await loadThesisAssessment(selectedThesisAssessment.position_id, true);
+    } catch (err: unknown) {
+      setThesisAssessmentError(err instanceof Error ? err.message : "Failed to save the risk policy.");
+    } finally {
+      setRiskPolicySaving(false);
     }
   };
 
@@ -2387,6 +2943,247 @@ export default function SecretOptions() {
     (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       setClosedFormData((prev) => ({ ...prev, [field]: event.target.value }));
     };
+
+  const handleDecisionReviewFieldChange =
+    (field: keyof typeof initialDecisionReviewFormState) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setDecisionReviewForm((prev) => {
+        if (field === "verdict" && ["close", "replacement_candidate"].includes(value)) {
+          return {
+            ...prev,
+            verdict: value,
+            next_review_date: "",
+            decision_deadline: prev.review_date || todayInputValue(),
+          };
+        }
+        return { ...prev, [field]: value };
+      });
+    };
+
+  const openDecisionReviewModal = async (
+    position: OptionPosition,
+    mode: DecisionReviewMode = "override"
+  ) => {
+    const latest = decisionReviewsByPosition[position.id]?.latest_review ?? null;
+    const assessmentResponse =
+      thesisAssessmentsByPosition[position.id] ?? (await loadThesisAssessment(position.id));
+    const suggestedWindow = assessmentResponse?.suggested_window ?? null;
+    const defaults = assessmentResponse?.review_defaults ?? {};
+    const defaultText = (key: string, fallback: string | number | null | undefined = "") => {
+      const value = defaults[key];
+      return String(value === null || value === undefined ? fallback ?? "" : value);
+    };
+    const nextForm = {
+      ...initialDecisionReviewFormState,
+      selected_assessment_id: defaultText("selected_assessment_id", assessmentResponse?.assessment.id),
+      review_date: defaultText("review_date", todayInputValue()),
+      trade_role: defaultText("trade_role", latest?.trade_role ?? "unclassified"),
+      original_thesis: defaultText("original_thesis", latest?.original_thesis),
+      contract_thesis: defaultText("contract_thesis", latest?.contract_thesis),
+      expected_path: defaultText("expected_path", latest?.expected_path),
+      catalyst: defaultText("catalyst", latest?.catalyst),
+      confirmation_condition: defaultText("confirmation_condition", latest?.confirmation_condition),
+      invalidation_condition: defaultText("invalidation_condition", latest?.invalidation_condition),
+      risk_budget: defaultText("risk_budget", latest?.risk_budget ?? position.total_cost),
+      evidence_since_last: defaultText("evidence_since_last", latest?.evidence_since_last),
+      thesis_status: defaultText("thesis_status", latest?.thesis_status ?? "unassessed"),
+      fresh_entry_answer: defaultText("fresh_entry_answer", latest?.fresh_entry_answer ?? "unassessed"),
+      portfolio_fit: defaultText("portfolio_fit", latest?.portfolio_fit),
+      data_quality_notes: defaultText("data_quality_notes", latest?.data_quality_notes),
+      verdict: defaultText("verdict", latest?.verdict ?? "manual_review"),
+      target_contracts: defaultText("target_contracts", latest?.target_contracts ?? position.contracts),
+      quality: defaultText("quality", latest?.quality ?? "unrated"),
+      urgency: defaultText("urgency", latest?.urgency ?? "medium"),
+      confidence: defaultText("confidence", latest?.confidence ?? "low"),
+      continuation_condition: defaultText("continuation_condition", latest?.continuation_condition),
+      next_review_date: defaultText("next_review_date", latest?.next_review_date),
+      decision_deadline: defaultText("decision_deadline", latest?.decision_deadline),
+      decision_notes: defaultText("decision_notes", latest?.decision_notes),
+      threshold_approval_status: defaultText(
+        "threshold_approval_status",
+        latest?.threshold_approval_status ?? assessmentResponse?.mandate.threshold_approval_status ?? "draft"
+      ),
+    };
+
+    if (mode === "window" && latest) {
+      Object.assign(nextForm, {
+        trade_role: latest.trade_role,
+        original_thesis: latest.original_thesis ?? "",
+        contract_thesis: latest.contract_thesis ?? "",
+        expected_path: latest.expected_path ?? "",
+        catalyst: latest.catalyst ?? "",
+        confirmation_condition: latest.confirmation_condition ?? "",
+        invalidation_condition: latest.invalidation_condition ?? "",
+        risk_budget: latest.risk_budget === null ? "" : String(latest.risk_budget),
+        evidence_since_last: "",
+        thesis_status: latest.thesis_status,
+        fresh_entry_answer: latest.fresh_entry_answer,
+        portfolio_fit: latest.portfolio_fit ?? "",
+        data_quality_notes: latest.data_quality_notes ?? "",
+        verdict: latest.verdict,
+        target_contracts: String(latest.target_contracts),
+        quality: latest.quality,
+        urgency: latest.urgency,
+        confidence: latest.confidence,
+        continuation_condition: suggestedWindow?.continuation_condition ?? latest.continuation_condition ?? "",
+        next_review_date: suggestedWindow?.next_review_date ?? defaultText("next_review_date", latest.next_review_date),
+        decision_deadline: suggestedWindow?.decision_deadline ?? defaultText("decision_deadline", latest.decision_deadline),
+        decision_notes: "",
+        threshold_approval_status: latest.threshold_approval_status ?? "draft",
+      });
+    }
+
+    setDecisionReviewError(null);
+    setDecisionReviewMode(mode);
+    setDecisionReviewForm(nextForm);
+    setShowDecisionReviewModal(true);
+  };
+
+  const applySuggestedDecisionWindow = () => {
+    const suggestion = selectedThesisAssessment?.suggested_window;
+    if (!suggestion) return;
+    setDecisionReviewForm((current) => ({
+      ...current,
+      next_review_date: suggestion.next_review_date ?? "",
+      decision_deadline: suggestion.decision_deadline ?? "",
+      continuation_condition: suggestion.continuation_condition,
+      decision_notes: "Applied the latest system-suggested review window; no order was created.",
+    }));
+  };
+
+  const confirmAutomaticAssessment = async () => {
+    if (!selected) return;
+    setConfirmingDecisionReview(true);
+    setThesisAssessmentError(null);
+    try {
+      const assessmentResponse =
+        thesisAssessmentsByPosition[selected.position.id]
+        ?? (await loadThesisAssessment(selected.position.id));
+      if (!assessmentResponse?.assessment) {
+        throw new Error("The automatic assessment is not ready yet.");
+      }
+      await apiFetch(`/secret/options/positions/${selected.position.id}/decision-reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          review_date: todayInputValue(),
+          selected_assessment_id: assessmentResponse.assessment.id,
+          threshold_approval_status: assessmentResponse.mandate.threshold_approval_status ?? "draft",
+        }),
+      });
+      const positionId = selected.position.id;
+      await loadDecisionReviews(positionId);
+      void loadPositions();
+    } catch (err: unknown) {
+      setThesisAssessmentError(err instanceof Error ? err.message : "Failed to confirm the automatic grade.");
+    } finally {
+      setConfirmingDecisionReview(false);
+    }
+  };
+
+  const closeDecisionReviewModal = () => {
+    setShowDecisionReviewModal(false);
+    setDecisionReviewError(null);
+    setDecisionReviewMode("override");
+    setDecisionReviewForm(initialDecisionReviewFormState);
+  };
+
+  const handleCreateDecisionReview = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selected) {
+      setDecisionReviewError("No position is selected.");
+      return;
+    }
+    const targetContracts = Number(decisionReviewForm.target_contracts);
+    const riskBudget = decisionReviewForm.risk_budget ? Number(decisionReviewForm.risk_budget) : null;
+    if (!Number.isInteger(targetContracts) || targetContracts < 0) {
+      setDecisionReviewError("Target contracts must be a whole number at or above zero.");
+      return;
+    }
+    if (riskBudget !== null && (!Number.isFinite(riskBudget) || riskBudget <= 0)) {
+      setDecisionReviewError("Risk budget must be greater than zero.");
+      return;
+    }
+    const terminalDecision = ["close", "replacement_candidate"].includes(decisionReviewForm.verdict);
+    const schedulingAnchor = decisionReviewForm.review_date > todayInputValue()
+      ? decisionReviewForm.review_date
+      : todayInputValue();
+    if (!terminalDecision && !decisionReviewForm.next_review_date) {
+      setDecisionReviewError("Choose a future next review date for an open-position decision.");
+      return;
+    }
+    if (!terminalDecision && !decisionReviewForm.decision_deadline) {
+      setDecisionReviewError("Choose a decision deadline for the maximum recommended hold.");
+      return;
+    }
+    if (decisionReviewForm.next_review_date && decisionReviewForm.next_review_date <= schedulingAnchor) {
+      setDecisionReviewError("The next review must be after today and the review date.");
+      return;
+    }
+    if (!terminalDecision && decisionReviewForm.decision_deadline <= schedulingAnchor) {
+      setDecisionReviewError("The decision deadline must be after today and the review date.");
+      return;
+    }
+    if (
+      terminalDecision &&
+      decisionReviewForm.decision_deadline &&
+      decisionReviewForm.decision_deadline !== decisionReviewForm.review_date
+    ) {
+      setDecisionReviewError("A close or replacement decision has zero recommended hold, so its deadline must match the review date.");
+      return;
+    }
+    if (
+      decisionReviewForm.next_review_date &&
+      decisionReviewForm.decision_deadline &&
+      decisionReviewForm.next_review_date > decisionReviewForm.decision_deadline
+    ) {
+      setDecisionReviewError("The next review cannot be after the decision deadline.");
+      return;
+    }
+    if (!terminalDecision && decisionReviewForm.decision_deadline && decisionReviewForm.decision_deadline > selected.position.expiration) {
+      setDecisionReviewError("The decision deadline cannot be after the contract expires.");
+      return;
+    }
+    setDecisionReviewSubmitting(true);
+    setDecisionReviewError(null);
+    try {
+      await apiFetch(`/secret/options/positions/${selected.position.id}/decision-reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...decisionReviewForm,
+          selected_assessment_id: decisionReviewForm.selected_assessment_id
+            ? Number(decisionReviewForm.selected_assessment_id)
+            : null,
+          risk_budget: riskBudget,
+          target_contracts: targetContracts,
+          original_thesis: decisionReviewForm.original_thesis || null,
+          contract_thesis: decisionReviewForm.contract_thesis || null,
+          expected_path: decisionReviewForm.expected_path || null,
+          catalyst: decisionReviewForm.catalyst || null,
+          confirmation_condition: decisionReviewForm.confirmation_condition || null,
+          invalidation_condition: decisionReviewForm.invalidation_condition || null,
+          evidence_since_last: decisionReviewForm.evidence_since_last || null,
+          portfolio_fit: decisionReviewForm.portfolio_fit || null,
+          data_quality_notes: decisionReviewForm.data_quality_notes || null,
+          continuation_condition: decisionReviewForm.continuation_condition || null,
+          next_review_date: decisionReviewForm.next_review_date || null,
+          decision_deadline: decisionReviewForm.decision_deadline || null,
+          decision_notes: decisionReviewForm.decision_notes || null,
+          override_reason: decisionReviewForm.override_reason || null,
+        }),
+      });
+      const positionId = selected.position.id;
+      closeDecisionReviewModal();
+      await Promise.all([loadDecisionReviews(positionId), loadThesisAssessment(positionId)]);
+      void loadPositions();
+    } catch (err: unknown) {
+      setDecisionReviewError(err instanceof Error ? err.message : "Failed to record decision review.");
+    } finally {
+      setDecisionReviewSubmitting(false);
+    }
+  };
 
   const handleCreatePosition = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -2669,11 +3466,22 @@ export default function SecretOptions() {
   };
 
   useEffect(() => {
-    loadPositions();
-    loadClosedPositions();
-    loadTrainingOutcomes();
-    loadOptionalityClusters();
-    loadScannerSummary();
+    let cancelled = false;
+    void loadPositions().finally(() => {
+      if (cancelled) return;
+      void loadDecisionReviewWindows();
+      // Scanner history and clustering live below the fold. Let the critical
+      // portfolio request finish before starting their queries, and load modal
+      // data only when its corresponding control is opened.
+      void loadOptionalityClusters();
+      void loadScannerSummary();
+    });
+    return () => {
+      cancelled = true;
+      if (positionsRefreshTimerRef.current !== null) {
+        window.clearTimeout(positionsRefreshTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -2690,9 +3498,17 @@ export default function SecretOptions() {
 
   useEffect(() => {
     if (selectedId !== null) {
-      loadGreeks(selectedId);
+      loadDecisionReviews(selectedId);
+      loadThesisAssessment(selectedId);
     }
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!showRiskEvidence || selectedId === null || greeksPositionId === selectedId) {
+      return;
+    }
+    void loadGreeks(selectedId);
+  }, [showRiskEvidence, selectedId, greeksPositionId]);
 
   const selected = useMemo(
     () => positions.find((item) => item.position.id === selectedId) || null,
@@ -2713,7 +3529,7 @@ export default function SecretOptions() {
   }, [greeksData, selected]);
 
   useEffect(() => {
-    if (!selectedSymbol || spotWeightBySymbol[selectedSymbol]) {
+    if (!showRiskEvidence || !selectedSymbol || spotWeightBySymbol[selectedSymbol]) {
       return;
     }
     let cancelled = false;
@@ -2736,7 +3552,7 @@ export default function SecretOptions() {
     return () => {
       cancelled = true;
     };
-  }, [selectedSymbol, spotWeightBySymbol]);
+  }, [showRiskEvidence, selectedSymbol, spotWeightBySymbol]);
 
   useEffect(() => {
     if (!selected) {
@@ -2761,6 +3577,10 @@ export default function SecretOptions() {
       };
     });
   }, [selected]);
+
+  useEffect(() => {
+    setShowRiskEvidence(false);
+  }, [selectedId]);
 
   const sortedPositions = useMemo(() => {
     const sorted = [...positions];
@@ -2865,6 +3685,7 @@ export default function SecretOptions() {
     positions.forEach(({ position }) => {
       const eventId = position.source_event_id;
       const directMatch = eventId ? trainingOutcomeByEventId.get(eventId) : null;
+      const usesDecisionReviewWindow = position.evaluation_source === "decision_review";
       const linkedHoldDays =
         typeof position.evaluation_hold_days === "number" &&
         Number.isFinite(position.evaluation_hold_days) &&
@@ -2879,15 +3700,20 @@ export default function SecretOptions() {
           : null;
       const fallbackKey = `${position.symbol.trim().toUpperCase()}|${position.option_type.trim().toLowerCase()}`;
       const historicalMatch = trainingOutcomeBySymbolType.get(fallbackKey);
-      const holdDays = directMatch?.hold_days ?? linkedHoldDays ?? historicalMatch?.hold_days ?? null;
+      const holdDays = usesDecisionReviewWindow
+        ? linkedHoldDays
+        : directMatch?.hold_days ?? linkedHoldDays ?? historicalMatch?.hold_days ?? null;
       const minHoldDays =
-        directMatch?.review_min_hold_days ??
-        linkedMinHoldDays ??
-        historicalMatch?.review_min_hold_days ??
+        (usesDecisionReviewWindow
+          ? linkedMinHoldDays
+          : directMatch?.review_min_hold_days ??
+            linkedMinHoldDays ??
+            historicalMatch?.review_min_hold_days) ??
         (holdDays ? Math.max(1, Math.min(holdDays, Math.round(holdDays * 0.4))) : null);
       if (!holdDays) return;
 
       const anchorDate =
+        (usesDecisionReviewWindow ? toDate(position.evaluation_start_date) : null) ||
         toDate(position.source_triggered_at) ||
         toDate(position.trade_date);
       if (!anchorDate) return;
@@ -2896,7 +3722,9 @@ export default function SecretOptions() {
       if (!insight) return;
       result[position.id] = {
         ...insight,
-        detail: directMatch
+        detail: usesDecisionReviewWindow
+          ? `Decision review window · ${insight.holdDays}d`
+          : directMatch
           ? `Linked window ${directMatch.review_min_hold_days ?? insight.minHoldDays}-${directMatch.hold_days}d`
           : linkedHoldDays
             ? `Linked window ${insight.minHoldDays}-${linkedHoldDays}d`
@@ -2940,6 +3768,7 @@ export default function SecretOptions() {
     [expandedScannerHitId, selectedScannerHits]
   );
   const selectedScannerHitContract = selectedScannerHit?.selected_contract ?? null;
+  const selectedScannerHitPositionMatch = presentScannerPositionMatch(selectedScannerHit?.position_match);
   const selectedScannerHitContractLabel =
     selectedScannerHitContract?.option_type &&
     selectedScannerHitContract.strike !== null &&
@@ -3133,6 +3962,14 @@ export default function SecretOptions() {
     ? buildPositionDiagnosis(selected.position, selected.metrics, selectedTimelineLane)
     : null;
   const selectedOpportunityRead = selected ? buildOpportunityRead(selected.metrics.opportunity) : null;
+  const selectedDecisionReviews = selected ? decisionReviewsByPosition[selected.position.id] ?? null : null;
+  const selectedThesisAssessment = selected ? thesisAssessmentsByPosition[selected.position.id] ?? null : null;
+  const selectedAssessmentConfirmed = Boolean(
+    selectedDecisionReviews?.latest_review
+    && selectedThesisAssessment?.assessment
+    && selectedDecisionReviews.latest_review.selected_assessment_id === selectedThesisAssessment.assessment.id
+    && selectedDecisionReviews.latest_review.human_override === "none"
+  );
 
   const chartPriceDomain = useMemo(() => {
     if (!greeksData?.price_curve?.length) {
@@ -3216,6 +4053,26 @@ export default function SecretOptions() {
       winRate: totalTrades ? (winners / totalTrades) * 100 : 0,
     };
   }, [sortedClosedRows]);
+
+  const scannerRecurrenceLearning = useMemo(() => {
+    const cohorts = learningSummary?.scanner_recurrence_outcomes?.cohorts;
+    if (!cohorts) return null;
+    const repeated =
+      cohorts.repeat_seen.sample_count +
+      cohorts.strengthened_seen.sample_count +
+      cohorts.contract_drift_seen.sample_count;
+    if (repeated === 0) {
+      return "Repeat evidence: collecting closed outcomes; no model weights change automatically.";
+    }
+    const parts = [`${repeated} closed repeat ${repeated === 1 ? "cycle" : "cycles"}`];
+    if (cohorts.strengthened_seen.sample_count > 0) {
+      parts.push(`${cohorts.strengthened_seen.sample_count} strengthened`);
+    }
+    if (cohorts.contract_drift_seen.sample_count > 0) {
+      parts.push(`${cohorts.contract_drift_seen.sample_count} contract drift`);
+    }
+    return `Repeat evidence: ${parts.join(" · ")}; actual trades only.`;
+  }, [learningSummary]);
 
   const openAttribution = useMemo(() => {
     const linked = positions.filter(
@@ -3400,6 +4257,9 @@ export default function SecretOptions() {
       <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_440px]">
         <section className="min-w-0 space-y-3">
       <div className="surface-card-strong p-3">
+        <span className="sr-only" role="status" aria-live="polite">
+          {listRefreshPending ? "Position list updates pending." : listRefreshSettled ? "Position list updated." : ""}
+        </span>
         <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -3518,6 +4378,22 @@ export default function SecretOptions() {
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <button
+              type="button"
+              onClick={() => void refreshPositionList()}
+              disabled={loading || listRefreshPending}
+              title={listRefreshPending ? "Fresh quotes and list updates are pending" : "Refresh all positions and review windows"}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-wait ${
+                listRefreshPending
+                  ? "border-amber-400/35 bg-amber-500/10 text-amber-100"
+                  : listRefreshSettled
+                    ? "border-emerald-400/35 bg-emerald-500/10 text-emerald-100"
+                    : "border-stealth-600 bg-stealth-900/70 text-stealth-300 hover:border-stealth-500 hover:text-stealth-100"
+              }`}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${listRefreshPending ? "animate-spin" : ""}`} aria-hidden="true" />
+              {listRefreshPending ? "Refreshing" : listRefreshSettled ? "Updated" : "Refresh list"}
+            </button>
+            <button
               onClick={() => {
                 setEditingPositionId(null);
                 resetForm();
@@ -3531,6 +4407,7 @@ export default function SecretOptions() {
             <button
               onClick={() => {
                 loadClosedPositions();
+                loadLearningSummary();
                 setShowClosedLog(true);
               }}
               className="rounded-lg bg-stealth-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-stealth-600"
@@ -3569,7 +4446,7 @@ export default function SecretOptions() {
           </div>
         ) : null}
 
-        {loading ? (
+        {loading && positions.length === 0 ? (
           <div className="text-sm text-gray-400">Loading positions...</div>
         ) : (
           <div className="max-h-[68vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
@@ -3594,7 +4471,7 @@ export default function SecretOptions() {
                   className="inline-flex"
                   role="img"
                   aria-label="Timeline legend"
-                  title="Rail = time until expiration. Cyan band = opportunity window. Mint fill = elapsed opportunity window. Thin tick = today. Thick tick = evaluation gate. Rose tail = past gate."
+                  title="Rail = contract life. Filled range = active maximum-hold window. Brackets strengthen on interaction. Thin amber marker = next review. Capped white marker = today. Translucent onion skins = all prior window versions."
                 >
                   <HelpCircle className="h-3.5 w-3.5 text-sky-300/80" aria-hidden="true" />
                 </span>
@@ -3624,6 +4501,7 @@ export default function SecretOptions() {
                 const volatilityRead = buildVolatilityRead(metrics.volatility_signal);
                 const opportunityRead = buildOpportunityRead(metrics.opportunity);
                 const rowActive = position.id === selectedId;
+                const rowHovered = position.id === hoveredPositionId;
                 const isExpanded = expandedPositionId === position.id;
                 const rowDiagnosis = buildPositionDiagnosis(position, metrics, lane);
                 const holdDateWindow = formatHoldDateWindow(position, evaluation, lane);
@@ -3640,6 +4518,8 @@ export default function SecretOptions() {
                         setSelectedId(position.id);
                         setExpandedPositionId((current) => (current === position.id ? null : position.id));
                       }}
+                      onMouseEnter={() => setHoveredPositionId(position.id)}
+                      onMouseLeave={() => setHoveredPositionId((current) => (current === position.id ? null : current))}
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -3660,6 +4540,11 @@ export default function SecretOptions() {
                         position={position}
                         metrics={metrics}
                         lane={lane}
+                        decisionHistory={
+                          decisionReviewsByPosition[position.id]?.history ?? decisionWindowsByPosition[String(position.id)]
+                        }
+                        suggestedWindow={rowActive ? thesisAssessmentsByPosition[position.id]?.suggested_window : null}
+                        isInteractive={rowActive || rowHovered}
                       />
 
                       <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)] gap-x-2 text-[11px] tabular-nums md:grid">
@@ -3698,6 +4583,18 @@ export default function SecretOptions() {
                             onClose={openCloseModal}
                           />
                         </div>
+                      ) : null}
+
+                      {(listRefreshPending || listRefreshSettled) ? (
+                        <span
+                          className={`pointer-events-none absolute inset-y-1 right-0 w-1 rounded-l-full transition-colors duration-200 ${
+                            listRefreshPending
+                              ? "animate-pulse bg-amber-300/85 motion-reduce:animate-none"
+                              : "bg-emerald-400/75"
+                          }`}
+                          title={listRefreshPending ? `${position.symbol} refresh pending` : `${position.symbol} updated`}
+                          aria-hidden="true"
+                        />
                       ) : null}
                     </div>
 
@@ -4008,6 +4905,7 @@ export default function SecretOptions() {
                 <div className="divide-y divide-stealth-800/80">
                 {selectedScannerHits.map((opportunity) => {
                   const contract = opportunity.selected_contract;
+                  const positionMatch = presentScannerPositionMatch(opportunity.position_match);
                   const isSelected = expandedScannerHitId === opportunity.event_id;
                   const contractLabel =
                     contract.option_type && contract.strike !== null && contract.strike !== undefined
@@ -4039,16 +4937,36 @@ export default function SecretOptions() {
                           {opportunity.symbol}
                         </Link>
                         <div className="min-w-0">
-                          <div className="truncate text-stealth-200">
-                            {contractLabel}
-                            {contract.expiry ? ` · ${formatDate(contract.expiry)}` : ""}
-                            {contract.dte !== null && contract.dte !== undefined ? ` · ${contract.dte} DTE` : ""}
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <div className="truncate text-stealth-200">
+                              {contractLabel}
+                              {contract.expiry ? ` · ${formatDate(contract.expiry)}` : ""}
+                              {contract.dte !== null && contract.dte !== undefined ? ` · ${contract.dte} DTE` : ""}
+                            </div>
+                            {positionMatch ? (
+                              <span
+                                aria-label={positionMatch.accessibleLabel}
+                                title={positionMatch.accessibleLabel}
+                                className={`shrink-0 rounded border px-1 py-0.5 text-[8px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[positionMatch.tone]}`}
+                              >
+                                {positionMatch.badgeLabel}
+                              </span>
+                            ) : null}
                           </div>
                           <div className="truncate text-[10px] text-stealth-500">
                             {opportunity.group} · IV pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
                             {contract.reward_risk !== null && contract.reward_risk !== undefined ? ` · ${contract.reward_risk.toFixed(2)}R` : ""}
                             {contract.open_interest !== null && contract.open_interest !== undefined ? ` · OI ${contract.open_interest}` : ""}
                           </div>
+                          {positionMatch ? (
+                            <div
+                              role="note"
+                              aria-label={positionMatch.accessibleLabel}
+                              className={`truncate text-[9px] ${scannerPositionMatchTextClass[positionMatch.tone]}`}
+                            >
+                              {positionMatch.evidenceLine}
+                            </div>
+                          ) : null}
                         </div>
                         <div className="flex items-start justify-end gap-1">
                           <div className={`rounded-md border px-1.5 py-1 text-center text-xs font-semibold ${opportunityScoreClass(opportunity.score)}`}>
@@ -4120,7 +5038,7 @@ export default function SecretOptions() {
       <div className="surface-card-strong max-h-none overflow-y-visible p-2.5 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
         <div className="mb-2 flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-stealth-100">Selected Volatility</h2>
+            <h2 className="text-sm font-semibold text-stealth-100">Position inspector</h2>
             {selected ? (
               <p className="mt-0.5 text-[11px] font-medium text-stealth-300">
                 Selected: {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
@@ -4159,6 +5077,318 @@ export default function SecretOptions() {
           </div>
         )}
 
+        {selected && (
+          <div className="mb-2 rounded-xl border border-sky-700/45 bg-sky-950/20 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-sky-300">Decision cockpit</div>
+                <div className="mt-1 text-base font-semibold leading-tight text-stealth-100">
+                  {selectedThesisAssessment?.assessment
+                    ? `${decisionLabel(selectedThesisAssessment.assessment.proposed_verdict)} to ${selectedThesisAssessment.assessment.proposed_target_contracts}`
+                    : "Building the first point-in-time assessment"}
+                </div>
+                {selectedThesisAssessment?.assessment && (
+                  <div className="mt-1 flex flex-wrap gap-1 text-[9px]">
+                    <span className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300">
+                      {decisionLabel(selectedThesisAssessment.assessment.quality)} quality
+                    </span>
+                    <span className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300">
+                      {decisionLabel(selectedThesisAssessment.assessment.urgency)} urgency
+                    </span>
+                    <span className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300">
+                      {decisionLabel(selectedThesisAssessment.assessment.confidence)} confidence
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0 text-right text-[9px] text-stealth-500">
+                <div>{selected.position.contracts} held</div>
+                <div>{selected.metrics.dte ?? "—"} DTE</div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                disabled={confirmingDecisionReview || loadingThesisAssessment || !selectedThesisAssessment?.assessment || selectedAssessmentConfirmed}
+                onClick={confirmAutomaticAssessment}
+                title="Append the current automatic grade to the decision journal. No order is submitted."
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-emerald-600/55 bg-emerald-900/35 px-2 py-1.5 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-800/45 disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                {confirmingDecisionReview ? "Confirming..." : selectedAssessmentConfirmed ? "Grade confirmed" : "Confirm grade"}
+              </button>
+              <button
+                type="button"
+                onClick={() => openDecisionReviewModal(selected.position, "override")}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-sky-600/55 bg-sky-900/35 px-2 py-1.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-800/55"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+                Override decision
+              </button>
+              <button
+                type="button"
+                onClick={() => openDecisionReviewModal(selected.position, "window")}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-amber-700/50 bg-amber-950/25 px-2 py-1.5 text-[10px] font-semibold text-amber-100 hover:bg-amber-900/40"
+              >
+                <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+                Revise window
+              </button>
+              <button
+                type="button"
+                disabled={loadingThesisAssessment}
+                onClick={() => loadThesisAssessment(selected.position.id, true)}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2 py-1.5 text-[10px] font-semibold text-stealth-200 hover:bg-stealth-800 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingThesisAssessment ? "animate-spin" : ""}`} aria-hidden="true" />
+                {loadingThesisAssessment ? "Grading..." : "Refresh grade"}
+              </button>
+            </div>
+
+            {selectedThesisAssessment?.assessment && (
+              <div className="mt-2 text-[10px]">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="rounded-md border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
+                    <div className="text-[9px] uppercase tracking-wide text-stealth-500">Suggested next review</div>
+                    <div className="mt-0.5 font-semibold text-stealth-100">
+                      {selectedThesisAssessment.suggested_window.next_review_date
+                        ? formatDate(selectedThesisAssessment.suggested_window.next_review_date)
+                        : "No further review"}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
+                    <div className="text-[9px] uppercase tracking-wide text-stealth-500">Maximum hold deadline</div>
+                    <div className="mt-0.5 font-semibold text-stealth-100">
+                      {formatDate(selectedThesisAssessment.suggested_window.decision_deadline)}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-1.5 text-[9px] text-stealth-500">
+                  {selectedThesisAssessment.suggested_window.max_hold_sessions} session max · entry model {selectedThesisAssessment.suggested_window.original_min_hold_days}-{selectedThesisAssessment.suggested_window.original_max_hold_days} sessions
+                  {selectedThesisAssessment.suggested_window.rebased ? " · rebased today; prior window preserved" : ""}
+                </div>
+              </div>
+            )}
+
+            {thesisAssessmentError && (
+              <div className="mt-2 rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-[10px] text-rose-100">
+                {thesisAssessmentError}
+              </div>
+            )}
+
+            {selectedThesisAssessment?.assessment && (
+              <details className="mt-2 rounded-md border border-sky-700/35 bg-stealth-950/30 text-[10px]">
+                <summary className="cursor-pointer px-2 py-1.5 font-semibold text-stealth-300">
+                  Why this grade · 6 decision inputs
+                </summary>
+                <div className="space-y-2 border-t border-sky-800/30 p-2">
+                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                  {[
+                    ["Company", selectedThesisAssessment.assessment.company_thesis_status],
+                    ["Security", selectedThesisAssessment.assessment.security_thesis_readiness],
+                    ["Path", selectedThesisAssessment.assessment.path_status],
+                    ["Contract", selectedThesisAssessment.assessment.contract_status],
+                    ["Portfolio", selectedThesisAssessment.assessment.portfolio_fit_status],
+                    ["Data", selectedThesisAssessment.assessment.data_quality_status],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded border border-stealth-700/70 bg-stealth-950/55 px-1.5 py-1">
+                      <div className="text-stealth-500">{label}</div>
+                      <div className="font-semibold text-stealth-100">{decisionLabel(value)}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-[10px] leading-relaxed text-stealth-300">
+                  {selectedThesisAssessment.assessment.reasons.join(" ")}
+                </div>
+                {selectedThesisAssessment.assessment.vetoes.length > 0 && (
+                  <div className="rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-[10px] text-rose-100">
+                    <span className="font-semibold">Vetoes: </span>
+                    {selectedThesisAssessment.assessment.vetoes.map((item) => item.detail).join(" ")}
+                  </div>
+                )}
+                {selectedThesisAssessment.assessment.missing_inputs.length > 0 && (
+                  <details className="text-[10px] text-amber-100">
+                    <summary className="cursor-pointer">Confidence limits · {selectedThesisAssessment.assessment.missing_inputs.length}</summary>
+                    <div className="mt-1 text-stealth-400">{selectedThesisAssessment.assessment.missing_inputs.join(" · ")}</div>
+                  </details>
+                )}
+                {(
+                  selectedThesisAssessment.risk_policy.approval_status !== "approved"
+                  || !selectedThesisAssessment.risk_policy.active
+                  || selectedThesisAssessment.risk_policy.portfolio_capital === null
+                ) && (
+                  <details className="rounded border border-amber-700/35 bg-amber-950/15 px-2 py-1.5 text-[10px] text-amber-100">
+                    <summary className="cursor-pointer font-semibold">Activate portfolio sizing guardrails</summary>
+                    <div className="mt-2 grid gap-2 border-t border-amber-900/50 pt-2 md:grid-cols-[1fr_auto] md:items-end">
+                      <label className="text-stealth-400">
+                        Portfolio capital / NAV
+                        <input
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          value={portfolioCapitalInput}
+                          onChange={(event) => setPortfolioCapitalInput(event.target.value)}
+                          placeholder="Required for sizing"
+                          className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2 py-1.5 text-xs text-stealth-100"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={riskPolicySaving}
+                        onClick={approveRiskPolicy}
+                        className="rounded border border-amber-600/50 bg-amber-900/35 px-2.5 py-1.5 font-semibold text-amber-100 hover:bg-amber-800/45 disabled:opacity-50"
+                      >
+                        {riskPolicySaving ? "Saving..." : "Approve draft guardrails"}
+                      </button>
+                    </div>
+                    <div className="mt-1.5 text-stealth-500">
+                      Defaults: 30% single-position, 75% one direction, 45% one expiry bucket, 25% max spread, 21 minimum DTE. Approval creates a new policy version.
+                    </div>
+                  </details>
+                )}
+                <div className="flex flex-wrap justify-between gap-2 text-[9px] text-stealth-500">
+                  <span>{selectedThesisAssessment.assessment.grader_version} · {formatRelativeTime(selectedThesisAssessment.assessment.as_of)}</span>
+                  <span>Shadow decision only · no order submitted</span>
+                </div>
+                </div>
+              </details>
+            )}
+
+            {loadingDecisionReview && !selectedDecisionReviews ? (
+              <div className="mt-2 text-[11px] text-stealth-400">Loading decision history...</div>
+            ) : selectedDecisionReviews?.latest_review ? (
+              <details className="mt-2 rounded-md border border-stealth-700/70 bg-stealth-950/25 text-[10px]">
+                <summary className="cursor-pointer px-2 py-1.5 font-semibold text-stealth-300">
+                  Decision journal · {selectedDecisionReviews.review_count} review{selectedDecisionReviews.review_count === 1 ? "" : "s"}
+                </summary>
+                <div className="space-y-2 border-t border-stealth-800 p-2">
+                <div className="grid grid-cols-4 gap-1.5 text-[10px]">
+                  <div className="rounded border border-stealth-700/70 bg-stealth-950/40 px-1.5 py-1">
+                    <div className="text-stealth-500">Target</div>
+                    <div className="font-semibold text-stealth-100">
+                      {selectedDecisionReviews.latest_review.target_contracts} / {selected.position.contracts}
+                    </div>
+                  </div>
+                  <div className="rounded border border-stealth-700/70 bg-stealth-950/40 px-1.5 py-1">
+                    <div className="text-stealth-500">Quality</div>
+                    <div className="font-semibold text-stealth-100">{decisionLabel(selectedDecisionReviews.latest_review.quality)}</div>
+                  </div>
+                  <div className="rounded border border-stealth-700/70 bg-stealth-950/40 px-1.5 py-1">
+                    <div className="text-stealth-500">Urgency</div>
+                    <div className="font-semibold text-stealth-100">{decisionLabel(selectedDecisionReviews.latest_review.urgency)}</div>
+                  </div>
+                  <div className="rounded border border-stealth-700/70 bg-stealth-950/40 px-1.5 py-1">
+                    <div className="text-stealth-500">Confidence</div>
+                    <div className="font-semibold text-stealth-100">{decisionLabel(selectedDecisionReviews.latest_review.confidence)}</div>
+                  </div>
+                </div>
+
+                <div className="rounded border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5 text-[10px] text-stealth-300">
+                  <span className="text-stealth-500">Would open this exact contract today? </span>
+                  <span className="font-semibold text-stealth-100">
+                    {decisionLabel(selectedDecisionReviews.latest_review.fresh_entry_answer)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                  <div className="rounded border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
+                    <div className="text-stealth-500">Review date · process clock</div>
+                    <div className="font-semibold text-stealth-100">
+                      {selectedDecisionReviews.latest_review.next_review_date
+                        ? formatDate(selectedDecisionReviews.latest_review.next_review_date)
+                        : "Not scheduled"}
+                    </div>
+                  </div>
+                  <div className="rounded border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
+                    <div className="text-stealth-500">Decision deadline · evidence clock</div>
+                    <div className="font-semibold text-stealth-100">
+                      {selectedDecisionReviews.latest_review.decision_deadline
+                        ? formatDate(selectedDecisionReviews.latest_review.decision_deadline)
+                        : "Not set"}
+                    </div>
+                  </div>
+                </div>
+
+                {selectedDecisionReviews.latest_review.evidence_since_last && (
+                  <div className="text-[10px] leading-relaxed text-stealth-300">
+                    <span className="text-stealth-500">What changed: </span>
+                    {selectedDecisionReviews.latest_review.evidence_since_last}
+                  </div>
+                )}
+                {selectedDecisionReviews.latest_review.continuation_condition && (
+                  <div className="text-[10px] leading-relaxed text-stealth-300">
+                    <span className="text-stealth-500">Continue only if: </span>
+                    {selectedDecisionReviews.latest_review.continuation_condition}
+                  </div>
+                )}
+
+                {selectedDecisionReviews.status.additions_blocked && (
+                  <div className="rounded border border-amber-600/45 bg-amber-950/30 px-2 py-1.5 text-[10px] text-amber-100">
+                    <div className="font-semibold">No additions until reconciled</div>
+                    <div className="mt-0.5">{selectedDecisionReviews.status.addition_blockers.join(" ")}</div>
+                  </div>
+                )}
+                {selectedDecisionReviews.status.warnings.length > 0 && (
+                  <div className="rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-[10px] text-rose-100">
+                    {selectedDecisionReviews.status.warnings.join(" ")}
+                  </div>
+                )}
+
+                <details className="rounded border border-stealth-700/70 bg-stealth-950/30 px-2 py-1 text-[10px]">
+                  <summary className="cursor-pointer text-stealth-400">
+                    Immutable history · {selectedDecisionReviews.review_count} review{selectedDecisionReviews.review_count === 1 ? "" : "s"}
+                  </summary>
+                  <div className="mt-1.5 space-y-1.5 border-t border-stealth-800 pt-1.5">
+                    {selectedDecisionReviews.history.map((review) => (
+                      <div key={review.id} className="rounded border border-stealth-800 bg-stealth-950/45 px-2 py-1.5 text-stealth-300">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-stealth-100">
+                            #{review.review_sequence} {formatDate(review.review_date)} · {decisionLabel(review.verdict)} to {review.target_contracts}
+                          </span>
+                          <span className="text-stealth-500">{review.snapshot.dte ?? "—"} DTE</span>
+                        </div>
+                        <div className="mt-0.5 text-stealth-500">
+                          Thesis {decisionLabel(review.thesis_status)} · remaining {formatCurrency(review.snapshot.remaining_capital)} · P/L {formatCurrency(review.snapshot.pnl_dollar)}
+                        </div>
+                        {review.evidence_since_last && <div className="mt-0.5">{review.evidence_since_last}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+                </div>
+              </details>
+            ) : (
+              <div className="mt-2 rounded-md border border-dashed border-stealth-700 px-2 py-1.5 text-[10px] leading-relaxed text-stealth-400">
+                No confirmed review yet. Confirm the grade or record an override; neither action submits an order.
+              </div>
+            )}
+          </div>
+        )}
+
+        {selected && (
+          <button
+            type="button"
+            onClick={() => setShowRiskEvidence((current) => !current)}
+            aria-expanded={showRiskEvidence}
+            className="mb-2 flex w-full items-center justify-between gap-3 rounded-lg border border-stealth-700/70 bg-stealth-900/35 px-2.5 py-2 text-left transition hover:border-stealth-500"
+          >
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold text-stealth-200">
+                {showRiskEvidence ? "Hide market & risk evidence" : "Show market & risk evidence"}
+              </div>
+              <div className="mt-0.5 truncate text-[9px] text-stealth-500">
+                Rank {selectedOpportunityRead?.label ?? "—"} · IV {formatPointChange(selected.metrics.volatility_signal?.trend.contract_iv_change, 1)} · quote {formatRelativeTime(selected.metrics.market.last_updated)}
+              </div>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-stealth-400 transition-transform ${showRiskEvidence ? "rotate-180" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+        )}
+
+        {showRiskEvidence && (
+          <>
         {selected && (
           <>
             {selected.metrics.opportunity ? (
@@ -4543,6 +5773,9 @@ export default function SecretOptions() {
           </div>
         )}
 
+          </>
+        )}
+
       </div>
       {optionalityClustersCard}
         </aside>
@@ -4569,6 +5802,20 @@ export default function SecretOptions() {
                 <div className="mt-0.5 break-words text-xs text-stealth-400">
                   {selectedScannerHit.group} · {selectedScannerHitContractLabel}
                 </div>
+                {selectedScannerHitPositionMatch ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <span
+                      aria-label={selectedScannerHitPositionMatch.accessibleLabel}
+                      title={selectedScannerHitPositionMatch.accessibleLabel}
+                      className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[selectedScannerHitPositionMatch.tone]}`}
+                    >
+                      {selectedScannerHitPositionMatch.badgeLabel}
+                    </span>
+                    <span className={`text-[10px] ${scannerPositionMatchTextClass[selectedScannerHitPositionMatch.tone]}`}>
+                      {selectedScannerHitPositionMatch.classificationLabel}
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <div className="flex shrink-0 items-start gap-2">
                 <div className={`rounded-md border px-2 py-1 text-sm font-semibold ${opportunityScoreClass(selectedScannerHit.score)}`}>
@@ -4587,6 +5834,379 @@ export default function SecretOptions() {
             <div className="min-h-0 overflow-x-hidden overflow-y-auto">
               <ScannerHitDetail opportunity={selectedScannerHit} />
             </div>
+          </div>
+        </div>
+      )}
+
+      {showDecisionReviewModal && selected && renderModal(
+        <div
+          className="fixed inset-0 z-[60] flex min-h-[100dvh] items-stretch justify-center overflow-y-auto bg-black/75 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+          onClick={closeDecisionReviewModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="decision-review-title"
+            className={`flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-hidden rounded-xl border border-stealth-700 bg-stealth-950 shadow-2xl sm:max-h-[calc(100dvh-2rem)] ${decisionReviewMode === "window" ? "max-w-3xl" : "max-w-5xl"}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-stealth-800 px-4 py-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-300">Append-only decision journal</div>
+                <h2 id="decision-review-title" className="mt-0.5 text-lg font-semibold text-stealth-100">
+                  {decisionReviewMode === "window"
+                    ? "Revise decision window"
+                    : selectedDecisionReviews?.latest_review
+                      ? "Override current grade"
+                      : "Capture mandate and decision"} · {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
+                </h2>
+                <p className="mt-1 max-w-3xl text-xs text-stealth-400">
+                  {decisionReviewMode === "window"
+                    ? "Change the process clock or evidence deadline without rewriting the previous review. You can explicitly apply the latest suggested dates below."
+                    : "Change only what the automatic grade missed. The recommendation, your override, and every prior version remain visible."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeDecisionReviewModal}
+                className="rounded-md border border-stealth-700 bg-stealth-900 px-2 py-1 text-sm text-stealth-300 hover:text-stealth-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateDecisionReview} className="min-h-0 overflow-y-auto px-4 py-3">
+              {decisionReviewError && (
+                <div className="mb-3 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+                  {decisionReviewError}
+                </div>
+              )}
+
+              {decisionReviewMode === "window" ? (
+                <div className="space-y-3">
+                  <section className="rounded-lg border border-stealth-700/70 bg-stealth-900/30 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Decision stays intact</div>
+                        <div className="mt-1 text-base font-semibold text-stealth-100">
+                          {decisionLabel(decisionReviewForm.verdict)} to {decisionReviewForm.target_contracts || selected.position.contracts}
+                        </div>
+                        <div className="mt-1 text-[11px] text-stealth-400">
+                          This creates a new journal entry for the clocks and conditions below. It does not edit the prior record or submit an order.
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-stealth-700 bg-stealth-950/45 px-2.5 py-1.5 text-right text-[10px] text-stealth-400">
+                        {decisionLabel(decisionReviewForm.quality)} quality<br />
+                        {decisionLabel(decisionReviewForm.confidence)} confidence
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="rounded-lg border border-amber-700/35 bg-amber-950/15 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-amber-100">Latest suggested window</h3>
+                        <p className="mt-1 text-[11px] text-stealth-400">
+                          Review {selectedThesisAssessment?.suggested_window.next_review_date ? formatDate(selectedThesisAssessment.suggested_window.next_review_date) : "not required"}
+                          {" · "}
+                          maximum hold {selectedThesisAssessment?.suggested_window.decision_deadline ? formatDate(selectedThesisAssessment.suggested_window.decision_deadline) : "not set"}
+                        </p>
+                        {selectedThesisAssessment?.suggested_window && (
+                          <p className="mt-1 max-w-xl text-[10px] text-stealth-500">
+                            {selectedThesisAssessment.suggested_window.max_hold_sessions} session max, bounded by the original {selectedThesisAssessment.suggested_window.original_min_hold_days}-{selectedThesisAssessment.suggested_window.original_max_hold_days} session model.
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!selectedThesisAssessment?.assessment}
+                        onClick={applySuggestedDecisionWindow}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-600/50 bg-amber-900/35 px-2.5 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-800/45 disabled:opacity-50"
+                      >
+                        <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+                        Apply suggested dates
+                      </button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-3 border-t border-amber-900/40 pt-3 md:grid-cols-2">
+                      <label className="text-xs text-stealth-400">
+                        Next review · process clock
+                        <input type="date" min={tomorrowInputValue()} value={decisionReviewForm.next_review_date} onChange={handleDecisionReviewFieldChange("next_review_date")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                      </label>
+                      <label className="text-xs text-stealth-400">
+                        Decision deadline · maximum hold
+                        <input
+                          type="date"
+                          min={
+                            ["close", "replacement_candidate"].includes(decisionReviewForm.verdict)
+                              ? decisionReviewForm.review_date
+                              : decisionReviewForm.next_review_date || tomorrowInputValue()
+                          }
+                          max={
+                            ["close", "replacement_candidate"].includes(decisionReviewForm.verdict)
+                              ? undefined
+                              : selected.position.expiration
+                          }
+                          value={decisionReviewForm.decision_deadline}
+                          onChange={handleDecisionReviewFieldChange("decision_deadline")}
+                          className="mt-1 w-full rounded border border-amber-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100"
+                        />
+                      </label>
+                    </div>
+                    <label className="mt-3 block text-xs text-stealth-400">
+                      Continue only if
+                      <textarea rows={3} value={decisionReviewForm.continuation_condition} onChange={handleDecisionReviewFieldChange("continuation_condition")} placeholder="What evidence must remain true through this window?" className="mt-1 w-full rounded border border-sky-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                  </section>
+
+                  <section className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="text-xs text-stealth-400">
+                        What changed?
+                        <textarea rows={3} value={decisionReviewForm.evidence_since_last} onChange={handleDecisionReviewFieldChange("evidence_since_last")} placeholder="Why should the window move now?" className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                      </label>
+                      <label className="text-xs text-stealth-400">
+                        Window notes
+                        <textarea rows={3} value={decisionReviewForm.decision_notes} onChange={handleDecisionReviewFieldChange("decision_notes")} placeholder="Timing assumptions, event dates, or conscious delay." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                      </label>
+                    </div>
+                  </section>
+                </div>
+              ) : (
+              <div className="space-y-4">
+                {selectedThesisAssessment?.assessment && (
+                  <section className="rounded-lg border border-sky-700/45 bg-sky-950/20 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-300">System recommendation</div>
+                        <div className="mt-1 text-lg font-semibold text-stealth-100">
+                          {decisionLabel(selectedThesisAssessment.assessment.proposed_verdict)} to {selectedThesisAssessment.assessment.proposed_target_contracts} contract{selectedThesisAssessment.assessment.proposed_target_contracts === 1 ? "" : "s"}
+                        </div>
+                        <div className="mt-1 text-xs text-stealth-400">
+                          {selectedThesisAssessment.assessment.reasons.join(" ")}
+                        </div>
+                      </div>
+                      <div className="rounded border border-stealth-700 bg-stealth-950/45 px-2 py-1 text-right text-[10px] text-stealth-400">
+                        {decisionLabel(selectedThesisAssessment.assessment.quality)} · {decisionLabel(selectedThesisAssessment.assessment.urgency)} urgency<br />
+                        {decisionLabel(selectedThesisAssessment.assessment.confidence)} confidence
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[10px] text-stealth-500">Saving records a decision; it does not create, stage, or send an order.</div>
+                  </section>
+                )}
+
+                <details className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-stealth-100">
+                    Advanced mandate and generated thresholds
+                    <span className="ml-2 text-[10px] font-normal text-stealth-500">Review only if the reconstructed context is wrong</span>
+                  </summary>
+                  <div className="mt-3 border-t border-stealth-800 pt-3">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold text-stealth-100">Mandate</h3>
+                    <p className="text-[11px] text-stealth-500">What was this trade supposed to accomplish? Carry these fields forward unless the mandate itself changed.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <label className="text-xs text-stealth-400">
+                      Review date
+                      <input type="date" required value={decisionReviewForm.review_date} onChange={handleDecisionReviewFieldChange("review_date")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Trade role
+                      <select value={decisionReviewForm.trade_role} onChange={handleDecisionReviewFieldChange("trade_role")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100">
+                        <option value="unclassified">Unclassified / imported</option>
+                        <option value="catalyst">Catalyst</option>
+                        <option value="trend">Trend</option>
+                        <option value="mean_reversion">Mean reversion</option>
+                        <option value="long_term_thesis">Long-term thesis</option>
+                        <option value="hedge">Hedge</option>
+                        <option value="income">Income</option>
+                      </select>
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Risk budget ($ premium at risk)
+                      <input type="number" min="0.01" step="0.01" value={decisionReviewForm.risk_budget} onChange={handleDecisionReviewFieldChange("risk_budget")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="text-xs text-stealth-400">
+                      Original underlying thesis
+                      <textarea rows={3} value={decisionReviewForm.original_thesis} onChange={handleDecisionReviewFieldChange("original_thesis")} placeholder="Why should the underlying move?" className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Exact contract thesis
+                      <textarea rows={3} value={decisionReviewForm.contract_thesis} onChange={handleDecisionReviewFieldChange("contract_thesis")} placeholder="Why this strike, expiration, and size?" className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Expected path
+                      <textarea rows={2} value={decisionReviewForm.expected_path} onChange={handleDecisionReviewFieldChange("expected_path")} placeholder="What should happen along the way, and how quickly?" className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Catalyst or milestone
+                      <textarea rows={2} value={decisionReviewForm.catalyst} onChange={handleDecisionReviewFieldChange("catalyst")} placeholder="Earnings, breakout, ruling, launch..." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Confirmation condition
+                      <textarea rows={2} value={decisionReviewForm.confirmation_condition} onChange={handleDecisionReviewFieldChange("confirmation_condition")} placeholder="Observable evidence that the trade is progressing." className="mt-1 w-full rounded border border-emerald-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Invalidation condition
+                      <textarea rows={2} value={decisionReviewForm.invalidation_condition} onChange={handleDecisionReviewFieldChange("invalidation_condition")} placeholder="Observable evidence that the idea is wrong." className="mt-1 w-full rounded border border-rose-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                  </div>
+                  <label className="mt-3 block text-xs text-stealth-400">
+                    Generated-threshold status
+                    <select value={decisionReviewForm.threshold_approval_status} onChange={handleDecisionReviewFieldChange("threshold_approval_status")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100 md:max-w-sm">
+                      <option value="draft">Keep as system draft</option>
+                      <option value="approved">Approve as a monitoring rule</option>
+                    </select>
+                  </label>
+                  </div>
+                </details>
+
+                <section className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold text-stealth-100">2. Knowing what we know today</h3>
+                    <p className="text-[11px] text-stealth-500">Separate the underlying thesis from whether this exact contract is still a good use of the remaining capital.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <label className="text-xs text-stealth-400">
+                      Thesis status
+                      <select value={decisionReviewForm.thesis_status} onChange={handleDecisionReviewFieldChange("thesis_status")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100">
+                        <option value="unassessed">Unassessed</option>
+                        <option value="strengthened">Strengthened</option>
+                        <option value="intact">Intact</option>
+                        <option value="weakened">Weakened</option>
+                        <option value="broken">Broken</option>
+                        <option value="no_longer_relevant">No longer relevant</option>
+                      </select>
+                    </label>
+                    <label className="text-xs text-stealth-400 md:col-span-2">
+                      Would you open this exact contract today?
+                      <select value={decisionReviewForm.fresh_entry_answer} onChange={handleDecisionReviewFieldChange("fresh_entry_answer")} className="mt-1 w-full rounded border border-sky-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100">
+                        <option value="unassessed">Unassessed</option>
+                        <option value="yes">Yes, without qualification</option>
+                        <option value="yes_smaller">Yes, but smaller</option>
+                        <option value="conditional">Yes, only if a condition occurs soon</option>
+                        <option value="no_underlying_valid">No, but the underlying thesis remains valid</option>
+                        <option value="no_thesis_invalid">No, because the thesis is invalid</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <label className="text-xs text-stealth-400 md:col-span-2">
+                      What changed since the last review?
+                      <textarea rows={3} value={decisionReviewForm.evidence_since_last} onChange={handleDecisionReviewFieldChange("evidence_since_last")} placeholder="Evidence, not just price movement." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Portfolio fit
+                      <textarea rows={3} value={decisionReviewForm.portfolio_fit} onChange={handleDecisionReviewFieldChange("portfolio_fit")} placeholder="Direction, strategy, expiry, sector, shared catalysts." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400 md:col-span-3">
+                      Data quality or missing context
+                      <textarea rows={2} value={decisionReviewForm.data_quality_notes} onChange={handleDecisionReviewFieldChange("data_quality_notes")} placeholder="Stale quote, wide spread, unmatched lot, uncertain event details..." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold text-stealth-100">3. Decision and the next two clocks</h3>
+                    <p className="text-[11px] text-stealth-500">Review date is a process reminder. Decision deadline is when specified evidence must exist.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                    <label className="text-xs text-stealth-400 md:col-span-2">
+                      Verdict
+                      <select value={decisionReviewForm.verdict} onChange={handleDecisionReviewFieldChange("verdict")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100">
+                        <option value="manual_review">Manual review / no verdict</option>
+                        <option value="hold">Hold</option>
+                        <option value="conditional_hold">Conditional hold</option>
+                        <option value="reduce">Reduce</option>
+                        <option value="close">Close</option>
+                        <option value="replacement_candidate">Close; evaluate replacement separately</option>
+                        <option value="add_eligible">Add-eligible</option>
+                      </select>
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Target contracts
+                      <input type="number" min="0" step="1" required value={decisionReviewForm.target_contracts} onChange={handleDecisionReviewFieldChange("target_contracts")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Quality
+                      <select value={decisionReviewForm.quality} onChange={handleDecisionReviewFieldChange("quality")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100">
+                        <option value="unrated">Unrated</option><option value="green">Green</option><option value="yellow">Yellow</option><option value="red">Red</option>
+                      </select>
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Urgency
+                      <select value={decisionReviewForm.urgency} onChange={handleDecisionReviewFieldChange("urgency")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100">
+                        <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
+                      </select>
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Confidence
+                      <select value={decisionReviewForm.confidence} onChange={handleDecisionReviewFieldChange("confidence")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100">
+                        <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="text-xs text-stealth-400">
+                      Next review date · process clock
+                      <input type="date" min={tomorrowInputValue()} value={decisionReviewForm.next_review_date} onChange={handleDecisionReviewFieldChange("next_review_date")} className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400">
+                      Decision deadline · maximum hold
+                      <input
+                        type="date"
+                        min={
+                          ["close", "replacement_candidate"].includes(decisionReviewForm.verdict)
+                            ? decisionReviewForm.review_date
+                            : decisionReviewForm.next_review_date || tomorrowInputValue()
+                        }
+                        max={
+                          ["close", "replacement_candidate"].includes(decisionReviewForm.verdict)
+                            ? undefined
+                            : selected.position.expiration
+                        }
+                        value={decisionReviewForm.decision_deadline}
+                        onChange={handleDecisionReviewFieldChange("decision_deadline")}
+                        className="mt-1 w-full rounded border border-amber-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100"
+                      />
+                    </label>
+                    <label className="text-xs text-stealth-400 md:col-span-2">
+                      Continue only if
+                      <textarea rows={2} value={decisionReviewForm.continuation_condition} onChange={handleDecisionReviewFieldChange("continuation_condition")} placeholder="Hold while A remains true; require B by the deadline; re-evaluate if D occurs." className="mt-1 w-full rounded border border-sky-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400 md:col-span-2">
+                      Decision notes
+                      <textarea rows={2} value={decisionReviewForm.decision_notes} onChange={handleDecisionReviewFieldChange("decision_notes")} placeholder="Execution plan, limit-order notes, uncertainties, or conscious override." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                    <label className="text-xs text-stealth-400 md:col-span-2">
+                      Why override the system? <span className="text-stealth-600">Recommended when you change its verdict or size</span>
+                      <textarea rows={2} value={decisionReviewForm.override_reason} onChange={handleDecisionReviewFieldChange("override_reason")} placeholder="What evidence or context does the automatic grade miss?" className="mt-1 w-full rounded border border-amber-800/60 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                    </label>
+                  </div>
+                </section>
+              </div>
+              )}
+
+              <div className="sticky bottom-0 mt-4 flex items-center justify-between gap-3 border-t border-stealth-800 bg-stealth-950/95 py-3">
+                <div className="text-[11px] text-stealth-500">
+                  {decisionReviewMode === "window"
+                    ? "Saving appends a new window version and captures a fresh market snapshot."
+                    : "A fresh quote, Greeks, P/L, DTE, and remaining-capital snapshot will be captured on save."}
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button type="button" onClick={closeDecisionReviewModal} className="rounded-md px-3 py-2 text-sm text-stealth-400 hover:text-stealth-100">Cancel</button>
+                  <button type="submit" disabled={decisionReviewSubmitting} className="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600 disabled:bg-stealth-700">
+                    {decisionReviewSubmitting
+                      ? "Recording..."
+                      : decisionReviewMode === "window"
+                        ? "Append revised window"
+                        : "Record override"}
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -5101,6 +6721,38 @@ export default function SecretOptions() {
               </div>
             </div>
 
+            {learningSummary && (
+              <div className="mb-4 rounded-lg border border-violet-500/30 bg-violet-950/15 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-300">Closed-trade learning lab</div>
+                    <div className="mt-1 text-sm font-semibold text-gray-100">
+                      {learningSummary.sample.classified_trade_cycles} classified cycles · {learningSummary.sample.matured_decision_horizons} matured decision horizons
+                    </div>
+                    <div className="mt-1 text-xs text-gray-400">
+                      Leading lessons: {Object.entries(learningSummary.trade_outcomes.primary_lessons)
+                        .sort((left, right) => right[1] - left[1])
+                        .slice(0, 3)
+                        .map(([label, count]) => `${decisionLabel(label)} (${count})`)
+                        .join(" · ") || "collecting outcomes"}
+                    </div>
+                    {scannerRecurrenceLearning ? (
+                      <div className="mt-1 text-[10px] text-violet-200/75">
+                        {scannerRecurrenceLearning}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="rounded-md border border-violet-500/25 bg-gray-950/35 px-3 py-2 text-right text-[10px] text-gray-400">
+                    Learned challenger: {decisionLabel(learningSummary.promotion_readiness.status)}<br />
+                    {learningSummary.promotion_readiness.remaining_cycles} independent cycles until eligible
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] text-gray-500">
+                  Time-ordered validation and manual promotion stay mandatory. Actual trades and modeled counterfactuals remain separate; automated execution is off.
+                </div>
+              </div>
+            )}
+
             {sortedClosedRows.length === 0 ? (
               <div className="text-sm text-gray-400 text-center py-8">No closed positions yet</div>
             ) : (
@@ -5262,7 +6914,17 @@ export default function SecretOptions() {
                         >
                           {formatSigned(pos.percent_pnl, 1)}%
                         </td>
-                        <td className="px-3 py-2 text-xs text-gray-400">{pos.notes || "—"}</td>
+                        <td className="px-3 py-2 text-xs text-gray-400">
+                          <div>{pos.notes || "—"}</div>
+                          {pos.learning_outcome && (
+                            <div
+                              className="mt-1 text-[10px] text-violet-300"
+                              title={`Process: ${decisionLabel(pos.learning_outcome.process_quality)} · Contract: ${decisionLabel(pos.learning_outcome.contract_result)}`}
+                            >
+                              Learn: {decisionLabel(pos.learning_outcome.primary_lesson)}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-2">
                           <div className="flex justify-end gap-1.5">
                             <button

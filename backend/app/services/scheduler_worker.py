@@ -20,11 +20,17 @@ async def run_scheduler_worker() -> None:
             pass
 
     logger.info("Starting scheduler worker process...")
-    await run_initial_etl()
+    # Register cron jobs before the startup ETL. External data providers can make
+    # that sweep run for several minutes; scheduled decision reviews must not be
+    # unavailable during the wait. The ETL advisory lock still prevents overlap
+    # if a regular ETL trigger arrives before this startup pass completes.
     start_scheduler()
-    await stop_event.wait()
-    logger.info("Stopping scheduler worker process...")
-    stop_scheduler()
+    try:
+        await run_initial_etl()
+        await stop_event.wait()
+    finally:
+        logger.info("Stopping scheduler worker process...")
+        stop_scheduler()
 
 
 def main() -> None:

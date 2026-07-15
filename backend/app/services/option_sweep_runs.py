@@ -20,6 +20,11 @@ from app.services.optionality_clusters import classify_optionality_symbol
 from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_opportunity_score, opportunity_grade
 from app.services.options_review_window import parse_review_window
 from app.services.options_alerts import _send_webhook
+from app.services.scanner_repeat_evidence import (
+    load_scanner_repeat_evidence_context,
+    position_match_for_event,
+    record_scanner_recurrence_events_for_run,
+)
 from app.utils.db_helpers import get_db_session
 from maintenance_scripts.options_chain_sweep import _scan_tickers
 from maintenance_scripts.options_chain_sweep import _sweep_market_data_provider_key
@@ -292,6 +297,12 @@ def finish_sweep_run(
         notes=details or None,
         completed=True,
     )
+    # The alert row is the source of truth; finalization backfills the
+    # append-only position journal idempotently in case immediate persistence
+    # was interrupted.
+    with get_db_session() as db:
+        record_scanner_recurrence_events_for_run(db, int(run_id))
+        db.commit()
 
 
 def fail_sweep_run(run_id: Optional[int], error: str) -> None:
@@ -642,6 +653,7 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
                 .limit(max(int(run.hits or 0), 25))
                 .all()
             )
+        repeat_context = load_scanner_repeat_evidence_context(db, events=events)
         serialized_run = _serialize_run(run)
 
     if not symbols:
@@ -663,15 +675,16 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
         symbol = str(event.symbol or "").strip().upper()
         group_counts[classify_optionality_symbol(symbol).group] += 1
 
-    opportunities = [
-        _ranked_opportunity_from_event(
+    opportunities = []
+    for event in filtered_events:
+        opportunity = _ranked_opportunity_from_event(
             event,
             symbol_recent_hits=symbol_counts[str(event.symbol or "").strip().upper()],
             symbol_total_hits=symbol_counts[str(event.symbol or "").strip().upper()],
             group_recent_hits=group_counts[classify_optionality_symbol(str(event.symbol or "").strip().upper()).group],
         )
-        for event in filtered_events
-    ]
+        opportunity["position_match"] = position_match_for_event(event, repeat_context)
+        opportunities.append(opportunity)
     opportunities.sort(
         key=lambda row: (
             symbol_order.get(str(row["symbol"]), len(symbol_order)),
@@ -709,6 +722,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             .limit(run_limit)
             .all()
         )
+        repeat_context = load_scanner_repeat_evidence_context(db, events=events)
 
     by_symbol: dict[str, dict[str, Any]] = {}
     event_records: list[dict[str, Any]] = []
@@ -851,6 +865,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
                 "convexity_profit_pct": event.selected_convexity_profit_pct,
                 "convexity_probability_itm": event.selected_convexity_probability_itm,
             },
+            "position_match": position_match_for_event(event, repeat_context),
         }
         current = ranked_by_symbol.get(symbol)
         if (

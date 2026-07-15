@@ -1,0 +1,94 @@
+# Option decision and learning system
+
+## Purpose
+
+This subsystem answers a capital-allocation question, not a break-even question:
+
+> Knowing what is observable now, would this exact contract at this size still be a good use of the remaining capital?
+
+It is decision support. It does not create, stage, route, or execute orders.
+
+## What is live in version 1
+
+### Append-only evidence and decisions
+
+- Every new tracked position receives a reconstructed entry mandate. The mandate records its source and labels generated thresholds as drafts.
+- A user confirmation creates a new mandate version. It never edits the reconstructed record.
+- Every automatic assessment stores its input hash, point-in-time feature snapshot, grader version, evidence, missing inputs, vetoes, and proposed action.
+- Every user review references the selected automatic assessment and records whether the user confirmed or overrode the verdict, size, or mandate.
+- Position opens, edits, adds/reductions, assessments, reviews, and closes are written to a lifecycle ledger.
+- Closing a tracked position creates a versioned postmortem; human corrections create another version.
+
+### Decision hierarchy
+
+The deterministic grader applies these layers in order:
+
+1. Reconcile the position, quote, time remaining, mandate, and risk policy.
+2. Grade the company thesis from human-confirmed evidence or current cached fundamentals. Price action is never treated as business-thesis proof.
+3. Grade path/timing and the exact contract separately.
+4. Check current tracked-option concentration and any approved risk-policy limits.
+5. Apply hard vetoes before ordinary quality logic.
+6. Propose a target contract count and one of: manual review, hold, conditional hold, reduce, close, or close-and-evaluate-replacement.
+
+The grader deliberately never proposes an add in version 1. Addition eligibility requires a confirmed mandate, current two-sided quote, approved risk policy and portfolio capital, strengthening evidence, and a separately tested sizing policy.
+
+### Closed-trade learning
+
+Actual trade outcomes are classified separately from profit and loss:
+
+- thesis selection;
+- timing;
+- contract selection;
+- sizing;
+- portfolio concentration;
+- entry execution;
+- exit discipline and review discipline;
+- catalyst/event result;
+- sound process with an unfavorable financial outcome.
+
+Each recorded review is also evaluated at pre-declared 1, 3, 5, and 10-session horizons, the decision deadline, and expiration. These counterfactual decision outcomes remain explicitly separate from actual fills and actual trade labels.
+
+## Automation schedule
+
+- Due open-position assessments: weekdays at 10:20, 13:20, and 16:20 America/New_York.
+- Closed-trade classification and matured decision horizons: weekdays at 18:10 America/New_York.
+- PostgreSQL advisory locks prevent duplicate work when more than one scheduler process is present.
+
+## Learning roadmap and anti-overfit gates
+
+The deterministic rules remain the champion while the system collects independent trade cycles. A learned model is a challenger only after at least 100 classified actual closes. That threshold is a governance floor, not evidence that a model is automatically good.
+
+Challenger development must use:
+
+- point-in-time features only, with no revised or post-decision data;
+- chronological train/calibration/test splits;
+- grouping all rows from the same trade into one split to prevent horizon leakage;
+- actual trade outcomes for actual-trade labels, never synthetic option marks mixed into them;
+- simple baselines before flexible models;
+- calibration, stability by market regime, turnover, and decision-value metrics in addition to accuracy;
+- a minimum of 25 new independent trade cycles before another retraining attempt;
+- frozen feature schema, code commit, training range, and evaluation report per challenger;
+- manual champion promotion and an immediate rollback path.
+
+Repeated experimentation must be tracked as multiple testing. Promotion should consider the probability of backtest overfitting and a deflated Sharpe-style correction where return-based comparisons are used. No model may promote itself, change risk policy, or enable order execution.
+
+## Known limits and next data priorities
+
+Version 1 is intentionally conservative when evidence is absent. It returns `unverified` or `manual_review` instead of inventing a thesis.
+
+The highest-value data improvements are:
+
+1. Broker-lot reconciliation and verified partial-fill linkage.
+2. A current option-mark table for portfolio-wide remaining-capital and Greeks aggregation.
+3. Earnings/event-calendar snapshots captured at each decision time.
+4. Sector, factor, strategy, and shared-catalyst concentration features.
+5. Entry bid/ask and execution-quality snapshots for all trades.
+6. Human feedback controls for correcting postmortem classifications in the UI.
+
+Until these are present, missing fields remain visible confidence limits and block addition eligibility.
+
+## Research references
+
+- Bailey et al., *The Probability of Backtest Overfitting*: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253
+- Bailey and Lopez de Prado, *The Deflated Sharpe Ratio*: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551
+- Harvey, Liu, and Zhu, *... and the Cross-Section of Expected Returns*: https://www.nber.org/papers/w20592

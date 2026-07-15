@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, time, timedelta
 import math
 from numbers import Real
+import os
 import re
+from threading import Lock
+import time as time_lib
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
@@ -15,10 +19,20 @@ from pydantic import BaseModel
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.models.option_positions import OptionPosition
+from app.models.option_position_reviews import OptionPositionReview
 from app.models.closed_positions import ClosedPosition
 from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
 from app.models.option_training_outcomes import OptionTrainingOutcome
+from app.models.option_decision_learning import (
+    OptionDecisionOutcome,
+    OptionPositionEvent,
+    OptionPositionMandate,
+    OptionRiskPolicy,
+    OptionThesisAssessment,
+    OptionTradeOutcome,
+)
+from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import option_quote_from_row
@@ -42,6 +56,32 @@ from app.services.option_sweep_runs import (
     start_dashboard_sweep,
 )
 from app.services.stock_price_cache import get_or_refresh_daily_frame
+from app.services.option_thesis_engine import (
+    build_actionable_decision_window,
+    build_assessment_payload,
+    confirm_mandate_from_review,
+    ensure_model_registry,
+    get_or_create_mandate,
+    json_dumps,
+    json_loads,
+    latest_risk_policy,
+    persist_assessment,
+    rebase_continuation_condition,
+    serialize_assessment,
+    serialize_mandate,
+    serialize_risk_policy,
+    technical_snapshot_from_frame,
+)
+from app.services.option_decision_learning import (
+    backfill_trade_outcomes,
+    create_trade_outcome,
+    learning_summary,
+    mature_decision_outcomes,
+    record_position_event,
+    serialize_decision_outcome,
+    serialize_position_event,
+    serialize_trade_outcome,
+)
 from app.utils.db_helpers import get_db_session
 from app.services.greeks_calculator import (
     black_scholes_price,
@@ -52,6 +92,15 @@ from app.services.greeks_calculator import (
 )
 
 router = APIRouter(prefix="/secret/options", tags=["SecretOptions"])
+
+_POSITION_METRICS_CACHE: Dict[tuple[object, ...], tuple[float, Dict[str, object]]] = {}
+_POSITION_METRICS_CACHE_LOCK = Lock()
+_POSITION_METRICS_REFRESH_LOCK = Lock()
+_POSITION_METRICS_REFRESH_IN_PROGRESS = False
+_POSITION_METRICS_REFRESH_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="option-position-cache-refresh",
+)
 
 # Risk-free rate configuration (can be adjusted based on current T-bill rates)
 RISK_FREE_RATE = 0.0425  # 4.25% - adjust as needed
@@ -131,6 +180,70 @@ class ClosedPositionUpdate(BaseModel):
 class ScannerRunRequest(BaseModel):
     universe_key: str = "SP500"
     threshold: float = 30.0
+
+
+class OptionPositionReviewCreate(BaseModel):
+    review_date: Optional[str] = None
+    selected_assessment_id: Optional[int] = None
+    trade_role: Optional[str] = None
+    original_thesis: Optional[str] = None
+    contract_thesis: Optional[str] = None
+    expected_path: Optional[str] = None
+    catalyst: Optional[str] = None
+    confirmation_condition: Optional[str] = None
+    invalidation_condition: Optional[str] = None
+    risk_budget: Optional[float] = None
+    evidence_since_last: Optional[str] = None
+    thesis_status: Optional[str] = None
+    fresh_entry_answer: Optional[str] = None
+    portfolio_fit: Optional[str] = None
+    data_quality_notes: Optional[str] = None
+    verdict: Optional[str] = None
+    target_contracts: Optional[int] = None
+    quality: Optional[str] = None
+    urgency: Optional[str] = None
+    confidence: Optional[str] = None
+    continuation_condition: Optional[str] = None
+    next_review_date: Optional[str] = None
+    decision_deadline: Optional[str] = None
+    decision_notes: Optional[str] = None
+    override_reason: Optional[str] = None
+    threshold_approval_status: str = "draft"
+
+
+class OptionRiskPolicyCreate(BaseModel):
+    name: str = "Tracked options risk policy"
+    active: bool = True
+    approval_status: str = "approved"
+    portfolio_capital: Optional[float] = None
+    default_trade_risk_budget: Optional[float] = None
+    max_single_position_premium_pct: Optional[float] = 30.0
+    max_directional_premium_pct: Optional[float] = 75.0
+    max_expiry_bucket_premium_pct: Optional[float] = 45.0
+    max_option_spread_pct: Optional[float] = 25.0
+    min_dte_for_add: Optional[int] = 21
+
+
+class OptionLifecycleEventCreate(BaseModel):
+    event_type: str
+    event_at: Optional[str] = None
+    quantity_after: Optional[int] = None
+    execution_price: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class OptionTradeOutcomeFeedback(BaseModel):
+    process_quality: Optional[str] = None
+    primary_lesson: Optional[str] = None
+    thesis_result: Optional[str] = None
+    contract_result: Optional[str] = None
+    timing_result: Optional[str] = None
+    sizing_result: Optional[str] = None
+    portfolio_result: Optional[str] = None
+    entry_execution_result: Optional[str] = None
+    exit_discipline_result: Optional[str] = None
+    event_result: Optional[str] = None
+    review_discipline: Optional[str] = None
 
 
 # Old Greeks functions removed - now using greeks_calculator module
@@ -1028,6 +1141,7 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
         "hv30": None,
         "volatility_signal": _empty_volatility_signal(),
         "opportunity": None,
+        "technical_snapshot": {},
         "dte": None,
         "greeks": None,
         "pnl": {
@@ -1400,6 +1514,7 @@ def _compute_position_metrics(
         hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
     except Exception:
         hv30 = None
+    technical_snapshot = technical_snapshot_from_frame(hist)
     
     # Determine spot price
     spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
@@ -1499,6 +1614,7 @@ def _compute_position_metrics(
         "hv30": hv30,
         "volatility_signal": volatility_signal,
         "opportunity": opportunity_signal,
+        "technical_snapshot": technical_snapshot,
         "dte": dte,
         "greeks": greeks,
         "pnl": {
@@ -1515,14 +1631,39 @@ def _position_evaluation_window(db: Any, position: OptionPosition) -> Dict[str, 
         "evaluation_hold_days": None,
         "evaluation_start_date": None,
         "evaluation_due_date": None,
+        "evaluation_decision_deadline": None,
         "evaluation_source": None,
         "evaluation_window_basis": None,
     }
+    position_id = getattr(position, "id", None)
+    if position_id is not None:
+        latest_review = (
+            db.query(OptionPositionReview)
+            .filter(OptionPositionReview.position_id == position_id)
+            .order_by(OptionPositionReview.review_sequence.desc(), OptionPositionReview.id.desc())
+            .first()
+        )
+        if latest_review and latest_review.next_review_date:
+            hold_days = max((latest_review.next_review_date - latest_review.review_date).days, 1)
+            return {
+                "evaluation_min_hold_days": 1,
+                "evaluation_hold_days": hold_days,
+                "evaluation_start_date": latest_review.review_date.isoformat(),
+                "evaluation_due_date": latest_review.next_review_date.isoformat(),
+                "evaluation_decision_deadline": (
+                    latest_review.decision_deadline.isoformat() if latest_review.decision_deadline else None
+                ),
+                "evaluation_source": "decision_review",
+                "evaluation_window_basis": (
+                    latest_review.continuation_condition
+                    or f"decision review #{latest_review.review_sequence}: {latest_review.verdict}"
+                ),
+            }
+
     source_event_id = getattr(position, "source_event_id", None)
     if source_event_id is None:
         return empty
 
-    position_id = getattr(position, "id", None)
     reminder = None
     if position_id is not None:
         reminder = (
@@ -1625,6 +1766,7 @@ def _serialize_closed_position(
 ) -> Dict[str, object]:
     return {
         "id": position.id,
+        "source_position_id": position.source_position_id,
         "symbol": position.symbol,
         "option_type": position.option_type,
         "strike": position.strike,
@@ -1650,6 +1792,415 @@ def _serialize_closed_position(
         "source_match_confidence": position.source_match_confidence,
         "source_match_notes": position.source_match_notes,
         **_opportunity_rank_payload_for_event(source_event, prefix="source_opportunity"),
+    }
+
+
+_REVIEW_TRADE_ROLES = {
+    "unclassified",
+    "catalyst",
+    "trend",
+    "mean_reversion",
+    "long_term_thesis",
+    "hedge",
+    "income",
+}
+_REVIEW_THESIS_STATES = {
+    "unassessed",
+    "strengthened",
+    "intact",
+    "weakened",
+    "broken",
+    "no_longer_relevant",
+}
+_REVIEW_FRESH_ENTRY_ANSWERS = {
+    "unassessed",
+    "yes",
+    "yes_smaller",
+    "conditional",
+    "no_underlying_valid",
+    "no_thesis_invalid",
+}
+_REVIEW_VERDICTS = {
+    "manual_review",
+    "hold",
+    "conditional_hold",
+    "reduce",
+    "close",
+    "replacement_candidate",
+    "add_eligible",
+}
+_REVIEW_QUALITY = {"unrated", "green", "yellow", "red"}
+_REVIEW_URGENCY = {"low", "medium", "high", "critical"}
+_REVIEW_CONFIDENCE = {"low", "medium", "high"}
+
+
+def _clean_review_text(value: Optional[str]) -> Optional[str]:
+    cleaned = value.strip() if value else ""
+    return cleaned or None
+
+
+def _parse_review_date(value: Optional[str], field_name: str) -> Optional[date]:
+    if not value:
+        return None
+    try:
+        return _parse_date(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"{field_name} must use YYYY-MM-DD.") from exc
+
+
+def _parse_market_timestamp(value: object) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def _position_review_snapshot(position: OptionPosition, metrics: Dict[str, object]) -> Dict[str, object]:
+    market = metrics.get("market") if isinstance(metrics.get("market"), dict) else {}
+    quote = metrics.get("quote") if isinstance(metrics.get("quote"), dict) else {}
+    pnl = metrics.get("pnl") if isinstance(metrics.get("pnl"), dict) else {}
+    greeks = metrics.get("greeks") if isinstance(metrics.get("greeks"), dict) else {}
+    option_price = metrics.get("option_price")
+    safe_option_price = float(option_price) if _is_finite_number(option_price) else None
+    return {
+        "underlying_price_snapshot": (
+            float(market.get("current_price")) if _is_finite_number(market.get("current_price")) else None
+        ),
+        "option_price_snapshot": safe_option_price,
+        "remaining_capital_snapshot": (
+            safe_option_price * position.contracts * 100 if safe_option_price is not None else None
+        ),
+        "pnl_dollar_snapshot": (
+            float(pnl.get("dollar")) if _is_finite_number(pnl.get("dollar")) else None
+        ),
+        "pnl_percent_snapshot": (
+            float(pnl.get("percent")) if _is_finite_number(pnl.get("percent")) else None
+        ),
+        "dte_snapshot": int(metrics["dte"]) if _is_finite_number(metrics.get("dte")) else None,
+        "delta_snapshot": (
+            float(greeks.get("delta")) if _is_finite_number(greeks.get("delta")) else None
+        ),
+        "theta_snapshot": (
+            float(greeks.get("theta")) if _is_finite_number(greeks.get("theta")) else None
+        ),
+        "implied_volatility_snapshot": (
+            float(quote.get("implied_volatility"))
+            if _is_finite_number(quote.get("implied_volatility"))
+            else float(metrics.get("volatility"))
+            if _is_finite_number(metrics.get("volatility"))
+            else None
+        ),
+        "quote_quality_snapshot": _clean_review_text(str(quote.get("quality") or "")),
+        "market_data_as_of": _parse_market_timestamp(market.get("last_updated")),
+    }
+
+
+def _serialize_position_review(review: OptionPositionReview) -> Dict[str, object]:
+    return {
+        "id": review.id,
+        "position_id": review.position_id,
+        "supersedes_review_id": review.supersedes_review_id,
+        "review_sequence": review.review_sequence,
+        "review_date": review.review_date.isoformat(),
+        "review_type": review.review_type,
+        "selected_assessment_id": review.selected_assessment_id,
+        "decision_source": review.decision_source,
+        "human_override": review.human_override,
+        "override_reason": review.override_reason,
+        "threshold_approval_status": review.threshold_approval_status,
+        "symbol": review.symbol,
+        "expiration": review.expiration.isoformat(),
+        "strike": review.strike,
+        "option_type": review.option_type,
+        "contracts_snapshot": review.contracts_snapshot,
+        "trade_role": review.trade_role,
+        "original_thesis": review.original_thesis,
+        "contract_thesis": review.contract_thesis,
+        "expected_path": review.expected_path,
+        "catalyst": review.catalyst,
+        "confirmation_condition": review.confirmation_condition,
+        "invalidation_condition": review.invalidation_condition,
+        "risk_budget": review.risk_budget,
+        "evidence_since_last": review.evidence_since_last,
+        "thesis_status": review.thesis_status,
+        "fresh_entry_answer": review.fresh_entry_answer,
+        "portfolio_fit": review.portfolio_fit,
+        "data_quality_notes": review.data_quality_notes,
+        "verdict": review.verdict,
+        "target_contracts": review.target_contracts,
+        "quality": review.quality,
+        "urgency": review.urgency,
+        "confidence": review.confidence,
+        "continuation_condition": review.continuation_condition,
+        "next_review_date": review.next_review_date.isoformat() if review.next_review_date else None,
+        "decision_deadline": review.decision_deadline.isoformat() if review.decision_deadline else None,
+        "decision_notes": review.decision_notes,
+        "snapshot": {
+            "underlying_price": review.underlying_price_snapshot,
+            "option_price": review.option_price_snapshot,
+            "remaining_capital": review.remaining_capital_snapshot,
+            "pnl_dollar": review.pnl_dollar_snapshot,
+            "pnl_percent": review.pnl_percent_snapshot,
+            "dte": review.dte_snapshot,
+            "delta": review.delta_snapshot,
+            "theta": review.theta_snapshot,
+            "implied_volatility": review.implied_volatility_snapshot,
+            "quote_quality": review.quote_quality_snapshot,
+            "market_data_as_of": review.market_data_as_of.isoformat() if review.market_data_as_of else None,
+        },
+        "created_at": review.created_at.isoformat() if review.created_at else None,
+    }
+
+
+def _serialize_position_review_window(review: OptionPositionReview) -> Dict[str, object]:
+    """Compact review history used by the portfolio rails."""
+    return {
+        "id": review.id,
+        "position_id": review.position_id,
+        "review_sequence": review.review_sequence,
+        "review_date": review.review_date.isoformat(),
+        "next_review_date": review.next_review_date.isoformat() if review.next_review_date else None,
+        "decision_deadline": review.decision_deadline.isoformat() if review.decision_deadline else None,
+    }
+
+
+def _position_review_status(
+    review: Optional[OptionPositionReview],
+    position: OptionPosition,
+    *,
+    today: Optional[date] = None,
+) -> Dict[str, object]:
+    as_of = today or date.today()
+    if review is None:
+        return {
+            "window_status": "unreviewed",
+            "review_due": True,
+            "decision_deadline_missed": False,
+            "additions_blocked": True,
+            "addition_blockers": ["No decision mandate or review has been recorded."],
+            "warnings": [],
+            "missing_mandate_fields": [
+                "original thesis",
+                "contract thesis",
+                "confirmation condition",
+                "invalidation condition",
+                "decision deadline",
+            ],
+        }
+
+    missing_mandate_fields = [
+        label
+        for label, value in (
+            ("original thesis", review.original_thesis),
+            ("contract thesis", review.contract_thesis),
+            ("confirmation condition", review.confirmation_condition),
+            ("invalidation condition", review.invalidation_condition),
+            ("decision deadline", review.decision_deadline),
+        )
+        if not value
+    ]
+    review_due = bool(review.next_review_date and review.next_review_date <= as_of)
+    deadline_missed = bool(review.decision_deadline and review.decision_deadline < as_of)
+    if deadline_missed:
+        window_status = "decision_overdue"
+    elif review.next_review_date and review.next_review_date < as_of:
+        window_status = "review_overdue"
+    elif review.next_review_date == as_of:
+        window_status = "review_due"
+    elif review.next_review_date:
+        window_status = "scheduled"
+    else:
+        window_status = "unscheduled"
+
+    blockers = []
+    if missing_mandate_fields:
+        blockers.append("Trade mandate is incomplete.")
+    if review.option_price_snapshot is None or review.underlying_price_snapshot is None:
+        blockers.append("The review lacks a complete live price snapshot.")
+    if review.thesis_status in {"broken", "no_longer_relevant"}:
+        blockers.append("The latest review says the thesis is no longer valid.")
+    if deadline_missed:
+        blockers.append("The active decision deadline has passed.")
+    if review.risk_budget is not None and position.total_cost > review.risk_budget:
+        blockers.append("Recorded position cost exceeds the latest risk budget.")
+
+    warnings = []
+    if review.verdict == "close" and review.target_contracts != 0:
+        warnings.append("Close verdict does not target zero contracts.")
+    if review.verdict == "reduce" and review.target_contracts >= position.contracts:
+        warnings.append("Reduce verdict does not target fewer contracts than the current position.")
+    if review.verdict in {"hold", "conditional_hold"} and review.target_contracts != position.contracts:
+        warnings.append("Hold verdict and target size differ from the current position.")
+    if review.verdict == "add_eligible" and review.target_contracts <= position.contracts:
+        warnings.append("Add-eligible verdict does not target more contracts than the current position.")
+    if review.verdict == "replacement_candidate" and review.target_contracts != 0:
+        warnings.append("A replacement candidate should close this contract before evaluating a new one.")
+    if review.next_review_date and review.decision_deadline and review.next_review_date > review.decision_deadline:
+        warnings.append("The next review is scheduled after the decision deadline.")
+
+    return {
+        "window_status": window_status,
+        "review_due": review_due,
+        "decision_deadline_missed": deadline_missed,
+        "additions_blocked": bool(blockers),
+        "addition_blockers": blockers,
+        "warnings": warnings,
+        "missing_mandate_fields": missing_mandate_fields,
+    }
+
+
+def _generate_position_assessment(
+    db: Any,
+    position: OptionPosition,
+    metrics: Dict[str, object],
+    *,
+    trigger: str,
+    force: bool = False,
+) -> tuple[OptionPositionMandate, OptionThesisAssessment, OptionRiskPolicy]:
+    source_event = (
+        db.query(OptionAlertEvent).filter(OptionAlertEvent.id == position.source_event_id).first()
+        if position.source_event_id is not None
+        else None
+    )
+    mandate = get_or_create_mandate(db, position, source_event)
+    latest_review = (
+        db.query(OptionPositionReview)
+        .filter(OptionPositionReview.position_id == position.id)
+        .order_by(OptionPositionReview.review_sequence.desc(), OptionPositionReview.id.desc())
+        .first()
+    )
+    policy = latest_risk_policy(db)
+    ensure_model_registry(db)
+    projection_row = (
+        db.query(StockProjectionSnapshot)
+        .filter(StockProjectionSnapshot.symbol == position.symbol)
+        .first()
+    )
+    latest_assessment = (
+        db.query(OptionThesisAssessment)
+        .filter(OptionThesisAssessment.position_id == position.id)
+        .order_by(OptionThesisAssessment.as_of.desc(), OptionThesisAssessment.id.desc())
+        .first()
+    )
+    payload = build_assessment_payload(
+        position=position,
+        metrics=metrics,
+        mandate=mandate,
+        latest_review=latest_review,
+        portfolio_positions=db.query(OptionPosition).all(),
+        risk_policy=policy,
+        source_event=source_event,
+        projection_payload=projection_row.payload if projection_row is not None else None,
+    )
+    assessment = persist_assessment(
+        db,
+        position=position,
+        mandate=mandate,
+        payload=payload,
+        trigger=trigger,
+        force=force,
+    )
+    if latest_assessment is None or assessment.id != latest_assessment.id:
+        record_position_event(
+            db,
+            position_id=position.id,
+            event_type="assessed",
+            related_assessment_id=assessment.id,
+            quantity_before=position.contracts,
+            quantity_after=position.contracts,
+            total_cost_before=position.total_cost,
+            total_cost_after=position.total_cost,
+            details={
+                "trigger": trigger,
+                "grader_version": assessment.grader_version,
+                "proposed_verdict": assessment.proposed_verdict,
+                "shadow_only": True,
+            },
+        )
+    return mandate, assessment, policy
+
+
+def _assessment_to_review_defaults(
+    position: OptionPosition,
+    mandate: OptionPositionMandate,
+    assessment: OptionThesisAssessment,
+    suggested_window: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
+    thesis_map = {
+        "strengthening": "strengthened",
+        "intact": "intact",
+        "watch": "weakened",
+        "impaired": "weakened",
+        "broken": "broken",
+        "retired": "no_longer_relevant",
+    }
+    if assessment.proposed_verdict == "hold" and assessment.contract_status == "attractive":
+        fresh_entry = "yes"
+    elif assessment.proposed_verdict == "reduce":
+        fresh_entry = "yes_smaller"
+    elif assessment.proposed_verdict == "conditional_hold":
+        fresh_entry = "conditional"
+    elif assessment.company_thesis_status in {"broken", "retired"}:
+        fresh_entry = "no_thesis_invalid"
+    else:
+        fresh_entry = "no_underlying_valid"
+    axes = json_loads(assessment.axis_results_json, {})
+    portfolio = axes.get("portfolio_fit", {}) if isinstance(axes, dict) else {}
+    missing = json_loads(assessment.missing_inputs_json, [])
+    next_review_default = (
+        suggested_window.get("next_review_date")
+        if suggested_window is not None
+        else assessment.next_review_date.isoformat() if assessment.next_review_date else None
+    )
+    decision_deadline_default = (
+        suggested_window.get("decision_deadline")
+        if suggested_window is not None
+        else assessment.decision_deadline.isoformat() if assessment.decision_deadline else None
+    )
+    continuation_default = (
+        suggested_window.get("continuation_condition")
+        if suggested_window is not None and suggested_window.get("continuation_condition")
+        else assessment.continuation_condition
+    )
+    return {
+        "selected_assessment_id": assessment.id,
+        "review_date": date.today().isoformat(),
+        "trade_role": mandate.trade_role,
+        "original_thesis": mandate.original_thesis,
+        "contract_thesis": mandate.contract_thesis,
+        "expected_path": mandate.expected_path,
+        "catalyst": mandate.catalyst,
+        "confirmation_condition": mandate.confirmation_condition,
+        "invalidation_condition": mandate.invalidation_condition,
+        "risk_budget": mandate.risk_budget,
+        "evidence_since_last": "\n".join(json_loads(assessment.reasons_json, [])[:3]),
+        "thesis_status": thesis_map.get(assessment.company_thesis_status, "unassessed"),
+        "fresh_entry_answer": fresh_entry,
+        "portfolio_fit": (
+            f"{assessment.portfolio_fit_status.replace('_', ' ').title()}; "
+            f"same-direction premium {portfolio.get('direction_share_pct'):.1f}% of tracked premium."
+            if isinstance(portfolio.get("direction_share_pct"), (int, float))
+            else assessment.portfolio_fit_status.replace("_", " ").title()
+        ),
+        "data_quality_notes": (
+            f"Missing or unapproved: {', '.join(missing)}" if missing else "Point-in-time data inputs are complete."
+        ),
+        "verdict": assessment.proposed_verdict,
+        "target_contracts": assessment.proposed_target_contracts,
+        "quality": assessment.quality,
+        "urgency": assessment.urgency,
+        "confidence": assessment.confidence,
+        "continuation_condition": continuation_default,
+        "next_review_date": next_review_default,
+        "decision_deadline": decision_deadline_default,
+        "decision_notes": "Automatic assessment accepted as a shadow recommendation; no order was submitted.",
+        "threshold_approval_status": mandate.threshold_approval_status,
+        "current_contracts": position.contracts,
     }
 
 
@@ -1872,28 +2423,194 @@ def _compute_training_outcome_with_cache(event: OptionAlertEvent) -> Optional[Di
     return _compute_training_outcome(event, history=history)
 
 
+def _position_metrics_cache_key(position: OptionPosition) -> tuple[object, ...]:
+    """Include every persisted field so edits cannot reuse incompatible metrics."""
+    return tuple(
+        getattr(position, column.name, None)
+        for column in OptionPosition.__table__.columns
+    )
+
+
+def _position_metrics_snapshot(position: OptionPosition) -> SimpleNamespace:
+    """Detach scalar position data before a background refresh outlives its DB session."""
+    return SimpleNamespace(
+        **{
+            column.name: getattr(position, column.name, None)
+            for column in OptionPosition.__table__.columns
+        }
+    )
+
+
+def _position_metrics_worker_count(position_count: int) -> int:
+    try:
+        configured_workers = int(os.getenv("OPTION_POSITIONS_MAX_WORKERS", "1"))
+    except ValueError:
+        configured_workers = 1
+    return min(position_count, max(1, min(configured_workers, 8)))
+
+
+def _compute_position_metrics_batch(
+    positions: list[Any],
+    provider: Optional[MarketDataProvider] = None,
+) -> Dict[int, Dict[str, object]]:
+    if not positions:
+        return {}
+    market_provider = provider or get_market_data_provider()
+    metrics_by_position_index: Dict[int, Dict[str, object]] = {}
+
+    def compute_metrics(
+        position_index: int,
+        position: OptionPosition,
+    ) -> tuple[int, Dict[str, object]]:
+        try:
+            return position_index, _compute_position_metrics(position, market_provider)
+        except Exception as perr:
+            # A failed symbol must not prevent the rest of the book from
+            # rendering. The empty payload also exposes the error to the
+            # existing data-quality UI.
+            traceback.print_exc()
+            return position_index, _empty_position_metrics(str(perr))
+
+    with ThreadPoolExecutor(
+        max_workers=_position_metrics_worker_count(len(positions)),
+        thread_name_prefix="option-position-metrics",
+    ) as executor:
+        futures = [
+            executor.submit(compute_metrics, position_index, position)
+            for position_index, position in enumerate(positions)
+        ]
+        for future in as_completed(futures):
+            position_index, metrics = future.result()
+            metrics_by_position_index[position_index] = metrics
+    return metrics_by_position_index
+
+
+def _position_metrics_cache_ttl_seconds() -> float:
+    try:
+        return max(float(os.getenv("OPTION_POSITIONS_CACHE_TTL_SECONDS", "30")), 0.0)
+    except ValueError:
+        return 30.0
+
+
+def _position_metrics_refreshing() -> bool:
+    with _POSITION_METRICS_REFRESH_LOCK:
+        return _POSITION_METRICS_REFRESH_IN_PROGRESS
+
+
+def _schedule_position_metrics_refresh(positions: list[Any]) -> bool:
+    global _POSITION_METRICS_REFRESH_IN_PROGRESS
+    if not positions:
+        return False
+    with _POSITION_METRICS_REFRESH_LOCK:
+        if _POSITION_METRICS_REFRESH_IN_PROGRESS:
+            return False
+        _POSITION_METRICS_REFRESH_IN_PROGRESS = True
+
+    snapshots = [_position_metrics_snapshot(position) for position in positions]
+
+    def refresh() -> None:
+        global _POSITION_METRICS_REFRESH_IN_PROGRESS
+        try:
+            refreshed = _compute_position_metrics_batch(snapshots)
+            refreshed_at = time_lib.monotonic()
+            with _POSITION_METRICS_CACHE_LOCK:
+                for position_index, position in enumerate(snapshots):
+                    _POSITION_METRICS_CACHE[_position_metrics_cache_key(position)] = (
+                        refreshed_at,
+                        refreshed[position_index],
+                    )
+        except Exception:
+            traceback.print_exc()
+        finally:
+            with _POSITION_METRICS_REFRESH_LOCK:
+                _POSITION_METRICS_REFRESH_IN_PROGRESS = False
+
+    try:
+        _POSITION_METRICS_REFRESH_EXECUTOR.submit(refresh)
+    except RuntimeError:
+        with _POSITION_METRICS_REFRESH_LOCK:
+            _POSITION_METRICS_REFRESH_IN_PROGRESS = False
+        return False
+    return True
+
+
 @router.get("/positions")
-def get_positions():
+def get_positions(refresh: bool = Query(False)):
     try:
         with get_db_session() as db:
             _seed_positions(db)
             positions = db.query(OptionPosition).order_by(OptionPosition.trade_date.desc()).all()
-            provider = get_market_data_provider()
+            cache_keys = [_position_metrics_cache_key(position) for position in positions]
+            valid_cache_keys = set(cache_keys)
+            now = time_lib.monotonic()
+            cache_ttl = _position_metrics_cache_ttl_seconds()
+
+            with _POSITION_METRICS_CACHE_LOCK:
+                for cache_key in list(_POSITION_METRICS_CACHE):
+                    if cache_key not in valid_cache_keys:
+                        _POSITION_METRICS_CACHE.pop(cache_key, None)
+                missing_indices = [
+                    position_index
+                    for position_index, cache_key in enumerate(cache_keys)
+                    if cache_key not in _POSITION_METRICS_CACHE
+                ]
+
+            # A new or edited position has no compatible snapshot, so compute
+            # only those misses before returning. Established positions render
+            # from their last complete snapshot immediately.
+            if missing_indices:
+                missing_positions = [positions[position_index] for position_index in missing_indices]
+                computed = _compute_position_metrics_batch(missing_positions)
+                computed_at = time_lib.monotonic()
+                with _POSITION_METRICS_CACHE_LOCK:
+                    for batch_index, position_index in enumerate(missing_indices):
+                        _POSITION_METRICS_CACHE[cache_keys[position_index]] = (
+                            computed_at,
+                            computed[batch_index],
+                        )
+
+            with _POSITION_METRICS_CACHE_LOCK:
+                cache_entries = [_POSITION_METRICS_CACHE[cache_key] for cache_key in cache_keys]
+
+            stale_indices = (
+                list(range(len(positions)))
+                if refresh
+                else [
+                    position_index
+                    for position_index, (cached_at, _metrics) in enumerate(cache_entries)
+                    if now - cached_at >= cache_ttl
+                ]
+            )
+            refresh_started = _schedule_position_metrics_refresh(
+                [positions[position_index] for position_index in stale_indices]
+            )
+            metrics_by_position_index = {
+                position_index: metrics
+                for position_index, (_cached_at, metrics) in enumerate(cache_entries)
+            }
+
             payload = []
-            for position in positions:
-                try:
-                    metrics = _compute_position_metrics(position, provider)
-                except Exception as perr:
-                    # Log per-position errors but continue returning other positions
-                    traceback.print_exc()
-                    metrics = _empty_position_metrics(str(perr))
+            for position_index, position in enumerate(positions):
                 payload.append(
                     {
                         "position": _serialize_position(position, _position_evaluation_window(db, position)),
-                        "metrics": metrics,
+                        "metrics": metrics_by_position_index[position_index],
                     }
                 )
-            return _json_safe({"positions": payload})
+            cache_age_seconds = max(
+                (max(now - cached_at, 0.0) for cached_at, _metrics in cache_entries),
+                default=0.0,
+            )
+            return _json_safe(
+                {
+                    "positions": payload,
+                    "metrics_cache": {
+                        "status": "stale" if stale_indices else "fresh",
+                        "age_seconds": round(cache_age_seconds, 1),
+                        "refresh_in_progress": refresh_started or _position_metrics_refreshing(),
+                    },
+                }
+            )
     except Exception as exc:
         # Log traceback to server logs for debugging
         traceback.print_exc()
@@ -2022,6 +2739,28 @@ def create_position(payload: OptionPositionCreate):
         )
         db.add(position)
         db.flush()
+        source_event = (
+            db.query(OptionAlertEvent).filter(OptionAlertEvent.id == position.source_event_id).first()
+            if position.source_event_id is not None
+            else None
+        )
+        mandate = get_or_create_mandate(
+            db,
+            position,
+            source_event,
+            capture_kind="captured_at_entry",
+        )
+        record_position_event(
+            db,
+            position_id=position.id,
+            event_type="opened",
+            quantity_before=0,
+            quantity_after=position.contracts,
+            execution_price=position.fill_price,
+            total_cost_before=0.0,
+            total_cost_after=position.total_cost,
+            details={"mandate_id": mandate.id, "source_event_id": position.source_event_id},
+        )
         sync_trade_sell_reminder(db, position)
         db.commit()
         db.refresh(position)
@@ -2035,6 +2774,9 @@ def update_position(position_id: int, payload: OptionPositionCreate):
         if not position:
             raise HTTPException(status_code=404, detail="Position not found")
 
+        quantity_before = position.contracts
+        total_cost_before = position.total_cost
+        prior_snapshot = _serialize_position(position)
         trade_date = _parse_date(payload.trade_date)
         expiration = _parse_date(payload.expiration)
         symbol = payload.symbol.upper()
@@ -2085,11 +2827,655 @@ def update_position(position_id: int, payload: OptionPositionCreate):
         position.source_match_method = attribution["source_match_method"]
         position.source_match_confidence = attribution["source_match_confidence"]
         position.source_match_notes = attribution["source_match_notes"]
+        event_type = (
+            "resized_up"
+            if payload.contracts > quantity_before
+            else "resized_down"
+            if payload.contracts < quantity_before
+            else "edited"
+        )
+        inferred_execution_price = None
+        if payload.contracts > quantity_before and payload.total_cost > total_cost_before:
+            inferred_execution_price = (
+                (payload.total_cost - total_cost_before)
+                / ((payload.contracts - quantity_before) * 100)
+            )
+        record_position_event(
+            db,
+            position_id=position.id,
+            event_type=event_type,
+            source="dashboard_edit",
+            quantity_before=quantity_before,
+            quantity_after=payload.contracts,
+            execution_price=inferred_execution_price,
+            total_cost_before=total_cost_before,
+            total_cost_after=payload.total_cost,
+            details={
+                "prior_position": prior_snapshot,
+                "execution_price_inferred": inferred_execution_price is not None,
+            },
+        )
         sync_trade_sell_reminder(db, position)
 
         db.commit()
         db.refresh(position)
         return _json_safe({"position": _serialize_position(position, _position_evaluation_window(db, position))})
+
+
+@router.get("/decision-review-windows")
+def get_decision_review_windows():
+    """Return every stored review window in one compact portfolio-level payload."""
+    with get_db_session() as db:
+        reviews = (
+            db.query(OptionPositionReview)
+            .join(OptionPosition, OptionPosition.id == OptionPositionReview.position_id)
+            .order_by(
+                OptionPositionReview.position_id.asc(),
+                OptionPositionReview.review_sequence.desc(),
+                OptionPositionReview.id.desc(),
+            )
+            .all()
+        )
+        windows_by_position: Dict[str, list[Dict[str, object]]] = {}
+        for review in reviews:
+            windows_by_position.setdefault(str(review.position_id), []).append(
+                _serialize_position_review_window(review)
+            )
+        return _json_safe(
+            {
+                "position_count": len(windows_by_position),
+                "window_count": len(reviews),
+                "windows_by_position": windows_by_position,
+            }
+        )
+
+
+@router.get("/positions/{position_id}/decision-reviews")
+def get_position_decision_reviews(position_id: int):
+    with get_db_session() as db:
+        position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Position not found")
+        reviews = (
+            db.query(OptionPositionReview)
+            .filter(OptionPositionReview.position_id == position_id)
+            .order_by(OptionPositionReview.review_sequence.desc(), OptionPositionReview.id.desc())
+            .all()
+        )
+        latest = reviews[0] if reviews else None
+        return _json_safe(
+            {
+                "position_id": position_id,
+                "review_count": len(reviews),
+                "latest_review": _serialize_position_review(latest) if latest else None,
+                "status": _position_review_status(latest, position),
+                "history": [_serialize_position_review(review) for review in reviews],
+            }
+        )
+
+
+def _assessment_response(
+    db: Any,
+    position: OptionPosition,
+    mandate: OptionPositionMandate,
+    assessment: OptionThesisAssessment,
+    policy: OptionRiskPolicy,
+) -> Dict[str, object]:
+    source_event = (
+        db.query(OptionAlertEvent).filter(OptionAlertEvent.id == position.source_event_id).first()
+        if position.source_event_id is not None
+        else None
+    )
+    latest_review = (
+        db.query(OptionPositionReview)
+        .filter(OptionPositionReview.position_id == position.id)
+        .order_by(OptionPositionReview.review_sequence.desc(), OptionPositionReview.id.desc())
+        .first()
+    )
+    effective_verdict = latest_review.verdict if latest_review is not None else assessment.proposed_verdict
+    effective_urgency = latest_review.urgency if latest_review is not None else assessment.urgency
+    suggested_window = build_actionable_decision_window(
+        position=position,
+        mandate=mandate,
+        source_event=source_event,
+        verdict=effective_verdict,
+        urgency=effective_urgency,
+        contract_status=assessment.contract_status,
+        as_of=date.today(),
+    )
+    suggested_window["source_assessment_id"] = assessment.id
+    suggested_window["decision_source"] = "latest_review" if latest_review is not None else "automatic_assessment"
+    suggested_window["verdict"] = effective_verdict
+    suggested_window["urgency"] = effective_urgency
+    suggested_window["continuation_condition"] = rebase_continuation_condition(
+        latest_review.continuation_condition if latest_review is not None else assessment.continuation_condition,
+        deadline=suggested_window["decision_deadline"],
+        verdict=effective_verdict,
+    )
+    active_next_review = latest_review.next_review_date if latest_review is not None else assessment.next_review_date
+    active_deadline = latest_review.decision_deadline if latest_review is not None else assessment.decision_deadline
+    suggested_window["rebased"] = bool(
+        (active_next_review and active_next_review <= date.today())
+        or (active_deadline and active_deadline < date.today())
+    )
+    history = (
+        db.query(OptionThesisAssessment)
+        .filter(OptionThesisAssessment.position_id == position.id)
+        .order_by(OptionThesisAssessment.as_of.desc(), OptionThesisAssessment.id.desc())
+        .limit(20)
+        .all()
+    )
+    return {
+        "position_id": position.id,
+        "mandate": serialize_mandate(mandate),
+        "assessment": serialize_assessment(assessment),
+        "suggested_window": suggested_window,
+        "review_defaults": _assessment_to_review_defaults(position, mandate, assessment, suggested_window),
+        "risk_policy": serialize_risk_policy(policy),
+        "history": [serialize_assessment(row) for row in history],
+        "automated_execution_enabled": False,
+        "execution_note": "This endpoint grades and records a decision snapshot; it never submits an order.",
+    }
+
+
+@router.get("/positions/{position_id}/thesis-assessment")
+def get_position_thesis_assessment(position_id: int):
+    with get_db_session() as db:
+        position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Position not found")
+        assessment = (
+            db.query(OptionThesisAssessment)
+            .filter(OptionThesisAssessment.position_id == position_id)
+            .order_by(OptionThesisAssessment.as_of.desc(), OptionThesisAssessment.id.desc())
+            .first()
+        )
+        if assessment is not None:
+            mandate = (
+                db.query(OptionPositionMandate)
+                .filter(OptionPositionMandate.id == assessment.mandate_id)
+                .first()
+            ) or get_or_create_mandate(db, position)
+            policy = latest_risk_policy(db)
+        else:
+            try:
+                metrics = _compute_position_metrics(position, get_market_data_provider())
+            except Exception as exc:
+                metrics = _empty_position_metrics(str(exc))
+            mandate, assessment, policy = _generate_position_assessment(
+                db,
+                position,
+                metrics,
+                trigger="dashboard_load",
+            )
+        response = _assessment_response(db, position, mandate, assessment, policy)
+        db.commit()
+        return _json_safe(response)
+
+
+@router.post("/positions/{position_id}/thesis-assessment")
+def refresh_position_thesis_assessment(
+    position_id: int,
+    force: bool = Query(True),
+):
+    with get_db_session() as db:
+        position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Position not found")
+        try:
+            metrics = _compute_position_metrics(position, get_market_data_provider())
+        except Exception as exc:
+            metrics = _empty_position_metrics(str(exc))
+        mandate, assessment, policy = _generate_position_assessment(
+            db,
+            position,
+            metrics,
+            trigger="manual_refresh",
+            force=force,
+        )
+        response = _assessment_response(db, position, mandate, assessment, policy)
+        db.commit()
+        return _json_safe(response)
+
+
+@router.post("/thesis-assessments/refresh-due")
+def refresh_due_thesis_assessments(limit: int = Query(100, ge=1, le=500)):
+    with get_db_session() as db:
+        positions = db.query(OptionPosition).order_by(OptionPosition.id.asc()).limit(limit).all()
+        provider = get_market_data_provider()
+        refreshed = []
+        errors = []
+        for position in positions:
+            try:
+                metrics = _compute_position_metrics(position, provider)
+                mandate, assessment, policy = _generate_position_assessment(
+                    db,
+                    position,
+                    metrics,
+                    trigger="batch_refresh",
+                    force=True,
+                )
+                refreshed.append(
+                    {
+                        "position_id": position.id,
+                        "symbol": position.symbol,
+                        "assessment": serialize_assessment(assessment),
+                        "mandate_confirmation_status": mandate.confirmation_status,
+                        "risk_policy_version": policy.policy_version,
+                    }
+                )
+            except Exception as exc:
+                errors.append({"position_id": position.id, "symbol": position.symbol, "error": str(exc)})
+        db.commit()
+        return _json_safe(
+            {
+                "checked": len(positions),
+                "refreshed": refreshed,
+                "errors": errors,
+                "automated_execution_enabled": False,
+            }
+        )
+
+
+@router.get("/positions/{position_id}/lifecycle-events")
+def get_position_lifecycle_events(position_id: int):
+    with get_db_session() as db:
+        rows = (
+            db.query(OptionPositionEvent)
+            .filter(OptionPositionEvent.position_id == position_id)
+            .order_by(OptionPositionEvent.event_at.desc(), OptionPositionEvent.id.desc())
+            .all()
+        )
+        if not rows and not db.query(OptionPosition).filter(OptionPosition.id == position_id).first():
+            raise HTTPException(status_code=404, detail="Position not found")
+        return _json_safe({"position_id": position_id, "events": [serialize_position_event(row) for row in rows]})
+
+
+@router.post("/positions/{position_id}/lifecycle-events")
+def create_position_lifecycle_event(position_id: int, payload: OptionLifecycleEventCreate):
+    allowed = {"add", "partial_close", "reduce", "close_execution", "adjustment"}
+    if payload.event_type not in allowed:
+        raise HTTPException(status_code=422, detail=f"Invalid event_type. Expected one of: {', '.join(sorted(allowed))}.")
+    if payload.quantity_after is not None and payload.quantity_after < 0:
+        raise HTTPException(status_code=422, detail="quantity_after cannot be negative.")
+    if payload.execution_price is not None and payload.execution_price < 0:
+        raise HTTPException(status_code=422, detail="execution_price cannot be negative.")
+    event_at = None
+    if payload.event_at:
+        try:
+            event_at = datetime.fromisoformat(payload.event_at.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="event_at must be ISO-8601.") from exc
+    with get_db_session() as db:
+        position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Position not found")
+        quantity_after = payload.quantity_after if payload.quantity_after is not None else position.contracts
+        row = record_position_event(
+            db,
+            position_id=position.id,
+            event_type=payload.event_type,
+            event_at=event_at,
+            source="manual_execution_log",
+            quantity_before=position.contracts,
+            quantity_after=quantity_after,
+            execution_price=payload.execution_price,
+            total_cost_before=position.total_cost,
+            total_cost_after=None,
+            details={
+                "notes": _clean_review_text(payload.notes),
+                "position_mutated": False,
+                "instruction": "Use the position edit/close workflow to reconcile current size.",
+            },
+        )
+        db.commit()
+        return _json_safe(
+            {
+                "event": serialize_position_event(row),
+                "position_mutated": False,
+                "automated_execution_enabled": False,
+            }
+        )
+
+
+@router.get("/risk-policy")
+def get_option_risk_policy():
+    with get_db_session() as db:
+        policy = latest_risk_policy(db)
+        db.commit()
+        return _json_safe({"risk_policy": serialize_risk_policy(policy)})
+
+
+@router.post("/risk-policy")
+def create_option_risk_policy(payload: OptionRiskPolicyCreate):
+    if payload.approval_status not in {"draft", "approved", "retired"}:
+        raise HTTPException(status_code=422, detail="approval_status must be draft, approved, or retired.")
+    for name in (
+        "portfolio_capital",
+        "default_trade_risk_budget",
+        "max_single_position_premium_pct",
+        "max_directional_premium_pct",
+        "max_expiry_bucket_premium_pct",
+        "max_option_spread_pct",
+    ):
+        value = getattr(payload, name)
+        if value is not None and value <= 0:
+            raise HTTPException(status_code=422, detail=f"{name} must be greater than zero.")
+    if payload.min_dte_for_add is not None and payload.min_dte_for_add < 0:
+        raise HTTPException(status_code=422, detail="min_dte_for_add cannot be negative.")
+    with get_db_session() as db:
+        latest = db.query(OptionRiskPolicy).order_by(OptionRiskPolicy.policy_version.desc()).first()
+        policy = OptionRiskPolicy(
+            policy_version=(latest.policy_version + 1) if latest else 1,
+            name=payload.name.strip() or "Tracked options risk policy",
+            active=payload.active,
+            approval_status=payload.approval_status,
+            portfolio_capital=payload.portfolio_capital,
+            default_trade_risk_budget=payload.default_trade_risk_budget,
+            max_single_position_premium_pct=payload.max_single_position_premium_pct,
+            max_directional_premium_pct=payload.max_directional_premium_pct,
+            max_expiry_bucket_premium_pct=payload.max_expiry_bucket_premium_pct,
+            max_option_spread_pct=payload.max_option_spread_pct,
+            min_dte_for_add=payload.min_dte_for_add,
+            settings_json=json_dumps(
+                {
+                    "basis": "tracked_option_premium",
+                    "approved_by": "dashboard_user" if payload.approval_status == "approved" else None,
+                    "automated_execution_enabled": False,
+                }
+            ),
+        )
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
+        return _json_safe({"risk_policy": serialize_risk_policy(policy)})
+
+
+@router.get("/learning-summary")
+def get_option_learning_summary():
+    with get_db_session() as db:
+        ensure_model_registry(db)
+        result = learning_summary(db)
+        db.commit()
+        return _json_safe(result)
+
+
+@router.post("/learning-outcomes/backfill")
+def backfill_option_learning_outcomes(
+    limit: int = Query(1000, ge=1, le=5000),
+    mature_decisions: bool = Query(True),
+):
+    with get_db_session() as db:
+        ensure_model_registry(db)
+        trade_result = backfill_trade_outcomes(db, limit=limit)
+        decision_result = (
+            mature_decision_outcomes(
+                db,
+                history_loader=lambda symbol: get_or_refresh_daily_frame(symbol, days=730),
+                limit=limit,
+            )
+            if mature_decisions
+            else {"inserted": 0, "skipped": 0, "errors": 0}
+        )
+        summary = learning_summary(db)
+        db.commit()
+        return _json_safe(
+            {
+                "trade_outcomes": trade_result,
+                "decision_outcomes": decision_result,
+                "summary": summary,
+                "automated_model_promotion": False,
+                "automated_execution_enabled": False,
+            }
+        )
+
+
+@router.post("/positions/{position_id}/decision-reviews")
+def create_position_decision_review(position_id: int, payload: OptionPositionReviewCreate):
+    if payload.threshold_approval_status not in {"draft", "approved"}:
+        raise HTTPException(status_code=422, detail="threshold_approval_status must be draft or approved.")
+    if payload.target_contracts is not None and payload.target_contracts < 0:
+        raise HTTPException(status_code=422, detail="target_contracts cannot be negative.")
+    if payload.risk_budget is not None and payload.risk_budget <= 0:
+        raise HTTPException(status_code=422, detail="risk_budget must be greater than zero.")
+
+    with get_db_session() as db:
+        position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
+        if not position:
+            raise HTTPException(status_code=404, detail="Position not found")
+        latest = (
+            db.query(OptionPositionReview)
+            .filter(OptionPositionReview.position_id == position_id)
+            .order_by(OptionPositionReview.review_sequence.desc(), OptionPositionReview.id.desc())
+            .first()
+        )
+        try:
+            metrics = _compute_position_metrics(position, get_market_data_provider())
+        except Exception as exc:
+            metrics = _empty_position_metrics(str(exc))
+
+        assessment = None
+        if payload.selected_assessment_id is not None:
+            assessment = (
+                db.query(OptionThesisAssessment)
+                .filter(OptionThesisAssessment.id == payload.selected_assessment_id)
+                .first()
+            )
+            if assessment is None or assessment.position_id != position.id:
+                raise HTTPException(status_code=422, detail="selected_assessment_id does not belong to this position.")
+            mandate = (
+                db.query(OptionPositionMandate)
+                .filter(OptionPositionMandate.id == assessment.mandate_id)
+                .first()
+            )
+            if mandate is None:
+                mandate = get_or_create_mandate(db, position)
+        else:
+            mandate, assessment, _ = _generate_position_assessment(
+                db,
+                position,
+                metrics,
+                trigger="review_prefill",
+            )
+
+        source_event = (
+            db.query(OptionAlertEvent).filter(OptionAlertEvent.id == position.source_event_id).first()
+            if position.source_event_id is not None
+            else None
+        )
+        suggested_window = build_actionable_decision_window(
+            position=position,
+            mandate=mandate,
+            source_event=source_event,
+            verdict=assessment.proposed_verdict,
+            urgency=assessment.urgency,
+            contract_status=assessment.contract_status,
+            as_of=date.today(),
+        )
+        suggested_window["continuation_condition"] = rebase_continuation_condition(
+            assessment.continuation_condition,
+            deadline=suggested_window["decision_deadline"],
+            verdict=assessment.proposed_verdict,
+        )
+        defaults = _assessment_to_review_defaults(position, mandate, assessment, suggested_window)
+
+        def chosen(field_name: str) -> object:
+            value = getattr(payload, field_name)
+            return defaults.get(field_name) if value is None else value
+
+        resolved = {
+            field_name: chosen(field_name)
+            for field_name in (
+                "trade_role",
+                "original_thesis",
+                "contract_thesis",
+                "expected_path",
+                "catalyst",
+                "confirmation_condition",
+                "invalidation_condition",
+                "risk_budget",
+                "evidence_since_last",
+                "thesis_status",
+                "fresh_entry_answer",
+                "portfolio_fit",
+                "data_quality_notes",
+                "verdict",
+                "target_contracts",
+                "quality",
+                "urgency",
+                "confidence",
+                "continuation_condition",
+                "next_review_date",
+                "decision_deadline",
+                "decision_notes",
+            )
+        }
+        choices = (
+            ("trade_role", resolved["trade_role"], _REVIEW_TRADE_ROLES),
+            ("thesis_status", resolved["thesis_status"], _REVIEW_THESIS_STATES),
+            ("fresh_entry_answer", resolved["fresh_entry_answer"], _REVIEW_FRESH_ENTRY_ANSWERS),
+            ("verdict", resolved["verdict"], _REVIEW_VERDICTS),
+            ("quality", resolved["quality"], _REVIEW_QUALITY),
+            ("urgency", resolved["urgency"], _REVIEW_URGENCY),
+            ("confidence", resolved["confidence"], _REVIEW_CONFIDENCE),
+        )
+        for field_name, value, allowed in choices:
+            if value not in allowed:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid {field_name}. Expected one of: {', '.join(sorted(allowed))}.",
+                )
+
+        target_contracts = int(resolved["target_contracts"])
+        if target_contracts < 0:
+            raise HTTPException(status_code=422, detail="target_contracts cannot be negative.")
+        review_date = _parse_review_date(payload.review_date, "review_date") or date.today()
+        next_review_date = _parse_review_date(str(resolved["next_review_date"] or ""), "next_review_date")
+        decision_deadline = _parse_review_date(str(resolved["decision_deadline"] or ""), "decision_deadline")
+        scheduling_anchor = max(review_date, date.today())
+        resolved_verdict = str(resolved["verdict"])
+        terminal_decision = resolved_verdict in {"close", "replacement_candidate"}
+        if terminal_decision and payload.next_review_date is None:
+            next_review_date = None
+        if terminal_decision and payload.decision_deadline is None:
+            decision_deadline = review_date
+        if not terminal_decision and next_review_date is None:
+            raise HTTPException(status_code=422, detail="next_review_date is required for an open-position decision.")
+        if not terminal_decision and decision_deadline is None:
+            raise HTTPException(status_code=422, detail="decision_deadline is required for an open-position decision.")
+        if next_review_date is not None and next_review_date <= scheduling_anchor:
+            raise HTTPException(status_code=422, detail="next_review_date must be after today and the review date.")
+        if not terminal_decision and decision_deadline is not None and decision_deadline <= scheduling_anchor:
+            raise HTTPException(status_code=422, detail="decision_deadline must be after today and the review date.")
+        if terminal_decision and decision_deadline is not None and decision_deadline != review_date:
+            raise HTTPException(status_code=422, detail="A close or replacement decision has zero recommended hold; use the review date as its deadline.")
+        if next_review_date is not None and decision_deadline is not None and next_review_date > decision_deadline:
+            raise HTTPException(status_code=422, detail="next_review_date cannot be after decision_deadline.")
+        if not terminal_decision and decision_deadline is not None and decision_deadline > position.expiration:
+            raise HTTPException(status_code=422, detail="decision_deadline cannot be after the contract expiration.")
+        decision_override = (
+            resolved["verdict"] != assessment.proposed_verdict
+            or target_contracts != assessment.proposed_target_contracts
+        )
+        mandate_fields = (
+            "trade_role",
+            "original_thesis",
+            "contract_thesis",
+            "expected_path",
+            "catalyst",
+            "confirmation_condition",
+            "invalidation_condition",
+            "risk_budget",
+        )
+        mandate_override = any(
+            getattr(payload, field_name) is not None
+            and getattr(payload, field_name) != getattr(mandate, field_name)
+            for field_name in mandate_fields
+        )
+        human_override = (
+            "decision_and_mandate"
+            if decision_override and mandate_override
+            else "decision"
+            if decision_override
+            else "mandate"
+            if mandate_override
+            else "none"
+        )
+        decision_source = "human_override" if human_override != "none" else "human_confirmed_auto"
+        snapshot = _position_review_snapshot(position, metrics)
+        review = OptionPositionReview(
+            position_id=position.id,
+            supersedes_review_id=latest.id if latest else None,
+            review_sequence=(latest.review_sequence + 1) if latest else 1,
+            review_date=review_date,
+            review_type="reassessment" if latest else "mandate",
+            selected_assessment_id=assessment.id,
+            decision_source=decision_source,
+            human_override=human_override,
+            override_reason=_clean_review_text(payload.override_reason),
+            threshold_approval_status=payload.threshold_approval_status,
+            symbol=position.symbol,
+            expiration=position.expiration,
+            strike=position.strike,
+            option_type=position.option_type,
+            contracts_snapshot=position.contracts,
+            trade_role=str(resolved["trade_role"]),
+            original_thesis=_clean_review_text(str(resolved["original_thesis"] or "")),
+            contract_thesis=_clean_review_text(str(resolved["contract_thesis"] or "")),
+            expected_path=_clean_review_text(str(resolved["expected_path"] or "")),
+            catalyst=_clean_review_text(str(resolved["catalyst"] or "")),
+            confirmation_condition=_clean_review_text(str(resolved["confirmation_condition"] or "")),
+            invalidation_condition=_clean_review_text(str(resolved["invalidation_condition"] or "")),
+            risk_budget=float(resolved["risk_budget"]) if resolved["risk_budget"] is not None else None,
+            evidence_since_last=_clean_review_text(str(resolved["evidence_since_last"] or "")),
+            thesis_status=str(resolved["thesis_status"]),
+            fresh_entry_answer=str(resolved["fresh_entry_answer"]),
+            portfolio_fit=_clean_review_text(str(resolved["portfolio_fit"] or "")),
+            data_quality_notes=_clean_review_text(str(resolved["data_quality_notes"] or "")),
+            verdict=str(resolved["verdict"]),
+            target_contracts=target_contracts,
+            quality=str(resolved["quality"]),
+            urgency=str(resolved["urgency"]),
+            confidence=str(resolved["confidence"]),
+            continuation_condition=_clean_review_text(str(resolved["continuation_condition"] or "")),
+            next_review_date=next_review_date,
+            decision_deadline=decision_deadline,
+            decision_notes=_clean_review_text(str(resolved["decision_notes"] or "")),
+            **snapshot,
+        )
+        db.add(review)
+        db.flush()
+        confirmed_mandate = confirm_mandate_from_review(db, position, review)
+        record_position_event(
+            db,
+            position_id=position.id,
+            event_type="reviewed",
+            related_review_id=review.id,
+            related_assessment_id=assessment.id,
+            quantity_before=position.contracts,
+            quantity_after=target_contracts,
+            total_cost_before=position.total_cost,
+            total_cost_after=position.total_cost if target_contracts == position.contracts else None,
+            details={
+                "verdict": review.verdict,
+                "decision_source": decision_source,
+                "human_override": human_override,
+                "order_submitted": False,
+            },
+        )
+        db.commit()
+        db.refresh(review)
+        status = _position_review_status(review, position)
+        return _json_safe(
+            {
+                "review": _serialize_position_review(review),
+                "assessment": serialize_assessment(assessment),
+                "mandate": serialize_mandate(confirmed_mandate),
+                "status": status,
+                "recorded_with_warnings": bool(status["warnings"] or status["addition_blockers"]),
+                "automated_execution_enabled": False,
+            }
+        )
 
 
 @router.get("/greeks/{position_id}")
@@ -2225,6 +3611,7 @@ def close_position(position_id: int, request: ClosePositionRequest):
         
         # Create closed position record
         closed = ClosedPosition(
+            source_position_id=position.id,
             symbol=position.symbol,
             option_type=position.option_type,
             strike=position.strike,
@@ -2249,6 +3636,20 @@ def close_position(position_id: int, request: ClosePositionRequest):
             source_match_notes=position.source_match_notes,
         )
         db.add(closed)
+        db.flush()
+        record_position_event(
+            db,
+            position_id=position.id,
+            closed_position_id=closed.id,
+            event_type="closed",
+            quantity_before=position.contracts,
+            quantity_after=0,
+            execution_price=request.exit_price,
+            total_cost_before=position.total_cost,
+            total_cost_after=0.0,
+            details={"close_date": close_date.isoformat(), "notes": request.notes},
+        )
+        trade_outcome = create_trade_outcome(db, closed)
         skip_trade_sell_reminder(db, position.id, "Position was closed before the reminder fired.")
         
         # Delete active position
@@ -2257,6 +3658,7 @@ def close_position(position_id: int, request: ClosePositionRequest):
         
         return _json_safe({
             "message": "Position closed successfully",
+            "learning_outcome": serialize_trade_outcome(trade_outcome),
             "pnl": {
                 "dollar": dollar_pnl,
                 "percent": percent_pnl,
@@ -2293,10 +3695,28 @@ def get_closed_positions(
             else []
         )
         source_events_by_id = {event.id: event for event in source_events}
+        closed_ids = [position.id for position in closed_positions]
+        outcome_rows = (
+            db.query(OptionTradeOutcome)
+            .filter(OptionTradeOutcome.closed_position_id.in_(closed_ids))
+            .order_by(
+                OptionTradeOutcome.closed_position_id.asc(),
+                OptionTradeOutcome.outcome_version.desc(),
+                OptionTradeOutcome.id.desc(),
+            )
+            .all()
+            if closed_ids
+            else []
+        )
+        outcomes_by_closed_id: Dict[int, OptionTradeOutcome] = {}
+        for outcome in outcome_rows:
+            outcomes_by_closed_id.setdefault(outcome.closed_position_id, outcome)
         
         results = []
         for pos in closed_positions:
-            results.append(_serialize_closed_position(pos, source_events_by_id.get(pos.source_event_id)))
+            serialized = _serialize_closed_position(pos, source_events_by_id.get(pos.source_event_id))
+            serialized["learning_outcome"] = serialize_trade_outcome(outcomes_by_closed_id.get(pos.id))
+            results.append(serialized)
         
         # Calculate summary stats
         total_pnl = sum(pos.dollar_pnl for pos in closed_positions)
@@ -2323,6 +3743,99 @@ def get_closed_positions(
                 "attributed_win_rate": attributed_win_rate,
             }
         })
+
+
+@router.get("/closed-positions/{closed_position_id}/learning")
+def get_closed_position_learning(closed_position_id: int):
+    with get_db_session() as db:
+        closed = db.query(ClosedPosition).filter(ClosedPosition.id == closed_position_id).first()
+        if not closed:
+            raise HTTPException(status_code=404, detail="Closed position not found")
+        outcomes = (
+            db.query(OptionTradeOutcome)
+            .filter(OptionTradeOutcome.closed_position_id == closed_position_id)
+            .order_by(OptionTradeOutcome.outcome_version.desc(), OptionTradeOutcome.id.desc())
+            .all()
+        )
+        decision_rows = []
+        if closed.source_position_id is not None:
+            decision_rows = (
+                db.query(OptionDecisionOutcome)
+                .filter(OptionDecisionOutcome.position_id == closed.source_position_id)
+                .order_by(OptionDecisionOutcome.target_date.desc(), OptionDecisionOutcome.id.desc())
+                .all()
+            )
+        return _json_safe(
+            {
+                "closed_position_id": closed_position_id,
+                "source_position_id": closed.source_position_id,
+                "latest_trade_outcome": serialize_trade_outcome(outcomes[0]) if outcomes else None,
+                "trade_outcome_history": [serialize_trade_outcome(row) for row in outcomes],
+                "decision_outcomes": [serialize_decision_outcome(row) for row in decision_rows],
+            }
+        )
+
+
+@router.post("/closed-positions/{closed_position_id}/learning-feedback")
+def create_closed_position_learning_feedback(
+    closed_position_id: int,
+    payload: OptionTradeOutcomeFeedback,
+):
+    allowed = {
+        "process_quality": {"good_process", "mixed_process", "weak_process"},
+        "primary_lesson": {
+            "contract_selection",
+            "review_discipline",
+            "position_sizing",
+            "timing",
+            "portfolio_concentration",
+            "entry_execution",
+            "exit_discipline",
+            "unpredictable_event",
+            "thesis_selection",
+            "sound_decision_unfavorable_outcome",
+            "no_single_dominant_error",
+        },
+        "thesis_result": {"supported", "not_supported", "inconclusive"},
+        "contract_result": {
+            "worked",
+            "underlying_right_contract_wrong",
+            "timing_or_contract_unresolved",
+            "failed_with_thesis",
+        },
+        "timing_result": {"adequate", "too_slow_for_contract", "late_exit", "unclear"},
+        "sizing_result": {"over_recorded_budget", "within_recorded_budget", "budget_unknown"},
+        "portfolio_result": {"concentration_present", "acceptable", "unknown"},
+        "entry_execution_result": {"good", "poor", "unverified"},
+        "exit_discipline_result": {"aligned", "late", "different_from_plan", "unreviewed"},
+        "event_result": {"catalyst_worked", "catalyst_failed_or_unconfirmed", "not_catalyst", "unknown"},
+        "review_discipline": {"unreviewed", "closed_after_deadline", "reviewed_before_close"},
+    }
+    overrides = {
+        key: value
+        for key, value in payload.model_dump().items()
+        if value is not None
+    }
+    if not overrides:
+        raise HTTPException(status_code=422, detail="Provide at least one learning classification.")
+    for key, value in overrides.items():
+        if value not in allowed[key]:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid {key}. Expected one of: {', '.join(sorted(allowed[key]))}.",
+            )
+    with get_db_session() as db:
+        closed = db.query(ClosedPosition).filter(ClosedPosition.id == closed_position_id).first()
+        if not closed:
+            raise HTTPException(status_code=404, detail="Closed position not found")
+        outcome = create_trade_outcome(db, closed, force=True, human_overrides=overrides)
+        db.commit()
+        return _json_safe(
+            {
+                "learning_outcome": serialize_trade_outcome(outcome),
+                "previous_versions_preserved": True,
+            }
+        )
 
 
 @router.put("/closed-positions/{closed_position_id}")
@@ -2380,6 +3893,7 @@ def update_closed_position(closed_position_id: int, payload: ClosedPositionUpdat
         position.underlying_at_exit = payload.underlying_at_exit
         position.notes = payload.notes
 
+        learning_outcome = create_trade_outcome(db, position, force=True)
         db.commit()
         db.refresh(position)
         source_event = (
@@ -2387,7 +3901,9 @@ def update_closed_position(closed_position_id: int, payload: ClosedPositionUpdat
             if position.source_event_id is not None
             else None
         )
-        return _json_safe({"closed_position": _serialize_closed_position(position, source_event)})
+        serialized = _serialize_closed_position(position, source_event)
+        serialized["learning_outcome"] = serialize_trade_outcome(learning_outcome)
+        return _json_safe({"closed_position": serialized})
 
 
 @router.delete("/closed-positions/{closed_position_id}")

@@ -14,6 +14,7 @@ from app.services.market_data.provider import MarketDataProvider
 from app.services.options_opportunity import compute_opportunity_score, opportunity_event_fields, selected_contract_signal_fields
 from app.services.options_quotes import select_atm_contract, select_optimal_contract
 from app.services.options_review_window import ReviewWindow, compute_review_window
+from app.services.scanner_repeat_evidence import record_scanner_recurrence_events
 from app.utils.db_helpers import get_db_session
 
 ESC = "\u001b"
@@ -1055,6 +1056,8 @@ def run_options_alert_scan() -> dict:
                     ),
                 )
                 db.add(event)
+                db.flush()
+                record_scanner_recurrence_events(db, event)
                 watch.last_triggered_at = datetime.utcnow()
                 db.add(watch)
                 db.commit()

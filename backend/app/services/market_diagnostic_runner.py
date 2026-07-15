@@ -292,7 +292,7 @@ def _build_prompts(
     run_date_utc: str,
     day_of_week: str,
     mode: Mode,
-    special_event_summary: bool,
+    special_event_summary: bool = False,
     recent_titles: Sequence[str],
 ) -> tuple[str, str]:
     system_prompt = (
