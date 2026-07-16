@@ -2406,7 +2406,15 @@ type PositionFormPayload = {
   shares_equivalent: number | null;
   dte_at_entry: number | null;
   underlying_reference: number | null;
+  source_event_id: number | null;
 };
+
+interface ScannerTradePrefillContext {
+  eventId: number;
+  symbol: string;
+  priceBasis: string;
+  missingFields: string[];
+}
 
 type ClosedPositionFormPayload = {
   trade_date: string;
@@ -2578,6 +2586,8 @@ export default function SecretOptions() {
   const [submitting, setSubmitting] = useState(false);
   const [closingSubmitting, setClosingSubmitting] = useState(false);
   const [formData, setFormData] = useState(initialFormState);
+  const [formSourceEventId, setFormSourceEventId] = useState<number | null>(null);
+  const [scannerTradePrefill, setScannerTradePrefill] = useState<ScannerTradePrefillContext | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPositionId, setEditingPositionId] = useState<number | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -3014,6 +3024,8 @@ export default function SecretOptions() {
   const closeTradeModal = () => {
     setShowAddModal(false);
     setEditingPositionId(null);
+    setFormSourceEventId(null);
+    setScannerTradePrefill(null);
     resetForm();
     setFormError(null);
   };
@@ -3056,6 +3068,7 @@ export default function SecretOptions() {
       shares_equivalent: optionalNumber(formData.shares_equivalent),
       dte_at_entry: optionalNumber(formData.dte_at_entry),
       underlying_reference: optionalNumber(formData.underlying_reference),
+      source_event_id: formSourceEventId,
     };
   };
 
@@ -3096,6 +3109,8 @@ export default function SecretOptions() {
 
   const openEditModal = (position: OptionPosition) => {
     setEditingPositionId(position.id);
+    setFormSourceEventId(position.source_event_id ?? null);
+    setScannerTradePrefill(null);
     setFormError(null);
     setFormData({
       trade_date: position.trade_date || "",
@@ -3129,6 +3144,60 @@ export default function SecretOptions() {
           ? String(position.underlying_reference)
           : "",
     });
+    setShowAddModal(true);
+  };
+
+  const openScannerTradePrefill = (opportunity: ScannerRankedOpportunity) => {
+    const contract = opportunity.selected_contract;
+    const sections = parseScannerAlertSections(opportunity.message);
+    const setup = scannerAlertValue(sections, "EXAMPLE TRADE", "Setup") || "";
+    const setupContracts = Number(setup.match(/(\d+)\s*x/i)?.[1] || 1);
+    const contracts = Number.isInteger(setupContracts) && setupContracts > 0 ? setupContracts : 1;
+    const bid = asNumber(contract.bid);
+    const ask = asNumber(contract.ask);
+    const quoteMid = bid !== null && bid > 0 && ask !== null && ask > 0 ? (bid + ask) / 2 : null;
+    // The selected premium is the scanner's recorded entry assumption. Older
+    // events may predate that field, so retain progressively weaker quote
+    // fallbacks while naming the basis for the user's execution check.
+    const priceCandidates: Array<[number | null, string]> = [
+      [asNumber(contract.premium), "scanner-selected premium"],
+      [quoteMid, "recorded bid/ask midpoint"],
+      [asNumber(contract.last), "recorded last trade"],
+      [ask, "recorded ask"],
+      [bid, "recorded bid"],
+    ];
+    const selectedPrice = priceCandidates.find(([value]) => value !== null && value > 0) ?? [null, "price unavailable"];
+    const fillPrice = selectedPrice[0];
+    const missingFields = [
+      !contract.expiry ? "expiration" : null,
+      contract.strike === null || contract.strike === undefined ? "strike" : null,
+      !contract.option_type ? "option type" : null,
+      fillPrice === null ? "fill price" : null,
+    ].filter((field): field is string => Boolean(field));
+
+    setEditingPositionId(null);
+    setFormError(null);
+    setFormSourceEventId(opportunity.event_id);
+    setScannerTradePrefill({
+      eventId: opportunity.event_id,
+      symbol: opportunity.symbol.trim().toUpperCase(),
+      priceBasis: selectedPrice[1],
+      missingFields,
+    });
+    setFormData({
+      ...initialFormState,
+      trade_date: opportunity.triggered_at?.slice(0, 10) || todayInputValue(),
+      action: "Buy to Open",
+      contracts: String(contracts),
+      symbol: opportunity.symbol.trim().toUpperCase(),
+      expiration: contract.expiry || "",
+      strike: contract.strike !== null && contract.strike !== undefined ? String(contract.strike) : "",
+      option_type: contract.option_type?.trim().toLowerCase() || "call",
+      fill_price: fillPrice !== null ? fillPrice.toFixed(2) : "",
+      total_cost: fillPrice !== null ? (fillPrice * contracts * 100).toFixed(2) : "",
+      dte_at_entry: contract.dte !== null && contract.dte !== undefined ? String(contract.dte) : "",
+    });
+    setExpandedScannerHitId(null);
     setShowAddModal(true);
   };
 
@@ -4409,6 +4478,8 @@ export default function SecretOptions() {
 
   const openAddTrade = () => {
     setEditingPositionId(null);
+    setFormSourceEventId(null);
+    setScannerTradePrefill(null);
     resetForm();
     setFormError(null);
     setShowAddModal(true);
@@ -4843,12 +4914,7 @@ export default function SecretOptions() {
               {listRefreshPending ? "Refreshing" : listRefreshSettled ? "Updated" : "Refresh list"}
             </button>
             <button
-              onClick={() => {
-                setEditingPositionId(null);
-                resetForm();
-                setFormError(null);
-                setShowAddModal(true);
-              }}
+              onClick={openAddTrade}
               className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
             >
               <span className="text-base leading-none">+</span> Add Trade
@@ -6301,6 +6367,19 @@ export default function SecretOptions() {
             <div className="min-h-0 overflow-x-hidden overflow-y-auto">
               <ScannerHitDetail opportunity={selectedScannerHit} />
             </div>
+            <div className="flex shrink-0 flex-col gap-2 border-t border-stealth-800 bg-stealth-950/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:pb-3">
+              <div className="text-xs leading-relaxed text-stealth-400">
+                Prefills one training lot from the recorded scanner contract and preserves event #{selectedScannerHit.event_id} for attribution.
+              </div>
+              <button
+                type="button"
+                onClick={() => openScannerTradePrefill(selectedScannerHit)}
+                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-600 active:bg-emerald-800"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add training trade
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -6690,7 +6769,7 @@ export default function SecretOptions() {
           >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">
-                {editingPositionId ? "Edit Trade" : "Add New Trade"}
+                {editingPositionId ? "Edit Trade" : scannerTradePrefill ? "Add Scanner Training Trade" : "Add New Trade"}
               </h2>
               <button
                 onClick={closeTradeModal}
@@ -6705,6 +6784,22 @@ export default function SecretOptions() {
                 {formError}
               </div>
             )}
+
+            {scannerTradePrefill ? (
+              <div className="mb-4 rounded-lg border border-emerald-600/35 bg-emerald-950/25 p-3 text-xs leading-relaxed text-emerald-100">
+                <div className="font-semibold">
+                  Prefilled from {scannerTradePrefill.symbol} scanner event #{scannerTradePrefill.eventId}
+                </div>
+                <div className="mt-1 text-stealth-300">
+                  Price basis: {scannerTradePrefill.priceBasis}. Confirm the quantity, recorded quote, account, and actual execution before adding. This logs a tracked position for learning; it does not submit a broker order.
+                </div>
+                {scannerTradePrefill.missingFields.length > 0 ? (
+                  <div className="mt-1 font-medium text-amber-200">
+                    Still required: {scannerTradePrefill.missingFields.join(", ")}.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <form
               onSubmit={editingPositionId ? handleUpdatePosition : handleCreatePosition}
@@ -6851,7 +6946,9 @@ export default function SecretOptions() {
                       : "Adding..."
                     : editingPositionId
                       ? "Save Changes"
-                      : "Add Trade"}
+                      : scannerTradePrefill
+                        ? "Add Training Trade"
+                        : "Add Trade"}
                 </button>
               </div>
             </form>
