@@ -23,6 +23,7 @@ from app.models.option_position_reviews import OptionPositionReview
 from app.models.closed_positions import ClosedPosition
 from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
+from app.models.option_sweep_runs import OptionSweepRun
 from app.models.option_training_outcomes import OptionTrainingOutcome
 from app.models.option_decision_learning import (
     OptionDecisionOutcome,
@@ -55,6 +56,7 @@ from app.services.option_sweep_runs import (
     request_stop_dashboard_sweep,
     start_dashboard_sweep,
 )
+from app.services.discord_sweep_universe import resolve_sweep_universe
 from app.services.stock_price_cache import get_or_refresh_daily_frame
 from app.services.option_thesis_engine import (
     build_actionable_decision_window,
@@ -100,6 +102,19 @@ _POSITION_METRICS_REFRESH_IN_PROGRESS = False
 _POSITION_METRICS_REFRESH_EXECUTOR = ThreadPoolExecutor(
     max_workers=1,
     thread_name_prefix="option-position-cache-refresh",
+)
+_POSITION_INDEX_MEMBERSHIP_CACHE: tuple[
+    float,
+    Dict[str, set[str]],
+    list[str],
+] | None = None
+_POSITION_INDEX_MEMBERSHIP_CACHE_LOCK = Lock()
+_POSITION_INDEX_MEMBERSHIP_SUCCESS_TTL_SECONDS = 6 * 60 * 60
+_POSITION_INDEX_MEMBERSHIP_FAILURE_TTL_SECONDS = 10 * 60
+
+_POSITION_INDEX_UNIVERSES = (
+    ("SP500", "SPY", "S&P 500"),
+    ("RUSSELL2000", "R2K", "Russell 2000"),
 )
 
 # Risk-free rate configuration (can be adjusted based on current T-bill rates)
@@ -1760,6 +1775,126 @@ def _serialize_position(
     }
 
 
+def _position_index_membership_catalog() -> tuple[Dict[str, set[str]], list[str]]:
+    """Return cached index constituents without delaying the core positions payload."""
+    global _POSITION_INDEX_MEMBERSHIP_CACHE
+
+    now = time_lib.monotonic()
+    with _POSITION_INDEX_MEMBERSHIP_CACHE_LOCK:
+        cached = _POSITION_INDEX_MEMBERSHIP_CACHE
+        if cached is not None:
+            cached_at, catalog, errors = cached
+            ttl = (
+                _POSITION_INDEX_MEMBERSHIP_FAILURE_TTL_SECONDS
+                if errors
+                else _POSITION_INDEX_MEMBERSHIP_SUCCESS_TTL_SECONDS
+            )
+            if now - cached_at < ttl:
+                return catalog, errors
+
+        catalog: Dict[str, set[str]] = {}
+        errors: list[str] = []
+        for universe_key, _short_label, _long_label in _POSITION_INDEX_UNIVERSES:
+            try:
+                universe = resolve_sweep_universe(universe_key)
+                catalog[universe_key] = {
+                    str(symbol).strip().upper()
+                    for symbol in universe.tickers
+                    if str(symbol).strip()
+                }
+            except Exception as exc:
+                errors.append(f"{universe_key}: {exc}")
+        _POSITION_INDEX_MEMBERSHIP_CACHE = (now, catalog, errors)
+        return catalog, errors
+
+
+def _position_row_context_payload(db, positions: list[OptionPosition]) -> Dict[str, object]:
+    event_ids = {
+        int(position.source_event_id)
+        for position in positions
+        if position.source_event_id is not None
+    }
+    events = (
+        db.query(OptionAlertEvent).filter(OptionAlertEvent.id.in_(event_ids)).all()
+        if event_ids
+        else []
+    )
+    events_by_id = {int(event.id): event for event in events}
+    run_ids = {
+        int(event.sweep_run_id)
+        for event in events
+        if event.sweep_run_id is not None
+    }
+    runs = (
+        db.query(OptionSweepRun).filter(OptionSweepRun.id.in_(run_ids)).all()
+        if run_ids
+        else []
+    )
+    runs_by_id = {int(run.id): run for run in runs}
+    membership_catalog, membership_errors = _position_index_membership_catalog()
+    if membership_errors and membership_catalog:
+        membership_status = "partial"
+    elif membership_errors:
+        membership_status = "unavailable"
+    else:
+        membership_status = "complete"
+
+    contexts: Dict[str, object] = {}
+    for position in positions:
+        symbol = str(position.symbol or "").strip().upper()
+        memberships = [
+            {
+                "key": universe_key,
+                "label": short_label,
+                "name": long_label,
+            }
+            for universe_key, short_label, long_label in _POSITION_INDEX_UNIVERSES
+            if symbol in membership_catalog.get(universe_key, set())
+        ]
+        event = events_by_id.get(int(position.source_event_id)) if position.source_event_id is not None else None
+        run = (
+            runs_by_id.get(int(event.sweep_run_id))
+            if event is not None and event.sweep_run_id is not None
+            else None
+        )
+        scan = None
+        if event is not None:
+            scan = {
+                "event_id": event.id,
+                "triggered_at": event.triggered_at.isoformat() if event.triggered_at else None,
+                "sweep_run_id": event.sweep_run_id,
+                "universe_key": run.universe_key if run is not None else None,
+                "universe_label": run.universe_label if run is not None else None,
+                "opportunity_score": event.opportunity_score,
+                "opportunity_grade": event.opportunity_grade,
+                "model_version": event.opportunity_model_version,
+                "selected_expiry": event.selected_expiry,
+                "selected_dte": event.selected_dte,
+                "selected_strike": event.selected_strike,
+                "selected_option_type": event.selected_option_type,
+                "selected_premium": event.selected_premium,
+                "selected_convexity_profit_pct": event.selected_convexity_profit_pct,
+                "selected_convexity_probability_itm": event.selected_convexity_probability_itm,
+            }
+        contexts[str(position.id)] = {
+            "position_id": position.id,
+            "symbol": symbol,
+            "index_memberships": memberships,
+            "membership_status": membership_status,
+            "linked_trade": position.source_event_id is not None,
+            "source_match_method": position.source_match_method,
+            "source_match_confidence": position.source_match_confidence,
+            "source_match_notes": position.source_match_notes,
+            "scan": scan,
+        }
+
+    return {
+        "contexts_by_position": contexts,
+        "membership_status": membership_status,
+        "membership_as_of": datetime.utcnow().isoformat(),
+    }
+
+
 def _serialize_closed_position(
     position: ClosedPosition,
     source_event: Optional[OptionAlertEvent] = None,
@@ -2616,6 +2751,18 @@ def get_positions(refresh: bool = Query(False)):
         traceback.print_exc()
         # Return a useful message to the caller to aid debugging (temporary)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(exc)}")
+
+
+@router.get("/position-row-context")
+def get_position_row_context():
+    """Load index membership and linked scanner provenance after critical row data."""
+    try:
+        with get_db_session() as db:
+            positions = db.query(OptionPosition).order_by(OptionPosition.trade_date.desc()).all()
+            return _json_safe(_position_row_context_payload(db, positions))
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to load position row context: {exc}")
 
 
 @router.get("/optionality-clusters")

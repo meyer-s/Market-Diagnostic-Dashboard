@@ -188,6 +188,42 @@ interface PositionPayload {
   metrics: PositionMetrics;
 }
 
+interface PositionIndexMembership {
+  key: "SP500" | "RUSSELL2000";
+  label: "SPY" | "R2K";
+  name: string;
+}
+
+interface PositionRowScanContext {
+  event_id: number;
+  triggered_at: string | null;
+  sweep_run_id: number | null;
+  universe_key: string | null;
+  universe_label: string | null;
+  opportunity_score: number | null;
+  opportunity_grade: string | null;
+  model_version: string | null;
+  selected_expiry: string | null;
+  selected_dte: number | null;
+  selected_strike: number | null;
+  selected_option_type: string | null;
+  selected_premium: number | null;
+  selected_convexity_profit_pct: number | null;
+  selected_convexity_probability_itm: number | null;
+}
+
+interface PositionRowContext {
+  position_id: number;
+  symbol: string;
+  index_memberships: PositionIndexMembership[];
+  membership_status: "complete" | "partial" | "unavailable";
+  linked_trade: boolean;
+  source_match_method: string | null;
+  source_match_confidence: number | null;
+  source_match_notes: string | null;
+  scan: PositionRowScanContext | null;
+}
+
 interface PositionDecisionReview {
   id: number;
   position_id: number;
@@ -1940,9 +1976,81 @@ function TimelinePressureStack({
   );
 }
 
+const buildPositionRowContextTooltip = (
+  position: OptionPosition,
+  context: PositionRowContext | null | undefined
+) => {
+  const memberships = context?.index_memberships ?? [];
+  const lines = [
+    memberships.length > 0
+      ? `Index: ${memberships.map((membership) => `${membership.name} (${membership.label})`).join(" · ")}`
+      : context?.membership_status === "complete"
+        ? "Index: neither S&P 500 nor Russell 2000"
+        : "Index membership: loading or unavailable",
+  ];
+  const linked = context?.linked_trade ?? Boolean(position.source_event_id);
+  if (!linked) {
+    lines.push("Trade source: not linked to a scanner hit");
+    return lines.join("\n");
+  }
+
+  const scan = context?.scan;
+  lines.push(`Trade source: linked scanner event #${scan?.event_id ?? position.source_event_id}`);
+  if (scan?.universe_label) {
+    lines.push(`Scan: ${scan.universe_label}${scan.sweep_run_id ? ` run #${scan.sweep_run_id}` : ""}`);
+  }
+  if (scan?.triggered_at ?? position.source_triggered_at) {
+    lines.push(`Triggered: ${formatDate(scan?.triggered_at ?? position.source_triggered_at)}`);
+  }
+  if (scan?.opportunity_score !== null && scan?.opportunity_score !== undefined) {
+    lines.push(`Entry rank: ${scan.opportunity_grade ?? compactOpportunityGrade(scan.opportunity_score)} (${scan.opportunity_score.toFixed(1)})`);
+  }
+  if (scan?.selected_option_type && scan.selected_strike !== null) {
+    lines.push(
+      `Selected: ${scan.selected_option_type.toUpperCase()} $${formatNumber(scan.selected_strike, 2)}` +
+      `${scan.selected_expiry ? ` · ${formatDate(scan.selected_expiry)}` : ""}` +
+      `${scan.selected_dte !== null ? ` · ${scan.selected_dte} DTE` : ""}`
+    );
+  }
+  if (scan?.selected_convexity_profit_pct !== null && scan?.selected_convexity_profit_pct !== undefined) {
+    const probability = scan.selected_convexity_probability_itm;
+    lines.push(
+      `Scanner convexity target: ${formatPercent(scan.selected_convexity_profit_pct, 0)}` +
+      `${probability !== null && probability !== undefined ? ` at ${formatPercent(probability * 100, 0)} probability` : ""}`
+    );
+  }
+  const method = context?.source_match_method ?? position.source_match_method;
+  const confidence = context?.source_match_confidence ?? position.source_match_confidence;
+  if (method) lines.push(`Link method: ${method}`);
+  if (confidence !== null && confidence !== undefined) {
+    lines.push(`Link confidence: ${formatPercent(confidence * 100, 0)}`);
+  }
+  const notes = context?.source_match_notes ?? position.source_match_notes;
+  if (notes) lines.push(`Notes: ${notes}`);
+  return lines.join("\n");
+};
+
+function PositionIndexBadges({ context }: { context: PositionRowContext | null | undefined }) {
+  if (!context?.index_memberships.length) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1" aria-label={context.index_memberships.map((item) => item.name).join(", ")}>
+      {context.index_memberships.map((membership) => (
+        <span
+          key={membership.key}
+          title={`${membership.name} constituent (${membership.label} proxy)`}
+          className="rounded border border-sky-400/25 bg-sky-400/10 px-1 py-0.5 text-[8px] font-semibold leading-none tracking-wide text-sky-200"
+        >
+          {membership.label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function MobilePositionCard({
   item,
   lane,
+  rowContext,
   decisionHistory,
   suggestedWindow,
   selected,
@@ -1952,6 +2060,7 @@ function MobilePositionCard({
 }: {
   item: PositionPayload;
   lane: TimelineLane | undefined;
+  rowContext?: PositionRowContext | null;
   decisionHistory?: PositionDecisionWindowRevision[];
   suggestedWindow?: SuggestedDecisionWindow | null;
   selected: boolean;
@@ -1970,6 +2079,16 @@ function MobilePositionCard({
       : "Medium confidence";
   const statusLabel = lane?.label ?? (metrics.dte !== null ? `${metrics.dte}d to expiration` : "Monitor");
   const statusClass = getStatusTextClass(lane?.urgency ?? "calm", lane?.remainingDays ?? metrics.dte, false);
+  const contextTooltip = buildPositionRowContextTooltip(position, rowContext);
+  const linkMarker = !position.source_event_id
+    ? "bg-stealth-600"
+    : (position.source_match_confidence ?? 0) >= 0.9
+      ? "bg-emerald-400"
+      : (position.source_match_confidence ?? 0) >= 0.75
+        ? "bg-lime-400"
+        : (position.source_match_confidence ?? 0) >= 0.6
+          ? "bg-amber-400"
+          : "bg-rose-400";
 
   return (
     <div
@@ -1992,9 +2111,18 @@ function MobilePositionCard({
           : "border-stealth-700/80 bg-stealth-950/35 hover:border-stealth-600"
       }`}
     >
+      <span
+        title={contextTooltip}
+        aria-label={contextTooltip.replace(/\n/g, ". ")}
+        className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${linkMarker}`}
+        onClick={(event) => event.stopPropagation()}
+      />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-base font-semibold text-stealth-100">{position.symbol}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="truncate text-base font-semibold text-stealth-100">{position.symbol}</div>
+            <PositionIndexBadges context={rowContext} />
+          </div>
           <div className="mt-0.5 truncate text-xs text-stealth-400">
             {position.option_type.toUpperCase()} ${formatNumber(position.strike, 2)} · {formatDate(position.expiration)} · {metrics.dte ?? "—"} DTE
           </div>
@@ -2039,6 +2167,12 @@ function MobilePositionCard({
       ) : null}
     </div>
   );
+}
+
+interface PositionRowContextResponse {
+  contexts_by_position: Record<string, PositionRowContext>;
+  membership_status: "complete" | "partial" | "unavailable";
+  membership_as_of: string;
 }
 
 const clampUnit = (value: number) => Math.max(-1, Math.min(1, value));
@@ -2507,6 +2641,7 @@ const normalizePositionMetrics = (
 export default function SecretOptions() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [positions, setPositions] = useState<PositionPayload[]>([]);
+  const [positionRowContexts, setPositionRowContexts] = useState<Record<string, PositionRowContext>>({});
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<number | null>(null);
   const [greeksData, setGreeksData] = useState<GreeksPayload | null>(null);
@@ -2730,6 +2865,15 @@ export default function SecretOptions() {
     }
   };
 
+  const loadPositionRowContexts = async () => {
+    try {
+      const data = await apiFetch<PositionRowContextResponse>("/secret/options/position-row-context");
+      setPositionRowContexts(data.contexts_by_position ?? {});
+    } catch (err: unknown) {
+      console.error("Failed to load position index and scanner context:", err);
+    }
+  };
+
   const loadGreeks = async (positionId: number) => {
     const requestId = ++greeksRequestRef.current;
     setLoadingGreeks(true);
@@ -2784,6 +2928,7 @@ export default function SecretOptions() {
       await Promise.all([
         loadPositions({ quiet: true, force: true }),
         loadDecisionReviewWindows(),
+        loadPositionRowContexts(),
       ]);
     } finally {
       setListRefreshInFlight(false);
@@ -3380,7 +3525,7 @@ export default function SecretOptions() {
         body: JSON.stringify(payload),
       });
       closeTradeModal();
-      await loadPositions();
+      await Promise.all([loadPositions(), loadPositionRowContexts()]);
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Failed to add position.");
     } finally {
@@ -3416,7 +3561,7 @@ export default function SecretOptions() {
         body: JSON.stringify(payload),
       });
       closeTradeModal();
-      await loadPositions();
+      await Promise.all([loadPositions(), loadPositionRowContexts()]);
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Failed to update position.");
     } finally {
@@ -3542,8 +3687,7 @@ export default function SecretOptions() {
       setExitPrice("");
       setCloseNotes("");
       setClosingPositionId(null);
-      await loadPositions();
-      await loadClosedPositions();
+      await Promise.all([loadPositions(), loadPositionRowContexts(), loadClosedPositions()]);
     } catch (err: unknown) {
       alert(`Failed to close position: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -3645,6 +3789,7 @@ export default function SecretOptions() {
     let cancelled = false;
     void loadPositions().finally(() => {
       if (cancelled) return;
+      void loadPositionRowContexts();
       void loadDecisionReviewWindows();
       // Scanner history and clustering live below the fold. Let the critical
       // portfolio request finish before starting their queries, and load modal
@@ -4325,9 +4470,7 @@ export default function SecretOptions() {
     sourceMatchConfidence: number | null | undefined,
     sourceMatchNotes: string | null | undefined
   ): string => {
-    if (!sourceEventId) {
-      return "No linked sweep signal for this trade.";
-    }
+    if (!sourceEventId) return "No linked sweep signal for this trade.";
     const lines = [
       `Linked sweep event #${sourceEventId}`,
       sourceTriggeredAt ? `Triggered: ${sourceTriggeredAt}` : "Triggered: n/a",
@@ -4336,9 +4479,7 @@ export default function SecretOptions() {
         ? `Link confidence: ${Math.round(sourceMatchConfidence * 100)}%`
         : "Link confidence: n/a",
     ];
-    if (sourceMatchNotes) {
-      lines.push(`Notes: ${sourceMatchNotes}`);
-    }
+    if (sourceMatchNotes) lines.push(`Notes: ${sourceMatchNotes}`);
     return lines.join("\n");
   };
 
@@ -4418,6 +4559,7 @@ export default function SecretOptions() {
       <MobilePositionCard
         item={item}
         lane={lane}
+        rowContext={positionRowContexts[String(position.id)]}
         decisionHistory={decisionReviewsByPosition[position.id]?.history ?? decisionWindowsByPosition[String(position.id)]}
         suggestedWindow={thesisAssessmentsByPosition[position.id]?.suggested_window ?? null}
         selected={expanded}
@@ -4968,16 +5110,11 @@ export default function SecretOptions() {
               ) : null}
               {filteredPositions.map((item) => {
                 const { position, metrics } = item;
+                const rowContext = positionRowContexts[String(position.id)];
                 const evaluation = evaluationByPositionId[position.id] || null;
                 const lane = timelineLaneByPositionId.get(position.id);
                 const heat = attributionHeat(position.source_event_id, position.source_match_confidence);
-                const tooltip = buildAttributionTooltip(
-                  position.source_event_id,
-                  position.source_triggered_at,
-                  position.source_match_method,
-                  position.source_match_confidence,
-                  position.source_match_notes
-                );
+                const tooltip = buildPositionRowContextTooltip(position, rowContext);
                 const volatilityRead = buildVolatilityRead(metrics.volatility_signal);
                 const opportunityRead = buildOpportunityRead(metrics.opportunity);
                 const rowActive = position.id === selectedId;
@@ -5008,7 +5145,10 @@ export default function SecretOptions() {
                             className={`inline-block h-7 w-1.5 shrink-0 rounded-full ${heat.marker}`}
                           />
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-gray-100">{position.symbol}</div>
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <div className="truncate text-sm font-semibold text-gray-100">{position.symbol}</div>
+                              <PositionIndexBadges context={rowContext} />
+                            </div>
                             <div className="truncate text-[10px] uppercase tracking-wide text-gray-500">
                               {position.option_type} ${formatNumber(position.strike, 2)} / {position.contracts} ctr
                             </div>

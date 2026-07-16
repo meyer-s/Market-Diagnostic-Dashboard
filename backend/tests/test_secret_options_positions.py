@@ -271,6 +271,79 @@ def _position_payload() -> dict[str, object]:
     }
 
 
+def test_position_row_context_includes_index_membership_and_linked_scan(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_local = secret_options_client
+    with secret_options._POSITION_INDEX_MEMBERSHIP_CACHE_LOCK:
+        secret_options._POSITION_INDEX_MEMBERSHIP_CACHE = None
+
+    def fake_universe(key: str):
+        symbols = ["SYY", "AAPL"] if key == "SP500" else ["XYZ"]
+        return types.SimpleNamespace(tickers=symbols)
+
+    monkeypatch.setattr(secret_options, "resolve_sweep_universe", fake_universe)
+    with session_local() as db:
+        run = OptionSweepRun(
+            universe_key="SP500",
+            universe_label="S&P 500",
+            threshold=30.0,
+            trigger_source="dashboard",
+            status="completed",
+        )
+        db.add(run)
+        db.flush()
+        event = OptionAlertEvent(
+            symbol="SYY",
+            triggered_at=datetime(2026, 7, 15, 14, 30),
+            sweep_run_id=run.id,
+            opportunity_score=72.5,
+            opportunity_grade="B",
+            opportunity_model_version="opportunity_v1",
+            selected_expiry="2026-08-21",
+            selected_dte=37,
+            selected_strike=80.0,
+            selected_option_type="call",
+            selected_premium=1.35,
+            selected_convexity_profit_pct=65.0,
+            selected_convexity_probability_itm=0.54,
+        )
+        db.add(event)
+        db.flush()
+        position = OptionPosition(
+            trade_date=date(2026, 7, 15),
+            account="Active Trading",
+            action="Buy to Open",
+            contracts=2,
+            symbol="SYY",
+            expiration=date(2026, 8, 21),
+            strike=80.0,
+            option_type="call",
+            fill_price=1.35,
+            total_cost=270.0,
+            source_event_id=event.id,
+            source_triggered_at=event.triggered_at,
+            source_match_method="exact_contract",
+            source_match_confidence=0.96,
+        )
+        db.add(position)
+        db.commit()
+        position_id = position.id
+
+    response = client.get("/secret/options/position-row-context")
+
+    assert response.status_code == 200
+    context = response.json()["contexts_by_position"][str(position_id)]
+    assert context["index_memberships"] == [
+        {"key": "SP500", "label": "SPY", "name": "S&P 500"}
+    ]
+    assert context["linked_trade"] is True
+    assert context["scan"]["universe_label"] == "S&P 500"
+    assert context["scan"]["opportunity_score"] == 72.5
+    assert context["scan"]["selected_convexity_profit_pct"] == 65.0
+
+
 def test_create_position_rejects_duplicate_resubmission(secret_options_client) -> None:
     client, _session_local = secret_options_client
 
