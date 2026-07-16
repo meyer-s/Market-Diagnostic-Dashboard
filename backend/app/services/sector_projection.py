@@ -210,6 +210,109 @@ def _rescore_stored_projection_values(
     return rescored
 
 
+def _rescore_stored_projection_runs(
+    runs: List[SectorProjectionRun],
+    values_by_run: Dict[int, List[SectorProjectionValue]],
+) -> Dict[Tuple[int, str, str], Dict[str, Any]]:
+    """Vectorized historical re-score across all complete run/horizon peer sets.
+
+    Building a pandas frame for every saved run and horizon is prohibitively
+    expensive over a one-year history. This produces the same peer-rank and
+    robust-magnitude calculation in a single grouped frame.
+    """
+    required_metrics = ("return", "sma_dist", "vol", "drawdown", "rel_ret")
+    records: List[Dict[str, Any]] = []
+    for run in runs:
+        by_horizon: Dict[str, Dict[str, SectorProjectionValue]] = {}
+        for value in values_by_run.get(run.id, []):
+            by_horizon.setdefault(value.horizon, {})[value.sector_symbol] = value
+        for horizon, value_by_symbol in by_horizon.items():
+            if set(value_by_symbol) != EXPECTED_SECTOR_SYMBOLS:
+                continue
+            horizon_records: List[Dict[str, Any]] = []
+            for symbol, value in value_by_symbol.items():
+                metrics = value.metrics_json or {}
+                if not set(required_metrics).issubset(metrics):
+                    horizon_records = []
+                    break
+                horizon_records.append({
+                    "run_id": run.id,
+                    "horizon": horizon,
+                    "sector_symbol": symbol,
+                    "sector_name": value.sector_name,
+                    "system_state": run.system_state,
+                    **{key: metrics.get(key) for key in required_metrics},
+                })
+            records.extend(horizon_records)
+
+    if not records:
+        return {}
+
+    frame = pd.DataFrame.from_records(records)
+    for column in required_metrics:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame.replace([np.inf, -np.inf], np.nan, inplace=True)
+    frame[list(required_metrics)] = frame[list(required_metrics)].fillna(0.0)
+    group_keys = [frame["run_id"], frame["horizon"]]
+
+    def grouped_score(signal: pd.Series, *, invert: bool = False) -> pd.Series:
+        values = pd.to_numeric(signal, errors="coerce").fillna(0.0)
+        grouped = values.groupby(group_keys, sort=False)
+        counts = grouped.transform("count")
+        ordinal = 100.0 * (grouped.rank(method="average") - 1.0) / (counts - 1.0)
+
+        median = grouped.transform("median")
+        absolute_deviation = (values - median).abs()
+        mad = absolute_deviation.groupby(group_keys, sort=False).transform("median")
+        mean = grouped.transform("mean")
+        variance = ((values - mean) ** 2).groupby(group_keys, sort=False).transform("mean")
+        fallback_std = np.sqrt(variance)
+        scale = (1.4826 * mad).where((1.4826 * mad) > 1e-12, fallback_std)
+        valid_scale = scale.where(np.isfinite(scale) & (scale > 1e-12))
+        robust_z = (values - median) / valid_scale
+        magnitude = 50.0 + 50.0 * np.tanh(robust_z / ROBUST_Z_TANH_SCALE)
+        magnitude = magnitude.fillna(50.0)
+
+        if invert:
+            ordinal = 100.0 - ordinal
+            magnitude = 100.0 - magnitude
+        return (
+            PEER_RANK_WEIGHT * ordinal
+            + PEER_MAGNITUDE_WEIGHT * magnitude
+        ).clip(0.0, 100.0).fillna(50.0)
+
+    frame["score_trend"] = grouped_score(frame["return"] + 0.5 * frame["sma_dist"])
+    frame["score_rel"] = grouped_score(frame["rel_ret"])
+    frame["score_risk"] = grouped_score(
+        frame["vol"] + 0.5 * np.abs(frame["drawdown"]),
+        invert=True,
+    )
+    frame["score_regime"] = 50.0
+    red = frame["system_state"].astype(str).str.upper().eq("RED")
+    defensive = frame["sector_name"].isin(["Utilities", "Consumer Staples", "Health Care"])
+    median_vol = frame["vol"].groupby(group_keys, sort=False).transform("median")
+    frame.loc[red & defensive, "score_regime"] = 55.0
+    frame.loc[red & ~defensive & frame["vol"].gt(median_vol), "score_regime"] = 45.0
+    frame["score_total"] = (
+        WEIGHTS["trend"] * frame["score_trend"]
+        + WEIGHTS["rel_strength"] * frame["score_rel"]
+        + WEIGHTS["risk"] * frame["score_risk"]
+        + WEIGHTS["regime"] * frame["score_regime"]
+    ).fillna(50.0).clip(0.0, 100.0)
+    frame["rank"] = frame["score_total"].groupby(group_keys, sort=False).rank(
+        ascending=False,
+        method="min",
+    ).astype(int)
+
+    return {
+        (int(row.run_id), str(row.sector_symbol), str(row.horizon)): {
+            "score_total": float(row.score_total),
+            "rank": int(row.rank),
+        }
+        for row in frame.itertuples(index=False)
+    }
+
+
 def _warning_type(warning: Dict[str, Any]) -> Optional[str]:
     return warning.get("type") if isinstance(warning, dict) else None
 
@@ -490,6 +593,7 @@ def build_sector_projection_history(
         for value in all_values:
             values_by_run.setdefault(value.run_id, []).append(value)
     candidates: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    rescored_history = _rescore_stored_projection_runs(runs, values_by_run)
 
     def add_entry(
         *,
@@ -531,9 +635,8 @@ def build_sector_projection_history(
             or sector_projection_quality_status(warnings) == QUALITY_STATUS_BLOCKED
         ):
             continue
-        rescored_values = _rescore_stored_projection_values(values, run.system_state)
         for v in values:
-            rescored = rescored_values.get((v.sector_symbol, v.horizon))
+            rescored = rescored_history.get((run.id, v.sector_symbol, v.horizon))
             add_entry(
                 sector_symbol=v.sector_symbol,
                 horizon=v.horizon,

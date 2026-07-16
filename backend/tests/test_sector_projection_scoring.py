@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 import pandas as pd
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -99,7 +100,11 @@ def test_history_rescores_complete_legacy_peer_sets_from_saved_metrics():
 
     history = build_sector_projection_history(db, date(2026, 7, 1), include_flagged=True)
     rescored = [history[etf["symbol"]]["3m"][0]["score_total"] for etf in SECTOR_ETFS]
+    expected = _score_sector_metrics_frame(frame, "YELLOW")
 
     assert len({round(value, 4) for value in rescored}) > 1
     assert any(abs(value - 77.5) > 0.01 for value in rescored)
-
+    for etf in SECTOR_ETFS:
+        actual = history[etf["symbol"]]["3m"][0]
+        assert actual["score_total"] == pytest.approx(expected.loc[etf["symbol"], "score_total"])
+        assert actual["rank"] == expected.loc[etf["symbol"], "rank"]
