@@ -486,15 +486,6 @@ export default function SectorProjections() {
     ...point,
     timestampNum: new Date(`${point.as_of_date}T00:00:00Z`).getTime(),
   }));
-  const selectedHistoryScores = selectedSectorHistory
-    .map((point) => point.stable_score)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  const selectedHistoryRange = selectedHistoryScores.length
-    ? Math.max(...selectedHistoryScores) - Math.min(...selectedHistoryScores)
-    : 0;
-  const selectedHistoryCurrent = selectedHistoryScores.length
-    ? selectedHistoryScores[selectedHistoryScores.length - 1]
-    : null;
   const selectedRankingRows = displayProjections[selectedHorizon] ?? [];
   const showRegimeColumn = new Set(selectedRankingRows.map((row) => Math.round(row.score_regime))).size > 1;
   const oscillatorComparisons = [...(analyticsData?.leadership_comparisons ?? [])].sort((a, b) => {
@@ -681,89 +672,65 @@ export default function SectorProjections() {
       )}
       
       
-      {/* Overview Chart - Sector Score Trends Across Horizons */}
+      {/* Multi-sector score paths across independent trailing lookbacks. */}
       {!pageLoading && !pageError && Object.keys(projections).length > 0 && (
         <div className="surface-card-strong p-4 sm:p-6">
-          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="text-base font-semibold sm:text-lg">Selected Sector Evidence</h2>
-              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-stealth-400">
-                Four independent trailing lookbacks for one sector. Dots are leadership scores; whiskers show observed score variability, not price targets or forecast confidence.
-              </p>
-            </div>
-            <label className="flex shrink-0 items-center gap-2 text-[10px] uppercase tracking-wide text-stealth-500">
-              Sector
-              <select
-                value={selectedSector ?? ""}
-                onChange={(event) => setSelectedSector(event.target.value)}
-                className="min-h-9 rounded-md border border-stealth-700 bg-stealth-950/60 px-2.5 text-xs font-semibold text-stealth-100 outline-none focus:border-sky-500"
-              >
-                {chartData.map((sector) => (
-                  <option key={sector.symbol} value={sector.symbol}>{sector.symbol} · {sector.name}</option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <h2 className="mb-2 text-base font-semibold sm:text-lg">Stabilized Sector Paths &amp; Scenario Ranges</h2>
+          <p className="mb-3 max-w-4xl text-xs leading-relaxed text-stealth-400">
+            Compare every sector across the same four trailing lookbacks. Select a sector to emphasize its stabilized path, observed-variability range, and scanner confirmation.
+          </p>
           {tInterpolated && (
-            <p className="text-xs text-amber-300/90 mb-3">
-              Some current values fall back to the stabilized 3M reading because a valid T observation is unavailable.
+            <p className="mb-3 text-xs text-amber-300/90">
+              Some current values fall back to the stabilized 3M reading because a valid current observation is unavailable.
             </p>
           )}
-          
-          {/* Independent lookback profile for the selected sector. */}
+
           <div className="surface-card-muted mb-2 p-2 sm:p-4">
-            <div className="w-full" style={{ aspectRatio: '2 / 1', maxHeight: '240px' }}>
+            <div className="w-full" style={{ aspectRatio: "2 / 1", maxHeight: "240px" }}>
               <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
-                {/* Grid lines */}
-                {[0, 25, 50, 75, 100].map((y) => (
-                  <g key={y}>
-                    <line x1="50" y1={260 - (y * 2.4)} x2="960" y2={260 - (y * 2.4)} stroke={CHART_NEUTRAL.grid} strokeWidth="1" strokeDasharray="4 4" />
-                    <text x="40" y={264 - (y * 2.4)} fill={CHART_NEUTRAL.tick} fontSize="10" textAnchor="end">{y}</text>
+                <defs>
+                  {chartData.map((sector, index) => (
+                    <linearGradient key={sector.symbol} id={`sector-range-${index}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor={getSectorColor(sector.symbol, "muted")} stopOpacity="0.03" />
+                      <stop offset="100%" stopColor={getSectorColor(sector.symbol, "muted")} stopOpacity="0.16" />
+                    </linearGradient>
+                  ))}
+                </defs>
+                {[0, 25, 50, 75, 100].map((score) => (
+                  <g key={score}>
+                    <line x1="50" y1={260 - score * 2.4} x2="960" y2={260 - score * 2.4} stroke={CHART_NEUTRAL.grid} strokeWidth="1" strokeDasharray="4 4" />
+                    <text x="40" y={264 - score * 2.4} fill={CHART_NEUTRAL.tick} fontSize="10" textAnchor="end">{score}</text>
                   </g>
                 ))}
-                
-                {/* X-axis labels */}
                 <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">NOW</text>
                 <text x="400" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M LOOKBACK</text>
                 <text x="650" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M LOOKBACK</text>
                 <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M LOOKBACK</text>
-                
-                {chartData.filter((sector) => sector.symbol === selectedSector).map((sector) => {
+
+                {chartData.map((sector, index) => {
                   const color = getSectorColor(sector.symbol);
+                  const isSelected = selectedSector === sector.symbol;
+                  const opacity = isSelected ? 1 : 0.16;
                   const score3m = sector.scores["3m"] ?? 0;
                   const score6m = sector.scores["6m"] ?? 0;
                   const score12m = sector.scores["12m"] ?? 0;
-                  const scoreT = sector.scores["T"] !== null && sector.scores["T"] !== undefined
-                    ? sector.scores["T"]
-                    : score3m;
-
-                  const x0 = 150;      // T (Now)
-                  const y0 = 260 - (scoreT * 2.4);
-                  const x1 = 400;      // 3M
-                  const y1 = 260 - (score3m * 2.4);
-                  const x2 = 650;      // 6M
-                  const y2 = 260 - (score6m * 2.4);
-                  const x3 = 900;      // 12M
-                  const y3 = 260 - (score12m * 2.4);
-                  const profilePoints = [
-                    { x: x0, y: y0, upper: 260 - ((sector.upper["T"] ?? scoreT) * 2.4), lower: 260 - ((sector.lower["T"] ?? scoreT) * 2.4) },
-                    { x: x1, y: y1, upper: 260 - ((sector.upper["3m"] ?? score3m) * 2.4), lower: 260 - ((sector.lower["3m"] ?? score3m) * 2.4) },
-                    { x: x2, y: y2, upper: 260 - ((sector.upper["6m"] ?? score6m) * 2.4), lower: 260 - ((sector.lower["6m"] ?? score6m) * 2.4) },
-                    { x: x3, y: y3, upper: 260 - ((sector.upper["12m"] ?? score12m) * 2.4), lower: 260 - ((sector.lower["12m"] ?? score12m) * 2.4) },
+                  const scoreT = sector.scores["T"] ?? score3m;
+                  const points = [
+                    { x: 150, y: 260 - scoreT * 2.4, upper: 260 - (sector.upper["T"] ?? scoreT) * 2.4, lower: 260 - (sector.lower["T"] ?? scoreT) * 2.4 },
+                    { x: 400, y: 260 - score3m * 2.4, upper: 260 - (sector.upper["3m"] ?? score3m) * 2.4, lower: 260 - (sector.lower["3m"] ?? score3m) * 2.4 },
+                    { x: 650, y: 260 - score6m * 2.4, upper: 260 - (sector.upper["6m"] ?? score6m) * 2.4, lower: 260 - (sector.lower["6m"] ?? score6m) * 2.4 },
+                    { x: 900, y: 260 - score12m * 2.4, upper: 260 - (sector.upper["12m"] ?? score12m) * 2.4, lower: 260 - (sector.lower["12m"] ?? score12m) * 2.4 },
                   ];
-                  
+                  const centerPath = `M ${points[0].x} ${points[0].y} Q 275 ${(points[0].y + points[1].y) / 2}, ${points[1].x} ${points[1].y} Q 525 ${(points[1].y + points[2].y) / 2}, ${points[2].x} ${points[2].y} Q 775 ${(points[2].y + points[3].y) / 2}, ${points[3].x} ${points[3].y}`;
+                  const upperPath = `M ${points[0].x} ${points[0].upper} Q 275 ${(points[0].upper + points[1].upper) / 2}, ${points[1].x} ${points[1].upper} Q 525 ${(points[1].upper + points[2].upper) / 2}, ${points[2].x} ${points[2].upper} Q 775 ${(points[2].upper + points[3].upper) / 2}, ${points[3].x} ${points[3].upper}`;
+                  const rangePath = `${upperPath} L ${points[3].x} ${points[3].lower} Q 775 ${(points[2].lower + points[3].lower) / 2}, ${points[2].x} ${points[2].lower} Q 525 ${(points[1].lower + points[2].lower) / 2}, ${points[1].x} ${points[1].lower} Q 275 ${(points[0].lower + points[1].lower) / 2}, ${points[0].x} ${points[0].lower} Z`;
+
                   return (
-                    <g key={sector.symbol}>
-                      {profilePoints.map((point, pointIndex) => (
-                        <g key={pointIndex}>
-                          <line x1={point.x} y1={point.upper} x2={point.x} y2={point.lower} stroke={color} strokeWidth="5" strokeOpacity="0.22" strokeLinecap="round" />
-                          <line x1={point.x - 8} y1={point.upper} x2={point.x + 8} y2={point.upper} stroke={color} strokeWidth="2" strokeOpacity="0.55" />
-                          <line x1={point.x - 8} y1={point.lower} x2={point.x + 8} y2={point.lower} stroke={color} strokeWidth="2" strokeOpacity="0.55" />
-                          <circle cx={point.x} cy={point.y} r="6" fill={color} stroke="white" strokeOpacity="0.65" strokeWidth="1.5" />
-                          <text x={point.x} y={point.y - 13} fill={CHART_NEUTRAL.label} fontSize="12" fontWeight="700" textAnchor="middle">
-                            {Math.round((260 - point.y) / 2.4)}
-                          </text>
-                        </g>
+                    <g key={sector.symbol} onClick={() => setSelectedSector(sector.symbol)} style={{ cursor: "pointer" }}>
+                      {isSelected ? <path d={rangePath} fill={`url(#sector-range-${index})`} /> : null}
+                      <path d={centerPath} stroke={color} strokeWidth={isSelected ? 3.5 : 1.5} fill="none" opacity={opacity} strokeLinecap="round" strokeLinejoin="round" />
+                      {points.map((point, pointIndex) => (
+                        <circle key={pointIndex} cx={point.x} cy={point.y} r={isSelected ? 5 : 3} fill={color} opacity={opacity} />
                       ))}
                     </g>
                   );
@@ -772,37 +739,61 @@ export default function SectorProjections() {
             </div>
           </div>
 
+          <div className="mb-4 mt-2 overflow-x-auto">
+            <div className="flex min-w-min flex-wrap gap-1 pb-2 sm:gap-2">
+              {chartData.map((sector) => {
+                const color = getSectorColor(sector.symbol);
+                const isSelected = selectedSector === sector.symbol;
+                return (
+                  <button
+                    key={sector.symbol}
+                    type="button"
+                    onClick={() => setSelectedSector(sector.symbol)}
+                    aria-pressed={isSelected}
+                    className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs whitespace-nowrap transition ${isSelected ? "border-stealth-500 bg-stealth-800 font-semibold text-white" : "border-transparent text-stealth-400 hover:border-stealth-700 hover:bg-stealth-900/50"}`}
+                  >
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: color }} aria-hidden="true" />
+                    {sector.symbol}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {selectedSectorAnalytics && selectedSectorHistory.length > 1 ? (
-            <div className="grid gap-2 border-t border-stealth-700 pt-3 text-[10px] md:grid-cols-3">
+            <div className="mb-1 grid gap-3 border-t border-stealth-700 pt-3 lg:grid-cols-[minmax(0,1fr)_220px]">
               <div className="min-w-0 rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
-                <div className="uppercase tracking-wide text-stealth-500">{selectedSectorAnalytics.sector_symbol} · 20-run leadership score</div>
-                <div className="mt-1 flex items-end justify-between gap-2">
-                  <div className="text-lg font-semibold tabular-nums text-stealth-100">{selectedHistoryCurrent?.toFixed(0) ?? "—"}</div>
-                  <div className="text-stealth-500">range {selectedHistoryRange.toFixed(1)} pts</div>
-                </div>
-                {selectedHistoryRange > 0.5 ? (
-                  <div className="mt-2 h-12">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                      <LineChart data={selectedSectorHistory} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                        <Line type="monotone" dataKey="raw_score" stroke={CHART_NEUTRAL.tick} strokeWidth={1} strokeOpacity={0.4} dot={false} isAnimationActive={false} />
-                        <Line type="monotone" dataKey="stable_score" stroke={getSectorColor(selectedSectorAnalytics.sector_symbol)} strokeWidth={2} dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+                  <div>
+                    <div className="text-xs font-semibold text-stealth-200">{selectedSectorAnalytics.sector_symbol} · observed 3M-score history</div>
+                    <div className="text-[10px] text-stealth-500">Raw daily score versus the stabilized score used above</div>
                   </div>
-                ) : (
-                  <div className="mt-2 text-stealth-400">Unchanged across {selectedSectorHistory.length} valid runs; a flat chart is intentionally omitted.</div>
-                )}
+                  <div className="text-[10px] text-stealth-500">{selectedSectorHistory.length} observations</div>
+                </div>
+                <div className="h-32">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <LineChart data={selectedSectorHistory} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
+                      <CartesianGrid {...commonGridProps} />
+                      <XAxis dataKey="timestampNum" type="number" domain={["dataMin", "dataMax"]} tick={false} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
+                      <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 9 }} stroke={CHART_NEUTRAL.axis} />
+                      <Tooltip contentStyle={commonTooltipStyle} labelFormatter={(label: number) => new Date(label).toLocaleDateString()} formatter={(value: number, name: string) => [value.toFixed(1), name === "stable_score" ? "Stable score" : "Raw score"]} />
+                      <Line type="monotone" dataKey="raw_score" stroke={CHART_NEUTRAL.tick} strokeWidth={1} strokeOpacity={0.45} dot={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="stable_score" stroke={getSectorColor(selectedSectorAnalytics.sector_symbol)} strokeWidth={2.25} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-              <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
-                <div className="uppercase tracking-wide text-stealth-500">Rank persistence</div>
-                <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.persistence.direction}</div>
-                <div className="mt-0.5 text-stealth-500">Top-3 in {(selectedSectorAnalytics.persistence.top3_rate * 100).toFixed(0)}% of recent runs</div>
-              </div>
-              <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
-                <div className="uppercase tracking-wide text-stealth-500">Scanner confirmation</div>
-                <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.scanner.hits} hits · {selectedSectorAnalytics.scanner.unique_symbols} names</div>
-                <div className="mt-0.5 text-stealth-500">Overlay {selectedSectorAnalytics.scanner.overlay_points >= 0 ? "+" : ""}{selectedSectorAnalytics.scanner.overlay_points.toFixed(1)} · reliability {(selectedSectorAnalytics.scanner.reliability * 100).toFixed(0)}%</div>
-                <div className="mt-1 text-stealth-600">Coverage {analyticsData?.scanner_coverage.classification_coverage_pct.toFixed(0) ?? "—"}% of scanner events</div>
+              <div className="grid grid-cols-2 gap-2 text-[10px] lg:grid-cols-1">
+                <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
+                  <div className="uppercase tracking-wide text-stealth-500">Rank persistence</div>
+                  <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.persistence.direction}</div>
+                  <div className="mt-0.5 text-stealth-500">Top-3 in {(selectedSectorAnalytics.persistence.top3_rate * 100).toFixed(0)}% of recent runs</div>
+                </div>
+                <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
+                  <div className="uppercase tracking-wide text-stealth-500">Scanner confirmation</div>
+                  <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.scanner.hits} deduped hits · {selectedSectorAnalytics.scanner.unique_symbols} names</div>
+                  <div className="mt-0.5 text-stealth-500">Overlay {selectedSectorAnalytics.scanner.overlay_points >= 0 ? "+" : ""}{selectedSectorAnalytics.scanner.overlay_points.toFixed(1)} · reliability {(selectedSectorAnalytics.scanner.reliability * 100).toFixed(0)}%</div>
+                </div>
               </div>
             </div>
           ) : null}
