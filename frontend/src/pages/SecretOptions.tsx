@@ -14,7 +14,6 @@ import { Link, useSearchParams } from "react-router-dom";
 import { createPortal } from "react-dom";
 import {
   Activity,
-  ArrowLeft,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -25,7 +24,6 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Settings2,
   SlidersHorizontal,
   Square,
   Trash2,
@@ -1942,50 +1940,6 @@ function TimelinePressureStack({
   );
 }
 
-function PositionActionButtons({
-  position,
-  mode,
-  onEdit,
-  onClose,
-}: {
-  position: OptionPosition;
-  mode: "row" | "expanded";
-  onEdit: (position: OptionPosition) => void;
-  onClose: (positionId: number) => void;
-}) {
-  const buttonSize = mode === "row" ? "h-7 w-7" : "h-8 w-8";
-  const iconSize = mode === "row" ? "h-3.5 w-3.5" : "h-4 w-4";
-
-  return (
-    <div className="flex items-center justify-end gap-1.5">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit(position);
-        }}
-        aria-label={`Edit ${position.symbol} position`}
-        title={`Edit ${position.symbol}`}
-        className={`inline-flex ${buttonSize} items-center justify-center rounded-md border border-sky-500/35 bg-sky-500/12 text-sky-200 transition hover:border-sky-300/70 hover:bg-sky-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50`}
-      >
-        <Pencil className={iconSize} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose(position.id);
-        }}
-        aria-label={`Close ${position.symbol} position`}
-        title={`Close ${position.symbol}`}
-        className={`inline-flex ${buttonSize} items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50`}
-      >
-        <Trash2 className={iconSize} aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
-
 function MobilePositionCard({
   item,
   lane,
@@ -1994,10 +1948,7 @@ function MobilePositionCard({
   selected,
   refreshing,
   refreshed,
-  showActions,
   onOpen,
-  onEdit,
-  onClose,
 }: {
   item: PositionPayload;
   lane: TimelineLane | undefined;
@@ -2006,10 +1957,7 @@ function MobilePositionCard({
   selected: boolean;
   refreshing: boolean;
   refreshed: boolean;
-  showActions: boolean;
   onOpen: () => void;
-  onEdit: (position: OptionPosition) => void;
-  onClose: (positionId: number) => void;
 }) {
   const { position, metrics } = item;
   const opportunity = buildOpportunityRead(metrics.opportunity);
@@ -2028,7 +1976,9 @@ function MobilePositionCard({
       id={`position-card-${position.id}`}
       role="button"
       tabIndex={0}
-      aria-label={`Open ${position.symbol} position inspector. ${statusLabel}.`}
+      aria-expanded={selected}
+      aria-controls={selected ? `position-details-${position.id}` : undefined}
+      aria-label={`${selected ? "Collapse" : "Expand"} ${position.symbol} position details. ${statusLabel}.`}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -2080,25 +2030,6 @@ function MobilePositionCard({
           {confidence}
         </span>
       </div>
-
-      {showActions ? (
-        <div className="mt-3 flex items-center justify-end gap-2 border-t border-stealth-800 pt-3" onClick={(event) => event.stopPropagation()}>
-          <button
-            type="button"
-            onClick={() => onEdit(position)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-sm font-semibold text-sky-100"
-          >
-            <Pencil className="h-4 w-4" aria-hidden="true" /> Edit
-          </button>
-          <button
-            type="button"
-            onClick={() => onClose(position.id)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 text-sm font-semibold text-rose-100"
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" /> Close
-          </button>
-        </div>
-      ) : null}
 
       {(refreshing || refreshed) ? (
         <span
@@ -2620,7 +2551,6 @@ export default function SecretOptions() {
   const scannerRunDetailRef = useRef<ScannerRunDetailResponse | null>(null);
   const [expandedScannerHitId, setExpandedScannerHitId] = useState<number | null>(null);
   const [loadingScannerRunDetail, setLoadingScannerRunDetail] = useState(false);
-  const [showRowActions, setShowRowActions] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
   const [positionsRefreshing, setPositionsRefreshing] = useState(false);
@@ -2662,11 +2592,9 @@ export default function SecretOptions() {
   const [showRiskEvidence, setShowRiskEvidence] = useState(false);
   const [mobileWorkspace, setMobileWorkspace] = useState<MobileOptionsWorkspace>("positions");
   const [mobileScannerView, setMobileScannerView] = useState<MobileScannerView>("hits");
-  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [mobileMonitoringOpen, setMobileMonitoringOpen] = useState(false);
   const [mobileClustersExpanded, setMobileClustersExpanded] = useState(false);
-  const mobileInspectorBackRef = useRef<HTMLButtonElement | null>(null);
   const [isMobileWorkflow, setIsMobileWorkflow] = useState(
     () => typeof window !== "undefined" && !window.matchMedia("(min-width: 1280px)").matches
   );
@@ -2682,8 +2610,7 @@ export default function SecretOptions() {
     showClosedLog ||
     showClosedEditModal ||
     showTrainingOutcomes ||
-    expandedScannerHitId !== null ||
-    (mobileInspectorOpen && isMobileWorkflow);
+    expandedScannerHitId !== null;
   const renderModal = (node: JSX.Element) => {
     if (typeof document === "undefined") {
       return null;
@@ -2712,7 +2639,7 @@ export default function SecretOptions() {
 
   useEffect(() => {
     if (!mobilePositionParam) {
-      setMobileInspectorOpen(false);
+      if (isMobileWorkflow) setExpandedPositionId(null);
       return;
     }
     const requested = positions.find(
@@ -2720,39 +2647,19 @@ export default function SecretOptions() {
     );
     if (!requested) return;
     setSelectedId(requested.position.id);
-    setMobileInspectorOpen(true);
-  }, [mobilePositionParam, positions]);
+    if (isMobileWorkflow) setExpandedPositionId(requested.position.id);
+  }, [mobilePositionParam, positions, isMobileWorkflow]);
 
-  const openMobileInspector = (position: OptionPosition) => {
+  const toggleMobilePositionDetails = (position: OptionPosition) => {
+    const isClosing = expandedPositionId === position.id;
     setSelectedId(position.id);
-    setExpandedPositionId(position.id);
-    setMobileInspectorOpen(true);
-    const next = new URLSearchParams(searchParams);
-    next.set("position", position.symbol.trim().toUpperCase());
-    setSearchParams(next, { replace: false });
-  };
-
-  const closeMobileInspector = () => {
-    const returnPositionId = selectedId;
-    setMobileInspectorOpen(false);
+    setExpandedPositionId(isClosing ? null : position.id);
     setShowRiskEvidence(false);
     const next = new URLSearchParams(searchParams);
-    next.delete("position");
-    setSearchParams(next, { replace: true });
-    window.setTimeout(() => document.getElementById(`position-card-${returnPositionId}`)?.focus(), 0);
+    if (isClosing) next.delete("position");
+    else next.set("position", position.symbol.trim().toUpperCase());
+    setSearchParams(next, { replace: isClosing });
   };
-
-  useEffect(() => {
-    if (!mobileInspectorOpen || !isMobileWorkflow) return;
-    mobileInspectorBackRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeMobileInspector();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  // Search params intentionally drive this lightweight mobile route. Closing
-  // restores the list in place instead of unmounting its filters or scroll.
-  }, [mobileInspectorOpen, isMobileWorkflow]);
 
   useEffect(() => {
     if (listRefreshStatusTimerRef.current !== null) {
@@ -2799,7 +2706,7 @@ export default function SecretOptions() {
       setPositionsLoadedAt(new Date());
       if (normalizedPositions.length > 0 && selectedId === null) {
         setSelectedId(normalizedPositions[0].position.id);
-        setExpandedPositionId(normalizedPositions[0].position.id);
+        if (!isMobileWorkflow) setExpandedPositionId(normalizedPositions[0].position.id);
       }
       const cacheRefreshing = data.metrics_cache?.refresh_in_progress === true;
       setPositionsRefreshing(cacheRefreshing);
@@ -3787,10 +3694,8 @@ export default function SecretOptions() {
   const selectedStockAnalysisPath = selectedSymbol
     ? `/stock-analysis/${encodeURIComponent(selectedSymbol)}?symbol=${encodeURIComponent(selectedSymbol)}`
     : null;
-  const positionGridColumns = showRowActions
-    ? "md:grid-cols-[170px_minmax(280px,1fr)_150px_64px]"
-    : "md:grid-cols-[170px_minmax(280px,1fr)_150px]";
-  const positionTableWidth = showRowActions ? "md:min-w-[770px]" : "md:min-w-[700px]";
+  const positionGridColumns = "md:grid-cols-[170px_minmax(280px,1fr)_150px]";
+  const positionTableWidth = "md:min-w-[700px]";
   // Mobile keeps the compact two-column scan pattern, but gives the timeline
   // most of the row. The wider identity track returns at sm and desktop.
   const positionMobileGrid = "grid-cols-[120px_minmax(0,1fr)] sm:grid-cols-[155px_minmax(0,1fr)]";
@@ -4211,9 +4116,14 @@ export default function SecretOptions() {
     if (!selectedIsVisible) {
       const nextPositionId = filteredPositions[0].position.id;
       setSelectedId(nextPositionId);
-      setExpandedPositionId(nextPositionId);
+      setExpandedPositionId(isMobileWorkflow ? null : nextPositionId);
+      if (isMobileWorkflow && searchParams.has("position")) {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("position");
+        setSearchParams(nextParams, { replace: true });
+      }
     }
-  }, [filteredPositions, loading, selectedId]);
+  }, [filteredPositions, loading, selectedId, isMobileWorkflow, searchParams, setSearchParams]);
 
   const totals = useMemo(() => {
     let totalCost = 0;
@@ -4494,22 +4404,95 @@ export default function SecretOptions() {
   };
 
   const mobilePositionCard = (item: PositionPayload) => {
-    const { position } = item;
+    const { position, metrics } = item;
+    const expanded = expandedPositionId === position.id;
+    const assessmentResponse = selectedId === position.id ? selectedThesisAssessment : null;
+    const assessment = assessmentResponse?.assessment ?? null;
+    const reviews = selectedId === position.id ? selectedDecisionReviews : null;
+    const lane = timelineLaneByPositionId.get(position.id);
+    const diagnosis = buildPositionDiagnosis(position, metrics, lane);
+    const opportunity = buildOpportunityRead(metrics.opportunity);
+    const volatility = buildVolatilityRead(metrics.volatility_signal);
     return (
+      <Fragment key={position.id}>
       <MobilePositionCard
-        key={position.id}
         item={item}
-        lane={timelineLaneByPositionId.get(position.id)}
+        lane={lane}
         decisionHistory={decisionReviewsByPosition[position.id]?.history ?? decisionWindowsByPosition[String(position.id)]}
         suggestedWindow={thesisAssessmentsByPosition[position.id]?.suggested_window ?? null}
-        selected={selectedId === position.id}
+        selected={expanded}
         refreshing={listRefreshPending}
         refreshed={listRefreshSettled}
-        showActions={showRowActions}
-        onOpen={() => openMobileInspector(position)}
-        onEdit={openEditModal}
-        onClose={openCloseModal}
+        onOpen={() => toggleMobilePositionDetails(position)}
       />
+      {expanded ? (
+        <div className="-mt-1 rounded-b-xl border border-t-0 border-sky-500/35 bg-stealth-950/55 p-3 shadow-[0_12px_28px_rgba(0,0,0,0.2)]" id={`position-details-${position.id}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-300">Decision review</div>
+              <div className="mt-1 text-base font-semibold leading-tight text-stealth-100">
+                {assessment ? `${decisionLabel(assessment.proposed_verdict)} to ${assessment.proposed_target_contracts}` : "Building assessment…"}
+              </div>
+              {assessment ? (
+                <div className="mt-1 text-xs text-stealth-400">
+                  {decisionLabel(assessment.quality)} quality · {decisionLabel(assessment.urgency)} urgency · {decisionLabel(assessment.confidence)} confidence
+                </div>
+              ) : null}
+            </div>
+            <button type="button" onClick={() => toggleMobilePositionDetails(position)} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-stealth-700 text-stealth-300" aria-label={`Collapse ${position.symbol} details`}>
+              <ChevronDown className="h-4 w-4 rotate-180" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-sm leading-relaxed ${lane?.urgency === "overdue" ? "border-rose-500/35 bg-rose-500/10 text-rose-100" : lane?.urgency === "due" ? "border-amber-500/35 bg-amber-500/10 text-amber-100" : "border-stealth-700 bg-stealth-900/45 text-stealth-300"}`}>
+            {diagnosis}
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-lg border border-stealth-800 bg-stealth-950/50 p-2.5">
+              <div className="text-stealth-500">Next review</div>
+              <div className="mt-0.5 font-semibold text-stealth-100">{assessmentResponse?.suggested_window.next_review_date ? formatDate(assessmentResponse.suggested_window.next_review_date) : reviews?.latest_review?.next_review_date ? formatDate(reviews.latest_review.next_review_date) : "Not scheduled"}</div>
+            </div>
+            <div className="rounded-lg border border-stealth-800 bg-stealth-950/50 p-2.5">
+              <div className="text-stealth-500">Maximum hold</div>
+              <div className="mt-0.5 font-semibold text-stealth-100">{assessmentResponse?.suggested_window.decision_deadline ? formatDate(assessmentResponse.suggested_window.decision_deadline) : reviews?.latest_review?.decision_deadline ? formatDate(reviews.latest_review.decision_deadline) : "Not set"}</div>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs tabular-nums">
+            <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5"><span className="text-stealth-500">Option</span><span className="float-right font-semibold text-stealth-100">{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span></div>
+            <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5"><span className="text-stealth-500">Bid / ask</span><span className="float-right font-semibold text-stealth-100">{metrics.quote.bid !== null ? formatCurrency(metrics.quote.bid, 2) : "—"} / {metrics.quote.ask !== null ? formatCurrency(metrics.quote.ask, 2) : "—"}</span></div>
+            <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5"><span className="text-stealth-500">Rank</span><span className="float-right font-semibold text-stealth-100">{opportunity.label}</span></div>
+            <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5"><span className="text-stealth-500">Volatility</span><span className={`float-right font-semibold ${volatility.text}`}>{volatility.label}</span></div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" disabled={confirmingDecisionReview || loadingThesisAssessment || !assessment || selectedAssessmentConfirmed} onClick={confirmAutomaticAssessment} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-600/50 bg-emerald-900/35 px-2 text-xs font-semibold text-emerald-100 disabled:opacity-50"><CheckCircle2 className="h-4 w-4" aria-hidden="true" />{confirmingDecisionReview ? "Confirming…" : selectedAssessmentConfirmed ? "Confirmed" : "Confirm grade"}</button>
+            <button type="button" onClick={() => openDecisionReviewModal(position, "override")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-sky-600/50 bg-sky-900/35 px-2 text-xs font-semibold text-sky-100"><SlidersHorizontal className="h-4 w-4" aria-hidden="true" />Override</button>
+            <button type="button" onClick={() => openDecisionReviewModal(position, "window")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-700/50 bg-amber-950/25 px-2 text-xs font-semibold text-amber-100"><CalendarClock className="h-4 w-4" aria-hidden="true" />Revise window</button>
+            <button type="button" disabled={loadingThesisAssessment} onClick={() => loadThesisAssessment(position.id, true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-stealth-700 bg-stealth-900/70 px-2 text-xs font-semibold text-stealth-200 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loadingThesisAssessment ? "animate-spin" : ""}`} aria-hidden="true" />Refresh grade</button>
+          </div>
+
+          <details className="mt-3 rounded-lg border border-stealth-800 bg-stealth-950/30 text-xs">
+            <summary className="min-h-11 cursor-pointer px-3 py-3 font-semibold text-stealth-300">Why this grade{assessment ? " · 6 inputs" : ""}</summary>
+            <div className="border-t border-stealth-800 p-3 leading-relaxed text-stealth-400">{assessment?.reasons.join(" ") || "The automatic assessment is still loading."}{assessment?.missing_inputs.length ? <div className="mt-2 text-amber-200">Confidence limits: {assessment.missing_inputs.join(" · ")}</div> : null}</div>
+          </details>
+          <details className="mt-2 rounded-lg border border-stealth-800 bg-stealth-950/30 text-xs">
+            <summary className="min-h-11 cursor-pointer px-3 py-3 font-semibold text-stealth-300">Decision journal · {reviews?.review_count ?? 0}</summary>
+            <div className="border-t border-stealth-800 p-3 leading-relaxed text-stealth-400">{reviews?.latest_review ? `${decisionLabel(reviews.latest_review.verdict)} to ${reviews.latest_review.target_contracts} contracts · reviewed ${formatDate(reviews.latest_review.review_date)}.` : "No confirmed decision review yet."}</div>
+          </details>
+
+          <div className="mt-3 border-t border-stealth-800 pt-3">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Position record</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => openEditModal(position)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-sm font-semibold text-sky-100"><Pencil className="h-4 w-4" aria-hidden="true" />Edit position</button>
+              <button type="button" onClick={() => openCloseModal(position.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 text-sm font-semibold text-rose-100"><Trash2 className="h-4 w-4" aria-hidden="true" />Close position</button>
+            </div>
+            {selectedStockAnalysisPath ? <Link to={selectedStockAnalysisPath} className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-stealth-700 text-sm font-semibold text-stealth-200">Open {position.symbol} analysis</Link> : null}
+          </div>
+        </div>
+      ) : null}
+      </Fragment>
     );
   };
 
@@ -4620,9 +4603,6 @@ export default function SecretOptions() {
                 </button>
                 <button type="button" onClick={openProfitLossHistory} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-stealth-200">
                   <History className="h-4 w-4" aria-hidden="true" /> P/L history
-                </button>
-                <button type="button" onClick={() => { setShowRowActions((current) => !current); setMobileActionsOpen(false); }} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-stealth-200">
-                  <Settings2 className="h-4 w-4" aria-hidden="true" /> {showRowActions ? "Done managing" : "Manage positions"}
                 </button>
               </div>
             ) : null}
@@ -4772,7 +4752,7 @@ export default function SecretOptions() {
       </div>
       ) : null}
 
-      {(!isMobileWorkflow || mobileInspectorOpen) ? (
+      {!isMobileWorkflow ? (
       <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_440px]">
         {!isMobileWorkflow ? (
         <section className="min-w-0 space-y-3">
@@ -4929,20 +4909,6 @@ export default function SecretOptions() {
             >
               P/L History
             </button>
-            <button
-              type="button"
-              aria-pressed={showRowActions}
-              title={showRowActions ? "Hide row action buttons" : "Show row action buttons"}
-              onClick={() => setShowRowActions((current) => !current)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                showRowActions
-                  ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100"
-                  : "border-stealth-600 bg-stealth-900/70 text-stealth-300 hover:border-stealth-500 hover:text-stealth-100"
-              }`}
-            >
-              <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Manage
-            </button>
           </div>
         </div>
 
@@ -4992,7 +4958,6 @@ export default function SecretOptions() {
                 </span>
               </span>
               <span className="hidden md:block">Stats</span>
-              {showRowActions ? <span className="hidden text-center md:block">Actions</span> : null}
             </div>
 
             <div className={`min-w-0 divide-y divide-gray-800 ${positionTableWidth}`}>
@@ -5089,17 +5054,6 @@ export default function SecretOptions() {
                         </div>
                       </div>
 
-                      {showRowActions ? (
-                        <div className="hidden items-center justify-end md:flex">
-                          <PositionActionButtons
-                            position={position}
-                            mode="row"
-                            onEdit={openEditModal}
-                            onClose={openCloseModal}
-                          />
-                        </div>
-                      ) : null}
-
                       {(listRefreshPending || listRefreshSettled) ? (
                         <span
                           className={`pointer-events-none absolute inset-y-1 right-0 w-1 rounded-l-full transition-colors duration-200 ${
@@ -5115,16 +5069,6 @@ export default function SecretOptions() {
 
                     {isExpanded ? (
                       <div className="border-t border-gray-800 bg-gray-950/35 px-3 py-2">
-                        {showRowActions ? (
-                          <div className="mb-2 flex justify-end md:hidden">
-                            <PositionActionButtons
-                              position={position}
-                              mode="expanded"
-                              onEdit={openEditModal}
-                              onClose={openCloseModal}
-                            />
-                          </div>
-                        ) : null}
                         <div
                           className={`mb-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
                             lane?.urgency === "overdue"
@@ -5550,19 +5494,9 @@ export default function SecretOptions() {
         </section>
         ) : null}
 
-        <aside className={`${mobileInspectorOpen ? "fixed inset-0 z-[70] block overflow-y-auto bg-stealth-950 pb-[calc(5.5rem+env(safe-area-inset-bottom))]" : "hidden"} min-w-0 xl:sticky xl:top-4 xl:z-auto xl:block xl:space-y-3 xl:overflow-visible xl:bg-transparent xl:pb-0`}>
-      <div className="surface-card-strong min-h-[100dvh] max-h-none overflow-y-visible rounded-none border-0 p-3 xl:min-h-0 xl:rounded-xl xl:border xl:p-2.5 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-        <div className="sticky top-0 z-20 -mx-3 -mt-3 mb-3 flex min-h-16 items-center gap-3 border-b border-stealth-800 bg-stealth-950/95 px-3 py-2 backdrop-blur xl:hidden">
-          <button ref={mobileInspectorBackRef} type="button" onClick={closeMobileInspector} aria-label="Back to positions" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-stealth-700 text-stealth-200">
-            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-base font-semibold text-stealth-100">{selected?.position.symbol ?? "Position"} decision</div>
-            {selected ? <div className="truncate text-xs text-stealth-400">{selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)} · {selected.metrics.dte ?? "—"} DTE</div> : null}
-          </div>
-          {selected ? <div className={`shrink-0 text-sm font-semibold tabular-nums ${(selected.metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{selected.metrics.pnl?.dollar !== null && selected.metrics.pnl?.dollar !== undefined ? formatCurrency(selected.metrics.pnl.dollar, 0) : "—"}</div> : null}
-        </div>
-        <div className="mb-2 hidden items-start justify-between gap-2 xl:flex">
+        <aside className="min-w-0 space-y-3 xl:sticky xl:top-4">
+      <div className="surface-card-strong max-h-[calc(100vh-2rem)] overflow-y-auto p-2.5">
+        <div className="mb-2 flex items-start justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-stealth-100">Position inspector</h2>
             {selected ? (
@@ -5668,6 +5602,22 @@ export default function SecretOptions() {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${loadingThesisAssessment ? "animate-spin" : ""}`} aria-hidden="true" />
                 {loadingThesisAssessment ? "Grading..." : "Refresh grade"}
+              </button>
+              <button
+                type="button"
+                onClick={() => openEditModal(selected.position)}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-sky-500/35 bg-sky-500/10 px-2 py-1.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-500/20"
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                Edit position
+              </button>
+              <button
+                type="button"
+                onClick={() => openCloseModal(selected.position.id)}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-rose-500/35 bg-rose-500/10 px-2 py-1.5 text-[10px] font-semibold text-rose-100 hover:bg-rose-500/20"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Close position
               </button>
             </div>
 
@@ -6303,13 +6253,7 @@ export default function SecretOptions() {
         )}
 
       </div>
-      {selected ? (
-        <div className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 gap-2 border-t border-stealth-700 bg-stealth-950/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur xl:hidden">
-          <button type="button" disabled={confirmingDecisionReview || loadingThesisAssessment || !selectedThesisAssessment?.assessment || selectedAssessmentConfirmed} onClick={confirmAutomaticAssessment} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-emerald-600/55 bg-emerald-900/40 px-2 text-sm font-semibold text-emerald-100 disabled:opacity-50"><CheckCircle2 className="h-4 w-4" aria-hidden="true" />{confirmingDecisionReview ? "Confirming…" : selectedAssessmentConfirmed ? "Confirmed" : "Confirm grade"}</button>
-          <button type="button" onClick={() => openDecisionReviewModal(selected.position, "override")} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-sky-600/55 bg-sky-900/40 px-2 text-sm font-semibold text-sky-100"><SlidersHorizontal className="h-4 w-4" aria-hidden="true" />Override</button>
-        </div>
-      ) : null}
-      {!isMobileWorkflow ? <div>{optionalityClustersCard}</div> : null}
+      <div>{optionalityClustersCard}</div>
         </aside>
       </div>
       ) : null}
