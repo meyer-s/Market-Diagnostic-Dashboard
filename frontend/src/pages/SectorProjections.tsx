@@ -43,6 +43,8 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  ReferenceArea,
+  ReferenceLine,
 } from "recharts";
 import {
   CHART_ANIMATION,
@@ -56,30 +58,19 @@ import "../index.css";
 
 const HORIZONS = ["3m", "6m", "12m"];
 const CHART_HORIZONS = ["T", "3m", "6m", "12m"];
-const DEFENSIVE_SECTORS = new Set(["XLU", "XLP", "XLV"]);
-const CYCLICAL_SECTORS = new Set(["XLE", "XLF", "XLK", "XLY"]);
 const getSectorColor = (
   symbol: string,
   variant: "base" | "muted" | "faint" = "base"
 ) => getMetricColor(symbol, variant);
 
-interface SectorHistoryEntry {
-  as_of_date: string;
-  created_at?: string | null;
-  run_id?: number | null;
-  score_total: number;
-  data_warnings?: DataWarning[];
-  quality_status?: string;
-}
-
-type SectorProjectionHistory = Record<string, Record<string, SectorHistoryEntry[]>>;
-
 interface SectorHistoryPoint {
   as_of_date: string;
   timestampNum: number;
-  defensive_avg: number;
-  cyclical_avg: number;
-  spread: number;
+  positive_avg: number;
+  negative_avg: number;
+  raw_spread: number;
+  smoothed_spread: number;
+  oscillator: number;
 }
 
 interface SectorProjectionItem {
@@ -92,6 +83,8 @@ interface SectorProjectionItem {
   score_regime: number;
   rank: number;
   classification: string;
+  raw_score?: number;
+  scanner_overlay?: number;
   metrics?: {
     return?: number | null;
     sma_dist?: number | null;
@@ -108,6 +101,82 @@ interface ChartDataPoint {
   name: string;
   symbol: string;
   scores: Record<string, number | null>;
+  lower: Record<string, number | null>;
+  upper: Record<string, number | null>;
+}
+
+interface StableHorizonSignal {
+  raw_score: number;
+  stable_core_score: number;
+  stable_score: number;
+  scanner_overlay: number;
+  uncertainty_low: number;
+  uncertainty_high: number;
+  observed_score_std: number;
+  sample_count: number;
+  raw_rank: number | null;
+  stable_rank: number;
+}
+
+interface SectorAnalyticsSignal {
+  sector_symbol: string;
+  sector_name: string;
+  horizons: Record<string, StableHorizonSignal>;
+  persistence: {
+    sample_count: number;
+    rank_slope_per_run: number;
+    rank_signal: number;
+    top3_rate: number;
+    direction: "improving" | "stable" | "weakening";
+  };
+  scanner: {
+    hits: number;
+    recent_hits: number;
+    prior_hits: number;
+    unique_symbols: number;
+    distinct_days: number;
+    directional_balance: number;
+    scanner_score: number;
+    reliability: number;
+    overlay_points: number;
+    evidence_status: "usable" | "thin";
+  };
+  history_3m: Array<{
+    as_of_date: string;
+    raw_score: number;
+    stable_score: number | null;
+    rank: number | null;
+  }>;
+}
+
+interface LeadershipComparison {
+  key: string;
+  title: string;
+  positive_label: string;
+  negative_label: string;
+  positive_symbols: string[];
+  negative_symbols: string[];
+  description: string;
+  series: Omit<SectorHistoryPoint, "timestampNum">[];
+  sample_count: number;
+}
+
+interface SectorProjectionAnalyticsResponse {
+  as_of_date: string;
+  analytics_version: string;
+  score_method: string;
+  scanner_method: string;
+  uncertainty_method: string;
+  scanner_coverage: {
+    lookback_days: number;
+    total_events: number;
+    classified_events: number;
+    deduplicated_events: number;
+    classification_coverage_pct: number;
+    max_overlay_points: number;
+  };
+  sectors: Record<string, SectorAnalyticsSignal>;
+  leadership_comparisons: LeadershipComparison[];
 }
 
 const BLOCKING_WARNING_TYPES = new Set([
@@ -133,10 +202,6 @@ function isSuspiciousProjectionSet(projectionSet?: Record<string, SectorProjecti
     });
     return zeroFilledRows.length > Math.max(3, Math.floor(expectedSectorCount * 0.4));
   });
-}
-
-function isFlaggedHistoryEntry(entry: SectorHistoryEntry) {
-  return entry.quality_status === "blocked" || hasBlockingDataWarnings(entry.data_warnings);
 }
 
 /**
@@ -168,54 +233,29 @@ export default function SectorProjections() {
     excluded_from_latest?: boolean;
   }
   const { data, loading, error } = useApi<SectorProjectionsResponse>("/sectors/projections/latest");
-  const { data: historyData } = useApi("/sectors/projections/history?days=365");
+  const {
+    data: analyticsData,
+    loading: analyticsLoading,
+    error: analyticsError,
+  } = useApi<SectorProjectionAnalyticsResponse>("/sectors/projections/analytics?days=365&scanner_days=45");
   const [projections, setProjections] = useState<Record<string, SectorProjectionItem[]>>({});
-  const [historicalScores, setHistoricalScores] = useState<Record<string, number>>({});
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [selectedHorizon, setSelectedHorizon] = useState<"T" | "3m" | "6m" | "12m">("12m");
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
+  const [selectedComparison, setSelectedComparison] = useState("cyclical_defensive");
   const [readingGuideOpen, setReadingGuideOpen] = useState(false);
+  const pageLoading = loading || analyticsLoading;
+  const pageError = error || analyticsError;
+  const activeComparison = analyticsData?.leadership_comparisons.find((comparison) => comparison.key === selectedComparison)
+    ?? analyticsData?.leadership_comparisons[0]
+    ?? null;
   const divergenceHistory = useMemo(() => {
-    const history = historyData as SectorProjectionHistory | null;
-    if (!history) return [];
-    const buckets = new Map<string, { defensive: number[]; cyclical: number[] }>();
-
-    Object.entries(history).forEach(([symbol, horizons]) => {
-      const entries = horizons?.["3m"];
-      if (!entries) return;
-      const isDefensive = DEFENSIVE_SECTORS.has(symbol);
-      const isCyclical = CYCLICAL_SECTORS.has(symbol);
-      if (!isDefensive && !isCyclical) return;
-
-      entries.filter((entry) => !isFlaggedHistoryEntry(entry)).forEach((entry) => {
-        if (!Number.isFinite(entry.score_total)) return;
-        const dateKey = entry.as_of_date;
-        if (!buckets.has(dateKey)) {
-          buckets.set(dateKey, { defensive: [], cyclical: [] });
-        }
-        const bucket = buckets.get(dateKey)!;
-        if (isDefensive) bucket.defensive.push(entry.score_total);
-        if (isCyclical) bucket.cyclical.push(entry.score_total);
-      });
-    });
-
-    const points: SectorHistoryPoint[] = [];
-    for (const [dateKey, bucket] of buckets.entries()) {
-      if (!bucket.defensive.length || !bucket.cyclical.length) continue;
-      const defensiveAvg = bucket.defensive.reduce((sum, val) => sum + val, 0) / bucket.defensive.length;
-      const cyclicalAvg = bucket.cyclical.reduce((sum, val) => sum + val, 0) / bucket.cyclical.length;
-      points.push({
-        as_of_date: dateKey,
-        timestampNum: new Date(`${dateKey}T00:00:00Z`).getTime(),
-        defensive_avg: Number(defensiveAvg.toFixed(2)),
-        cyclical_avg: Number(cyclicalAvg.toFixed(2)),
-        spread: Number((defensiveAvg - cyclicalAvg).toFixed(2)),
-      });
-    }
-
-    return points.sort((a, b) => a.timestampNum - b.timestampNum);
-  }, [historyData]);
+    return (activeComparison?.series ?? []).map((point) => ({
+      ...point,
+      timestampNum: new Date(`${point.as_of_date}T00:00:00Z`).getTime(),
+    }));
+  }, [activeComparison]);
   const scoreBarColors = {
     total: getFamilyColor("system"),
     trend: getFamilyColor("growth"),
@@ -232,7 +272,6 @@ export default function SectorProjections() {
         hasBlockingDataWarnings(data.data_warnings) ||
         isSuspiciousProjectionSet(data.projections);
       setProjections(excludeLatestRun ? {} : data.projections);
-      setHistoricalScores(data.historical || {});
       
       // If T data is invalid and currently selected, switch to 3m
       const tData = data.projections["T"] || [];
@@ -245,29 +284,64 @@ export default function SectorProjections() {
     }
   }, [data]);
 
+  useEffect(() => {
+    if (selectedSector || !analyticsData) return;
+    const leader = Object.values(analyticsData.sectors)
+      .filter((sector) => sector.horizons["3m"])
+      .sort((a, b) => a.horizons["3m"].stable_rank - b.horizons["3m"].stable_rank)[0];
+    if (leader) setSelectedSector(leader.sector_symbol);
+  }, [analyticsData, selectedSector]);
+
+  const displayProjections = useMemo(() => {
+    const output: Record<string, SectorProjectionItem[]> = {};
+    Object.entries(projections).forEach(([horizon, rows]) => {
+      output[horizon] = rows.map((row) => {
+        const stable = analyticsData?.sectors[row.sector_symbol]?.horizons[horizon];
+        return stable
+          ? {
+              ...row,
+              raw_score: row.score_total,
+              score_total: stable.stable_score,
+              rank: stable.stable_rank,
+              scanner_overlay: stable.scanner_overlay,
+              classification: stable.stable_rank <= 3 ? "Winner" : stable.stable_rank >= 9 ? "Loser" : "Neutral",
+            }
+          : row;
+      });
+    });
+    return output;
+  }, [analyticsData, projections]);
+
   // Prepare data for line chart: track each sector's score across horizons
   const getChartData = () => {
-    if (!projections["3m"]) return [];
+    if (!displayProjections["3m"]) return [];
     
     // Get all unique sectors from 3m data (use 3m as reference since it should always exist)
-    const sectors = projections["3m"] || [];
+    const sectors = displayProjections["3m"] || [];
     
     return sectors.map((sector) => {
       const sectorData: ChartDataPoint = {
         name: sector.sector_name,
         symbol: sector.sector_symbol,
         scores: {},
+        lower: {},
+        upper: {},
       };
 
       // Collect scores for each horizon
       CHART_HORIZONS.forEach((h) => {
-        const horizonData = projections[h] || [];
+        const horizonData = displayProjections[h] || [];
         const match = horizonData.find((s) => s.sector_symbol === sector.sector_symbol);
         if (match) {
           sectorData.scores[h] = match.score_total;
+          const stable = analyticsData?.sectors[sector.sector_symbol]?.horizons[h];
+          sectorData.lower[h] = stable?.uncertainty_low ?? match.score_total;
+          sectorData.upper[h] = stable?.uncertainty_high ?? match.score_total;
         } else {
           // If no data for this horizon, use null to indicate missing data
           sectorData.scores[h] = null;
+          sectorData.lower[h] = null;
+          sectorData.upper[h] = null;
         }
       });
       
@@ -297,13 +371,32 @@ export default function SectorProjections() {
   const divergenceTicks = divergenceTimestamps.length > 1
     ? Array.from({ length: 5 }, (_, i) => divergenceMinTime + ((divergenceMaxTime - divergenceMinTime) * (i / 4)))
     : divergenceTimestamps;
+  const latestOscillator = divergenceHistory.length
+    ? divergenceHistory[divergenceHistory.length - 1]?.oscillator ?? null
+    : null;
+  const priorOscillator = divergenceHistory.length > 20
+    ? divergenceHistory[divergenceHistory.length - 21]?.oscillator ?? null
+    : divergenceHistory[0]?.oscillator ?? null;
+  const oscillatorChange = latestOscillator !== null && priorOscillator !== null ? latestOscillator - priorOscillator : null;
+  const oscillatorRead = latestOscillator === null
+    ? "Unavailable"
+    : latestOscillator >= 35
+      ? activeComparison?.positive_label ?? "Positive leadership"
+      : latestOscillator <= -35
+        ? activeComparison?.negative_label ?? "Negative leadership"
+        : "Balanced leadership";
+  const selectedSectorAnalytics = selectedSector ? analyticsData?.sectors[selectedSector] ?? null : null;
+  const selectedSectorHistory = (selectedSectorAnalytics?.history_3m ?? []).map((point) => ({
+    ...point,
+    timestampNum: new Date(`${point.as_of_date}T00:00:00Z`).getTime(),
+  }));
 
   return (
     <div className="page-shell-narrow page-stack">
       <div className="flex flex-col">
         <span className="page-kicker">Rotation Monitor</span>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Sector Projections</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Identify sector leadership across multiple time horizons with quantified confidence levels.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Track persistent sector leadership across multiple lookback horizons, with bounded scanner confirmation and transparent scenario ranges.</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
           {data && <span className="page-badge">System {data.system_state}</span>}
           {data && <span className="page-badge">As of {data.as_of_date}</span>}
@@ -332,26 +425,60 @@ export default function SectorProjections() {
         </div>
       )}
       
-      {loading && (
+      {pageLoading && (
         <div className="flex justify-center py-6">
           <MarketLoading size={110} variant="scan" label="Loading sector projections..." />
         </div>
       )}
-      {error && <div className="text-red-400">Error: {error}</div>}
+      {pageError && <div className="text-red-400">Error: {pageError}</div>}
       
-      {/* Defensive vs Cyclical Spread - Historical Trend */}
-      {!loading && !error && (
+      {/* Sector leadership oscillator - historical trend */}
+      {!pageLoading && !pageError && (
         <div className="surface-card-strong p-4 sm:p-6">
-          <h2 className="text-base sm:text-lg font-semibold mb-2">Defensive vs Cyclical Spread</h2>
-          <p className="mb-4 text-xs text-stealth-400">
-            Rolling history of the defensive minus cyclical average (3M projection scores).
-          </p>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold sm:text-lg">Sector Leadership Oscillator</h2>
+              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-stealth-400">
+                {activeComparison?.description ?? "Smoothed leadership spread from 3M sector scores."} Positive favors {activeComparison?.positive_label.toLowerCase()}; negative favors {activeComparison?.negative_label.toLowerCase()}.
+              </p>
+            </div>
+            <div className="grid shrink-0 grid-cols-2 gap-2 text-xs tabular-nums sm:flex">
+              <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
+                <div className="text-[9px] uppercase tracking-wide text-stealth-500">Current</div>
+                <div className="mt-0.5 font-semibold text-stealth-100">{latestOscillator !== null ? latestOscillator.toFixed(0) : "—"}</div>
+              </div>
+              <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
+                <div className="text-[9px] uppercase tracking-wide text-stealth-500">20-run move</div>
+                <div className={`mt-0.5 font-semibold ${oscillatorChange !== null && oscillatorChange >= 0 ? "text-sky-200" : "text-amber-200"}`}>
+                  {oscillatorChange !== null ? `${oscillatorChange >= 0 ? "+" : ""}${oscillatorChange.toFixed(0)}` : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {(analyticsData?.leadership_comparisons ?? []).map((comparison) => (
+              <button
+                key={comparison.key}
+                type="button"
+                onClick={() => setSelectedComparison(comparison.key)}
+                title={`${comparison.positive_label}: ${comparison.positive_symbols.join(", ")} · ${comparison.negative_label}: ${comparison.negative_symbols.join(", ")}`}
+                className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition ${selectedComparison === comparison.key ? "border-sky-400/50 bg-sky-400/10 text-sky-100" : "border-stealth-700 bg-stealth-950/30 text-stealth-400 hover:border-stealth-600"}`}
+              >
+                {comparison.title}
+              </button>
+            ))}
+          </div>
           {divergenceHistory.length > 0 ? (
-            <div className="surface-card-muted p-2 sm:p-4">
+            <div className="surface-card-muted mt-4 p-2 sm:p-4">
               <div className="h-44 sm:h-56">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={divergenceHistory} margin={CHART_MARGIN}>
                     <CartesianGrid {...commonGridProps} />
+                    <ReferenceArea y1={35} y2={100} fill={getFamilyColor("market")} fillOpacity={0.05} />
+                    <ReferenceArea y1={-100} y2={-35} fill={getFamilyColor("volatility")} fillOpacity={0.05} />
+                    <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeWidth={1.5} />
+                    <ReferenceLine y={35} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
+                    <ReferenceLine y={-35} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
                     <XAxis
                       dataKey="timestampNum"
                       type="number"
@@ -369,7 +496,8 @@ export default function SectorProjections() {
                     <YAxis
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
                       stroke={CHART_NEUTRAL.axis}
-                      domain={["dataMin - 5", "dataMax + 5"]}
+                      domain={[-100, 100]}
+                      ticks={[-100, -50, 0, 50, 100]}
                     />
                     <Tooltip
                       contentStyle={commonTooltipStyle}
@@ -380,19 +508,26 @@ export default function SectorProjections() {
                           year: "numeric",
                         })
                       }
-                      formatter={(value: number) => [`${value.toFixed(2)}`, "Spread"]}
+                      formatter={(value: number, name: string) => [
+                        value.toFixed(1),
+                        name === "oscillator" ? "Oscillator" : name,
+                      ]}
                     />
                     <Line
                       type="monotone"
-                      dataKey="spread"
+                      dataKey="oscillator"
                       stroke={getFamilyColor("market")}
-                      strokeWidth={2}
+                      strokeWidth={2.25}
                       dot={false}
                       animationDuration={CHART_ANIMATION.duration}
                       animationEasing={CHART_ANIMATION.easing}
                     />
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-[10px] text-stealth-500">
+                <span>{oscillatorRead}</span>
+                <span>{activeComparison?.sample_count ?? 0} observations · bands at ±35</span>
               </div>
             </div>
           ) : (
@@ -405,13 +540,20 @@ export default function SectorProjections() {
       
       
       {/* Overview Chart - Sector Score Trends Across Horizons */}
-      {!loading && !error && Object.keys(projections).length > 0 && (
+      {!pageLoading && !pageError && Object.keys(projections).length > 0 && (
         <div className="surface-card-strong p-4 sm:p-6">
-          <h2 className="text-base sm:text-lg font-semibold mb-3">Sector Score Trends Across Time Horizons</h2>
-          <p className="mb-3 text-xs text-stealth-400">Each line shows how a sector's composite score evolves from current to forward projections</p>
+          <h2 className="mb-2 text-base font-semibold sm:text-lg">Stabilized Sector Paths &amp; Scenario Envelopes</h2>
+          <p className="mb-3 max-w-4xl text-xs leading-relaxed text-stealth-400">
+            Center lines use a robust rolling score instead of a one-day percentile rank. Select a sector to see its observed-variability envelope; persistent rank improvement and reliable scanner breadth can tilt the envelope, while scanner impact is capped at ±{analyticsData?.scanner_coverage.max_overlay_points ?? 4} points.
+          </p>
+          {analyticsData ? (
+            <div className={`mb-3 inline-flex rounded-md border px-2.5 py-1 text-[10px] tabular-nums ${analyticsData.scanner_coverage.classification_coverage_pct >= 70 ? "border-emerald-700/40 bg-emerald-950/20 text-emerald-200" : "border-amber-700/40 bg-amber-950/20 text-amber-200"}`}>
+              Scanner mapping · {analyticsData.scanner_coverage.classified_events}/{analyticsData.scanner_coverage.total_events} events classified ({analyticsData.scanner_coverage.classification_coverage_pct.toFixed(0)}%) · {analyticsData.scanner_coverage.lookback_days}d
+            </div>
+          ) : null}
           {tInterpolated && (
             <p className="text-xs text-amber-300/90 mb-3">
-              Note: Some T values are estimated from historical and 3M data due to missing current readings.
+              Some current values fall back to the stabilized 3M reading because a valid T observation is unavailable.
             </p>
           )}
           
@@ -454,10 +596,9 @@ export default function SectorProjections() {
                 ))}
                 
                 {/* X-axis labels */}
-                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">-3M</text>
-                <text x="350" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">T</text>
-                <text x="550" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M</text>
-                <text x="725" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M</text>
+                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">T</text>
+                <text x="400" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M</text>
+                <text x="650" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M</text>
                 <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M</text>
                 
                 {/* Uncertainty cones and lines for each sector */}
@@ -466,57 +607,30 @@ export default function SectorProjections() {
                   const isSelected = selectedSector === sector.symbol;
                   const opacity = !selectedSector || isSelected ? 0.7 : 0.1;
                   
-                  // Calculate points - 5 data points: -3M, T(now), 3M, 6M, 12M
-                  // Use real historical score from backend, fallback to estimation if unavailable
+                  // Stable center path plus an observed-variability scenario envelope.
                   const score3m = sector.scores["3m"] ?? 0;
                   const score6m = sector.scores["6m"] ?? 0;
                   const score12m = sector.scores["12m"] ?? 0;
-                  const histScore = historicalScores[sector.symbol] !== undefined
-                    ? historicalScores[sector.symbol]
-                    : score3m - 8; // Fallback estimation
-
-                  // For T (current), use data if available, otherwise interpolate from historical and 3m
                   const scoreT = sector.scores["T"] !== null && sector.scores["T"] !== undefined
                     ? sector.scores["T"]
-                    : histScore + ((score3m - histScore) / 2); // Interpolate midpoint
+                    : score3m;
 
-                  const xHist = 150;   // -3M
-                  const yHist = 260 - (histScore * 2.4);
-                  const x0 = 350;      // T (Now)
+                  const x0 = 150;      // T (Now)
                   const y0 = 260 - (scoreT * 2.4);
-                  const x1 = 550;      // 3M
+                  const x1 = 400;      // 3M
                   const y1 = 260 - (score3m * 2.4);
-                  const x2 = 725;      // 6M
+                  const x2 = 650;      // 6M
                   const y2 = 260 - (score6m * 2.4);
                   const x3 = 900;      // 12M
                   const y3 = 260 - (score12m * 2.4);
-
-                  // Calculate expanding uncertainty cone starting from now
-                  // Uncertainty grows progressively and smoothly
-                  const initialSigma = 2; // Small initial uncertainty at "now"
-                  const midSigma = Math.abs(score6m - score3m) * 0.3 + 5;
-                  const finalSigma = Math.abs(score12m - score6m) * 0.4 + 8;
-                  
-                  // Create smooth cone envelope by calculating bounds at each point
-                  const sigma0 = initialSigma;
-                  const sigma1 = midSigma * 0.4;
-                  const sigma2 = midSigma * 0.85;
-                  const sigma3 = finalSigma;
-                  
-                  const upper0 = y0 - (sigma0 * 2.4);
-                  const lower0 = y0 + (sigma0 * 2.4);
-                  const upper1 = y1 - (sigma1 * 2.4);
-                  const lower1 = y1 + (sigma1 * 2.4);
-                  const upper2 = y2 - (sigma2 * 2.4);
-                  const lower2 = y2 + (sigma2 * 2.4);
-                  const upper3 = y3 - (sigma3 * 2.4);
-                  const lower3 = y3 + (sigma3 * 2.4);
-                  
-                  // Historical path (solid, no cone, -3M to T)
-                  const historicalPath = `
-                    M ${xHist} ${yHist}
-                    Q ${(xHist + x0) / 2} ${(yHist + y0) / 2}, ${x0} ${y0}
-                  `;
+                  const upper0 = 260 - ((sector.upper["T"] ?? scoreT) * 2.4);
+                  const lower0 = 260 - ((sector.lower["T"] ?? scoreT) * 2.4);
+                  const upper1 = 260 - ((sector.upper["3m"] ?? score3m) * 2.4);
+                  const lower1 = 260 - ((sector.lower["3m"] ?? score3m) * 2.4);
+                  const upper2 = 260 - ((sector.upper["6m"] ?? score6m) * 2.4);
+                  const lower2 = 260 - ((sector.lower["6m"] ?? score6m) * 2.4);
+                  const upper3 = 260 - ((sector.upper["12m"] ?? score12m) * 2.4);
+                  const lower3 = 260 - ((sector.lower["12m"] ?? score12m) * 2.4);
                   
                   // Future path (from T forward with uncertainty cone)
                   const pathData = `
@@ -543,17 +657,6 @@ export default function SectorProjections() {
                   
                   return (
                     <g key={sector.symbol} onClick={() => setSelectedSector(isSelected ? null : sector.symbol)} style={{ cursor: 'pointer' }}>
-                      {/* Historical line (solid, no cone, -3M to T) */}
-                      <path 
-                        d={historicalPath} 
-                        stroke={color} 
-                        strokeWidth={isSelected ? "3" : "2"} 
-                        fill="none" 
-                        opacity={opacity * 1.2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      
                       {/* Uncertainty cone - filled area between upper and lower bounds */}
                       {isSelected && (
                         <g opacity={0.4}>
@@ -613,8 +716,7 @@ export default function SectorProjections() {
                         />
                       )}
                       
-                      {/* Points - 5 data points */}
-                      <circle cx={xHist} cy={yHist} r={isSelected ? "4" : "3"} fill={color} opacity={opacity * 0.9} />
+                      {/* Stable score anchors */}
                       <circle cx={x0} cy={y0} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} stroke={idx === 0 ? getFamilyColor("benchmark") : "none"} strokeWidth="1" />
                       <circle cx={x1} cy={y1} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} />
                       <circle cx={x2} cy={y2} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} />
@@ -650,13 +752,55 @@ export default function SectorProjections() {
               })}
             </div>
           </div>
+
+          {selectedSectorAnalytics && selectedSectorHistory.length > 1 ? (
+            <div className="mb-4 grid gap-3 border-t border-stealth-700 pt-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="min-w-0 rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+                  <div>
+                    <div className="text-xs font-semibold text-stealth-200">{selectedSectorAnalytics.sector_symbol} · observed 3M-score history</div>
+                    <div className="text-[10px] text-stealth-500">Raw daily rank score versus the stabilized score used above</div>
+                  </div>
+                  <div className="text-[10px] text-stealth-500">{selectedSectorHistory.length} observations</div>
+                </div>
+                <div className="h-32">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <LineChart data={selectedSectorHistory} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
+                      <CartesianGrid {...commonGridProps} />
+                      <XAxis dataKey="timestampNum" type="number" domain={["dataMin", "dataMax"]} tick={false} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
+                      <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 9 }} stroke={CHART_NEUTRAL.axis} />
+                      <Tooltip
+                        contentStyle={commonTooltipStyle}
+                        labelFormatter={(label: number) => new Date(label).toLocaleDateString()}
+                        formatter={(value: number, name: string) => [value.toFixed(1), name === "stable_score" ? "Stable score" : "Raw score"]}
+                      />
+                      <Line type="monotone" dataKey="raw_score" stroke={CHART_NEUTRAL.tick} strokeWidth={1} strokeOpacity={0.45} dot={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="stable_score" stroke={getSectorColor(selectedSectorAnalytics.sector_symbol)} strokeWidth={2.25} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px] lg:grid-cols-1">
+                <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
+                  <div className="uppercase tracking-wide text-stealth-500">Rank persistence</div>
+                  <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.persistence.direction}</div>
+                  <div className="mt-0.5 text-stealth-500">Top-3 in {(selectedSectorAnalytics.persistence.top3_rate * 100).toFixed(0)}% of recent runs</div>
+                </div>
+                <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
+                  <div className="uppercase tracking-wide text-stealth-500">Scanner confirmation</div>
+                  <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.scanner.hits} deduped hits · {selectedSectorAnalytics.scanner.unique_symbols} names</div>
+                  <div className="mt-0.5 text-stealth-500">Overlay {selectedSectorAnalytics.scanner.overlay_points >= 0 ? "+" : ""}{selectedSectorAnalytics.scanner.overlay_points.toFixed(1)} · reliability {(selectedSectorAnalytics.scanner.reliability * 100).toFixed(0)}%</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
           
           {/* Top Performers by Horizon */}
           <div className="border-t border-gray-700 pt-3 mt-3">
             <h3 className="text-xs sm:text-sm font-semibold mb-2 text-gray-300">Top Performers</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 sm:gap-2 text-xs">
               {HORIZONS.map((h) => {
-                const topSectors = (projections[h] || [])
+                const topSectors = (displayProjections[h] || [])
                   .sort((a, b) => a.rank - b.rank)
                   .slice(0, 3);
                 return (
@@ -677,7 +821,7 @@ export default function SectorProjections() {
       )}
 
       {/* Detailed Tables with Horizon Selector */}
-      {(projections[selectedHorizon === "T" ? "T" : selectedHorizon] || selectedHorizon === "T") && (
+      {(displayProjections[selectedHorizon === "T" ? "T" : selectedHorizon] || selectedHorizon === "T") && (
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4">
             <h2 className="text-base sm:text-lg font-semibold">Sector Rankings</h2>
@@ -727,7 +871,7 @@ export default function SectorProjections() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(projections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
+                  {(displayProjections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
                     <tr key={row.sector_symbol} className={
                       row.classification === "Winner"
                         ? "bg-green-900/30"
@@ -739,6 +883,11 @@ export default function SectorProjections() {
                       <td>{row.sector_name} <span className="text-xs text-gray-500">({row.sector_symbol})</span></td>
                       <td>
                         <ScoreBar label="" value={row.score_total} color={scoreBarColors.total} />
+                        {row.raw_score !== undefined ? (
+                          <div className="mt-1 pl-14 text-[9px] text-stealth-500">
+                            raw {row.raw_score.toFixed(0)} · scanner {row.scanner_overlay !== undefined && row.scanner_overlay >= 0 ? "+" : ""}{row.scanner_overlay?.toFixed(1) ?? "0.0"}
+                          </div>
+                        ) : null}
                       </td>
                       <td>
                         <span className={
@@ -761,7 +910,7 @@ export default function SectorProjections() {
               </table>
             </div>
             <div className="md:hidden space-y-2 sm:space-y-3">
-              {(selectedHorizon === "T" ? projections["T"] : projections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
+              {(selectedHorizon === "T" ? displayProjections["T"] : displayProjections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
                 <div
                   key={row.sector_symbol}
                   className={`rounded-lg border border-gray-700 overflow-hidden ${
@@ -802,6 +951,11 @@ export default function SectorProjections() {
                   </button>
                   <div className="px-3 pt-2 pb-3">
                     <ScoreBar label="Total" value={row.score_total} color={scoreBarColors.total} />
+                    {row.raw_score !== undefined ? (
+                      <div className="mt-1 text-right text-[9px] text-stealth-500">
+                        raw {row.raw_score.toFixed(0)} · scanner {row.scanner_overlay !== undefined && row.scanner_overlay >= 0 ? "+" : ""}{row.scanner_overlay?.toFixed(1) ?? "0.0"}
+                      </div>
+                    ) : null}
                   </div>
                   <div className={`collapsible-panel ${expandedCard === row.sector_symbol ? 'collapsible-panel-open' : ''}`}>
                     <div className="collapsible-panel-inner">
@@ -839,10 +993,10 @@ export default function SectorProjections() {
         <div className={`collapsible-panel ${readingGuideOpen ? 'collapsible-panel-open' : ''}`}>
           <div className="collapsible-panel-inner">
             <div className="bg-blue-900/20 border border-blue-700/50 border-t-0 rounded-b-lg p-3 sm:p-4 text-xs sm:text-sm text-blue-200/80 space-y-2 leading-relaxed">
-              <p><strong>Score (0-100):</strong> Higher scores indicate stronger technical outlook based on trend, relative strength vs SPY, risk metrics, and market regime alignment. Compare sectors vertically-higher is better.</p>
-              <p><strong>Score Changes:</strong> Lines moving up show improving outlook; lines moving down show deteriorating conditions. Crossing lines indicate sector rotation.</p>
-              <p><strong>Uncertainty Cones (Click a Sector):</strong> The shaded area shows confidence range based on score divergence. Larger gaps create wider cones; smaller gaps keep them tighter.</p>
-              <p><strong>Historical (-3M):</strong> Score from 3 months ago, or estimated offset to preserve trend shape.</p>
+              <p><strong>Oscillator:</strong> Positive readings favor the first basket named in the selected comparison; negative readings favor the second. The ±35 zones are visual leadership thresholds, not statistical significance tests.</p>
+              <p><strong>Stable Score (0-100):</strong> The displayed rank blends a rolling EWMA, a five-run median, and the latest raw score. This reduces one-day percentile jumps without hiding the raw reading.</p>
+              <p><strong>Scenario Envelope:</strong> The selected sector's band uses observed 20-run score variability. Persistent rank improvement and reliable directional scanner breadth can skew the band, but it is not a probability confidence interval.</p>
+              <p><strong>Scanner Overlay:</strong> Calls and puts are deduplicated by symbol, day, and side; breadth, recency, and opportunity rank determine reliability. The overlay is capped at ±4 points and decays beyond 3M.</p>
             </div>
           </div>
         </div>
@@ -941,22 +1095,30 @@ export default function SectorProjections() {
                   Composite Score = (0.45 x Trend) + (0.30 x Rel_Strength) + (0.20 x Risk) + (0.05 x Regime)
                 </p>
                 <p className="text-xs sm:text-sm">
-                  Sectors ranked 1-11 by composite score (descending) using minimum rank method for ties.
+                  The raw score remains auditable. Displayed ranks use 55% EWMA, 30% five-run median, and 15% latest raw score, followed by a reliability-gated scanner overlay capped at ±4 points.
                 </p>
               </div>
             </div>
             
             <div className="border-t border-gray-700 pt-4">
-              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Uncertainty Cones</h3>
+              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Scanner Confirmation &amp; Scenario Envelopes</h3>
               <p className="text-xs sm:text-sm text-gray-400 mb-3">
-                Interactive projection confidence intervals visualized as expanding "uncertainty cones" for each sector.
+                Scanner evidence confirms or challenges the price-based path without becoming the primary model.
               </p>
               <div className="text-xs sm:text-sm text-gray-400 space-y-2">
-                <p><strong>What they represent:</strong> Cone boundary shows range of possible scores based on score volatility across projection horizons (3M, 6M, 12M).</p>
-                <p><strong>How they expand:</strong> Cone starts narrow at current date (high confidence) and widens toward longer horizons (lower confidence).</p>
-                <p><strong>Calculating width:</strong> Width scales with absolute score changes between 3M, 6M, and 12M projections.</p>
-                <p><strong>Interpreting:</strong> Wide cone = higher projection uncertainty; narrow cone = more stable positioning.</p>
-                <p><strong>Interactive selection:</strong> Click sector line or legend item to isolate that sector and highlight its uncertainty cone.</p>
+                <p><strong>Scanner input:</strong> Direction comes from selected calls versus puts. Duplicate symbol/day/side events are collapsed, then recency, unique-name breadth, distinct days, and opportunity rank determine reliability.</p>
+                <p><strong>Bounded influence:</strong> Scanner evidence can move the 3M stabilized score by no more than four points; influence decays by half at 6M and to one quarter at 12M.</p>
+                <p><strong>Envelope width:</strong> Uses the sector's observed score variability over the latest 20 valid runs, expanding with the horizon.</p>
+                <p><strong>Envelope skew:</strong> Repeated rank improvement and reliable bullish scanner breadth allow more upside room; weakening persistence or bearish breadth does the reverse.</p>
+                <p><strong>Important:</strong> The envelope is a transparent scenario range, not a calibrated probability confidence interval.</p>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-700 pt-4">
+              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Leadership Oscillators</h3>
+              <div className="text-xs sm:text-sm text-gray-400 space-y-2">
+                <p>Each oscillator starts with the average daily 3M score of the first basket minus the second basket. A 25% EWMA reduces one-run reversals.</p>
+                <p>The smoothed spread is normalized against its rolling 60-run variability and bounded from -100 to +100. Cyclical/defensive, broad offense/shelter, growth/reflation, and discretionary/staples expose different rotation regimes; the broad split uses all 11 sectors.</p>
               </div>
             </div>
             

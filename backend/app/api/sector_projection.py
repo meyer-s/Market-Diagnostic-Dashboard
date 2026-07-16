@@ -16,10 +16,13 @@ All projections include:
 """
 
 from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+import time
 from app.utils.db_helpers import get_db_session
-from app.models.sector_projection import SectorProjectionValue
+from app.models.options_alerts import OptionAlertEvent
+from app.models.sector_projection import SectorProjectionRun, SectorProjectionValue
 from app.services.sector_projection import (
     build_sector_projection_history,
     compute_sector_projections,
@@ -32,12 +35,16 @@ from app.services.sector_projection import (
 )
 from app.models.system_status import SystemStatus
 from typing import Dict
+from app.services.sector_projection_analytics import build_sector_projection_analytics
 
 router = APIRouter()
 
 # Cache historical scores since they don't change (based on date)
 _historical_scores_cache = {}
 _cache_date = None
+_analytics_cache_key = None
+_analytics_cache_payload = None
+_analytics_cache_expires_at = 0.0
 
 def _get_or_compute_historical_scores(db: Session) -> Dict[str, float]:
     """Get cached historical scores or compute them once per day (UTC)."""
@@ -134,6 +141,62 @@ def get_projection_history(days: int = Query(365, ge=1, le=1095)):
     cutoff = datetime.utcnow().date() - timedelta(days=days)
     with get_db_session() as db:
         return build_sector_projection_history(db, cutoff)
+
+
+@router.get("/sectors/projections/analytics")
+def get_projection_analytics(
+    days: int = Query(365, ge=60, le=1095),
+    scanner_days: int = Query(45, ge=14, le=180),
+):
+    """Return compact stability, uncertainty, scanner, and leadership analytics."""
+    global _analytics_cache_key, _analytics_cache_payload, _analytics_cache_expires_at
+    cutoff = datetime.utcnow().date() - timedelta(days=days)
+    scanner_cutoff = datetime.utcnow() - timedelta(days=scanner_days)
+    with get_db_session() as db:
+        run = get_latest_sector_projection_run(db)
+        if not run:
+            raise HTTPException(status_code=404, detail="No sector projections available.")
+        latest_scanner_event_id = (
+            db.query(func.max(OptionAlertEvent.id))
+            .filter(OptionAlertEvent.triggered_at >= scanner_cutoff)
+            .scalar()
+        )
+        cache_key = (run.id, latest_scanner_event_id, days, scanner_days)
+        if (
+            _analytics_cache_key == cache_key
+            and _analytics_cache_payload is not None
+            and time.monotonic() < _analytics_cache_expires_at
+        ):
+            return _analytics_cache_payload
+        values = db.query(SectorProjectionValue).filter_by(run_id=run.id).all()
+        latest_by_horizon = {}
+        for value in values:
+            latest_by_horizon.setdefault(value.horizon, []).append(
+                {
+                    "sector_symbol": value.sector_symbol,
+                    "sector_name": value.sector_name,
+                    "score_total": value.score_total,
+                    "rank": value.rank,
+                }
+            )
+        history = build_sector_projection_history(db, cutoff)
+        scanner_events = (
+            db.query(OptionAlertEvent)
+            .filter(OptionAlertEvent.triggered_at >= scanner_cutoff)
+            .order_by(OptionAlertEvent.triggered_at.asc(), OptionAlertEvent.id.asc())
+            .all()
+        )
+        payload = build_sector_projection_analytics(
+            history=history,
+            latest_by_horizon=latest_by_horizon,
+            scanner_events=scanner_events,
+            as_of=run.as_of_date,
+            scanner_lookback_days=scanner_days,
+        )
+        _analytics_cache_key = cache_key
+        _analytics_cache_payload = payload
+        _analytics_cache_expires_at = time.monotonic() + 300.0
+        return payload
 
 @router.post("/sectors/projections/refresh")
 def refresh_projections():

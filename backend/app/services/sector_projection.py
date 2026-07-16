@@ -348,6 +348,18 @@ def build_sector_projection_history(
         )
         .all()
     )
+    # History is consumed by both the raw-history endpoint and the stabilized
+    # analytics endpoint. Load all values in one query instead of issuing one
+    # query per run; this keeps a year of history cheap enough for page loads.
+    values_by_run: Dict[int, List[SectorProjectionValue]] = {}
+    if runs:
+        all_values = (
+            db.query(SectorProjectionValue)
+            .filter(SectorProjectionValue.run_id.in_([run.id for run in runs]))
+            .all()
+        )
+        for value in all_values:
+            values_by_run.setdefault(value.run_id, []).append(value)
     candidates: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
 
     def add_entry(
@@ -381,7 +393,7 @@ def build_sector_projection_history(
     for run in runs:
         config = run.config_json or {}
         warnings = config.get("data_warnings", [])
-        values = db.query(SectorProjectionValue).filter_by(run_id=run.id).all()
+        values = values_by_run.get(run.id, [])
         read_warnings = validate_sector_projection_quality(_projection_dicts_from_values(values))
         warnings = merge_sector_projection_warnings(warnings, read_warnings)
         quality_status = config.get("quality_status") or sector_projection_quality_status(warnings)
