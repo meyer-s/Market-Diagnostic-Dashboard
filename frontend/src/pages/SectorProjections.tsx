@@ -1054,7 +1054,7 @@ export default function SectorProjections() {
                   <div className="text-xs text-gray-400 space-y-1 ml-3">
                     <p><strong>Return:</strong> Total return over the horizon period: (Price_end / Price_start) - 1</p>
                     <p><strong>SMA Distance:</strong> Distance from 200-day simple moving average: (Price_current / SMA_200) - 1</p>
-                    <p><strong>Composite:</strong> Return + (0.5 x SMA Distance), then percentile-ranked across all sectors and scaled to 0-100</p>
+                    <p><strong>Composite:</strong> Return + (0.5 x SMA Distance), scored from peer rank plus robust distance from the peer median on a 0-100 scale</p>
                   </div>
                 </div>
                 
@@ -1065,7 +1065,7 @@ export default function SectorProjections() {
                   </p>
                   <div className="text-xs text-gray-400 space-y-1 ml-3">
                     <p><strong>Calculation:</strong> Sector Return - SPY Return (both measured over the horizon)</p>
-                    <p><strong>Normalization:</strong> Percentile-ranked across sectors and scaled to 0-100</p>
+                    <p><strong>Normalization:</strong> Blends cross-sector rank with robust outperformance magnitude on a 0-100 scale</p>
                     <p>Higher scores indicate sectors beating the market; lower scores indicate underperformance</p>
                   </div>
                 </div>
@@ -1078,8 +1078,8 @@ export default function SectorProjections() {
                   <div className="text-xs text-gray-400 space-y-1 ml-3">
                     <p><strong>Realized Volatility:</strong> 20-day rolling standard deviation of daily returns, annualized (x sqrt252)</p>
                     <p><strong>Max Drawdown:</strong> Largest peak-to-trough decline over the full horizon period</p>
-                    <p><strong>Composite:</strong> Volatility + (0.5 x |Drawdown|), inverted percentile rank scaled to 0-100</p>
-                    <p>Sectors with lower volatility and smaller drawdowns receive higher stability scores. A zero means least stable in this 11-sector peer set.</p>
+                    <p><strong>Composite:</strong> Volatility + (0.5 x |Drawdown|), with peer rank and robust magnitude both inverted so lower risk scores higher</p>
+                    <p>Sectors with lower volatility and smaller drawdowns receive higher stability scores. The magnitude blend prevents a merely last-place sector from automatically reading as zero.</p>
                   </div>
                 </div>
                 
@@ -1106,6 +1106,9 @@ export default function SectorProjections() {
               <div className="text-xs sm:text-sm text-gray-400 space-y-2">
                 <p className="font-mono bg-gray-950 p-2 rounded text-xs">
                   Composite Score = (0.45 x Trend) + (0.30 x Rel_Strength) + (0.20 x Stability) + (0.05 x Regime)
+                </p>
+                <p className="text-xs sm:text-sm">
+                  Trend, relative strength, and stability each blend 55% peer order with 45% robust distance from the peer median. A sector can therefore strengthen or weaken while retaining the same rank.
                 </p>
                 <p className="text-xs sm:text-sm">
                   The raw score remains auditable. Displayed ranks use 55% EWMA, 30% five-run median, and 15% latest raw score, followed by a reliability-gated scanner overlay capped at ±4 points.

@@ -10,7 +10,7 @@ from app.services.optionality_clusters import classify_optionality_symbol
 from app.services.sector_projection import HORIZONS, SECTOR_ETFS
 
 
-ANALYTICS_VERSION = "sector_stability_v3"
+ANALYTICS_VERSION = "sector_stability_v4"
 LEADERSHIP_BAND = 15.0
 
 SECTOR_NAME_TO_ETF = {

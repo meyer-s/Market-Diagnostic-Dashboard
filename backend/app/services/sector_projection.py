@@ -9,7 +9,7 @@ Key Features:
 - Multi-horizon analysis: 3-month, 6-month, and 12-month projections
 - Four weighted scoring components: Trend (45%), Relative Strength (30%), Risk (20%), Regime (5%)
 - Regime-aware adjustments: Favors defensive sectors in RED markets, cyclical in GREEN
-- Transparent percentile ranking: All scores normalized to 0-100 scale
+- Transparent peer scoring: rank and robust magnitude blended on a 0-100 scale
 - Classification system: Winner (top 3), Neutral (middle 5), Loser (bottom 3)
 
 Designed for extensibility - Option A machine learning overlay can be added in future.
@@ -53,7 +53,15 @@ HORIZONS = {
 T_WINDOW_DAYS = 21
 
 # Model versioning for tracking projection methodology changes
-MODEL_VERSION = "option_b_v1"
+MODEL_VERSION = "option_b_v2"
+
+# A rank-only score cannot move while a sector remains first (or last), even
+# when its return, relative strength, or risk changes materially. Preserve the
+# cross-sectional ranking signal while allowing the distance from peers to
+# affect the score.
+PEER_RANK_WEIGHT = 0.55
+PEER_MAGNITUDE_WEIGHT = 0.45
+ROBUST_Z_TANH_SCALE = 2.5
 
 # Score component weights - sum to 1.0 for final scoring
 # These weights reflect relative importance of each factor in sector evaluation
@@ -79,6 +87,127 @@ QUALITY_STATUS_VALID = "valid"
 # =============================================================================
 
 logger = logging.getLogger(__name__)
+
+
+def _continuous_peer_score(series: pd.Series, *, invert: bool = False) -> pd.Series:
+    """Blend peer order with robust distance from the peer median.
+
+    The ordinal component preserves the sector ordering analysts expect. The
+    magnitude component uses a median/MAD z-score passed through tanh, which
+    keeps outliers bounded without pinning every best/worst sector to 100/0.
+    """
+    values = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    if not values.notna().any():
+        return pd.Series(50.0, index=series.index, dtype=float)
+
+    values = values.fillna(float(values.median()))
+    if len(values) <= 1:
+        ordinal = pd.Series(50.0, index=values.index, dtype=float)
+    else:
+        ordinal = 100.0 * (values.rank(method="average") - 1.0) / (len(values) - 1.0)
+
+    median = float(values.median())
+    mad = float((values - median).abs().median())
+    scale = 1.4826 * mad
+    if not np.isfinite(scale) or scale <= 1e-12:
+        scale = float(values.std(ddof=0))
+
+    if not np.isfinite(scale) or scale <= 1e-12:
+        magnitude = pd.Series(50.0, index=values.index, dtype=float)
+    else:
+        robust_z = (values - median) / scale
+        magnitude = 50.0 + 50.0 * np.tanh(robust_z / ROBUST_Z_TANH_SCALE)
+
+    if invert:
+        ordinal = 100.0 - ordinal
+        magnitude = 100.0 - magnitude
+
+    return (
+        PEER_RANK_WEIGHT * ordinal
+        + PEER_MAGNITUDE_WEIGHT * magnitude
+    ).clip(0.0, 100.0).fillna(50.0)
+
+
+def _score_sector_metrics_frame(metrics_frame: pd.DataFrame, system_state: str) -> pd.DataFrame:
+    """Score one horizon of sector metrics with the current model."""
+    mdf = metrics_frame.copy()
+    if mdf.empty:
+        return mdf
+
+    numeric_columns = ("return", "sma_dist", "vol", "drawdown", "rel_ret")
+    for column in numeric_columns:
+        if column not in mdf:
+            mdf[column] = 0.0
+        mdf[column] = pd.to_numeric(mdf[column], errors="coerce")
+    mdf.replace([np.inf, -np.inf], np.nan, inplace=True)
+    mdf[list(numeric_columns)] = mdf[list(numeric_columns)].fillna(0.0)
+
+    mdf["score_trend"] = _continuous_peer_score(mdf["return"] + 0.5 * mdf["sma_dist"])
+    mdf["score_rel"] = _continuous_peer_score(mdf["rel_ret"])
+    mdf["score_risk"] = _continuous_peer_score(
+        mdf["vol"] + 0.5 * np.abs(mdf["drawdown"]),
+        invert=True,
+    )
+
+    regime_adj = np.zeros(len(mdf))
+    if str(system_state).upper() == "RED":
+        for i, sym in enumerate(mdf.index):
+            if mdf.loc[sym, "sector_name"] in ["Utilities", "Consumer Staples", "Health Care"]:
+                regime_adj[i] = 5
+            elif mdf.loc[sym, "vol"] > mdf["vol"].median():
+                regime_adj[i] = -5
+    mdf["score_regime"] = 50.0 + regime_adj
+
+    mdf["score_total"] = (
+        WEIGHTS["trend"] * mdf["score_trend"]
+        + WEIGHTS["rel_strength"] * mdf["score_rel"]
+        + WEIGHTS["risk"] * mdf["score_risk"]
+        + WEIGHTS["regime"] * mdf["score_regime"]
+    ).fillna(50.0).clip(0.0, 100.0)
+    mdf["rank"] = mdf["score_total"].rank(ascending=False, method="min", na_option="bottom")
+    mdf["rank"] = mdf["rank"].fillna(len(mdf) // 2).astype(int)
+    mdf["classification"] = "Neutral"
+    mdf.loc[mdf["rank"] <= 3, "classification"] = "Winner"
+    mdf.loc[mdf["rank"] > (len(mdf) - 3), "classification"] = "Loser"
+    return mdf
+
+
+def _rescore_stored_projection_values(
+    values: List[SectorProjectionValue],
+    system_state: str,
+) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """Re-score complete saved peer sets from raw metrics for comparable history."""
+    by_horizon: Dict[str, List[SectorProjectionValue]] = {}
+    for value in values:
+        by_horizon.setdefault(value.horizon, []).append(value)
+
+    rescored: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    required_metrics = {"return", "sma_dist", "vol", "drawdown", "rel_ret"}
+    for horizon, horizon_values in by_horizon.items():
+        value_by_symbol = {value.sector_symbol: value for value in horizon_values}
+        if set(value_by_symbol) != EXPECTED_SECTOR_SYMBOLS:
+            continue
+
+        rows: Dict[str, Dict[str, Any]] = {}
+        for symbol, value in value_by_symbol.items():
+            metrics = value.metrics_json or {}
+            if not required_metrics.issubset(metrics):
+                rows = {}
+                break
+            rows[symbol] = {
+                "sector_name": value.sector_name,
+                **{key: metrics.get(key) for key in required_metrics},
+            }
+        if not rows:
+            continue
+
+        scored = _score_sector_metrics_frame(pd.DataFrame.from_dict(rows, orient="index"), system_state)
+        for symbol, row in scored.iterrows():
+            rescored[(symbol, horizon)] = {
+                "score_total": float(row["score_total"]),
+                "rank": int(row["rank"]),
+            }
+    return rescored
 
 
 def _warning_type(warning: Dict[str, Any]) -> Optional[str]:
@@ -402,15 +531,17 @@ def build_sector_projection_history(
             or sector_projection_quality_status(warnings) == QUALITY_STATUS_BLOCKED
         ):
             continue
+        rescored_values = _rescore_stored_projection_values(values, run.system_state)
         for v in values:
+            rescored = rescored_values.get((v.sector_symbol, v.horizon))
             add_entry(
                 sector_symbol=v.sector_symbol,
                 horizon=v.horizon,
                 as_of_date=str(run.as_of_date),
                 created_at=run.created_at.isoformat(),
                 run_id=run.id,
-                score_total=v.score_total,
-                rank=v.rank,
+                score_total=rescored["score_total"] if rescored else v.score_total,
+                rank=rescored["rank"] if rescored else v.rank,
                 data_warnings=warnings,
                 quality_status=quality_status,
             )
@@ -519,7 +650,7 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
         1. For each horizon (3m, 6m, 12m):
         2.   Extract price data for lookback period
         3.   Calculate raw metrics (returns, volatility, drawdown, relative strength)
-        4.   Normalize metrics to 0-100 scores using percentile ranks
+        4.   Normalize metrics with peer rank plus robust peer magnitude
         5.   Apply regime adjustments based on market state
         6.   Compute weighted final score
         7.   Rank sectors and assign Winner/Neutral/Loser classifications
@@ -594,7 +725,7 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
             }
         
         # ------------------------------------------------------------------
-        # STEP 3: Convert raw metrics to 0-100 scores via percentile ranking
+        # STEP 3: Convert raw metrics to continuous 0-100 peer scores
         # ------------------------------------------------------------------
         
         # Convert metrics dict to DataFrame for vectorized operations
@@ -602,62 +733,7 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
         if mdf.empty:
             continue
         
-        # Data cleaning: Replace inf/-inf with NaN, then fill with 0
-        mdf.replace([np.inf, -np.inf], np.nan, inplace=True)
-        mdf.fillna(0, inplace=True)
-        
-        # Percentile ranking function - converts any metric to 0-100 score
-        def to_score(series, invert=False):
-            """Convert metric to 0-100 score using percentile ranks.
-            Higher percentile = higher score (unless inverted for "bad" metrics like volatility)"""
-            ranks = series.rank(pct=True, na_option='bottom')
-            if invert:
-                scores = 100 * (1 - ranks)  # Invert for risk metrics
-            else:
-                scores = 100 * ranks  # Higher is better
-            return scores.clip(0, 100).fillna(50)  # Default to 50 if still NaN
-        
-        # Trend Score (45%): Combination of return and momentum
-        mdf["score_trend"] = to_score(mdf["return"] + 0.5 * mdf["sma_dist"])
-        
-        # Relative Strength Score (30%): Outperformance vs SPY
-        mdf["score_rel"] = to_score(mdf["rel_ret"])
-        
-        # Risk Score (20%): Lower risk = higher score (inverted)
-        mdf["score_risk"] = to_score(mdf["vol"] + 0.5 * np.abs(mdf["drawdown"]), invert=True)
-        # ------------------------------------------------------------------
-        # STEP 4: Apply regime-based adjustments (5% weight)
-        # ------------------------------------------------------------------
-        # Regime Score: Context-aware bonus/penalty based on sector characteristics
-        regime_adj = np.zeros(len(mdf))
-        if system_state == "RED":
-            # RED market: Reward defensive sectors, penalize high-vol cyclicals
-            for i, sym in enumerate(mdf.index):
-                if mdf.loc[sym, "sector_name"] in ["Utilities", "Consumer Staples", "Health Care"]:
-                    regime_adj[i] = 5  # Defensive bonus
-                elif mdf.loc[sym, "vol"] > mdf["vol"].median():
-                    regime_adj[i] = -5  # High volatility penalty
-        mdf["score_regime"] = 50 + regime_adj
-        # ------------------------------------------------------------------
-        # STEP 5: Calculate final weighted score and classify sectors
-        # ------------------------------------------------------------------
-        
-        # Weighted average of all components
-        mdf["score_total"] = (
-            WEIGHTS["trend"] * mdf["score_trend"] +
-            WEIGHTS["rel_strength"] * mdf["score_rel"] +
-            WEIGHTS["risk"] * mdf["score_risk"] +
-            WEIGHTS["regime"] * mdf["score_regime"]
-        ).fillna(50)
-        
-        # Rank sectors 1-11 (1 = best)
-        mdf["rank"] = mdf["score_total"].rank(ascending=False, method="min", na_option='bottom')
-        mdf["rank"] = mdf["rank"].fillna(len(mdf) // 2).astype(int)
-        
-        # Classification: Winner (1-3), Neutral (4-8), Loser (9-11)
-        mdf["classification"] = "Neutral"
-        mdf.loc[mdf["rank"] <= 3, "classification"] = "Winner"
-        mdf.loc[mdf["rank"] > (len(mdf) - 3), "classification"] = "Loser"
+        mdf = _score_sector_metrics_frame(mdf, system_state)
         # Output
         for sym, row in mdf.iterrows():
             projections.append({
