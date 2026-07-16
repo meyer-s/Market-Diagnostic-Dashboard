@@ -38,6 +38,8 @@ import MarketLoading from "../components/ui/MarketLoading";
 import {
   LineChart,
   Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -63,6 +65,13 @@ const getSectorColor = (
   variant: "base" | "muted" | "faint" = "base"
 ) => getMetricColor(symbol, variant);
 
+const OSCILLATOR_STYLES: Record<string, { color: string; dash?: string }> = {
+  cyclical_defensive: { color: getFamilyColor("market") },
+  broad_risk_appetite: { color: getFamilyColor("volatility"), dash: "8 4" },
+  growth_reflation: { color: getFamilyColor("inflation"), dash: "3 3" },
+  consumer_appetite: { color: getFamilyColor("sentiment"), dash: "10 3 2 3" },
+};
+
 interface SectorHistoryPoint {
   as_of_date: string;
   timestampNum: number;
@@ -71,6 +80,12 @@ interface SectorHistoryPoint {
   raw_spread: number;
   smoothed_spread: number;
   oscillator: number;
+}
+
+interface CombinedOscillatorPoint {
+  as_of_date: string;
+  timestampNum: number;
+  [comparisonKey: string]: string | number;
 }
 
 interface SectorProjectionItem {
@@ -222,6 +237,37 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
   );
 }
 
+function CompactScoreBar({
+  value,
+  color,
+  metadata,
+}: {
+  value: number;
+  color: string;
+  metadata?: string;
+}) {
+  return (
+    <div className="min-w-0 py-1">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-stealth-700">
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${Math.max(0, Math.min(100, value))}%`, backgroundColor: color }}
+          />
+        </div>
+        <span className="w-6 shrink-0 text-right text-[11px] tabular-nums text-stealth-200">
+          {Math.round(value)}
+        </span>
+      </div>
+      {metadata ? (
+        <div className="mt-1 truncate text-[8px] tabular-nums text-stealth-500" title={metadata}>
+          {metadata}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function SectorProjections() {
   interface SectorProjectionsResponse {
     projections: Record<string, SectorProjectionItem[]>;
@@ -256,6 +302,20 @@ export default function SectorProjections() {
       timestampNum: new Date(`${point.as_of_date}T00:00:00Z`).getTime(),
     }));
   }, [activeComparison]);
+  const combinedOscillatorHistory = useMemo(() => {
+    const byDate = new Map<string, CombinedOscillatorPoint>();
+    (analyticsData?.leadership_comparisons ?? []).forEach((comparison) => {
+      comparison.series.forEach((point) => {
+        const existing = byDate.get(point.as_of_date) ?? {
+          as_of_date: point.as_of_date,
+          timestampNum: new Date(`${point.as_of_date}T00:00:00Z`).getTime(),
+        };
+        existing[comparison.key] = point.oscillator;
+        byDate.set(point.as_of_date, existing);
+      });
+    });
+    return Array.from(byDate.values()).sort((a, b) => a.timestampNum - b.timestampNum);
+  }, [analyticsData]);
   const scoreBarColors = {
     total: getFamilyColor("system"),
     trend: getFamilyColor("growth"),
@@ -365,7 +425,7 @@ export default function SectorProjections() {
   const tScoresValid = tData.length > 0 && (
     new Set(tData.map(s => Math.round(s.score_total))).size > 1
   );
-  const divergenceTimestamps = divergenceHistory.map((point) => point.timestampNum);
+  const divergenceTimestamps = combinedOscillatorHistory.map((point) => point.timestampNum);
   const divergenceMinTime = divergenceTimestamps.length ? Math.min(...divergenceTimestamps) : 0;
   const divergenceMaxTime = divergenceTimestamps.length ? Math.max(...divergenceTimestamps) : 0;
   const divergenceTicks = divergenceTimestamps.length > 1
@@ -390,6 +450,11 @@ export default function SectorProjections() {
     ...point,
     timestampNum: new Date(`${point.as_of_date}T00:00:00Z`).getTime(),
   }));
+  const oscillatorComparisons = [...(analyticsData?.leadership_comparisons ?? [])].sort((a, b) => {
+    if (a.key === selectedComparison) return 1;
+    if (b.key === selectedComparison) return -1;
+    return 0;
+  });
 
   return (
     <div className="page-shell-narrow page-stack">
@@ -439,7 +504,7 @@ export default function SectorProjections() {
             <div className="min-w-0">
               <h2 className="text-base font-semibold sm:text-lg">Sector Leadership Oscillator</h2>
               <p className="mt-1 max-w-3xl text-xs leading-relaxed text-stealth-400">
-                {activeComparison?.description ?? "Smoothed leadership spread from 3M sector scores."} Positive favors {activeComparison?.positive_label.toLowerCase()}; negative favors {activeComparison?.negative_label.toLowerCase()}.
+                All four rotation lenses share the same scale. Select one to emphasize it and update the summary; positive favors its first basket and negative favors its second.
               </p>
             </div>
             <div className="grid shrink-0 grid-cols-2 gap-2 text-xs tabular-nums sm:flex">
@@ -462,20 +527,25 @@ export default function SectorProjections() {
                 type="button"
                 onClick={() => setSelectedComparison(comparison.key)}
                 title={`${comparison.positive_label}: ${comparison.positive_symbols.join(", ")} · ${comparison.negative_label}: ${comparison.negative_symbols.join(", ")}`}
-                className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition ${selectedComparison === comparison.key ? "border-sky-400/50 bg-sky-400/10 text-sky-100" : "border-stealth-700 bg-stealth-950/30 text-stealth-400 hover:border-stealth-600"}`}
+                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition ${selectedComparison === comparison.key ? "border-stealth-500 bg-stealth-900/70 text-stealth-100" : "border-stealth-700 bg-stealth-950/30 text-stealth-400 hover:border-stealth-600"}`}
               >
+                <span
+                  className="h-0.5 w-4 shrink-0 rounded-full"
+                  style={{ backgroundColor: OSCILLATOR_STYLES[comparison.key]?.color ?? CHART_NEUTRAL.tick }}
+                  aria-hidden="true"
+                />
                 {comparison.title}
               </button>
             ))}
           </div>
-          {divergenceHistory.length > 0 ? (
+          {combinedOscillatorHistory.length > 0 ? (
             <div className="surface-card-muted mt-4 p-2 sm:p-4">
               <div className="h-44 sm:h-56">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={divergenceHistory} margin={CHART_MARGIN}>
+                  <AreaChart data={combinedOscillatorHistory} margin={CHART_MARGIN}>
                     <CartesianGrid {...commonGridProps} />
-                    <ReferenceArea y1={35} y2={100} fill={getFamilyColor("market")} fillOpacity={0.05} />
-                    <ReferenceArea y1={-100} y2={-35} fill={getFamilyColor("volatility")} fillOpacity={0.05} />
+                    <ReferenceArea y1={35} y2={100} fill={getFamilyColor("market")} fillOpacity={0.025} />
+                    <ReferenceArea y1={-100} y2={-35} fill={getFamilyColor("volatility")} fillOpacity={0.025} />
                     <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeWidth={1.5} />
                     <ReferenceLine y={35} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
                     <ReferenceLine y={-35} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
@@ -510,24 +580,38 @@ export default function SectorProjections() {
                       }
                       formatter={(value: number, name: string) => [
                         value.toFixed(1),
-                        name === "oscillator" ? "Oscillator" : name,
+                        name,
                       ]}
                     />
-                    <Line
-                      type="monotone"
-                      dataKey="oscillator"
-                      stroke={getFamilyColor("market")}
-                      strokeWidth={2.25}
-                      dot={false}
-                      animationDuration={CHART_ANIMATION.duration}
-                      animationEasing={CHART_ANIMATION.easing}
-                    />
-                  </LineChart>
+                    {oscillatorComparisons.map((comparison) => {
+                      const style = OSCILLATOR_STYLES[comparison.key] ?? { color: CHART_NEUTRAL.tick };
+                      const isActive = comparison.key === selectedComparison;
+                      return (
+                        <Area
+                          key={comparison.key}
+                          type="monotone"
+                          dataKey={comparison.key}
+                          name={comparison.title}
+                          baseValue={0}
+                          stroke={style.color}
+                          strokeWidth={isActive ? 2.5 : 1.5}
+                          strokeOpacity={isActive ? 1 : 0.72}
+                          strokeDasharray={style.dash}
+                          fill={style.color}
+                          fillOpacity={isActive ? 0.09 : 0.025}
+                          dot={false}
+                          connectNulls={false}
+                          animationDuration={CHART_ANIMATION.duration}
+                          animationEasing={CHART_ANIMATION.easing}
+                        />
+                      );
+                    })}
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-[10px] text-stealth-500">
-                <span>{oscillatorRead}</span>
-                <span>{activeComparison?.sample_count ?? 0} observations · bands at ±35</span>
+                <span>{activeComparison?.title} · {oscillatorRead}</span>
+                <span>{activeComparison?.sample_count ?? 0} observations per series · bands at ±35</span>
               </div>
             </div>
           ) : (
@@ -855,41 +939,57 @@ export default function SectorProjections() {
             </div>
           )}
           
-          <div className="bg-gray-800 rounded-lg p-4 shadow">
+          <div className="overflow-hidden rounded-lg bg-gray-800 shadow">
             <div className="hidden md:block">
-              <table className="w-full text-sm">
+              <table className="w-full table-fixed text-xs">
+                <colgroup>
+                  <col className="w-[5%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
                 <thead>
-                  <tr className="text-gray-400">
-                    <th className="text-left">Rank</th>
-                    <th className="text-left">Sector</th>
-                    <th className="text-left">Score</th>
-                    <th className="text-left">Type</th>
-                    <th className="text-left">Trend</th>
-                    <th className="text-left">Rel</th>
-                    <th className="text-left">Risk</th>
-                    <th className="text-left">Regime</th>
+                  <tr className="border-b border-stealth-700 bg-stealth-900/40 text-[10px] uppercase tracking-wide text-stealth-500">
+                    <th className="px-2 py-2 text-left">#</th>
+                    <th className="px-2 py-2 text-left">Sector</th>
+                    <th className="px-2 py-2 text-left">Stable score</th>
+                    <th className="px-2 py-2 text-left">Type</th>
+                    <th className="px-2 py-2 text-left">Trend</th>
+                    <th className="px-2 py-2 text-left">Rel</th>
+                    <th className="px-2 py-2 text-left">Risk</th>
+                    <th className="px-2 py-2 text-left">Regime</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(displayProjections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
-                    <tr key={row.sector_symbol} className={
+                    <tr key={row.sector_symbol} className={`border-b border-stealth-800/70 last:border-b-0 ${
                       row.classification === "Winner"
                         ? "bg-green-900/30"
                         : row.classification === "Loser"
                         ? "bg-red-900/20"
                         : ""
-                    }>
-                      <td>{row.rank}</td>
-                      <td>{row.sector_name} <span className="text-xs text-gray-500">({row.sector_symbol})</span></td>
-                      <td>
-                        <ScoreBar label="" value={row.score_total} color={scoreBarColors.total} />
-                        {row.raw_score !== undefined ? (
-                          <div className="mt-1 pl-14 text-[9px] text-stealth-500">
-                            raw {row.raw_score.toFixed(0)} · scanner {row.scanner_overlay !== undefined && row.scanner_overlay >= 0 ? "+" : ""}{row.scanner_overlay?.toFixed(1) ?? "0.0"}
-                          </div>
-                        ) : null}
+                    }`}>
+                      <td className="px-2 py-1.5 align-middle tabular-nums text-stealth-300">{row.rank}</td>
+                      <td className="min-w-0 px-2 py-1.5 align-middle">
+                        <div className="truncate font-medium text-stealth-100" title={`${row.sector_name} (${row.sector_symbol})`}>
+                          {row.sector_name}
+                        </div>
+                        <div className="text-[9px] text-stealth-500">{row.sector_symbol}</div>
                       </td>
-                      <td>
+                      <td className="px-2 py-1 align-middle">
+                        <CompactScoreBar
+                          value={row.score_total}
+                          color={scoreBarColors.total}
+                          metadata={row.raw_score !== undefined
+                            ? `raw ${row.raw_score.toFixed(0)} · scan ${row.scanner_overlay !== undefined && row.scanner_overlay >= 0 ? "+" : ""}${row.scanner_overlay?.toFixed(1) ?? "0.0"}`
+                            : undefined}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5 align-middle">
                         <span className={
                           row.classification === "Winner"
                             ? "text-green-400"
@@ -900,16 +1000,16 @@ export default function SectorProjections() {
                           {row.classification}
                         </span>
                       </td>
-                      <td><ScoreBar label="" value={row.score_trend} color={scoreBarColors.trend} /></td>
-                      <td><ScoreBar label="" value={row.score_rel} color={scoreBarColors.rel} /></td>
-                      <td><ScoreBar label="" value={row.score_risk} color={scoreBarColors.risk} /></td>
-                      <td><ScoreBar label="" value={row.score_regime} color={scoreBarColors.regime} /></td>
+                      <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_trend} color={scoreBarColors.trend} /></td>
+                      <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_rel} color={scoreBarColors.rel} /></td>
+                      <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_risk} color={scoreBarColors.risk} /></td>
+                      <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_regime} color={scoreBarColors.regime} /></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="md:hidden space-y-2 sm:space-y-3">
+            <div className="space-y-2 p-4 md:hidden sm:space-y-3">
               {(selectedHorizon === "T" ? displayProjections["T"] : displayProjections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
                 <div
                   key={row.sector_symbol}
