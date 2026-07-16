@@ -1,82 +1,86 @@
 /**
- * Sector Divergence Widget
- * 
- * Dashboard widget displaying sector leadership patterns and regime alignment.
- * Helps identify macro market positioning by comparing defensive vs cyclical sector performance.
- * 
- * Key Metrics:
- * - Defensive Average: XLU (Utilities), XLP (Staples), XLV (Healthcare)
- * - Cyclical Average: XLE (Energy), XLF (Financials), XLK (Tech), XLY (Discretionary)
- * - Regime Alignment: How well sector leadership matches expected patterns for current market state
- * - Sector Breadth: Count of improving vs deteriorating sectors across horizons
- * 
- * Interpretations:
- * - RED market + defensive lead = Flight to safety (expected)
- * - RED market + cyclical lead = Risk appetite emerging (potential reversal signal)
- * - GREEN market + cyclical lead = Risk-on mode (healthy)
- * - GREEN market + defensive lead = Caution creeping in (early warning)
- * 
- * @component
+ * Compact dashboard view of the stabilized sector-rotation analytics.
+ *
+ * The detailed Sector Rotation page owns the full four-lens comparison and
+ * forward scenarios. This widget answers three faster questions: who leads
+ * now, how leadership is moving, and how broad that move is.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  LineChart,
-  Line,
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ReferenceArea,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
 } from "recharts";
 import { getLegacyApiUrl } from "../../utils/apiUtils";
-import { CHART_MARGIN, commonGridProps, commonTooltipStyle } from "../../utils/chartUtils";
+import {
+  CHART_ANIMATION,
+  CHART_MARGIN,
+  CHART_NEUTRAL,
+  commonGridProps,
+  commonTooltipStyle,
+} from "../../utils/chartUtils";
+import { getFamilyColor } from "../../theme/metricColors";
 import {
   analyzeSeries,
-  getTrendTone,
   getConfidenceFromSignal,
-  getTrendWindows,
   type InsightSignal,
 } from "../../utils/insightUtils";
 
-interface SectorSummary {
+interface SectorLatestResponse {
   as_of_date: string;
+  model_version: string;
   system_state: string;
-  defensive_avg: number;
-  cyclical_avg: number;
-  defensive_vs_cyclical: number;
-  regime_alignment_score: number;
-  sector_breadth: {
-    improving: number;
-    deteriorating: number;
-    stable: number;
-  };
-  top_defensive: Array<{ symbol: string; name: string; score: number }>;
-  top_cyclical: Array<{ symbol: string; name: string; score: number }>;
+  quality_status?: string;
+  data_warnings?: Array<{ type: string }>;
 }
 
-interface SectorHistoryEntry {
+interface LeadershipPoint {
   as_of_date: string;
-  score_total: number;
+  positive_avg: number;
+  negative_avg: number;
+  raw_spread: number;
+  smoothed_spread: number;
+  oscillator: number;
 }
 
-type SectorProjectionHistory = Record<string, Record<string, SectorHistoryEntry[]>>;
-
-interface SectorAlertDetails {
-  system_state?: string;
-  spread?: number | null;
-  defensive_avg?: number | null;
-  cyclical_avg?: number | null;
-}
-
-interface SectorAlert {
-  type: string;
-  severity: "INFO" | "WARNING";
+interface LeadershipComparison {
+  key: string;
   title: string;
-  message: string;
-  details: SectorAlertDetails;
-  timestamp: string;
+  positive_label: string;
+  negative_label: string;
+  positive_axis_label: string;
+  negative_axis_label: string;
+  description: string;
+  sample_count: number;
+  series: LeadershipPoint[];
+}
+
+interface SectorAnalyticsSignal {
+  sector_symbol: string;
+  sector_name: string;
+  horizons: Record<string, {
+    stable_score: number;
+    stable_rank: number;
+  }>;
+  persistence: {
+    direction: "improving" | "stable" | "weakening";
+  };
+}
+
+interface SectorAnalyticsResponse {
+  as_of_date: string;
+  analytics_version: string;
+  leadership_band: number;
+  sectors: Record<string, SectorAnalyticsSignal>;
+  leadership_comparisons: LeadershipComparison[];
 }
 
 interface Props {
@@ -84,438 +88,358 @@ interface Props {
   onInsight?: (insight: InsightSignal) => void;
 }
 
-interface SectorHistoryPoint {
-  as_of_date: string;
+interface ChartPoint extends LeadershipPoint {
   timestampNum: number;
-  defensive_avg: number;
-  cyclical_avg: number;
-  spread: number;
 }
 
-const DEFENSIVE_SECTORS = new Set(["XLU", "XLP", "XLV"]);
-const CYCLICAL_SECTORS = new Set(["XLE", "XLF", "XLK", "XLY"]);
+const PRIMARY_COMPARISON = "cyclical_defensive";
+
+function latestComparisonValue(comparison: LeadershipComparison): number | null {
+  const value = comparison.series[comparison.series.length - 1]?.oscillator;
+  return Number.isFinite(value) ? value : null;
+}
+
+function formatLeadershipValue(value: number | null, comparison: LeadershipComparison) {
+  if (value === null) return "Unavailable";
+  if (Math.abs(value) < 2) return "Balanced";
+  const leader = value > 0 ? comparison.positive_axis_label : comparison.negative_axis_label;
+  return `${leader} +${Math.abs(value).toFixed(1)}`;
+}
+
+function getLeadershipRead(value: number | null, band: number, comparison: LeadershipComparison) {
+  if (value === null) {
+    return { title: "Leadership unavailable", description: "No valid oscillator history", color: "text-stealth-400" };
+  }
+  if (value >= band) {
+    return { title: comparison.positive_label, description: `${comparison.positive_axis_label} leadership is above the clear-signal band`, color: "text-cyan-300" };
+  }
+  if (value <= -band) {
+    return { title: comparison.negative_label, description: `${comparison.negative_axis_label} leadership is above the clear-signal band`, color: "text-violet-300" };
+  }
+  if (value > 2) {
+    return { title: `Balanced, leaning ${comparison.positive_axis_label.toLowerCase()}`, description: "The tilt remains inside the clear-leadership band", color: "text-stealth-200" };
+  }
+  if (value < -2) {
+    return { title: `Balanced, leaning ${comparison.negative_axis_label.toLowerCase()}`, description: "The tilt remains inside the clear-leadership band", color: "text-stealth-200" };
+  }
+  return { title: "Balanced rotation", description: "Neither basket has a meaningful leadership edge", color: "text-stealth-200" };
+}
 
 export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: Props) {
-  const [data, setData] = useState<SectorSummary | null>(null);
-  const [history, setHistory] = useState<SectorHistoryPoint[]>([]);
-  const [alerts, setAlerts] = useState<SectorAlert[]>([]);
+  const [latest, setLatest] = useState<SectorLatestResponse | null>(null);
+  const [analytics, setAnalytics] = useState<SectorAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const buildHistorySeries = (historyData: SectorProjectionHistory | null): SectorHistoryPoint[] => {
-    if (!historyData) return [];
-    const buckets = new Map<string, { defensive: number[]; cyclical: number[] }>();
-
-    Object.entries(historyData).forEach(([symbol, horizons]) => {
-      const entries = horizons?.["3m"];
-      if (!entries) return;
-      const isDefensive = DEFENSIVE_SECTORS.has(symbol);
-      const isCyclical = CYCLICAL_SECTORS.has(symbol);
-      if (!isDefensive && !isCyclical) return;
-
-      entries.forEach((entry) => {
-        if (!Number.isFinite(entry.score_total)) return;
-        const dateKey = entry.as_of_date;
-        if (!buckets.has(dateKey)) {
-          buckets.set(dateKey, { defensive: [], cyclical: [] });
-        }
-        const bucket = buckets.get(dateKey)!;
-        if (isDefensive) bucket.defensive.push(entry.score_total);
-        if (isCyclical) bucket.cyclical.push(entry.score_total);
-      });
-    });
-
-    const points: SectorHistoryPoint[] = [];
-    for (const [dateKey, bucket] of buckets.entries()) {
-      if (!bucket.defensive.length || !bucket.cyclical.length) continue;
-      const defensiveAvg = bucket.defensive.reduce((sum, val) => sum + val, 0) / bucket.defensive.length;
-      const cyclicalAvg = bucket.cyclical.reduce((sum, val) => sum + val, 0) / bucket.cyclical.length;
-      points.push({
-        as_of_date: dateKey,
-        timestampNum: new Date(`${dateKey}T00:00:00Z`).getTime(),
-        defensive_avg: Number(defensiveAvg.toFixed(2)),
-        cyclical_avg: Number(cyclicalAvg.toFixed(2)),
-        spread: Number((defensiveAvg - cyclicalAvg).toFixed(2)),
-      });
-    }
-
-    return points.sort((a, b) => a.timestampNum - b.timestampNum);
-  };
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const apiUrl = getLegacyApiUrl();
-        const historyUrl = `${apiUrl}/sectors/projections/history?days=${trendPeriod}`;
-        const [summaryRes, historyRes, alertsRes] = await Promise.all([
-          fetch(`${apiUrl}/sectors/summary`),
-          fetch(historyUrl),
-          fetch(`${apiUrl}/sectors/alerts`)
+        const [latestResponse, analyticsResponse] = await Promise.all([
+          fetch(`${apiUrl}/sectors/projections/latest`, { signal: controller.signal }),
+          fetch(`${apiUrl}/sectors/projections/analytics?days=365&scanner_days=45`, { signal: controller.signal }),
         ]);
-        if (!summaryRes.ok) throw new Error("Failed to fetch sector summary");
-        const summaryData = await summaryRes.json();
-        setData(summaryData);
-
-        if (historyRes.ok) {
-          const historyData: SectorProjectionHistory = await historyRes.json();
-          setHistory(buildHistorySeries(historyData));
-        } else {
-          setHistory([]);
+        if (!latestResponse.ok || !analyticsResponse.ok) {
+          throw new Error("Sector rotation data is unavailable");
         }
-
-        const alertsData = alertsRes.ok ? await alertsRes.json() : { alerts: [] };
-        setAlerts(alertsData.alerts || []);
-      } catch (error) {
-        console.error("Failed to fetch sector data:", error);
-        setHistory([]);
+        const [latestPayload, analyticsPayload] = await Promise.all([
+          latestResponse.json() as Promise<SectorLatestResponse>,
+          analyticsResponse.json() as Promise<SectorAnalyticsResponse>,
+        ]);
+        setLatest(latestPayload);
+        setAnalytics(analyticsPayload);
+      } catch (requestError) {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        console.error("Failed to fetch sector rotation data:", requestError);
+        setError(requestError instanceof Error ? requestError.message : "Sector rotation data is unavailable");
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
-    fetchData();
-  }, [trendPeriod]);
+    void fetchData();
+    return () => controller.abort();
+  }, []);
 
-  const chartData = history;
-  const trendWindows = getTrendWindows(trendPeriod);
-  const spreadSeries = chartData.map((point) => point.spread).filter((value) => Number.isFinite(value));
-  const gapSeries = spreadSeries.map((value) => Math.abs(value));
-  const primaryGapSignal = analyzeSeries(gapSeries, trendWindows.primary);
-  const secondaryGapSignal = analyzeSeries(gapSeries, trendWindows.secondary);
-  const spreadTrendPhrase =
-    primaryGapSignal.direction === "up"
-      ? "widening"
-      : primaryGapSignal.direction === "down"
-      ? "narrowing"
-      : "steady";
-  const secondarySpreadPhrase =
-    secondaryGapSignal.direction === "up"
-      ? "widening"
-      : secondaryGapSignal.direction === "down"
-      ? "narrowing"
-      : "steady";
-  const spreadTone = getTrendTone(primaryGapSignal);
-  const leadValue = data?.defensive_vs_cyclical ?? 0;
-  const leadSide =
-    Math.abs(leadValue) < 2 ? "balanced" : leadValue > 0 ? "defense" : "growth";
-  const breadthBalance = (data?.sector_breadth.improving ?? 0) - (data?.sector_breadth.deteriorating ?? 0);
-  const breadthPhrase =
-    breadthBalance > 2
-      ? "breadth is improving"
-      : breadthBalance < -2
-      ? "breadth is thinning"
-      : "breadth is mixed";
-  const toneClause = spreadTone === "mixed" ? "" : `, and the move feels ${spreadTone}`;
-  const secondaryBiasSignal = analyzeSeries(spreadSeries, trendWindows.secondary);
-  const primaryDirection =
-    leadSide === "growth" ? "up" : leadSide === "defense" ? "down" : "flat";
-  const secondaryDirection =
-    secondaryBiasSignal.direction === "up"
-      ? "down"
-      : secondaryBiasSignal.direction === "down"
-      ? "up"
-      : "flat";
-  const summaryShort =
-    leadSide === "balanced"
-      ? `balanced, gap ${spreadTrendPhrase}${
-          secondaryGapSignal.direction === primaryGapSignal.direction
-            ? ""
-            : ` / recent ${secondarySpreadPhrase}`
-        }`
-      : `${leadSide} lead, gap ${spreadTrendPhrase}${
-          secondaryGapSignal.direction === primaryGapSignal.direction
-            ? ""
-            : ` / recent ${secondarySpreadPhrase}`
-        }`;
-  const sectorInsight: InsightSignal | null = data
-    ? {
-        id: "sector",
-        label: "Sectors",
-        primaryDirection,
-        secondaryDirection,
-        stance: leadSide === "growth" ? "risk-on" : leadSide === "defense" ? "risk-off" : "mixed",
-        confidence: getConfidenceFromSignal(primaryGapSignal),
-        summary: summaryShort,
-      }
+  const primaryComparison = analytics?.leadership_comparisons.find(
+    (comparison) => comparison.key === PRIMARY_COMPARISON
+  ) ?? analytics?.leadership_comparisons[0] ?? null;
+  const leadershipBand = analytics?.leadership_band ?? 15;
+
+  const chartData = useMemo<ChartPoint[]>(() => {
+    if (!primaryComparison?.series.length) return [];
+    const allPoints = primaryComparison.series.map((point) => ({
+      ...point,
+      timestampNum: new Date(`${point.as_of_date}T00:00:00Z`).getTime(),
+    }));
+    const latestTimestamp = allPoints[allPoints.length - 1].timestampNum;
+    const cutoff = latestTimestamp - trendPeriod * 24 * 60 * 60 * 1000;
+    return allPoints.filter((point) => point.timestampNum >= cutoff);
+  }, [primaryComparison, trendPeriod]);
+
+  const latestOscillator = primaryComparison ? latestComparisonValue(primaryComparison) : null;
+  const priorOscillator = primaryComparison?.series.length
+    ? primaryComparison.series[Math.max(0, primaryComparison.series.length - 21)]?.oscillator ?? null
+    : null;
+  const oscillatorShift = latestOscillator !== null && priorOscillator !== null
+    ? latestOscillator - priorOscillator
+    : null;
+  const interpretation = primaryComparison
+    ? getLeadershipRead(latestOscillator, leadershipBand, primaryComparison)
     : null;
 
+  const persistenceCounts = useMemo(() => {
+    const counts = { improving: 0, stable: 0, weakening: 0 };
+    Object.values(analytics?.sectors ?? {}).forEach((sector) => {
+      counts[sector.persistence.direction] += 1;
+    });
+    return counts;
+  }, [analytics]);
+
+  const leaders = useMemo(() => {
+    return Object.values(analytics?.sectors ?? {})
+      .filter((sector) => sector.horizons["3m"])
+      .sort((a, b) => a.horizons["3m"].stable_rank - b.horizons["3m"].stable_rank)
+      .slice(0, 3);
+  }, [analytics]);
+
+  const sectorInsight = useMemo<InsightSignal | null>(() => {
+    if (!primaryComparison || latestOscillator === null) return null;
+    const values = primaryComparison.series.map((point) => point.oscillator);
+    const comparisonWindow = Math.max(2, Math.min(10, Math.floor(values.length / 2)));
+    const trendSignal = analyzeSeries(values, { recent: comparisonWindow, prior: comparisonWindow });
+    const primaryDirection = latestOscillator >= leadershipBand
+      ? "up"
+      : latestOscillator <= -leadershipBand
+        ? "down"
+        : "flat";
+    const secondaryDirection = oscillatorShift === null || Math.abs(oscillatorShift) < 2
+      ? "flat"
+      : oscillatorShift > 0
+        ? "up"
+        : "down";
+    const shiftText = oscillatorShift === null || Math.abs(oscillatorShift) < 2
+      ? "little 20-run change"
+      : `${Math.abs(oscillatorShift).toFixed(1)} pts toward ${oscillatorShift > 0 ? primaryComparison.positive_axis_label : primaryComparison.negative_axis_label}`;
+    return {
+      id: "sector",
+      label: "Sectors",
+      primaryDirection,
+      secondaryDirection,
+      stance: primaryDirection === "up" ? "risk-on" : primaryDirection === "down" ? "risk-off" : "mixed",
+      confidence: getConfidenceFromSignal(trendSignal),
+      summary: `${interpretation?.title ?? "Balanced rotation"}; ${shiftText}`,
+    };
+  }, [interpretation?.title, latestOscillator, leadershipBand, oscillatorShift, primaryComparison]);
+
   useEffect(() => {
-    if (!onInsight || !sectorInsight) return;
-    onInsight(sectorInsight);
-  }, [
-    onInsight,
-    sectorInsight?.primaryDirection,
-    sectorInsight?.secondaryDirection,
-    sectorInsight?.stance,
-    sectorInsight?.confidence,
-    sectorInsight?.summary,
-  ]);
+    if (onInsight && sectorInsight) onInsight(sectorInsight);
+  }, [onInsight, sectorInsight]);
 
   if (loading) {
     return (
       <div className="primary-card p-6">
-        <div className="animate-pulse">
-          <div className="h-6 bg-stealth-700 rounded w-1/3 mb-4"></div>
-          <div className="h-4 bg-stealth-700 rounded w-2/3 mb-3"></div>
-          <div className="h-4 bg-stealth-700 rounded w-1/2"></div>
+        <div className="animate-pulse space-y-3">
+          <div className="h-6 w-1/3 rounded bg-stealth-700" />
+          <div className="h-24 rounded-xl bg-stealth-800" />
+          <div className="h-40 rounded-xl bg-stealth-800" />
         </div>
       </div>
     );
   }
 
-  if (!data) {
-    return null;
+  if (error || !analytics || !latest || !primaryComparison || !interpretation) {
+    return (
+      <div className="primary-card p-6">
+        <h3 className="text-lg font-semibold">Sector Rotation</h3>
+        <p className="mt-3 text-sm text-red-300">{error ?? "Sector rotation data is unavailable"}</p>
+      </div>
+    );
   }
 
-  const getAlignmentColor = (score: number) => {
-    if (score >= 65) return "text-green-400";
-    if (score >= 45) return "text-yellow-400";
-    return "text-red-400";
-  };
-
-  // Interpret the defensive vs cyclical spread
-  const getMarketInterpretation = () => {
-    const spread = data.defensive_vs_cyclical;
-    const isRed = data.system_state === "RED";
-    const isGreen = data.system_state === "GREEN";
-    
-    if (isRed && spread > 5) {
-      return { text: "Flight to Safety", color: "text-blue-400", desc: "Investors seeking defensive positioning amid stress" };
-    } else if (isRed && spread < -5) {
-      return { text: "Cyclicals Leading in Stress", color: "text-green-400", desc: "Cyclicals gaining despite red regime - atypical leadership mix" };
-    } else if (isGreen && spread < -5) {
-      return { text: "Risk-On Mode", color: "text-orange-400", desc: "Growth sectors leading as expected in healthy market" };
-    } else if (isGreen && spread > 5) {
-      return { text: "Defensive Lead in Green Regime", color: "text-yellow-400", desc: "Defensives outperforming despite green market conditions" };
-    } else {
-      return { text: "Balanced Rotation", color: "text-gray-400", desc: "No clear defensive or cyclical bias" };
-    }
-  };
-
-  const interpretation = getMarketInterpretation();
-  const periodLabel = trendPeriod === 365 ? "1yr" : trendPeriod === 180 ? "6mo" : "90d";
   const timestamps = chartData.map((point) => point.timestampNum);
   const minTime = timestamps.length ? Math.min(...timestamps) : 0;
   const maxTime = timestamps.length ? Math.max(...timestamps) : 0;
   const tickPositions = timestamps.length > 1
-    ? Array.from({ length: 5 }, (_, i) => minTime + ((maxTime - minTime) * (i / 4)))
+    ? Array.from({ length: 4 }, (_, index) => minTime + (maxTime - minTime) * (index / 3))
     : timestamps;
-  const secondaryClause =
-    secondaryGapSignal.direction === primaryGapSignal.direction
-      ? "Recent move agrees."
-      : `Recent move is ${secondarySpreadPhrase}.`;
-  const sectorSummary =
-    leadSide === "balanced"
-      ? `Compares defensive vs growth sectors. ${trendWindows.label} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Balanced leadership suggests mixed positioning.`
-      : leadSide === "defense"
-      ? `Compares defensive vs growth sectors. Defense is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Defensive leadership indicates a cautious tone in sector positioning.`
-      : `Compares defensive vs growth sectors. Growth is ahead and the ${trendWindows.label.toLowerCase()} gap is ${spreadTrendPhrase}${toneClause}, ${breadthPhrase}. ${secondaryClause} Growth leadership indicates stronger cyclicality in sector positioning.`;
+  const maxMagnitude = chartData.length
+    ? Math.max(...chartData.map((point) => Math.abs(point.oscillator)))
+    : 30;
+  const oscillatorDomain = Math.max(30, Math.ceil(maxMagnitude / 10) * 10);
+  const periodLabel = trendPeriod === 365 ? "1yr" : trendPeriod === 180 ? "6mo" : "90d";
+  const shiftLeader = oscillatorShift === null || Math.abs(oscillatorShift) < 2
+    ? "Little change"
+    : `Toward ${oscillatorShift > 0 ? primaryComparison.positive_axis_label : primaryComparison.negative_axis_label}`;
+  const qualityWarning = latest.quality_status === "blocked" || (latest.data_warnings?.length ?? 0) > 0;
+  const breadthSummary = persistenceCounts.improving > persistenceCounts.weakening
+    ? "more sectors are improving than weakening"
+    : persistenceCounts.improving < persistenceCounts.weakening
+      ? "more sectors are weakening than improving"
+      : "improving and weakening breadth are even";
+  const narrative = `${interpretation.title}. ${oscillatorShift === null ? "The 20-run shift is unavailable" : `${shiftLeader} by ${Math.abs(oscillatorShift).toFixed(1)} points over 20 runs`}; ${breadthSummary}.`;
 
   return (
-    <Link
-      to="/sector-projections"
-      className="group block h-full"
-      aria-label="View sector projection details"
-    >
-      <div className="primary-card primary-card-hover h-full cursor-pointer p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold">Sector Divergence Analysis</h3>
-          <span
-            className="text-stealth-400 transition-colors group-hover:text-stealth-200"
-            aria-hidden="true"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <Link to="/sector-projections" className="group block h-full" aria-label="View sector rotation details">
+      <div className="primary-card primary-card-hover h-full cursor-pointer p-4 sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold">Sector Rotation</h3>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-stealth-500">
+              <span>{latest.system_state} regime</span>
+              <span aria-hidden="true">·</span>
+              <span>As of {new Date(`${latest.as_of_date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+              <span aria-hidden="true">·</span>
+              <span>{analytics.analytics_version.replace("sector_stability_", "analytics ")}</span>
+            </div>
+          </div>
+          <span className="text-stealth-400 transition-colors group-hover:text-stealth-200" aria-hidden="true">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
           </span>
         </div>
 
-        {/* Market Interpretation - Prominent Card */}
-        <div className="secondary-card secondary-card-hover p-4 mb-6 bg-gradient-to-br from-white/[0.05] to-transparent">
+        {qualityWarning && (
+          <div className="mt-4 rounded-lg border border-yellow-700/50 bg-yellow-950/20 px-3 py-2 text-xs text-yellow-200">
+            Sector data includes a quality warning; treat the current read cautiously.
+          </div>
+        )}
+
+        <div className="secondary-card mt-5 p-4 sm:p-5">
           <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <div className={`text-lg font-bold ${interpretation.color} mb-2`}>
-                {interpretation.text}
-              </div>
-              <div className="text-sm text-gray-400">
-                {interpretation.desc}
+            <div className="min-w-0">
+              <div className={`text-lg font-semibold ${interpretation.color}`}>{interpretation.title}</div>
+              <div className="mt-1 text-xs leading-relaxed text-stealth-400">{interpretation.description}</div>
+            </div>
+            <div className="shrink-0 text-right tabular-nums">
+              <div className="text-[10px] uppercase tracking-wide text-stealth-500">Cyclical − defensive</div>
+              <div className="mt-1 text-2xl font-semibold text-stealth-100">
+                {latestOscillator !== null && latestOscillator > 0 ? "+" : ""}{latestOscillator?.toFixed(1) ?? "—"}
               </div>
             </div>
-            <div className="text-right flex-shrink-0">
-              <div className="text-xs text-gray-500 mb-1">Def vs Cyc</div>
-              <div className={`text-2xl font-bold ${data.defensive_vs_cyclical > 0 ? 'text-blue-400' : 'text-orange-400'}`}>
-                {data.defensive_vs_cyclical > 0 ? '+' : ''}{data.defensive_vs_cyclical}
-              </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 border-t border-stealth-700/70 pt-3 text-xs">
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-stealth-500">20-run shift</div>
+              <div className="mt-1 font-semibold text-stealth-200">{shiftLeader}</div>
+              <div className="mt-0.5 text-[10px] text-stealth-500">{oscillatorShift === null ? "—" : `${Math.abs(oscillatorShift).toFixed(1)} pts`}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-stealth-500">Clear signal</div>
+              <div className="mt-1 font-semibold text-stealth-200">Beyond ±{leadershipBand}</div>
+              <div className="mt-0.5 text-[10px] text-stealth-500">Smoothed basket spread</div>
             </div>
           </div>
         </div>
 
-        {/* Key Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div className="secondary-card secondary-card-hover p-4">
-            <div className="text-xs text-gray-400 mb-2">Regime Alignment</div>
-            <div className="flex items-end justify-between">
-              <div className={`text-3xl font-bold ${getAlignmentColor(data.regime_alignment_score)}`}>
-                {data.regime_alignment_score}
-              </div>
-              <div className="text-xs text-gray-500">/100</div>
-            </div>
-            <div className="text-xs text-gray-500 mt-2 leading-tight">
-              {data.regime_alignment_score >= 65 && "Sectors aligned"}
-              {data.regime_alignment_score >= 45 && data.regime_alignment_score < 65 && "Mixed positioning"}
-              {data.regime_alignment_score < 45 && "Diverged regime"}
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="secondary-card p-4">
+            <div className="text-xs text-stealth-400">3M leadership</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {leaders.map((sector) => (
+                <span key={sector.sector_symbol} className="rounded-md border border-stealth-700 bg-stealth-950/30 px-2 py-1 text-[11px] text-stealth-200">
+                  <strong>#{sector.horizons["3m"].stable_rank} {sector.sector_symbol}</strong>
+                  <span className="ml-1 text-stealth-500">{sector.horizons["3m"].stable_score.toFixed(0)}</span>
+                </span>
+              ))}
             </div>
           </div>
-
-          <div className="secondary-card secondary-card-hover p-4">
-            <div className="text-xs text-gray-400 mb-2">Sector Breadth</div>
-            <div className="flex justify-between items-end mb-2 gap-2 min-w-0">
-              <div className="flex-1 min-w-0">
-                <div className="text-green-400 font-bold text-2xl truncate">{data.sector_breadth.improving}</div>
-                <div className="text-xs text-gray-500 truncate">Improving</div>
-              </div>
-              <div className="flex-1 min-w-0 text-center">
-                <div className="text-gray-400 font-bold text-lg truncate">{data.sector_breadth.stable}</div>
-                <div className="text-xs text-gray-500 truncate">Stable</div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-red-400 font-bold text-2xl truncate">{data.sector_breadth.deteriorating}</div>
-                <div className="text-xs text-gray-500 truncate">Falling</div>
-              </div>
+          <div className="secondary-card p-4">
+            <div className="text-xs text-stealth-400">Rank persistence</div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center tabular-nums">
+              <div><div className="text-xl font-semibold text-green-400">{persistenceCounts.improving}</div><div className="text-[10px] text-stealth-500">Improving</div></div>
+              <div><div className="text-xl font-semibold text-stealth-300">{persistenceCounts.stable}</div><div className="text-[10px] text-stealth-500">Stable</div></div>
+              <div><div className="text-xl font-semibold text-red-400">{persistenceCounts.weakening}</div><div className="text-[10px] text-stealth-500">Weakening</div></div>
             </div>
           </div>
         </div>
 
-        {/* Trend Chart */}
-        <div className="secondary-card secondary-card-hover p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold text-stealth-200">Defensive vs Cyclical Spread</div>
+        <div className="secondary-card mt-4 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-stealth-200">Cyclical vs defensive oscillator</div>
+              <div className="mt-0.5 text-[10px] text-stealth-500">Native score-point spread · 25% EWMA</div>
+            </div>
             <div className="text-xs text-stealth-500">{periodLabel}</div>
           </div>
           {chartData.length > 0 ? (
-            <div className="h-40 sm:h-44">
+            <div className="mt-3 h-44">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <LineChart data={chartData} margin={CHART_MARGIN}>
+                <AreaChart data={chartData} margin={{ ...CHART_MARGIN, left: 12, right: 4 }}>
                   <CartesianGrid {...commonGridProps} />
+                  <ReferenceArea y1={leadershipBand} y2={oscillatorDomain} fill={getFamilyColor("market")} fillOpacity={0.035} />
+                  <ReferenceArea y1={-oscillatorDomain} y2={-leadershipBand} fill={getFamilyColor("volatility")} fillOpacity={0.035} />
+                  <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeWidth={1.5} />
+                  <ReferenceLine y={leadershipBand} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
+                  <ReferenceLine y={-leadershipBand} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
                   <XAxis
                     dataKey="timestampNum"
                     type="number"
                     domain={[minTime, maxTime]}
                     ticks={tickPositions}
-                    tick={{ fill: "#6b7280", fontSize: 10 }}
-                    stroke="#555560"
-                    tickFormatter={(value: number) =>
-                      new Date(value).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      })
-                    }
+                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                    stroke={CHART_NEUTRAL.axis}
+                    tickFormatter={(value: number) => new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   />
                   <YAxis
-                    tick={{ fill: "#6b7280", fontSize: 10 }}
-                    stroke="#555560"
-                    domain={["dataMin - 5", "dataMax + 5"]}
+                    width={58}
+                    axisLine={false}
+                    tickLine={false}
+                    domain={[-oscillatorDomain, oscillatorDomain]}
+                    ticks={[-oscillatorDomain, 0, oscillatorDomain]}
+                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                    tickFormatter={(value: number) => value > 0 ? "Cyclical" : value < 0 ? "Defensive" : "Balanced"}
                   />
                   <Tooltip
                     contentStyle={commonTooltipStyle}
-                    labelFormatter={(label: number) =>
-                      new Date(label).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })
-                    }
-                    formatter={(value: number) => [`${value.toFixed(2)}`, "Spread"]}
+                    labelFormatter={(label: number) => new Date(label).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    formatter={(value: number) => {
+                      const leader = value >= 0 ? primaryComparison.positive_axis_label : primaryComparison.negative_axis_label;
+                      return [`${leader} by ${Math.abs(value).toFixed(1)} score points`, primaryComparison.title];
+                    }}
                   />
-                  <Line
+                  <Area
                     type="monotone"
-                    dataKey="spread"
-                    stroke="#60a5fa"
-                    strokeWidth={2}
+                    dataKey="oscillator"
+                    name={primaryComparison.title}
+                    baseValue={0}
+                    stroke={getFamilyColor("market")}
+                    strokeWidth={2.5}
+                    fill={getFamilyColor("market")}
+                    fillOpacity={0.09}
                     dot={false}
-                    animationDuration={300}
+                    animationDuration={CHART_ANIMATION.duration}
+                    animationEasing={CHART_ANIMATION.easing}
                   />
-                </LineChart>
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-40 sm:h-44 flex items-center justify-center text-xs text-stealth-400">
-              No history available yet.
-            </div>
+            <div className="flex h-44 items-center justify-center text-xs text-stealth-400">No oscillator history available.</div>
           )}
         </div>
 
-        {/* Sector Divergence Alerts */}
-        {alerts.length > 0 && (
-          <div className="mt-6">
-            <h4 className="text-sm font-semibold text-stealth-200 mb-3">Divergence Alerts</h4>
-            <div className="space-y-3">
-              {alerts.map((alert, idx) => (
-                <div
-                  key={idx}
-                  className={`secondary-card secondary-card-hover p-4 border-l-4 ${
-                    alert.severity === "WARNING"
-                      ? "border-yellow-400"
-                      : "border-blue-400"
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-bold ${
-                        alert.severity === "WARNING" ? "text-yellow-400" : "text-blue-400"
-                      }`}>
-                        {alert.severity === "WARNING" ? "⚠" : "ℹ"}
-                      </span>
-                      <span className="text-sm font-semibold text-stealth-100">
-                        {alert.title}
-                      </span>
-                    </div>
+        <div className="mt-4">
+          <div className="text-[10px] uppercase tracking-wide text-stealth-500">Other rotation lenses</div>
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {analytics.leadership_comparisons
+              .filter((comparison) => comparison.key !== PRIMARY_COMPARISON)
+              .map((comparison) => {
+                const value = latestComparisonValue(comparison);
+                return (
+                  <div key={comparison.key} className="rounded-lg border border-stealth-700 bg-stealth-950/20 px-3 py-2">
+                    <div className="truncate text-[10px] text-stealth-500">{comparison.title}</div>
+                    <div className="mt-1 text-xs font-semibold text-stealth-200">{formatLeadershipValue(value, comparison)}</div>
                   </div>
-
-                  <p className="text-xs text-gray-300 mb-3">
-                    {alert.message}
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="secondary-card p-2">
-                      <div className="text-gray-500">System State</div>
-                      <div className={`font-bold ${
-                        alert.details.system_state === "RED" ? "text-red-400" :
-                        alert.details.system_state === "GREEN" ? "text-green-400" :
-                        "text-yellow-400"
-                      }`}>
-                        {alert.details.system_state}
-                      </div>
-                    </div>
-
-                    <div className="secondary-card p-2">
-                      <div className="text-gray-500">Spread</div>
-                      <div className="font-bold text-stealth-200">
-                        {(alert.details.spread ?? 0) > 0 ? "+" : ""}{alert.details.spread ?? 0} pts
-                      </div>
-                    </div>
-
-                    <div className="secondary-card p-2">
-                      <div className="text-gray-500">Defensive Avg</div>
-                      <div className="font-bold text-blue-400">
-                        {alert.details.defensive_avg}
-                      </div>
-                    </div>
-
-                    <div className="secondary-card p-2">
-                      <div className="text-gray-500">Cyclical Avg</div>
-                      <div className="font-bold text-orange-400">
-                        {alert.details.cyclical_avg}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                );
+              })}
           </div>
-        )}
-
-        <div className="mt-6 secondary-card secondary-card-hover p-3">
-          <p className="text-xs text-stealth-300 leading-relaxed">{sectorSummary}</p>
         </div>
+
+        <p className="mt-4 text-xs leading-relaxed text-stealth-300">{narrative}</p>
       </div>
     </Link>
   );
