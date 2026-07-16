@@ -134,10 +134,23 @@ interface StableHorizonSignal {
   stable_rank: number;
 }
 
+interface ForwardScenarioSignal {
+  months_forward: number;
+  projected_score: number;
+  projected_low: number;
+  projected_high: number;
+  projected_rank: number;
+  current_core_score: number;
+  anchor_score: number;
+  momentum_points: number;
+  scanner_points: number;
+}
+
 interface SectorAnalyticsSignal {
   sector_symbol: string;
   sector_name: string;
   horizons: Record<string, StableHorizonSignal>;
+  forward_scenarios: Record<string, ForwardScenarioSignal>;
   persistence: {
     sample_count: number;
     rank_slope_per_run: number;
@@ -184,6 +197,7 @@ interface SectorProjectionAnalyticsResponse {
   analytics_version: string;
   leadership_method: string;
   leadership_band: number;
+  forward_scenario_method: string;
   score_method: string;
   scanner_method: string;
   uncertainty_method: string;
@@ -398,13 +412,19 @@ export default function SectorProjections() {
         upper: {},
       };
 
-      // Collect scores for each horizon
+      // The chart uses the explicit forward scenario layer. Trailing-window
+      // scores remain available below as model inputs and audit evidence.
       CHART_HORIZONS.forEach((h) => {
+        const scenario = analyticsData?.sectors[sector.sector_symbol]?.forward_scenarios?.[h];
         const horizonData = displayProjections[h] || [];
         const match = horizonData.find((s) => s.sector_symbol === sector.sector_symbol);
-        if (match) {
-          sectorData.scores[h] = match.score_total;
+        if (scenario) {
+          sectorData.scores[h] = scenario.projected_score;
+          sectorData.lower[h] = scenario.projected_low;
+          sectorData.upper[h] = scenario.projected_high;
+        } else if (match) {
           const stable = analyticsData?.sectors[sector.sector_symbol]?.horizons[h];
+          sectorData.scores[h] = stable?.stable_score ?? match.score_total;
           sectorData.lower[h] = stable?.uncertainty_low ?? match.score_total;
           sectorData.upper[h] = stable?.uncertainty_high ?? match.score_total;
         } else {
@@ -499,7 +519,7 @@ export default function SectorProjections() {
       <div className="flex flex-col">
         <span className="page-kicker">Rotation Monitor</span>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Sector Rotation</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Compare current sector leadership across trailing lookbacks. Scores rank sectors against one another; they are not price forecasts.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Compare stabilized forward leadership scenarios built from trailing sector evidence, rank persistence, and bounded scanner confirmation.</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
           {data && <span className="page-badge">System {data.system_state}</span>}
           {data && <span className="page-badge">As of {data.as_of_date}</span>}
@@ -672,12 +692,12 @@ export default function SectorProjections() {
       )}
       
       
-      {/* Multi-sector score paths across independent trailing lookbacks. */}
+      {/* Multi-sector forward score scenarios. */}
       {!pageLoading && !pageError && Object.keys(projections).length > 0 && (
         <div className="surface-card-strong p-4 sm:p-6">
-          <h2 className="mb-2 text-base font-semibold sm:text-lg">Stabilized Sector Paths &amp; Scenario Ranges</h2>
+          <h2 className="mb-2 text-base font-semibold sm:text-lg">Stabilized Sector Forward Scenarios</h2>
           <p className="mb-3 max-w-4xl text-xs leading-relaxed text-stealth-400">
-            Compare every sector across the same four trailing lookbacks. Select a sector to emphasize its stabilized path, observed-variability range, and scanner confirmation.
+            Projected leadership scores blend today's stabilized reading toward longer-run anchors, then apply bounded rank persistence and scanner confirmation. Select a sector to emphasize its path and scenario range.
           </p>
           {tInterpolated && (
             <p className="mb-3 text-xs text-amber-300/90">
@@ -703,9 +723,9 @@ export default function SectorProjections() {
                   </g>
                 ))}
                 <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">NOW</text>
-                <text x="400" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M LOOKBACK</text>
-                <text x="650" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M LOOKBACK</text>
-                <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M LOOKBACK</text>
+                <text x="400" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">+3 MONTHS</text>
+                <text x="650" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">+6 MONTHS</text>
+                <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">+12 MONTHS</text>
 
                 {chartData.map((sector, index) => {
                   const color = getSectorColor(sector.symbol);
@@ -805,8 +825,8 @@ export default function SectorProjections() {
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4">
             <div>
-              <h2 className="text-base sm:text-lg font-semibold">Sector Rankings</h2>
-              <p className="mt-1 text-[10px] text-stealth-500">Leadership score is the smoothed composite plus scanner adjustment. Trend, relative strength, and stability are current peer percentiles; higher is better.</p>
+              <h2 className="text-base sm:text-lg font-semibold">Trailing Input Rankings</h2>
+              <p className="mt-1 text-[10px] text-stealth-500">These backward-looking windows are model evidence, not the forward scenario dates shown above. Leadership score is the smoothed composite plus scanner adjustment.</p>
             </div>
             <div className="flex flex-wrap gap-1 sm:gap-2">
               {["T", "3m", "6m", "12m"].map((h) => {
@@ -816,14 +836,14 @@ export default function SectorProjections() {
                     key={h}
                     onClick={() => setSelectedHorizon(h as "T" | "3m" | "6m" | "12m")}
                     aria-pressed={selectedHorizon === h}
-                    title={h === "T" ? "Current reading" : `${h.toUpperCase()} trailing lookback`}
+                    title={h === "T" ? "Current input reading" : `${h.toUpperCase()} trailing input window`}
                     className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition min-h-10 ${
                       selectedHorizon === h
                         ? "bg-blue-600 text-white"
                         : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                     }`}
                   >
-                    {h === "T" ? "Now" : h.toUpperCase()}
+                    {h === "T" ? "Current" : `${h.toUpperCase()} input`}
                   </button>
                 );
               })}
@@ -1018,7 +1038,7 @@ export default function SectorProjections() {
                 Ranks 11 sector ETFs (XLE, XLF, XLK, XLY, XLP, XLV, XLI, XLU, XLB, XLRE, XLC) using 8000 days of historical data. Each sector receives a composite score (0-100) from four weighted components.
               </p>
               <p className="text-gray-400 text-xs sm:text-sm">
-                Computed independently from trailing 3-month (63 trading days), 6-month (126), and 12-month (252) lookbacks. These are not future dates.
+                Raw evidence is computed independently from trailing 3-month (63 trading days), 6-month (126), and 12-month (252) windows. The forward chart then converts those inputs into separate +3M, +6M, and +12M score scenarios.
               </p>
             </div>
             
@@ -1096,12 +1116,13 @@ export default function SectorProjections() {
             <div className="border-t border-gray-700 pt-4">
               <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Scanner Confirmation &amp; Scenario Ranges</h3>
               <p className="text-xs sm:text-sm text-gray-400 mb-3">
-                Scanner evidence confirms or challenges the price-based path without becoming the primary model.
+                Forward score scenarios blend the current stabilized reading toward the matching longer-run input anchor. Recent rank persistence and scanner evidence can tilt that path without becoming the primary model.
               </p>
               <div className="text-xs sm:text-sm text-gray-400 space-y-2">
                 <p><strong>Scanner input:</strong> Direction comes from selected calls versus puts. Duplicate symbol/day/side events are collapsed, then recency, unique-name breadth, distinct days, and opportunity rank determine reliability.</p>
-                <p><strong>Bounded influence:</strong> Scanner evidence can move the 3M stabilized score by no more than four points; influence decays by half at 6M and to one quarter at 12M.</p>
-                <p><strong>Range width:</strong> Uses the sector's observed score variability over the latest 20 valid runs, expanding with the lookback.</p>
+                <p><strong>Projected center:</strong> The current stabilized score receives the most weight at +3M; longer scenarios blend progressively toward the sector's 6M and 12M structural anchors.</p>
+                <p><strong>Bounded influence:</strong> Recent rank persistence contributes at most 3, 5, and 7 points across +3M, +6M, and +12M. Scanner influence remains capped at four points and decays by half at +6M and to one quarter at +12M.</p>
+                <p><strong>Range width:</strong> Uses the sector's observed score variability over the latest 20 valid runs, expanding with forecast distance.</p>
                 <p><strong>Range skew:</strong> Repeated rank improvement and reliable bullish scanner breadth allow more upside room; weakening persistence or bearish breadth does the reverse.</p>
                 <p><strong>Important:</strong> The displayed intervals are transparent scenario ranges, not calibrated probability confidence intervals.</p>
               </div>

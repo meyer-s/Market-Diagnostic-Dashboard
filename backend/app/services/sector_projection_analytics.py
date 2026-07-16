@@ -10,7 +10,7 @@ from app.services.optionality_clusters import classify_optionality_symbol
 from app.services.sector_projection import HORIZONS, SECTOR_ETFS
 
 
-ANALYTICS_VERSION = "sector_stability_v2"
+ANALYTICS_VERSION = "sector_stability_v3"
 LEADERSHIP_BAND = 15.0
 
 SECTOR_NAME_TO_ETF = {
@@ -78,6 +78,12 @@ LEADERSHIP_COMPARISONS = (
 
 HORIZON_SCANNER_DECAY = {"T": 1.0, "3m": 1.0, "6m": 0.5, "12m": 0.25}
 HORIZON_UNCERTAINTY_SCALE = {"T": 0.55, "3m": 1.0, "6m": 1.35, "12m": 1.7}
+FORWARD_SCENARIO_CONFIG = {
+    "T": {"months": 0, "anchor": "T", "current_weight": 1.0, "momentum_cap": 0.0, "scanner_decay": 1.0, "uncertainty_scale": 0.55},
+    "3m": {"months": 3, "anchor": "3m", "current_weight": 0.65, "momentum_cap": 3.0, "scanner_decay": 1.0, "uncertainty_scale": 1.0},
+    "6m": {"months": 6, "anchor": "6m", "current_weight": 0.50, "momentum_cap": 5.0, "scanner_decay": 0.5, "uncertainty_scale": 1.35},
+    "12m": {"months": 12, "anchor": "12m", "current_weight": 0.35, "momentum_cap": 7.0, "scanner_decay": 0.25, "uncertainty_scale": 1.7},
+}
 
 
 def _finite(value: object) -> Optional[float]:
@@ -371,6 +377,56 @@ def build_sector_projection_analytics(
                 "raw_rank": int(latest["rank"]) if latest.get("rank") is not None else None,
             }
 
+        # Convert trailing-window evidence into a separate forward scenario path.
+        # The current stabilized score is blended toward the corresponding
+        # longer-run anchor, then adjusted by bounded rank persistence and the
+        # reliability-gated scanner signal. These are score scenarios, not price
+        # targets or calibrated return forecasts.
+        current_signal = horizons_payload.get("T") or horizons_payload.get("3m")
+        forward_scenarios: dict[str, dict[str, Any]] = {}
+        if current_signal is not None:
+            current_core = float(current_signal["stable_core_score"])
+            variability_reference = horizons_payload.get("3m") or current_signal
+            reference_std = float(variability_reference.get("observed_score_std") or 4.0)
+            base_scenario_width = _clamp(max(4.0, reference_std * 1.3), 4.0, 18.0)
+            scanner_skew = float(scanner["directional_balance"]) * float(scanner["reliability"])
+            scenario_skew = _clamp(rank_signal * 0.70 + scanner_skew * 0.30, -1.0, 1.0)
+            upper_factor = 1.0 + 0.40 * max(scenario_skew, 0.0) - 0.20 * max(-scenario_skew, 0.0)
+            lower_factor = 1.0 + 0.40 * max(-scenario_skew, 0.0) - 0.20 * max(scenario_skew, 0.0)
+
+            for scenario_horizon, config in FORWARD_SCENARIO_CONFIG.items():
+                anchor = horizons_payload.get(str(config["anchor"])) or current_signal
+                if scenario_horizon == "T":
+                    projected_score = float(current_signal["stable_score"])
+                    anchor_score = current_core
+                    momentum_points = 0.0
+                    scanner_points = float(current_signal["scanner_overlay"])
+                else:
+                    anchor_score = float(anchor["stable_core_score"])
+                    current_weight = float(config["current_weight"])
+                    momentum_points = rank_signal * float(config["momentum_cap"])
+                    scanner_points = float(scanner["overlay_points"]) * float(config["scanner_decay"])
+                    projected_score = _clamp(
+                        current_weight * current_core
+                        + (1.0 - current_weight) * anchor_score
+                        + momentum_points
+                        + scanner_points,
+                        0.0,
+                        100.0,
+                    )
+
+                scenario_width = base_scenario_width * float(config["uncertainty_scale"])
+                forward_scenarios[scenario_horizon] = {
+                    "months_forward": int(config["months"]),
+                    "projected_score": round(projected_score, 2),
+                    "projected_low": round(_clamp(projected_score - scenario_width * lower_factor, 0.0, 100.0), 2),
+                    "projected_high": round(_clamp(projected_score + scenario_width * upper_factor, 0.0, 100.0), 2),
+                    "current_core_score": round(current_core, 2),
+                    "anchor_score": round(anchor_score, 2),
+                    "momentum_points": round(momentum_points, 2),
+                    "scanner_points": round(scanner_points, 2),
+                }
+
         sector_payload[symbol] = {
             "sector_symbol": symbol,
             "sector_name": etf["name"],
@@ -384,6 +440,7 @@ def build_sector_projection_analytics(
             },
             "scanner": scanner,
             "history_3m": _smoothed_history(rank_entries, limit=90),
+            "forward_scenarios": forward_scenarios,
         }
 
     for horizon in HORIZONS:
@@ -397,6 +454,18 @@ def build_sector_projection_analytics(
         )
         for rank, (symbol, _score) in enumerate(ranked, start=1):
             sector_payload[symbol]["horizons"][horizon]["stable_rank"] = rank
+
+    for horizon in FORWARD_SCENARIO_CONFIG:
+        ranked = sorted(
+            (
+                (symbol, payload["forward_scenarios"][horizon]["projected_score"])
+                for symbol, payload in sector_payload.items()
+                if horizon in payload["forward_scenarios"]
+            ),
+            key=lambda item: (-item[1], item[0]),
+        )
+        for rank, (symbol, _score) in enumerate(ranked, start=1):
+            sector_payload[symbol]["forward_scenarios"][horizon]["projected_rank"] = rank
 
     comparisons = []
     for comparison in LEADERSHIP_COMPARISONS:
@@ -416,6 +485,7 @@ def build_sector_projection_analytics(
         "analytics_version": ANALYTICS_VERSION,
         "leadership_method": "25% EWMA of the positive-basket mean minus the negative-basket mean, expressed in native sector score points.",
         "leadership_band": LEADERSHIP_BAND,
+        "forward_scenario_method": "Current stabilized score blended toward trailing-window anchors, with bounded recent-rank persistence and reliability-gated scanner confirmation.",
         "score_method": "55% EWMA + 30% five-run median + 15% latest raw score",
         "scanner_method": "Directional scanner evidence is deduplicated by symbol/day/side and capped at +/-4 score points before horizon decay.",
         "uncertainty_method": "Observed 20-run score variability with asymmetric scenario width from persistent rank direction and reliable scanner breadth; not a probability confidence interval.",

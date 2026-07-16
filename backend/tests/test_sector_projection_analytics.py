@@ -79,6 +79,16 @@ def test_sector_analytics_stabilizes_spikes_and_bounds_scanner_overlay() -> None
     assert 0.0 < three_month["scanner_overlay"] <= 4.0
     assert xlk["persistence"]["direction"] == "improving"
     assert three_month["uncertainty_high"] - three_month["stable_score"] > three_month["stable_score"] - three_month["uncertainty_low"]
+    forward = xlk["forward_scenarios"]
+    assert set(forward) == set(HORIZONS)
+    assert forward["T"]["months_forward"] == 0
+    assert forward["3m"]["months_forward"] == 3
+    assert forward["6m"]["months_forward"] == 6
+    assert forward["12m"]["months_forward"] == 12
+    assert forward["3m"]["momentum_points"] > 0
+    assert forward["12m"]["projected_high"] - forward["12m"]["projected_low"] > forward["3m"]["projected_high"] - forward["3m"]["projected_low"]
+    assert all(1 <= scenario["projected_rank"] <= 11 for scenario in forward.values())
+    assert "trailing-window anchors" in payload["forward_scenario_method"]
 
 
 def test_sector_analytics_builds_bounded_multi_comparison_oscillators() -> None:
