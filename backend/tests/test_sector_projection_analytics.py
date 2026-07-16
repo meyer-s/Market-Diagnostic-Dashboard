@@ -96,6 +96,11 @@ def test_sector_analytics_builds_bounded_multi_comparison_oscillators() -> None:
     assert len(broad["positive_symbols"]) + len(broad["negative_symbols"]) == 11
     assert broad["sample_count"] == 30
     assert all(-100.0 <= point["oscillator"] <= 100.0 for point in broad["series"])
+    assert all(point["oscillator"] == point["smoothed_spread"] for point in broad["series"])
+    assert broad["positive_axis_label"] == "Offense"
+    assert broad["negative_axis_label"] == "Shelter"
+    assert payload["leadership_band"] == 15.0
+    assert "native sector score points" in payload["leadership_method"]
     assert payload["scanner_coverage"]["max_overlay_points"] == 4.0
 
 

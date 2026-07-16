@@ -10,7 +10,8 @@ from app.services.optionality_clusters import classify_optionality_symbol
 from app.services.sector_projection import HORIZONS, SECTOR_ETFS
 
 
-ANALYTICS_VERSION = "sector_stability_v1"
+ANALYTICS_VERSION = "sector_stability_v2"
+LEADERSHIP_BAND = 15.0
 
 SECTOR_NAME_TO_ETF = {
     "Communication": "XLC",
@@ -34,6 +35,8 @@ LEADERSHIP_COMPARISONS = (
         "title": "Cyclical vs defensive",
         "positive_label": "Cyclical leadership",
         "negative_label": "Defensive leadership",
+        "positive_axis_label": "Cyclical",
+        "negative_axis_label": "Defensive",
         "positive_symbols": ("XLY", "XLI", "XLB", "XLE", "XLF"),
         "negative_symbols": ("XLP", "XLV", "XLU"),
         "description": "Consumer and real-economy cyclicals minus classic defensive sectors.",
@@ -43,6 +46,8 @@ LEADERSHIP_COMPARISONS = (
         "title": "Broad offense vs shelter",
         "positive_label": "Broad offense",
         "negative_label": "Capital shelter",
+        "positive_axis_label": "Offense",
+        "negative_axis_label": "Shelter",
         "positive_symbols": ("XLK", "XLC", "XLY", "XLI", "XLF", "XLE", "XLB"),
         "negative_symbols": ("XLP", "XLV", "XLU", "XLRE"),
         "description": "A complete 11-sector split that checks whether leadership is broadly offensive or sheltered.",
@@ -52,6 +57,8 @@ LEADERSHIP_COMPARISONS = (
         "title": "Growth vs reflation",
         "positive_label": "Growth leadership",
         "negative_label": "Reflation leadership",
+        "positive_axis_label": "Growth",
+        "negative_axis_label": "Reflation",
         "positive_symbols": ("XLK", "XLC", "XLY"),
         "negative_symbols": ("XLE", "XLB", "XLI", "XLF"),
         "description": "Long-duration growth leadership compared with nominal-growth and real-economy leadership.",
@@ -61,6 +68,8 @@ LEADERSHIP_COMPARISONS = (
         "title": "Discretionary vs staples",
         "positive_label": "Consumer risk appetite",
         "negative_label": "Consumer defensiveness",
+        "positive_axis_label": "Discretionary",
+        "negative_axis_label": "Staples",
         "positive_symbols": ("XLY",),
         "negative_symbols": ("XLP",),
         "description": "The cleanest sector-level consumer risk-appetite pair.",
@@ -275,17 +284,16 @@ def _leadership_series(
             }
         )
 
-    smoothed_spreads: list[float] = []
     output = []
     level: Optional[float] = None
     for point in raw_points:
         raw_spread = float(point["raw_spread"])
         level = raw_spread if level is None else 0.25 * raw_spread + 0.75 * level
-        smoothed_spreads.append(level)
-        scale_window = [float(row["raw_spread"]) for row in raw_points[max(0, len(output) - 59):len(output) + 1]]
-        scale_std = statistics.pstdev(scale_window) if len(scale_window) >= 5 else 0.0
-        scale = max(15.0, scale_std * 2.0)
-        oscillator = _clamp(level / scale * 100.0, -100.0, 100.0)
+        # The underlying sector scores already share a common 0-100 scale. The
+        # smoothed basket spread is therefore directly comparable across lenses.
+        # Re-standardizing it by each lens's rolling dispersion caused persistent
+        # leadership to saturate at +/-100 and erased useful changes in magnitude.
+        oscillator = _clamp(level, -100.0, 100.0)
         output.append(
             {
                 "as_of_date": point["as_of_date"],
@@ -406,6 +414,8 @@ def build_sector_projection_analytics(
     return {
         "as_of_date": as_of.isoformat(),
         "analytics_version": ANALYTICS_VERSION,
+        "leadership_method": "25% EWMA of the positive-basket mean minus the negative-basket mean, expressed in native sector score points.",
+        "leadership_band": LEADERSHIP_BAND,
         "score_method": "55% EWMA + 30% five-run median + 15% latest raw score",
         "scanner_method": "Directional scanner evidence is deduplicated by symbol/day/side and capped at +/-4 score points before horizon decay.",
         "uncertainty_method": "Observed 20-run score variability with asymmetric scenario width from persistent rank direction and reliable scanner breadth; not a probability confidence interval.",

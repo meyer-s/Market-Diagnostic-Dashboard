@@ -170,6 +170,8 @@ interface LeadershipComparison {
   title: string;
   positive_label: string;
   negative_label: string;
+  positive_axis_label: string;
+  negative_axis_label: string;
   positive_symbols: string[];
   negative_symbols: string[];
   description: string;
@@ -180,6 +182,8 @@ interface LeadershipComparison {
 interface SectorProjectionAnalyticsResponse {
   as_of_date: string;
   analytics_version: string;
+  leadership_method: string;
+  leadership_band: number;
   score_method: string;
   scanner_method: string;
   uncertainty_method: string;
@@ -444,13 +448,39 @@ export default function SectorProjections() {
     ? divergenceHistory[divergenceHistory.length - 21]?.oscillator ?? null
     : divergenceHistory[0]?.oscillator ?? null;
   const oscillatorChange = latestOscillator !== null && priorOscillator !== null ? latestOscillator - priorOscillator : null;
+  const leadershipBand = analyticsData?.leadership_band ?? 15;
+  const positiveAxisLabel = activeComparison?.positive_axis_label ?? "First basket";
+  const negativeAxisLabel = activeComparison?.negative_axis_label ?? "Second basket";
+  const oscillatorValues = combinedOscillatorHistory.flatMap((point) =>
+    (analyticsData?.leadership_comparisons ?? [])
+      .map((comparison) => point[comparison.key])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+  );
+  const oscillatorDomain = Math.max(
+    30,
+    Math.ceil((oscillatorValues.length ? Math.max(...oscillatorValues.map((value) => Math.abs(value))) : 30) / 10) * 10
+  );
   const oscillatorRead = latestOscillator === null
     ? "Unavailable"
-    : latestOscillator >= 35
+    : latestOscillator >= leadershipBand
       ? activeComparison?.positive_label ?? "Positive leadership"
-      : latestOscillator <= -35
+      : latestOscillator <= -leadershipBand
         ? activeComparison?.negative_label ?? "Negative leadership"
         : "Balanced leadership";
+  const oscillatorNowLabel = latestOscillator === null
+    ? "Unavailable"
+    : latestOscillator >= leadershipBand
+      ? positiveAxisLabel
+      : latestOscillator <= -leadershipBand
+        ? negativeAxisLabel
+        : "Balanced";
+  const oscillatorShiftLabel = oscillatorChange === null
+    ? "Unavailable"
+    : Math.abs(oscillatorChange) < 2
+      ? "Little change"
+      : oscillatorChange > 0
+        ? `Toward ${positiveAxisLabel}`
+        : `Toward ${negativeAxisLabel}`;
   const selectedSectorAnalytics = selectedSector ? analyticsData?.sectors[selectedSector] ?? null : null;
   const selectedSectorHistory = (selectedSectorAnalytics?.history_3m ?? []).map((point) => ({
     ...point,
@@ -521,20 +551,20 @@ export default function SectorProjections() {
             <div className="min-w-0">
               <h2 className="text-base font-semibold sm:text-lg">Sector Leadership Oscillator</h2>
               <p className="mt-1 max-w-3xl text-xs leading-relaxed text-stealth-400">
-                All four rotation lenses share the same scale. Select one to emphasize it and update the summary; positive favors its first basket and negative favors its second.
+                All four lenses show the smoothed score spread between two sector baskets. Higher favors the first basket; lower favors the second. Select a lens to label the direction.
               </p>
             </div>
             <div className="shrink-0">
               <div className="mb-1 text-right text-[9px] uppercase tracking-wide text-stealth-500">Selected · {activeComparison?.title ?? "—"}</div>
               <div className="grid grid-cols-2 gap-2 text-xs tabular-nums">
                 <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
-                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">Now</div>
-                  <div className="mt-0.5 font-semibold text-stealth-100">{latestOscillator !== null ? latestOscillator.toFixed(0) : "—"}</div>
+                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">Leading now</div>
+                  <div className="mt-0.5 font-semibold text-stealth-100">{oscillatorNowLabel}</div>
                 </div>
                 <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
-                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">20-run change</div>
-                  <div className={`mt-0.5 font-semibold ${oscillatorChange !== null && oscillatorChange >= 0 ? "text-sky-200" : "text-amber-200"}`}>
-                    {oscillatorChange !== null ? `${oscillatorChange >= 0 ? "+" : ""}${oscillatorChange.toFixed(0)}` : "—"}
+                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">20-run shift</div>
+                  <div className="mt-0.5 font-semibold text-stealth-200">
+                    {oscillatorShiftLabel}
                   </div>
                 </div>
               </div>
@@ -563,13 +593,13 @@ export default function SectorProjections() {
             <div className="surface-card-muted mt-4 p-2 sm:p-4">
               <div className="h-44 sm:h-56">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <AreaChart data={combinedOscillatorHistory} margin={CHART_MARGIN}>
+                  <AreaChart data={combinedOscillatorHistory} margin={{ ...CHART_MARGIN, right: 8 }}>
                     <CartesianGrid {...commonGridProps} />
-                    <ReferenceArea y1={35} y2={100} fill={getFamilyColor("market")} fillOpacity={0.025} />
-                    <ReferenceArea y1={-100} y2={-35} fill={getFamilyColor("volatility")} fillOpacity={0.025} />
+                    <ReferenceArea y1={leadershipBand} y2={oscillatorDomain} fill={getFamilyColor("market")} fillOpacity={0.025} />
+                    <ReferenceArea y1={-oscillatorDomain} y2={-leadershipBand} fill={getFamilyColor("volatility")} fillOpacity={0.025} />
                     <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeWidth={1.5} />
-                    <ReferenceLine y={35} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
-                    <ReferenceLine y={-35} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
+                    <ReferenceLine y={leadershipBand} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
+                    <ReferenceLine y={-leadershipBand} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
                     <XAxis
                       dataKey="timestampNum"
                       type="number"
@@ -587,8 +617,12 @@ export default function SectorProjections() {
                     <YAxis
                       tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
                       stroke={CHART_NEUTRAL.axis}
-                      domain={[-100, 100]}
-                      ticks={[-100, -50, 0, 50, 100]}
+                      axisLine={false}
+                      tickLine={false}
+                      width={82}
+                      domain={[-oscillatorDomain, oscillatorDomain]}
+                      ticks={[-oscillatorDomain, 0, oscillatorDomain]}
+                      tickFormatter={(value: number) => value > 0 ? positiveAxisLabel : value < 0 ? negativeAxisLabel : "Balanced"}
                     />
                     <Tooltip
                       contentStyle={commonTooltipStyle}
@@ -599,10 +633,13 @@ export default function SectorProjections() {
                           year: "numeric",
                         })
                       }
-                      formatter={(value: number, name: string) => [
-                        value.toFixed(1),
-                        name,
-                      ]}
+                      formatter={(value: number, name: string) => {
+                        const comparison = analyticsData?.leadership_comparisons.find((row) => row.title === name);
+                        const leader = value >= 0
+                          ? comparison?.positive_axis_label ?? "First basket"
+                          : comparison?.negative_axis_label ?? "Second basket";
+                        return [`${leader} by ${Math.abs(value).toFixed(1)} score points`, name];
+                      }}
                     />
                     {oscillatorComparisons.map((comparison) => {
                       const style = OSCILLATOR_STYLES[comparison.key] ?? { color: CHART_NEUTRAL.tick };
@@ -632,7 +669,7 @@ export default function SectorProjections() {
               </div>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-[10px] text-stealth-500">
                 <span>{activeComparison?.title} · {oscillatorRead}</span>
-                <span>{activeComparison?.sample_count ?? 0} observations per series · bands at ±35</span>
+                <span>{activeComparison?.sample_count ?? 0} observations per series · shaded zones mark clear leadership</span>
               </div>
             </div>
           ) : (
@@ -1083,7 +1120,7 @@ export default function SectorProjections() {
               <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Leadership Oscillators</h3>
               <div className="text-xs sm:text-sm text-gray-400 space-y-2">
                 <p>Each oscillator starts with the average daily 3M score of the first basket minus the second basket. A 25% EWMA reduces one-run reversals.</p>
-                <p>The smoothed spread is normalized against its rolling 60-run variability and bounded from -100 to +100. Cyclical/defensive, broad offense/shelter, growth/reflation, and discretionary/staples expose different rotation regimes; the broad split uses all 11 sectors.</p>
+                <p>The smoothed spread remains in native sector score points because every basket already uses the same 0-100 scoring scale. This preserves magnitude without rolling-volatility rescaling or artificial plateaus. Cyclical/defensive, broad offense/shelter, growth/reflation, and discretionary/staples expose different rotation regimes; the broad split uses all 11 sectors.</p>
               </div>
             </div>
             
