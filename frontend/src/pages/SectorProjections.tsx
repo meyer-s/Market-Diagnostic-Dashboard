@@ -26,7 +26,7 @@
  * Scoring Components (Total = 100):
  * - Trend (45%): Return + momentum indicator (SMA distance)
  * - Relative Strength (30%): Outperformance vs SPY benchmark
- * - Risk (20%): Volatility + drawdown (inverted - lower risk = higher score)
+ * - Stability (20%): Volatility + drawdown (inverted - lower risk = higher score)
  * - Regime (5%): Context-aware adjustments based on market state
  * 
  * @component
@@ -58,7 +58,6 @@ import {
 import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import "../index.css";
 
-const HORIZONS = ["3m", "6m", "12m"];
 const CHART_HORIZONS = ["T", "3m", "6m", "12m"];
 const getSectorColor = (
   symbol: string,
@@ -104,6 +103,8 @@ interface SectorProjectionItem {
     return?: number | null;
     sma_dist?: number | null;
     rel_ret?: number | null;
+    vol?: number | null;
+    drawdown?: number | null;
   };
 }
 
@@ -237,6 +238,12 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
   );
 }
 
+function formatMetricPercent(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${(value * 100).toFixed(1)}%`
+    : "—";
+}
+
 function CompactScoreBar({
   value,
   color,
@@ -290,7 +297,6 @@ export default function SectorProjections() {
   const [selectedHorizon, setSelectedHorizon] = useState<"T" | "3m" | "6m" | "12m">("12m");
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [selectedComparison, setSelectedComparison] = useState("cyclical_defensive");
-  const [readingGuideOpen, setReadingGuideOpen] = useState(false);
   const pageLoading = loading || analyticsLoading;
   const pageError = error || analyticsError;
   const activeComparison = analyticsData?.leadership_comparisons.find((comparison) => comparison.key === selectedComparison)
@@ -450,6 +456,17 @@ export default function SectorProjections() {
     ...point,
     timestampNum: new Date(`${point.as_of_date}T00:00:00Z`).getTime(),
   }));
+  const selectedHistoryScores = selectedSectorHistory
+    .map((point) => point.stable_score)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const selectedHistoryRange = selectedHistoryScores.length
+    ? Math.max(...selectedHistoryScores) - Math.min(...selectedHistoryScores)
+    : 0;
+  const selectedHistoryCurrent = selectedHistoryScores.length
+    ? selectedHistoryScores[selectedHistoryScores.length - 1]
+    : null;
+  const selectedRankingRows = displayProjections[selectedHorizon] ?? [];
+  const showRegimeColumn = new Set(selectedRankingRows.map((row) => Math.round(row.score_regime))).size > 1;
   const oscillatorComparisons = [...(analyticsData?.leadership_comparisons ?? [])].sort((a, b) => {
     if (a.key === selectedComparison) return 1;
     if (b.key === selectedComparison) return -1;
@@ -460,8 +477,8 @@ export default function SectorProjections() {
     <div className="page-shell-narrow page-stack">
       <div className="flex flex-col">
         <span className="page-kicker">Rotation Monitor</span>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Sector Projections</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Track persistent sector leadership across multiple lookback horizons, with bounded scanner confirmation and transparent scenario ranges.</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Sector Rotation</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Compare current sector leadership across trailing lookbacks. Scores rank sectors against one another; they are not price forecasts.</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
           {data && <span className="page-badge">System {data.system_state}</span>}
           {data && <span className="page-badge">As of {data.as_of_date}</span>}
@@ -507,15 +524,18 @@ export default function SectorProjections() {
                 All four rotation lenses share the same scale. Select one to emphasize it and update the summary; positive favors its first basket and negative favors its second.
               </p>
             </div>
-            <div className="grid shrink-0 grid-cols-2 gap-2 text-xs tabular-nums sm:flex">
-              <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
-                <div className="text-[9px] uppercase tracking-wide text-stealth-500">Current</div>
-                <div className="mt-0.5 font-semibold text-stealth-100">{latestOscillator !== null ? latestOscillator.toFixed(0) : "—"}</div>
-              </div>
-              <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
-                <div className="text-[9px] uppercase tracking-wide text-stealth-500">20-run move</div>
-                <div className={`mt-0.5 font-semibold ${oscillatorChange !== null && oscillatorChange >= 0 ? "text-sky-200" : "text-amber-200"}`}>
-                  {oscillatorChange !== null ? `${oscillatorChange >= 0 ? "+" : ""}${oscillatorChange.toFixed(0)}` : "—"}
+            <div className="shrink-0">
+              <div className="mb-1 text-right text-[9px] uppercase tracking-wide text-stealth-500">Selected · {activeComparison?.title ?? "—"}</div>
+              <div className="grid grid-cols-2 gap-2 text-xs tabular-nums">
+                <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
+                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">Now</div>
+                  <div className="mt-0.5 font-semibold text-stealth-100">{latestOscillator !== null ? latestOscillator.toFixed(0) : "—"}</div>
+                </div>
+                <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
+                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">20-run change</div>
+                  <div className={`mt-0.5 font-semibold ${oscillatorChange !== null && oscillatorChange >= 0 ? "text-sky-200" : "text-amber-200"}`}>
+                    {oscillatorChange !== null ? `${oscillatorChange >= 0 ? "+" : ""}${oscillatorChange.toFixed(0)}` : "—"}
+                  </div>
                 </div>
               </div>
             </div>
@@ -526,6 +546,7 @@ export default function SectorProjections() {
                 key={comparison.key}
                 type="button"
                 onClick={() => setSelectedComparison(comparison.key)}
+                aria-pressed={selectedComparison === comparison.key}
                 title={`${comparison.positive_label}: ${comparison.positive_symbols.join(", ")} · ${comparison.negative_label}: ${comparison.negative_symbols.join(", ")}`}
                 className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition ${selectedComparison === comparison.key ? "border-stealth-500 bg-stealth-900/70 text-stealth-100" : "border-stealth-700 bg-stealth-950/30 text-stealth-400 hover:border-stealth-600"}`}
               >
@@ -626,51 +647,36 @@ export default function SectorProjections() {
       {/* Overview Chart - Sector Score Trends Across Horizons */}
       {!pageLoading && !pageError && Object.keys(projections).length > 0 && (
         <div className="surface-card-strong p-4 sm:p-6">
-          <h2 className="mb-2 text-base font-semibold sm:text-lg">Stabilized Sector Paths &amp; Scenario Envelopes</h2>
-          <p className="mb-3 max-w-4xl text-xs leading-relaxed text-stealth-400">
-            Center lines use a robust rolling score instead of a one-day percentile rank. Select a sector to see its observed-variability envelope; persistent rank improvement and reliable scanner breadth can tilt the envelope, while scanner impact is capped at ±{analyticsData?.scanner_coverage.max_overlay_points ?? 4} points.
-          </p>
-          {analyticsData ? (
-            <div className={`mb-3 inline-flex rounded-md border px-2.5 py-1 text-[10px] tabular-nums ${analyticsData.scanner_coverage.classification_coverage_pct >= 70 ? "border-emerald-700/40 bg-emerald-950/20 text-emerald-200" : "border-amber-700/40 bg-amber-950/20 text-amber-200"}`}>
-              Scanner mapping · {analyticsData.scanner_coverage.classified_events}/{analyticsData.scanner_coverage.total_events} events classified ({analyticsData.scanner_coverage.classification_coverage_pct.toFixed(0)}%) · {analyticsData.scanner_coverage.lookback_days}d
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold sm:text-lg">Selected Sector Evidence</h2>
+              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-stealth-400">
+                Four independent trailing lookbacks for one sector. Dots are leadership scores; whiskers show observed score variability, not price targets or forecast confidence.
+              </p>
             </div>
-          ) : null}
+            <label className="flex shrink-0 items-center gap-2 text-[10px] uppercase tracking-wide text-stealth-500">
+              Sector
+              <select
+                value={selectedSector ?? ""}
+                onChange={(event) => setSelectedSector(event.target.value)}
+                className="min-h-9 rounded-md border border-stealth-700 bg-stealth-950/60 px-2.5 text-xs font-semibold text-stealth-100 outline-none focus:border-sky-500"
+              >
+                {chartData.map((sector) => (
+                  <option key={sector.symbol} value={sector.symbol}>{sector.symbol} · {sector.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           {tInterpolated && (
             <p className="text-xs text-amber-300/90 mb-3">
               Some current values fall back to the stabilized 3M reading because a valid T observation is unavailable.
             </p>
           )}
           
-          {/* Smooth Line Chart */}
+          {/* Independent lookback profile for the selected sector. */}
           <div className="surface-card-muted mb-2 p-2 sm:p-4">
             <div className="w-full" style={{ aspectRatio: '2 / 1', maxHeight: '240px' }}>
               <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
-                {/* Gradient definitions for uncertainty cones */}
-                <defs>
-                  {chartData.map((sector, idx) => {
-                    const color = getSectorColor(sector.symbol, "muted");
-                    const gradientId = `grad_${idx}`;
-                    return (
-                      <linearGradient key={gradientId} id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor={color} stopOpacity="0.02" />
-                        <stop offset="30%" stopColor={color} stopOpacity="0.08" />
-                        <stop offset="100%" stopColor={color} stopOpacity="0.12" />
-                      </linearGradient>
-                    );
-                  })}
-                  {/* Radial gradients for fading cone edges */}
-                  {chartData.map((sector, idx) => {
-                    const color = getSectorColor(sector.symbol, "muted");
-                    const radialId = `radial_${idx}`;
-                    return (
-                      <radialGradient key={radialId} id={radialId} cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor={color} stopOpacity="0.08" />
-                        <stop offset="100%" stopColor={color} stopOpacity="0" />
-                      </radialGradient>
-                    );
-                  })}
-                </defs>
-                
                 {/* Grid lines */}
                 {[0, 25, 50, 75, 100].map((y) => (
                   <g key={y}>
@@ -680,18 +686,13 @@ export default function SectorProjections() {
                 ))}
                 
                 {/* X-axis labels */}
-                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">T</text>
-                <text x="400" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M</text>
-                <text x="650" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M</text>
-                <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M</text>
+                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">NOW</text>
+                <text x="400" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M LOOKBACK</text>
+                <text x="650" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M LOOKBACK</text>
+                <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M LOOKBACK</text>
                 
-                {/* Uncertainty cones and lines for each sector */}
-                {chartData.map((sector, idx) => {
+                {chartData.filter((sector) => sector.symbol === selectedSector).map((sector) => {
                   const color = getSectorColor(sector.symbol);
-                  const isSelected = selectedSector === sector.symbol;
-                  const opacity = !selectedSector || isSelected ? 0.7 : 0.1;
-                  
-                  // Stable center path plus an observed-variability scenario envelope.
                   const score3m = sector.scores["3m"] ?? 0;
                   const score6m = sector.scores["6m"] ?? 0;
                   const score12m = sector.scores["12m"] ?? 0;
@@ -707,200 +708,67 @@ export default function SectorProjections() {
                   const y2 = 260 - (score6m * 2.4);
                   const x3 = 900;      // 12M
                   const y3 = 260 - (score12m * 2.4);
-                  const upper0 = 260 - ((sector.upper["T"] ?? scoreT) * 2.4);
-                  const lower0 = 260 - ((sector.lower["T"] ?? scoreT) * 2.4);
-                  const upper1 = 260 - ((sector.upper["3m"] ?? score3m) * 2.4);
-                  const lower1 = 260 - ((sector.lower["3m"] ?? score3m) * 2.4);
-                  const upper2 = 260 - ((sector.upper["6m"] ?? score6m) * 2.4);
-                  const lower2 = 260 - ((sector.lower["6m"] ?? score6m) * 2.4);
-                  const upper3 = 260 - ((sector.upper["12m"] ?? score12m) * 2.4);
-                  const lower3 = 260 - ((sector.lower["12m"] ?? score12m) * 2.4);
-                  
-                  // Future path (from T forward with uncertainty cone)
-                  const pathData = `
-                    M ${x0} ${y0}
-                    Q ${(x0 + x1) / 2} ${(y0 + y1) / 2}, ${x1} ${y1}
-                    Q ${(x1 + x2) / 2} ${(y1 + y2) / 2}, ${x2} ${y2}
-                    Q ${(x2 + x3) / 2} ${(y2 + y3) / 2}, ${x3} ${y3}
-                  `;
-                  
-                  // Create smooth uncertainty cone envelope
-                  const conePathUpper = `
-                    M ${x0} ${upper0}
-                    Q ${(x0 + x1) / 2} ${(upper0 + upper1) / 2}, ${x1} ${upper1}
-                    Q ${(x1 + x2) / 2} ${(upper1 + upper2) / 2}, ${x2} ${upper2}
-                    Q ${(x2 + x3) / 2} ${(upper2 + upper3) / 2}, ${x3} ${upper3}
-                  `;
-                  
-                  const conePathLower = `
-                    M ${x0} ${lower0}
-                    Q ${(x0 + x1) / 2} ${(lower0 + lower1) / 2}, ${x1} ${lower1}
-                    Q ${(x1 + x2) / 2} ${(lower1 + lower2) / 2}, ${x2} ${lower2}
-                    Q ${(x2 + x3) / 2} ${(lower2 + lower3) / 2}, ${x3} ${lower3}
-                  `;
+                  const profilePoints = [
+                    { x: x0, y: y0, upper: 260 - ((sector.upper["T"] ?? scoreT) * 2.4), lower: 260 - ((sector.lower["T"] ?? scoreT) * 2.4) },
+                    { x: x1, y: y1, upper: 260 - ((sector.upper["3m"] ?? score3m) * 2.4), lower: 260 - ((sector.lower["3m"] ?? score3m) * 2.4) },
+                    { x: x2, y: y2, upper: 260 - ((sector.upper["6m"] ?? score6m) * 2.4), lower: 260 - ((sector.lower["6m"] ?? score6m) * 2.4) },
+                    { x: x3, y: y3, upper: 260 - ((sector.upper["12m"] ?? score12m) * 2.4), lower: 260 - ((sector.lower["12m"] ?? score12m) * 2.4) },
+                  ];
                   
                   return (
-                    <g key={sector.symbol} onClick={() => setSelectedSector(isSelected ? null : sector.symbol)} style={{ cursor: 'pointer' }}>
-                      {/* Uncertainty cone - filled area between upper and lower bounds */}
-                      {isSelected && (
-                        <g opacity={0.4}>
-                          <path
-                            d={`${conePathUpper} L ${x3} ${lower3} Q ${(x2 + x3) / 2} ${(lower2 + lower3) / 2}, ${x2} ${lower2} Q ${(x1 + x2) / 2} ${(lower1 + lower2) / 2}, ${x1} ${lower1} Q ${(x0 + x1) / 2} ${(lower0 + lower1) / 2}, ${x0} ${lower0} Z`}
-                            fill={`url(#grad_${idx})`}
-                          />
+                    <g key={sector.symbol}>
+                      {profilePoints.map((point, pointIndex) => (
+                        <g key={pointIndex}>
+                          <line x1={point.x} y1={point.upper} x2={point.x} y2={point.lower} stroke={color} strokeWidth="5" strokeOpacity="0.22" strokeLinecap="round" />
+                          <line x1={point.x - 8} y1={point.upper} x2={point.x + 8} y2={point.upper} stroke={color} strokeWidth="2" strokeOpacity="0.55" />
+                          <line x1={point.x - 8} y1={point.lower} x2={point.x + 8} y2={point.lower} stroke={color} strokeWidth="2" strokeOpacity="0.55" />
+                          <circle cx={point.x} cy={point.y} r="6" fill={color} stroke="white" strokeOpacity="0.65" strokeWidth="1.5" />
+                          <text x={point.x} y={point.y - 13} fill={CHART_NEUTRAL.label} fontSize="12" fontWeight="700" textAnchor="middle">
+                            {Math.round((260 - point.y) / 2.4)}
+                          </text>
                         </g>
-                      )}
-                      
-                      {/* Upper and lower cone boundaries - subtle when not selected */}
-                      {isSelected && (
-                        <>
-                          <path 
-                            d={conePathUpper}
-                            stroke={color}
-                            strokeWidth="1"
-                            fill="none"
-                            opacity={0.3}
-                            strokeDasharray="3 3"
-                            strokeLinecap="round"
-                          />
-                          <path 
-                            d={conePathLower}
-                            stroke={color}
-                            strokeWidth="1"
-                            fill="none"
-                            opacity={0.3}
-                            strokeDasharray="3 3"
-                            strokeLinecap="round"
-                          />
-                        </>
-                      )}
-                      
-                      {/* Main trend line */}
-                      <path 
-                        d={pathData} 
-                        stroke={color} 
-                        strokeWidth={isSelected ? "3.5" : "2.5"} 
-                        fill="none" 
-                        opacity={opacity}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      
-                      {/* Vertical "T" line - only show once, not per sector */}
-                      {idx === 0 && (
-                        <line 
-                          x1={x0} 
-                          y1={20} 
-                          x2={x0} 
-                          y2={280} 
-                          stroke={getFamilyColor("benchmark")} 
-                          strokeWidth="2" 
-                          strokeDasharray="5 5"
-                          opacity={0.4}
-                        />
-                      )}
-                      
-                      {/* Stable score anchors */}
-                      <circle cx={x0} cy={y0} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} stroke={idx === 0 ? getFamilyColor("benchmark") : "none"} strokeWidth="1" />
-                      <circle cx={x1} cy={y1} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} />
-                      <circle cx={x2} cy={y2} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} />
-                      <circle cx={x3} cy={y3} r={isSelected ? "5" : "4"} fill={color} opacity={opacity} />
+                      ))}
                     </g>
                   );
                 })}
               </svg>
             </div>
           </div>
-          
-          {/* Legend - Compact and scrollable */}
-          <div className="mt-2 mb-4 overflow-x-auto">
-            <div className="flex flex-wrap gap-1 sm:gap-2 pb-2 min-w-min">
-              {chartData.map((sector) => {
-                const color = getSectorColor(sector.symbol);
-                const isSelected = selectedSector === sector.symbol;
-                return (
-                  <button
-                    key={sector.symbol}
-                    onClick={() => setSelectedSector(isSelected ? null : sector.symbol)}
-                    className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 sm:py-2 rounded whitespace-nowrap transition-all text-xs sm:text-sm ${
-                      isSelected 
-                        ? 'ring-2 bg-gray-700' 
-                        : 'bg-transparent hover:bg-gray-800'
-                    }`}
-                    style={isSelected ? { outline: `2px solid ${color}` } : {}}
-                  >
-                    <div style={{ width: "10px", height: "10px", backgroundColor: color, borderRadius: "2px", opacity: 0.9, flexShrink: 0 }}></div>
-                    <span className={`${isSelected ? 'text-white font-semibold' : 'text-gray-400'}`}>{sector.symbol}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
 
           {selectedSectorAnalytics && selectedSectorHistory.length > 1 ? (
-            <div className="mb-4 grid gap-3 border-t border-stealth-700 pt-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="grid gap-2 border-t border-stealth-700 pt-3 text-[10px] md:grid-cols-3">
               <div className="min-w-0 rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
-                  <div>
-                    <div className="text-xs font-semibold text-stealth-200">{selectedSectorAnalytics.sector_symbol} · observed 3M-score history</div>
-                    <div className="text-[10px] text-stealth-500">Raw daily rank score versus the stabilized score used above</div>
+                <div className="uppercase tracking-wide text-stealth-500">{selectedSectorAnalytics.sector_symbol} · 20-run leadership score</div>
+                <div className="mt-1 flex items-end justify-between gap-2">
+                  <div className="text-lg font-semibold tabular-nums text-stealth-100">{selectedHistoryCurrent?.toFixed(0) ?? "—"}</div>
+                  <div className="text-stealth-500">range {selectedHistoryRange.toFixed(1)} pts</div>
+                </div>
+                {selectedHistoryRange > 0.5 ? (
+                  <div className="mt-2 h-12">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <LineChart data={selectedSectorHistory} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                        <Line type="monotone" dataKey="raw_score" stroke={CHART_NEUTRAL.tick} strokeWidth={1} strokeOpacity={0.4} dot={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="stable_score" stroke={getSectorColor(selectedSectorAnalytics.sector_symbol)} strokeWidth={2} dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div className="text-[10px] text-stealth-500">{selectedSectorHistory.length} observations</div>
-                </div>
-                <div className="h-32">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <LineChart data={selectedSectorHistory} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
-                      <CartesianGrid {...commonGridProps} />
-                      <XAxis dataKey="timestampNum" type="number" domain={["dataMin", "dataMax"]} tick={false} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                      <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 9 }} stroke={CHART_NEUTRAL.axis} />
-                      <Tooltip
-                        contentStyle={commonTooltipStyle}
-                        labelFormatter={(label: number) => new Date(label).toLocaleDateString()}
-                        formatter={(value: number, name: string) => [value.toFixed(1), name === "stable_score" ? "Stable score" : "Raw score"]}
-                      />
-                      <Line type="monotone" dataKey="raw_score" stroke={CHART_NEUTRAL.tick} strokeWidth={1} strokeOpacity={0.45} dot={false} isAnimationActive={false} />
-                      <Line type="monotone" dataKey="stable_score" stroke={getSectorColor(selectedSectorAnalytics.sector_symbol)} strokeWidth={2.25} dot={false} isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                ) : (
+                  <div className="mt-2 text-stealth-400">Unchanged across {selectedSectorHistory.length} valid runs; a flat chart is intentionally omitted.</div>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-2 text-[10px] lg:grid-cols-1">
-                <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
-                  <div className="uppercase tracking-wide text-stealth-500">Rank persistence</div>
-                  <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.persistence.direction}</div>
-                  <div className="mt-0.5 text-stealth-500">Top-3 in {(selectedSectorAnalytics.persistence.top3_rate * 100).toFixed(0)}% of recent runs</div>
-                </div>
-                <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
-                  <div className="uppercase tracking-wide text-stealth-500">Scanner confirmation</div>
-                  <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.scanner.hits} deduped hits · {selectedSectorAnalytics.scanner.unique_symbols} names</div>
-                  <div className="mt-0.5 text-stealth-500">Overlay {selectedSectorAnalytics.scanner.overlay_points >= 0 ? "+" : ""}{selectedSectorAnalytics.scanner.overlay_points.toFixed(1)} · reliability {(selectedSectorAnalytics.scanner.reliability * 100).toFixed(0)}%</div>
-                </div>
+              <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
+                <div className="uppercase tracking-wide text-stealth-500">Rank persistence</div>
+                <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.persistence.direction}</div>
+                <div className="mt-0.5 text-stealth-500">Top-3 in {(selectedSectorAnalytics.persistence.top3_rate * 100).toFixed(0)}% of recent runs</div>
+              </div>
+              <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
+                <div className="uppercase tracking-wide text-stealth-500">Scanner confirmation</div>
+                <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.scanner.hits} hits · {selectedSectorAnalytics.scanner.unique_symbols} names</div>
+                <div className="mt-0.5 text-stealth-500">Overlay {selectedSectorAnalytics.scanner.overlay_points >= 0 ? "+" : ""}{selectedSectorAnalytics.scanner.overlay_points.toFixed(1)} · reliability {(selectedSectorAnalytics.scanner.reliability * 100).toFixed(0)}%</div>
+                <div className="mt-1 text-stealth-600">Coverage {analyticsData?.scanner_coverage.classification_coverage_pct.toFixed(0) ?? "—"}% of scanner events</div>
               </div>
             </div>
           ) : null}
-          
-          {/* Top Performers by Horizon */}
-          <div className="border-t border-gray-700 pt-3 mt-3">
-            <h3 className="text-xs sm:text-sm font-semibold mb-2 text-gray-300">Top Performers</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 sm:gap-2 text-xs">
-              {HORIZONS.map((h) => {
-                const topSectors = (displayProjections[h] || [])
-                  .sort((a, b) => a.rank - b.rank)
-                  .slice(0, 3);
-                return (
-                  <div key={h} className="bg-gray-900 rounded p-1.5 sm:p-2">
-                    <div className="text-gray-500 mb-1 font-semibold text-xs">{h.toUpperCase()}</div>
-                    {topSectors.map((s, i) => (
-                      <div key={s.sector_symbol} className="flex items-center gap-1 mb-0.5">
-                        <span className="text-green-400 font-bold text-xs">#{i + 1}</span>
-                        <span className="text-gray-300 truncate text-xs">{s.sector_symbol}</span>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
       )}
 
@@ -908,7 +776,10 @@ export default function SectorProjections() {
       {(displayProjections[selectedHorizon === "T" ? "T" : selectedHorizon] || selectedHorizon === "T") && (
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4">
-            <h2 className="text-base sm:text-lg font-semibold">Sector Rankings</h2>
+            <div>
+              <h2 className="text-base sm:text-lg font-semibold">Sector Rankings</h2>
+              <p className="mt-1 text-[10px] text-stealth-500">Leadership score is the smoothed composite plus scanner adjustment. Trend, relative strength, and stability are current peer percentiles; higher is better.</p>
+            </div>
             <div className="flex flex-wrap gap-1 sm:gap-2">
               {["T", "3m", "6m", "12m"].map((h) => {
                 if (h === "T" && !tScoresValid) return null;
@@ -916,13 +787,15 @@ export default function SectorProjections() {
                   <button
                     key={h}
                     onClick={() => setSelectedHorizon(h as "T" | "3m" | "6m" | "12m")}
+                    aria-pressed={selectedHorizon === h}
+                    title={h === "T" ? "Current reading" : `${h.toUpperCase()} trailing lookback`}
                     className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition min-h-10 ${
                       selectedHorizon === h
                         ? "bg-blue-600 text-white"
                         : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                     }`}
                   >
-                    {h === "T" ? "T" : h === "3m" ? "T+3M" : h === "6m" ? "T+6M" : "T+12M"}
+                    {h === "T" ? "Now" : h.toUpperCase()}
                   </button>
                 );
               })}
@@ -947,26 +820,26 @@ export default function SectorProjections() {
                   <col className="w-[25%]" />
                   <col className="w-[20%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[10%]" />
+                  <col style={{ width: showRegimeColumn ? "10%" : "13.333%" }} />
+                  <col style={{ width: showRegimeColumn ? "10%" : "13.333%" }} />
+                  <col style={{ width: showRegimeColumn ? "10%" : "13.334%" }} />
+                  {showRegimeColumn ? <col className="w-[10%]" /> : null}
                 </colgroup>
                 <thead>
                   <tr className="border-b border-stealth-700 bg-stealth-900/40 text-[10px] uppercase tracking-wide text-stealth-500">
                     <th className="px-2 py-2 text-left">#</th>
                     <th className="px-2 py-2 text-left">Sector</th>
-                    <th className="px-2 py-2 text-left">Stable score</th>
-                    <th className="px-2 py-2 text-left">Type</th>
+                    <th className="px-2 py-2 text-left">Leadership</th>
+                    <th className="px-2 py-2 text-left">Tier</th>
                     <th className="px-2 py-2 text-left">Trend</th>
-                    <th className="px-2 py-2 text-left">Rel</th>
-                    <th className="px-2 py-2 text-left">Risk</th>
-                    <th className="px-2 py-2 text-left">Regime</th>
+                    <th className="px-2 py-2 text-left" title="Relative strength versus SPY">Vs. SPY</th>
+                    <th className="px-2 py-2 text-left" title="Higher means more stable. Zero means riskiest in the 11-sector peer set—not zero risk.">Stability ↑</th>
+                    {showRegimeColumn ? <th className="px-2 py-2 text-left">Regime adj.</th> : null}
                   </tr>
                 </thead>
                 <tbody>
-                  {(displayProjections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
-                    <tr key={row.sector_symbol} className={`border-b border-stealth-800/70 last:border-b-0 ${
+                  {[...selectedRankingRows].sort((a, b) => a.rank - b.rank).map((row) => (
+                    <tr key={row.sector_symbol} className={`border-b border-stealth-800/70 last:border-b-0 ${selectedSector === row.sector_symbol ? "ring-1 ring-inset ring-sky-500/60" : ""} ${
                       row.classification === "Winner"
                         ? "bg-green-900/30"
                         : row.classification === "Loser"
@@ -975,10 +848,15 @@ export default function SectorProjections() {
                     }`}>
                       <td className="px-2 py-1.5 align-middle tabular-nums text-stealth-300">{row.rank}</td>
                       <td className="min-w-0 px-2 py-1.5 align-middle">
-                        <div className="truncate font-medium text-stealth-100" title={`${row.sector_name} (${row.sector_symbol})`}>
-                          {row.sector_name}
-                        </div>
-                        <div className="text-[9px] text-stealth-500">{row.sector_symbol}</div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSector(row.sector_symbol)}
+                          className="block w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                          title={`Show evidence for ${row.sector_name} (${row.sector_symbol})`}
+                        >
+                          <div className="truncate font-medium text-stealth-100">{row.sector_name}</div>
+                          <div className="text-[9px] text-stealth-500">{row.sector_symbol}</div>
+                        </button>
                       </td>
                       <td className="px-2 py-1 align-middle">
                         <CompactScoreBar
@@ -1002,15 +880,24 @@ export default function SectorProjections() {
                       </td>
                       <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_trend} color={scoreBarColors.trend} /></td>
                       <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_rel} color={scoreBarColors.rel} /></td>
-                      <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_risk} color={scoreBarColors.risk} /></td>
-                      <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_regime} color={scoreBarColors.regime} /></td>
+                      <td
+                        className="px-2 py-1 align-middle"
+                        title={`Stability ${Math.round(row.score_risk)}. Annualized volatility ${formatMetricPercent(row.metrics?.vol)}; maximum drawdown ${formatMetricPercent(row.metrics?.drawdown)}. Higher is safer relative to the other sectors.`}
+                      >
+                        <CompactScoreBar
+                          value={row.score_risk}
+                          color={scoreBarColors.risk}
+                          metadata={`vol ${formatMetricPercent(row.metrics?.vol)} · DD ${formatMetricPercent(row.metrics?.drawdown)}`}
+                        />
+                      </td>
+                      {showRegimeColumn ? <td className="px-2 py-1 align-middle"><CompactScoreBar value={row.score_regime} color={scoreBarColors.regime} /></td> : null}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <div className="space-y-2 p-4 md:hidden sm:space-y-3">
-              {(selectedHorizon === "T" ? displayProjections["T"] : displayProjections[selectedHorizon])?.sort((a, b) => a.rank - b.rank).map((row) => (
+              {[...selectedRankingRows].sort((a, b) => a.rank - b.rank).map((row) => (
                 <div
                   key={row.sector_symbol}
                   className={`rounded-lg border border-gray-700 overflow-hidden ${
@@ -1022,7 +909,10 @@ export default function SectorProjections() {
                   }`}
                 >
                   <button
-                    onClick={() => setExpandedCard(expandedCard === row.sector_symbol ? null : row.sector_symbol)}
+                    onClick={() => {
+                      setSelectedSector(row.sector_symbol);
+                      setExpandedCard(expandedCard === row.sector_symbol ? null : row.sector_symbol);
+                    }}
                     className="w-full p-2 sm:p-3 flex items-start justify-between gap-2 sm:gap-3 hover:bg-black/20 transition-colors"
                     aria-expanded={expandedCard === row.sector_symbol}
                   >
@@ -1050,7 +940,7 @@ export default function SectorProjections() {
                     </div>
                   </button>
                   <div className="px-3 pt-2 pb-3">
-                    <ScoreBar label="Total" value={row.score_total} color={scoreBarColors.total} />
+                    <ScoreBar label="Score" value={row.score_total} color={scoreBarColors.total} />
                     {row.raw_score !== undefined ? (
                       <div className="mt-1 text-right text-[9px] text-stealth-500">
                         raw {row.raw_score.toFixed(0)} · scanner {row.scanner_overlay !== undefined && row.scanner_overlay >= 0 ? "+" : ""}{row.scanner_overlay?.toFixed(1) ?? "0.0"}
@@ -1061,9 +951,12 @@ export default function SectorProjections() {
                     <div className="collapsible-panel-inner">
                       <div className="border-t border-gray-700 bg-black/20 p-3 space-y-2">
                         <ScoreBar label="Trend" value={row.score_trend} color={scoreBarColors.trend} />
-                        <ScoreBar label="Rel" value={row.score_rel} color={scoreBarColors.rel} />
-                        <ScoreBar label="Risk" value={row.score_risk} color={scoreBarColors.risk} />
-                        <ScoreBar label="Regime" value={row.score_regime} color={scoreBarColors.regime} />
+                        <ScoreBar label="Relative" value={row.score_rel} color={scoreBarColors.rel} />
+                        <ScoreBar label="Stability" value={row.score_risk} color={scoreBarColors.risk} />
+                        <div className="pl-14 text-[9px] leading-relaxed text-stealth-500">
+                          {formatMetricPercent(row.metrics?.vol)} annualized volatility · {formatMetricPercent(row.metrics?.drawdown)} max drawdown · higher stability is safer
+                        </div>
+                        {showRegimeColumn ? <ScoreBar label="Regime" value={row.score_regime} color={scoreBarColors.regime} /> : null}
                       </div>
                     </div>
                   </div>
@@ -1073,34 +966,6 @@ export default function SectorProjections() {
           </div>
         </div>
       )}
-
-      {/* How to Read This Chart */}
-      <div className="mb-6">
-        <button
-          onClick={() => setReadingGuideOpen(!readingGuideOpen)}
-          className="w-full bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 sm:p-4 text-left hover:bg-blue-900/30 transition"
-          aria-expanded={readingGuideOpen}
-        >
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs sm:text-sm font-semibold text-blue-200">How to Read This Chart</h3>
-            <span className={`collapsible-icon ${readingGuideOpen ? 'collapsible-icon-open' : ''} border-blue-700/50 bg-blue-950/30 text-blue-300`} aria-hidden="true">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </span>
-          </div>
-        </button>
-        <div className={`collapsible-panel ${readingGuideOpen ? 'collapsible-panel-open' : ''}`}>
-          <div className="collapsible-panel-inner">
-            <div className="bg-blue-900/20 border border-blue-700/50 border-t-0 rounded-b-lg p-3 sm:p-4 text-xs sm:text-sm text-blue-200/80 space-y-2 leading-relaxed">
-              <p><strong>Oscillator:</strong> Positive readings favor the first basket named in the selected comparison; negative readings favor the second. The ±35 zones are visual leadership thresholds, not statistical significance tests.</p>
-              <p><strong>Stable Score (0-100):</strong> The displayed rank blends a rolling EWMA, a five-run median, and the latest raw score. This reduces one-day percentile jumps without hiding the raw reading.</p>
-              <p><strong>Scenario Envelope:</strong> The selected sector's band uses observed 20-run score variability. Persistent rank improvement and reliable directional scanner breadth can skew the band, but it is not a probability confidence interval.</p>
-              <p><strong>Scanner Overlay:</strong> Calls and puts are deduplicated by symbol, day, and side; breadth, recency, and opportunity rank determine reliability. The overlay is capped at ±4 points and decays beyond 3M.</p>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Methodology Explanation - Collapsible */}
       <div className="mb-6 bg-gray-800 rounded-lg shadow">
@@ -1125,7 +990,7 @@ export default function SectorProjections() {
                 Ranks 11 sector ETFs (XLE, XLF, XLK, XLY, XLP, XLV, XLI, XLU, XLB, XLRE, XLC) using 8000 days of historical data. Each sector receives a composite score (0-100) from four weighted components.
               </p>
               <p className="text-gray-400 text-xs sm:text-sm">
-                Computed independently for 3-month (63 days), 6-month (126 days), and 12-month (252 days) horizons.
+                Computed independently from trailing 3-month (63 trading days), 6-month (126), and 12-month (252) lookbacks. These are not future dates.
               </p>
             </div>
             
@@ -1158,7 +1023,7 @@ export default function SectorProjections() {
                 </div>
                 
                 <div className="bg-gray-900 rounded p-3 sm:p-4">
-                  <h4 className="font-semibold text-red-400 mb-2 text-xs sm:text-sm">3. Risk Score (20% weight, inverted)</h4>
+                  <h4 className="font-semibold text-red-400 mb-2 text-xs sm:text-sm">3. Stability Score (20% weight; risk inverted)</h4>
                   <p className="text-xs text-gray-400 mb-2">
                     Evaluates price stability and downside protection. Lower risk = higher score (inverse ranking).
                   </p>
@@ -1166,7 +1031,7 @@ export default function SectorProjections() {
                     <p><strong>Realized Volatility:</strong> 20-day rolling standard deviation of daily returns, annualized (x sqrt252)</p>
                     <p><strong>Max Drawdown:</strong> Largest peak-to-trough decline over the full horizon period</p>
                     <p><strong>Composite:</strong> Volatility + (0.5 x |Drawdown|), inverted percentile rank scaled to 0-100</p>
-                    <p>Sectors with lower volatility and smaller drawdowns receive higher risk scores</p>
+                    <p>Sectors with lower volatility and smaller drawdowns receive higher stability scores. A zero means least stable in this 11-sector peer set.</p>
                   </div>
                 </div>
                 
@@ -1192,7 +1057,7 @@ export default function SectorProjections() {
               <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Final Score & Ranking</h3>
               <div className="text-xs sm:text-sm text-gray-400 space-y-2">
                 <p className="font-mono bg-gray-950 p-2 rounded text-xs">
-                  Composite Score = (0.45 x Trend) + (0.30 x Rel_Strength) + (0.20 x Risk) + (0.05 x Regime)
+                  Composite Score = (0.45 x Trend) + (0.30 x Rel_Strength) + (0.20 x Stability) + (0.05 x Regime)
                 </p>
                 <p className="text-xs sm:text-sm">
                   The raw score remains auditable. Displayed ranks use 55% EWMA, 30% five-run median, and 15% latest raw score, followed by a reliability-gated scanner overlay capped at ±4 points.
@@ -1201,16 +1066,16 @@ export default function SectorProjections() {
             </div>
             
             <div className="border-t border-gray-700 pt-4">
-              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Scanner Confirmation &amp; Scenario Envelopes</h3>
+              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Scanner Confirmation &amp; Scenario Ranges</h3>
               <p className="text-xs sm:text-sm text-gray-400 mb-3">
                 Scanner evidence confirms or challenges the price-based path without becoming the primary model.
               </p>
               <div className="text-xs sm:text-sm text-gray-400 space-y-2">
                 <p><strong>Scanner input:</strong> Direction comes from selected calls versus puts. Duplicate symbol/day/side events are collapsed, then recency, unique-name breadth, distinct days, and opportunity rank determine reliability.</p>
                 <p><strong>Bounded influence:</strong> Scanner evidence can move the 3M stabilized score by no more than four points; influence decays by half at 6M and to one quarter at 12M.</p>
-                <p><strong>Envelope width:</strong> Uses the sector's observed score variability over the latest 20 valid runs, expanding with the horizon.</p>
-                <p><strong>Envelope skew:</strong> Repeated rank improvement and reliable bullish scanner breadth allow more upside room; weakening persistence or bearish breadth does the reverse.</p>
-                <p><strong>Important:</strong> The envelope is a transparent scenario range, not a calibrated probability confidence interval.</p>
+                <p><strong>Range width:</strong> Uses the sector's observed score variability over the latest 20 valid runs, expanding with the lookback.</p>
+                <p><strong>Range skew:</strong> Repeated rank improvement and reliable bullish scanner breadth allow more upside room; weakening persistence or bearish breadth does the reverse.</p>
+                <p><strong>Important:</strong> The displayed intervals are transparent scenario ranges, not calibrated probability confidence intervals.</p>
               </div>
             </div>
 
@@ -1257,7 +1122,7 @@ export default function SectorProjections() {
       {/* Disclaimer */}
       <div className="mb-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3 sm:p-4">
         <p className="text-xs sm:text-sm text-yellow-200/90 leading-relaxed">
-          <strong>Disclaimer:</strong> These projections are theoretical models for educational purposes only. Not financial advice, investment recommendations, or performance guarantees. Always conduct your own research and consult a qualified financial advisor before making investment decisions.
+          <strong>Disclaimer:</strong> These relative sector scores are theoretical models for educational purposes only. Not financial advice, investment recommendations, or performance guarantees. Always conduct your own research and consult a qualified financial advisor before making investment decisions.
         </p>
       </div>
     </div>
