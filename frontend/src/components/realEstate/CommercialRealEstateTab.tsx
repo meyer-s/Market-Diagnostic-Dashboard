@@ -18,11 +18,14 @@ import {
   commonYAxisProps,
 } from "../../utils/chartUtils";
 import {
-  buildCycleTicks,
-  filterByYears,
-  formatCycleAxisLabel,
+  buildCycleTimeTicks,
+  buildSeriesWindow,
+  filterToSeriesWindow,
+  formatCycleTimeAxisLabel,
+  formatCycleTooltipLabel,
   REAL_ESTATE_HORIZONS,
-  rebaseSeries,
+  realEstateTimestamp,
+  rebaseSeriesToWindow,
   type RealEstateHorizon,
 } from "../../utils/realEstateHorizon";
 
@@ -204,13 +207,16 @@ function nearestValue(points: DataPoint[], date: string) {
   return nearest.value;
 }
 
-function mergeNamedSeries(series: Array<{ key: string; data: DataPoint[] }>): Array<{ date: string } & Record<string, string | number | null>> {
+function mergeNamedSeries(series: Array<{ key: string; data: DataPoint[] }>): Array<{ date: string; timestamp: number } & Record<string, string | number | null>> {
   const dates = [...new Set(series.flatMap((item) => item.data.map((point) => point.date)))].sort();
   const maps = Object.fromEntries(
     series.map((item) => [item.key, Object.fromEntries(item.data.map((point) => [point.date, point.value]))]),
   );
   return dates.map((date) => {
-    const row: { date: string } & Record<string, string | number | null> = { date };
+    const row: { date: string; timestamp: number } & Record<string, string | number | null> = {
+      date,
+      timestamp: realEstateTimestamp(date),
+    };
     series.forEach((item) => {
       row[item.key] = maps[item.key]?.[date] ?? null;
     });
@@ -223,6 +229,13 @@ function formatSupplyValue(series: SectorSupplySeries) {
   if (series.unit.startsWith("$M")) return `$${(series.latest / 1000).toFixed(1)}B`;
   if (series.unit.startsWith("K")) return `${series.latest.toFixed(0)}K`;
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(series.latest);
+}
+
+function formatSeriesCoverage(points: DataPoint[]) {
+  if (!points.length) return "unavailable";
+  const first = formatCycleTooltipLabel(points[0].date);
+  const last = formatCycleTooltipLabel(points[points.length - 1].date);
+  return first === last ? first : `${first}–${last}`;
 }
 
 function SectionHeader({ kicker, title, detail }: { kicker: string; title: string; detail: string }) {
@@ -374,18 +387,22 @@ function SectorSupplyCard({
   color: string;
   horizonYears: RealEstateHorizon;
 }) {
+  const seriesWindow = useMemo(
+    () => buildSeriesWindow(context.supply.series.map((series) => series.data), horizonYears),
+    [context.supply.series, horizonYears],
+  );
   const chartSeries = useMemo(
     () => context.supply.series.map((series) => ({
       ...series,
-      data: filterByYears(series.data, horizonYears),
+      data: filterToSeriesWindow(series.data, seriesWindow),
     })),
-    [context.supply.series, horizonYears],
+    [context.supply.series, seriesWindow],
   );
   const chartData = useMemo(
     () => mergeNamedSeries(chartSeries.map((series) => ({ key: series.key, data: series.data }))),
     [chartSeries],
   );
-  const cycleTicks = useMemo(() => buildCycleTicks(chartData, horizonYears), [chartData, horizonYears]);
+  const cycleTicks = useMemo(() => buildCycleTimeTicks(seriesWindow, horizonYears), [seriesWindow, horizonYears]);
   const seriesColors = [color, "#a78bfa", "#94a3b8"];
 
   return (
@@ -421,15 +438,19 @@ function SectorSupplyCard({
               <CartesianGrid {...commonGridProps} />
               <XAxis
                 {...commonXAxisProps}
-                dataKey="date"
+                dataKey="timestamp"
+                type="number"
+                scale="time"
+                domain={seriesWindow ? [seriesWindow.start, seriesWindow.end] : ["dataMin", "dataMax"]}
                 ticks={cycleTicks}
                 interval={0}
                 minTickGap={24}
-                tickFormatter={(date: string) => formatCycleAxisLabel(date, horizonYears)}
+                tickFormatter={(timestamp: number) => formatCycleTimeAxisLabel(timestamp, horizonYears)}
               />
               <YAxis {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(value: number) => `${Math.round(value)}`} />
               <Tooltip
                 {...chartTooltip}
+                labelFormatter={(timestamp: number) => formatCycleTooltipLabel(timestamp)}
                 formatter={(value: number, name: string) => {
                   const series = context.supply.series.find((item) => item.key === name);
                   return [series ? formatSupplyValue({ ...series, latest: value }) : value.toFixed(1), series?.label ?? name];
@@ -472,8 +493,18 @@ function SectorDemandSupplyCard({
   horizonYears: RealEstateHorizon;
 }) {
   const demand = context.demand_supply;
-  const demandSeries = useMemo(() => rebaseSeries(demand.demand_index, horizonYears), [demand.demand_index, horizonYears]);
-  const supplySeries = useMemo(() => rebaseSeries(demand.supply_index, horizonYears), [demand.supply_index, horizonYears]);
+  const seriesWindow = useMemo(
+    () => buildSeriesWindow([demand.demand_index, demand.supply_index], horizonYears),
+    [demand.demand_index, demand.supply_index, horizonYears],
+  );
+  const demandSeries = useMemo(
+    () => rebaseSeriesToWindow(demand.demand_index, seriesWindow),
+    [demand.demand_index, seriesWindow],
+  );
+  const supplySeries = useMemo(
+    () => rebaseSeriesToWindow(demand.supply_index, seriesWindow),
+    [demand.supply_index, seriesWindow],
+  );
   const chartData = useMemo(
     () => mergeNamedSeries([
       { key: "demand", data: demandSeries },
@@ -481,7 +512,7 @@ function SectorDemandSupplyCard({
     ]),
     [demandSeries, supplySeries],
   );
-  const cycleTicks = useMemo(() => buildCycleTicks(chartData, horizonYears), [chartData, horizonYears]);
+  const cycleTicks = useMemo(() => buildCycleTimeTicks(seriesWindow, horizonYears), [seriesWindow, horizonYears]);
   const demandLatest = demandSeries[demandSeries.length - 1]?.value ?? null;
   const supplyLatest = supplySeries[supplySeries.length - 1]?.value ?? null;
   const divergence = demandLatest != null && supplyLatest != null ? demandLatest - supplyLatest : null;
@@ -491,7 +522,7 @@ function SectorDemandSupplyCard({
       <SectionHeader
         kicker="Demand vs Supply"
         title={`${context.label} operating balance`}
-        detail="Public demand and development measures, each indexed to 100 at the start of the selected window."
+        detail="Public demand and development measures, each indexed to 100 at its first available observation within the selected window."
       />
       <div className="mt-4 grid grid-cols-3 gap-2">
         <StatTile label="Demand" value={demandLatest?.toFixed(1) ?? "—"} detail="Indexed activity" tone="text-sky-300" />
@@ -510,16 +541,20 @@ function SectorDemandSupplyCard({
               <CartesianGrid {...commonGridProps} />
               <XAxis
                 {...commonXAxisProps}
-                dataKey="date"
+                dataKey="timestamp"
+                type="number"
+                scale="time"
+                domain={seriesWindow ? [seriesWindow.start, seriesWindow.end] : ["dataMin", "dataMax"]}
                 ticks={cycleTicks}
                 interval={0}
                 minTickGap={24}
-                tickFormatter={(date: string) => formatCycleAxisLabel(date, horizonYears)}
+                tickFormatter={(timestamp: number) => formatCycleTimeAxisLabel(timestamp, horizonYears)}
               />
               <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
               <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
               <Tooltip
                 {...chartTooltip}
+                labelFormatter={(timestamp: number) => formatCycleTooltipLabel(timestamp)}
                 formatter={(value: number, name: string) => [value.toFixed(1), name === "demand" ? demand.demand_label : demand.supply_label]}
               />
               <Line type="monotone" dataKey="demand" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls isAnimationActive={false} />
@@ -547,9 +582,22 @@ function SectorPriceCard({
   horizonYears: RealEstateHorizon;
 }) {
   const price = context.price;
-  const listedSeries = useMemo(() => rebaseSeries(price.listed_index, horizonYears), [horizonYears, price.listed_index]);
-  const propertySeries = useMemo(() => rebaseSeries(price.property_price_index, horizonYears), [horizonYears, price.property_price_index]);
-  const rentSeries = useMemo(() => rebaseSeries(price.rent_index, horizonYears), [horizonYears, price.rent_index]);
+  const seriesWindow = useMemo(
+    () => buildSeriesWindow([price.listed_index, price.property_price_index, price.rent_index], horizonYears),
+    [horizonYears, price.listed_index, price.property_price_index, price.rent_index],
+  );
+  const listedSeries = useMemo(
+    () => rebaseSeriesToWindow(price.listed_index, seriesWindow),
+    [price.listed_index, seriesWindow],
+  );
+  const propertySeries = useMemo(
+    () => rebaseSeriesToWindow(price.property_price_index, seriesWindow),
+    [price.property_price_index, seriesWindow],
+  );
+  const rentSeries = useMemo(
+    () => rebaseSeriesToWindow(price.rent_index, seriesWindow),
+    [price.rent_index, seriesWindow],
+  );
   const chartData = useMemo(
     () => mergeNamedSeries([
       { key: "listed", data: listedSeries },
@@ -558,14 +606,19 @@ function SectorPriceCard({
     ]),
     [listedSeries, propertySeries, rentSeries],
   );
-  const cycleTicks = useMemo(() => buildCycleTicks(chartData, horizonYears), [chartData, horizonYears]);
+  const cycleTicks = useMemo(() => buildCycleTimeTicks(seriesWindow, horizonYears), [seriesWindow, horizonYears]);
+  const coverage = [
+    `${price.listed_label}: ${formatSeriesCoverage(listedSeries)}`,
+    `${price.property_price_label}: ${formatSeriesCoverage(propertySeries)}`,
+    `${price.rent_label}: ${formatSeriesCoverage(rentSeries)}`,
+  ].join(" · ");
 
   return (
     <div className="self-start rounded-2xl border border-stealth-700 bg-stealth-950/20 p-3 sm:p-4">
       <SectionHeader
         kicker="Price & Rent"
         title={`${context.label} pricing layers`}
-        detail="Listed-market pricing alongside property-value and rent context, normalized to 100 at the selected window start."
+        detail="Calendar-time comparison of listed pricing, property values, and rents. Each line is indexed to 100 at its first available observation within the selected window."
       />
       <div className="mt-4 grid grid-cols-3 gap-2">
         <StatTile label="Listed 60D" value={formatChange(price.listed_change_60d)} detail="Sector basket" tone={changeTone(price.listed_change_60d)} />
@@ -579,16 +632,20 @@ function SectorPriceCard({
               <CartesianGrid {...commonGridProps} />
               <XAxis
                 {...commonXAxisProps}
-                dataKey="date"
+                dataKey="timestamp"
+                type="number"
+                scale="time"
+                domain={seriesWindow ? [seriesWindow.start, seriesWindow.end] : ["dataMin", "dataMax"]}
                 ticks={cycleTicks}
                 interval={0}
                 minTickGap={24}
-                tickFormatter={(date: string) => formatCycleAxisLabel(date, horizonYears)}
+                tickFormatter={(timestamp: number) => formatCycleTimeAxisLabel(timestamp, horizonYears)}
               />
               <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
               <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
               <Tooltip
                 {...chartTooltip}
+                labelFormatter={(timestamp: number) => formatCycleTooltipLabel(timestamp)}
                 formatter={(value: number, name: string) => {
                   const labels: Record<string, string> = {
                     listed: price.listed_label,
@@ -599,8 +656,8 @@ function SectorPriceCard({
                 }}
               />
               <Line type="monotone" dataKey="listed" stroke={color} strokeWidth={2.2} dot={false} connectNulls isAnimationActive={false} />
-              <Line type="monotone" dataKey="property" stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-              <Line type="monotone" dataKey="rent" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls isAnimationActive={false} />
+              <Line type="monotone" dataKey="property" stroke="#94a3b8" strokeWidth={2} strokeDasharray="7 3" dot={false} connectNulls isAnimationActive={false} />
+              <Line type="monotone" dataKey="rent" stroke="#f59e0b" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -608,7 +665,7 @@ function SectorPriceCard({
       <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-stealth-300">
         {[
           [price.listed_label, color],
-          [price.property_price_label, "#38bdf8"],
+          [price.property_price_label, "#94a3b8"],
           [price.rent_label, "#f59e0b"],
         ].map(([label, swatch]) => (
           <span key={label} className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1">
@@ -616,6 +673,7 @@ function SectorPriceCard({
           </span>
         ))}
       </div>
+      <p className="mt-3 text-[11px] leading-5 text-stealth-400">Coverage: {coverage}</p>
       <p className="mt-3 text-[11px] leading-5 text-stealth-500">{price.note}</p>
     </div>
   );

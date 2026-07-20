@@ -102,7 +102,7 @@ def test_calculate_commercial_real_estate_separates_property_types_and_credit(mo
     rei._COMMERCIAL_CACHE.clear()
 
     def proxy_fetch(days: int):
-        assert days == 365
+        assert days == rei.COMMERCIAL_LONG_CONTEXT_DAYS
         group_slopes = {
             "office": -0.08,
             "industrial": 0.08,
@@ -194,4 +194,26 @@ def test_calculate_commercial_real_estate_separates_property_types_and_credit(mo
     assert data["sector_context"]["office"]["demand_supply"]["demand_index"]
     assert data["sector_context"]["multifamily"]["supply"]["series"][0]["data"]
     assert data["sector_context"]["multifamily"]["price"]["property_price_index"]
+    assert data["sector_context"]["industrial"]["price"]["listed_index"]
     assert data["sector_context"]["digital"]["coverage"].startswith("Proxy")
+
+
+def test_commercial_long_group_history_is_monthly_and_chained() -> None:
+    dates = pd.date_range(start="2024-01-01", periods=100, freq="D")
+    early = pd.Series([100 + index for index in range(100)], index=dates, dtype="float64")
+    later_dates = dates[50:]
+    later = pd.Series([100 + index * 0.5 for index in range(50)], index=later_dates, dtype="float64")
+    symbol_data = {
+        "BXP": {"group": "office"},
+        "VNO": {"group": "office"},
+    }
+
+    history = rei._build_commercial_long_group_history(
+        {"BXP": early, "VNO": later},
+        symbol_data,
+    )
+    office_points = [point for point in history if point.get("office") is not None]
+
+    assert len(office_points) == 4
+    assert len({point["date"][:7] for point in office_points}) == len(office_points)
+    assert office_points[-1]["office"] > office_points[-2]["office"]

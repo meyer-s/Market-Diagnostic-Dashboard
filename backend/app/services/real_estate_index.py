@@ -93,6 +93,7 @@ HTTP_HEADERS = {
 }
 
 FRED_TIMEOUT_SECONDS = 8
+COMMERCIAL_LONG_CONTEXT_DAYS = 30 * 365
 
 _CACHE: Dict[int, Dict[str, Any]] = {}
 _CACHE_LOCK = Lock()
@@ -1275,6 +1276,55 @@ def _build_commercial_group_history(
     return history
 
 
+def _build_commercial_long_group_history(
+    series_map: Dict[str, pd.Series],
+    symbol_data: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Build monthly, equal-weight listed-sector indexes across available constituents.
+
+    Chaining the mean daily return avoids artificial level jumps when a newer
+    constituent enters a sector basket. Monthly endpoints keep the long-horizon
+    payload compact and comparable with the monthly and quarterly context series.
+    """
+    group_series: Dict[str, pd.Series] = {}
+    for group in COMMERCIAL_GROUP_LABELS:
+        member_returns: Dict[str, pd.Series] = {}
+        for code, data in symbol_data.items():
+            if data["group"] != group:
+                continue
+            clean = series_map.get(code, pd.Series(dtype="float64")).dropna().sort_index()
+            if len(clean) < 2:
+                continue
+            member_returns[code] = clean.pct_change(fill_method=None)
+
+        if not member_returns:
+            continue
+        equal_weight_return = (
+            pd.DataFrame(member_returns)
+            .sort_index()
+            .mean(axis=1, skipna=True)
+            .dropna()
+        )
+        if equal_weight_return.empty:
+            continue
+        chained = (1.0 + equal_weight_return).cumprod()
+        group_series[group] = (chained / float(chained.iloc[0])) * 100.0
+
+    if not group_series:
+        return []
+
+    combined = pd.DataFrame(group_series).sort_index().dropna(how="all")
+    combined = combined.groupby(combined.index.to_period("M"), sort=True).tail(1)
+    history: List[Dict[str, Any]] = []
+    for idx, row in combined.iterrows():
+        point: Dict[str, Any] = {"date": str(idx.date())}
+        for group in COMMERCIAL_GROUP_LABELS:
+            value = row.get(group)
+            point[group] = round(float(value), 2) if value is not None and pd.notna(value) else None
+        history.append(point)
+    return history
+
+
 def _indexed_series(series: pd.Series, *, invert: bool = False) -> pd.Series:
     clean = series.dropna().sort_index()
     if clean.empty:
@@ -1483,7 +1533,9 @@ def calculate_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
             if cached and (now - cached["timestamp"]).total_seconds() < _CACHE_TTL_SECONDS:
                 return cached["data"]
 
-        proxy_series, availability, missing_proxies = fetch_commercial_proxy_data(days)
+        proxy_series, availability, missing_proxies = fetch_commercial_proxy_data(
+            max(days, COMMERCIAL_LONG_CONTEXT_DAYS)
+        )
         fred_series, missing_fred = fetch_commercial_fred_context(days)
         symbol_data = _build_symbol_data_for_proxies(proxy_series, COMMERCIAL_REAL_ESTATE_PROXIES)
         effective_weights = _effective_weights_for(symbol_data, COMMERCIAL_GROUP_WEIGHTS)
@@ -1568,9 +1620,13 @@ def calculate_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
             symbol_data,
             days,
         )
+        sector_property_type_history = _build_commercial_long_group_history(
+            proxy_series,
+            symbol_data,
+        )
         sector_context = _build_commercial_sector_context(
             fred_series,
-            property_type_history,
+            sector_property_type_history,
             groups,
         )
 
