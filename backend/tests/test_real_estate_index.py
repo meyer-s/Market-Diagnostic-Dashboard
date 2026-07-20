@@ -17,6 +17,11 @@ def _monthly(values: list[float], start: str = "2024-01-01") -> pd.Series:
     return pd.Series(values, index=dates, dtype="float64")
 
 
+def _quarterly(values: list[float], start: str = "2024-01-01") -> pd.Series:
+    dates = pd.date_range(start=start, periods=len(values), freq="QS")
+    return pd.Series(values, index=dates, dtype="float64")
+
+
 def test_equity_pressure_score_inverts_listed_proxy_returns() -> None:
     rising = {"5d": 3.0, "20d": 6.0, "60d": 10.0, "120d": 14.0}
     falling = {"5d": -3.0, "20d": -6.0, "60d": -10.0, "120d": -14.0}
@@ -91,3 +96,73 @@ def test_calculate_real_estate_index_uses_relative_factor_evidence(monkeypatch) 
     assert data["context"]["housing_cpi"]
     assert data["context"]["median_housing_cpi"]
     assert data["context"]["new_home_sales"]
+
+
+def test_calculate_commercial_real_estate_separates_property_types_and_credit(monkeypatch) -> None:
+    rei._COMMERCIAL_CACHE.clear()
+
+    def proxy_fetch(days: int):
+        assert days == 365
+        group_slopes = {
+            "office": -0.08,
+            "industrial": 0.08,
+            "retail": 0.04,
+            "multifamily": -0.01,
+            "digital": 0.12,
+        }
+        series_map = {
+            proxy.code: _series([100 + i * group_slopes[proxy.group] for i in range(180)])
+            for proxy in rei.COMMERCIAL_REAL_ESTATE_PROXIES
+        }
+        availability = [
+            {
+                "code": proxy.code,
+                "name": proxy.name,
+                "group": proxy.group,
+                "status": "ok",
+                "ticker": proxy.ticker,
+                "points": len(series_map[proxy.code]),
+            }
+            for proxy in rei.COMMERCIAL_REAL_ESTATE_PROXIES
+        ]
+        return series_map, availability, []
+
+    def fred_fetch(days: int):
+        assert days == 365
+        return {
+            "cre_price_yoy": _quarterly([-8.0, -6.0, -4.0, -2.0, 0.5, 1.5, 2.5, 3.5]),
+            "cre_loans": _monthly([2900 + i * 8 for i in range(18)]),
+            "cre_delinquency": _quarterly([0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]),
+            "treasury_10y": _series([4.0 + i * 0.002 for i in range(180)]),
+            "credit_spread": _series([3.5 - i * 0.001 for i in range(180)]),
+        }, []
+
+    monkeypatch.setattr(rei, "fetch_commercial_proxy_data", proxy_fetch)
+    monkeypatch.setattr(rei, "fetch_commercial_fred_context", fred_fetch)
+    monkeypatch.setattr(rei, "datetime", type("FixedDatetime", (), {"utcnow": staticmethod(lambda: datetime(2026, 5, 12))}))
+
+    data = rei.calculate_commercial_real_estate(days=365)
+
+    assert data["regime_label"]
+    assert 0 <= data["pressure_score"] <= 100
+    assert data["stability_score"] == 100.0 - data["pressure_score"]
+    assert {group["group"] for group in data["groups"]} == {
+        "office",
+        "industrial",
+        "retail",
+        "multifamily",
+        "digital",
+    }
+    assert len(data["symbols"]) == len(rei.COMMERCIAL_REAL_ESTATE_PROXIES)
+    assert data["property_type_history"]
+    assert data["metrics"]["cre_loan_growth_yoy"] is not None
+    assert data["metrics"]["cre_delinquency_delta_1y"] is not None
+    assert {factor["key"] for factor in data["factors"]} == {
+        "listed_property_types",
+        "loan_performance",
+        "property_prices",
+        "funding_backdrop",
+    }
+    assert "Office" in data["summary"]
+    assert data["macro"]["cre_price_yoy"]
+    assert data["availability"]["available_count"] == data["availability"]["total_configured"]

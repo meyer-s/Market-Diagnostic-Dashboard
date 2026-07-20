@@ -14,6 +14,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
+import CommercialRealEstateTab from "../components/realEstate/CommercialRealEstateTab";
 import { useApi } from "../hooks/useApi";
 import {
   CHART_MARGIN,
@@ -27,6 +28,7 @@ import {
 // ---------------------------------------------------------------------------
 
 type Timeframe = "90d" | "180d" | "365d";
+type RealEstateTab = "overview" | "commercial";
 const TIMEFRAME_DAYS: Record<Timeframe, number> = { "90d": 90, "180d": 180, "365d": 365 };
 type CycleHorizon = 1 | 5 | 15 | 30;
 const BUYER_SELLER_CONTEXT_DAYS = 10950;
@@ -1527,6 +1529,7 @@ const TIMEFRAME_OPTIONS: { key: Timeframe; label: string }[] = [
 
 export default function RealEstateDiagnostic() {
   const [timeframe, setTimeframe] = useState<Timeframe>("365d");
+  const [activeTab, setActiveTab] = useState<RealEstateTab>("overview");
   const days = TIMEFRAME_DAYS[timeframe];
 
   const overviewApi      = useApi<RealEstateOverview>(`/real-estate/overview?days=${days}`);
@@ -1620,6 +1623,36 @@ export default function RealEstateDiagnostic() {
           ))}
         </div>
       </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stealth-700/80" role="tablist" aria-label="Real estate market views">
+        <div className="flex gap-1">
+          {([
+            { key: "overview", label: "Housing & Overview" },
+            { key: "commercial", label: "Commercial Real Estate" },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? "border-sky-400 text-sky-300"
+                  : "border-transparent text-stealth-400 hover:text-stealth-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <p className="pb-2 text-[11px] text-stealth-500">
+          {activeTab === "commercial" ? "Property types, credit fundamentals, and bank exposure" : "Housing, listed REITs, financing, and supply"}
+        </p>
+      </div>
+
+      {activeTab === "overview" ? (
+        <>
 
       {/* ── Hero snapshot ─────────────────────────────────────── */}
       <div className="surface-card-strong p-4 md:p-5">
@@ -1842,6 +1875,11 @@ export default function RealEstateDiagnostic() {
       </div>
 
       <RealEstateMethodologyPanel />
+
+        </>
+      ) : (
+        <CommercialRealEstateTab days={days} />
+      )}
 
     </div>
   );

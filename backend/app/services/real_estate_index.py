@@ -103,6 +103,10 @@ _CONTEXT_CACHE: Dict[int, Dict[str, Any]] = {}
 _CONTEXT_CACHE_LOCK = Lock()
 _CONTEXT_COMPUTE_LOCK = Lock()
 
+_COMMERCIAL_CACHE: Dict[int, Dict[str, Any]] = {}
+_COMMERCIAL_CACHE_LOCK = Lock()
+_COMMERCIAL_COMPUTE_LOCK = Lock()
+
 
 @dataclass(frozen=True)
 class RealEstateProxy:
@@ -125,6 +129,57 @@ REAL_ESTATE_PROXIES: Tuple[RealEstateProxy, ...] = (
     RealEstateProxy("MBB", "MBB", "Agency MBS ETF", "financing"),
     RealEstateProxy("REM", "REM", "Mortgage REIT ETF", "financing"),
 )
+
+
+COMMERCIAL_GROUP_WEIGHTS: Dict[str, float] = {
+    "office": 20.0,
+    "industrial": 20.0,
+    "retail": 20.0,
+    "multifamily": 20.0,
+    "digital": 20.0,
+}
+
+COMMERCIAL_GROUP_LABELS: Dict[str, str] = {
+    "office": "Office",
+    "industrial": "Industrial / Logistics",
+    "retail": "Retail",
+    "multifamily": "Multifamily",
+    "digital": "Digital Infrastructure",
+}
+
+COMMERCIAL_REAL_ESTATE_PROXIES: Tuple[RealEstateProxy, ...] = (
+    RealEstateProxy("BXP", "BXP", "BXP", "office"),
+    RealEstateProxy("VNO", "VNO", "Vornado Realty Trust", "office"),
+    RealEstateProxy("SLG", "SLG", "SL Green Realty", "office"),
+    RealEstateProxy("PLD", "PLD", "Prologis", "industrial"),
+    RealEstateProxy("STAG", "STAG", "STAG Industrial", "industrial"),
+    RealEstateProxy("FR", "FR", "First Industrial Realty", "industrial"),
+    RealEstateProxy("SPG", "SPG", "Simon Property Group", "retail"),
+    RealEstateProxy("REG", "REG", "Regency Centers", "retail"),
+    RealEstateProxy("KIM", "KIM", "Kimco Realty", "retail"),
+    RealEstateProxy("AVB", "AVB", "AvalonBay Communities", "multifamily"),
+    RealEstateProxy("EQR", "EQR", "Equity Residential", "multifamily"),
+    RealEstateProxy("ESS", "ESS", "Essex Property Trust", "multifamily"),
+    RealEstateProxy("EQIX", "EQIX", "Equinix", "digital"),
+    RealEstateProxy("DLR", "DLR", "Digital Realty", "digital"),
+    RealEstateProxy("AMT", "AMT", "American Tower", "digital"),
+)
+
+COMMERCIAL_FRED_SERIES: Dict[str, str] = {
+    "cre_price_yoy": "BOGZ1FL010000386Q",
+    "cre_loans": "CREACBM027NBOG",
+    "cre_delinquency": "DRCRELEXFACBS",
+    "treasury_10y": "DGS10",
+    "credit_spread": "BAMLH0A0HYM2",
+}
+
+COMMERCIAL_FRED_LABELS: Dict[str, str] = {
+    "cre_price_yoy": "commercial real-estate prices",
+    "cre_loans": "commercial real-estate loans",
+    "cre_delinquency": "commercial real-estate loan delinquencies",
+    "treasury_10y": "10Y Treasury yield",
+    "credit_spread": "HY credit spread",
+}
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -441,6 +496,92 @@ def fetch_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
     return series_map, missing
 
 
+def fetch_commercial_proxy_data(
+    days: int,
+) -> Tuple[Dict[str, pd.Series], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Fetch the listed CRE property-type universe without changing the broad page score."""
+    start = (datetime.utcnow() - timedelta(days=days + 260)).strftime("%Y-%m-%d")
+    end = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
+    resolved: Dict[str, pd.Series] = {}
+    availability: List[Dict[str, Any]] = []
+    missing: List[Dict[str, Any]] = []
+
+    # yfinance maintains shared cookie/crumb state, so this universe is fetched
+    # sequentially. Parallel single-ticker calls can occasionally cross results
+    # and silently attach one REIT's history to another ticker.
+    client = YahooClient()
+    for proxy in COMMERCIAL_REAL_ESTATE_PROXIES:
+        chosen_series = pd.Series(dtype="float64")
+        for _attempt in range(3):
+            try:
+                rows = client.fetch_series(
+                    ticker=proxy.ticker,
+                    start_date=start,
+                    end_date=end,
+                    interval="1d",
+                )
+                chosen_series = _series_from_rows(rows)
+            except Exception:
+                chosen_series = pd.Series(dtype="float64")
+            if len(chosen_series) >= 30:
+                break
+
+        if len(chosen_series) >= 30:
+            resolved[proxy.code] = chosen_series
+            availability.append({
+                "code": proxy.code,
+                "name": proxy.name,
+                "group": proxy.group,
+                "status": "ok",
+                "ticker": proxy.ticker,
+                "points": int(len(chosen_series)),
+            })
+            continue
+
+        missing.append({
+            "code": proxy.code,
+            "name": proxy.name,
+            "group": proxy.group,
+            "attempted_tickers": [proxy.ticker],
+        })
+        availability.append({
+            "code": proxy.code,
+            "name": proxy.name,
+            "group": proxy.group,
+            "status": "missing",
+            "ticker": None,
+            "points": 0,
+        })
+
+    return resolved, availability, missing
+
+
+def fetch_commercial_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
+    start = (datetime.utcnow() - timedelta(days=days + 450)).strftime("%Y-%m-%d")
+    series_map: Dict[str, pd.Series] = {
+        key: pd.Series(dtype="float64") for key in COMMERCIAL_FRED_SERIES
+    }
+    missing: List[str] = []
+
+    max_workers = min(6, len(COMMERCIAL_FRED_SERIES))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_fred_fetch, series_id, start): key
+            for key, series_id in COMMERCIAL_FRED_SERIES.items()
+        }
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                series = future.result()
+            except Exception:
+                series = pd.Series(dtype="float64")
+            if series.empty:
+                missing.append(key)
+            series_map[key] = series
+
+    return series_map, missing
+
+
 def _build_context_payload(fred_series: Dict[str, pd.Series]) -> Dict[str, Any]:
     return {
         "housing_starts": _series_points(fred_series.get("housing_starts", pd.Series(dtype="float64")), decimals=0),
@@ -478,9 +619,12 @@ def get_real_estate_context_payload(days: int = 1095) -> Dict[str, Any]:
         return payload
 
 
-def _build_symbol_data(series_map: Dict[str, pd.Series]) -> Dict[str, Dict[str, Any]]:
+def _build_symbol_data_for_proxies(
+    series_map: Dict[str, pd.Series],
+    proxies: Tuple[RealEstateProxy, ...],
+) -> Dict[str, Dict[str, Any]]:
     symbol_data: Dict[str, Dict[str, Any]] = {}
-    proxy_by_code = {proxy.code: proxy for proxy in REAL_ESTATE_PROXIES}
+    proxy_by_code = {proxy.code: proxy for proxy in proxies}
 
     for code, series in series_map.items():
         proxy = proxy_by_code.get(code)
@@ -503,21 +647,36 @@ def _build_symbol_data(series_map: Dict[str, pd.Series]) -> Dict[str, Dict[str, 
     return symbol_data
 
 
-def _effective_group_weights(symbol_data: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
+def _build_symbol_data(series_map: Dict[str, pd.Series]) -> Dict[str, Dict[str, Any]]:
+    return _build_symbol_data_for_proxies(series_map, REAL_ESTATE_PROXIES)
+
+
+def _effective_weights_for(
+    symbol_data: Dict[str, Dict[str, Any]],
+    configured_weights: Dict[str, float],
+) -> Dict[str, float]:
     available_groups = {data["group"] for data in symbol_data.values()}
-    total_weight = sum(GROUP_WEIGHTS.get(group, 0.0) for group in available_groups)
+    total_weight = sum(configured_weights.get(group, 0.0) for group in available_groups)
     if total_weight <= 0:
         return {}
     return {
-        group: (GROUP_WEIGHTS[group] / total_weight) * 100.0
+        group: (configured_weights[group] / total_weight) * 100.0
         for group in available_groups
-        if group in GROUP_WEIGHTS
+        if group in configured_weights
     }
 
 
-def _build_groups(symbol_data: Dict[str, Dict[str, Any]], effective_weights: Dict[str, float]) -> Dict[str, Dict[str, Any]]:
+def _effective_group_weights(symbol_data: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
+    return _effective_weights_for(symbol_data, GROUP_WEIGHTS)
+
+
+def _build_groups_for(
+    symbol_data: Dict[str, Dict[str, Any]],
+    effective_weights: Dict[str, float],
+    group_labels: Dict[str, str],
+) -> Dict[str, Dict[str, Any]]:
     groups: Dict[str, Dict[str, Any]] = {}
-    for group, label in GROUP_LABELS.items():
+    for group, label in group_labels.items():
         members = [code for code, data in symbol_data.items() if data["group"] == group]
         if not members or group not in effective_weights:
             continue
@@ -538,6 +697,10 @@ def _build_groups(symbol_data: Dict[str, Dict[str, Any]], effective_weights: Dic
             "changes": {key: round(value, 2) if value is not None else None for key, value in group_changes.items()},
         }
     return groups
+
+
+def _build_groups(symbol_data: Dict[str, Dict[str, Any]], effective_weights: Dict[str, float]) -> Dict[str, Dict[str, Any]]:
+    return _build_groups_for(symbol_data, effective_weights, GROUP_LABELS)
 
 
 def _indexed_history(series: pd.Series, days: int) -> List[Dict[str, Any]]:
@@ -944,4 +1107,228 @@ def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
         with _CACHE_LOCK:
             _CACHE[days] = {"timestamp": now, "data": data}
 
+        return data
+
+
+def _build_commercial_group_history(
+    series_map: Dict[str, pd.Series],
+    symbol_data: Dict[str, Dict[str, Any]],
+    days: int,
+) -> List[Dict[str, Any]]:
+    group_series: Dict[str, pd.Series] = {}
+    for group in COMMERCIAL_GROUP_LABELS:
+        indexed_members: Dict[str, pd.Series] = {}
+        for code, data in symbol_data.items():
+            if data["group"] != group:
+                continue
+            clean = series_map.get(code, pd.Series(dtype="float64")).dropna().tail(days)
+            if clean.empty:
+                continue
+            base = _safe_float(clean.iloc[0])
+            if base in (None, 0):
+                continue
+            indexed_members[code] = (clean / float(base)) * 100.0
+        if indexed_members:
+            group_series[group] = pd.DataFrame(indexed_members).sort_index().mean(axis=1)
+
+    if not group_series:
+        return []
+
+    combined = pd.DataFrame(group_series).sort_index().dropna(how="all")
+    history: List[Dict[str, Any]] = []
+    for idx, row in combined.iterrows():
+        point: Dict[str, Any] = {"date": str(idx.date())}
+        for group in COMMERCIAL_GROUP_LABELS:
+            value = row.get(group)
+            point[group] = round(float(value), 2) if value is not None and pd.notna(value) else None
+        history.append(point)
+    return history
+
+
+def _commercial_regime_label(pressure_score: float) -> str:
+    if pressure_score >= 65:
+        return "Broad CRE Stress"
+    if pressure_score >= 55:
+        return "CRE Pressure"
+    if pressure_score >= 45:
+        return "Mixed CRE Conditions"
+    if pressure_score >= 35:
+        return "CRE Stabilization"
+    return "CRE Expansion"
+
+
+def _commercial_summary(
+    pressure_score: float,
+    groups: Dict[str, Dict[str, Any]],
+    metrics: Dict[str, Optional[float]],
+) -> str:
+    parts = [f"Commercial real-estate pressure is {pressure_score:.0f} on the 0-100 scale."]
+
+    if groups:
+        ordered = sorted(groups.values(), key=lambda group: group["score"], reverse=True)
+        high = ordered[0]
+        low = ordered[-1]
+        parts.append(
+            f"{high['label']} is the weakest listed property type at {high['score']:.0f}, "
+            f"{high['score'] - low['score']:.0f} pts above {low['label']}."
+        )
+
+    price_yoy = metrics.get("cre_price_yoy")
+    if price_yoy is not None:
+        direction = "rising" if price_yoy >= 0 else "falling"
+        parts.append(f"Broad CRE prices are {direction} {abs(price_yoy):.1f}% year over year.")
+
+    delinquency = metrics.get("cre_delinquency_rate")
+    delinquency_delta = metrics.get("cre_delinquency_delta_1y")
+    if delinquency is not None:
+        text = f"Bank CRE delinquencies are {delinquency:.2f}%"
+        if delinquency_delta is not None:
+            text += f", {delinquency_delta:+.2f} pp versus four quarters earlier"
+        parts.append(text + ".")
+
+    loan_balance = metrics.get("cre_loan_balance_bil")
+    loan_growth = metrics.get("cre_loan_growth_yoy")
+    if loan_balance is not None:
+        text = f"Commercial-bank CRE loans total ${loan_balance:,.0f}B"
+        if loan_growth is not None:
+            text += f", {loan_growth:+.1f}% year over year"
+        parts.append(text + ".")
+
+    treasury = metrics.get("treasury_10y")
+    credit = metrics.get("credit_spread_bps")
+    if treasury is not None or credit is not None:
+        funding_parts: List[str] = []
+        if treasury is not None:
+            funding_parts.append(f"the 10Y Treasury at {treasury:.2f}%")
+        if credit is not None:
+            funding_parts.append(f"HY OAS at {credit:.0f} bps")
+        parts.append("The funding backdrop has " + " and ".join(funding_parts) + ".")
+
+    return " ".join(parts)
+
+
+def calculate_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
+    now = datetime.utcnow()
+    with _COMMERCIAL_CACHE_LOCK:
+        cached = _COMMERCIAL_CACHE.get(days)
+        if cached and (now - cached["timestamp"]).total_seconds() < _CACHE_TTL_SECONDS:
+            return cached["data"]
+
+    with _COMMERCIAL_COMPUTE_LOCK:
+        now = datetime.utcnow()
+        with _COMMERCIAL_CACHE_LOCK:
+            cached = _COMMERCIAL_CACHE.get(days)
+            if cached and (now - cached["timestamp"]).total_seconds() < _CACHE_TTL_SECONDS:
+                return cached["data"]
+
+        proxy_series, availability, missing_proxies = fetch_commercial_proxy_data(days)
+        fred_series, missing_fred = fetch_commercial_fred_context(days)
+        symbol_data = _build_symbol_data_for_proxies(proxy_series, COMMERCIAL_REAL_ESTATE_PROXIES)
+        effective_weights = _effective_weights_for(symbol_data, COMMERCIAL_GROUP_WEIGHTS)
+        groups = _build_groups_for(symbol_data, effective_weights, COMMERCIAL_GROUP_LABELS)
+
+        price_series = fred_series.get("cre_price_yoy", pd.Series(dtype="float64"))
+        loan_series = fred_series.get("cre_loans", pd.Series(dtype="float64"))
+        delinquency_series = fred_series.get("cre_delinquency", pd.Series(dtype="float64"))
+        treasury_series = fred_series.get("treasury_10y", pd.Series(dtype="float64"))
+        credit_series = fred_series.get("credit_spread", pd.Series(dtype="float64"))
+
+        price_yoy = _latest(price_series)
+        loan_balance = _latest(loan_series)
+        loan_growth = _pct_change_observations(loan_series, 12)
+        delinquency = _latest(delinquency_series)
+        delinquency_delta = _point_delta(delinquency_series, 4)
+        treasury = _latest(treasury_series)
+        treasury_delta = _point_delta(treasury_series, 60)
+        credit = _latest(credit_series)
+        credit_delta = _point_delta(credit_series, 60)
+
+        listed_pressure = _weighted_score([
+            (group["score"], group["weight"])
+            for group in groups.values()
+        ])
+        delinquency_pressure = _weighted_score([
+            (_level_pressure(delinquency, 0.5, 5.0), 0.60),
+            (_rate_trend_pressure(delinquency_delta, 0.75), 0.40),
+        ])
+        price_pressure = _inverse_activity_pressure(price_yoy, 8.0)
+        funding_pressure = _weighted_score([
+            (_level_pressure(treasury, 2.5, 6.0), 0.35),
+            (_rate_trend_pressure(treasury_delta, 0.75), 0.20),
+            (_level_pressure(credit, 2.5, 5.5), 0.25),
+            (_rate_trend_pressure(credit_delta, 1.0), 0.20),
+        ])
+
+        factor_specs = [
+            ("listed_property_types", "Listed Property Types", 45.0, listed_pressure),
+            ("loan_performance", "Loan Performance", 20.0, delinquency_pressure),
+            ("property_prices", "Property Prices", 15.0, price_pressure),
+            ("funding_backdrop", "Funding Backdrop", 20.0, funding_pressure),
+        ]
+        factors = [
+            {
+                "key": key,
+                "label": label,
+                "weight": weight,
+                "score": round(float(score), 2),
+            }
+            for key, label, weight, score in factor_specs
+            if score is not None
+        ]
+        pressure_score = _weighted_score([
+            (factor["score"], factor["weight"])
+            for factor in factors
+        ]) or 50.0
+        pressure_score = round(float(_clamp(pressure_score, 0.0, 100.0)), 2)
+        stability_score = round(100.0 - pressure_score, 2)
+
+        metrics: Dict[str, Optional[float]] = {
+            "cre_price_yoy": round(price_yoy, 2) if price_yoy is not None else None,
+            "cre_loan_balance_bil": round(loan_balance, 1) if loan_balance is not None else None,
+            "cre_loan_growth_yoy": round(loan_growth, 2) if loan_growth is not None else None,
+            "cre_delinquency_rate": round(delinquency, 2) if delinquency is not None else None,
+            "cre_delinquency_delta_1y": round(delinquency_delta, 2) if delinquency_delta is not None else None,
+            "treasury_10y": round(treasury, 3) if treasury is not None else None,
+            "treasury_10y_delta_60d": round(treasury_delta, 3) if treasury_delta is not None else None,
+            "credit_spread_bps": round(credit * 100.0, 1) if credit is not None else None,
+            "credit_spread_delta_60d_bps": round(credit_delta * 100.0, 1) if credit_delta is not None else None,
+        }
+
+        warnings: List[str] = []
+        if missing_proxies:
+            warnings.append(f"Missing CRE proxies: {', '.join(proxy['code'] for proxy in missing_proxies)}")
+        if missing_fred:
+            labels = [COMMERCIAL_FRED_LABELS.get(key, key) for key in missing_fred]
+            warnings.append(f"Missing CRE macro series: {', '.join(labels)}")
+
+        data: Dict[str, Any] = {
+            "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "regime_label": _commercial_regime_label(pressure_score),
+            "pressure_score": pressure_score,
+            "stability_score": stability_score,
+            "summary": _commercial_summary(pressure_score, groups, metrics),
+            "groups": list(groups.values()),
+            "symbols": list(symbol_data.values()),
+            "factors": factors,
+            "metrics": metrics,
+            "property_type_history": _build_commercial_group_history(proxy_series, symbol_data, days),
+            "macro": {
+                "cre_price_yoy": _series_points(price_series, decimals=2),
+                "cre_loans": _series_points(loan_series, decimals=1),
+                "cre_delinquency": _series_points(delinquency_series, decimals=2),
+                "treasury_10y": _series_points(treasury_series, decimals=3),
+                "credit_spread": _series_points(credit_series, decimals=1, multiplier=100.0),
+            },
+            "availability": {
+                "symbols": availability,
+                "missing_symbols": missing_proxies,
+                "missing_macro_series": missing_fred,
+                "available_count": len(proxy_series),
+                "total_configured": len(COMMERCIAL_REAL_ESTATE_PROXIES),
+            },
+            "warnings": warnings,
+        }
+
+        with _COMMERCIAL_CACHE_LOCK:
+            _COMMERCIAL_CACHE[days] = {"timestamp": now, "data": data}
         return data
