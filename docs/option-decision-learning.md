@@ -32,6 +32,26 @@ The deterministic grader applies these layers in order:
 
 The grader deliberately never proposes an add in version 1. Addition eligibility requires a confirmed mandate, current two-sided quote, approved risk policy and portfolio capital, strengthening evidence, and a separately tested sizing policy.
 
+### Scanner replacement classification
+
+When the scanner selects a different contract for a symbol already held, `replacement_rules_v1` evaluates the new contract as a separate capital-allocation decision. It first identifies the structure—up and out, down and out, straight out, same-expiry strike switch, shorter-dated switch, or direction change—and then applies five gates:
+
+1. At least 14 additional calendar days for an ordinary roll-out comparison.
+2. A fresh-entry score of at least 50 and, for an ordinary roll candidate, at least 10 points of improvement over the held contract.
+3. At least two independent post-entry scanner occurrences.
+4. Candidate and held-leg spreads no wider than 25% when those snapshots are available.
+5. Explicit convexity-harvest inputs when a profitable position is moved to a more demanding strike.
+
+The resulting classes are deliberately distinct:
+
+- `convexity_harvest_candidate`: a profitable position may fund a smaller up-and-out replacement while retaining convex upside;
+- `roll_out_candidate`: a later contract materially improves the fresh-entry case without increasing the directional hurdle;
+- `watch_replacement`: the structure is plausible but one or more material gates remain incomplete;
+- `rescue_roll_rejected`: a losing contract would be given a harder strike merely by purchasing more time;
+- direction change, shorter-dated switch, execution rejection, portfolio-reduction conflict, or no replacement.
+
+Every result remains shadow decision support. It is never marked implementation-ready because the stored scanner event is not a live executable two-leg quote and does not contain the complete candidate Greeks. A qualified replacement must close and journal the held contract first; the replacement becomes a new position with its own mandate, size, review window, and decision deadline.
+
 ### Closed-trade learning
 
 Actual trade outcomes are classified separately from profit and loss:
@@ -45,6 +65,8 @@ Actual trade outcomes are classified separately from profit and loss:
 - exit discipline and review discipline;
 - catalyst/event result;
 - sound process with an unfavorable financial outcome.
+
+Scanner recurrence events also preserve the replacement recommendation that was visible at the time. Closed-trade summaries compare `no_replacement_signal`, `replacement_watch_seen`, `rescue_roll_rejected_seen`, `roll_candidate_seen`, and `convexity_harvest_seen` cohorts. These cohorts require at least 20 actual closed trades before comparison and never change classifier weights automatically.
 
 Each recorded review is also evaluated at pre-declared 1, 3, 5, and 10-session horizons, the decision deadline, and expiration. These counterfactual decision outcomes remain explicitly separate from actual fills and actual trade labels.
 

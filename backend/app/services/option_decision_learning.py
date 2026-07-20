@@ -31,8 +31,10 @@ def _scanner_recurrence_attribution(db: Session, position_id: Optional[int]) -> 
     if position_id is None:
         return {
             "cohort": "no_repeat",
+            "replacement_cohort": "no_replacement_signal",
             "event_count": 0,
             "classifications": [],
+            "replacement_recommendations": [],
             "event_ids": [],
             "scanner_event_ids": [],
         }
@@ -53,6 +55,15 @@ def _scanner_recurrence_attribution(db: Session, position_id: Optional[int]) -> 
             if isinstance(detail, dict) and detail.get("classification")
         }
     )
+    replacement_recommendations = sorted(
+        {
+            str(replacement.get("recommendation"))
+            for detail in details
+            if isinstance(detail, dict)
+            for replacement in [detail.get("replacement_decision")]
+            if isinstance(replacement, dict) and replacement.get("recommendation")
+        }
+    )
     if "contract_drift" in classifications:
         cohort = "contract_drift_seen"
     elif "strengthened" in classifications:
@@ -61,6 +72,18 @@ def _scanner_recurrence_attribution(db: Session, position_id: Optional[int]) -> 
         cohort = "repeat_seen"
     else:
         cohort = "no_repeat"
+    if "convexity_harvest_candidate" in replacement_recommendations:
+        replacement_cohort = "convexity_harvest_seen"
+    elif "roll_out_candidate" in replacement_recommendations:
+        replacement_cohort = "roll_candidate_seen"
+    elif "rescue_roll_rejected" in replacement_recommendations:
+        replacement_cohort = "rescue_roll_rejected_seen"
+    elif "watch_replacement" in replacement_recommendations:
+        replacement_cohort = "replacement_watch_seen"
+    elif replacement_recommendations:
+        replacement_cohort = "other_replacement_signal"
+    else:
+        replacement_cohort = "no_replacement_signal"
     scanner_event_ids = sorted(
         {
             int(row.related_alert_event_id)
@@ -70,8 +93,10 @@ def _scanner_recurrence_attribution(db: Session, position_id: Optional[int]) -> 
     )
     return {
         "cohort": cohort,
+        "replacement_cohort": replacement_cohort,
         "event_count": len(rows),
         "classifications": classifications,
+        "replacement_recommendations": replacement_recommendations,
         "event_ids": [row.id for row in rows],
         "scanner_event_ids": scanner_event_ids,
     }
@@ -542,6 +567,7 @@ def create_trade_outcome(
                 "premium_at_risk": closed.total_cost,
                 "scanner_recurrence_cohort": scanner_recurrence["cohort"],
                 "scanner_recurrence_count": scanner_recurrence["event_count"],
+                "scanner_replacement_cohort": scanner_recurrence["replacement_cohort"],
             }
         ),
         attribution_json=json_dumps(
@@ -661,6 +687,7 @@ def learning_summary(db: Session) -> dict[str, object]:
     minimum_cycles = 100
     models = db.query(OptionModelRegistry).order_by(OptionModelRegistry.created_at.asc()).all()
     recurrence_cohorts: dict[str, dict[str, object]] = {}
+    replacement_cohorts: dict[str, dict[str, object]] = {}
     for outcome in latest_outcomes:
         metrics = json_loads(outcome.metrics_json, {})
         attribution = json_loads(outcome.attribution_json, {})
@@ -690,6 +717,27 @@ def learning_summary(db: Session) -> dict[str, object]:
             values = row["percent_pnl_values"]
             if isinstance(values, list):
                 values.append(percent_pnl)
+        replacement_cohort = (
+            str(recurrence.get("replacement_cohort"))
+            if isinstance(recurrence, dict) and recurrence.get("replacement_cohort")
+            else str(metrics.get("scanner_replacement_cohort") or "no_replacement_signal")
+        )
+        replacement_row = replacement_cohorts.setdefault(
+            replacement_cohort,
+            {
+                "sample_count": 0,
+                "profitable": 0,
+                "unprofitable": 0,
+                "flat": 0,
+                "percent_pnl_values": [],
+            },
+        )
+        replacement_row["sample_count"] = int(replacement_row["sample_count"]) + 1
+        replacement_row[financial_outcome] = int(replacement_row.get(financial_outcome, 0)) + 1
+        if percent_pnl is not None:
+            replacement_values = replacement_row["percent_pnl_values"]
+            if isinstance(replacement_values, list):
+                replacement_values.append(percent_pnl)
     recurrence_outcomes = {}
     for cohort in ("no_repeat", "repeat_seen", "strengthened_seen", "contract_drift_seen"):
         row = recurrence_cohorts.get(
@@ -704,6 +752,30 @@ def learning_summary(db: Session) -> dict[str, object]:
         )
         values = row.pop("percent_pnl_values")
         recurrence_outcomes[cohort] = {
+            **row,
+            "average_percent_pnl": round(sum(values) / len(values), 2) if values else None,
+        }
+    replacement_outcomes = {}
+    for cohort in (
+        "no_replacement_signal",
+        "replacement_watch_seen",
+        "rescue_roll_rejected_seen",
+        "roll_candidate_seen",
+        "convexity_harvest_seen",
+        "other_replacement_signal",
+    ):
+        row = replacement_cohorts.get(
+            cohort,
+            {
+                "sample_count": 0,
+                "profitable": 0,
+                "unprofitable": 0,
+                "flat": 0,
+                "percent_pnl_values": [],
+            },
+        )
+        values = row.pop("percent_pnl_values")
+        replacement_outcomes[cohort] = {
             **row,
             "average_percent_pnl": round(sum(values) / len(values), 2) if values else None,
         }
@@ -734,6 +806,12 @@ def learning_summary(db: Session) -> dict[str, object]:
         },
         "scanner_recurrence_outcomes": {
             "cohorts": recurrence_outcomes,
+            "actual_closed_trades_only": True,
+            "minimum_sample_before_comparison": 20,
+            "automatic_weight_changes": False,
+        },
+        "scanner_replacement_outcomes": {
+            "cohorts": replacement_outcomes,
             "actual_closed_trades_only": True,
             "minimum_sample_before_comparison": 20,
             "automatic_weight_changes": False,

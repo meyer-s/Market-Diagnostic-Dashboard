@@ -945,6 +945,10 @@ def build_assessment_payload(
             "market_data_as_of": market.get("last_updated"),
             "market_data_source": market.get("data_source"),
         },
+        # Persist the current held-contract opportunity read so later scanner
+        # hits can compare a proposed replacement with today's held contract
+        # without re-fetching every option chain on the scanner page.
+        "opportunity": metrics.get("opportunity"),
         "path": {
             "directional_return_pct": directional_return,
             "mandate_deadline": mandate_deadline,

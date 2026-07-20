@@ -356,8 +356,9 @@ def test_create_position_rejects_duplicate_resubmission(secret_options_client) -
 
 
 def _decision_review_payload() -> dict[str, object]:
+    review_date = date.today()
     return {
-        "review_date": "2026-07-15",
+        "review_date": review_date.isoformat(),
         "trade_role": "catalyst",
         "original_thesis": "Earnings should reset the revenue outlook higher.",
         "contract_thesis": "The August call should retain enough time after the event.",
@@ -376,8 +377,8 @@ def _decision_review_payload() -> dict[str, object]:
         "urgency": "high",
         "confidence": "medium",
         "continuation_condition": "Keep one only while the gap holds.",
-        "next_review_date": "2026-07-17",
-        "decision_deadline": "2026-07-22",
+        "next_review_date": (review_date + timedelta(days=1)).isoformat(),
+        "decision_deadline": (review_date + timedelta(days=7)).isoformat(),
         "decision_notes": "Use a limit order for the reduction.",
     }
 
@@ -412,7 +413,7 @@ def test_decision_reviews_are_append_only_and_capture_market_snapshot(
     )
     second_payload = {
         **_decision_review_payload(),
-        "review_date": "2026-07-18",
+        "review_date": date.today().isoformat(),
         "evidence_since_last": "The gap failed on the third session.",
         "thesis_status": "weakened",
         "fresh_entry_answer": "no_underlying_valid",
@@ -421,7 +422,7 @@ def test_decision_reviews_are_append_only_and_capture_market_snapshot(
         "quality": "red",
         "urgency": "critical",
         "next_review_date": None,
-        "decision_deadline": "2026-07-18",
+        "decision_deadline": date.today().isoformat(),
     }
     second = client.post(
         f"/secret/options/positions/{position_id}/decision-reviews",
@@ -450,17 +451,17 @@ def test_decision_reviews_are_append_only_and_capture_market_snapshot(
             "id": second_review["id"],
             "position_id": position_id,
             "review_sequence": 2,
-            "review_date": "2026-07-18",
+            "review_date": date.today().isoformat(),
             "next_review_date": None,
-            "decision_deadline": "2026-07-18",
+            "decision_deadline": date.today().isoformat(),
         },
         {
             "id": first_review["id"],
             "position_id": position_id,
             "review_sequence": 1,
-            "review_date": "2026-07-15",
-            "next_review_date": "2026-07-17",
-            "decision_deadline": "2026-07-22",
+            "review_date": date.today().isoformat(),
+            "next_review_date": (date.today() + timedelta(days=1)).isoformat(),
+            "decision_deadline": (date.today() + timedelta(days=7)).isoformat(),
         },
     ]
     with session_local() as db:
@@ -472,7 +473,13 @@ def test_automatic_assessment_prefills_review_and_close_learning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, session_local = secret_options_client
-    created = client.post("/secret/options/positions", json=_position_payload())
+    created = client.post(
+        "/secret/options/positions",
+        json={
+            **_position_payload(),
+            "expiration": (date.today() + timedelta(days=60)).isoformat(),
+        },
+    )
     position_id = created.json()["position"]["id"]
     metrics_compute_count = 0
 
@@ -545,13 +552,13 @@ def test_automatic_assessment_prefills_review_and_close_learning(
     review_response = client.post(
         f"/secret/options/positions/{position_id}/decision-reviews",
         json={
-            "review_date": "2026-07-15",
+            "review_date": date.today().isoformat(),
             "selected_assessment_id": assessment_body["assessment"]["id"],
             "threshold_approval_status": "approved",
         },
     )
 
-    assert review_response.status_code == 200
+    assert review_response.status_code == 200, review_response.json()
     review_body = review_response.json()
     assert review_body["review"]["decision_source"] == "human_confirmed_auto"
     assert review_body["review"]["human_override"] == "none"
@@ -562,7 +569,7 @@ def test_automatic_assessment_prefills_review_and_close_learning(
     close_response = client.request(
         "DELETE",
         f"/secret/options/positions/{position_id}",
-        json={"exit_price": 1.25, "close_date": "2026-07-15", "notes": "test close"},
+        json={"exit_price": 1.25, "close_date": date.today().isoformat(), "notes": "test close"},
     )
 
     assert close_response.status_code == 200
@@ -1320,7 +1327,11 @@ def test_scanner_repeat_evidence_handles_missing_drift_opposite_direction_and_du
     assert missing_match["classification"] == "still_qualifies"
     assert missing_match["contract_comparison_status"] == "unavailable"
     assert drift_match["classification"] == "contract_drift"
+    assert drift_match["held_contracts"] == 5
+    assert drift_match["replacement_decision"]["recommendation"] == "watch_replacement"
+    assert drift_match["replacement_decision"]["implementation_ready"] is False
     assert opposite_match["classification"] == "contradiction"
+    assert opposite_match["replacement_decision"]["recommendation"] == "direction_change"
     assert exact_match["match_type"] == "exact_contract"
     assert exact_match["held_contracts"] == 5
     assert len(exact_match["position_ids"]) == 2

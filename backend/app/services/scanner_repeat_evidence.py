@@ -14,6 +14,7 @@ from app.models.option_decision_learning import OptionPositionEvent, OptionThesi
 from app.models.option_position_reviews import OptionPositionReview
 from app.models.option_positions import OptionPosition
 from app.models.options_alerts import OptionAlertEvent
+from app.services.option_replacement_classifier import classify_option_replacement
 from app.services.options_opportunity import compute_opportunity_score
 
 
@@ -26,6 +27,7 @@ class ScannerRepeatEvidenceContext:
     positions_by_symbol: dict[str, tuple[OptionPosition, ...]]
     events_by_symbol: dict[str, tuple[OptionAlertEvent, ...]]
     latest_decision_by_position: dict[int, dict[str, object]]
+    latest_assessment_by_position: dict[int, dict[str, object]]
 
 
 def _finite(value: object) -> Optional[float]:
@@ -74,6 +76,26 @@ def _same_contract(event: OptionAlertEvent, position: OptionPosition) -> bool:
         and abs(event_strike - position_strike) <= 0.005
         and _option_type(event.selected_option_type) == _option_type(position.option_type)
     )
+
+
+def _same_position_contract(left: OptionPosition, right: OptionPosition) -> bool:
+    left_strike = _finite(left.strike)
+    right_strike = _finite(right.strike)
+    return bool(
+        left.expiration == right.expiration
+        and left_strike is not None
+        and right_strike is not None
+        and abs(left_strike - right_strike) <= 0.005
+        and _option_type(left.option_type) == _option_type(right.option_type)
+    )
+
+
+def _json_mapping(value: object) -> dict[str, object]:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _contract_comparison_available(event: OptionAlertEvent) -> bool:
@@ -297,7 +319,7 @@ def load_scanner_repeat_evidence_context(
     event_list = list(events)
     symbols = sorted({_symbol(event.symbol) for event in event_list if _symbol(event.symbol)})
     if not symbols:
-        return ScannerRepeatEvidenceContext({}, {}, {})
+        return ScannerRepeatEvidenceContext({}, {}, {}, {})
 
     positions = (
         db.query(OptionPosition)
@@ -311,7 +333,7 @@ def load_scanner_repeat_evidence_context(
 
     held_symbols = sorted(positions_by_symbol)
     if not held_symbols:
-        return ScannerRepeatEvidenceContext({}, {}, {})
+        return ScannerRepeatEvidenceContext({}, {}, {}, {})
     earliest_trade_at = datetime.combine(
         min(position.trade_date for position in positions),
         datetime.min.time(),
@@ -343,6 +365,7 @@ def load_scanner_repeat_evidence_context(
 
     position_ids = [int(position.id) for position in positions if position.id is not None]
     latest_decisions: dict[int, dict[str, object]] = {}
+    latest_assessments: dict[int, dict[str, object]] = {}
     if position_ids:
         latest_review_ids = (
             select(func.max(OptionPositionReview.id))
@@ -372,6 +395,17 @@ def load_scanner_repeat_evidence_context(
             .all()
         )
         for assessment in assessments:
+            latest_assessments[int(assessment.position_id)] = {
+                "id": assessment.id,
+                "as_of": assessment.as_of.isoformat() if assessment.as_of else None,
+                "data_quality_status": assessment.data_quality_status,
+                "company_thesis_status": assessment.company_thesis_status,
+                "path_status": assessment.path_status,
+                "contract_status": assessment.contract_status,
+                "portfolio_fit_status": assessment.portfolio_fit_status,
+                "proposed_verdict": assessment.proposed_verdict,
+                "input_snapshot": _json_mapping(assessment.input_snapshot_json),
+            }
             existing = latest_decisions.get(int(assessment.position_id))
             if existing and existing.get("source") == "review":
                 continue
@@ -386,6 +420,7 @@ def load_scanner_repeat_evidence_context(
         positions_by_symbol={key: tuple(value) for key, value in positions_by_symbol.items()},
         events_by_symbol={key: tuple(value) for key, value in events_by_symbol.items()},
         latest_decision_by_position=latest_decisions,
+        latest_assessment_by_position=latest_assessments,
     )
 
 
@@ -446,20 +481,29 @@ def position_match_for_event(
     contract_comparison_available = _contract_comparison_available(event)
     exact_positions = [position for position in positions if _same_contract(event, position)]
     match_type = "exact_contract" if exact_positions else "same_symbol"
-    matched_positions = exact_positions or [min(positions, key=lambda row: _position_distance(event, row))]
+    if exact_positions:
+        matched_positions = exact_positions
+    else:
+        nearest = min(positions, key=lambda row: _position_distance(event, row))
+        # Consolidate duplicate broker lots for the held contract so the badge,
+        # comparison and later learning record describe the actual exposure.
+        matched_positions = [
+            position for position in positions if _same_position_contract(position, nearest)
+        ]
     primary = matched_positions[0]
     history = context.events_by_symbol.get(symbol, ())
     prior = _prior_events(event, primary, history, exact_contract=bool(exact_positions))
-    source_baseline = None
-    if exact_positions and primary.source_event_id is not None:
-        source_baseline = next(
-            (
-                candidate
-                for candidate in history
-                if candidate.id == primary.source_event_id and _same_contract(candidate, primary)
-            ),
+    held_source_event = None
+    if primary.source_event_id is not None:
+        held_source_event = next(
+            (candidate for candidate in history if candidate.id == primary.source_event_id),
             None,
         )
+    source_baseline = (
+        held_source_event
+        if exact_positions and held_source_event is not None and _same_contract(held_source_event, primary)
+        else None
+    )
     previous = prior[-1] if prior else source_baseline
     recurrence_count = len(prior) + 1
     current_base_score = _event_base_score(event)
@@ -472,6 +516,17 @@ def position_match_for_event(
     deltas = _meaningful_deltas(event, previous)
     numeric_deltas = _numeric_deltas(event, previous)
     conflict = _decision_conflict(matched_positions, context.latest_decision_by_position)
+    replacement_decision = None
+    if match_type == "same_symbol" and contract_comparison_available:
+        replacement_decision = classify_option_replacement(
+            position=primary,
+            event=event,
+            candidate_score=current_base_score,
+            held_baseline_score=_event_base_score(held_source_event) if held_source_event is not None else None,
+            repeat_count=recurrence_count,
+            latest_assessment=context.latest_assessment_by_position.get(int(primary.id)),
+            latest_decision=context.latest_decision_by_position.get(int(primary.id)),
+        )
     if match_type == "same_symbol" and not contract_comparison_available:
         classification = "still_qualifies"
         delta_summary = (
@@ -556,9 +611,16 @@ def position_match_for_event(
         "material_deltas": deltas,
         "held_contract": _held_contract_snapshot(primary),
         "selected_contract": _contract_snapshot(event),
+        "replacement_decision": replacement_decision,
         "assessment_refresh_recommended": bool(
-            match_type == "exact_contract"
-            and classification in {"strengthened", "contradiction", "portfolio_conflict"}
+            (
+                match_type == "exact_contract"
+                and classification in {"strengthened", "contradiction", "portfolio_conflict"}
+            )
+            or (
+                isinstance(replacement_decision, dict)
+                and replacement_decision.get("status") == "candidate"
+            )
         ),
         "automated_add_enabled": False,
     }
@@ -580,6 +642,7 @@ def _append_recurrence_events(
             positions_by_symbol={_symbol(event.symbol): (position,)},
             events_by_symbol=context.events_by_symbol,
             latest_decision_by_position=context.latest_decision_by_position,
+            latest_assessment_by_position=context.latest_assessment_by_position,
         )
         payload = position_match_for_event(event, per_position_context)
         if payload is None:

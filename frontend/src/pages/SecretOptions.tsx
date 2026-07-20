@@ -1236,9 +1236,17 @@ const scannerPositionMatchTextClass: Record<ScannerPositionMatchTone, string> = 
   negative: "text-rose-300",
 };
 
+const replacementGateClass: Record<string, string> = {
+  pass: "border-emerald-500/25 bg-emerald-500/10 text-emerald-200",
+  watch: "border-amber-500/25 bg-amber-500/10 text-amber-200",
+  fail: "border-rose-500/25 bg-rose-500/10 text-rose-200",
+};
+
 const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportunity }) => {
   const contract = opportunity.selected_contract;
   const positionMatch = presentScannerPositionMatch(opportunity.position_match);
+  const replacementDecision = opportunity.position_match?.replacement_decision || null;
+  const replacementComparison = replacementDecision?.comparison || null;
   const sections = parseScannerAlertSections(opportunity.message);
   const directionSection = scannerAlertSection(sections, "DIRECTION");
   const macdSection = scannerAlertSection(sections, "MACD 1W");
@@ -1283,7 +1291,89 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
 
   return (
     <div className="overflow-x-hidden bg-stealth-950/40 px-3 py-3 sm:px-4">
-      {positionMatch ? (
+      {replacementDecision && replacementComparison ? (
+        <section className={`mb-3 rounded-lg border p-3 ${scannerPositionMatchBadgeClass[positionMatch?.tone || "neutral"]}`}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] opacity-70">Replacement decision</div>
+              <div className="mt-0.5 text-sm font-semibold">{replacementDecision.label}</div>
+              <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-stealth-300">
+                {replacementDecision.summary}
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="text-[10px] font-semibold uppercase tracking-wide">
+                {replacementDecision.structure.label}
+              </div>
+              <div className="mt-0.5 text-[9px] text-stealth-400">
+                {replacementDecision.confidence} confidence · shadow only
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-px overflow-hidden rounded-md border border-stealth-700/70 bg-stealth-700/70 sm:grid-cols-3">
+            <div className="bg-stealth-950/80 p-2">
+              <div className="text-[9px] uppercase tracking-wide text-stealth-500">Held</div>
+              <div className="mt-0.5 truncate text-[11px] font-semibold text-stealth-100">
+                {replacementComparison.held.contract || "Held contract"}
+              </div>
+              <div className="mt-1 text-[10px] text-stealth-400 tabular-nums">
+                Score {formatNumber(replacementComparison.held.score, 1)} · P/L {formatPercent(replacementComparison.held.pnl_pct, 1)}
+              </div>
+              <div className="text-[10px] text-stealth-500 tabular-nums">
+                {replacementComparison.held.dte ?? "—"} DTE · spread {formatPercent(replacementComparison.held.spread_pct, 1)}
+              </div>
+            </div>
+            <div className="bg-stealth-950/80 p-2">
+              <div className="text-[9px] uppercase tracking-wide text-stealth-500">Scanner candidate</div>
+              <div className="mt-0.5 truncate text-[11px] font-semibold text-stealth-100">
+                {replacementComparison.candidate.contract || "Candidate contract"}
+              </div>
+              <div className="mt-1 text-[10px] text-stealth-400 tabular-nums">
+                Score {formatNumber(replacementComparison.candidate.score, 1)} · premium {formatCurrency(replacementComparison.candidate.premium)}
+              </div>
+              <div className="text-[10px] text-stealth-500 tabular-nums">
+                {replacementComparison.candidate.dte ?? "—"} DTE · spread {formatPercent(replacementComparison.candidate.spread_pct, 1)}
+              </div>
+            </div>
+            <div className="bg-stealth-950/80 p-2">
+              <div className="text-[9px] uppercase tracking-wide text-stealth-500">Net change</div>
+              <div className="mt-0.5 text-[11px] font-semibold text-stealth-100 tabular-nums">
+                Score {replacementComparison.change.score !== null && replacementComparison.change.score !== undefined ? formatSigned(replacementComparison.change.score, 1) : "—"}
+              </div>
+              <div className="mt-1 text-[10px] text-stealth-400 tabular-nums">
+                {replacementComparison.change.dte !== null && replacementComparison.change.dte !== undefined ? `${formatSigned(replacementComparison.change.dte, 0)} DTE` : "DTE —"}
+              </div>
+              <div className="text-[10px] text-stealth-500 tabular-nums">
+                {replacementComparison.change.strike !== null && replacementComparison.change.strike !== undefined ? `${formatSigned(replacementComparison.change.strike, 2)} strike` : "Strike —"}
+              </div>
+            </div>
+          </div>
+
+          <details className="mt-2 rounded-md border border-stealth-700/60 bg-stealth-950/45 px-2.5 py-2">
+            <summary className="cursor-pointer list-none text-[10px] font-semibold text-stealth-300">
+              Why this decision · {replacementDecision.gates.length} gates
+            </summary>
+            <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+              {replacementDecision.gates.map((gate) => (
+                <div key={gate.key} className="flex items-start gap-2 rounded border border-stealth-800 bg-stealth-950/50 p-2">
+                  <span className={`mt-px shrink-0 rounded border px-1 py-0.5 text-[8px] font-semibold uppercase ${replacementGateClass[gate.status] || replacementGateClass.watch}`}>
+                    {gate.status}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold text-stealth-200">{gate.label}</div>
+                    <div className="text-[9px] leading-snug text-stealth-500">{gate.detail}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 border-t border-stealth-800/70 pt-2 text-[9px] leading-relaxed text-stealth-500">
+              {replacementDecision.journal_rule}
+            </p>
+          </details>
+        </section>
+      ) : null}
+      {positionMatch && !replacementDecision ? (
         <div
           role="note"
           aria-label={positionMatch.accessibleLabel}
@@ -4085,6 +4175,19 @@ export default function SecretOptions() {
   const recentScannerRuns = scannerData?.runs ?? [];
   const selectedScannerRun = scannerRunDetail?.run ?? recentScannerRuns.find((run) => run.id === selectedScannerRunId) ?? null;
   const selectedScannerHits = scannerRunDetail?.hits ?? [];
+  const selectedPositionReplacementHit = useMemo(() => {
+    if (!selected) return null;
+    return (
+      selectedScannerHits.find((hit) => {
+        const match = hit.position_match;
+        if (!match?.replacement_decision) return false;
+        return match.position_id === selected.position.id || match.position_ids?.includes(selected.position.id);
+      }) ?? null
+    );
+  }, [selected, selectedScannerHits]);
+  const selectedPositionReplacementPresentation = presentScannerPositionMatch(
+    selectedPositionReplacementHit?.position_match
+  );
   const selectedScannerHit = useMemo(
     () => selectedScannerHits.find((hit) => hit.event_id === expandedScannerHitId) ?? null,
     [expandedScannerHitId, selectedScannerHits]
@@ -5785,6 +5888,29 @@ export default function SecretOptions() {
                 </div>
               </div>
             )}
+
+            {selectedPositionReplacementHit?.position_match?.replacement_decision && selectedPositionReplacementPresentation ? (
+              <button
+                type="button"
+                onClick={() => setExpandedScannerHitId(selectedPositionReplacementHit.event_id)}
+                className={`mt-2 block w-full rounded-md border px-2.5 py-2 text-left transition hover:brightness-110 ${scannerPositionMatchBadgeClass[selectedPositionReplacementPresentation.tone]}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[9px] font-semibold uppercase tracking-wide opacity-70">Scanner replacement</div>
+                    <div className="mt-0.5 truncate text-[11px] font-semibold">
+                      {selectedPositionReplacementHit.position_match.replacement_decision.label}
+                    </div>
+                    <div className="mt-0.5 truncate text-[9px] text-stealth-400">
+                      {selectedPositionReplacementHit.position_match.replacement_decision.comparison.candidate.contract}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide">
+                    Review comparison →
+                  </span>
+                </div>
+              </button>
+            ) : null}
 
             {thesisAssessmentError && (
               <div className="mt-2 rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-[10px] text-rose-100">

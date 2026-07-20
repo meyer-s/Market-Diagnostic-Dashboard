@@ -18,15 +18,77 @@ export interface ScannerPositionMatchDeltas {
   dte?: number | null;
 }
 
+export type ScannerReplacementStatus = "candidate" | "watch" | "rejected" | "not_applicable" | string;
+
+export interface ScannerReplacementGate {
+  key: string;
+  label: string;
+  status: "pass" | "watch" | "fail" | string;
+  detail: string;
+}
+
+export interface ScannerReplacementContractComparison {
+  contract?: string | null;
+  expiry?: string | null;
+  strike?: number | null;
+  option_type?: string | null;
+  dte?: number | null;
+  score?: number | null;
+  score_source?: string | null;
+  pnl_pct?: number | null;
+  premium?: number | null;
+  spread_pct?: number | null;
+  delta?: number | null;
+  theta_per_day_per_contract?: number | null;
+  contract_status?: string | null;
+  verdict?: string | null;
+  reward_risk?: number | null;
+  contract_score?: number | null;
+  convexity_profit_pct?: number | null;
+  convexity_probability_itm?: number | null;
+}
+
+export interface ScannerReplacementDecision {
+  model_version: string;
+  status: ScannerReplacementStatus;
+  recommendation: string;
+  action: string;
+  label: string;
+  summary: string;
+  confidence: string;
+  implementation_ready: boolean;
+  structure: {
+    expiry_direction: string;
+    strike_direction: string;
+    directional_hurdle: string;
+    label: string;
+  };
+  comparison: {
+    held: ScannerReplacementContractComparison;
+    candidate: ScannerReplacementContractComparison;
+    change: {
+      dte?: number | null;
+      strike?: number | null;
+      score?: number | null;
+    };
+  };
+  gates: ScannerReplacementGate[];
+  missing_inputs: string[];
+  journal_rule: string;
+  automated_execution_enabled: boolean;
+}
+
 export interface ScannerPositionMatch {
   match_type: ScannerPositionMatchType;
   classification?: ScannerPositionMatchClassification | null;
   position_id?: number | null;
+  position_ids?: number[] | null;
   held_contracts?: number | null;
   repeat_count?: number | null;
   previous_event_id?: number | null;
   delta_summary?: string | null;
   deltas?: ScannerPositionMatchDeltas | null;
+  replacement_decision?: ScannerReplacementDecision | null;
 }
 
 export type ScannerPositionMatchTone = "neutral" | "positive" | "warning" | "negative";
@@ -84,6 +146,25 @@ const humanizeClassification = (classification: string) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
 
+const replacementTone = (status: ScannerReplacementStatus): ScannerPositionMatchTone => {
+  if (status === "candidate") return "positive";
+  if (status === "rejected") return "negative";
+  if (status === "watch") return "warning";
+  return "neutral";
+};
+
+const compactReplacementEvidence = (replacement: ScannerReplacementDecision) => {
+  const change = replacement.comparison?.change;
+  const parts = [replacement.structure?.label];
+  if (typeof change?.score === "number" && Number.isFinite(change.score)) {
+    parts.push(`score ${formatSigned(change.score)}`);
+  }
+  if (typeof change?.dte === "number" && Number.isFinite(change.dte)) {
+    parts.push(`${change.dte > 0 ? "+" : ""}${Math.round(change.dte)}d`);
+  }
+  return parts.filter(Boolean).join(" · ") || replacement.summary;
+};
+
 export const presentScannerPositionMatch = (
   match?: ScannerPositionMatch | null
 ): ScannerPositionMatchPresentation | null => {
@@ -100,18 +181,33 @@ export const presentScannerPositionMatch = (
     typeof match.repeat_count === "number" && match.repeat_count > 0
       ? Math.round(match.repeat_count)
       : null;
+  const replacement = !isExactContract ? match.replacement_decision || null : null;
   const badgeParts = ["HELD"];
   if (heldContracts !== null) badgeParts.push(String(heldContracts));
   if (isExactContract && repeatCount !== null) badgeParts.push(`#${repeatCount}`);
-  if (!isExactContract) badgeParts.push("NAME");
+  if (!isExactContract) {
+    badgeParts.push(
+      replacement?.status === "candidate"
+        ? replacement.action === "partial_replace"
+          ? "HARVEST"
+          : "ROLL"
+        : replacement?.status === "rejected"
+          ? "NO ROLL"
+          : replacement?.status === "watch"
+            ? "WATCH"
+            : "NAME"
+    );
+  }
 
-  const classificationLabel =
+  const classificationLabel = replacement?.label ||
     classificationLabels[classification] || humanizeClassification(classification);
   const suppliedSummary = match.delta_summary?.trim() || null;
   const deltaSummary = suppliedSummary || buildDeltaSummary(match.deltas);
-  const evidenceLine = deltaSummary
-    ? `${classificationLabel} · ${deltaSummary}`
-    : classificationLabel;
+  const evidenceLine = replacement
+    ? `${classificationLabel} · ${compactReplacementEvidence(replacement)}`
+    : deltaSummary
+      ? `${classificationLabel} · ${deltaSummary}`
+      : classificationLabel;
   const matchDescription = isExactContract ? "exact contract" : "same symbol, different contract";
   const heldDescription = heldContracts !== null ? `, ${heldContracts} contracts held` : "";
   const repeatDescription = repeatCount !== null ? `, repeat hit ${repeatCount}` : "";
@@ -120,7 +216,11 @@ export const presentScannerPositionMatch = (
     badgeLabel: badgeParts.join(" · "),
     classificationLabel,
     evidenceLine,
-    accessibleLabel: `Open position match: ${matchDescription}${heldDescription}${repeatDescription}. ${evidenceLine}. Evidence only; not an add recommendation.`,
-    tone: classificationTones[classification] || "neutral",
+    accessibleLabel: `Open position match: ${matchDescription}${heldDescription}${repeatDescription}. ${evidenceLine}. ${
+      replacement
+        ? "Replacement decision support only; close and new entry remain separate decisions."
+        : "Evidence only; not an add recommendation."
+    }`,
+    tone: replacement ? replacementTone(replacement.status) : classificationTones[classification] || "neutral",
   };
 };
