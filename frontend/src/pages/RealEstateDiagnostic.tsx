@@ -22,6 +22,14 @@ import {
   commonXAxisProps,
   commonYAxisProps,
 } from "../utils/chartUtils";
+import {
+  buildCycleTicks,
+  filterByYears,
+  formatCycleAxisLabel,
+  formatCycleTooltipLabel,
+  REAL_ESTATE_HORIZONS,
+  type RealEstateHorizon,
+} from "../utils/realEstateHorizon";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,14 +38,7 @@ import {
 type Timeframe = "90d" | "180d" | "365d";
 type RealEstateTab = "overview" | "commercial";
 const TIMEFRAME_DAYS: Record<Timeframe, number> = { "90d": 90, "180d": 180, "365d": 365 };
-type CycleHorizon = 1 | 5 | 15 | 30;
-const BUYER_SELLER_CONTEXT_DAYS = 10950;
-const BUYER_SELLER_HORIZONS: Array<{ years: CycleHorizon; label: string }> = [
-  { years: 1, label: "1Y" },
-  { years: 5, label: "5Y" },
-  { years: 15, label: "15Y" },
-  { years: 30, label: "30Y" },
-];
+const LONG_HORIZON_CONTEXT_DAYS = 10950;
 
 type DataPoint = { date: string; value: number };
 
@@ -272,54 +273,6 @@ function nearestDate(map: Record<string, number>, date: string): number | undefi
     if (vb != null) return vb;
   }
   return undefined;
-}
-
-function parseIsoDate(date: string) {
-  return new Date(`${date}T00:00:00Z`);
-}
-
-function filterByYears<T extends { date: string }>(points: T[], years: number) {
-  if (!points.length) return [];
-  const end = parseIsoDate(points[points.length - 1].date);
-  const cutoff = new Date(end);
-  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - years);
-  return points.filter((point) => parseIsoDate(point.date) >= cutoff);
-}
-
-function decimateKeepLast<T>(points: T[], maxPoints: number) {
-  if (points.length <= maxPoints) return points;
-  const step = Math.max(1, Math.floor(points.length / maxPoints));
-  return points.filter((_, index) => index % step === 0 || index === points.length - 1);
-}
-
-function buildCycleTicks(points: Array<{ date: string }>, years: CycleHorizon) {
-  if (!points.length) return [] as string[];
-  const tickDates = points
-    .map((point) => point.date)
-    .filter((date) => {
-      const parsed = parseIsoDate(date);
-      const month = parsed.getUTCMonth();
-      const year = parsed.getUTCFullYear();
-      if (years === 1) return month % 3 === 0;
-      if (years === 5) return month === 0;
-      if (years === 15) return month === 0 && year % 3 === 0;
-      return month === 0 && year % 5 === 0;
-    });
-
-  const withEdges = [points[0].date, ...tickDates, points[points.length - 1].date];
-  return [...new Set(withEdges)];
-}
-
-function formatCycleAxisLabel(date: string, years: CycleHorizon) {
-  const parsed = parseIsoDate(date);
-  if (years === 1) {
-    return new Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit", timeZone: "UTC" }).format(parsed);
-  }
-  return new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: "UTC" }).format(parsed);
-}
-
-function formatCycleTooltipLabel(date: string) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(parseIsoDate(date));
 }
 
 // ---------------------------------------------------------------------------
@@ -935,28 +888,32 @@ function SupplyContextChart({
   starts,
   permits,
   completions,
+  horizonYears,
   surfaceClassName = "surface-card",
 }: {
   starts: DataPoint[];
   permits: DataPoint[];
   completions: DataPoint[];
+  horizonYears: RealEstateHorizon;
   surfaceClassName?: string;
 }) {
+  const horizonStarts = useMemo(() => filterByYears(starts, horizonYears), [horizonYears, starts]);
+  const horizonPermits = useMemo(() => filterByYears(permits, horizonYears), [horizonYears, permits]);
+  const horizonCompletions = useMemo(() => filterByYears(completions, horizonYears), [completions, horizonYears]);
   const merged = useMemo(() => {
-    const spine = permits.length >= starts.length ? permits : starts;
+    const spine = horizonPermits.length >= horizonStarts.length ? horizonPermits : horizonStarts;
     if (!spine.length) return [];
-    const startsMap = Object.fromEntries(starts.map((p) => [p.date, p.value]));
-    const permMap   = Object.fromEntries(permits.map((p) => [p.date, p.value]));
-    const compMap   = Object.fromEntries(completions.map((p) => [p.date, p.value]));
-    return spine
-      .map((p) => ({
+    const startsMap = Object.fromEntries(horizonStarts.map((p) => [p.date, p.value]));
+    const permMap   = Object.fromEntries(horizonPermits.map((p) => [p.date, p.value]));
+    const compMap   = Object.fromEntries(horizonCompletions.map((p) => [p.date, p.value]));
+    return spine.map((p) => ({
         date: p.date,
         starts:      startsMap[p.date] ?? null,
         permits:     permMap[p.date]   ?? null,
         completions: compMap[p.date]   ?? null,
-      }))
-      .filter((_, i) => i % Math.max(1, Math.floor(spine.length / 150)) === 0);
-  }, [starts, permits, completions]);
+      }));
+  }, [horizonCompletions, horizonPermits, horizonStarts]);
+  const cycleTicks = useMemo(() => buildCycleTicks(merged, horizonYears), [horizonYears, merged]);
 
   if (!merged.length) return null;
 
@@ -988,7 +945,14 @@ function SupplyContextChart({
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
-            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <XAxis
+              {...commonXAxisProps}
+              dataKey="date"
+              ticks={cycleTicks}
+              interval={0}
+              minTickGap={24}
+              tickFormatter={(d: string) => formatCycleAxisLabel(d, horizonYears)}
+            />
             <YAxis {...commonYAxisProps} />
             <Tooltip
               {...tip}
@@ -1023,16 +987,16 @@ function BuyerSellerDivergenceChart({
   permits,
   completions,
   starts,
+  horizonYears,
   surfaceClassName = "surface-card",
 }: {
   newHomeSales: DataPoint[];
   permits: DataPoint[];
   completions: DataPoint[];
   starts: DataPoint[];
+  horizonYears: RealEstateHorizon;
   surfaceClassName?: string;
 }) {
-  const [horizonYears, setHorizonYears] = useState<CycleHorizon>(15);
-
   const joinedRows = useMemo(() => {
     if (!newHomeSales.length) return [];
 
@@ -1067,8 +1031,7 @@ function BuyerSellerDivergenceChart({
     const buyerBase = horizonRows[0].buyers_raw || 1;
     const sellerBase = horizonRows[0].sellers_raw || 1;
 
-    return decimateKeepLast(
-      horizonRows
+    return horizonRows
       .map((row) => {
         const buyersIndex = (row.buyers_raw / buyerBase) * 100;
         const sellersIndex = (row.sellers_raw / sellerBase) * 100;
@@ -1078,9 +1041,7 @@ function BuyerSellerDivergenceChart({
           sellers_index: sellersIndex,
           gap: buyersIndex - sellersIndex,
         };
-      }),
-      120,
-    );
+      });
   }, [horizonYears, joinedRows]);
 
   if (!merged.length) return null;
@@ -1098,28 +1059,12 @@ function BuyerSellerDivergenceChart({
 
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4">
         <CardHeader
           kicker="Demand vs Supply"
           title="Home buyers vs seller supply"
           tooltipText="Buyer demand uses new home sales so the chart can span full housing cycles. Seller supply is built from permits, starts, and completions. Both lines are indexed to 100 at the start of the selected window, so the divergence compares relative performance over 1Y, 5Y, 15Y, or 30Y on the same basis."
         />
-        <div className="control-strip mt-1">
-          {BUYER_SELLER_HORIZONS.map(({ years, label }) => (
-            <button
-              key={years}
-              type="button"
-              onClick={() => setHorizonYears(years)}
-              className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
-                horizonYears === years
-                  ? "bg-sky-500/20 text-sky-300"
-                  : "text-stealth-400 hover:text-stealth-200"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
       <div className="mb-3 grid gap-3 md:grid-cols-3">
         <StatTile
@@ -1204,6 +1149,7 @@ function AffordabilityChart({
   housingCpi,
   medianHousingCpi,
   newHomeSales,
+  horizonYears,
   surfaceClassName = "surface-card",
 }: {
   shelterCpi: DataPoint[];
@@ -1211,24 +1157,30 @@ function AffordabilityChart({
   housingCpi: DataPoint[];
   medianHousingCpi: DataPoint[];
   newHomeSales: DataPoint[];
+  horizonYears: RealEstateHorizon;
   surfaceClassName?: string;
 }) {
+  const horizonShelterCpi = useMemo(() => filterByYears(shelterCpi, horizonYears), [horizonYears, shelterCpi]);
+  const horizonRentCpi = useMemo(() => filterByYears(rentCpi, horizonYears), [horizonYears, rentCpi]);
+  const horizonHousingCpi = useMemo(() => filterByYears(housingCpi, horizonYears), [horizonYears, housingCpi]);
+  const horizonMedianHousingCpi = useMemo(() => filterByYears(medianHousingCpi, horizonYears), [horizonYears, medianHousingCpi]);
+  const horizonNewHomeSales = useMemo(() => filterByYears(newHomeSales, horizonYears), [horizonYears, newHomeSales]);
   const inflationConfigs = useMemo(
     () => [
-      { key: "rent", label: "Rent CPI (YoY)", data: rentCpi, color: "#f59e0b", dash: undefined as string | undefined, percent: true },
-      { key: "housing", label: "Housing CPI (YoY)", data: housingCpi, color: "#38bdf8", dash: "5 3", percent: true },
-      { key: "median", label: "Median Housing", data: medianHousingCpi, color: "#a78bfa", dash: "3 3", percent: false },
+      { key: "rent", label: "Rent CPI (YoY)", data: horizonRentCpi, color: "#f59e0b", dash: undefined as string | undefined, percent: true },
+      { key: "housing", label: "Housing CPI (YoY)", data: horizonHousingCpi, color: "#38bdf8", dash: "5 3", percent: true },
+      { key: "median", label: "Median Housing", data: horizonMedianHousingCpi, color: "#a78bfa", dash: "3 3", percent: false },
     ].filter((config) => config.data.length),
-    [housingCpi, medianHousingCpi, rentCpi],
+    [horizonHousingCpi, horizonMedianHousingCpi, horizonRentCpi],
   );
 
   const activeConfigs = useMemo(
     () => inflationConfigs.length
       ? inflationConfigs
-      : shelterCpi.length
-        ? [{ key: "shelter", label: "Shelter CPI (YoY)", data: shelterCpi, color: "#fbbf24", dash: undefined as string | undefined, percent: true }]
+      : horizonShelterCpi.length
+        ? [{ key: "shelter", label: "Shelter CPI (YoY)", data: horizonShelterCpi, color: "#fbbf24", dash: undefined as string | undefined, percent: true }]
         : [],
-    [inflationConfigs, shelterCpi],
+    [horizonShelterCpi, inflationConfigs],
   );
 
   const merged = useMemo(() => {
@@ -1248,14 +1200,14 @@ function AffordabilityChart({
 
     const referenceSeries = [...activeConfigs].sort((left, right) => right.data.length - left.data.length)[0]?.data ?? [];
 
-    const appVals = newHomeSales.map((p) => p.value).filter((v) => v > 0);
+    const appVals = horizonNewHomeSales.map((p) => p.value).filter((v) => v > 0);
     const [minA, maxA] = appVals.length ? [Math.min(...appVals), Math.max(...appVals)] : [0, 1];
     const rangeA = maxA - minA || 1;
 
-    const appMap = Object.fromEntries(newHomeSales.map((p) => [p.date, p.value]));
+    const appMap = Object.fromEntries(horizonNewHomeSales.map((p) => [p.date, p.value]));
     return referenceSeries
       .map((point) => {
-        const row: Record<string, number | string | null> = { date: point.date };
+        const row: { date: string } & Record<string, number | string | null> = { date: point.date };
         normalizedConfigs.forEach((config) => {
           const rawValue = nearestDate(config.rawMap, point.date);
           row[`${config.key}_raw`] = rawValue ?? null;
@@ -1266,9 +1218,9 @@ function AffordabilityChart({
         row.apps = appVal ?? null;
         row.apps_norm = appVal != null ? ((appVal - minA) / rangeA) * 100 : null;
         return row;
-      })
-      .filter((_, i) => i % Math.max(1, Math.floor(referenceSeries.length / 150)) === 0);
-  }, [activeConfigs, newHomeSales]);
+      });
+  }, [activeConfigs, horizonNewHomeSales]);
+  const cycleTicks = useMemo(() => buildCycleTicks(merged, horizonYears), [horizonYears, merged]);
 
   if (!merged.length) return null;
 
@@ -1342,7 +1294,14 @@ function AffordabilityChart({
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={merged} margin={CHART_MARGIN}>
             <CartesianGrid {...commonGridProps} />
-            <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
+            <XAxis
+              {...commonXAxisProps}
+              dataKey="date"
+              ticks={cycleTicks}
+              interval={0}
+              minTickGap={24}
+              tickFormatter={(d: string) => formatCycleAxisLabel(d, horizonYears)}
+            />
             <YAxis {...commonYAxisProps} domain={[0, 100]} />
             <ReferenceLine y={50} stroke="#1e293b" strokeDasharray="3 3" />
             <Tooltip
@@ -1374,7 +1333,7 @@ function AffordabilityChart({
                 isAnimationActive={false}
               />
             ))}
-            {newHomeSales.length > 0 && (
+            {horizonNewHomeSales.length > 0 && (
               <Line type="monotone" dataKey="apps_norm" stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="7 4" dot={false} name="apps_norm" isAnimationActive={false} />
             )}
           </LineChart>
@@ -1384,7 +1343,7 @@ function AffordabilityChart({
         {activeConfigs.map((config) => (
           <LegendPill key={config.key} color={config.color}>{config.label}</LegendPill>
         ))}
-        {newHomeSales.length > 0 && (
+        {horizonNewHomeSales.length > 0 && (
           <LegendPill color="#94a3b8">New Home Sales (normalized)</LegendPill>
         )}
       </div>
@@ -1530,13 +1489,13 @@ const TIMEFRAME_OPTIONS: { key: Timeframe; label: string }[] = [
 export default function RealEstateDiagnostic() {
   const [timeframe, setTimeframe] = useState<Timeframe>("365d");
   const [activeTab, setActiveTab] = useState<RealEstateTab>("overview");
+  const [longHorizonYears, setLongHorizonYears] = useState<RealEstateHorizon>(15);
   const days = TIMEFRAME_DAYS[timeframe];
 
   const overviewApi      = useApi<RealEstateOverview>(`/real-estate/overview?days=${days}`);
   const historyApi       = useApi<RealEstateHistory>(`/real-estate/history?days=${days}`);
   const transmissionApi  = useApi<RealEstateTransmission>(`/real-estate/transmission?days=${days}`);
-  const contextApi       = useApi<RealEstateContext>(`/real-estate/context`);
-  const cycleContextApi  = useApi<RealEstateContext>(`/real-estate/context?days=${BUYER_SELLER_CONTEXT_DAYS}`);
+  const longContextApi   = useApi<RealEstateContext>(`/real-estate/context?days=${LONG_HORIZON_CONTEXT_DAYS}`);
 
   const primaryDataPending = !overviewApi.data;
   if (overviewApi.loading && primaryDataPending) {
@@ -1554,8 +1513,7 @@ export default function RealEstateDiagnostic() {
   const overview     = overviewApi.data;
   const history      = historyApi.data;
   const transmission = transmissionApi.data;
-  const context      = contextApi.data;
-  const cycleContext = cycleContextApi.data;
+  const context      = longContextApi.data;
 
   const groupsByPressure    = [...overview.groups].sort((a, b) => b.score - a.score);
   const highestPressureGroup = groupsByPressure[0];
@@ -1587,7 +1545,7 @@ export default function RealEstateDiagnostic() {
   const hasTransmission       = Boolean(transmission?.indexed_vnq?.length && transmission?.indexed_xhb?.length);
   const hasCreditPanel        = Boolean(transmission?.indexed_vnq?.length && transmission?.credit_spread?.length);
   const hasSupplyPanel        = Boolean(context?.housing_starts?.length || context?.building_permits?.length);
-  const hasBuyerSeller        = Boolean(cycleContext?.new_home_sales?.length && (cycleContext?.building_permits?.length || cycleContext?.completions?.length || cycleContext?.housing_starts?.length));
+  const hasBuyerSeller        = Boolean(context?.new_home_sales?.length && (context?.building_permits?.length || context?.completions?.length || context?.housing_starts?.length));
   const hasAffordability      = Boolean(
     context?.shelter_cpi?.length ||
     context?.rent_cpi?.length ||
@@ -1816,16 +1774,33 @@ export default function RealEstateDiagnostic() {
 
       {/* ── Longer-horizon context band ────────────────────────── */}
       {(hasSupplyPanel || hasBuyerSeller || hasAffordability) && context && (
-        <div className="space-y-2.5">
+        <div className="surface-card-strong p-3 sm:p-4">
           <div className="flex flex-wrap items-end justify-between gap-2.5">
             <SectionHeader
               kicker="Longer Horizon"
               title="Supply, construction, and affordability context"
               tooltipText="Slower-moving structural context. Supply and construction data confirm whether the price and credit picture is demand- or supply-driven. Buyer-demand divergence and housing inflation provide the structural demand overlay without replacing the listed-market read."
             />
+            <div className="control-strip" role="group" aria-label="Residential longer-horizon window">
+              {REAL_ESTATE_HORIZONS.map(({ years, label }) => (
+                <button
+                  key={years}
+                  type="button"
+                  aria-pressed={longHorizonYears === years}
+                  onClick={() => setLongHorizonYears(years)}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                    longHorizonYears === years
+                      ? "bg-sky-500/20 text-sky-300"
+                      : "text-stealth-400 hover:text-stealth-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div
-            className={`grid items-start gap-3 md:gap-4 ${
+            className={`mt-4 grid items-start gap-3 md:gap-4 ${
               longerHorizonCardCount >= 3 ? "xl:grid-cols-3" : longerHorizonCardCount === 2 ? "xl:grid-cols-2" : "grid-cols-1"
             }`}
           >
@@ -1834,14 +1809,18 @@ export default function RealEstateDiagnostic() {
                 starts={context.housing_starts}
                 permits={context.building_permits}
                 completions={context.completions}
+                horizonYears={longHorizonYears}
+                surfaceClassName="rounded-2xl border border-stealth-700 bg-stealth-950/20"
               />
             ) : null}
-            {hasBuyerSeller && cycleContext ? (
+            {hasBuyerSeller ? (
               <BuyerSellerDivergenceChart
-                newHomeSales={cycleContext.new_home_sales}
-                permits={cycleContext.building_permits}
-                completions={cycleContext.completions}
-                starts={cycleContext.housing_starts}
+                newHomeSales={context.new_home_sales}
+                permits={context.building_permits}
+                completions={context.completions}
+                starts={context.housing_starts}
+                horizonYears={longHorizonYears}
+                surfaceClassName="rounded-2xl border border-stealth-700 bg-stealth-950/20"
               />
             ) : null}
             {hasAffordability ? (
@@ -1851,6 +1830,8 @@ export default function RealEstateDiagnostic() {
                 housingCpi={context.housing_cpi}
                 medianHousingCpi={context.median_housing_cpi}
                 newHomeSales={context.new_home_sales}
+                horizonYears={longHorizonYears}
+                surfaceClassName="rounded-2xl border border-stealth-700 bg-stealth-950/20"
               />
             ) : null}
           </div>

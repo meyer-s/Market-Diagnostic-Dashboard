@@ -676,7 +676,7 @@ def fetch_commercial_proxy_data(
 
 def fetch_commercial_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
     start = (datetime.utcnow() - timedelta(days=days + 450)).strftime("%Y-%m-%d")
-    long_context_start = (datetime.utcnow() - timedelta(days=2200)).strftime("%Y-%m-%d")
+    long_context_start = (datetime.utcnow() - timedelta(days=10950 + 450)).strftime("%Y-%m-%d")
     core_keys = {
         "cre_price_yoy",
         "cre_loans",

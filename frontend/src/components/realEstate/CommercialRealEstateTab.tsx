@@ -17,6 +17,14 @@ import {
   commonXAxisProps,
   commonYAxisProps,
 } from "../../utils/chartUtils";
+import {
+  buildCycleTicks,
+  filterByYears,
+  formatCycleAxisLabel,
+  REAL_ESTATE_HORIZONS,
+  rebaseSeries,
+  type RealEstateHorizon,
+} from "../../utils/realEstateHorizon";
 
 type DataPoint = { date: string; value: number };
 
@@ -196,13 +204,13 @@ function nearestValue(points: DataPoint[], date: string) {
   return nearest.value;
 }
 
-function mergeNamedSeries(series: Array<{ key: string; data: DataPoint[] }>) {
+function mergeNamedSeries(series: Array<{ key: string; data: DataPoint[] }>): Array<{ date: string } & Record<string, string | number | null>> {
   const dates = [...new Set(series.flatMap((item) => item.data.map((point) => point.date)))].sort();
   const maps = Object.fromEntries(
     series.map((item) => [item.key, Object.fromEntries(item.data.map((point) => [point.date, point.value]))]),
   );
   return dates.map((date) => {
-    const row: Record<string, string | number | null> = { date };
+    const row: { date: string } & Record<string, string | number | null> = { date };
     series.forEach((item) => {
       row[item.key] = maps[item.key]?.[date] ?? null;
     });
@@ -357,15 +365,31 @@ function LendingChart({ loans }: { loans: DataPoint[] }) {
   );
 }
 
-function SectorSupplyCard({ context, color }: { context: CommercialSectorContext; color: string }) {
-  const chartData = useMemo(
-    () => mergeNamedSeries(context.supply.series.map((series) => ({ key: series.key, data: series.data }))),
-    [context.supply.series],
+function SectorSupplyCard({
+  context,
+  color,
+  horizonYears,
+}: {
+  context: CommercialSectorContext;
+  color: string;
+  horizonYears: RealEstateHorizon;
+}) {
+  const chartSeries = useMemo(
+    () => context.supply.series.map((series) => ({
+      ...series,
+      data: filterByYears(series.data, horizonYears),
+    })),
+    [context.supply.series, horizonYears],
   );
+  const chartData = useMemo(
+    () => mergeNamedSeries(chartSeries.map((series) => ({ key: series.key, data: series.data }))),
+    [chartSeries],
+  );
+  const cycleTicks = useMemo(() => buildCycleTicks(chartData, horizonYears), [chartData, horizonYears]);
   const seriesColors = [color, "#a78bfa", "#94a3b8"];
 
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
+    <div className="self-start rounded-2xl border border-stealth-700 bg-stealth-950/20 p-3 sm:p-4">
       <SectionHeader
         kicker="Supply & Construction"
         title={context.supply.title}
@@ -395,7 +419,14 @@ function SectorSupplyCard({ context, color }: { context: CommercialSectorContext
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart data={chartData} margin={CHART_MARGIN}>
               <CartesianGrid {...commonGridProps} />
-              <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
+              <XAxis
+                {...commonXAxisProps}
+                dataKey="date"
+                ticks={cycleTicks}
+                interval={0}
+                minTickGap={24}
+                tickFormatter={(date: string) => formatCycleAxisLabel(date, horizonYears)}
+              />
               <YAxis {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(value: number) => `${Math.round(value)}`} />
               <Tooltip
                 {...chartTooltip}
@@ -433,27 +464,38 @@ function SectorSupplyCard({ context, color }: { context: CommercialSectorContext
   );
 }
 
-function SectorDemandSupplyCard({ context }: { context: CommercialSectorContext }) {
+function SectorDemandSupplyCard({
+  context,
+  horizonYears,
+}: {
+  context: CommercialSectorContext;
+  horizonYears: RealEstateHorizon;
+}) {
   const demand = context.demand_supply;
+  const demandSeries = useMemo(() => rebaseSeries(demand.demand_index, horizonYears), [demand.demand_index, horizonYears]);
+  const supplySeries = useMemo(() => rebaseSeries(demand.supply_index, horizonYears), [demand.supply_index, horizonYears]);
   const chartData = useMemo(
     () => mergeNamedSeries([
-      { key: "demand", data: demand.demand_index },
-      { key: "supply", data: demand.supply_index },
+      { key: "demand", data: demandSeries },
+      { key: "supply", data: supplySeries },
     ]),
-    [demand.demand_index, demand.supply_index],
+    [demandSeries, supplySeries],
   );
-  const divergence = demand.divergence;
+  const cycleTicks = useMemo(() => buildCycleTicks(chartData, horizonYears), [chartData, horizonYears]);
+  const demandLatest = demandSeries[demandSeries.length - 1]?.value ?? null;
+  const supplyLatest = supplySeries[supplySeries.length - 1]?.value ?? null;
+  const divergence = demandLatest != null && supplyLatest != null ? demandLatest - supplyLatest : null;
 
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
+    <div className="self-start rounded-2xl border border-stealth-700 bg-stealth-950/20 p-3 sm:p-4">
       <SectionHeader
         kicker="Demand vs Supply"
         title={`${context.label} operating balance`}
-        detail="Public demand and development measures, each indexed to 100 at the start of its history."
+        detail="Public demand and development measures, each indexed to 100 at the start of the selected window."
       />
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <StatTile label="Demand" value={demand.demand_latest?.toFixed(1) ?? "—"} detail="Indexed activity" tone="text-sky-300" />
-        <StatTile label="Supply" value={demand.supply_latest?.toFixed(1) ?? "—"} detail="Indexed pipeline" tone="text-amber-300" />
+        <StatTile label="Demand" value={demandLatest?.toFixed(1) ?? "—"} detail="Indexed activity" tone="text-sky-300" />
+        <StatTile label="Supply" value={supplyLatest?.toFixed(1) ?? "—"} detail="Indexed pipeline" tone="text-amber-300" />
         <StatTile
           label="Divergence"
           value={divergence != null ? `${divergence > 0 ? "+" : ""}${divergence.toFixed(1)}` : "—"}
@@ -466,7 +508,14 @@ function SectorDemandSupplyCard({ context }: { context: CommercialSectorContext 
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart data={chartData} margin={CHART_MARGIN}>
               <CartesianGrid {...commonGridProps} />
-              <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
+              <XAxis
+                {...commonXAxisProps}
+                dataKey="date"
+                ticks={cycleTicks}
+                interval={0}
+                minTickGap={24}
+                tickFormatter={(date: string) => formatCycleAxisLabel(date, horizonYears)}
+              />
               <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
               <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
               <Tooltip
@@ -488,23 +537,35 @@ function SectorDemandSupplyCard({ context }: { context: CommercialSectorContext 
   );
 }
 
-function SectorPriceCard({ context, color }: { context: CommercialSectorContext; color: string }) {
+function SectorPriceCard({
+  context,
+  color,
+  horizonYears,
+}: {
+  context: CommercialSectorContext;
+  color: string;
+  horizonYears: RealEstateHorizon;
+}) {
   const price = context.price;
+  const listedSeries = useMemo(() => rebaseSeries(price.listed_index, horizonYears), [horizonYears, price.listed_index]);
+  const propertySeries = useMemo(() => rebaseSeries(price.property_price_index, horizonYears), [horizonYears, price.property_price_index]);
+  const rentSeries = useMemo(() => rebaseSeries(price.rent_index, horizonYears), [horizonYears, price.rent_index]);
   const chartData = useMemo(
     () => mergeNamedSeries([
-      { key: "listed", data: price.listed_index },
-      { key: "property", data: price.property_price_index },
-      { key: "rent", data: price.rent_index },
+      { key: "listed", data: listedSeries },
+      { key: "property", data: propertySeries },
+      { key: "rent", data: rentSeries },
     ]),
-    [price.listed_index, price.property_price_index, price.rent_index],
+    [listedSeries, propertySeries, rentSeries],
   );
+  const cycleTicks = useMemo(() => buildCycleTicks(chartData, horizonYears), [chartData, horizonYears]);
 
   return (
-    <div className="surface-card self-start p-3 sm:p-4">
+    <div className="self-start rounded-2xl border border-stealth-700 bg-stealth-950/20 p-3 sm:p-4">
       <SectionHeader
         kicker="Price & Rent"
         title={`${context.label} pricing layers`}
-        detail="Listed-market pricing alongside property-value and rent context, normalized to 100."
+        detail="Listed-market pricing alongside property-value and rent context, normalized to 100 at the selected window start."
       />
       <div className="mt-4 grid grid-cols-3 gap-2">
         <StatTile label="Listed 60D" value={formatChange(price.listed_change_60d)} detail="Sector basket" tone={changeTone(price.listed_change_60d)} />
@@ -516,7 +577,14 @@ function SectorPriceCard({ context, color }: { context: CommercialSectorContext;
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart data={chartData} margin={CHART_MARGIN}>
               <CartesianGrid {...commonGridProps} />
-              <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
+              <XAxis
+                {...commonXAxisProps}
+                dataKey="date"
+                ticks={cycleTicks}
+                interval={0}
+                minTickGap={24}
+                tickFormatter={(date: string) => formatCycleAxisLabel(date, horizonYears)}
+              />
               <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
               <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
               <Tooltip
@@ -555,6 +623,7 @@ function SectorPriceCard({ context, color }: { context: CommercialSectorContext;
 
 export default function CommercialRealEstateTab({ days }: { days: number }) {
   const [selectedSector, setSelectedSector] = useState("office");
+  const [horizonYears, setHorizonYears] = useState<RealEstateHorizon>(15);
   const api = useApi<CommercialPayload>(`/real-estate/commercial?days=${days}`);
 
   if (api.loading && !api.data) {
@@ -686,38 +755,57 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
       </div>
 
       {selectedContext && (
-        <div className="space-y-3">
+        <div className="surface-card-strong p-3 sm:p-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <SectionHeader
-              kicker="Sector Operating Context"
-              title="Supply, demand, and price context"
-              detail="Select a property type to apply the same three-card diagnostic. Labels distinguish direct sector data from broader public-market proxies."
+              kicker="Longer Horizon"
+              title="Commercial supply, demand, and pricing context"
+              detail="One window controls all three sector diagnostics. Labels distinguish direct sector data from broader public-market proxies."
             />
             <span className="rounded-full border border-stealth-700 bg-stealth-900/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-stealth-400">
               {selectedContext.coverage}
             </span>
           </div>
-          <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-900/50 p-1" role="tablist" aria-label="Commercial property type context">
-            {sectorContexts.map((context) => {
-              const active = context.group === selectedContext.group;
-              return (
+          <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="flex w-full max-w-full gap-1 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-900/50 p-1" role="tablist" aria-label="Commercial property type context">
+              {sectorContexts.map((context) => {
+                const active = context.group === selectedContext.group;
+                return (
+                  <button
+                    key={context.group}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setSelectedSector(context.group)}
+                    className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? "bg-sky-500/15 text-sky-300" : "text-stealth-400 hover:bg-stealth-800 hover:text-stealth-200"}`}
+                  >
+                    {context.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="control-strip justify-self-start lg:justify-self-end" role="group" aria-label="Commercial longer-horizon window">
+              {REAL_ESTATE_HORIZONS.map(({ years, label }) => (
                 <button
-                  key={context.group}
+                  key={years}
                   type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setSelectedSector(context.group)}
-                  className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? "bg-sky-500/15 text-sky-300" : "text-stealth-400 hover:bg-stealth-800 hover:text-stealth-200"}`}
+                  aria-pressed={horizonYears === years}
+                  onClick={() => setHorizonYears(years)}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                    horizonYears === years
+                      ? "bg-sky-500/20 text-sky-300"
+                      : "text-stealth-400 hover:text-stealth-200"
+                  }`}
                 >
-                  {context.label}
+                  {label}
                 </button>
-              );
-            })}
+              ))}
+            </div>
           </div>
-          <div className="grid items-start gap-3 md:gap-4 xl:grid-cols-3">
-            <SectorSupplyCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#38bdf8"} />
-            <SectorDemandSupplyCard context={selectedContext} />
-            <SectorPriceCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#a78bfa"} />
+          <div className="mt-4 grid items-start gap-3 md:gap-4 xl:grid-cols-3">
+            <SectorSupplyCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#38bdf8"} horizonYears={horizonYears} />
+            <SectorDemandSupplyCard context={selectedContext} horizonYears={horizonYears} />
+            <SectorPriceCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#a78bfa"} horizonYears={horizonYears} />
           </div>
           <p className="text-[10px] leading-5 text-stealth-500">
             {selectedContext.label} public-data series: {selectedContext.sources.map((source) => `${source.series_id} (${source.label})`).join(" · ")}
