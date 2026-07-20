@@ -131,10 +131,28 @@ def test_calculate_commercial_real_estate_separates_property_types_and_credit(mo
         assert days == 365
         return {
             "cre_price_yoy": _quarterly([-8.0, -6.0, -4.0, -2.0, 0.5, 1.5, 2.5, 3.5]),
+            "cre_price_level": _quarterly([100, 99, 98, 97, 98, 99, 101, 103]),
             "cre_loans": _monthly([2900 + i * 8 for i in range(18)]),
             "cre_delinquency": _quarterly([0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]),
             "treasury_10y": _series([4.0 + i * 0.002 for i in range(180)]),
             "credit_spread": _series([3.5 - i * 0.001 for i in range(180)]),
+            "nonres_rent_ppi": _monthly([120 + i * 0.4 for i in range(18)]),
+            "rent_cpi_index": _monthly([330 + i * 0.7 for i in range(18)]),
+            "office_construction": _monthly([95 - i * 0.8 for i in range(18)]),
+            "office_professional_employment": _monthly([100 + i * 0.4 for i in range(18)]),
+            "office_financial_employment": _monthly([100 + i * 0.2 for i in range(18)]),
+            "office_information_employment": _monthly([100 - i * 0.1 for i in range(18)]),
+            "industrial_construction": _monthly([120 + i * 1.2 for i in range(18)]),
+            "industrial_production": _monthly([100 + i * 0.3 for i in range(18)]),
+            "retail_construction": _monthly([80 + i * 0.2 for i in range(18)]),
+            "retail_sales": _monthly([700 + i * 3 for i in range(18)]),
+            "multifamily_starts": _monthly([480 - i * 4 for i in range(18)]),
+            "multifamily_permits": _monthly([500 - i * 3 for i in range(18)]),
+            "multifamily_completions": _monthly([420 + i * 2 for i in range(18)]),
+            "multifamily_vacancy": _quarterly([6.5, 6.4, 6.3, 6.2, 6.1, 6.0, 5.9, 5.8]),
+            "multifamily_price_level": _quarterly([100, 101, 102, 103, 105, 107, 109, 112]),
+            "digital_power_construction": _monthly([135 + i * 1.5 for i in range(18)]),
+            "digital_demand_employment": _monthly([100 + i * 0.8 for i in range(18)]),
         }, []
 
     monkeypatch.setattr(rei, "fetch_commercial_proxy_data", proxy_fetch)
@@ -166,3 +184,14 @@ def test_calculate_commercial_real_estate_separates_property_types_and_credit(mo
     assert "Office" in data["summary"]
     assert data["macro"]["cre_price_yoy"]
     assert data["availability"]["available_count"] == data["availability"]["total_configured"]
+    assert set(data["sector_context"]) == {
+        "office",
+        "industrial",
+        "retail",
+        "multifamily",
+        "digital",
+    }
+    assert data["sector_context"]["office"]["demand_supply"]["demand_index"]
+    assert data["sector_context"]["multifamily"]["supply"]["series"][0]["data"]
+    assert data["sector_context"]["multifamily"]["price"]["property_price_index"]
+    assert data["sector_context"]["digital"]["coverage"].startswith("Proxy")

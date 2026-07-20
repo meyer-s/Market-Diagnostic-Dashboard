@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -58,6 +58,49 @@ type CommercialMetrics = {
   credit_spread_delta_60d_bps?: number | null;
 };
 
+type SectorSupplySeries = {
+  key: string;
+  label: string;
+  unit: string;
+  latest: number | null;
+  change_yoy: number | null;
+  data: DataPoint[];
+};
+
+type CommercialSectorContext = {
+  group: string;
+  label: string;
+  coverage: string;
+  supply: {
+    title: string;
+    note: string;
+    series: SectorSupplySeries[];
+  };
+  demand_supply: {
+    demand_label: string;
+    supply_label: string;
+    demand_index: DataPoint[];
+    supply_index: DataPoint[];
+    demand_latest: number | null;
+    supply_latest: number | null;
+    divergence: number | null;
+    note: string;
+  };
+  price: {
+    listed_label: string;
+    listed_index: DataPoint[];
+    listed_change_60d: number | null;
+    property_price_label: string;
+    property_price_index: DataPoint[];
+    property_price_change_1y: number | null;
+    rent_label: string;
+    rent_index: DataPoint[];
+    rent_change_1y: number | null;
+    note: string;
+  };
+  sources: Array<{ key: string; series_id: string; label: string }>;
+};
+
 type CommercialPayload = {
   as_of: string;
   regime_label: string;
@@ -69,6 +112,7 @@ type CommercialPayload = {
   factors: CommercialFactor[];
   metrics: CommercialMetrics;
   property_type_history: Array<Record<string, string | number | null>>;
+  sector_context: Record<string, CommercialSectorContext>;
   macro: {
     cre_price_yoy: DataPoint[];
     cre_loans: DataPoint[];
@@ -150,6 +194,27 @@ function nearestValue(points: DataPoint[], date: string) {
     }
   }
   return nearest.value;
+}
+
+function mergeNamedSeries(series: Array<{ key: string; data: DataPoint[] }>) {
+  const dates = [...new Set(series.flatMap((item) => item.data.map((point) => point.date)))].sort();
+  const maps = Object.fromEntries(
+    series.map((item) => [item.key, Object.fromEntries(item.data.map((point) => [point.date, point.value]))]),
+  );
+  return dates.map((date) => {
+    const row: Record<string, string | number | null> = { date };
+    series.forEach((item) => {
+      row[item.key] = maps[item.key]?.[date] ?? null;
+    });
+    return row;
+  });
+}
+
+function formatSupplyValue(series: SectorSupplySeries) {
+  if (series.latest == null) return "—";
+  if (series.unit.startsWith("$M")) return `$${(series.latest / 1000).toFixed(1)}B`;
+  if (series.unit.startsWith("K")) return `${series.latest.toFixed(0)}K`;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(series.latest);
 }
 
 function SectionHeader({ kicker, title, detail }: { kicker: string; title: string; detail: string }) {
@@ -292,7 +357,204 @@ function LendingChart({ loans }: { loans: DataPoint[] }) {
   );
 }
 
+function SectorSupplyCard({ context, color }: { context: CommercialSectorContext; color: string }) {
+  const chartData = useMemo(
+    () => mergeNamedSeries(context.supply.series.map((series) => ({ key: series.key, data: series.data }))),
+    [context.supply.series],
+  );
+  const seriesColors = [color, "#a78bfa", "#94a3b8"];
+
+  return (
+    <div className="surface-card self-start p-3 sm:p-4">
+      <SectionHeader
+        kicker="Supply & Construction"
+        title={context.supply.title}
+        detail="Current development activity and its year-over-year direction."
+      />
+      <div className={`mt-4 grid gap-2 ${context.supply.series.length > 1 ? "sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3" : "grid-cols-2"}`}>
+        {context.supply.series.map((series) => (
+          <StatTile
+            key={series.key}
+            label={series.label}
+            value={formatSupplyValue(series)}
+            detail={`${formatChange(series.change_yoy)} year over year`}
+            tone={changeTone(series.change_yoy)}
+          />
+        ))}
+        {context.supply.series.length === 1 && (
+          <StatTile
+            label="One-Year Change"
+            value={formatChange(context.supply.series[0]?.change_yoy)}
+            detail="Change in development activity"
+            tone={changeTone(context.supply.series[0]?.change_yoy)}
+          />
+        )}
+      </div>
+      {chartData.length > 0 && (
+        <div className="mt-4 h-56">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <LineChart data={chartData} margin={CHART_MARGIN}>
+              <CartesianGrid {...commonGridProps} />
+              <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
+              <YAxis {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(value: number) => `${Math.round(value)}`} />
+              <Tooltip
+                {...chartTooltip}
+                formatter={(value: number, name: string) => {
+                  const series = context.supply.series.find((item) => item.key === name);
+                  return [series ? formatSupplyValue({ ...series, latest: value }) : value.toFixed(1), series?.label ?? name];
+                }}
+              />
+              {context.supply.series.map((series, index) => (
+                <Line
+                  key={series.key}
+                  type="monotone"
+                  dataKey={series.key}
+                  stroke={seriesColors[index] ?? "#94a3b8"}
+                  strokeWidth={2.1}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {context.supply.series.map((series, index) => (
+          <span key={series.key} className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-stealth-300">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: seriesColors[index] ?? "#94a3b8" }} />
+            {series.label}
+          </span>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] leading-5 text-stealth-500">{context.supply.note}</p>
+    </div>
+  );
+}
+
+function SectorDemandSupplyCard({ context }: { context: CommercialSectorContext }) {
+  const demand = context.demand_supply;
+  const chartData = useMemo(
+    () => mergeNamedSeries([
+      { key: "demand", data: demand.demand_index },
+      { key: "supply", data: demand.supply_index },
+    ]),
+    [demand.demand_index, demand.supply_index],
+  );
+  const divergence = demand.divergence;
+
+  return (
+    <div className="surface-card self-start p-3 sm:p-4">
+      <SectionHeader
+        kicker="Demand vs Supply"
+        title={`${context.label} operating balance`}
+        detail="Public demand and development measures, each indexed to 100 at the start of its history."
+      />
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <StatTile label="Demand" value={demand.demand_latest?.toFixed(1) ?? "—"} detail="Indexed activity" tone="text-sky-300" />
+        <StatTile label="Supply" value={demand.supply_latest?.toFixed(1) ?? "—"} detail="Indexed pipeline" tone="text-amber-300" />
+        <StatTile
+          label="Divergence"
+          value={divergence != null ? `${divergence > 0 ? "+" : ""}${divergence.toFixed(1)}` : "—"}
+          detail="Demand less supply"
+          tone={divergence == null ? "text-stealth-500" : divergence >= 0 ? "text-emerald-300" : "text-rose-300"}
+        />
+      </div>
+      {chartData.length > 0 && (
+        <div className="mt-4 h-56">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <LineChart data={chartData} margin={CHART_MARGIN}>
+              <CartesianGrid {...commonGridProps} />
+              <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
+              <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
+              <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
+              <Tooltip
+                {...chartTooltip}
+                formatter={(value: number, name: string) => [value.toFixed(1), name === "demand" ? demand.demand_label : demand.supply_label]}
+              />
+              <Line type="monotone" dataKey="demand" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls isAnimationActive={false} />
+              <Line type="monotone" dataKey="supply" stroke="#f59e0b" strokeWidth={2.1} strokeDasharray="5 3" dot={false} connectNulls isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-stealth-300">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1"><span className="h-2 w-2 rounded-full bg-sky-400" />{demand.demand_label}</span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1"><span className="h-2 w-2 rounded-full bg-amber-500" />{demand.supply_label}</span>
+      </div>
+      <p className="mt-3 text-[11px] leading-5 text-stealth-500">{demand.note}</p>
+    </div>
+  );
+}
+
+function SectorPriceCard({ context, color }: { context: CommercialSectorContext; color: string }) {
+  const price = context.price;
+  const chartData = useMemo(
+    () => mergeNamedSeries([
+      { key: "listed", data: price.listed_index },
+      { key: "property", data: price.property_price_index },
+      { key: "rent", data: price.rent_index },
+    ]),
+    [price.listed_index, price.property_price_index, price.rent_index],
+  );
+
+  return (
+    <div className="surface-card self-start p-3 sm:p-4">
+      <SectionHeader
+        kicker="Price & Rent"
+        title={`${context.label} pricing layers`}
+        detail="Listed-market pricing alongside property-value and rent context, normalized to 100."
+      />
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <StatTile label="Listed 60D" value={formatChange(price.listed_change_60d)} detail="Sector basket" tone={changeTone(price.listed_change_60d)} />
+        <StatTile label="Property 1Y" value={formatChange(price.property_price_change_1y)} detail="Price index" tone={changeTone(price.property_price_change_1y)} />
+        <StatTile label="Rent 1Y" value={formatChange(price.rent_change_1y)} detail="Rent measure" tone={changeTone(price.rent_change_1y)} />
+      </div>
+      {chartData.length > 0 && (
+        <div className="mt-4 h-56">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <LineChart data={chartData} margin={CHART_MARGIN}>
+              <CartesianGrid {...commonGridProps} />
+              <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
+              <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
+              <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
+              <Tooltip
+                {...chartTooltip}
+                formatter={(value: number, name: string) => {
+                  const labels: Record<string, string> = {
+                    listed: price.listed_label,
+                    property: price.property_price_label,
+                    rent: price.rent_label,
+                  };
+                  return [value.toFixed(1), labels[name] ?? name];
+                }}
+              />
+              <Line type="monotone" dataKey="listed" stroke={color} strokeWidth={2.2} dot={false} connectNulls isAnimationActive={false} />
+              <Line type="monotone" dataKey="property" stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+              <Line type="monotone" dataKey="rent" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-stealth-300">
+        {[
+          [price.listed_label, color],
+          [price.property_price_label, "#38bdf8"],
+          [price.rent_label, "#f59e0b"],
+        ].map(([label, swatch]) => (
+          <span key={label} className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: swatch }} />{label}
+          </span>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] leading-5 text-stealth-500">{price.note}</p>
+    </div>
+  );
+}
+
 export default function CommercialRealEstateTab({ days }: { days: number }) {
+  const [selectedSector, setSelectedSector] = useState("office");
   const api = useApi<CommercialPayload>(`/real-estate/commercial?days=${days}`);
 
   if (api.loading && !api.data) {
@@ -311,6 +573,10 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
   const metrics = data.metrics;
   const orderedGroups = [...data.groups].sort((left, right) => right.score - left.score);
   const loanBalance = metrics.cre_loan_balance_bil;
+  const sectorContexts = data.groups
+    .map((group) => data.sector_context?.[group.group])
+    .filter((context): context is CommercialSectorContext => Boolean(context));
+  const selectedContext = data.sector_context?.[selectedSector] ?? sectorContexts[0];
 
   return (
     <div className="space-y-5 md:space-y-6">
@@ -418,6 +684,46 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
         </div>
         <PropertyTypeChart data={data.property_type_history} groups={data.groups} />
       </div>
+
+      {selectedContext && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <SectionHeader
+              kicker="Sector Operating Context"
+              title="Supply, demand, and price context"
+              detail="Select a property type to apply the same three-card diagnostic. Labels distinguish direct sector data from broader public-market proxies."
+            />
+            <span className="rounded-full border border-stealth-700 bg-stealth-900/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-stealth-400">
+              {selectedContext.coverage}
+            </span>
+          </div>
+          <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-900/50 p-1" role="tablist" aria-label="Commercial property type context">
+            {sectorContexts.map((context) => {
+              const active = context.group === selectedContext.group;
+              return (
+                <button
+                  key={context.group}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setSelectedSector(context.group)}
+                  className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? "bg-sky-500/15 text-sky-300" : "text-stealth-400 hover:bg-stealth-800 hover:text-stealth-200"}`}
+                >
+                  {context.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid items-start gap-3 md:gap-4 xl:grid-cols-3">
+            <SectorSupplyCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#38bdf8"} />
+            <SectorDemandSupplyCard context={selectedContext} />
+            <SectorPriceCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#a78bfa"} />
+          </div>
+          <p className="text-[10px] leading-5 text-stealth-500">
+            {selectedContext.label} public-data series: {selectedContext.sources.map((source) => `${source.series_id} (${source.label})`).join(" · ")}
+          </p>
+        </div>
+      )}
 
       <div className="space-y-3">
         <SectionHeader

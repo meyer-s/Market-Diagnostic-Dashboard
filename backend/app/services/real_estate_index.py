@@ -167,18 +167,136 @@ COMMERCIAL_REAL_ESTATE_PROXIES: Tuple[RealEstateProxy, ...] = (
 
 COMMERCIAL_FRED_SERIES: Dict[str, str] = {
     "cre_price_yoy": "BOGZ1FL010000386Q",
+    "cre_price_level": "BOGZ1FL075035503Q",
     "cre_loans": "CREACBM027NBOG",
     "cre_delinquency": "DRCRELEXFACBS",
     "treasury_10y": "DGS10",
     "credit_spread": "BAMLH0A0HYM2",
+    "nonres_rent_ppi": "PCU531120531120",
+    "rent_cpi_index": "CUSR0000SEHA",
+    "office_construction": "TLOFCONS",
+    "office_professional_employment": "USPBS",
+    "office_financial_employment": "USFIRE",
+    "office_information_employment": "USINFO",
+    "industrial_construction": "TLMFGCONS",
+    "industrial_production": "INDPRO",
+    "retail_construction": "TLCOMCONS",
+    "retail_sales": "RETAILSMSA",
+    "multifamily_starts": "HOUST5F",
+    "multifamily_permits": "PERMIT5",
+    "multifamily_completions": "COMPU5MUSA",
+    "multifamily_vacancy": "RRVRUSQ156N",
+    "multifamily_price_level": "BOGZ1FL075035403Q",
+    "digital_power_construction": "TLPWRCONS",
+    "digital_demand_employment": "CES5051800001",
 }
 
 COMMERCIAL_FRED_LABELS: Dict[str, str] = {
     "cre_price_yoy": "commercial real-estate prices",
+    "cre_price_level": "commercial real-estate price index",
     "cre_loans": "commercial real-estate loans",
     "cre_delinquency": "commercial real-estate loan delinquencies",
     "treasury_10y": "10Y Treasury yield",
     "credit_spread": "HY credit spread",
+    "nonres_rent_ppi": "nonresidential building rents",
+    "rent_cpi_index": "rent CPI",
+    "office_construction": "office construction spending",
+    "office_professional_employment": "professional-services employment",
+    "office_financial_employment": "financial-activities employment",
+    "office_information_employment": "information employment",
+    "industrial_construction": "manufacturing construction spending",
+    "industrial_production": "industrial production",
+    "retail_construction": "commercial construction spending",
+    "retail_sales": "retail sales",
+    "multifamily_starts": "multifamily housing starts",
+    "multifamily_permits": "multifamily building permits",
+    "multifamily_completions": "multifamily completions",
+    "multifamily_vacancy": "rental vacancy rate",
+    "multifamily_price_level": "multifamily property price index",
+    "digital_power_construction": "power infrastructure construction",
+    "digital_demand_employment": "computing-infrastructure employment",
+}
+
+COMMERCIAL_SECTOR_CONTEXT_CONFIG: Dict[str, Dict[str, Any]] = {
+    "office": {
+        "label": "Office",
+        "coverage": "Direct construction + operating proxies",
+        "supply_title": "Office development pipeline",
+        "supply_note": "Office construction spending is a direct Census measure of development activity.",
+        "supply": (("office_construction", "Office Construction", "$M SAAR"),),
+        "demand": (
+            "office_professional_employment",
+            "office_financial_employment",
+            "office_information_employment",
+        ),
+        "demand_label": "Office-using Employment",
+        "demand_note": "Demand is an equal-weighted employment proxy across professional services, financial activities, and information.",
+        "price_key": "cre_price_level",
+        "price_label": "Broad CRE Price Index",
+        "rent_key": "nonres_rent_ppi",
+        "rent_label": "Nonresidential Rent PPI",
+    },
+    "industrial": {
+        "label": "Industrial / Logistics",
+        "coverage": "Operating and development proxies",
+        "supply_title": "Industrial development pipeline",
+        "supply_note": "Manufacturing construction is a logistics-adjacent supply proxy, not a warehouse inventory count.",
+        "supply": (("industrial_construction", "Manufacturing Construction", "$M SAAR"),),
+        "demand": ("industrial_production",),
+        "demand_label": "Industrial Production",
+        "demand_note": "Industrial production is used as the public operating-demand proxy for logistics space.",
+        "price_key": "cre_price_level",
+        "price_label": "Broad CRE Price Index",
+        "rent_key": "nonres_rent_ppi",
+        "rent_label": "Nonresidential Rent PPI",
+    },
+    "retail": {
+        "label": "Retail",
+        "coverage": "Direct activity + broad construction proxy",
+        "supply_title": "Retail development pipeline",
+        "supply_note": "Commercial construction spending is broader than retail alone and is labeled as a supply proxy.",
+        "supply": (("retail_construction", "Commercial Construction", "$M SAAR"),),
+        "demand": ("retail_sales",),
+        "demand_label": "Retail Sales",
+        "demand_note": "Monthly retailer sales provide the operating-demand side of the retail property read.",
+        "price_key": "cre_price_level",
+        "price_label": "Broad CRE Price Index",
+        "rent_key": "nonres_rent_ppi",
+        "rent_label": "Nonresidential Rent PPI",
+    },
+    "multifamily": {
+        "label": "Multifamily",
+        "coverage": "Mostly direct property-market series",
+        "supply_title": "Multifamily construction pipeline",
+        "supply_note": "Starts, permits, and completions are direct measures for buildings with five units or more.",
+        "supply": (
+            ("multifamily_starts", "5+ Unit Starts", "K SAAR"),
+            ("multifamily_permits", "5+ Unit Permits", "K SAAR"),
+            ("multifamily_completions", "5+ Unit Completions", "K SAAR"),
+        ),
+        "demand": ("multifamily_vacancy",),
+        "demand_label": "Rental Demand (Inverse Vacancy)",
+        "demand_invert": True,
+        "demand_note": "The rental vacancy rate is inverted so a falling vacancy rate reads as stronger demand.",
+        "price_key": "multifamily_price_level",
+        "price_label": "Multifamily Price Index",
+        "rent_key": "rent_cpi_index",
+        "rent_label": "Rent CPI",
+    },
+    "digital": {
+        "label": "Digital Infrastructure",
+        "coverage": "Proxy-led public-data read",
+        "supply_title": "Digital infrastructure pipeline",
+        "supply_note": "Power construction is an enabling-infrastructure proxy; public data do not isolate national data-center completions cleanly.",
+        "supply": (("digital_power_construction", "Power Construction", "$M SAAR"),),
+        "demand": ("digital_demand_employment",),
+        "demand_label": "Computing Infrastructure Employment",
+        "demand_note": "Computing-infrastructure and hosting employment is used as a public activity proxy for digital demand.",
+        "price_key": "cre_price_level",
+        "price_label": "Broad CRE Price Index",
+        "rent_key": "nonres_rent_ppi",
+        "rent_label": "Nonresidential Rent PPI",
+    },
 }
 
 
@@ -558,6 +676,14 @@ def fetch_commercial_proxy_data(
 
 def fetch_commercial_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
     start = (datetime.utcnow() - timedelta(days=days + 450)).strftime("%Y-%m-%d")
+    long_context_start = (datetime.utcnow() - timedelta(days=2200)).strftime("%Y-%m-%d")
+    core_keys = {
+        "cre_price_yoy",
+        "cre_loans",
+        "cre_delinquency",
+        "treasury_10y",
+        "credit_spread",
+    }
     series_map: Dict[str, pd.Series] = {
         key: pd.Series(dtype="float64") for key in COMMERCIAL_FRED_SERIES
     }
@@ -566,7 +692,11 @@ def fetch_commercial_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List
     max_workers = min(6, len(COMMERCIAL_FRED_SERIES))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_fred_fetch, series_id, start): key
+            executor.submit(
+                _fred_fetch,
+                series_id,
+                start if key in core_keys else long_context_start,
+            ): key
             for key, series_id in COMMERCIAL_FRED_SERIES.items()
         }
         for future in as_completed(futures):
@@ -1145,6 +1275,138 @@ def _build_commercial_group_history(
     return history
 
 
+def _indexed_series(series: pd.Series, *, invert: bool = False) -> pd.Series:
+    clean = series.dropna().sort_index()
+    if clean.empty:
+        return pd.Series(dtype="float64")
+    base = _safe_float(clean.iloc[0])
+    if base in (None, 0):
+        return pd.Series(dtype="float64")
+    if invert:
+        valid = clean.replace(0, np.nan).dropna()
+        return (float(base) / valid) * 100.0
+    return (clean / float(base)) * 100.0
+
+
+def _average_indexed_series(
+    series_list: List[pd.Series],
+    *,
+    invert: bool = False,
+) -> pd.Series:
+    indexed = {
+        str(index): _indexed_series(series, invert=invert)
+        for index, series in enumerate(series_list)
+        if not series.empty
+    }
+    indexed = {key: series for key, series in indexed.items() if not series.empty}
+    if not indexed:
+        return pd.Series(dtype="float64")
+    return pd.DataFrame(indexed).sort_index().mean(axis=1).dropna()
+
+
+def _build_commercial_sector_context(
+    fred_series: Dict[str, pd.Series],
+    property_type_history: List[Dict[str, Any]],
+    groups: Dict[str, Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    contexts: Dict[str, Dict[str, Any]] = {}
+
+    for group, config in COMMERCIAL_SECTOR_CONTEXT_CONFIG.items():
+        supply_specs = config["supply"]
+        supply_series = [
+            fred_series.get(key, pd.Series(dtype="float64"))
+            for key, _, _ in supply_specs
+        ]
+        supply_payload = []
+        for (key, label, unit), series in zip(supply_specs, supply_series):
+            latest = _latest(series)
+            change_yoy = _pct_change_observations(series, 12)
+            supply_payload.append({
+                "key": key,
+                "label": label,
+                "unit": unit,
+                "latest": round(latest, 1) if latest is not None else None,
+                "change_yoy": round(change_yoy, 2) if change_yoy is not None else None,
+                "data": _series_points(series, decimals=2),
+            })
+
+        demand_source_series = [
+            fred_series.get(key, pd.Series(dtype="float64"))
+            for key in config["demand"]
+        ]
+        demand_index = _average_indexed_series(
+            demand_source_series,
+            invert=bool(config.get("demand_invert", False)),
+        )
+        supply_index = _average_indexed_series(supply_series)
+        demand_latest = _latest(demand_index)
+        supply_latest = _latest(supply_index)
+        divergence = (
+            demand_latest - supply_latest
+            if demand_latest is not None and supply_latest is not None
+            else None
+        )
+
+        listed_index = [
+            {"date": point["date"], "value": point[group]}
+            for point in property_type_history
+            if point.get(group) is not None
+        ]
+        price_series = fred_series.get(config["price_key"], pd.Series(dtype="float64"))
+        rent_series = fred_series.get(config["rent_key"], pd.Series(dtype="float64"))
+        group_60d = groups.get(group, {}).get("changes", {}).get("60d")
+        price_change_1y = _pct_change_observations(price_series, 4)
+        rent_change_1y = _pct_change_observations(rent_series, 12)
+
+        source_keys = {
+            *(key for key, _, _ in supply_specs),
+            *config["demand"],
+            config["price_key"],
+            config["rent_key"],
+        }
+        contexts[group] = {
+            "group": group,
+            "label": config["label"],
+            "coverage": config["coverage"],
+            "supply": {
+                "title": config["supply_title"],
+                "note": config["supply_note"],
+                "series": supply_payload,
+            },
+            "demand_supply": {
+                "demand_label": config["demand_label"],
+                "supply_label": "Development Pipeline",
+                "demand_index": _series_points(demand_index, decimals=2),
+                "supply_index": _series_points(supply_index, decimals=2),
+                "demand_latest": round(demand_latest, 2) if demand_latest is not None else None,
+                "supply_latest": round(supply_latest, 2) if supply_latest is not None else None,
+                "divergence": round(divergence, 2) if divergence is not None else None,
+                "note": config["demand_note"],
+            },
+            "price": {
+                "listed_label": f"{config['label']} Listed Basket",
+                "listed_index": listed_index,
+                "listed_change_60d": group_60d,
+                "property_price_label": config["price_label"],
+                "property_price_index": _series_points(_indexed_series(price_series), decimals=2),
+                "property_price_change_1y": round(price_change_1y, 2) if price_change_1y is not None else None,
+                "rent_label": config["rent_label"],
+                "rent_index": _series_points(_indexed_series(rent_series), decimals=2),
+                "rent_change_1y": round(rent_change_1y, 2) if rent_change_1y is not None else None,
+                "note": (
+                    "Listed pricing is sector-specific. The appraisal and rent series are direct for multifamily "
+                    "and broad nonresidential context for the other property types."
+                ),
+            },
+            "sources": [
+                {"key": key, "series_id": COMMERCIAL_FRED_SERIES[key], "label": COMMERCIAL_FRED_LABELS[key]}
+                for key in sorted(source_keys)
+            ],
+        }
+
+    return contexts
+
+
 def _commercial_regime_label(pressure_score: float) -> str:
     if pressure_score >= 65:
         return "Broad CRE Stress"
@@ -1301,6 +1563,17 @@ def calculate_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
             labels = [COMMERCIAL_FRED_LABELS.get(key, key) for key in missing_fred]
             warnings.append(f"Missing CRE macro series: {', '.join(labels)}")
 
+        property_type_history = _build_commercial_group_history(
+            proxy_series,
+            symbol_data,
+            days,
+        )
+        sector_context = _build_commercial_sector_context(
+            fred_series,
+            property_type_history,
+            groups,
+        )
+
         data: Dict[str, Any] = {
             "as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "regime_label": _commercial_regime_label(pressure_score),
@@ -1311,7 +1584,8 @@ def calculate_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
             "symbols": list(symbol_data.values()),
             "factors": factors,
             "metrics": metrics,
-            "property_type_history": _build_commercial_group_history(proxy_series, symbol_data, days),
+            "property_type_history": property_type_history,
+            "sector_context": sector_context,
             "macro": {
                 "cre_price_yoy": _series_points(price_series, decimals=2),
                 "cre_loans": _series_points(loan_series, decimals=1),
