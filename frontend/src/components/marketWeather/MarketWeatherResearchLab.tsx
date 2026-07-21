@@ -37,12 +37,12 @@ import {
 } from "../../utils/marketWeatherTimeline";
 import type {
   MarketDirectionalPhase,
-  MarketStateTimelinePoint,
   MarketTimelineWindow,
 } from "../../utils/marketWeatherTimeline";
 
 type LanguageView = "now" | "dictionary" | "methods";
 type DerivativeKey = "pressure" | "velocity" | "acceleration" | "jerk" | "snap";
+type TimelineLens = "direction" | "structure" | "carriers" | "range";
 
 interface MarketWeatherResearchLabProps {
   research: MarketWeatherResearch;
@@ -158,7 +158,12 @@ function StateDeviationBars({
 }
 
 const TIMELINE_WINDOWS: MarketTimelineWindow[] = [60, 120, 250, "all"];
-const TIMELINE_SYNC_ID = "market-state-through-time";
+const TIMELINE_LENSES: Array<{ id: TimelineLens; label: string }> = [
+  { id: "direction", label: "Direction" },
+  { id: "structure", label: "Structure" },
+  { id: "carriers", label: "Carriers" },
+  { id: "range", label: "Range" },
+];
 
 const PHASE_STYLES: Record<MarketDirectionalPhase, { label: string; color: string }> = {
   "positive-strengthening": { label: "Positive · strengthening", color: "#38bdf8" },
@@ -212,62 +217,6 @@ function TimelineTrackHeader({
   );
 }
 
-function RatioTimelineTrack({
-  data,
-  dataKey,
-  label,
-  color,
-  selectedDate,
-  selectedValue,
-  onInspect,
-}: {
-  data: MarketStateTimelinePoint[];
-  dataKey: "volatilityRatio" | "participationRatio" | "liquidityRatio";
-  label: string;
-  color: string;
-  selectedDate: string;
-  selectedValue: number | null;
-  onInspect: (state: unknown) => void;
-}) {
-  const domain = focusedRatioDomain(data, dataKey);
-  return (
-    <div className="min-w-0 lg:px-3 lg:first:pl-0 lg:last:pr-0">
-      <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
-        <span className="text-slate-300">{label}</span>
-        <strong className="font-mono text-white">{formatRatio(selectedValue)}</strong>
-      </div>
-      <div className="h-[104px] min-w-0" role="img" aria-label={`${label} relative to its own causal trailing baseline over the selected window`}>
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart
-            data={data}
-            syncId={TIMELINE_SYNC_ID}
-            margin={{ top: 7, right: 4, left: 0, bottom: 0 }}
-            onMouseMove={onInspect}
-            onClick={onInspect}
-            accessibilityLayer
-          >
-            <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-            <XAxis dataKey="date" hide />
-            <YAxis
-              domain={domain}
-              width={42}
-              tickCount={3}
-              tick={{ fill: "var(--chart-axis-tick)", fontSize: 10 }}
-              tickFormatter={(value: number) => Number(value).toFixed(domain[1] - domain[0] < 0.5 ? 2 : 1)}
-              axisLine={false}
-              tickLine={false}
-            />
-            <ReferenceLine y={1} stroke="#64748b" strokeDasharray="3 4" />
-            <TimelineCursor selectedDate={selectedDate} />
-            <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
-            <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
 function MarketStateTimeline({
   price,
   research,
@@ -279,25 +228,50 @@ function MarketStateTimeline({
 }) {
   const lexicon = research.lexicon!;
   const timeline = useMemo(() => buildMarketStateTimeline(price, research), [price, research]);
-  const [window, setWindow] = useState<MarketTimelineWindow>(120);
-  const visible = useMemo(() => sliceMarketStateTimeline(timeline, window), [timeline, window]);
+  const [timelineWindow, setTimelineWindow] = useState<MarketTimelineWindow>(120);
+  const [activeLens, setActiveLens] = useState<TimelineLens>("direction");
+  const visible = useMemo(() => sliceMarketStateTimeline(timeline, timelineWindow), [timeline, timelineWindow]);
   const latestDate = visible[visible.length - 1]?.date ?? "";
   const [selectedDate, setSelectedDate] = useState(latestDate);
+  const selectedDateRef = useRef(selectedDate);
+  const pendingDateRef = useRef<string | null>(null);
+  const inspectFrameRef = useRef<number | null>(null);
+  const indexByDate = useMemo(() => new Map(visible.map((point, index) => [point.date, index])), [visible]);
 
   useEffect(() => {
-    if (!visible.some((point) => point.date === selectedDate)) setSelectedDate(latestDate);
-  }, [latestDate, selectedDate, visible]);
+    pendingDateRef.current = null;
+    if (inspectFrameRef.current !== null) {
+      cancelAnimationFrame(inspectFrameRef.current);
+      inspectFrameRef.current = null;
+    }
+    if (latestDate && !indexByDate.has(selectedDateRef.current)) {
+      selectedDateRef.current = latestDate;
+      setSelectedDate(latestDate);
+    }
+  }, [indexByDate, latestDate]);
 
-  const selected = visible.find((point) => point.date === selectedDate) ?? visible[visible.length - 1];
+  useEffect(() => () => {
+    if (inspectFrameRef.current !== null) cancelAnimationFrame(inspectFrameRef.current);
+  }, []);
+
+  const selectedIndex = indexByDate.get(selectedDate) ?? Math.max(0, visible.length - 1);
+  const selected = visible[selectedIndex];
   const directionalRuns = useMemo(() => buildDirectionalPhaseRuns(visible), [visible]);
   const learnedFormRuns = useMemo(() => buildLearnedFormRuns(visible), [visible]);
+  const carrierDomain = useMemo(
+    () => focusedRatioDomain(visible, ["volatilityRatio", "participationRatio", "liquidityRatio"]),
+    [visible],
+  );
   const stateNumberById = useMemo(
     () => new Map(lexicon.archetypes.map((archetype, index) => [archetype.id, index + 1])),
     [lexicon.archetypes],
   );
-  const learnedTransitions = learnedFormRuns
-    .filter((run) => run.stateId !== null)
-    .reduce((count, run, index, runs) => count + (index > 0 && runs[index - 1].stateId !== run.stateId ? 1 : 0), 0);
+  const learnedTransitions = useMemo(
+    () => learnedFormRuns
+      .filter((run) => run.stateId !== null)
+      .reduce((count, run, index, runs) => count + (index > 0 && runs[index - 1].stateId !== run.stateId ? 1 : 0), 0),
+    [learnedFormRuns],
+  );
   const cutoff = lexicon.distance_metric.outside_range_cutoff ?? 0.05;
   const rangeLabel = selected?.distanceTailScore === null || selected?.distanceTailScore === undefined
     ? "Not range-scored"
@@ -306,30 +280,61 @@ function MarketStateTimeline({
       : "Within learned range";
   const selectedStateNumber = selected?.stateId ? stateNumberById.get(selected.stateId) : undefined;
 
-  const inspect = (state: unknown) => {
-    const date = activeTimelineDate(state);
-    if (date) setSelectedDate(date);
+  if (!selected) return null;
+
+  const lensReadout = activeLens === "direction"
+    ? { label: "Direction", value: `${formatSignedScore(selected.pressure)} · Δ ${formatSignedScore(selected.pressureChange)}`, detail: null, warning: false }
+    : activeLens === "structure"
+      ? { label: "Field structure", value: `${Math.round(selected.organization ?? 0)} org · ${Math.round(selected.disorder ?? 0)} disorder · ${Math.round(selected.propagation ?? 0)} spread`, detail: null, warning: false }
+      : activeLens === "carriers"
+        ? { label: "Market carriers", value: `${formatRatio(selected.volatilityRatio)} vol · ${formatRatio(selected.participationRatio)} participation · ${formatRatio(selected.liquidityRatio)} liquidity`, detail: "Each relative to its own causal baseline", warning: false }
+        : { label: "Learned-range evidence", value: rangeLabel, detail: `score ${selected.distanceTailScore?.toFixed(3) ?? "—"} · cutoff ${cutoff.toFixed(2)}`, warning: Boolean(selected.outsideLearnedRange) };
+
+  const commitSelectedDate = (date: string) => {
+    if (!date || date === selectedDateRef.current) return;
+    selectedDateRef.current = date;
+    setSelectedDate(date);
   };
 
-  if (!selected) return null;
+  const inspect = (state: unknown) => {
+    const date = activeTimelineDate(state);
+    if (!date || date === selectedDateRef.current) return;
+    pendingDateRef.current = date;
+    if (inspectFrameRef.current !== null) return;
+    inspectFrameRef.current = requestAnimationFrame(() => {
+      inspectFrameRef.current = null;
+      const nextDate = pendingDateRef.current;
+      pendingDateRef.current = null;
+      if (nextDate) commitSelectedDate(nextDate);
+    });
+  };
+
+  const resetToLatest = () => {
+    pendingDateRef.current = null;
+    if (inspectFrameRef.current !== null) {
+      cancelAnimationFrame(inspectFrameRef.current);
+      inspectFrameRef.current = null;
+    }
+    commitSelectedDate(latestDate);
+  };
 
   return (
     <article className="min-w-0 overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/30">
-      <header className="border-b border-stealth-700 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <header className="border-b border-stealth-700 p-3 sm:p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <h3 className="text-lg font-semibold text-white">Market state through time</h3>
             <p className="mt-1 text-xs leading-5 text-slate-400">One shared cursor connects price to the measurements that produced each description. Historical diagnostics, not forecasts.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-xl border border-stealth-700 bg-slate-950/45 p-1" aria-label="Timeline window">
+            <div className="inline-flex rounded-xl border border-stealth-700 bg-slate-950/45 p-1" role="group" aria-label="Timeline window">
               {TIMELINE_WINDOWS.map((option) => (
                 <button
                   key={option}
                   type="button"
-                  aria-pressed={window === option}
-                  onClick={() => setWindow(option)}
-                  className={`min-h-9 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${window === option ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                  aria-pressed={timelineWindow === option}
+                  onClick={() => setTimelineWindow(option)}
+                  className={`min-h-8 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${timelineWindow === option ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
                 >
                   {option === "all" ? "All" : option}
                 </button>
@@ -337,174 +342,211 @@ function MarketStateTimeline({
             </div>
             <button
               type="button"
-              onClick={() => setSelectedDate(latestDate)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-700 px-3 text-xs text-slate-300 transition hover:border-stealth-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+              onClick={resetToLatest}
+              className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-700 px-3 text-xs text-slate-300 transition hover:border-stealth-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
             >
               <RotateCcw className="h-3.5 w-3.5" />Latest
             </button>
           </div>
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/35">
-          <div className="grid sm:grid-cols-2 xl:grid-cols-[1.25fr_.55fr_.8fr_1fr_1fr] xl:divide-x xl:divide-stealth-700">
-            <div className="p-3 sm:col-span-2 xl:col-span-1">
+        <div className="mt-3 overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/35">
+          <div className="grid md:grid-cols-[1.15fr_.45fr_1.6fr] md:divide-x md:divide-stealth-700">
+            <div className="p-3">
               <span className="text-xs uppercase tracking-[0.12em] text-slate-500">Inspected bar</span>
               <strong className="mt-1 block text-base text-white">{PHASE_STYLES[selected.directionalPhase].label}</strong>
               <span className="mt-1 block text-xs text-slate-400">{formatObservationDate(selected.date, timeframe)} · {selectedStateNumber ? `Form ${selectedStateNumber}` : "before learned evaluation"}</span>
             </div>
-            <div className="border-t border-stealth-700 p-3 sm:border-r sm:border-stealth-700 xl:border-t-0 xl:border-r-0">
+            <div className="border-t border-stealth-700 p-3 md:border-t-0">
               <span className="text-xs text-slate-400">Close</span>
               <strong className="mt-1 block font-mono text-base text-white">${selected.close.toFixed(2)}</strong>
             </div>
-            <div className="border-t border-stealth-700 p-3 xl:border-t-0">
-              <span className="text-xs text-slate-400">Direction</span>
-              <strong className="mt-1 block font-mono text-sm text-white">{formatSignedScore(selected.pressure)} · Δ {formatSignedScore(selected.pressureChange)}</strong>
-            </div>
-            <div className="border-t border-stealth-700 p-3 sm:border-r sm:border-stealth-700 xl:border-t-0 xl:border-r-0">
-              <span className="text-xs text-slate-400">Field structure</span>
-              <strong className="mt-1 block font-mono text-sm text-white">{Math.round(selected.organization ?? 0)} org · {Math.round(selected.disorder ?? 0)} disorder · {Math.round(selected.propagation ?? 0)} spread</strong>
-            </div>
-            <div className="border-t border-stealth-700 p-3 xl:border-t-0">
-              <span className="text-xs text-slate-400">Learned-range evidence</span>
-              <strong className={`mt-1 block text-sm ${selected.outsideLearnedRange ? "text-amber-200" : "text-white"}`}>{rangeLabel}</strong>
-              <span className="mt-1 block font-mono text-xs text-slate-400">score {selected.distanceTailScore?.toFixed(3) ?? "—"} · cutoff {cutoff.toFixed(2)}</span>
+            <div className="border-t border-stealth-700 p-3 md:border-t-0">
+              <span className="text-xs text-slate-400">{lensReadout.label}</span>
+              <strong className={`mt-1 block font-mono text-sm ${lensReadout.warning ? "text-amber-200" : "text-white"}`}>{lensReadout.value}</strong>
+              {lensReadout.detail ? <span className="mt-1 block text-xs text-slate-400">{lensReadout.detail}</span> : null}
             </div>
           </div>
         </div>
       </header>
 
       <div className="divide-y divide-stealth-700">
-        <section className="p-4 sm:p-5">
+        <section className="p-3 sm:p-4">
           <TimelineTrackHeader title="Price" scale={`Actual close · ${visible.length} bars`} />
-          <div className="h-[190px] min-w-0 sm:h-[220px]" role="img" aria-label="Closing price over the selected window with measured directional phases">
+          <div className="h-[165px] min-w-0 sm:h-[180px]" role="img" aria-label="Closing price over the selected window with measured directional phases">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={visible}
-                syncId={TIMELINE_SYNC_ID}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                 onMouseMove={inspect}
                 onClick={inspect}
-                accessibilityLayer
               >
                 <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
                 <XAxis dataKey="date" hide />
                 <YAxis domain={["auto", "auto"]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => `$${Number(value).toFixed(0)}`} axisLine={false} tickLine={false} />
-                {directionalRuns.map((run) => <ReferenceArea key={run.key} x1={run.start} x2={run.end} fill={PHASE_STYLES[run.phase].color} fillOpacity={0.055} strokeOpacity={0} />)}
                 <TimelineCursor selectedDate={selected.date} />
-                <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
+                <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
                 <Line type="monotone" dataKey="close" stroke="#7dd3fc" strokeWidth={2.5} dot={false} isAnimationActive={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
 
-          <div className="mt-3 space-y-3 pl-[58px] pr-2">
+          <div className="mt-2 space-y-2 pl-[58px] pr-2">
             <div>
               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400"><span>Measured directional phase</span><span>{Math.max(0, directionalRuns.length - 1)} phase changes</span></div>
-              <div className="flex h-7 min-w-0 overflow-hidden rounded-md border border-stealth-700 bg-slate-900" role="list" aria-label="Measured directional phase runs">
+              <div className="flex h-6 min-w-0 overflow-hidden rounded-md border border-stealth-700 bg-slate-900" role="img" aria-label={`${directionalRuns.length} measured directional phase runs; amber underline marks outside learned range`}>
                 {directionalRuns.map((run) => (
-                  <button
+                  <span
                     key={run.key}
-                    type="button"
-                    role="listitem"
-                    onClick={() => setSelectedDate(run.end)}
-                    className="min-w-[3px] border-r border-slate-950/80 last:border-r-0 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="min-w-[3px] border-r border-slate-950/80 last:border-r-0"
                     style={{ flexGrow: run.duration, backgroundColor: PHASE_STYLES[run.phase].color, borderBottom: run.outsideLearnedRange ? "3px solid #fbbf24" : undefined }}
                     title={`${PHASE_STYLES[run.phase].label}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}${run.outsideLearnedRange ? "; outside learned range" : ""}`}
-                    aria-label={`${PHASE_STYLES[run.phase].label}, ${run.duration} bars${run.outsideLearnedRange ? ", outside learned range" : ""}`}
                   />
                 ))}
               </div>
             </div>
             <div>
               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400"><span>Learned Form identity</span><span>{lexicon.archetypes.length} supported · {learnedTransitions} transitions{learnedFormRuns.some((run) => run.stateId === null) ? " · gray before evaluation" : ""}</span></div>
-              <div className="flex h-3 min-w-0 overflow-hidden rounded-sm bg-slate-900" role="list" aria-label="Learned Form identity over the evaluation window">
+              <div className="flex h-3 min-w-0 overflow-hidden rounded-sm bg-slate-900" role="img" aria-label={`Learned Form identity over the evaluation window; ${lexicon.archetypes.length} supported Forms and ${learnedTransitions} transitions`}>
                 {learnedFormRuns.map((run) => (
-                  <button
+                  <span
                     key={run.key}
-                    type="button"
-                    role="listitem"
-                    onClick={() => setSelectedDate(run.end)}
-                    className="min-w-[3px] border-r border-slate-950/80 last:border-r-0 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="min-w-[3px] border-r border-slate-950/80 last:border-r-0"
                     style={{ flexGrow: run.duration, backgroundColor: run.stateId ? marketStateColor(run.stateId) : "#334155" }}
                     title={`${run.stateId ? `Form ${stateNumberById.get(run.stateId) ?? 1}` : "Before learned evaluation"}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}`}
-                    aria-label={`${run.stateId ? `Learned Form ${stateNumberById.get(run.stateId) ?? 1}` : "Before learned evaluation"}, ${run.duration} bars`}
                   />
                 ))}
               </div>
             </div>
+            <label className="flex items-center gap-3 text-xs text-slate-400">
+              <span className="shrink-0">Inspect bar</span>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, visible.length - 1)}
+                value={selectedIndex}
+                onChange={(event) => commitSelectedDate(visible[Number(event.target.value)]?.date ?? latestDate)}
+                aria-valuetext={`${formatObservationDate(selected.date, timeframe)}, ${PHASE_STYLES[selected.directionalPhase].label}`}
+                className="min-w-0 flex-1 accent-sky-300"
+              />
+              <span className="shrink-0 font-mono text-slate-500">{selectedIndex + 1}/{visible.length}</span>
+            </label>
           </div>
         </section>
 
-        <section className="p-4 sm:p-5">
-          <TimelineTrackHeader title="Direction" scale="Pressure and pressure change · −100 to +100 bounded signed scales">
-            <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Pressure</span>
-            <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Pressure change</span>
-          </TimelineTrackHeader>
-          <div className="h-[138px] min-w-0" role="img" aria-label="Directional pressure and pressure change over the selected window">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={visible} syncId={TIMELINE_SYNC_ID} margin={{ top: 5, right: 8, left: 0, bottom: 0 }} onMouseMove={inspect} onClick={inspect} accessibilityLayer>
-                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-                <XAxis dataKey="date" hide />
-                <YAxis domain={[-100, 100]} ticks={[-100, 0, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <ReferenceLine y={0} stroke="#64748b" />
-                <TimelineCursor selectedDate={selected.date} />
-                <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
-                <Line type="monotone" dataKey="pressure" stroke="#7dd3fc" strokeWidth={2.2} dot={false} connectNulls={false} isAnimationActive={false} />
-                <Line type="monotone" dataKey="pressureChange" stroke="#c4b5fd" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
+        <section className="p-3 sm:p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-400">Choose one diagnostic lens; price and the inspected bar stay synchronized.</p>
+            <div className="grid w-full grid-cols-4 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto" role="group" aria-label="Timeline diagnostic lens">
+              {TIMELINE_LENSES.map((lens) => (
+                <button
+                  key={lens.id}
+                  type="button"
+                  aria-pressed={activeLens === lens.id}
+                  onClick={() => setActiveLens(lens.id)}
+                  className={`min-h-9 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${activeLens === lens.id ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                >
+                  {lens.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </section>
 
-        <section className="p-4 sm:p-5">
-          <TimelineTrackHeader title="Field structure" scale="Bounded 0 to 100 model scores; shared scale, distinct measurements">
-            <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Organization</span>
-            <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Disorder</span>
-            <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Propagation</span>
-          </TimelineTrackHeader>
-          <div className="h-[150px] min-w-0" role="img" aria-label="Organization, disorder, and cross-horizon propagation over the selected window">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={visible} syncId={TIMELINE_SYNC_ID} margin={{ top: 5, right: 8, left: 0, bottom: 0 }} onMouseMove={inspect} onClick={inspect} accessibilityLayer>
-                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-                <XAxis dataKey="date" hide />
-                <YAxis domain={[0, 100]} ticks={[0, 50, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <ReferenceLine y={50} stroke="#475569" strokeDasharray="3 4" />
-                <TimelineCursor selectedDate={selected.date} />
-                <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
-                <Line type="monotone" dataKey="organization" stroke="#7dd3fc" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
-                <Line type="monotone" dataKey="disorder" stroke="#c4b5fd" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
-                <Line type="monotone" dataKey="propagation" stroke="#fcd34d" strokeWidth={2} strokeDasharray="2 4" dot={false} connectNulls={false} isAnimationActive={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
+          <div className="min-w-0" aria-label={`${TIMELINE_LENSES.find((lens) => lens.id === activeLens)?.label ?? "Diagnostic"} timeline lens`}>
+            {activeLens === "direction" ? (
+              <>
+                <TimelineTrackHeader title="Direction" scale="Pressure and pressure change · −100 to +100 bounded signed scales">
+                  <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Pressure</span>
+                  <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Pressure change</span>
+                </TimelineTrackHeader>
+                <div className="h-[142px] min-w-0" role="img" aria-label="Directional pressure and pressure change over the selected window">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
+                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                      <YAxis domain={[-100, 100]} ticks={[-100, 0, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <ReferenceLine y={0} stroke="#64748b" />
+                      <TimelineCursor selectedDate={selected.date} />
+                      <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
+                      <Line type="monotone" dataKey="pressure" stroke="#7dd3fc" strokeWidth={2.2} dot={false} connectNulls={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="pressureChange" stroke="#c4b5fd" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            ) : null}
 
-        <section className="p-4 sm:p-5">
-          <TimelineTrackHeader title="Market carriers" scale="Each mini-track uses its own focused scale around a 1.00× causal baseline; missing volume evidence stays blank" />
-          <div className="grid min-w-0 gap-3 divide-stealth-700 lg:grid-cols-3 lg:divide-x">
-            <RatioTimelineTrack data={visible} dataKey="volatilityRatio" label="Realized volatility" color="#7dd3fc" selectedDate={selected.date} selectedValue={selected.volatilityRatio} onInspect={inspect} />
-            <RatioTimelineTrack data={visible} dataKey="participationRatio" label="Volume participation" color="#c4b5fd" selectedDate={selected.date} selectedValue={selected.participationRatio} onInspect={inspect} />
-            <RatioTimelineTrack data={visible} dataKey="liquidityRatio" label="Liquidity stress" color="#fcd34d" selectedDate={selected.date} selectedValue={selected.liquidityRatio} onInspect={inspect} />
-          </div>
-        </section>
+            {activeLens === "structure" ? (
+              <>
+                <TimelineTrackHeader title="Field structure" scale="Bounded 0 to 100 model scores; shared scale, distinct measurements">
+                  <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Organization</span>
+                  <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Disorder</span>
+                  <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Propagation</span>
+                </TimelineTrackHeader>
+                <div className="h-[142px] min-w-0" role="img" aria-label="Organization, disorder, and cross-horizon propagation over the selected window">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
+                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                      <YAxis domain={[0, 100]} ticks={[0, 50, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <ReferenceLine y={50} stroke="#475569" strokeDasharray="3 4" />
+                      <TimelineCursor selectedDate={selected.date} />
+                      <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
+                      <Line type="monotone" dataKey="organization" stroke="#7dd3fc" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="disorder" stroke="#c4b5fd" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="propagation" stroke="#fcd34d" strokeWidth={2} strokeDasharray="2 4" dot={false} connectNulls={false} isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            ) : null}
 
-        <section className="p-4 sm:p-5">
-          <TimelineTrackHeader title="Learned-range evidence" scale={`Same-state distance-tail rank · lower means farther · outside below ${cutoff.toFixed(2)}`}>
-            <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-300/30 ring-1 ring-amber-300/60" />Outside-range zone</span>
-          </TimelineTrackHeader>
-          <div className="h-[142px] min-w-0" role="img" aria-label="Same-state distance-tail rank over the learned evaluation window; lower values are farther from the learned Form">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={visible} syncId={TIMELINE_SYNC_ID} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect} accessibilityLayer>
-                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-                <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
-                <YAxis domain={[0, 1]} ticks={[0, 0.5, 1]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => Number(value).toFixed(1)} axisLine={false} tickLine={false} />
-                <ReferenceArea y1={0} y2={cutoff} fill="#fbbf24" fillOpacity={0.13} strokeOpacity={0} />
-                <ReferenceLine y={cutoff} stroke="#fbbf24" strokeDasharray="4 4" />
-                <TimelineCursor selectedDate={selected.date} />
-                <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
-                <Area type="monotone" dataKey="distanceTailScore" stroke="#fcd34d" strokeWidth={2} fill="#fbbf24" fillOpacity={0.08} dot={false} connectNulls={false} isAnimationActive={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
+            {activeLens === "carriers" ? (
+              <>
+                <TimelineTrackHeader title="Market carriers" scale="Shared focused ×-baseline scale; missing volume evidence remains blank">
+                  <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Volatility</span>
+                  <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Participation</span>
+                  <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Liquidity</span>
+                </TimelineTrackHeader>
+                <div className="h-[142px] min-w-0" role="img" aria-label="Market carrier ratios relative to their own causal trailing baselines over the selected window">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
+                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                      <YAxis domain={carrierDomain} width={58} tickCount={3} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => Number(value).toFixed(carrierDomain[1] - carrierDomain[0] < 0.5 ? 2 : 1)} axisLine={false} tickLine={false} />
+                      <ReferenceLine y={1} stroke="#64748b" strokeDasharray="3 4" />
+                      <TimelineCursor selectedDate={selected.date} />
+                      <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
+                      <Line type="monotone" dataKey="volatilityRatio" stroke="#7dd3fc" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="participationRatio" stroke="#c4b5fd" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="liquidityRatio" stroke="#fcd34d" strokeWidth={2} strokeDasharray="2 4" dot={false} connectNulls={false} isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            ) : null}
+
+            {activeLens === "range" ? (
+              <>
+                <TimelineTrackHeader title="Learned-range evidence" scale={`Same-state distance-tail rank · lower means farther · outside below ${cutoff.toFixed(2)}`}>
+                  <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-300/30 ring-1 ring-amber-300/60" />Outside-range zone</span>
+                </TimelineTrackHeader>
+                <div className="h-[142px] min-w-0" role="img" aria-label="Same-state distance-tail rank over the learned evaluation window; lower values are farther from the learned Form">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
+                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                      <YAxis domain={[0, 1]} ticks={[0, 0.5, 1]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => Number(value).toFixed(1)} axisLine={false} tickLine={false} />
+                      <ReferenceArea y1={0} y2={cutoff} fill="#fbbf24" fillOpacity={0.13} strokeOpacity={0} />
+                      <ReferenceLine y={cutoff} stroke="#fbbf24" strokeDasharray="4 4" />
+                      <TimelineCursor selectedDate={selected.date} />
+                      <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
+                      <Area type="monotone" dataKey="distanceTailScore" stroke="#fcd34d" strokeWidth={2} fill="#fbbf24" fillOpacity={0.08} dot={false} connectNulls={false} isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            ) : null}
           </div>
         </section>
       </div>
@@ -547,12 +589,12 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
   const minimumTailSupport = lexicon.distance_metric.minimum_distance_tail_support ?? 20;
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-3">
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">{symbol} · {barSize} · {currentDate ? formatObservationDate(currentDate, timeframe) : "Latest bar"}</p>
-            <h3 className={`mt-2 text-2xl font-semibold tracking-tight sm:text-3xl ${noCloseMatch ? "text-amber-200" : "text-white"}`}>
+            <h3 className={`mt-1.5 text-xl font-semibold tracking-tight sm:text-2xl ${noCloseMatch ? "text-amber-200" : "text-white"}`}>
               {noCloseMatch ? "No reliable learned-state match" : profile.headline}
             </h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
@@ -567,7 +609,7 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
             <span className="mt-1 block font-mono text-xs text-slate-400">score {current.distance_tail_score?.toFixed(3) ?? "—"}{distanceTailCutoff !== undefined ? ` · cutoff ${distanceTailCutoff.toFixed(2)}` : ""} · n={current.distance_tail_support}</span>
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 border-t border-white/10 pt-3 text-xs text-slate-400">
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-white/10 pt-2.5 text-xs text-slate-400">
           <span>Current Form run <strong className="font-medium text-slate-200">{current.age_bars} bars{current.age_truncated ? "+" : ""}</strong></span>
           <span>Typical learned run <strong className="font-medium text-slate-200">{archetype.typical_duration_bars} bars</strong></span>
           <span>Window frequency <strong className="font-medium text-slate-200">{formatRate(archetype.window_frequency)}</strong></span>
@@ -579,7 +621,7 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
 
       <MarketStateTimeline price={price} research={research} timeframe={timeframe} />
 
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold text-white">What followed similar holdout bars</h3>
@@ -589,7 +631,7 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
             {sampleLabel(outcome.sample_size)}
           </span>
         </div>
-        <div className={`mt-4 overflow-hidden rounded-xl border border-white/10 ${noCloseMatch ? "opacity-55" : ""}`} aria-disabled={noCloseMatch || undefined}>
+        <div className={`mt-3 overflow-hidden rounded-xl border border-white/10 ${noCloseMatch ? "opacity-55" : ""}`} aria-disabled={noCloseMatch || undefined}>
           <div className="grid sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-white/10">
             <div className="p-3"><span className="text-xs text-slate-400">Forward window</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{outcome.forward_bars} bars</strong></div>
             <div className="border-t border-white/10 p-3 sm:border-t-0"><span className="text-xs text-slate-400">Median return</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatReturn(outcome.median_return)}</strong></div>
@@ -947,11 +989,11 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
 
   return (
     <section className="primary-card relative isolate overflow-hidden">
-      <header className="border-b border-stealth-700 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <header className="border-b border-stealth-700 p-3 sm:p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-300"><FlaskConical className="h-4 w-4" />Field language · {lexicon?.version ?? "learning"}</div>
-            <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">{labels[view].title}</h2>
+            <h2 className="mt-1.5 text-xl font-semibold text-white sm:text-2xl">{labels[view].title}</h2>
             <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">{labels[view].description}</p>
           </div>
           <div className="grid min-h-11 w-full grid-cols-3 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto" role="tablist" aria-label="Field language view">
@@ -974,7 +1016,7 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
       </header>
 
       {lexicon?.archetypes.length ? (
-        <div id={`field-language-${view}-panel`} role="tabpanel" aria-labelledby={`field-language-${view}-tab`} className="min-w-0 p-4 sm:p-5">
+        <div id={`field-language-${view}-panel`} role="tabpanel" aria-labelledby={`field-language-${view}-tab`} className="min-w-0 p-3 sm:p-4">
           {view === "now" ? <CurrentStateView {...props} /> : null}
           {view === "dictionary" ? <DictionaryView research={research} /> : null}
           {view === "methods" ? <MethodsView research={research} symbol={props.symbol} timeframe={props.timeframe} barSize={props.barSize} /> : null}

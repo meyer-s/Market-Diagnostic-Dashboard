@@ -155,11 +155,16 @@ export function buildLearnedFormRuns(points: MarketStateTimelinePoint[]): Market
   return runs;
 }
 
+type MarketCarrierRatioKey = "volatilityRatio" | "participationRatio" | "liquidityRatio";
+
 export function focusedRatioDomain(
   points: MarketStateTimelinePoint[],
-  key: "volatilityRatio" | "participationRatio" | "liquidityRatio",
+  keyOrKeys: MarketCarrierRatioKey | readonly MarketCarrierRatioKey[],
 ): [number, number] {
-  const values = points.map((point) => point[key]).filter((value): value is number => value !== null && Number.isFinite(value));
+  const keys: readonly MarketCarrierRatioKey[] = typeof keyOrKeys === "string" ? [keyOrKeys] : keyOrKeys;
+  const values = points
+    .flatMap((point) => keys.map((key) => point[key]))
+    .filter((value): value is number => value !== null && Number.isFinite(value));
   if (!values.length) return [0.9, 1.1];
   const low = Math.min(1, ...values);
   const high = Math.max(1, ...values);

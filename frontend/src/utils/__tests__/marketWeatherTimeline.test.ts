@@ -86,4 +86,14 @@ describe("market weather timeline", () => {
     expect(domain[0]).toBeLessThan(1);
     expect(domain[1]).toBeGreaterThan(1);
   });
+
+  it("builds one focused carrier domain that contains every finite ratio", () => {
+    const timeline = buildMarketStateTimeline(price, research);
+    const domain = focusedRatioDomain(timeline, ["volatilityRatio", "participationRatio", "liquidityRatio"]);
+
+    expect(domain[0]).toBeLessThanOrEqual(0.9);
+    expect(domain[1]).toBeGreaterThanOrEqual(1.2);
+    expect(domain[0]).toBeLessThan(1);
+    expect(domain[1]).toBeGreaterThan(1);
+  });
 });

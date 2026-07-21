@@ -157,6 +157,7 @@ export default function MarketWeatherRadar() {
   const [inspectorChannel, setInspectorChannel] = useState("pressure");
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fieldSurfaceOpen, setFieldSurfaceOpen] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsDialogRef = useRef<HTMLFormElement | null>(null);
   const endpoint = useMemo(() => buildEndpoint(applied), [applied]);
@@ -373,7 +374,7 @@ export default function MarketWeatherRadar() {
 
   return (
     <>
-    <div className="page-shell-wide page-stack">
+    <div className="page-shell-wide space-y-4 md:space-y-5">
       <section className="page-hero">
         <div className="relative z-[1] flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -394,7 +395,7 @@ export default function MarketWeatherRadar() {
         </div>
       </section>
 
-      <section className="surface-card-strong p-4 sm:p-5">
+      <section className="surface-card-strong p-3 sm:p-4">
         <form onSubmit={runAnalysis} className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
             <label className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-[260px]">
@@ -467,20 +468,40 @@ export default function MarketWeatherRadar() {
             />
           ) : null}
 
-          <section className="primary-card p-4 sm:p-5">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-              <div>
+          <details
+            className="group primary-card overflow-hidden"
+            onToggle={(event) => setFieldSurfaceOpen(event.currentTarget.open)}
+            data-testid="field-surface"
+            data-lens={mode}
+          >
+            <summary
+              className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left sm:px-5"
+              aria-expanded={fieldSurfaceOpen}
+              aria-controls="market-field-surface-panel"
+              data-testid="field-surface-toggle"
+            >
+              <div className="min-w-0">
                 <span className="page-kicker">Field surface</span>
-                <h2 className="mt-1 text-xl font-semibold text-white">{data.symbol} across horizons</h2>
+                <h2 className="mt-1 truncate text-base font-semibold text-white">{data.symbol} across horizons</h2>
+                <p className="mt-0.5 text-xs text-slate-400">{data.horizons.length} horizons × {data.available_bars.toLocaleString()} bars · open the full field when needed</p>
               </div>
-              <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1.5 text-xs text-slate-300">Lens · {activeMode.label}</span>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="hidden rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1.5 text-xs text-slate-300 sm:inline-flex">Lens · {activeMode.label}</span>
+                <ChevronDown className="h-5 w-5 text-slate-500 transition-transform group-open:rotate-180" />
+              </div>
+            </summary>
+            <div id="market-field-surface-panel" className={fieldSurfaceOpen ? "border-t border-stealth-700 p-3 sm:p-4" : undefined}>
+              {fieldSurfaceOpen ? (
+                <>
+                <MarketWeatherCanvas data={data} mode={mode} inspectorChannel={inspectorChannel} />
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400" aria-label="Field surface axes and color key">
+                  <span>Time → · Longer horizons ↑</span>
+                  <span>▲ positive · ◆ transition · ▼ negative · rings boundary energy</span>
+                </div>
+                </>
+              ) : null}
             </div>
-            <MarketWeatherCanvas data={data} mode={mode} inspectorChannel={inspectorChannel} />
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400" aria-label="Field surface axes and color key">
-              <span>Time → · Longer horizons ↑</span>
-              <span>▲ positive · ◆ transition · ▼ negative · rings boundary energy</span>
-            </div>
-          </section>
+          </details>
 
           <details className="group primary-card overflow-hidden">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4 text-left sm:p-5">
