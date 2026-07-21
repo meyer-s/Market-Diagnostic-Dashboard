@@ -146,6 +146,9 @@ def analyze_market_weather(
             carriers = research.get("carriers")
             if isinstance(carriers, dict):
                 carriers["series"] = carriers.get("series", [])[start:]
+                ratios = carriers.get("ratios")
+                if isinstance(ratios, dict):
+                    ratios["series"] = ratios.get("series", [])[start:]
             lexicon = research.get("lexicon")
             if isinstance(lexicon, dict):
                 research["lexicon"] = scope_market_state_lexicon(

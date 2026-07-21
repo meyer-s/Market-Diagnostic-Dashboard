@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { Activity, ArrowRight, BookOpen, ChevronDown, FlaskConical, Info, Layers } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, ArrowRight, BookOpen, ChevronDown, FlaskConical, Info, Layers, RotateCcw } from "lucide-react";
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -22,10 +25,21 @@ import type {
 import {
   buildGroundedStateProfile,
   MARKET_FIELD_METRICS,
-  marketFieldReading,
+  marketStateColor,
   robustFieldDeviations,
 } from "../../utils/marketWeatherLexicon";
-import type { MarketFieldMetricId } from "../../utils/marketWeatherLexicon";
+import {
+  buildDirectionalPhaseRuns,
+  buildLearnedFormRuns,
+  buildMarketStateTimeline,
+  focusedRatioDomain,
+  sliceMarketStateTimeline,
+} from "../../utils/marketWeatherTimeline";
+import type {
+  MarketDirectionalPhase,
+  MarketStateTimelinePoint,
+  MarketTimelineWindow,
+} from "../../utils/marketWeatherTimeline";
 
 type LanguageView = "now" | "dictionary" | "methods";
 type DerivativeKey = "pressure" | "velocity" | "acceleration" | "jerk" | "snap";
@@ -67,8 +81,6 @@ const FOUNDATIONS = [
   ["Multiple-test discipline", "Harvey, Liu & Zhu (2016)", "https://academic.oup.com/rfs/article/29/1/5/1843824"],
 ] as const;
 
-const METRIC_BY_ID = new Map(MARKET_FIELD_METRICS.map((metric) => [metric.id, metric]));
-
 function formatRate(value: number | null | undefined): string {
   return value === null || value === undefined || !Number.isFinite(value) ? "Not available" : `${Math.round(value * 100)}%`;
 }
@@ -99,39 +111,10 @@ function formatObservationDate(value: string, timeframe: MarketWeatherTimeframe)
     : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
 }
 
-function stateTone(direction: "positive" | "negative" | "neutral"): string {
-  if (direction === "positive") return "#38bdf8";
-  if (direction === "negative") return "#a78bfa";
-  return "#94a3b8";
-}
-
-function metricValue(id: MarketFieldMetricId, value: number): string {
-  if (["pressure", "velocity", "cascade_bias"].includes(id)) {
-    const scaled = value * 100;
-    return `${scaled > 0 ? "+" : ""}${scaled.toFixed(1)}`;
-  }
-  return `${Math.round(value * 100)}`;
-}
-
-function metricUnit(id: MarketFieldMetricId): string {
-  if (["pressure", "velocity", "cascade_bias"].includes(id)) return "on a −100 to +100 scale";
-  if (["volatility_carrier", "participation_carrier", "liquidity_stress_carrier"].includes(id)) {
-    return "index; 50 is its trailing baseline";
-  }
-  return "on a 0 to 100 scale";
-}
-
 function sampleLabel(sampleSize: number): string {
   if (sampleSize < 5) return "Too few holdout observations";
   if (sampleSize < 20) return "Limited holdout evidence";
   return "Descriptive holdout evidence";
-}
-
-function baselineRatioReading(value: number): string {
-  const difference = (value - 1) * 100;
-  if (Math.abs(difference) < 0.05) return "at baseline";
-  const magnitude = Math.abs(difference);
-  return `${magnitude < 10 ? magnitude.toFixed(1) : magnitude.toFixed(0)}% ${difference > 0 ? "above" : "below"}`;
 }
 
 function StateDeviationBars({
@@ -174,7 +157,118 @@ function StateDeviationBars({
   );
 }
 
-function PriceStateChart({
+const TIMELINE_WINDOWS: MarketTimelineWindow[] = [60, 120, 250, "all"];
+const TIMELINE_SYNC_ID = "market-state-through-time";
+
+const PHASE_STYLES: Record<MarketDirectionalPhase, { label: string; color: string }> = {
+  "positive-strengthening": { label: "Positive · strengthening", color: "#38bdf8" },
+  "positive-fading": { label: "Positive · fading", color: "#7dd3fc" },
+  "negative-strengthening": { label: "Negative · strengthening", color: "#8b5cf6" },
+  "negative-fading": { label: "Negative · fading", color: "#c4b5fd" },
+  balanced: { label: "Balanced", color: "#94a3b8" },
+};
+
+function formatSignedScore(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}`;
+}
+
+function formatRatio(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return `${value.toFixed(2)}×`;
+}
+
+function activeTimelineDate(state: unknown): string | null {
+  if (!state || typeof state !== "object" || !("activeLabel" in state)) return null;
+  const activeLabel = (state as { activeLabel?: unknown }).activeLabel;
+  return typeof activeLabel === "string" ? activeLabel : null;
+}
+
+function EmptyTimelineTooltip() {
+  return null;
+}
+
+function TimelineCursor({ selectedDate }: { selectedDate: string }) {
+  return <ReferenceLine x={selectedDate} stroke="#e2e8f0" strokeDasharray="3 4" strokeOpacity={0.72} />;
+}
+
+function TimelineTrackHeader({
+  title,
+  scale,
+  children,
+}: {
+  title: string;
+  scale: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <h4 className="text-sm font-semibold text-white">{title}</h4>
+        <p className="mt-0.5 text-xs text-slate-400">{scale}</p>
+      </div>
+      {children ? <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300">{children}</div> : null}
+    </div>
+  );
+}
+
+function RatioTimelineTrack({
+  data,
+  dataKey,
+  label,
+  color,
+  selectedDate,
+  selectedValue,
+  onInspect,
+}: {
+  data: MarketStateTimelinePoint[];
+  dataKey: "volatilityRatio" | "participationRatio" | "liquidityRatio";
+  label: string;
+  color: string;
+  selectedDate: string;
+  selectedValue: number | null;
+  onInspect: (state: unknown) => void;
+}) {
+  const domain = focusedRatioDomain(data, dataKey);
+  return (
+    <div className="min-w-0 lg:px-3 lg:first:pl-0 lg:last:pr-0">
+      <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
+        <span className="text-slate-300">{label}</span>
+        <strong className="font-mono text-white">{formatRatio(selectedValue)}</strong>
+      </div>
+      <div className="h-[104px] min-w-0" role="img" aria-label={`${label} relative to its own causal trailing baseline over the selected window`}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart
+            data={data}
+            syncId={TIMELINE_SYNC_ID}
+            margin={{ top: 7, right: 4, left: 0, bottom: 0 }}
+            onMouseMove={onInspect}
+            onClick={onInspect}
+            accessibilityLayer
+          >
+            <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+            <XAxis dataKey="date" hide />
+            <YAxis
+              domain={domain}
+              width={42}
+              tickCount={3}
+              tick={{ fill: "var(--chart-axis-tick)", fontSize: 10 }}
+              tickFormatter={(value: number) => Number(value).toFixed(domain[1] - domain[0] < 0.5 ? 2 : 1)}
+              axisLine={false}
+              tickLine={false}
+            />
+            <ReferenceLine y={1} stroke="#64748b" strokeDasharray="3 4" />
+            <TimelineCursor selectedDate={selectedDate} />
+            <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
+            <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function MarketStateTimeline({
   price,
   research,
   timeframe,
@@ -184,91 +278,237 @@ function PriceStateChart({
   timeframe: MarketWeatherTimeframe;
 }) {
   const lexicon = research.lexicon!;
-  const visiblePrice = price.slice(-120);
-  const visibleDates = new Set(visiblePrice.map((point) => point.date));
-  const pressureByDate = new Map(research.derivative_series.map((point) => [point.date, point.pressure]));
-  const stateNumberById = new Map(lexicon.archetypes.map((archetype, index) => [archetype.id, index + 1]));
-  const runs: Array<{ stateId: string; start: string; end: string; duration: number; outside: boolean; direction: "positive" | "negative" | "neutral" }> = [];
-  lexicon.evaluation_sequence.filter((point) => visibleDates.has(point.date)).forEach((point) => {
-    const previous = runs[runs.length - 1];
-    const outside = point.outside_learned_range === true;
-    const pressure = pressureByDate.get(point.date) ?? 0;
-    const direction = pressure > 0 ? "positive" : pressure < 0 ? "negative" : "neutral";
-    if (previous?.stateId === point.state_id && previous.outside === outside && previous.direction === direction) {
-      previous.end = point.date;
-      previous.duration += 1;
-    } else {
-      runs.push({ stateId: point.state_id, start: point.date, end: point.date, duration: 1, outside, direction });
-    }
-  });
+  const timeline = useMemo(() => buildMarketStateTimeline(price, research), [price, research]);
+  const [window, setWindow] = useState<MarketTimelineWindow>(120);
+  const visible = useMemo(() => sliceMarketStateTimeline(timeline, window), [timeline, window]);
+  const latestDate = visible[visible.length - 1]?.date ?? "";
+  const [selectedDate, setSelectedDate] = useState(latestDate);
+
+  useEffect(() => {
+    if (!visible.some((point) => point.date === selectedDate)) setSelectedDate(latestDate);
+  }, [latestDate, selectedDate, visible]);
+
+  const selected = visible.find((point) => point.date === selectedDate) ?? visible[visible.length - 1];
+  const directionalRuns = useMemo(() => buildDirectionalPhaseRuns(visible), [visible]);
+  const learnedFormRuns = useMemo(() => buildLearnedFormRuns(visible), [visible]);
+  const stateNumberById = useMemo(
+    () => new Map(lexicon.archetypes.map((archetype, index) => [archetype.id, index + 1])),
+    [lexicon.archetypes],
+  );
+  const learnedTransitions = learnedFormRuns
+    .filter((run) => run.stateId !== null)
+    .reduce((count, run, index, runs) => count + (index > 0 && runs[index - 1].stateId !== run.stateId ? 1 : 0), 0);
+  const cutoff = lexicon.distance_metric.outside_range_cutoff ?? 0.05;
+  const rangeLabel = selected?.distanceTailScore === null || selected?.distanceTailScore === undefined
+    ? "Not range-scored"
+    : selected.outsideLearnedRange
+      ? "Outside learned range"
+      : "Within learned range";
+  const selectedStateNumber = selected?.stateId ? stateNumberById.get(selected.stateId) : undefined;
+
+  const inspect = (state: unknown) => {
+    const date = activeTimelineDate(state);
+    if (date) setSelectedDate(date);
+  };
+
+  if (!selected) return null;
 
   return (
-    <article className="min-w-0 rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="text-base font-semibold text-white">Price and learned state history</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-400">Actual closing price with the model’s recent state assignments below it.</p>
+    <article className="min-w-0 overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/30">
+      <header className="border-b border-stealth-700 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-3xl">
+            <h3 className="text-lg font-semibold text-white">Market state through time</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-400">One shared cursor connects price to the measurements that produced each description. Historical diagnostics, not forecasts.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-xl border border-stealth-700 bg-slate-950/45 p-1" aria-label="Timeline window">
+              {TIMELINE_WINDOWS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={window === option}
+                  onClick={() => setWindow(option)}
+                  className={`min-h-9 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${window === option ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                >
+                  {option === "all" ? "All" : option}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(latestDate)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-700 px-3 text-xs text-slate-300 transition hover:border-stealth-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />Latest
+            </button>
+          </div>
         </div>
-        {visiblePrice.length ? <span className="rounded-full border border-stealth-600 px-3 py-1 text-xs text-slate-300">Last {visiblePrice.length} bars</span> : null}
+
+        <div className="mt-4 overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/35">
+          <div className="grid sm:grid-cols-2 xl:grid-cols-[1.25fr_.55fr_.8fr_1fr_1fr] xl:divide-x xl:divide-stealth-700">
+            <div className="p-3 sm:col-span-2 xl:col-span-1">
+              <span className="text-xs uppercase tracking-[0.12em] text-slate-500">Inspected bar</span>
+              <strong className="mt-1 block text-base text-white">{PHASE_STYLES[selected.directionalPhase].label}</strong>
+              <span className="mt-1 block text-xs text-slate-400">{formatObservationDate(selected.date, timeframe)} · {selectedStateNumber ? `Form ${selectedStateNumber}` : "before learned evaluation"}</span>
+            </div>
+            <div className="border-t border-stealth-700 p-3 sm:border-r sm:border-stealth-700 xl:border-t-0 xl:border-r-0">
+              <span className="text-xs text-slate-400">Close</span>
+              <strong className="mt-1 block font-mono text-base text-white">${selected.close.toFixed(2)}</strong>
+            </div>
+            <div className="border-t border-stealth-700 p-3 xl:border-t-0">
+              <span className="text-xs text-slate-400">Direction</span>
+              <strong className="mt-1 block font-mono text-sm text-white">{formatSignedScore(selected.pressure)} · Δ {formatSignedScore(selected.pressureChange)}</strong>
+            </div>
+            <div className="border-t border-stealth-700 p-3 sm:border-r sm:border-stealth-700 xl:border-t-0 xl:border-r-0">
+              <span className="text-xs text-slate-400">Field structure</span>
+              <strong className="mt-1 block font-mono text-sm text-white">{Math.round(selected.organization ?? 0)} org · {Math.round(selected.disorder ?? 0)} disorder · {Math.round(selected.propagation ?? 0)} spread</strong>
+            </div>
+            <div className="border-t border-stealth-700 p-3 xl:border-t-0">
+              <span className="text-xs text-slate-400">Learned-range evidence</span>
+              <strong className={`mt-1 block text-sm ${selected.outsideLearnedRange ? "text-amber-200" : "text-white"}`}>{rangeLabel}</strong>
+              <span className="mt-1 block font-mono text-xs text-slate-400">score {selected.distanceTailScore?.toFixed(3) ?? "—"} · cutoff {cutoff.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="divide-y divide-stealth-700">
+        <section className="p-4 sm:p-5">
+          <TimelineTrackHeader title="Price" scale={`Actual close · ${visible.length} bars`} />
+          <div className="h-[190px] min-w-0 sm:h-[220px]" role="img" aria-label="Closing price over the selected window with measured directional phases">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={visible}
+                syncId={TIMELINE_SYNC_ID}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                onMouseMove={inspect}
+                onClick={inspect}
+                accessibilityLayer
+              >
+                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+                <XAxis dataKey="date" hide />
+                <YAxis domain={["auto", "auto"]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => `$${Number(value).toFixed(0)}`} axisLine={false} tickLine={false} />
+                {directionalRuns.map((run) => <ReferenceArea key={run.key} x1={run.start} x2={run.end} fill={PHASE_STYLES[run.phase].color} fillOpacity={0.055} strokeOpacity={0} />)}
+                <TimelineCursor selectedDate={selected.date} />
+                <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
+                <Line type="monotone" dataKey="close" stroke="#7dd3fc" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="mt-3 space-y-3 pl-[58px] pr-2">
+            <div>
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400"><span>Measured directional phase</span><span>{Math.max(0, directionalRuns.length - 1)} phase changes</span></div>
+              <div className="flex h-7 min-w-0 overflow-hidden rounded-md border border-stealth-700 bg-slate-900" role="list" aria-label="Measured directional phase runs">
+                {directionalRuns.map((run) => (
+                  <button
+                    key={run.key}
+                    type="button"
+                    role="listitem"
+                    onClick={() => setSelectedDate(run.end)}
+                    className="min-w-[3px] border-r border-slate-950/80 last:border-r-0 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    style={{ flexGrow: run.duration, backgroundColor: PHASE_STYLES[run.phase].color, borderBottom: run.outsideLearnedRange ? "3px solid #fbbf24" : undefined }}
+                    title={`${PHASE_STYLES[run.phase].label}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}${run.outsideLearnedRange ? "; outside learned range" : ""}`}
+                    aria-label={`${PHASE_STYLES[run.phase].label}, ${run.duration} bars${run.outsideLearnedRange ? ", outside learned range" : ""}`}
+                  />
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400"><span>Learned Form identity</span><span>{lexicon.archetypes.length} supported · {learnedTransitions} transitions{learnedFormRuns.some((run) => run.stateId === null) ? " · gray before evaluation" : ""}</span></div>
+              <div className="flex h-3 min-w-0 overflow-hidden rounded-sm bg-slate-900" role="list" aria-label="Learned Form identity over the evaluation window">
+                {learnedFormRuns.map((run) => (
+                  <button
+                    key={run.key}
+                    type="button"
+                    role="listitem"
+                    onClick={() => setSelectedDate(run.end)}
+                    className="min-w-[3px] border-r border-slate-950/80 last:border-r-0 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    style={{ flexGrow: run.duration, backgroundColor: run.stateId ? marketStateColor(run.stateId) : "#334155" }}
+                    title={`${run.stateId ? `Form ${stateNumberById.get(run.stateId) ?? 1}` : "Before learned evaluation"}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}`}
+                    aria-label={`${run.stateId ? `Learned Form ${stateNumberById.get(run.stateId) ?? 1}` : "Before learned evaluation"}, ${run.duration} bars`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="p-4 sm:p-5">
+          <TimelineTrackHeader title="Direction" scale="Pressure and pressure change · −100 to +100 bounded signed scales">
+            <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Pressure</span>
+            <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Pressure change</span>
+          </TimelineTrackHeader>
+          <div className="h-[138px] min-w-0" role="img" aria-label="Directional pressure and pressure change over the selected window">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={visible} syncId={TIMELINE_SYNC_ID} margin={{ top: 5, right: 8, left: 0, bottom: 0 }} onMouseMove={inspect} onClick={inspect} accessibilityLayer>
+                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+                <XAxis dataKey="date" hide />
+                <YAxis domain={[-100, 100]} ticks={[-100, 0, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <ReferenceLine y={0} stroke="#64748b" />
+                <TimelineCursor selectedDate={selected.date} />
+                <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
+                <Line type="monotone" dataKey="pressure" stroke="#7dd3fc" strokeWidth={2.2} dot={false} connectNulls={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="pressureChange" stroke="#c4b5fd" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
+        <section className="p-4 sm:p-5">
+          <TimelineTrackHeader title="Field structure" scale="Bounded 0 to 100 model scores; shared scale, distinct measurements">
+            <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Organization</span>
+            <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Disorder</span>
+            <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Propagation</span>
+          </TimelineTrackHeader>
+          <div className="h-[150px] min-w-0" role="img" aria-label="Organization, disorder, and cross-horizon propagation over the selected window">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={visible} syncId={TIMELINE_SYNC_ID} margin={{ top: 5, right: 8, left: 0, bottom: 0 }} onMouseMove={inspect} onClick={inspect} accessibilityLayer>
+                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+                <XAxis dataKey="date" hide />
+                <YAxis domain={[0, 100]} ticks={[0, 50, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <ReferenceLine y={50} stroke="#475569" strokeDasharray="3 4" />
+                <TimelineCursor selectedDate={selected.date} />
+                <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
+                <Line type="monotone" dataKey="organization" stroke="#7dd3fc" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="disorder" stroke="#c4b5fd" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="propagation" stroke="#fcd34d" strokeWidth={2} strokeDasharray="2 4" dot={false} connectNulls={false} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
+        <section className="p-4 sm:p-5">
+          <TimelineTrackHeader title="Market carriers" scale="Each mini-track uses its own focused scale around a 1.00× causal baseline; missing volume evidence stays blank" />
+          <div className="grid min-w-0 gap-3 divide-stealth-700 lg:grid-cols-3 lg:divide-x">
+            <RatioTimelineTrack data={visible} dataKey="volatilityRatio" label="Realized volatility" color="#7dd3fc" selectedDate={selected.date} selectedValue={selected.volatilityRatio} onInspect={inspect} />
+            <RatioTimelineTrack data={visible} dataKey="participationRatio" label="Volume participation" color="#c4b5fd" selectedDate={selected.date} selectedValue={selected.participationRatio} onInspect={inspect} />
+            <RatioTimelineTrack data={visible} dataKey="liquidityRatio" label="Liquidity stress" color="#fcd34d" selectedDate={selected.date} selectedValue={selected.liquidityRatio} onInspect={inspect} />
+          </div>
+        </section>
+
+        <section className="p-4 sm:p-5">
+          <TimelineTrackHeader title="Learned-range evidence" scale={`Same-state distance-tail rank · lower means farther · outside below ${cutoff.toFixed(2)}`}>
+            <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-300/30 ring-1 ring-amber-300/60" />Outside-range zone</span>
+          </TimelineTrackHeader>
+          <div className="h-[142px] min-w-0" role="img" aria-label="Same-state distance-tail rank over the learned evaluation window; lower values are farther from the learned Form">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={visible} syncId={TIMELINE_SYNC_ID} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect} accessibilityLayer>
+                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+                <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                <YAxis domain={[0, 1]} ticks={[0, 0.5, 1]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => Number(value).toFixed(1)} axisLine={false} tickLine={false} />
+                <ReferenceArea y1={0} y2={cutoff} fill="#fbbf24" fillOpacity={0.13} strokeOpacity={0} />
+                <ReferenceLine y={cutoff} stroke="#fbbf24" strokeDasharray="4 4" />
+                <TimelineCursor selectedDate={selected.date} />
+                <Tooltip content={<EmptyTimelineTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 4" }} />
+                <Area type="monotone" dataKey="distanceTailScore" stroke="#fcd34d" strokeWidth={2} fill="#fbbf24" fillOpacity={0.08} dot={false} connectNulls={false} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
       </div>
-      <div className="h-[280px] min-w-0 sm:h-[320px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={visiblePrice} margin={{ top: 8, right: 8, left: 2, bottom: 4 }}>
-            <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-            <XAxis
-              dataKey="date"
-              minTickGap={44}
-              tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }}
-              tickFormatter={(value: string) => formatDate(value, timeframe)}
-              axisLine={{ stroke: "var(--chart-axis-line)" }}
-              tickLine={false}
-            />
-            <YAxis
-              domain={["auto", "auto"]}
-              width={62}
-              tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }}
-              tickFormatter={(value: number) => `$${Number(value).toFixed(0)}`}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip
-              contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 12 }}
-              labelStyle={{ color: "var(--chart-tooltip-label)" }}
-              labelFormatter={(value) => formatObservationDate(String(value), timeframe)}
-              formatter={(value) => [`$${Number(value).toFixed(2)}`, "Close"]}
-            />
-            <Line type="monotone" dataKey="close" stroke="#7dd3fc" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="mt-3">
-        <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400">
-          <span>Measured pressure within learned states</span>
-          <span>{runs.length} runs shown</span>
-        </div>
-        <div className="flex h-8 min-w-0 overflow-hidden rounded-lg border border-stealth-700 bg-slate-900" role="list" aria-label="Recent learned state runs">
-          {runs.map((run) => {
-            const stateNumber = stateNumberById.get(run.stateId) ?? 1;
-            const directionLabel = run.direction === "positive" ? "Positive pressure" : run.direction === "negative" ? "Negative pressure" : "Balanced pressure";
-            return (
-              <div
-                key={`${run.start}-${run.stateId}`}
-                role="listitem"
-                className="min-w-[3px] border-r border-slate-950/80 last:border-r-0"
-                style={{ flexGrow: run.duration, backgroundColor: run.outside ? "#fbbf24" : stateTone(run.direction) }}
-                title={`${run.outside ? "Outside learned range" : directionLabel}; learned state ${stateNumber}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}`}
-                aria-label={`${run.outside ? "Outside learned range" : directionLabel}, learned state ${stateNumber}, ${run.duration} bars`}
-              />
-            );
-          })}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400" aria-label="State direction legend">
-          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-sky-400" />Positive pressure</span>
-          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-slate-400" />Balanced pressure</span>
-          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-violet-400" />Negative pressure</span>
-          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />Outside learned range</span>
-        </div>
-      </div>
+      <p className="sr-only">At {formatObservationDate(selected.date, timeframe)}, the close was ${selected.close.toFixed(2)}. {PHASE_STYLES[selected.directionalPhase].label}. Organization {Math.round(selected.organization ?? 0)}, disorder {Math.round(selected.disorder ?? 0)}, and propagation {Math.round(selected.propagation ?? 0)} on zero-to-one-hundred scales. {rangeLabel}.</p>
     </article>
   );
 }
@@ -280,7 +520,6 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
   const latestDerivative = research.derivative_series[research.derivative_series.length - 1];
   const latestStrata = research.strata.latest;
   const latestCarriers = research.carriers?.latest;
-  const latestRatios = research.carriers?.ratios?.latest;
   const currentValues: Record<string, number> = {
     ...archetype.centroid,
     pressure: latestDerivative?.pressure ?? archetype.centroid.pressure ?? 0,
@@ -304,18 +543,6 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
   const noCloseMatch = current.outside_learned_range === true;
   const currentDate = price[price.length - 1]?.date ?? lexicon.evaluation_sequence[lexicon.evaluation_sequence.length - 1]?.date;
   const outcome = archetype.evaluation_outcome;
-  const measuredMetrics: MarketFieldMetricId[] = [
-    "pressure",
-    "velocity",
-    "volatility_carrier",
-    "participation_carrier",
-    "liquidity_stress_carrier",
-  ];
-  const directRatios: Partial<Record<MarketFieldMetricId, number | null>> = {
-    volatility_carrier: latestRatios?.realized_volatility,
-    participation_carrier: latestRatios?.participation,
-    liquidity_stress_carrier: latestRatios?.liquidity_stress,
-  };
   const distanceTailCutoff = lexicon.distance_metric.outside_range_cutoff;
   const minimumTailSupport = lexicon.distance_metric.minimum_distance_tail_support ?? 20;
 
@@ -328,71 +555,29 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
             <h3 className={`mt-2 text-2xl font-semibold tracking-tight sm:text-3xl ${noCloseMatch ? "text-amber-200" : "text-white"}`}>
               {noCloseMatch ? "No reliable learned-state match" : profile.headline}
             </h3>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
               {noCloseMatch
-                ? `The current field is farther from its assigned state than nearly all same-state bars in the held-out calibration slice. Its live measurements show ${profile.headline.toLowerCase()}, but that state’s historical behavior is not treated as a current analog.`
-                : `The current field has ${profile.headline.toLowerCase()}. ${profile.summary}`}
+                ? `The current measurements read ${profile.headline.toLowerCase()}, but this bar falls outside the learned Form’s held-out range, so its historical analog is disabled.`
+                : profile.summary}
             </p>
           </div>
-          <div className="rounded-xl border border-stealth-600 bg-slate-950/45 px-4 py-3 text-sm text-slate-300">
-            <span className="block text-xs uppercase tracking-wider text-slate-400">Learned-range check</span>
-            <span className={`mt-1 block text-lg font-semibold ${noCloseMatch ? "text-amber-200" : "text-white"}`}>{!rangeCheckAvailable ? "Insufficient history" : noCloseMatch ? "Outside range" : "Within range"}</span>
-            <span className="mt-1 block text-xs text-slate-400">Held-out distance-tail score {current.distance_tail_score?.toFixed(3) ?? "not available"}{distanceTailCutoff !== undefined ? `; cutoff ${distanceTailCutoff.toFixed(2)}` : ""}</span>
-            <span className="mt-1 block text-xs text-slate-500">Same-state reference n={current.distance_tail_support}; {minimumTailSupport} required. Empirical rank, not a formal p-value.</span>
+          <div className="min-w-[250px] rounded-xl border border-stealth-600 bg-slate-950/45 px-4 py-3 text-sm text-slate-300">
+            <span className="text-xs uppercase tracking-wider text-slate-400">Learned-range check</span>
+            <span className={`mt-1 block text-base font-semibold ${noCloseMatch ? "text-amber-200" : "text-white"}`}>{!rangeCheckAvailable ? "Insufficient history" : noCloseMatch ? "Outside range" : "Within range"}</span>
+            <span className="mt-1 block font-mono text-xs text-slate-400">score {current.distance_tail_score?.toFixed(3) ?? "—"}{distanceTailCutoff !== undefined ? ` · cutoff ${distanceTailCutoff.toFixed(2)}` : ""} · n={current.distance_tail_support}</span>
           </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 border-t border-white/10 pt-3 text-xs text-slate-400">
+          <span>Current Form run <strong className="font-medium text-slate-200">{current.age_bars} bars{current.age_truncated ? "+" : ""}</strong></span>
+          <span>Typical learned run <strong className="font-medium text-slate-200">{archetype.typical_duration_bars} bars</strong></span>
+          <span>Window frequency <strong className="font-medium text-slate-200">{formatRate(archetype.window_frequency)}</strong></span>
+          <span>Evidence <strong className="font-medium text-slate-200">{archetype.fit_count} fit · {archetype.calibration_count} range-check · {archetype.evaluation_count} holdout</strong></span>
+          <span>Range support minimum <strong className="font-medium text-slate-200">{minimumTailSupport}</strong></span>
         </div>
         {!lexicon.training_split.warmup_complete ? <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">This history does not fully cover the requested horizon warm-up. Treat the learned state and its comparisons as provisional.</p> : null}
       </section>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
-        <PriceStateChart price={price} research={research} timeframe={timeframe} />
-        <aside className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
-          <h3 className="text-base font-semibold text-white">Current measured evidence</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-              <span className="text-xs text-slate-400">Current run</span>
-              <strong className="mt-1 block text-lg text-white">{current.age_bars} bars</strong>
-              <span className="text-xs leading-5 text-slate-400">Typical learned run: {archetype.typical_duration_bars} bars{current.age_truncated ? "; visible history starts mid-run" : ""}</span>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-              <span className="text-xs text-slate-400">Window frequency</span>
-              <strong className="mt-1 block text-lg text-white">{formatRate(archetype.window_frequency)}</strong>
-              <span className="text-xs leading-5 text-slate-400">Share of eligible bars assigned to this learned state</span>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:col-span-2 xl:col-span-1">
-              <span className="text-xs text-slate-400">State observations</span>
-              <strong className="mt-1 block text-lg text-white">{archetype.fit_count + archetype.calibration_count + archetype.evaluation_count} bars</strong>
-              <span className="text-xs leading-5 text-slate-400">{archetype.fit_count} fit · {archetype.calibration_count} range-check · {archetype.evaluation_count} later holdout{noCloseMatch ? "; the current bar is not treated as an analog" : ""}</span>
-            </div>
-          </div>
-        </aside>
-      </div>
-
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
-        <div className="mb-4">
-          <h3 className="text-base font-semibold text-white">What the model actually measured</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-400">Directional measures retain their signed scales. The three OHLCV carriers are shown as direct multiples of their own causal trailing baselines.</p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {measuredMetrics.map((id) => {
-            const definition = METRIC_BY_ID.get(id)!;
-            const value = currentValues[id] ?? 0;
-            const directRatio = directRatios[id];
-            const hasDirectRatio = typeof directRatio === "number" && Number.isFinite(directRatio);
-            const ratioLabel = hasDirectRatio && directRatio >= 10 ? "≥10.00×" : hasDirectRatio ? `${directRatio.toFixed(2)}×` : "Unavailable";
-            return (
-              <article key={id} className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-                <h4 className="text-xs font-medium text-slate-300">{definition.label}</h4>
-                <div className="mt-2 flex items-baseline justify-between gap-2">
-                  <strong className="font-mono text-xl text-white">{definition.family === "carrier" ? ratioLabel : metricValue(id, value)}</strong>
-                  <span className="text-xs capitalize text-sky-300">{definition.family === "carrier" ? hasDirectRatio ? baselineRatioReading(directRatio) : "source unavailable" : marketFieldReading(id, value)}</span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-400">{definition.family === "carrier" ? hasDirectRatio ? "mean per-horizon ratio to its causal EWM baseline" : "this carrier cannot be measured from the returned OHLCV bars" : metricUnit(id)}</p>
-              </article>
-            );
-          })}
-        </div>
-      </section>
+      <MarketStateTimeline price={price} research={research} timeframe={timeframe} />
 
       <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -404,11 +589,13 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
             {sampleLabel(outcome.sample_size)}
           </span>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Forward window</span><strong className="mt-1 block text-lg text-white">{outcome.forward_bars} bars</strong></div>
-          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Median return</span><strong className="mt-1 block text-lg text-white">{formatReturn(outcome.median_return)}</strong></div>
-          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Positive observations</span><strong className="mt-1 block text-lg text-white">{formatRate(outcome.positive_rate)}</strong></div>
-          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Holdout observations</span><strong className="mt-1 block text-lg text-white">{outcome.sample_size}</strong></div>
+        <div className={`mt-4 overflow-hidden rounded-xl border border-white/10 ${noCloseMatch ? "opacity-55" : ""}`} aria-disabled={noCloseMatch || undefined}>
+          <div className="grid sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-white/10">
+            <div className="p-3"><span className="text-xs text-slate-400">Forward window</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{outcome.forward_bars} bars</strong></div>
+            <div className="border-t border-white/10 p-3 sm:border-t-0"><span className="text-xs text-slate-400">Median return</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatReturn(outcome.median_return)}</strong></div>
+            <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-slate-400">Positive observations</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatRate(outcome.positive_rate)}</strong></div>
+            <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-slate-400">Holdout sample</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">n={outcome.sample_size}</strong></div>
+          </div>
         </div>
         <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-400"><Info className="mt-0.5 h-4 w-4 shrink-0" />Descriptive historical context only, not a forecast or trading signal.{noCloseMatch ? " The current bar is novel, so this analog is especially weak." : ""}</p>
       </section>
@@ -753,7 +940,7 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
   const lexicon = research.lexicon;
   const [view, setView] = useState<LanguageView>("now");
   const labels: Record<LanguageView, { tab: string; title: string; description: string }> = {
-    now: { tab: "Now", title: "Current market state", description: "What the field measures now, where it appeared in price, and how strong the historical match is." },
+    now: { tab: "Now", title: "Current market state", description: "How the current reading formed and how its measured components changed together over time." },
     dictionary: { tab: "Dictionary", title: "Learned state dictionary", description: "Measured state definitions relative to this window’s earlier model-fit baseline." },
     methods: { tab: "Methods", title: "Methods and evidence", description: "Higher-order layers, experimental sequences, validation checks, references, and limitations." },
   };

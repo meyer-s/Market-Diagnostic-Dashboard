@@ -444,6 +444,10 @@ def test_market_weather_api_scopes_extreme_buffered_lexicon_to_visible_bars(monk
     assert sequence
     assert all(point["date"] in payload["dates"] for point in sequence)
     assert all(0 <= point["index"] < 60 for point in sequence)
+    carriers = payload["research"]["carriers"]
+    assert len(carriers["series"]) == 60
+    assert len(carriers["ratios"]["series"]) == 60
+    assert [point["date"] for point in carriers["ratios"]["series"]] == payload["dates"]
 
 
 def test_market_weather_api_caps_flat_form_age_to_the_visible_response(monkeypatch) -> None:
