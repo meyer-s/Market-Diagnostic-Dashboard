@@ -53,6 +53,10 @@ class MarketDataProvider(Protocol):
     def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
         ...
 
+    def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+        """Return OHLCV history at a canonical market-weather timeframe."""
+        ...
+
     def option_expirations(self, symbol: str) -> list[str]:
         """Return ISO dates: YYYY-MM-DD."""
         ...

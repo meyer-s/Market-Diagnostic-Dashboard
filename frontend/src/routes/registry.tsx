@@ -21,6 +21,7 @@ import RealEstateDiagnostic from "../pages/RealEstateDiagnostic";
 import RecapIndex from "../pages/tools/RecapIndex";
 import RecapPost from "../pages/tools/RecapPost";
 import VolumeBreadthTools from "../pages/tools/VolumeBreadthTools";
+import MarketWeatherRadar from "../pages/MarketWeatherRadar";
 
 type NavGroup = "primary" | "tools";
 type ToolGroup = "market-views" | "asset-classes" | "research";
@@ -74,6 +75,7 @@ export const routeRegistry: AppRouteDefinition[] = [
   { path: "/stock-analysis/:symbol", analyticsName: "Stock Analysis", element: <StockAnalysis /> },
   { path: "/stock-analysis", label: "Stock Analysis", analyticsName: "Stock Analysis", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/stock-analysis", element: <StockAnalysis /> },
   { path: "/institutional-flow", label: "Institutional Flow", analyticsName: "Institutional Flow", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/institutional-flow", element: <InstitutionalFlow /> },
+  { path: "/market-weather", label: "Market Weather Lab", analyticsName: "Market Weather Lab", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/market-weather", element: <MarketWeatherRadar /> },
   { path: "/secret/options", analyticsName: "Secret Options", element: <SecretOptions /> },
   { path: "/tools/recap", label: "Recap", analyticsName: "Recap", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/tools/recap", element: <RecapIndex /> },
   { path: "/tools/recap/:slug", analyticsName: "Recap", element: <RecapPost /> },

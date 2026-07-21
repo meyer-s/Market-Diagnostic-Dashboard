@@ -28,6 +28,17 @@ class YahooProvider:
         period = "1y" if days <= 365 else "2y" if days <= 730 else "5y"
         return yf.Ticker(symbol).history(period=period).tail(days)
 
+    def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+        canonical = _canonical_timeframe(timeframe)
+        requested_bars = max(1, int(bars))
+        interval, period = _yahoo_history_request(canonical, requested_bars)
+        frame = yf.Ticker(symbol).history(period=period, interval=interval)
+        if frame is None or frame.empty:
+            return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+        if canonical in {"2h", "4h"}:
+            frame = _resample_session_bars(frame, 2 if canonical == "2h" else 4)
+        return frame.tail(requested_bars)
+
     def option_expirations(self, symbol: str) -> list[str]:
         expiries = yf.Ticker(symbol).options or []
         parsed = [parse_option_expiry(exp) for exp in expiries]
@@ -70,3 +81,57 @@ class YahooProvider:
             puts=puts,
             source=self.name,
         )
+
+
+def _canonical_timeframe(timeframe: str) -> str:
+    aliases = {
+        "1m": "1m",
+        "5m": "5m",
+        "15m": "15m",
+        "30m": "30m",
+        "1h": "1h",
+        "60m": "1h",
+        "2h": "2h",
+        "4h": "4h",
+        "1d": "1D",
+        "1w": "1W",
+        "1wk": "1W",
+    }
+    normalized = str(timeframe).strip().lower()
+    if normalized not in aliases:
+        raise ValueError(f"Unsupported historical timeframe: {timeframe}")
+    return aliases[normalized]
+
+
+def _yahoo_history_request(timeframe: str, bars: int) -> tuple[str, str]:
+    if timeframe == "1m":
+        return "1m", "5d"
+    if timeframe in {"5m", "15m", "30m"}:
+        return timeframe, "60d"
+    if timeframe in {"1h", "2h", "4h"}:
+        return "60m", "2y"
+    if timeframe == "1D":
+        period = "1y" if bars <= 252 else "2y" if bars <= 504 else "5y" if bars <= 1260 else "10y"
+        return "1d", period
+    period = "2y" if bars <= 104 else "5y" if bars <= 260 else "10y"
+    return "1wk", period
+
+
+def _resample_session_bars(frame: pd.DataFrame, group_size: int) -> pd.DataFrame:
+    """Build 2h/4h bars without allowing an overnight gap into a bucket."""
+    pieces: list[pd.DataFrame] = []
+    for _session, session_frame in frame.groupby(frame.index.date, sort=True):
+        bucket = pd.Series(range(len(session_frame)), index=session_frame.index) // group_size
+        aggregated = session_frame.groupby(bucket).agg(
+            Open=("Open", "first"),
+            High=("High", "max"),
+            Low=("Low", "min"),
+            Close=("Close", "last"),
+            Volume=("Volume", "sum"),
+        )
+        first_indexes = [value.index[0] for _key, value in session_frame.groupby(bucket)]
+        aggregated.index = pd.DatetimeIndex(first_indexes)
+        pieces.append(aggregated)
+    if not pieces:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+    return pd.concat(pieces).sort_index()

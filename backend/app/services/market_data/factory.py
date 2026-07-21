@@ -22,6 +22,7 @@ class FallbackMarketDataProvider:
         self._primary_disabled_until = 0.0
         self._primary_cooldown_seconds = float(os.getenv("MARKET_DATA_PRIMARY_COOLDOWN_SECONDS", "60"))
         self._primary_slow_seconds = float(os.getenv("MARKET_DATA_PRIMARY_SLOW_SECONDS", "5"))
+        self._last_sources: dict[str, str] = {}
 
     def _primary_available(self) -> bool:
         return time.monotonic() >= self._primary_disabled_until
@@ -44,25 +45,37 @@ class FallbackMarketDataProvider:
 
     def _call(self, method: str, *args, **kwargs):
         if not self._primary_available():
-            return getattr(self.fallback, method)(*args, **kwargs)
+            result = getattr(self.fallback, method)(*args, **kwargs)
+            self._last_sources[method] = getattr(self.fallback, "name", "fallback")
+            return result
 
         started = time.monotonic()
         try:
             result = getattr(self.primary, method)(*args, **kwargs)
         except Exception as exc:
             self._disable_primary(method, "exception", exc)
-            return getattr(self.fallback, method)(*args, **kwargs)
+            result = getattr(self.fallback, method)(*args, **kwargs)
+            self._last_sources[method] = getattr(self.fallback, "name", "fallback")
+            return result
 
         elapsed = time.monotonic() - started
         if self._primary_slow_seconds > 0 and elapsed > self._primary_slow_seconds:
             self._disable_primary(method, f"slow_{elapsed:.2f}s")
+        self._last_sources[method] = getattr(self.primary, "name", "primary")
         return result
+
+    def source_for(self, method: str) -> str:
+        """Return the provider that actually served the most recent method call."""
+        return self._last_sources.get(method, self.name)
 
     def quote(self, symbol: str) -> UnderlyingQuote:
         return self._call("quote", symbol)
 
     def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
         return self._call("daily_bars", symbol, days=days)
+
+    def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+        return self._call("historical_bars", symbol, timeframe, bars=bars)
 
     def option_expirations(self, symbol: str) -> list[str]:
         return self._call("option_expirations", symbol)

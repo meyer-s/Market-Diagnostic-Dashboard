@@ -143,3 +143,4 @@ def test_fallback_provider_skips_primary_after_slow_call(monkeypatch) -> None:
 
     assert first.source == "ibkr"
     assert second.source == "yahoo"
+    assert provider.source_for("quote") == "yahoo"

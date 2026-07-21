@@ -49,6 +49,19 @@ OPTION_COLUMNS = [
     "quoteSource",
 ]
 
+HISTORICAL_BAR_SPECS: dict[str, tuple[str, str, int]] = {
+    # Canonical timeframe: (IBKR bar size, safe request duration, approximate RTH bars/chunk)
+    "1m": ("1 min", "1 D", 390),
+    "5m": ("5 mins", "1 W", 390),
+    "15m": ("15 mins", "2 W", 260),
+    "30m": ("30 mins", "1 M", 286),
+    "1h": ("1 hour", "1 M", 143),
+    "2h": ("2 hours", "1 M", 72),
+    "4h": ("4 hours", "1 M", 36),
+    "1D": ("1 day", "1 Y", 252),
+    "1W": ("1 week", "5 Y", 260),
+}
+
 
 @dataclass
 class _CacheEntry:
@@ -162,6 +175,76 @@ class IbkrCliProvider:
         from app.services.market_data_capture import record_daily_bars
 
         record_daily_bars(provider=self.name, symbol=normalized, frame=frame, days_requested=days)
+        self._cache.set(key, frame.copy(), self.bars_ttl)
+        return frame
+
+    def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+        """Fetch causal OHLCV history, paging backward within IBKR step-size limits."""
+        from ibkr_cli.ib_service import get_historical_bars
+
+        normalized = symbol.upper()
+        canonical = _canonical_timeframe(timeframe)
+        requested_bars = max(1, int(bars))
+        bar_size, duration, estimated_chunk_bars = HISTORICAL_BAR_SPECS[canonical]
+        key = ("historical_bars", normalized, canonical, requested_bars)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached.copy()
+
+        max_chunks = max(1, int(os.getenv("IBKR_HISTORICAL_MAX_CHUNKS", "4")))
+        chunk_count = min(max_chunks, max(1, math.ceil(requested_bars / estimated_chunk_bars)))
+
+        def fetch(api_symbol: str) -> dict[str, Any]:
+            frames: list[pd.DataFrame] = []
+            end = ""
+            previous_earliest: pd.Timestamp | None = None
+            for _chunk_index in range(chunk_count):
+                try:
+                    payload = get_historical_bars(
+                        self.profile,
+                        symbol=api_symbol,
+                        exchange=self.exchange,
+                        currency=self.currency,
+                        end=end,
+                        duration=duration,
+                        bar_size=bar_size,
+                        what_to_show="TRADES",
+                        use_rth=True,
+                        timeout=self.timeout,
+                    )
+                except Exception:
+                    if frames:
+                        logger.warning(
+                            "ibkr_historical_partial_result",
+                            extra={"symbol": normalized, "timeframe": canonical, "chunks": len(frames)},
+                        )
+                        break
+                    raise
+
+                frame = _bars_rows_to_frame(list(payload.get("rows") or []))
+                if frame.empty:
+                    break
+                frames.append(frame)
+                earliest = pd.Timestamp(frame.index.min())
+                if previous_earliest is not None and earliest >= previous_earliest:
+                    break
+                previous_earliest = earliest
+                end = _ibkr_end_before(earliest)
+
+                combined_count = len(pd.concat(frames).loc[lambda value: ~value.index.duplicated(keep="last")])
+                if combined_count >= requested_bars:
+                    break
+
+            if not frames:
+                return {"rows": []}
+            combined = pd.concat(frames)
+            combined = combined[~combined.index.duplicated(keep="last")].sort_index().tail(requested_bars)
+            return {"frame": combined}
+
+        payload = self._call_with_symbol(normalized, fetch)
+        frame = payload.get("frame")
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            raise RuntimeError(f"IBKR returned no {canonical} historical bars for {normalized}")
         self._cache.set(key, frame.copy(), self.bars_ttl)
         return frame
 
@@ -533,6 +616,34 @@ def _duration_for_days(days: int) -> str:
         return "1 Y"
     years = max(1, math.ceil(days / 365))
     return f"{years} Y"
+
+
+def _canonical_timeframe(timeframe: str) -> str:
+    aliases = {
+        "1m": "1m",
+        "5m": "5m",
+        "15m": "15m",
+        "30m": "30m",
+        "1h": "1h",
+        "60m": "1h",
+        "2h": "2h",
+        "4h": "4h",
+        "1d": "1D",
+        "1w": "1W",
+        "1wk": "1W",
+    }
+    normalized = str(timeframe).strip().lower()
+    if normalized not in aliases:
+        raise ValueError(f"Unsupported historical timeframe: {timeframe}")
+    return aliases[normalized]
+
+
+def _ibkr_end_before(timestamp: pd.Timestamp) -> str:
+    value = pd.Timestamp(timestamp) - pd.Timedelta(seconds=1)
+    if value.tzinfo is not None:
+        value = value.tz_convert("UTC")
+        return value.strftime("%Y%m%d %H:%M:%S UTC")
+    return value.strftime("%Y%m%d %H:%M:%S")
 
 
 def _bars_rows_to_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:

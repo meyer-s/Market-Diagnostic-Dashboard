@@ -20,6 +20,7 @@ describe("route registry", () => {
   it("resolves analytics names from the registry", () => {
     expect(getAnalyticsNameForPath("/")).toBe("Dashboard");
     expect(getAnalyticsNameForPath("/stock-analysis/MSFT")).toBe("Stock Analysis");
+    expect(getAnalyticsNameForPath("/market-weather")).toBe("Market Weather Lab");
   });
 
   it("renders the catch-all 404 route for unknown paths", () => {

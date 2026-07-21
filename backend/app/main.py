@@ -27,6 +27,7 @@ from app.api.market_internals import router as market_internals_router
 from app.api.agriculture import router as agriculture_router
 from app.api.energy import router as energy_router
 from app.api.real_estate import router as real_estate_router
+from app.api.market_weather import router as market_weather_router
 
 # Set up logging
 logging.basicConfig(
@@ -151,6 +152,9 @@ app.include_router(energy_router, tags=["Energy"])
 
 # Real Estate Diagnostic
 app.include_router(real_estate_router, tags=["RealEstate"])
+
+# Experimental multi-horizon market weather radar
+app.include_router(market_weather_router, tags=["MarketWeather"])
 
 # Metal Projections
 from app.api.metal_projections import router as metal_projections_router
