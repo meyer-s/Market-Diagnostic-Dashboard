@@ -74,6 +74,15 @@ export interface MarketWeatherCarrierPoint {
 
 export type MarketWeatherCarrierLatest = Omit<MarketWeatherCarrierPoint, "date">;
 
+export interface MarketWeatherCarrierRatioPoint {
+  date: string;
+  realized_volatility: number | null;
+  participation: number | null;
+  liquidity_stress: number | null;
+}
+
+export type MarketWeatherCarrierRatioLatest = Omit<MarketWeatherCarrierRatioPoint, "date">;
+
 export interface MarketWeatherRelationshipResult {
   id: string;
   label: string;
@@ -107,6 +116,7 @@ export interface MarketWeatherLexiconArchetype {
   window_frequency: number;
   frequency: number;
   typical_duration_bars: number;
+  fit_count: number;
   calibration_count: number;
   evaluation_count: number;
   evaluation_outcome: MarketWeatherLexiconOutcome;
@@ -119,6 +129,10 @@ export interface MarketWeatherLexiconSequencePoint {
   state_id: string;
   match: number;
   novelty: number;
+  distance_tail_score: number | null;
+  distance_tail_support: number;
+  distance_tail_scope: "state_conditional" | "unavailable";
+  outside_learned_range: boolean | null;
   transition_surprise: number;
 }
 
@@ -144,15 +158,24 @@ export interface MarketWeatherLexicon {
     archetype_count: number;
     maximum_archetypes: number;
     minimum_form_support: number;
+    fit_mean_silhouette?: number;
+    minimum_mean_silhouette?: number;
     requested_warmup_bars: number;
     fit_start_index: number;
     fit_start: string;
+    fit_end_index: number;
+    fit_end: string;
+    fit_bars: number;
     warmup_complete: boolean;
+    calibration_start_index: number;
+    calibration_start: string;
     calibration_bars: number;
     evaluation_bars: number;
     evaluation_bars_total?: number;
     calibration_end: string;
+    evaluation_start_index: number;
     evaluation_start: string;
+    calibration_independent_from_fit: boolean;
     evaluation_outcomes_used_for_training: boolean;
     visible_evaluation_start?: string | null;
     sequence_scope?: "visible_response_window";
@@ -169,6 +192,12 @@ export interface MarketWeatherLexicon {
     family_weights: Record<string, number>;
     signature_version: string;
     signature_quantization: string;
+    outside_range_rule?: string;
+    outside_range_cutoff?: number;
+    minimum_distance_tail_support?: number;
+    distance_tail_interpretation?: string;
+    coverage_guarantee?: boolean;
+    dependence_caveat?: string;
   };
   archetypes: MarketWeatherLexiconArchetype[];
   evaluation_sequence: MarketWeatherLexiconSequencePoint[];
@@ -178,6 +207,10 @@ export interface MarketWeatherLexicon {
     signature: string;
     match: number;
     novelty: number;
+    distance_tail_score: number | null;
+    distance_tail_support: number;
+    distance_tail_scope: "state_conditional" | "unavailable";
+    outside_learned_range: boolean | null;
     age_bars: number;
     age_truncated?: boolean;
     transition_surprise: number;
@@ -216,6 +249,17 @@ export interface MarketWeatherResearch {
   carriers?: {
     latest: MarketWeatherCarrierLatest;
     series: MarketWeatherCarrierPoint[];
+    availability?: {
+      realized_volatility: boolean;
+      participation: boolean;
+      liquidity_stress: boolean;
+      positive_volume_observations: number;
+    };
+    ratios?: {
+      latest: MarketWeatherCarrierRatioLatest;
+      series: MarketWeatherCarrierRatioPoint[];
+      baseline: string;
+    };
   };
   relationship_atlas: MarketWeatherRelationshipResult[];
   lexicon?: MarketWeatherLexicon;

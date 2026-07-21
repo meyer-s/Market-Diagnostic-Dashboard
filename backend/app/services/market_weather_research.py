@@ -10,6 +10,8 @@ import pandas as pd
 
 
 EPSILON = 1e-9
+DISTANCE_TAIL_CUTOFF = 0.05
+DISTANCE_TAIL_MINIMUM_SUPPORT = 20
 
 
 def _clip(values: np.ndarray, low: float = 0.0, high: float = 1.0) -> np.ndarray:
@@ -103,13 +105,35 @@ def _relative_level(values: np.ndarray, span: int) -> np.ndarray:
     return _clip(0.5 + 0.5 * np.tanh(2.0 * np.log(ratio)))
 
 
+def _relative_ratio(values: np.ndarray, span: int) -> np.ndarray:
+    """Return an interpretable current-to-causal-baseline ratio."""
+    baseline = _ewm_rows(values, span)
+    return np.clip(
+        np.nan_to_num(
+            np.divide(values + EPSILON, baseline + EPSILON),
+            nan=1.0,
+            posinf=10.0,
+            neginf=0.0,
+        ),
+        0.0,
+        10.0,
+    )
+
+
 def _carrier_fields(
     history: pd.DataFrame,
     horizons: Sequence[int],
     structure: np.ndarray,
-) -> tuple[dict[str, np.ndarray], np.ndarray]:
+) -> tuple[
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    np.ndarray,
+    dict[str, bool | int],
+]:
     close = history["close"].astype(float)
     volume = history["volume"].astype(float).clip(lower=0.0)
+    positive_volume_observations = int(np.sum(volume.to_numpy(dtype=float) > 0.0))
+    volume_available = positive_volume_observations > 0
     realized_volatility = _rolling_realized_volatility(close, horizons)
 
     volume_rows: list[np.ndarray] = []
@@ -124,13 +148,33 @@ def _carrier_fields(
     volume_field = np.vstack(volume_rows)
     impact_field = np.vstack(impact_rows)
     baseline_span = max(34, int(max(horizons) * 2))
+    unavailable_ratio = np.full_like(realized_volatility, np.nan, dtype=float)
+    ratios = {
+        "realized_volatility": _relative_ratio(realized_volatility, baseline_span),
+        "participation": (
+            _relative_ratio(volume_field, baseline_span)
+            if volume_available
+            else unavailable_ratio.copy()
+        ),
+        "liquidity_stress": (
+            _relative_ratio(impact_field, baseline_span)
+            if volume_available
+            else unavailable_ratio.copy()
+        ),
+    }
     carriers = {
         "price_structure": _clip(structure),
         "realized_volatility": _relative_level(realized_volatility, baseline_span),
         "participation": _relative_level(volume_field, baseline_span),
         "liquidity_stress": _relative_level(impact_field, baseline_span),
     }
-    return carriers, realized_volatility
+    availability: dict[str, bool | int] = {
+        "realized_volatility": True,
+        "participation": volume_available,
+        "liquidity_stress": volume_available,
+        "positive_volume_observations": positive_volume_observations,
+    }
+    return carriers, ratios, realized_volatility, availability
 
 
 def _aggregate(values: np.ndarray, weights: np.ndarray | None = None) -> np.ndarray:
@@ -144,6 +188,19 @@ def _rounded(value: float | np.floating[object] | None, digits: int = 4) -> floa
     if value is None or not np.isfinite(float(value)):
         return None
     return round(float(value), digits)
+
+
+def _empirical_distance_tail_score(
+    distance: float,
+    calibration_distances: np.ndarray,
+    *,
+    minimum_support: int = DISTANCE_TAIL_MINIMUM_SUPPORT,
+) -> float | None:
+    """Rank one distance against an independent chronological reference segment."""
+    finite = calibration_distances[np.isfinite(calibration_distances)]
+    if len(finite) < minimum_support:
+        return None
+    return float((1 + np.sum(finite >= distance)) / (len(finite) + 1))
 
 
 def _robust_standardize(
@@ -220,15 +277,42 @@ def _quantized_lexicon_centroid(centroid: np.ndarray) -> np.ndarray:
     return np.rint(np.asarray(centroid, dtype=float) / 0.35).astype("<i4")
 
 
+def _mean_silhouette(calibration: np.ndarray, assignments: np.ndarray, cluster_count: int) -> float:
+    """Return dependency-free mean silhouette on the calibration segment."""
+    if cluster_count <= 1 or len(calibration) <= cluster_count:
+        return 0.0
+    pairwise = np.sqrt(
+        np.sum(
+            np.square(calibration[:, None, :] - calibration[None, :, :]),
+            axis=2,
+        )
+    )
+    silhouettes = np.zeros(len(calibration), dtype=float)
+    for index, state in enumerate(assignments):
+        same = assignments == state
+        same[index] = False
+        within = float(np.mean(pairwise[index, same])) if np.any(same) else 0.0
+        alternatives = [
+            float(np.mean(pairwise[index, assignments == other]))
+            for other in range(cluster_count)
+            if other != state and np.any(assignments == other)
+        ]
+        between = min(alternatives) if alternatives else 0.0
+        denominator = max(within, between)
+        silhouettes[index] = (between - within) / denominator if denominator > EPSILON else 0.0
+    return float(np.mean(silhouettes))
+
+
 def _select_supported_centroids(
     calibration: np.ndarray,
     *,
     max_clusters: int = 5,
 ) -> tuple[np.ndarray, int]:
-    """Use the richest codebook whose Forms are distinct and sufficiently supported."""
-    min_support = max(3, int(ceil(len(calibration) * 0.025)))
+    """Use the most separated supported codebook; fall back to one honest Form."""
+    min_support = max(20, int(ceil(len(calibration) * 0.05)))
     upper = min(max_clusters, max(1, len(calibration) // min_support))
-    for cluster_count in range(upper, 0, -1):
+    candidates: list[tuple[float, int, np.ndarray]] = []
+    for cluster_count in range(2, upper + 1):
         centroids, assignments = _deterministic_kmeans(
             calibration,
             cluster_count=cluster_count,
@@ -252,7 +336,12 @@ def _select_supported_centroids(
             }
             if len(identities) != cluster_count:
                 continue
-        return centroids, min_support
+        silhouette = _mean_silhouette(calibration, assignments, cluster_count)
+        if silhouette >= 0.25:
+            candidates.append((silhouette, cluster_count, centroids))
+    if candidates:
+        _, _, selected = max(candidates, key=lambda item: (item[0], -item[1]))
+        return selected, min_support
     # A single Form is always the honest fallback for a flat calibration field.
     centroids, _ = _deterministic_kmeans(calibration, cluster_count=1)
     return centroids, min_support
@@ -425,12 +514,13 @@ def scope_market_state_lexicon(
         if state_id in visible_indexes_by_state:
             visible_indexes_by_state[state_id].append(int(point["index"]))
 
-    calibration_total = 0
+    pre_evaluation_total = 0
     for archetype in archetypes:
         if not isinstance(archetype, dict):
             continue
+        fit_count = int(archetype.get("fit_count", 0))
         calibration_count = int(archetype.get("calibration_count", 0))
-        calibration_total += calibration_count
+        pre_evaluation_total += fit_count + calibration_count
         indexes = visible_indexes_by_state.get(str(archetype.get("id", "")), [])
         archetype["evaluation_count"] = len(indexes)
         archetype["evaluation_outcome"] = _forward_outcome_stats(
@@ -438,11 +528,15 @@ def scope_market_state_lexicon(
             indexes,
             forward_bars=5,
         )
-    scoped_total = max(1, calibration_total + len(rebased_sequence))
+    scoped_total = max(1, pre_evaluation_total + len(rebased_sequence))
     for archetype in archetypes:
         if isinstance(archetype, dict):
             window_frequency = _rounded(
-                (int(archetype.get("calibration_count", 0)) + int(archetype.get("evaluation_count", 0)))
+                (
+                    int(archetype.get("fit_count", 0))
+                    + int(archetype.get("calibration_count", 0))
+                    + int(archetype.get("evaluation_count", 0))
+                )
                 / scoped_total
             )
             archetype["window_frequency"] = window_frequency
@@ -533,8 +627,12 @@ def _build_market_state_lexicon(
     values = np.column_stack([feature_arrays[name] for name in feature_names])
     count = len(values)
     evaluation_start = max(5, min(int(count * 0.60), count - 6))
-    fit_start = min(max(0, requested_warmup_bars), max(0, evaluation_start - 20))
-    standardized, center, scale = _robust_standardize(values, fit_start, evaluation_start)
+    fit_start = min(max(0, requested_warmup_bars), max(0, evaluation_start - 40))
+    pre_evaluation_bars = evaluation_start - fit_start
+    desired_calibration_bars = max(20, pre_evaluation_bars // 3)
+    calibration_bars = min(desired_calibration_bars, max(0, pre_evaluation_bars - 20))
+    calibration_start = evaluation_start - calibration_bars
+    standardized, center, scale = _robust_standardize(values, fit_start, calibration_start)
     family_counts = Counter(feature_families.values())
     family_weight = 1.0 / len(family_counts)
     feature_weights = np.asarray(
@@ -544,7 +642,7 @@ def _build_market_state_lexicon(
     metric_scale = np.sqrt(feature_weights)
     metric_values = standardized * metric_scale[None, :]
     raw_centroids, minimum_form_support = _select_supported_centroids(
-        metric_values[fit_start:evaluation_start],
+        metric_values[fit_start:calibration_start],
         max_clusters=5,
     )
 
@@ -560,10 +658,17 @@ def _build_market_state_lexicon(
     )
     assignments = np.argmin(distance_matrix, axis=1)
     nearest_distance = np.sqrt(np.min(distance_matrix, axis=1))
+    fit_silhouette = _mean_silhouette(
+        metric_values[fit_start:calibration_start],
+        assignments[fit_start:calibration_start],
+        len(centroids),
+    )
 
-    calibration_distance = nearest_distance[fit_start:evaluation_start]
-    distance_median = float(np.median(calibration_distance))
-    distance_high = float(np.quantile(calibration_distance, 0.95))
+    distance_reference = nearest_distance[calibration_start:evaluation_start]
+    if not len(distance_reference):
+        distance_reference = nearest_distance[fit_start:calibration_start]
+    distance_median = float(np.median(distance_reference))
+    distance_high = float(np.quantile(distance_reference, 0.95))
     match_scale = max(distance_median, EPSILON)
     matches = np.clip(np.exp(-nearest_distance / match_scale), 0.0, 1.0)
     novelty_denominator = max(distance_high - distance_median, EPSILON)
@@ -579,10 +684,10 @@ def _build_market_state_lexicon(
 
     smoothing = 0.5
     transition_counts = np.zeros((len(centroids), len(centroids)), dtype=int)
-    calibration_segments = _run_segments(assignments, fit_start, evaluation_start)
-    for segment_index in range(1, len(calibration_segments)):
-        previous_state = calibration_segments[segment_index - 1][0]
-        state = calibration_segments[segment_index][0]
+    fit_segments = _run_segments(assignments, fit_start, calibration_start)
+    for segment_index in range(1, len(fit_segments)):
+        previous_state = fit_segments[segment_index - 1][0]
+        state = fit_segments[segment_index][0]
         transition_counts[previous_state, state] += 1
     if len(centroids) == 1:
         transition_probabilities = np.ones((1, 1), dtype=float)
@@ -592,7 +697,7 @@ def _build_market_state_lexicon(
         transition_probabilities /= np.sum(transition_probabilities, axis=1, keepdims=True)
 
     durations: dict[int, list[int]] = {index: [] for index in range(len(centroids))}
-    for state, start, end in calibration_segments:
+    for state, start, end in fit_segments:
         durations[state].append(end - start + 1)
 
     standardized_centroids = np.divide(
@@ -603,10 +708,16 @@ def _build_market_state_lexicon(
     )
     original_centroids = center[None, :] + standardized_centroids * scale[None, :]
     archetypes: list[dict[str, object]] = []
+    calibration_distances_by_state: dict[int, np.ndarray] = {}
     for state_index, state_id in enumerate(state_ids):
-        calibration_indexes = np.flatnonzero(assignments[fit_start:evaluation_start] == state_index) + fit_start
+        fit_indexes = np.flatnonzero(assignments[fit_start:calibration_start] == state_index) + fit_start
+        calibration_indexes = (
+            np.flatnonzero(assignments[calibration_start:evaluation_start] == state_index)
+            + calibration_start
+        )
         evaluation_indexes = np.flatnonzero(assignments[evaluation_start:] == state_index) + evaluation_start
-        total_count = len(calibration_indexes) + len(evaluation_indexes)
+        calibration_distances_by_state[state_index] = nearest_distance[calibration_indexes]
+        total_count = len(fit_indexes) + len(calibration_indexes) + len(evaluation_indexes)
         archetypes.append(
             {
                 "id": state_id,
@@ -622,6 +733,7 @@ def _build_market_state_lexicon(
                     float(np.median(durations[state_index])) if durations[state_index] else 0.0,
                     1,
                 ),
+                "fit_count": int(len(fit_indexes)),
                 "calibration_count": int(len(calibration_indexes)),
                 "evaluation_count": int(len(evaluation_indexes)),
                 "evaluation_outcome": _forward_outcome_stats(
@@ -637,6 +749,12 @@ def _build_market_state_lexicon(
     for index in range(evaluation_start, count):
         previous_state = int(assignments[index - 1])
         state = int(assignments[index])
+        distance_tail_reference = calibration_distances_by_state[state]
+        distance_tail_support = int(np.sum(np.isfinite(distance_tail_reference)))
+        distance_tail_score = _empirical_distance_tail_score(
+            float(nearest_distance[index]),
+            distance_tail_reference,
+        )
         transition_surprise = 0.0 if previous_state == state else -log(
             max(float(transition_probabilities[previous_state, state]), EPSILON)
         )
@@ -647,6 +765,14 @@ def _build_market_state_lexicon(
                 "state_id": state_ids[state],
                 "match": _rounded(matches[index]),
                 "novelty": _rounded(novelty[index]),
+                "distance_tail_score": _rounded(distance_tail_score, 6),
+                "distance_tail_support": distance_tail_support,
+                "distance_tail_scope": "state_conditional" if distance_tail_score is not None else "unavailable",
+                "outside_learned_range": (
+                    distance_tail_score < DISTANCE_TAIL_CUTOFF
+                    if distance_tail_score is not None
+                    else None
+                ),
                 "transition_surprise": _rounded(transition_surprise, 6),
             }
         )
@@ -658,6 +784,12 @@ def _build_market_state_lexicon(
             break
         current_age += 1
     current_run_start = count - current_age
+    current_distance_tail_reference = calibration_distances_by_state[latest_state]
+    current_distance_tail_support = int(np.sum(np.isfinite(current_distance_tail_reference)))
+    current_distance_tail_score = _empirical_distance_tail_score(
+        float(nearest_distance[-1]),
+        current_distance_tail_reference,
+    )
     if current_run_start > 0 and int(assignments[current_run_start - 1]) != latest_state:
         latest_probability = max(
             float(transition_probabilities[int(assignments[current_run_start - 1]), latest_state]),
@@ -701,18 +833,27 @@ def _build_market_state_lexicon(
         "version": "0.1.0",
         "description": "A deterministic, window-native empirical codebook learned from this field, not a published market taxonomy, persistent identifier system, or trading signal.",
         "training_split": {
-            "method": "Warm-up excluded, then chronological calibration through 60%; calibration-only robust scaling and deterministic farthest-first k-means.",
+            "method": "Warm-up excluded where history permits; the pre-evaluation history is split chronologically into a proper fit segment and a later held-out calibration segment. Robust scaling, deterministic farthest-first k-means, Form selection, and grammar use the fit segment only. Candidate codebooks require 5%/20-bar fit support and mean fit silhouette >= 0.25.",
             "archetype_count": len(centroids),
             "maximum_archetypes": 5,
             "minimum_form_support": minimum_form_support,
+            "fit_mean_silhouette": _rounded(fit_silhouette, 6),
+            "minimum_mean_silhouette": 0.25,
             "requested_warmup_bars": requested_warmup_bars,
             "fit_start_index": fit_start,
             "fit_start": dates[fit_start],
+            "fit_end_index": calibration_start - 1,
+            "fit_end": dates[calibration_start - 1],
+            "fit_bars": calibration_start - fit_start,
             "warmup_complete": fit_start >= requested_warmup_bars,
-            "calibration_bars": evaluation_start - fit_start,
+            "calibration_start_index": calibration_start,
+            "calibration_start": dates[calibration_start],
+            "calibration_bars": evaluation_start - calibration_start,
             "evaluation_bars": count - evaluation_start,
             "calibration_end": dates[evaluation_start - 1],
+            "evaluation_start_index": evaluation_start,
             "evaluation_start": dates[evaluation_start],
+            "calibration_independent_from_fit": True,
             "evaluation_outcomes_used_for_training": False,
         },
         "features": [
@@ -733,6 +874,12 @@ def _build_market_state_lexicon(
             },
             "signature_version": "lx1",
             "signature_quantization": "Metric-space centroids rounded to 0.35-unit bins; identities remain native to the selected rolling window.",
+            "outside_range_rule": "State-conditional chronological held-out empirical distance-tail score below 0.05, available only with at least 20 same-state calibration distances.",
+            "outside_range_cutoff": DISTANCE_TAIL_CUTOFF,
+            "minimum_distance_tail_support": DISTANCE_TAIL_MINIMUM_SUPPORT,
+            "distance_tail_interpretation": "A smaller score means the observation is farther from its assigned Form than most same-state bars in the later held-out calibration segment.",
+            "coverage_guarantee": False,
+            "dependence_caveat": "Overlapping, autocorrelated, and nonstationary market bars are not exchangeable; this empirical rank has no exact false-alert or coverage guarantee.",
         },
         "archetypes": archetypes,
         "evaluation_sequence": evaluation_sequence,
@@ -742,11 +889,21 @@ def _build_market_state_lexicon(
             "signature": state_signatures[latest_state],
             "match": _rounded(matches[-1]),
             "novelty": _rounded(novelty[-1]),
+            "distance_tail_score": _rounded(current_distance_tail_score, 6),
+            "distance_tail_support": current_distance_tail_support,
+            "distance_tail_scope": (
+                "state_conditional" if current_distance_tail_score is not None else "unavailable"
+            ),
+            "outside_learned_range": (
+                current_distance_tail_score < DISTANCE_TAIL_CUTOFF
+                if current_distance_tail_score is not None
+                else None
+            ),
             "age_bars": current_age,
             "transition_surprise": _rounded(latest_surprise, 6),
         },
         "grammar": {
-            "training": "Run-collapsed calibration Form exits only; self-persistence and evaluation transitions do not update this matrix.",
+            "training": "Run-collapsed proper-fit Form exits only; self-persistence, calibration transitions, and evaluation transitions do not update this matrix.",
             "smoothing": smoothing,
             "minimum_transition_support": minimum_transition_support,
             "state_ids": state_ids,
@@ -965,7 +1122,11 @@ def build_market_weather_research(
     )
 
     structure = _clip(0.58 * structural_strength + 0.42 * coherence)
-    carriers, realized_volatility = _carrier_fields(history, horizons, structure)
+    carriers, carrier_ratios, realized_volatility, carrier_availability = _carrier_fields(
+        history,
+        horizons,
+        structure,
+    )
     if len(horizons) < 2:
         scaling_exponent = np.zeros_like(realized_volatility)
     else:
@@ -1017,6 +1178,7 @@ def build_market_weather_research(
         "scaling_exponent": np.clip(_aggregate(scaling_exponent), -2.0, 2.0),
     }
     aggregate_carriers = {name: _aggregate(values) for name, values in carriers.items()}
+    aggregate_carrier_ratios = {name: _aggregate(values) for name, values in carrier_ratios.items()}
 
     derivative_series = [
         {"date": date, **{name: _rounded(values[index]) for name, values in aggregate_derivatives.items()}}
@@ -1028,6 +1190,10 @@ def build_market_weather_research(
     ]
     carrier_series = [
         {"date": date, **{name: _rounded(values[index]) for name, values in aggregate_carriers.items()}}
+        for index, date in enumerate(dates)
+    ]
+    carrier_ratio_series = [
+        {"date": date, **{name: _rounded(values[index]) for name, values in aggregate_carrier_ratios.items()}}
         for index, date in enumerate(dates)
     ]
     relationship_atlas, validation = _build_relationship_atlas(
@@ -1079,7 +1245,13 @@ def build_market_weather_research(
         "carriers": {
             "latest": {name: _rounded(values[-1]) for name, values in aggregate_carriers.items()},
             "series": carrier_series,
-            "note": "Price structure, realized volatility, volume participation, and an Amihud-like OHLCV liquidity-stress proxy are separate carriers; the other strata are transformations of the price field.",
+            "availability": carrier_availability,
+            "ratios": {
+                "latest": {name: _rounded(values[-1]) for name, values in aggregate_carrier_ratios.items()},
+                "series": carrier_ratio_series,
+                "baseline": "Arithmetic mean across configured horizons of current measure divided by its causal EWM baseline, which includes the current bar. 1.0 means equal, 1.2 means 20% above, and values are capped at 10.0.",
+            },
+            "note": "Price structure, realized volatility, volume participation, and an Amihud-like OHLCV liquidity-stress proxy are separate carriers. Volume-dependent direct ratios are unavailable when the source contains no positive volume observations; neutral internal values keep the descriptive clustering path finite without implying a measured 1.0x ratio.",
         },
         "relationship_atlas": relationship_atlas,
         "lexicon": lexicon,

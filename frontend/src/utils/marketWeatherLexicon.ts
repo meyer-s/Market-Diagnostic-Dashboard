@@ -13,6 +13,196 @@ export interface MarketGlyphEncoding {
   cascadeTilt: number;
 }
 
+export type MarketFieldMetricId =
+  | "pressure"
+  | "velocity"
+  | "acceleration"
+  | "jerk"
+  | "snap"
+  | "structure"
+  | "kinematics"
+  | "geometry"
+  | "information"
+  | "propagation"
+  | "cascade_bias"
+  | "scaling_exponent"
+  | "volatility_carrier"
+  | "participation_carrier"
+  | "liquidity_stress_carrier";
+
+export interface MarketFieldMetricDefinition {
+  id: MarketFieldMetricId;
+  label: string;
+  shortLabel: string;
+  scale: string;
+  definition: string;
+  family: "field" | "carrier";
+}
+
+export interface MarketWeatherCalibrationFeature {
+  id: string;
+  calibration_median: number;
+  calibration_robust_scale: number;
+}
+
+export interface MarketFieldDeviation {
+  id: MarketFieldMetricId;
+  label: string;
+  value: number;
+  median: number;
+  robustScale: number;
+  robustDeviation: number;
+}
+
+export interface GroundedMarketStateProfile {
+  headline: string;
+  characteristic: string;
+  summary: string;
+  direction: "positive" | "negative" | "neutral";
+  deviations: MarketFieldDeviation[];
+}
+
+export const MARKET_FIELD_METRICS: MarketFieldMetricDefinition[] = [
+  {
+    id: "pressure",
+    label: "Directional pressure",
+    shortLabel: "Direction",
+    scale: "−100 negative to +100 positive",
+    definition: "Horizon-weighted trend state. Zero means the multi-horizon field is directionally balanced.",
+    family: "field",
+  },
+  {
+    id: "velocity",
+    label: "Pressure change",
+    shortLabel: "Change",
+    scale: "−100 falling to +100 rising",
+    definition: "The causal first change in directional pressure, scaled against its recent magnitude.",
+    family: "field",
+  },
+  {
+    id: "acceleration",
+    label: "Pressure acceleration",
+    shortLabel: "Acceleration",
+    scale: "−100 negative to +100 positive",
+    definition: "The causal change in pressure change, normalized against the recent magnitude of those changes.",
+    family: "field",
+  },
+  {
+    id: "jerk",
+    label: "Acceleration change",
+    shortLabel: "Jerk",
+    scale: "−100 negative to +100 positive",
+    definition: "The causal change in pressure acceleration, normalized against its recent magnitude.",
+    family: "field",
+  },
+  {
+    id: "snap",
+    label: "Jerk change",
+    shortLabel: "Snap",
+    scale: "−100 negative to +100 positive",
+    definition: "The causal change in jerk, normalized against its recent magnitude; this is the most noise-sensitive derivative used by the state model.",
+    family: "field",
+  },
+  {
+    id: "structure",
+    label: "Organization",
+    shortLabel: "Organization",
+    scale: "0 diffuse to 100 organized",
+    definition: "A blend of structural trend strength and agreement between neighboring horizons.",
+    family: "field",
+  },
+  {
+    id: "kinematics",
+    label: "Rate of reorganization",
+    shortLabel: "Reorganization",
+    scale: "0 quiet to 100 fast-changing",
+    definition: "Combined absolute velocity, acceleration, jerk, and snap of the pressure field.",
+    family: "field",
+  },
+  {
+    id: "geometry",
+    label: "Boundary activity",
+    shortLabel: "Boundaries",
+    scale: "0 smooth to 100 highly curved",
+    definition: "Scale gradients, curvature, mixed derivatives, and boundary energy across horizons.",
+    family: "field",
+  },
+  {
+    id: "information",
+    label: "Disorder",
+    shortLabel: "Disorder",
+    scale: "0 ordered to 100 disordered",
+    definition: "Causal permutation entropy blended with disagreement and motion energy in the field.",
+    family: "field",
+  },
+  {
+    id: "propagation",
+    label: "Cross-horizon spread",
+    shortLabel: "Propagation",
+    scale: "0 local to 100 broad",
+    definition: "Strength of a state change moving through neighboring time horizons.",
+    family: "field",
+  },
+  {
+    id: "cascade_bias",
+    label: "Propagation direction",
+    shortLabel: "Cascade",
+    scale: "−100 toward faster to +100 toward slower horizons",
+    definition: "Weighted direction of a moving pressure front across the log-horizon axis.",
+    family: "field",
+  },
+  {
+    id: "scaling_exponent",
+    label: "Volatility scaling slope",
+    shortLabel: "Scaling slope",
+    scale: "−2 to +2 log-log slope",
+    definition: "Local slope of log realized volatility versus log horizon. It describes cross-horizon scaling and is not a Hurst exponent.",
+    family: "field",
+  },
+  {
+    id: "volatility_carrier",
+    label: "Realized volatility",
+    shortLabel: "Volatility",
+    scale: "50 equals its trailing causal baseline",
+    definition: "Multi-horizon realized volatility relative to its own trailing baseline.",
+    family: "carrier",
+  },
+  {
+    id: "participation_carrier",
+    label: "Volume participation",
+    shortLabel: "Participation",
+    scale: "50 equals its trailing causal baseline",
+    definition: "Average trading volume across horizons relative to its own trailing baseline.",
+    family: "carrier",
+  },
+  {
+    id: "liquidity_stress_carrier",
+    label: "Liquidity stress",
+    shortLabel: "Liquidity stress",
+    scale: "50 equals its trailing causal baseline",
+    definition: "An Amihud-like price-impact measure from OHLCV data relative to its trailing baseline.",
+    family: "carrier",
+  },
+];
+
+const STATE_PROFILE_IDS: MarketFieldMetricId[] = [
+  "pressure",
+  "velocity",
+  "acceleration",
+  "jerk",
+  "snap",
+  "structure",
+  "kinematics",
+  "geometry",
+  "information",
+  "propagation",
+  "cascade_bias",
+  "scaling_exponent",
+  "volatility_carrier",
+  "participation_carrier",
+  "liquidity_stress_carrier",
+];
+
 function finite(value: number | undefined): number {
   return Number.isFinite(value) ? Number(value) : 0;
 }
@@ -23,6 +213,96 @@ export function clampUnit(value: number | undefined): number {
 
 export function clampSigned(value: number | undefined): number {
   return Math.min(1, Math.max(-1, finite(value)));
+}
+
+export function robustFieldDeviations(
+  values: Record<string, number>,
+  features: MarketWeatherCalibrationFeature[],
+): MarketFieldDeviation[] {
+  const featureById = new Map(features.map((feature) => [feature.id, feature]));
+  const definitionById = new Map(MARKET_FIELD_METRICS.map((metric) => [metric.id, metric]));
+
+  return STATE_PROFILE_IDS.map((id) => {
+    const feature = featureById.get(id);
+    const metric = definitionById.get(id)!;
+    const value = finite(values[id]);
+    const median = finite(feature?.calibration_median);
+    const robustScale = Math.max(Math.abs(finite(feature?.calibration_robust_scale)), 1e-9);
+    return {
+      id,
+      label: metric.shortLabel,
+      value,
+      median,
+      robustScale,
+      robustDeviation: (value - median) / robustScale,
+    };
+  });
+}
+
+function relativeCharacteristic(deviations: MarketFieldDeviation[]): string {
+  const candidates = deviations
+    .filter((item) => !["pressure", "velocity"].includes(item.id))
+    .sort((left, right) => Math.abs(right.robustDeviation) - Math.abs(left.robustDeviation));
+  const distinctive = candidates[0];
+  if (!distinctive) return "no calibrated comparison is available";
+  const direction = distinctive.robustDeviation > 0 ? "higher" : "lower";
+  if (distinctive.robustDeviation === 0) return `${distinctive.label.toLowerCase()} is at its calibration median`;
+  return `${distinctive.label.toLowerCase()} is ${Math.abs(distinctive.robustDeviation).toFixed(1)} fit-spread units ${direction}`;
+}
+
+export function buildGroundedStateProfile(
+  values: Record<string, number>,
+  features: MarketWeatherCalibrationFeature[],
+): GroundedMarketStateProfile {
+  const pressure = clampSigned(values.pressure);
+  const velocity = clampSigned(values.velocity);
+  const acceleration = clampSigned(values.acceleration);
+  const alignedVelocity = pressure * velocity;
+  const alignedAcceleration = pressure * acceleration;
+  const direction: GroundedMarketStateProfile["direction"] = pressure > 0
+    ? "positive"
+    : pressure < 0
+      ? "negative"
+      : "neutral";
+  const directionLabel = direction === "positive"
+    ? "Positive pressure"
+    : direction === "negative"
+      ? "Negative pressure"
+      : "Balanced pressure";
+
+  let motionLabel = "unchanged";
+  if (direction === "neutral") motionLabel = velocity > 0 ? "shifting positive" : velocity < 0 ? "shifting negative" : "unchanged";
+  else if (alignedVelocity > 0) motionLabel = "strengthening";
+  else if (alignedVelocity < 0) motionLabel = "fading";
+  else if (alignedAcceleration < 0) motionLabel = "decelerating";
+  else if (alignedAcceleration > 0) motionLabel = "re-accelerating";
+
+  const deviations = robustFieldDeviations(values, features);
+  const characteristic = relativeCharacteristic(deviations);
+  const organization = Math.round(clampUnit(values.structure) * 100);
+  const propagation = Math.round(clampUnit(values.propagation) * 100);
+  const information = Math.round(clampUnit(values.information) * 100);
+
+  return {
+    headline: `${directionLabel} · ${motionLabel}`,
+    characteristic,
+    summary: `Organization ${organization}/100, cross-horizon propagation ${propagation}/100, and disorder ${information}/100; ${characteristic}.`,
+    direction,
+    deviations,
+  };
+}
+
+export function marketFieldReading(id: MarketFieldMetricId, value: number): string {
+  const bounded = id === "pressure" || id === "velocity" || id === "cascade_bias"
+    ? clampSigned(value)
+    : clampUnit(value);
+  if (id === "pressure") return bounded > 0 ? "positive" : bounded < 0 ? "negative" : "balanced";
+  if (id === "velocity") return bounded > 0 ? "rising" : bounded < 0 ? "falling" : "steady";
+  if (id === "cascade_bias") return bounded > 0 ? "toward slower horizons" : bounded < 0 ? "toward faster horizons" : "no clear direction";
+  if (["volatility_carrier", "participation_carrier", "liquidity_stress_carrier"].includes(id)) {
+    return bounded > 0.5 ? "above baseline" : bounded < 0.5 ? "below baseline" : "at baseline";
+  }
+  return bounded > 0.5 ? "above scale midpoint" : bounded < 0.5 ? "below scale midpoint" : "at scale midpoint";
 }
 
 /**

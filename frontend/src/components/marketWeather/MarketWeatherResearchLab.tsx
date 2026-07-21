@@ -1,59 +1,60 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Activity, ArrowRight, BookOpen, FlaskConical, Languages, Layers } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, ArrowRight, BookOpen, ChevronDown, FlaskConical, Info, Layers } from "lucide-react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import type {
   MarketWeatherDerivativePoint,
   MarketWeatherLexiconArchetype,
   MarketWeatherLexiconMotif,
+  MarketWeatherPricePoint,
   MarketWeatherResearch,
   MarketWeatherStrataLatest,
   MarketWeatherTimeframe,
 } from "../../types/marketWeather";
 import {
-  buildMarketGlyphEncoding,
-  clampUnit,
-  describeMarketGlyph,
-  marketStateColor,
+  buildGroundedStateProfile,
+  MARKET_FIELD_METRICS,
+  marketFieldReading,
+  robustFieldDeviations,
 } from "../../utils/marketWeatherLexicon";
+import type { MarketFieldMetricId } from "../../utils/marketWeatherLexicon";
 
-type WorkbenchTab = "orders" | "strata" | "evidence";
-type LanguageView = "now" | "dictionary" | "audit";
+type LanguageView = "now" | "dictionary" | "methods";
 type DerivativeKey = "pressure" | "velocity" | "acceleration" | "jerk" | "snap";
 
 interface MarketWeatherResearchLabProps {
   research: MarketWeatherResearch;
+  price: MarketWeatherPricePoint[];
   symbol: string;
   timeframe: MarketWeatherTimeframe;
   barSize: string;
 }
 
-interface SyntaxRunSelection {
-  stateId: string;
-  start: number;
-  stop: number;
-  match: number;
-  novelty: number;
-  surprise: number;
-}
-
-const DERIVATIVES: Array<{ key: DerivativeKey; order: string }> = [
-  { key: "pressure", order: "P" },
-  { key: "velocity", order: "P′" },
-  { key: "acceleration", order: "P″" },
-  { key: "jerk", order: "P‴" },
-  { key: "snap", order: "P⁗" },
+const DERIVATIVES: Array<{ key: DerivativeKey; label: string }> = [
+  { key: "pressure", label: "Pressure" },
+  { key: "velocity", label: "Change" },
+  { key: "acceleration", label: "Acceleration" },
+  { key: "jerk", label: "Jerk" },
+  { key: "snap", label: "Snap" },
 ];
 
 const STRATA: Array<{
   key: keyof Pick<MarketWeatherStrataLatest, "structure" | "kinematics" | "geometry" | "information" | "propagation">;
-  symbol: string;
   label: string;
 }> = [
-  { key: "structure", symbol: "S", label: "structure" },
-  { key: "kinematics", symbol: "K", label: "kinematics" },
-  { key: "geometry", symbol: "G", label: "geometry" },
-  { key: "information", symbol: "I", label: "information" },
-  { key: "propagation", symbol: "R", label: "propagation" },
+  { key: "structure", label: "Organization" },
+  { key: "kinematics", label: "Reorganization" },
+  { key: "geometry", label: "Boundary activity" },
+  { key: "information", label: "Disorder" },
+  { key: "propagation", label: "Propagation" },
 ];
 
 const FOUNDATIONS = [
@@ -66,12 +67,14 @@ const FOUNDATIONS = [
   ["Multiple-test discipline", "Harvey, Liu & Zhu (2016)", "https://academic.oup.com/rfs/article/29/1/5/1843824"],
 ] as const;
 
+const METRIC_BY_ID = new Map(MARKET_FIELD_METRICS.map((metric) => [metric.id, metric]));
+
 function formatRate(value: number | null | undefined): string {
-  return value === null || value === undefined || !Number.isFinite(value) ? "–" : `${Math.round(value * 100)}%`;
+  return value === null || value === undefined || !Number.isFinite(value) ? "Not available" : `${Math.round(value * 100)}%`;
 }
 
 function formatReturn(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "–";
+  if (value === null || value === undefined || !Number.isFinite(value)) return "Not available";
   const percent = value * 100;
   return `${percent > 0 ? "+" : ""}${percent.toFixed(2)}%`;
 }
@@ -88,335 +91,517 @@ function formatDate(value: string, timeframe: MarketWeatherTimeframe): string {
     : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
 }
 
-function polygonPoints(facets: number, radius: number, center = 100): string {
-  return Array.from({ length: facets }, (_, index) => {
-    const angle = -Math.PI / 2 + index * Math.PI * 2 / facets;
-    return `${center + Math.cos(angle) * radius},${center + Math.sin(angle) * radius}`;
-  }).join(" ");
+function formatObservationDate(value: string, timeframe: MarketWeatherTimeframe): string {
+  const date = parseTimestamp(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return ["1D", "1W"].includes(timeframe)
+    ? date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+    : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
 }
 
-function StateGlyph({
+function stateTone(direction: "positive" | "negative" | "neutral"): string {
+  if (direction === "positive") return "#38bdf8";
+  if (direction === "negative") return "#a78bfa";
+  return "#94a3b8";
+}
+
+function metricValue(id: MarketFieldMetricId, value: number): string {
+  if (["pressure", "velocity", "cascade_bias"].includes(id)) {
+    const scaled = value * 100;
+    return `${scaled > 0 ? "+" : ""}${scaled.toFixed(1)}`;
+  }
+  return `${Math.round(value * 100)}`;
+}
+
+function metricUnit(id: MarketFieldMetricId): string {
+  if (["pressure", "velocity", "cascade_bias"].includes(id)) return "on a −100 to +100 scale";
+  if (["volatility_carrier", "participation_carrier", "liquidity_stress_carrier"].includes(id)) {
+    return "index; 50 is its trailing baseline";
+  }
+  return "on a 0 to 100 scale";
+}
+
+function sampleLabel(sampleSize: number): string {
+  if (sampleSize < 5) return "Too few holdout observations";
+  if (sampleSize < 20) return "Limited holdout evidence";
+  return "Descriptive holdout evidence";
+}
+
+function baselineRatioReading(value: number): string {
+  const difference = (value - 1) * 100;
+  if (Math.abs(difference) < 0.05) return "at baseline";
+  const magnitude = Math.abs(difference);
+  return `${magnitude < 10 ? magnitude.toFixed(1) : magnitude.toFixed(0)}% ${difference > 0 ? "above" : "below"}`;
+}
+
+function StateDeviationBars({
   archetype,
-  size = 220,
-  muted = false,
-  match = 1,
-  novelty = 0,
-  decorative = false,
+  research,
+  compact = false,
 }: {
   archetype: MarketWeatherLexiconArchetype;
-  size?: number;
-  muted?: boolean;
-  match?: number;
-  novelty?: number;
-  decorative?: boolean;
+  research: MarketWeatherResearch;
+  compact?: boolean;
 }) {
-  const instanceId = useId().replace(/:/g, "");
-  const encoding = buildMarketGlyphEncoding(archetype.centroid);
-  const color = marketStateColor(archetype.id);
-  const dash = Math.max(2, (Math.PI * 2 * 76) / encoding.textureDashes);
-  const boundedMatch = clampUnit(match);
-  const boundedNovelty = clampUnit(novelty);
-  const label = `${archetype.token}, state ${archetype.id}: ${describeMarketGlyph(archetype.centroid)}. ${encoding.facetCount} geometry facets, ${encoding.ringCount} structure rings, ${encoding.trailCount} propagation trails.`;
+  const features = research.lexicon?.features ?? [];
+  const deviations = robustFieldDeviations(archetype.centroid, features);
+  const ranked = deviations.slice().sort((left, right) => Math.abs(right.robustDeviation) - Math.abs(left.robustDeviation));
+  const visible = ranked.slice(0, compact ? 3 : 8);
 
   return (
-    <svg
-      viewBox="0 0 200 200"
-      width={size}
-      height={size}
-      role={decorative ? undefined : "img"}
-      aria-hidden={decorative ? true : undefined}
-      aria-label={decorative ? undefined : label}
-      focusable="false"
-      className={`h-auto max-w-full ${muted ? "opacity-75" : ""}`}
-    >
-      <defs>
-        <radialGradient id={`core-${instanceId}`} cx="50%" cy="44%" r="64%">
-          <stop offset="0%" stopColor={color} stopOpacity="0.36" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.03" />
-        </radialGradient>
-        <filter id={`glow-${instanceId}`} x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="3.5" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
-      <g transform={`rotate(${encoding.cascadeTilt} 100 100)`}>
-        {Array.from({ length: encoding.trailCount }, (_, index) => {
-          const offset = (index - (encoding.trailCount - 1) / 2) * 9;
-          return (
-            <path
-              key={index}
-              d={`M ${48 - encoding.trailLength} ${100 + offset} Q ${58 - encoding.trailLength / 3} ${90 + offset} 72 ${100 + offset}`}
-              fill="none"
-              stroke={color}
-              strokeWidth={1.2 + index * 0.35}
-              strokeDasharray="4 5"
-              opacity={0.3 + index * 0.13}
-            />
-          );
-        })}
-        <circle cx="100" cy="100" r="82" fill={`url(#core-${instanceId})`} opacity="0.52" />
-        <circle
-          cx="100"
-          cy="100"
-          r="86"
-          fill="none"
-          stroke="#cbd5e1"
-          strokeWidth={1.2 + boundedMatch * 1.4}
-          strokeDasharray={boundedMatch >= 0.72 ? undefined : `${2 + boundedMatch * 8} ${4 + (1 - boundedMatch) * 8}`}
-          opacity={0.24 + boundedMatch * 0.48}
-        />
-        {boundedNovelty > 0.05 ? (
-          <circle
-            cx="100"
-            cy="100"
-            r="92"
-            fill="none"
-            stroke="#fbbf24"
-            strokeWidth={0.8 + boundedNovelty * 2.2}
-            strokeDasharray="13 9"
-            opacity={0.18 + boundedNovelty * 0.72}
-          />
-        ) : null}
-        <circle
-          cx="100"
-          cy="100"
-          r="76"
-          fill="none"
-          stroke={color}
-          strokeWidth="1.2"
-          strokeDasharray={`${dash * 0.34} ${dash * 0.66}`}
-          opacity="0.48"
-        />
-        {Array.from({ length: encoding.ringCount }, (_, index) => (
-          <circle
-            key={index}
-            cx="100"
-            cy="100"
-            r={encoding.structureRadius - index * 8}
-            fill="none"
-            stroke={color}
-            strokeWidth={Math.max(1, encoding.pulseWidth - index * 0.7)}
-            opacity={0.2 + (encoding.ringCount - index) * 0.16}
-          />
-        ))}
-        <polygon
-          points={polygonPoints(encoding.facetCount, 27 + Math.abs(encoding.pressure) * 8)}
-          fill={color}
-          fillOpacity="0.08"
-          stroke={color}
-          strokeWidth="2"
-          strokeLinejoin="round"
-          filter={`url(#glow-${instanceId})`}
-        />
-        <g transform={`translate(100 100) rotate(${encoding.coreRotation}) scale(${encoding.coreScale})`}>
-          {encoding.direction === "level" ? (
-            <path d="M -13 0 H 13" stroke={color} strokeWidth="5" strokeLinecap="round" />
-          ) : (
-            <path d="M -11 -9 L 12 0 L -11 9 Z" fill={color} />
-          )}
-        </g>
-        <circle cx="100" cy="100" r="3.5" fill="#e2e8f0" />
-      </g>
-    </svg>
-  );
-}
-
-function MachineMeter({ label, symbol, value, inverse = false }: { label: string; symbol: string; value: number; inverse?: boolean }) {
-  const normalized = clampUnit(value);
-  return (
-    <div className="min-w-0" title={`${label}: ${Math.round(normalized * 100)}%`}>
-      <div className="flex items-center justify-between gap-2 font-mono text-[10px] text-slate-500">
-        <span>{symbol}</span><span>{Math.round(normalized * 100).toString().padStart(2, "0")}</span>
-      </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800" aria-label={`${label} ${Math.round(normalized * 100)} percent`}>
-        <div className={`h-full rounded-full ${inverse ? "bg-amber-300" : "bg-sky-300"}`} style={{ width: `${normalized * 100}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function SyntaxRibbon({
-  sequence,
-  archetypes,
-  selectedRunStart,
-  onSelect,
-}: {
-  sequence: NonNullable<MarketWeatherResearch["lexicon"]>["evaluation_sequence"];
-  archetypes: MarketWeatherLexiconArchetype[];
-  selectedRunStart: number | null;
-  onSelect: (run: SyntaxRunSelection) => void;
-}) {
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const lookup = useMemo(() => new Map(archetypes.map((archetype) => [archetype.id, archetype])), [archetypes]);
-  const runs = useMemo(() => {
-    const grouped: Array<SyntaxRunSelection & { matchTotal: number; observations: number }> = [];
-    sequence.forEach((point) => {
-      const previous = grouped[grouped.length - 1];
-      if (previous?.stateId === point.state_id) {
-        previous.stop = point.index;
-        previous.matchTotal += point.match;
-        previous.observations += 1;
-        previous.match = previous.matchTotal / previous.observations;
-        previous.novelty = Math.max(previous.novelty, point.novelty);
-        previous.surprise = Math.max(previous.surprise, point.transition_surprise);
-      } else {
-        grouped.push({ stateId: point.state_id, start: point.index, stop: point.index, match: point.match, matchTotal: point.match, observations: 1, novelty: point.novelty, surprise: point.transition_surprise });
-      }
-    });
-    return grouped.slice(-15);
-  }, [sequence]);
-
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    viewport.scrollLeft = viewport.scrollWidth;
-  }, [runs]);
-
-  return (
-    <div ref={viewportRef} className="h-[108px] overflow-x-auto overflow-y-hidden rounded-2xl border border-stealth-700 bg-slate-950/45 px-3 py-2" aria-label="Evaluation syntax ribbon">
-      <div className="flex h-full min-w-max items-center gap-2">
-        {runs.map((run, runIndex) => {
-          const archetype = lookup.get(run.stateId);
-          const selected = selectedRunStart === null ? runIndex === runs.length - 1 : run.start === selectedRunStart;
-          const duration = run.stop - run.start + 1;
-          const surprise = clampUnit(run.surprise / 4);
-          if (!archetype) return null;
-          return (
-            <button
-              key={`${run.start}-${run.stateId}`}
-              type="button"
-              onClick={() => onSelect(run)}
-              style={{ width: `${Math.max(58, Math.min(154, 46 + duration * 8))}px` }}
-              className={`relative flex h-[88px] shrink-0 items-center justify-center rounded-lg border px-1 pb-3 outline-none transition focus-visible:ring-2 focus-visible:ring-white ${selected ? "border-white/35 bg-white/[0.04]" : "border-transparent hover:bg-white/[0.025]"}`}
-              title={`${archetype.token} · ${duration} bars · resonance ${formatRate(run.match)} · novelty ${formatRate(run.novelty)} · surprise ${run.surprise.toFixed(2)}`}
-              aria-label={`${archetype.token}, ${duration} bar run, resonance ${formatRate(run.match)}, novelty ${formatRate(run.novelty)}`}
-            >
-              {runIndex > 0 ? (
-                <span
-                  aria-hidden="true"
-                  className="absolute -left-[6px] top-2 h-14 border-l border-amber-300"
-                  style={{ borderLeftStyle: surprise > 0.55 ? "dashed" : "solid", borderLeftWidth: `${1 + surprise * 4}px`, opacity: 0.2 + surprise * 0.75 }}
-                />
-              ) : null}
-              <StateGlyph archetype={archetype} size={58} muted={!selected} match={run.match} novelty={run.novelty} decorative />
-              <span className="absolute bottom-1.5 left-1/2 z-[1] -translate-x-1/2 font-mono text-[10px] text-slate-400">{duration}</span>
+    <div className="space-y-2" aria-label="Difference from the model-fit baseline">
+      {visible.map((deviation) => {
+        const magnitude = Math.min(50, Math.abs(deviation.robustDeviation) / 3 * 50);
+        const positive = deviation.robustDeviation >= 0;
+        return (
+          <div key={deviation.id} className="grid grid-cols-[minmax(86px,1fr)_minmax(90px,1.4fr)_52px] items-center gap-2 text-xs">
+            <span className="truncate text-slate-300">{deviation.label}</span>
+            <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
+              <span className="absolute inset-y-0 left-1/2 w-px bg-slate-500" />
               <span
-                aria-hidden="true"
-                className="absolute bottom-0 left-1 right-1 border-t border-amber-200/70 bg-[repeating-linear-gradient(90deg,rgba(251,191,36,.8)_0_3px,transparent_3px_6px)]"
-                style={{ height: `${1 + clampUnit(run.novelty) * 7}px`, opacity: 0.2 + clampUnit(run.novelty) * 0.8 }}
+                className={`absolute inset-y-0 rounded-full ${positive ? "bg-sky-300" : "bg-violet-300"}`}
+                style={positive ? { left: "50%", width: `${magnitude}%` } : { right: "50%", width: `${magnitude}%` }}
               />
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function TransitionMatrix({
-  lexicon,
-  selectedId,
-  onSelect,
-  translate,
-}: {
-  lexicon: NonNullable<MarketWeatherResearch["lexicon"]>;
-  selectedId: string;
-  onSelect: (stateId: string) => void;
-  translate: boolean;
-}) {
-  const tokenById = new Map(lexicon.archetypes.map((archetype) => [archetype.id, archetype.token]));
-  const archetypeById = new Map(lexicon.archetypes.map((archetype) => [archetype.id, archetype]));
-  const stateIds = lexicon.grammar.state_ids;
-  const selectedIndex = Math.max(0, stateIds.indexOf(selectedId));
-  const likely = lexicon.grammar.likely_next.find((item) => item.from_state === selectedId);
-
-  return (
-    <div className="min-w-0 rounded-2xl border border-stealth-700 bg-slate-950/35 p-4">
-      <div className="flex min-h-10 items-start justify-between gap-3">
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">M · Motion</div>
-          <div className="mt-1 font-mono text-sm text-slate-100">
-            {tokenById.get(selectedId) ?? selectedId} <ArrowRight className="inline h-3.5 w-3.5" /> {likely?.reliable ? likely.to_token : "unresolved"}
-          </div>
-          <div className="mt-1 font-mono text-[10px] text-slate-500">exit support n={likely?.support ?? 0}</div>
-        </div>
-        <span className="font-mono text-xs text-sky-300">{likely?.reliable ? formatRate(likely.probability) : "–"}</span>
-      </div>
-      <div className="mt-3 overflow-x-auto">
-        <table className="mx-auto border-separate border-spacing-1" aria-label="Calibration-only state transition matrix">
-          <thead>
-            <tr><th className="w-8" />{stateIds.map((stateId) => {
-              const archetype = archetypeById.get(stateId);
-              return <th key={stateId} className="pb-1 text-center font-mono text-[10px] text-slate-500">{archetype ? <StateGlyph archetype={archetype} size={30} muted decorative /> : stateId}</th>;
-            })}</tr>
-          </thead>
-          <tbody>
-            {stateIds.map((fromState, rowIndex) => (
-              <tr key={fromState}>
-                <th className="pr-1 text-right font-mono text-[10px] text-slate-500">
-                  <button type="button" onClick={() => onSelect(fromState)} className={fromState === selectedId ? "text-white" : "hover:text-white"} aria-label={`Select ${tokenById.get(fromState)}`}>{archetypeById.get(fromState) ? <StateGlyph archetype={archetypeById.get(fromState)!} size={28} muted={fromState !== selectedId} decorative /> : fromState}</button>
-                </th>
-                {stateIds.map((toState, columnIndex) => {
-                  const probability = lexicon.grammar.probabilities[rowIndex]?.[columnIndex] ?? 0;
-                  return (
-                    <td key={toState}>
-                      <button
-                        type="button"
-                        onClick={() => onSelect(toState)}
-                        className={`grid h-10 w-10 place-items-center rounded-md border font-mono text-[10px] transition hover:brightness-150 sm:h-11 sm:w-11 ${rowIndex === selectedIndex ? "border-white/20" : "border-white/5"}`}
-                        style={{ backgroundColor: `${marketStateColor(toState)}${Math.round((0.1 + probability * 0.9) * 255).toString(16).padStart(2, "0")}` }}
-                        title={`${tokenById.get(fromState)} → ${tokenById.get(toState)}: ${formatRate(probability)}`}
-                        aria-label={`${tokenById.get(fromState)} to ${tokenById.get(toState)}, ${formatRate(probability)}`}
-                      >
-                        {Math.round(probability * 100)}
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="mt-2 min-h-5 text-center text-[10px] text-slate-500">
-        {translate ? "Rows are current states; columns are calibration-estimated next states." : "P(Lₜ₊₁ | Lₜ) · calibration only"}
-      </div>
-    </div>
-  );
-}
-
-function MotifCard({
-  motif,
-  archetypes,
-  translate,
-}: {
-  motif: MarketWeatherLexiconMotif;
-  archetypes: MarketWeatherLexiconArchetype[];
-  translate: boolean;
-}) {
-  const lookup = new Map(archetypes.map((archetype) => [archetype.id, archetype]));
-  return (
-    <article className={`rounded-xl border p-3 ${motif.current ? "border-sky-300/45 bg-sky-950/20" : "border-stealth-700 bg-slate-950/30"}`}>
-      <div className="flex items-center gap-1.5 overflow-hidden">
-        {motif.states.map((stateId, index) => {
-          const archetype = lookup.get(stateId);
-          if (!archetype) return null;
-          return (
-            <div key={`${stateId}-${index}`} className="flex min-w-0 items-center gap-1">
-              <StateGlyph archetype={archetype} size={38} muted decorative />
-              {index < motif.states.length - 1 ? <ArrowRight className="h-3 w-3 shrink-0 text-slate-600" /> : null}
             </div>
-          );
-        })}
+            <span className="text-right font-mono text-slate-300">
+              {deviation.robustDeviation > 0 ? "+" : ""}{deviation.robustDeviation.toFixed(1)}
+            </span>
+          </div>
+        );
+      })}
+      {!compact ? <p className="text-xs leading-5 text-slate-400">The eight largest differences are shown. The center line is the model-fit median; numbers are fit-spread units (normally interquartile ranges), while bar lengths cap at three for display.</p> : null}
+    </div>
+  );
+}
+
+function PriceStateChart({
+  price,
+  research,
+  timeframe,
+}: {
+  price: MarketWeatherPricePoint[];
+  research: MarketWeatherResearch;
+  timeframe: MarketWeatherTimeframe;
+}) {
+  const lexicon = research.lexicon!;
+  const visiblePrice = price.slice(-120);
+  const visibleDates = new Set(visiblePrice.map((point) => point.date));
+  const profileById = useMemo(
+    () => new Map(lexicon.archetypes.map((archetype) => [archetype.id, buildGroundedStateProfile(archetype.centroid, lexicon.features)])),
+    [lexicon.archetypes, lexicon.features],
+  );
+  const runs: Array<{ stateId: string; start: string; end: string; duration: number; outside: boolean }> = [];
+  lexicon.evaluation_sequence.filter((point) => visibleDates.has(point.date)).forEach((point) => {
+    const previous = runs[runs.length - 1];
+    const outside = point.outside_learned_range === true;
+    if (previous?.stateId === point.state_id && previous.outside === outside) {
+      previous.end = point.date;
+      previous.duration += 1;
+    } else {
+      runs.push({ stateId: point.state_id, start: point.date, end: point.date, duration: 1, outside });
+    }
+  });
+
+  return (
+    <article className="min-w-0 rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-base font-semibold text-white">Price and learned state history</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-400">Actual closing price with the model’s recent state assignments below it.</p>
+        </div>
+        {visiblePrice.length ? <span className="rounded-full border border-stealth-600 px-3 py-1 text-xs text-slate-300">Last {visiblePrice.length} bars</span> : null}
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="truncate font-mono text-xs text-slate-200">{motif.id} · {motif.tokens.join("·")}</span>
-        <span className="shrink-0 font-mono text-[10px] text-slate-500">×{motif.count}</span>
+      <div className="h-[280px] min-w-0 sm:h-[320px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={visiblePrice} margin={{ top: 8, right: 8, left: 2, bottom: 4 }}>
+            <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
+            <XAxis
+              dataKey="date"
+              minTickGap={44}
+              tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }}
+              tickFormatter={(value: string) => formatDate(value, timeframe)}
+              axisLine={{ stroke: "var(--chart-axis-line)" }}
+              tickLine={false}
+            />
+            <YAxis
+              domain={["auto", "auto"]}
+              width={62}
+              tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }}
+              tickFormatter={(value: number) => `$${Number(value).toFixed(0)}`}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip
+              contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 12 }}
+              labelStyle={{ color: "var(--chart-tooltip-label)" }}
+              labelFormatter={(value) => formatObservationDate(String(value), timeframe)}
+              formatter={(value) => [`$${Number(value).toFixed(2)}`, "Close"]}
+            />
+            <Line type="monotone" dataKey="close" stroke="#7dd3fc" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
-      <div className="mt-1 min-h-4 text-[10px] text-slate-500">
-        {translate ? `${motif.typical_span_bars} bars · next ${formatReturn(motif.outcome.mean_return)} · n=${motif.outcome.sample_size}` : motif.current ? "⌁ current phrase" : `Δ${motif.length} · τ${motif.typical_span_bars}`}
+      <div className="mt-3">
+        <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400">
+          <span>Recent learned states</span>
+          <span>{runs.length} runs shown</span>
+        </div>
+        <div className="flex h-8 min-w-0 overflow-hidden rounded-lg border border-stealth-700 bg-slate-900" role="list" aria-label="Recent learned state runs">
+          {runs.map((run) => {
+            const profile = profileById.get(run.stateId);
+            return (
+              <div
+                key={`${run.start}-${run.stateId}`}
+                role="listitem"
+                className="min-w-[3px] border-r border-slate-950/80 last:border-r-0"
+                style={{ flexGrow: run.duration, backgroundColor: run.outside ? "#fbbf24" : stateTone(profile?.direction ?? "neutral") }}
+                title={`${run.outside ? "Outside learned range" : profile?.headline ?? "Learned state"}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}`}
+                aria-label={`${run.outside ? "Outside learned range" : profile?.headline ?? "Learned state"}, ${run.duration} bars`}
+              />
+            );
+          })}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400" aria-label="State direction legend">
+          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-sky-400" />Positive pressure</span>
+          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-slate-400" />Balanced pressure</span>
+          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-violet-400" />Negative pressure</span>
+          <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />Outside learned range</span>
+        </div>
       </div>
     </article>
+  );
+}
+
+function CurrentStateView({ research, price, symbol, timeframe, barSize }: MarketWeatherResearchLabProps) {
+  const lexicon = research.lexicon!;
+  const current = lexicon.current;
+  const archetype = lexicon.archetypes.find((item) => item.id === current.state_id) ?? lexicon.archetypes[0];
+  const latestDerivative = research.derivative_series[research.derivative_series.length - 1];
+  const latestStrata = research.strata.latest;
+  const latestCarriers = research.carriers?.latest;
+  const latestRatios = research.carriers?.ratios?.latest;
+  const currentValues: Record<string, number> = {
+    ...archetype.centroid,
+    pressure: latestDerivative?.pressure ?? archetype.centroid.pressure ?? 0,
+    velocity: latestDerivative?.velocity ?? archetype.centroid.velocity ?? 0,
+    acceleration: latestDerivative?.acceleration ?? archetype.centroid.acceleration ?? 0,
+    jerk: latestDerivative?.jerk ?? archetype.centroid.jerk ?? 0,
+    snap: latestDerivative?.snap ?? archetype.centroid.snap ?? 0,
+    structure: latestStrata.structure,
+    kinematics: latestStrata.kinematics,
+    geometry: latestStrata.geometry,
+    information: latestStrata.information,
+    propagation: latestStrata.propagation,
+    cascade_bias: latestStrata.cascade_bias,
+    scaling_exponent: latestStrata.scaling_exponent,
+    volatility_carrier: latestCarriers?.realized_volatility ?? archetype.centroid.volatility_carrier ?? 0,
+    participation_carrier: latestCarriers?.participation ?? archetype.centroid.participation_carrier ?? 0,
+    liquidity_stress_carrier: latestCarriers?.liquidity_stress ?? archetype.centroid.liquidity_stress_carrier ?? 0,
+  };
+  const profile = buildGroundedStateProfile(currentValues, lexicon.features);
+  const rangeCheckAvailable = typeof current.outside_learned_range === "boolean";
+  const noCloseMatch = current.outside_learned_range === true;
+  const currentDate = price[price.length - 1]?.date ?? lexicon.evaluation_sequence[lexicon.evaluation_sequence.length - 1]?.date;
+  const outcome = archetype.evaluation_outcome;
+  const measuredMetrics: MarketFieldMetricId[] = [
+    "pressure",
+    "velocity",
+    "volatility_carrier",
+    "participation_carrier",
+    "liquidity_stress_carrier",
+  ];
+  const directRatios: Partial<Record<MarketFieldMetricId, number | null>> = {
+    volatility_carrier: latestRatios?.realized_volatility,
+    participation_carrier: latestRatios?.participation,
+    liquidity_stress_carrier: latestRatios?.liquidity_stress,
+  };
+  const distanceTailCutoff = lexicon.distance_metric.outside_range_cutoff;
+  const minimumTailSupport = lexicon.distance_metric.minimum_distance_tail_support ?? 20;
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-3xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">{symbol} · {barSize} · {currentDate ? formatObservationDate(currentDate, timeframe) : "Latest bar"}</p>
+            <h3 className={`mt-2 text-2xl font-semibold tracking-tight sm:text-3xl ${noCloseMatch ? "text-amber-200" : "text-white"}`}>
+              {noCloseMatch ? "No reliable learned-state match" : profile.headline}
+            </h3>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+              {noCloseMatch
+                ? `The current field is farther from its assigned state than nearly all same-state bars in the held-out calibration slice. Its live measurements show ${profile.headline.toLowerCase()}, but that state’s historical behavior is not treated as a current analog.`
+                : `The current field has ${profile.headline.toLowerCase()} and ${profile.characteristic}. ${profile.summary}`}
+            </p>
+          </div>
+          <div className="rounded-xl border border-stealth-600 bg-slate-950/45 px-4 py-3 text-sm text-slate-300">
+            <span className="block text-xs uppercase tracking-wider text-slate-400">Learned-range check</span>
+            <span className={`mt-1 block text-lg font-semibold ${noCloseMatch ? "text-amber-200" : "text-white"}`}>{!rangeCheckAvailable ? "Insufficient history" : noCloseMatch ? "Outside range" : "Within range"}</span>
+            <span className="mt-1 block text-xs text-slate-400">Held-out distance-tail score {current.distance_tail_score?.toFixed(3) ?? "not available"}{distanceTailCutoff !== undefined ? `; cutoff ${distanceTailCutoff.toFixed(2)}` : ""}</span>
+            <span className="mt-1 block text-xs text-slate-500">Same-state reference n={current.distance_tail_support}; {minimumTailSupport} required. Empirical rank, not a formal p-value.</span>
+          </div>
+        </div>
+        {!lexicon.training_split.warmup_complete ? <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">This history does not fully cover the requested horizon warm-up. Treat the learned state and its comparisons as provisional.</p> : null}
+      </section>
+
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
+        <PriceStateChart price={price} research={research} timeframe={timeframe} />
+        <aside className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+          <h3 className="text-base font-semibold text-white">Current measured evidence</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+              <span className="text-xs text-slate-400">Current run</span>
+              <strong className="mt-1 block text-lg text-white">{current.age_bars} bars</strong>
+              <span className="text-xs leading-5 text-slate-400">Typical learned run: {archetype.typical_duration_bars} bars{current.age_truncated ? "; visible history starts mid-run" : ""}</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+              <span className="text-xs text-slate-400">Window frequency</span>
+              <strong className="mt-1 block text-lg text-white">{formatRate(archetype.window_frequency)}</strong>
+              <span className="text-xs leading-5 text-slate-400">Share of eligible bars assigned to this learned state</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:col-span-2 xl:col-span-1">
+              <span className="text-xs text-slate-400">State observations</span>
+              <strong className="mt-1 block text-lg text-white">{archetype.fit_count + archetype.calibration_count + archetype.evaluation_count} bars</strong>
+              <span className="text-xs leading-5 text-slate-400">{archetype.fit_count} fit · {archetype.calibration_count} range-check · {archetype.evaluation_count} later holdout{noCloseMatch ? "; the current bar is not treated as an analog" : ""}</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+        <div className="mb-4">
+          <h3 className="text-base font-semibold text-white">What the model actually measured</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-400">Directional measures retain their signed scales. The three OHLCV carriers are shown as direct multiples of their own causal trailing baselines.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {measuredMetrics.map((id) => {
+            const definition = METRIC_BY_ID.get(id)!;
+            const value = currentValues[id] ?? 0;
+            const directRatio = directRatios[id];
+            const hasDirectRatio = typeof directRatio === "number" && Number.isFinite(directRatio);
+            const ratioLabel = hasDirectRatio && directRatio >= 10 ? "≥10.00×" : hasDirectRatio ? `${directRatio.toFixed(2)}×` : "Unavailable";
+            return (
+              <article key={id} className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                <h4 className="text-xs font-medium text-slate-300">{definition.label}</h4>
+                <div className="mt-2 flex items-baseline justify-between gap-2">
+                  <strong className="font-mono text-xl text-white">{definition.family === "carrier" ? ratioLabel : metricValue(id, value)}</strong>
+                  <span className="text-xs capitalize text-sky-300">{definition.family === "carrier" ? hasDirectRatio ? baselineRatioReading(directRatio) : "source unavailable" : marketFieldReading(id, value)}</span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-400">{definition.family === "carrier" ? hasDirectRatio ? "mean per-horizon ratio to its causal EWM baseline" : "this carrier cannot be measured from the returned OHLCV bars" : metricUnit(id)}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-white">What followed similar holdout bars</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-400">Every evaluation bar assigned to the nearest state; forward windows overlap and are serially dependent.</p>
+          </div>
+          <span className={`rounded-full border px-3 py-1 text-xs ${outcome.sample_size < 20 ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-sky-400/30 bg-sky-400/10 text-sky-200"}`}>
+            {sampleLabel(outcome.sample_size)}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Forward window</span><strong className="mt-1 block text-lg text-white">{outcome.forward_bars} bars</strong></div>
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Median return</span><strong className="mt-1 block text-lg text-white">{formatReturn(outcome.median_return)}</strong></div>
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Positive observations</span><strong className="mt-1 block text-lg text-white">{formatRate(outcome.positive_rate)}</strong></div>
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Holdout observations</span><strong className="mt-1 block text-lg text-white">{outcome.sample_size}</strong></div>
+        </div>
+        <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-400"><Info className="mt-0.5 h-4 w-4 shrink-0" />Descriptive historical context only, not a forecast or trading signal.{noCloseMatch ? " The current bar is novel, so this analog is especially weak." : ""}</p>
+      </section>
+    </div>
+  );
+}
+
+function TransitionEvidence({
+  archetype,
+  research,
+}: {
+  archetype: MarketWeatherLexiconArchetype;
+  research: MarketWeatherResearch;
+}) {
+  const lexicon = research.lexicon!;
+  const fromIndex = lexicon.grammar.state_ids.indexOf(archetype.id);
+  const counts = lexicon.grammar.counts[fromIndex] ?? [];
+  const support = counts.reduce((total, count) => total + count, 0);
+  const destinations = counts
+    .map((count, index) => ({ count, stateId: lexicon.grammar.state_ids[index] }))
+    .filter((item) => item.count > 0)
+    .sort((left, right) => right.count - left.count);
+
+  return (
+    <details className="rounded-xl border border-stealth-700 bg-slate-950/30 p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-slate-200">
+        <span>Observed state exits ({support})</span>
+        <ChevronDown className="h-4 w-4 text-slate-400" />
+      </summary>
+      <div className="mt-4 space-y-3">
+        {support < lexicon.grammar.minimum_transition_support ? (
+          <p className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+            Insufficient observed exits for a stable transition estimate. At least {lexicon.grammar.minimum_transition_support} are required.
+          </p>
+        ) : null}
+        {destinations.length ? destinations.map((destination) => {
+          const destinationArchetype = lexicon.archetypes.find((item) => item.id === destination.stateId);
+          const destinationProfile = destinationArchetype
+            ? buildGroundedStateProfile(destinationArchetype.centroid, lexicon.features)
+            : null;
+          return (
+            <div key={destination.stateId} className="flex items-start justify-between gap-3 rounded-lg border border-white/10 px-3 py-2.5 text-xs">
+              <span className="text-slate-300">{destinationProfile?.headline ?? "Another learned state"}</span>
+              <span className="shrink-0 font-mono text-slate-300">
+                {destination.count} of {support}{support >= lexicon.grammar.minimum_transition_support ? ` · ${Math.round(destination.count / support * 100)}%` : ""}
+              </span>
+            </div>
+          );
+        }) : <p className="text-xs text-slate-400">No run-collapsed exits were observed in calibration.</p>}
+        <p className="text-xs leading-5 text-slate-400">Raw calibration counts only. Self-persistence is excluded, and these are not forecast probabilities.</p>
+      </div>
+    </details>
+  );
+}
+
+function LearnedStateCard({
+  archetype,
+  index,
+  selected,
+  research,
+  onSelect,
+}: {
+  archetype: MarketWeatherLexiconArchetype;
+  index: number;
+  selected: boolean;
+  research: MarketWeatherResearch;
+  onSelect: () => void;
+}) {
+  const profile = buildGroundedStateProfile(archetype.centroid, research.lexicon?.features ?? []);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`w-full rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selected ? "border-sky-300/55 bg-sky-950/25" : "border-stealth-700 bg-slate-950/25 hover:border-stealth-500"}`}
+    >
+      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Learned state {index + 1}</span>
+      <strong className="mt-2 block text-base leading-6 text-white">{profile.headline}</strong>
+      <span className="mt-1 block text-xs leading-5 text-slate-400">{profile.characteristic}</span>
+      <div className="mt-4"><StateDeviationBars archetype={archetype} research={research} compact /></div>
+      <span className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/10 pt-3 text-xs text-slate-300">
+        <span>{formatRate(archetype.window_frequency)} of window</span>
+        <span>Typical run {archetype.typical_duration_bars} bars</span>
+        <span>Holdout n={archetype.evaluation_outcome.sample_size}</span>
+      </span>
+    </button>
+  );
+}
+
+function MeasurementGlossary() {
+  const fieldMetrics = MARKET_FIELD_METRICS.filter((metric) => metric.family === "field");
+  const carrierMetrics = MARKET_FIELD_METRICS.filter((metric) => metric.family === "carrier");
+
+  return (
+    <details className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white">
+        <span className="inline-flex items-center gap-2"><BookOpen className="h-4 w-4 text-sky-300" />Measurement glossary</span>
+        <span className="inline-flex items-center gap-2 text-xs font-normal text-slate-400">{MARKET_FIELD_METRICS.length} definitions <ChevronDown className="h-4 w-4" /></span>
+      </summary>
+      <p className="mt-3 max-w-3xl text-xs leading-5 text-slate-400">Every learned state is a cluster over these measurements. The labels below state the actual scale and construction; none is a probability or a trading recommendation.</p>
+      {[
+        { title: "Price-field measurements", metrics: fieldMetrics },
+        { title: "OHLCV context", metrics: carrierMetrics },
+      ].map((group) => (
+        <section key={group.title} className="mt-5">
+          <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">{group.title}</h4>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            {group.metrics.map((metric) => (
+              <article key={metric.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h5 className="text-sm font-medium text-white">{metric.label}</h5>
+                  <span className="text-xs text-sky-200">{metric.scale}</span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-400">{metric.definition}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
+    </details>
+  );
+}
+
+function DictionaryView({ research }: { research: MarketWeatherResearch }) {
+  const lexicon = research.lexicon!;
+  const [selectedId, setSelectedId] = useState(lexicon.current.state_id);
+
+  useEffect(() => setSelectedId(lexicon.current.state_id), [lexicon.current.state_id]);
+
+  const selected = lexicon.archetypes.find((archetype) => archetype.id === selectedId) ?? lexicon.archetypes[0];
+  const selectedIndex = Math.max(0, lexicon.archetypes.findIndex((archetype) => archetype.id === selected.id));
+  const profile = buildGroundedStateProfile(selected.centroid, lexicon.features);
+  const outcome = selected.evaluation_outcome;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(300px,.72fr)_minmax(0,1.28fr)]">
+      <section className="min-w-0">
+        <div className="mb-4">
+          <h3 className="text-base font-semibold text-white">Learned states in this window</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-400">Names come from the sign of directional pressure and whether its first change reinforces or opposes that sign. Profiles show measured differences from the earlier model-fit baseline.</p>
+        </div>
+        <div className="space-y-3">
+          {lexicon.archetypes.map((archetype, index) => (
+            <LearnedStateCard
+              key={archetype.id}
+              archetype={archetype}
+              index={index}
+              selected={archetype.id === selected.id}
+              research={research}
+              onSelect={() => setSelectedId(archetype.id)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="min-w-0 rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5 lg:sticky lg:top-4 lg:self-start">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">Learned state {selectedIndex + 1}</span>
+        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">{profile.headline}</h3>
+        <p className="mt-3 text-sm leading-6 text-slate-300">{profile.summary}</p>
+
+        <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+          <h4 className="text-sm font-semibold text-white">Measured definition</h4>
+          <p className="mt-1 text-xs leading-5 text-slate-400">Deviation from the model-fit median in fit-spread units; these are measured comparisons, not hand-set category scores.</p>
+          <div className="mt-4"><StateDeviationBars archetype={selected} research={research} /></div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Window frequency</span><strong className="mt-1 block text-lg text-white">{formatRate(selected.window_frequency)}</strong></div>
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Typical run</span><strong className="mt-1 block text-lg text-white">{selected.typical_duration_bars} bars</strong></div>
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Holdout sample</span><strong className="mt-1 block text-lg text-white">{outcome.sample_size}</strong></div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-white/10 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-white">Holdout behavior</h4>
+              <p className="mt-1 text-xs leading-5 text-slate-400">What followed assigned evaluation bars over the next {outcome.forward_bars} bars.</p>
+            </div>
+            <span className={`rounded-full border px-3 py-1 text-xs ${outcome.sample_size < 20 ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-sky-400/30 bg-sky-400/10 text-sky-200"}`}>{sampleLabel(outcome.sample_size)}</span>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div><span className="text-xs text-slate-400">Median return</span><strong className="mt-1 block text-base text-white">{formatReturn(outcome.median_return)}</strong></div>
+            <div><span className="text-xs text-slate-400">Positive observations</span><strong className="mt-1 block text-base text-white">{formatRate(outcome.positive_rate)}</strong></div>
+            <div><span className="text-xs text-slate-400">Mean absolute move</span><strong className="mt-1 block text-base text-white">{formatReturn(outcome.mean_absolute_return)}</strong></div>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-slate-400">Overlapping, serially dependent observations; descriptive only and not corrected for state search.</p>
+        </div>
+
+        <div className="mt-4"><TransitionEvidence archetype={selected} research={research} /></div>
+      </section>
+      </div>
+      <MeasurementGlossary />
+    </div>
   );
 }
 
@@ -424,7 +609,7 @@ function DerivativeHeatmap({ series, timeframe }: { series: MarketWeatherDerivat
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
-  const height = 216;
+  const height = 232;
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -449,284 +634,167 @@ function DerivativeHeatmap({ series, timeframe }: { series: MarketWeatherDerivat
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.fillStyle = "rgb(10,17,29)";
     context.fillRect(0, 0, width, height);
-    const left = 38;
-    const bottom = 24;
+    const left = 98;
+    const bottom = 28;
     const cellWidth = (width - left - 8) / series.length;
     const cellHeight = (height - bottom - 8) / DERIVATIVES.length;
     DERIVATIVES.forEach((derivative, row) => {
       series.forEach((point, column) => {
         const value = Math.max(-1, Math.min(1, point[derivative.key]));
         const alpha = 0.12 + Math.abs(value) * 0.88;
-        context.fillStyle = value >= 0 ? `rgba(45,212,191,${alpha})` : `rgba(251,113,133,${alpha})`;
+        context.fillStyle = value >= 0 ? `rgba(56,189,248,${alpha})` : `rgba(245,158,11,${alpha})`;
         context.fillRect(left + column * cellWidth, 7 + row * cellHeight, Math.max(1, cellWidth + 0.2), cellHeight + 0.2);
       });
-      context.fillStyle = "rgba(148,163,184,.8)";
-      context.font = "11px IBM Plex Mono, monospace";
+      context.fillStyle = "rgba(203,213,225,.88)";
+      context.font = "12px IBM Plex Sans, sans-serif";
       context.textAlign = "right";
-      context.fillText(derivative.order, left - 7, 7 + (row + 0.58) * cellHeight);
+      context.fillText(derivative.label, left - 8, 7 + (row + 0.58) * cellHeight);
     });
     context.textAlign = "left";
-    context.fillStyle = "rgba(100,116,139,.85)";
-    context.fillText(formatDate(series[0].date, timeframe), left, height - 7);
+    context.fillStyle = "rgba(148,163,184,.9)";
+    context.fillText(formatDate(series[0].date, timeframe), left, height - 8);
     context.textAlign = "right";
-    context.fillText(formatDate(series[series.length - 1].date, timeframe), width - 8, height - 7);
+    context.fillText(formatDate(series[series.length - 1].date, timeframe), width - 8, height - 8);
   }, [series, timeframe, width]);
 
-  return <div ref={wrapperRef} className="overflow-hidden rounded-xl border border-stealth-700"><canvas ref={canvasRef} className="block w-full" aria-label="Pressure derivative order heatmap" /></div>;
-}
-
-function Workbench({ research, symbol, timeframe, barSize }: MarketWeatherResearchLabProps) {
-  const [tab, setTab] = useState<WorkbenchTab>("orders");
-  const latest = research.strata.latest;
   return (
-    <div className="bg-slate-950/20">
-      <div className="flex min-h-14 items-center justify-between gap-3 border-b border-stealth-700 px-4 py-3 text-sm font-medium text-slate-300 sm:px-5">
-        <span className="inline-flex items-center gap-2"><Layers className="h-4 w-4 text-violet-300" /> Audit / Workbench</span>
-        <span className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{symbol} · {barSize}</span>
-      </div>
-      <div className="p-4 sm:p-5">
-        <div className="mb-4 flex w-full max-w-md rounded-xl border border-stealth-700 bg-slate-950/50 p-1" role="tablist" aria-label="Research workbench">
-          {(["orders", "strata", "evidence"] as WorkbenchTab[]).map((option) => (
-            <button key={option} type="button" role="tab" aria-selected={tab === option} onClick={() => setTab(option)} className={`min-h-9 flex-1 rounded-lg px-3 text-xs capitalize transition ${tab === option ? "bg-violet-500/20 text-violet-200" : "text-slate-500 hover:text-slate-200"}`}>{option}</button>
-          ))}
-        </div>
-        {tab === "orders" ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(260px,.5fr)]">
-            <DerivativeHeatmap series={research.derivative_series} timeframe={timeframe} />
-            <div className="grid grid-cols-5 gap-2 lg:grid-cols-1">
-              {DERIVATIVES.map((derivative, index) => (
-                <div key={derivative.key} className="rounded-lg border border-stealth-700 bg-slate-950/30 px-3 py-2 font-mono text-xs text-slate-300"><span className="text-violet-300">{derivative.order}</span><span className="ml-2 text-slate-600">d{index}</span></div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {tab === "strata" ? (
-          <div className="grid gap-3 sm:grid-cols-5">
-            {STRATA.map((stratum) => (
-              <div key={stratum.key} className="rounded-xl border border-stealth-700 bg-slate-950/30 p-3">
-                <div className="flex items-center justify-between font-mono text-xs"><span className="text-violet-300">{stratum.symbol}</span><span className="text-slate-200">{formatRate(latest[stratum.key])}</span></div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-violet-300" style={{ width: `${clampUnit(latest[stratum.key]) * 100}%` }} /></div>
-                <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-600">{stratum.label}</div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {tab === "evidence" ? (
-          <div className="space-y-4">
-            <div className="overflow-x-auto rounded-xl border border-stealth-700">
-              <table className="w-full min-w-[680px] text-left text-xs">
-                <thead className="bg-slate-950/60 text-[9px] uppercase tracking-[0.16em] text-slate-600"><tr><th className="px-3 py-2">Test</th><th className="px-3 py-2">n</th><th className="px-3 py-2">Event</th><th className="px-3 py-2">Baseline</th><th className="px-3 py-2">Uplift</th><th className="px-3 py-2">Status</th></tr></thead>
-                <tbody className="divide-y divide-white/5">
-                  {research.relationship_atlas.map((result) => <tr key={result.id}><td className="px-3 py-2 text-slate-200">{result.label}</td><td className="px-3 py-2 font-mono text-slate-400">{result.sample_size}</td><td className="px-3 py-2 font-mono text-slate-300">{formatReturn(result.event_mean)}</td><td className="px-3 py-2 font-mono text-slate-500">{formatReturn(result.baseline_mean)}</td><td className="px-3 py-2 font-mono text-sky-300">{formatReturn(result.uplift)}</td><td className="px-3 py-2 text-slate-500">{result.status}</td></tr>)}
-                </tbody>
-              </table>
-            </div>
-            <details className="rounded-xl border border-stealth-700 bg-slate-950/25 p-3">
-              <summary className="cursor-pointer text-xs text-slate-400"><BookOpen className="mr-2 inline h-3.5 w-3.5" /> Published foundations</summary>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {FOUNDATIONS.map(([title, authors, url]) => <a key={title} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/5 px-3 py-2 text-xs text-slate-400 hover:border-violet-400/30 hover:text-white"><span className="block text-slate-200">{title}</span><span className="text-[10px] text-slate-600">{authors}</span></a>)}
-              </div>
-            </details>
-            <div className="text-[10px] text-slate-600">{symbol} · {barSize} · chronological evaluation · overlapping outcomes · no multiple-test adjustment</div>
-          </div>
-        ) : null}
-      </div>
+    <div ref={wrapperRef} className="overflow-hidden rounded-xl border border-stealth-700">
+      <canvas ref={canvasRef} className="block w-full" aria-label="Pressure and its first four causal changes over time; blue is positive and amber is negative." />
     </div>
   );
 }
 
-export default function MarketWeatherResearchLab({ research, symbol, timeframe, barSize }: MarketWeatherResearchLabProps) {
+function translatedMotif(motif: MarketWeatherLexiconMotif, research: MarketWeatherResearch): string[] {
+  const lexicon = research.lexicon!;
+  return motif.states.map((stateId) => {
+    const archetype = lexicon.archetypes.find((item) => item.id === stateId);
+    return archetype ? buildGroundedStateProfile(archetype.centroid, lexicon.features).headline : "Unresolved state";
+  });
+}
+
+function MethodsView({ research, symbol, timeframe, barSize }: Omit<MarketWeatherResearchLabProps, "price">) {
+  const latest = research.strata.latest;
+  const motifs = research.lexicon?.motifs.slice().sort((left, right) => right.count - left.count).slice(0, 6) ?? [];
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+        <div className="mb-4 flex items-center gap-2"><Layers className="h-4 w-4 text-violet-300" /><h3 className="text-base font-semibold text-white">Causal derivative layers</h3></div>
+        <p className="mb-4 max-w-3xl text-xs leading-5 text-slate-400">Successive changes in the pressure field. This visualization is diagnostic; higher orders are more noise-sensitive.</p>
+        <DerivativeHeatmap series={research.derivative_series} timeframe={timeframe} />
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400"><span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-sky-400" />Positive</span><span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />Negative</span></div>
+      </section>
+
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+        <h3 className="text-base font-semibold text-white">Latest field layers</h3>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {STRATA.map((stratum) => (
+            <article key={stratum.key} className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+              <div className="flex items-center justify-between gap-2 text-xs"><span className="text-slate-300">{stratum.label}</span><strong className="font-mono text-white">{Math.round(latest[stratum.key] * 100)}</strong></div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-violet-300" style={{ width: `${Math.max(0, Math.min(100, latest[stratum.key] * 100))}%` }} /></div>
+              <p className="mt-2 text-xs text-slate-400">0 to 100 model scale</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+        <h3 className="text-base font-semibold text-white">Experimental repeated sequences</h3>
+        <p className="mt-1 text-xs leading-5 text-slate-400">Run-collapsed sequences translated into measured state definitions. They remain descriptive and uncorrected for search.</p>
+        {motifs.length ? (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {motifs.map((motif) => {
+              const states = translatedMotif(motif, research);
+              return (
+                <article key={motif.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                  <div className="flex flex-wrap items-center gap-2 text-xs leading-5 text-slate-300">
+                    {states.map((state, index) => <span key={`${state}-${index}`} className="inline-flex items-center gap-2"><span>{state}</span>{index < states.length - 1 ? <ArrowRight className="h-3.5 w-3.5 text-slate-500" /> : null}</span>)}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/10 pt-3 text-xs text-slate-400">
+                    <span>{motif.count} occurrences</span><span>Typical span {motif.typical_span_bars} bars</span><span>Next {motif.outcome.forward_bars} bars: {formatReturn(motif.outcome.median_return)}</span><span>n={motif.outcome.sample_size}</span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : <p className="mt-4 rounded-xl border border-dashed border-stealth-700 p-5 text-center text-xs text-slate-400">No repeated sequence has enough occurrences in the visible evaluation window.</p>}
+      </section>
+
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+        <h3 className="text-base font-semibold text-white">Chronological relationship checks</h3>
+        <div className="mt-4 overflow-x-auto rounded-xl border border-stealth-700">
+          <table className="w-full min-w-[720px] text-left text-xs">
+            <thead className="bg-slate-950/60 uppercase tracking-[0.12em] text-slate-400"><tr><th className="px-3 py-3">Test</th><th className="px-3 py-3">Sample</th><th className="px-3 py-3">Event</th><th className="px-3 py-3">Baseline</th><th className="px-3 py-3">Difference</th><th className="px-3 py-3">Status</th></tr></thead>
+            <tbody className="divide-y divide-white/10">
+              {research.relationship_atlas.map((result) => <tr key={result.id}><td className="px-3 py-3 text-slate-200">{result.label}</td><td className="px-3 py-3 font-mono text-slate-300">{result.sample_size}</td><td className="px-3 py-3 font-mono text-slate-300">{formatReturn(result.event_mean)}</td><td className="px-3 py-3 font-mono text-slate-400">{formatReturn(result.baseline_mean)}</td><td className="px-3 py-3 font-mono text-sky-300">{formatReturn(result.uplift)}</td><td className="px-3 py-3 text-slate-400">{result.status}</td></tr>)}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <details className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white"><span className="inline-flex items-center gap-2"><BookOpen className="h-4 w-4 text-violet-300" />Published foundations and limits</span><ChevronDown className="h-4 w-4 text-slate-400" /></summary>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {FOUNDATIONS.map(([title, authors, url]) => <a key={title} href={url} target="_blank" rel="noreferrer" className="rounded-xl border border-white/10 px-3 py-3 text-xs text-slate-300 hover:border-violet-400/40 hover:text-white"><span className="block font-medium text-slate-100">{title}</span><span className="mt-1 block text-slate-400">{authors}</span></a>)}
+        </div>
+        <div className="mt-4 space-y-2 text-xs leading-5 text-slate-400">
+          {research.notes.map((note) => <p key={note}>{note}</p>)}
+          <p>{symbol} · {barSize} · chronological evaluation · overlapping outcomes · no multiple-test adjustment</p>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+export default function MarketWeatherResearchLab(props: MarketWeatherResearchLabProps) {
+  const { research } = props;
   const lexicon = research.lexicon;
   const [view, setView] = useState<LanguageView>("now");
-  const [translate, setTranslate] = useState(false);
-  const [selectedId, setSelectedId] = useState(lexicon?.current.state_id ?? "");
-  const [selectedRun, setSelectedRun] = useState<SyntaxRunSelection | null>(null);
-
-  useEffect(() => {
-    setSelectedId(lexicon?.current.state_id ?? "");
-    setSelectedRun(null);
-  }, [lexicon?.current.state_id]);
-
-  const archetypeById = useMemo(() => new Map(lexicon?.archetypes.map((archetype) => [archetype.id, archetype]) ?? []), [lexicon?.archetypes]);
-  const selected = archetypeById.get(selectedId) ?? lexicon?.archetypes[0];
-  const selectedIsCurrent = selectedRun === null && selectedId === lexicon?.current.state_id;
-  const selectedMatch = selectedRun?.match ?? (selectedIsCurrent ? lexicon?.current.match ?? 0 : 0);
-  const selectedNovelty = selectedRun?.novelty ?? (selectedIsCurrent ? lexicon?.current.novelty ?? 0 : 0);
-  const selectedSurprise = selectedRun?.surprise ?? (selectedIsCurrent ? lexicon?.current.transition_surprise ?? 0 : 0);
-  const selectedAge = selectedRun ? selectedRun.stop - selectedRun.start + 1 : (selectedIsCurrent ? lexicon?.current.age_bars ?? 0 : selected?.typical_duration_bars ?? 0);
-  const selectedIsUnknown = selectedNovelty >= 0.75;
-  const phrase = useMemo(() => {
-    if (!lexicon) return [];
-    const runCollapsed: string[] = [];
-    for (const point of lexicon.evaluation_sequence.slice().reverse()) {
-      if (runCollapsed[0] !== point.state_id) runCollapsed.unshift(point.state_id);
-      if (runCollapsed.length >= 6) break;
-    }
-    return runCollapsed.map((stateId) => archetypeById.get(stateId)).filter((item): item is MarketWeatherLexiconArchetype => Boolean(item));
-  }, [archetypeById, lexicon]);
-  const motifs = useMemo(() => lexicon?.motifs.slice().sort((a, b) => Number(b.current) - Number(a.current) || b.count - a.count).slice(0, 6) ?? [], [lexicon?.motifs]);
-  const likelyNext = lexicon?.grammar.likely_next.find((item) => item.from_state === selectedId);
-  const currentPhrase = motifs.find((motif) => motif.current);
+  const labels: Record<LanguageView, { tab: string; title: string; description: string }> = {
+    now: { tab: "Now", title: "Current market state", description: "What the field measures now, where it appeared in price, and how strong the historical match is." },
+    dictionary: { tab: "Dictionary", title: "Learned state dictionary", description: "Measured state definitions relative to this window’s calibration baseline." },
+    methods: { tab: "Methods", title: "Methods and evidence", description: "Higher-order layers, experimental sequences, validation checks, references, and limitations." },
+  };
 
   return (
     <section className="primary-card relative isolate overflow-hidden">
-      <div className="relative z-0 border-b border-stealth-700 p-4 sm:p-5">
-        <div className="flex min-h-12 flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2"><FlaskConical className="h-4 w-4 text-violet-300" /><span className="page-kicker">Field language · {lexicon?.version ?? "learning"}</span></div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Now · Dictionary · Motion · Phrase</h2>
+      <header className="border-b border-stealth-700 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-300"><FlaskConical className="h-4 w-4" />Field language · {lexicon?.version ?? "learning"}</div>
+            <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">{labels[view].title}</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">{labels[view].description}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex min-h-10 rounded-xl border border-stealth-700 bg-slate-950/45 p-1" role="tablist" aria-label="Field language view">
-              {(["now", "dictionary", "audit"] as LanguageView[]).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  role="tab"
-                  id={`field-language-${option}-tab`}
-                  aria-controls={`field-language-${option}-panel`}
-                  aria-selected={view === option}
-                  onClick={() => {
-                    setView(option);
-                    if (option === "now" && lexicon) {
-                      setSelectedId(lexicon.current.state_id);
-                      setSelectedRun(null);
-                    }
-                  }}
-                  className={`min-w-[76px] rounded-lg px-3 text-xs capitalize transition ${view === option ? "bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/25" : "text-slate-500 hover:text-white"}`}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-            {view !== "audit" ? <button
-              type="button"
-              onClick={() => setTranslate((current) => !current)}
-              aria-pressed={translate}
-              className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition ${translate ? "border-sky-300/40 bg-sky-400/15 text-sky-100" : "border-stealth-600 bg-slate-950/45 text-slate-400 hover:text-white"}`}
-            >
-              <Languages className="h-4 w-4" /> Translate {translate ? "on" : "off"}
-            </button> : null}
+          <div className="grid min-h-11 w-full grid-cols-3 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto" role="tablist" aria-label="Field language view">
+            {(["now", "dictionary", "methods"] as LanguageView[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="tab"
+                id={`field-language-${option}-tab`}
+                aria-controls={`field-language-${option}-panel`}
+                aria-selected={view === option}
+                onClick={() => setView(option)}
+                className={`min-h-10 min-w-0 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-w-[96px] ${view === option ? "bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/30" : "text-slate-400 hover:text-white"}`}
+              >
+                {labels[option].tab}
+              </button>
+            ))}
           </div>
         </div>
-      </div>
+      </header>
 
-      {view !== "audit" && lexicon && selected ? (
-        <div id={`field-language-${view}-panel`} role="tabpanel" aria-labelledby={`field-language-${view}-tab`} className="relative z-0 p-4 sm:p-5">
-          <div className={`grid gap-4 ${view === "now" ? "xl:grid-cols-[minmax(360px,.85fr)_minmax(0,1.15fr)]" : "grid-cols-1"}`}>
-            <div className={`relative min-h-[430px] overflow-hidden rounded-3xl border border-stealth-700 bg-[radial-gradient(circle_at_50%_34%,rgba(88,80,180,0.15),rgba(2,6,23,0.7)_68%)] p-4 ${view === "now" ? "" : "hidden"}`}>
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.035)_1px,transparent_1px)] bg-[size:28px_28px]" />
-              <div className="relative flex min-h-[397px] flex-col items-center justify-center">
-                <div className="absolute left-0 top-0 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500">{selectedIsCurrent ? "Now" : `Form ${selected.id}`}</div>
-                <StateGlyph archetype={selected} size={268} match={selectedMatch} novelty={selectedNovelty} />
-                <div className="-mt-5 text-center">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-slate-600">{selected.id}</div>
-                  <div className={`mt-1 font-mono text-3xl font-semibold tracking-[0.08em] ${selectedIsUnknown ? "text-amber-200" : "text-white"}`}>{selectedIsUnknown ? "Unknown" : selected.token}</div>
-                  <div className="mt-2 h-10 max-w-sm overflow-hidden text-xs leading-5 text-slate-400">{translate ? (selectedIsUnknown ? `Outside learned Form distance; nearest Fieldmark is ${selected.token}.` : describeMarketGlyph(selected.centroid)) : `⌬${selected.id} · φ${formatRate(selected.window_frequency)} · τ${selectedAge}`}</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex min-w-0 flex-col gap-4">
-              <div className={`grid min-h-[126px] grid-cols-2 gap-3 rounded-2xl border border-stealth-700 bg-slate-950/35 p-4 sm:grid-cols-4 ${view === "now" ? "" : "hidden"}`}>
-                <MachineMeter label="Form resonance" symbol="μ" value={selectedMatch} />
-                <MachineMeter label="novelty" symbol="ν" value={selectedNovelty} inverse />
-                <MachineMeter label="state persistence" symbol="τ" value={Math.min(1, selectedAge / 20)} />
-                <MachineMeter label="transition surprise" symbol="σ" value={Math.min(1, selectedSurprise / 4)} inverse />
-                <div className="col-span-2 min-h-7 text-[11px] text-slate-500 sm:col-span-4">{translate ? "Form resonance · Unknown distance · persistence · Motion surprise" : "μ(F) · ν(x|F) · τ(F) · −ln P(Fₜ|Fₜ₋₁)"}</div>
-              </div>
-
-              {view === "now" ? (
-                <div className="grid min-h-[184px] gap-3 rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:grid-cols-2">
-                  <div className="flex flex-col justify-between rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600">M · likely Motion</div>
-                    <div className="my-3 flex items-center gap-2 font-mono text-sm text-slate-200">
-                      <StateGlyph archetype={selected} size={54} muted decorative />
-                      <ArrowRight className="h-4 w-4 text-slate-600" />
-                      {likelyNext?.reliable && likelyNext.to_state && archetypeById.get(likelyNext.to_state) ? <StateGlyph archetype={archetypeById.get(likelyNext.to_state)!} size={54} decorative /> : <span>–</span>}
-                    </div>
-                    <div className="font-mono text-[11px] text-slate-400">{likelyNext?.reliable && likelyNext.to_token ? `${selected.token} → ${likelyNext.to_token} · ${formatRate(likelyNext.probability)} · n=${likelyNext.support}` : `Motion unresolved · n=${likelyNext?.support ?? 0}`}</div>
-                  </div>
-                  <div className="flex flex-col justify-between rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600">P · current Phrase</div>
-                    {currentPhrase ? <MotifCard motif={currentPhrase} archetypes={lexicon.archetypes} translate={translate} /> : <div className="my-3 font-mono text-xs text-slate-600">P = ∅</div>}
-                    {!currentPhrase ? <div className="font-mono text-[10px] text-slate-600">No repeated Phrase at Now</div> : null}
-                  </div>
-                </div>
-              ) : null}
-
-              <div className={view === "dictionary" ? "font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600" : "hidden"}>D · Fieldmark dictionary</div>
-              <div className={view === "dictionary" ? "grid flex-1 grid-cols-2 gap-2 sm:grid-cols-5" : "hidden"} aria-label="Learned Fieldmark dictionary">
-                {lexicon.archetypes.map((archetype) => (
-                  <button
-                    key={archetype.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedId(archetype.id);
-                      setSelectedRun(null);
-                    }}
-                    aria-pressed={selectedId === archetype.id}
-                    className={`min-h-[188px] rounded-2xl border px-2 py-3 text-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selectedId === archetype.id ? "border-sky-300/50 bg-sky-950/20" : "border-stealth-700 bg-slate-950/25 hover:border-stealth-500"}`}
-                  >
-                    <StateGlyph archetype={archetype} size={92} muted={selectedId !== archetype.id} decorative />
-                    <span className="block font-mono text-xs font-semibold text-slate-100">{archetype.token}</span>
-                    <span className="mt-1 block h-8 overflow-hidden text-[10px] leading-4 text-slate-500">{translate ? describeMarketGlyph(archetype.centroid) : `${archetype.id} · ${formatRate(archetype.window_frequency)}`}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className={view === "now" ? "mt-4" : "hidden"}>
-            <div className="mb-2 flex min-h-8 items-center justify-between gap-3">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600">{translate ? "Evaluation syntax" : "Σ · syntax"}</div>
-              <div className="flex min-w-0 items-center justify-end gap-1 overflow-hidden font-mono text-[10px] text-slate-500">
-                {phrase.map((archetype, index) => <span key={`${archetype.id}-${index}`} className="inline-flex items-center gap-1"><span style={{ color: marketStateColor(archetype.id) }}>{archetype.token}</span>{index < phrase.length - 1 ? <span className="text-slate-700">›</span> : null}</span>)}
-              </div>
-            </div>
-            <SyntaxRibbon
-              sequence={lexicon.evaluation_sequence}
-              archetypes={lexicon.archetypes}
-              selectedRunStart={selectedRun?.start ?? null}
-              onSelect={(run) => {
-                const latestPoint = lexicon.evaluation_sequence[lexicon.evaluation_sequence.length - 1];
-                setSelectedId(run.stateId);
-                setSelectedRun(latestPoint && run.stop === latestPoint.index && run.stateId === lexicon.current.state_id ? null : run);
-              }}
-            />
-          </div>
-
-          <div className={view === "dictionary" ? "mt-4 grid gap-4 xl:grid-cols-[minmax(320px,.72fr)_minmax(0,1.28fr)]" : "hidden"}>
-            <TransitionMatrix lexicon={lexicon} selectedId={selectedId} onSelect={setSelectedId} translate={translate} />
-            <div className="rounded-2xl border border-stealth-700 bg-slate-950/25 p-4">
-              <div className="flex min-h-10 items-start justify-between gap-3">
-                <div><div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">P · Phrase</div><div className="mt-1 text-xs text-slate-400">{translate ? "Repeated run-collapsed Form sequences" : "2 ≤ |P| ≤ 4"}</div></div>
-                <span className="font-mono text-xs text-slate-600">{lexicon.motifs.length}</span>
-              </div>
-              {motifs.length ? (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{motifs.map((motif) => <MotifCard key={motif.id} motif={motif} archetypes={lexicon.archetypes} translate={translate} />)}</div>
-              ) : (
-                <div className="mt-3 grid min-h-[116px] place-items-center rounded-xl border border-dashed border-stealth-700 font-mono text-xs text-slate-600">P = ∅ · still learning</div>
-              )}
-            </div>
-          </div>
-
-          <div className={view === "now" ? "mt-4 grid min-h-[68px] gap-2 rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:grid-cols-[1fr_auto] sm:items-center" : "hidden"}>
-            <div className="min-w-0 font-mono text-xs text-slate-300">
-              {translate ? "Core = pressure · rings = structure · facets = geometry" : `${selected.token} · age ${selectedAge} · resonance ${formatRate(selectedMatch)} · novelty ${formatRate(selectedNovelty)}`}
-            </div>
-            <div className="text-[10px] text-slate-600">
-              {translate ? "weight = kinematics · dashes = information · trails = propagation · tilt = cascade" : `D₀:${lexicon.training_split.calibration_bars} | D₁:${lexicon.training_split.evaluation_bars} | y∉fit`}
-            </div>
-          </div>
+      {lexicon?.archetypes.length ? (
+        <div id={`field-language-${view}-panel`} role="tabpanel" aria-labelledby={`field-language-${view}-tab`} className="min-w-0 p-4 sm:p-5">
+          {view === "now" ? <CurrentStateView {...props} /> : null}
+          {view === "dictionary" ? <DictionaryView research={research} /> : null}
+          {view === "methods" ? <MethodsView research={research} symbol={props.symbol} timeframe={props.timeframe} barSize={props.barSize} /> : null}
         </div>
-      ) : view !== "audit" ? (
+      ) : (
         <div className="grid min-h-[260px] place-items-center p-8 text-center">
-          <div><Activity className="mx-auto h-7 w-7 text-violet-300" /><div className="mt-3 font-mono text-sm text-slate-300">Lexicon calibration pending</div><div className="mt-1 text-xs text-slate-600">The workbench remains available below.</div></div>
+          <div><Activity className="mx-auto h-7 w-7 text-violet-300" /><div className="mt-3 text-sm font-medium text-slate-200">Learning measured states</div><div className="mt-1 text-xs text-slate-400">More eligible history is required before the state dictionary can be calibrated.</div></div>
         </div>
-      ) : null}
-
-      {view === "audit" ? <div id="field-language-audit-panel" role="tabpanel" aria-labelledby="field-language-audit-tab"><Workbench research={research} symbol={symbol} timeframe={timeframe} barSize={barSize} /></div> : null}
+      )}
     </section>
   );
 }

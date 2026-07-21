@@ -283,7 +283,7 @@ export default function MarketWeatherRadar() {
 
         <div className="space-y-6 p-5 sm:p-6">
           <section>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Analysis shape</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Analysis shape</div>
             <div className="mt-3 flex flex-wrap gap-2">
               {(["balanced", "tactical", "structural"] as const).map((preset) => (
                 <button
@@ -300,20 +300,20 @@ export default function MarketWeatherRadar() {
 
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="flex flex-col gap-1.5">
-              <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">History</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-slate-400">History</span>
               <select value={draft.bars} onChange={(event) => setDraft((current) => ({ ...current, bars: Number(event.target.value) }))} className={inputClass}>
                 {activeTimeframe.barOptions.map((value) => <option key={value} value={value}>{value.toLocaleString()} bars</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Field lens</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-slate-400">Field lens</span>
               <select value={mode} onChange={(event) => setMode(event.target.value as MarketWeatherMode)} className={inputClass}>
                 {MODES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             {mode === "inspector" ? (
               <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Inspector channel</span>
+                <span className="text-xs uppercase tracking-[0.12em] text-slate-400">Inspector channel</span>
                 <select value={inspectorChannel} onChange={(event) => setInspectorChannel(event.target.value)} className={inputClass}>
                   {INSPECTOR_CHANNELS.map((channel) => <option key={channel} value={channel}>{channelLabel(channel)}</option>)}
                 </select>
@@ -322,7 +322,7 @@ export default function MarketWeatherRadar() {
           </section>
 
           <section>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Field construction</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Field construction</div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {[
                 ["Min horizon", "horizonMin", 4, 100, 1],
@@ -337,7 +337,7 @@ export default function MarketWeatherRadar() {
                 ["Contour bands", "contourBands", 3, 16, 1],
               ].map(([label, key, min, max, step]) => (
                 <label key={String(key)} className="flex flex-col gap-1.5">
-                  <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">{String(label)}</span>
+                  <span className="text-xs uppercase tracking-[0.12em] text-slate-400">{String(label)}</span>
                   <input
                     type="number"
                     min={Number(min)}
@@ -378,11 +378,11 @@ export default function MarketWeatherRadar() {
         <div className="relative z-[1] flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="page-kicker">Machine-native market grammar</span>
-              <span className="page-badge border-sky-400/20 text-sky-200"><FlaskConical className="h-3.5 w-3.5" /> Field Language 0.1</span>
+              <span className="page-kicker">Multi-horizon market structure</span>
+              <span className="page-badge border-sky-400/20 text-sky-200"><FlaskConical className="h-3.5 w-3.5" /> Grounded field model</span>
             </div>
             <h1 className="page-title">Market Field Language</h1>
-            <p className="page-subtitle max-w-3xl">The model learns recurring Forms, their Motions, and repeated Phrases. The page translates them only when you ask.</p>
+            <p className="page-subtitle max-w-3xl">Direction, organization, disorder, and cross-horizon movement are shown in measured terms. Learned states are named from their calibration-relative profiles.</p>
           </div>
           {data ? (
             <div className="flex flex-wrap gap-2 text-xs text-slate-300">
@@ -398,7 +398,7 @@ export default function MarketWeatherRadar() {
         <form onSubmit={runAnalysis} className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
             <label className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-[260px]">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Ticker</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Ticker</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 <input
@@ -411,7 +411,7 @@ export default function MarketWeatherRadar() {
               </div>
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Timeframe</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Timeframe</span>
               <select
                 value={draft.timeframe}
                 onChange={(event) => {
@@ -460,6 +460,7 @@ export default function MarketWeatherRadar() {
           {data.research ? (
             <MarketWeatherResearchLab
               research={data.research}
+              price={data.price}
               symbol={data.symbol}
               timeframe={data.timeframe}
               barSize={data.bar_size}
@@ -472,10 +473,10 @@ export default function MarketWeatherRadar() {
                 <span className="page-kicker">Field surface</span>
                 <h2 className="mt-1 text-xl font-semibold text-white">{data.symbol} across horizons</h2>
               </div>
-              <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1.5 text-[11px] text-slate-300">Lens · {activeMode.label}</span>
+              <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1.5 text-xs text-slate-300">Lens · {activeMode.label}</span>
             </div>
             <MarketWeatherCanvas data={data} mode={mode} inspectorChannel={inspectorChannel} />
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500" aria-label="Field surface axes and color key">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400" aria-label="Field surface axes and color key">
               <span>Time → · Longer horizons ↑</span>
               <span>▲ positive · ◆ transition · ▼ negative · rings boundary energy</span>
             </div>
@@ -524,7 +525,7 @@ export default function MarketWeatherRadar() {
                 </div>
                 <div className="max-h-[620px] overflow-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
-                    <thead className="sticky top-0 z-[1] bg-slate-950 text-[10px] uppercase tracking-[0.16em] text-slate-500 shadow-[0_1px_0_rgba(71,85,105,0.45)]">
+                    <thead className="sticky top-0 z-[1] bg-slate-950 text-xs uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_rgba(71,85,105,0.45)]">
                       <tr>
                         <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Organization</th><th className="px-4 py-3">Coherence</th><th className="px-4 py-3">Disorder proxy</th><th className="px-4 py-3">Permutation entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
                       </tr>

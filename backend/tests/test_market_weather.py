@@ -41,6 +41,12 @@ def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
     assert len(result["research"]["derivative_series"]) == 420
     assert len(result["research"]["strata"]["series"]) == 420
     assert len(result["research"]["carriers"]["series"]) == 420
+    assert len(result["research"]["carriers"]["ratios"]["series"]) == 420
+    assert "1.0 means equal" in result["research"]["carriers"]["ratios"]["baseline"]
+    assert all(
+        np.isfinite(value) and value >= 0.0
+        for value in result["research"]["carriers"]["ratios"]["latest"].values()
+    )
     assert len(result["research"]["relationship_atlas"]) == 4
 
     for matrix in result["channels"].values():
@@ -67,6 +73,24 @@ def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
         assert values.max() <= 1.0
 
 
+def test_volume_dependent_ratios_are_unavailable_without_positive_volume() -> None:
+    history = _history().drop(columns=["Volume"])
+
+    carriers = build_market_weather(history, horizons=range(12, 50, 2))["research"]["carriers"]
+
+    assert carriers["availability"] == {
+        "realized_volatility": True,
+        "participation": False,
+        "liquidity_stress": False,
+        "positive_volume_observations": 0,
+    }
+    assert np.isfinite(carriers["ratios"]["latest"]["realized_volatility"])
+    assert carriers["ratios"]["latest"]["participation"] is None
+    assert carriers["ratios"]["latest"]["liquidity_stress"] is None
+    assert all(point["participation"] is None for point in carriers["ratios"]["series"])
+    assert all(point["liquidity_stress"] is None for point in carriers["ratios"]["series"])
+
+
 def test_market_weather_has_no_future_leak() -> None:
     history = _history()
     cutoff = 310
@@ -88,6 +112,10 @@ def test_market_weather_has_no_future_leak() -> None:
         prefix_row = prefix["research"][section]["series"][-1]
         complete_row = complete["research"][section]["series"][cutoff - 1]
         assert prefix_row == complete_row
+    assert (
+        prefix["research"]["carriers"]["ratios"]["series"][-1]
+        == complete["research"]["carriers"]["ratios"]["series"][cutoff - 1]
+    )
 
 
 def test_market_weather_log_horizon_geometry_is_resolution_stable() -> None:
@@ -128,9 +156,18 @@ def test_market_state_lexicon_is_deterministic_and_has_a_stable_schema() -> None
     assert len({item["signature"] for item in first["archetypes"]}) == archetype_count
     assert all(item["id"].startswith("F.") for item in first["archetypes"])
     assert all(
-        item["calibration_count"] >= first["training_split"]["minimum_form_support"]
+        item["fit_count"] >= first["training_split"]["minimum_form_support"]
         for item in first["archetypes"]
     )
+    assert first["training_split"]["minimum_form_support"] >= 20
+    assert first["training_split"]["calibration_independent_from_fit"] is True
+    assert first["training_split"]["fit_end_index"] < first["training_split"]["calibration_start_index"]
+    assert first["training_split"]["calibration_start_index"] < int(len(_history()) * 0.60)
+    if archetype_count > 1:
+        assert (
+            first["training_split"]["fit_mean_silhouette"]
+            >= first["training_split"]["minimum_mean_silhouette"]
+        )
     assert len(first["evaluation_sequence"]) == first["training_split"]["evaluation_bars"]
     assert first["current"]["state_id"] in first["grammar"]["state_ids"]
     assert "published market taxonomy" in first["description"]
@@ -142,7 +179,7 @@ def test_market_state_lexicon_is_deterministic_and_has_a_stable_schema() -> None
         assert family_total == pytest.approx(1.0 / 3.0, abs=1e-6)
 
 
-def test_market_state_lexicon_learns_prototypes_and_grammar_from_calibration_only() -> None:
+def test_market_state_lexicon_learns_prototypes_and_grammar_from_proper_fit_only() -> None:
     history = _history()
     evaluation_start = int(len(history) * 0.60)
     changed_evaluation = history.copy()
@@ -168,6 +205,37 @@ def test_market_state_lexicon_learns_prototypes_and_grammar_from_calibration_onl
     assert baseline["grammar"] == changed["grammar"]
 
 
+def test_market_state_distance_reference_is_held_out_from_model_fit() -> None:
+    history = _history()
+    baseline = build_market_weather(history, horizons=range(12, 50, 2))["research"]["lexicon"]
+    calibration_start = baseline["training_split"]["calibration_start_index"]
+    evaluation_start = baseline["training_split"]["evaluation_start_index"]
+    changed_calibration = history.copy()
+    ramp = np.linspace(0.0, 125.0, evaluation_start - calibration_start)
+    for column in ("Open", "High", "Low", "Close"):
+        changed_calibration.iloc[
+            calibration_start:evaluation_start,
+            changed_calibration.columns.get_loc(column),
+        ] += ramp
+    changed_calibration.iloc[
+        calibration_start:evaluation_start,
+        changed_calibration.columns.get_loc("Volume"),
+    ] *= 4.0
+
+    changed = build_market_weather(
+        changed_calibration,
+        horizons=range(12, 50, 2),
+    )["research"]["lexicon"]
+
+    assert baseline["features"] == changed["features"]
+    assert baseline["training_split"] == changed["training_split"]
+    assert baseline["grammar"] == changed["grammar"]
+    for key in ("id", "token", "signature", "centroid", "fit_count"):
+        assert [item[key] for item in baseline["archetypes"]] == [
+            item[key] for item in changed["archetypes"]
+        ]
+
+
 def test_market_state_lexicon_probabilities_and_scores_are_finite() -> None:
     lexicon = build_market_weather(_history(), horizons=range(12, 50, 2))["research"]["lexicon"]
 
@@ -185,7 +253,32 @@ def test_market_state_lexicon_probabilities_and_scores_are_finite() -> None:
         assert np.isfinite(item["transition_surprise"])
         assert 0.0 <= item["match"] <= 1.0
         assert 0.0 <= item["novelty"] <= 1.0
+        if item["distance_tail_score"] is None:
+            assert item["distance_tail_support"] < lexicon["distance_metric"]["minimum_distance_tail_support"]
+            assert item["distance_tail_scope"] == "unavailable"
+            assert item["outside_learned_range"] is None
+        else:
+            assert np.isfinite(item["distance_tail_score"])
+            assert 0.0 < item["distance_tail_score"] <= 1.0
+            assert item["distance_tail_support"] >= lexicon["distance_metric"]["minimum_distance_tail_support"]
+            assert item["distance_tail_scope"] == "state_conditional"
+            assert item["outside_learned_range"] is (
+                item["distance_tail_score"] < lexicon["distance_metric"]["outside_range_cutoff"]
+            )
     assert all(np.isfinite(value) for value in lexicon["current"].values() if isinstance(value, float))
+    current = lexicon["current"]
+    if current["distance_tail_score"] is None:
+        assert current["distance_tail_support"] < lexicon["distance_metric"]["minimum_distance_tail_support"]
+        assert current["distance_tail_scope"] == "unavailable"
+        assert current["outside_learned_range"] is None
+    else:
+        assert 0.0 < current["distance_tail_score"] <= 1.0
+        assert current["distance_tail_support"] >= lexicon["distance_metric"]["minimum_distance_tail_support"]
+        assert current["distance_tail_scope"] == "state_conditional"
+        assert current["outside_learned_range"] is (
+            current["distance_tail_score"] < lexicon["distance_metric"]["outside_range_cutoff"]
+        )
+    assert lexicon["distance_metric"]["coverage_guarantee"] is False
     for motif in lexicon["motifs"]:
         assert motif["id"].startswith("P.")
         assert 2 <= motif["length"] <= 4
@@ -213,9 +306,23 @@ def test_market_state_lexicon_does_not_fabricate_forms_from_a_flat_field() -> No
 
     assert lexicon["training_split"]["archetype_count"] == 1
     assert len(lexicon["archetypes"]) == 1
+    assert lexicon["archetypes"][0]["fit_count"] == lexicon["training_split"]["fit_bars"]
     assert lexicon["archetypes"][0]["calibration_count"] == lexicon["training_split"]["calibration_bars"]
     assert lexicon["grammar"]["state_ids"] == ["F.001"]
     assert lexicon["training_split"]["warmup_complete"] is False
+
+
+def test_market_state_distance_tail_is_unavailable_below_same_state_support_floor() -> None:
+    lexicon = build_market_weather(
+        _history(60),
+        horizons=range(12, 50, 2),
+    )["research"]["lexicon"]
+
+    assert lexicon["training_split"]["calibration_bars"] < 20
+    assert lexicon["current"]["distance_tail_score"] is None
+    assert lexicon["current"]["outside_learned_range"] is None
+    assert lexicon["current"]["distance_tail_scope"] == "unavailable"
+    assert all(point["distance_tail_score"] is None for point in lexicon["evaluation_sequence"])
 
 
 def test_market_state_lexicon_merges_forms_inside_one_identity_cell() -> None:
