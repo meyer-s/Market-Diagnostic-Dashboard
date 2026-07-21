@@ -83,7 +83,6 @@ body {
       radial-gradient(circle at top left, rgba(96, 165, 250, 0.16), transparent 24%),
       radial-gradient(circle at top right, rgba(110, 231, 183, 0.16), transparent 22%),
       linear-gradient(180deg, rgba(18, 27, 45, 0.96) 0%, rgba(23, 34, 53, 0.98) 42%, rgba(26, 39, 58, 1) 100%);
-    filter: saturate(1.03);
   }
 
   .page-shell {

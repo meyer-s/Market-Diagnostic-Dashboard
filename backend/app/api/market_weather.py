@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_weather import MarketWeatherSettings, build_market_weather
+from app.services.market_weather_research import scope_market_state_lexicon
 
 
 router = APIRouter()
@@ -145,6 +146,14 @@ def analyze_market_weather(
             carriers = research.get("carriers")
             if isinstance(carriers, dict):
                 carriers["series"] = carriers.get("series", [])[start:]
+            lexicon = research.get("lexicon")
+            if isinstance(lexicon, dict):
+                research["lexicon"] = scope_market_state_lexicon(
+                    lexicon,
+                    visible_dates=result["dates"],
+                    visible_close=[point["close"] for point in result["price"]],
+                    source_start_index=start,
+                )
 
     result.update(
         {

@@ -81,7 +81,7 @@ export default function Topbar() {
   }
 
   return (
-    <div className="sticky top-0 z-50 w-full border-b border-stealth-700/80 bg-stealth-950/78 backdrop-blur-xl">
+    <div className="sticky top-0 z-[200] isolate w-full border-b border-stealth-700/80 bg-stealth-950/78 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
         <div className="mr-2 min-w-0">
           <span className="block truncate text-base font-semibold tracking-[0.04em] text-white md:text-lg">Market Diagnostic Tool</span>
@@ -108,7 +108,7 @@ export default function Topbar() {
             );
           })}
           <div
-            className="relative"
+            className="relative z-[210]"
             onMouseEnter={() => setToolsOpen(true)}
             onMouseLeave={() => setToolsOpen(false)}
           >
@@ -137,7 +137,7 @@ export default function Topbar() {
               </svg>
             </button>
             {toolsOpen && (
-              <div className="absolute right-0 top-full pt-2">
+              <div className="absolute right-0 top-full z-[220] pt-2">
                 <div
                   id="topbar-tools-menu"
                   ref={toolsMenuRef}

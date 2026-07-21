@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 from collections import Counter, deque
-from math import factorial, log
+from math import ceil, factorial, log
 from typing import Mapping, Sequence
 
 import numpy as np
@@ -143,6 +144,619 @@ def _rounded(value: float | np.floating[object] | None, digits: int = 4) -> floa
     if value is None or not np.isfinite(float(value)):
         return None
     return round(float(value), digits)
+
+
+def _robust_standardize(
+    values: np.ndarray,
+    calibration_start: int,
+    calibration_stop: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Standardize from calibration data only, with deterministic finite fallbacks."""
+    calibration = values[calibration_start:calibration_stop]
+    center = np.median(calibration, axis=0)
+    lower = np.quantile(calibration, 0.25, axis=0)
+    upper = np.quantile(calibration, 0.75, axis=0)
+    scale = upper - lower
+    mad_scale = 1.4826 * np.median(np.abs(calibration - center), axis=0)
+    standard_scale = np.std(calibration, axis=0)
+    scale = np.where(scale > EPSILON, scale, mad_scale)
+    scale = np.where(scale > EPSILON, scale, standard_scale)
+    scale = np.where(scale > EPSILON, scale, 1.0)
+    standardized = np.nan_to_num((values - center) / scale)
+    return standardized, center, scale
+
+
+def _deterministic_kmeans(
+    calibration: np.ndarray,
+    *,
+    cluster_count: int,
+    iterations: int = 40,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Dependency-free farthest-first k-means with deterministic tie breaking."""
+    if len(calibration) < cluster_count:
+        raise ValueError("Lexicon calibration requires at least one row per archetype.")
+
+    distance_from_origin = np.sum(np.square(calibration), axis=1)
+    selected = [int(np.argmin(distance_from_origin))]
+    centroids = [calibration[selected[0]].copy()]
+    while len(centroids) < cluster_count:
+        distances = np.min(
+            np.stack([np.sum(np.square(calibration - centroid), axis=1) for centroid in centroids]),
+            axis=0,
+        )
+        distances[np.asarray(selected, dtype=int)] = -1.0
+        next_index = int(np.argmax(distances))
+        selected.append(next_index)
+        centroids.append(calibration[next_index].copy())
+
+    centroid_array = np.vstack(centroids)
+    assignments = np.zeros(len(calibration), dtype=int)
+    for _ in range(iterations):
+        distance_matrix = np.stack(
+            [np.sum(np.square(calibration - centroid), axis=1) for centroid in centroid_array],
+            axis=1,
+        )
+        updated_assignments = np.argmin(distance_matrix, axis=1)
+        updated_centroids = centroid_array.copy()
+        for cluster_index in range(cluster_count):
+            members = calibration[updated_assignments == cluster_index]
+            if len(members):
+                updated_centroids[cluster_index] = np.mean(members, axis=0)
+        if np.array_equal(updated_assignments, assignments) and np.allclose(
+            updated_centroids,
+            centroid_array,
+            atol=1e-12,
+            rtol=0.0,
+        ):
+            centroid_array = updated_centroids
+            assignments = updated_assignments
+            break
+        centroid_array = updated_centroids
+        assignments = updated_assignments
+    return centroid_array, assignments
+
+
+def _quantized_lexicon_centroid(centroid: np.ndarray) -> np.ndarray:
+    return np.rint(np.asarray(centroid, dtype=float) / 0.35).astype("<i4")
+
+
+def _select_supported_centroids(
+    calibration: np.ndarray,
+    *,
+    max_clusters: int = 5,
+) -> tuple[np.ndarray, int]:
+    """Use the richest codebook whose Forms are distinct and sufficiently supported."""
+    min_support = max(3, int(ceil(len(calibration) * 0.025)))
+    upper = min(max_clusters, max(1, len(calibration) // min_support))
+    for cluster_count in range(upper, 0, -1):
+        centroids, assignments = _deterministic_kmeans(
+            calibration,
+            cluster_count=cluster_count,
+        )
+        counts = np.bincount(assignments, minlength=cluster_count)
+        if np.any(counts < min_support):
+            continue
+        if cluster_count > 1:
+            pairwise = np.sqrt(
+                np.sum(
+                    np.square(centroids[:, None, :] - centroids[None, :, :]),
+                    axis=2,
+                )
+            )
+            separation = pairwise[np.triu_indices(cluster_count, 1)]
+            if np.any(separation <= 1e-6):
+                continue
+            identities = {
+                _quantized_lexicon_centroid(centroid).tobytes()
+                for centroid in centroids
+            }
+            if len(identities) != cluster_count:
+                continue
+        return centroids, min_support
+    # A single Form is always the honest fallback for a flat calibration field.
+    centroids, _ = _deterministic_kmeans(calibration, cluster_count=1)
+    return centroids, min_support
+
+
+def _lexicon_identity(centroid: np.ndarray) -> tuple[str, str]:
+    """Create a coarse, window-native signature and pronounceable nonsemantic token."""
+    signature_version = "lx1"
+    quantized = _quantized_lexicon_centroid(centroid)
+    payload = signature_version.encode("ascii") + quantized.tobytes()
+    digest = hashlib.sha256(payload).digest()
+    consonants = ("b", "d", "f", "g", "k", "l", "m", "n", "p", "r", "s", "t", "v", "z")
+    vowels = ("a", "e", "i", "o", "u")
+    syllables = [
+        consonants[value % len(consonants)] + vowels[(value // len(consonants)) % len(vowels)]
+        for value in digest[:3]
+    ]
+    token = "".join(syllables).capitalize()
+    signature = f"{signature_version}-{hashlib.sha256(payload).hexdigest()[:6]}"
+    return token, signature
+
+
+def _run_segments(assignments: np.ndarray, start: int, stop: int) -> list[tuple[int, int, int]]:
+    """Return (state, inclusive start, inclusive end) runs in a bounded sequence."""
+    if stop <= start:
+        return []
+    segments: list[tuple[int, int, int]] = []
+    run_start = start
+    state = int(assignments[start])
+    for index in range(start + 1, stop):
+        next_state = int(assignments[index])
+        if next_state != state:
+            segments.append((state, run_start, index - 1))
+            state = next_state
+            run_start = index
+    segments.append((state, run_start, stop - 1))
+    return segments
+
+
+def _rounded_probability_row(values: np.ndarray) -> list[float]:
+    """Round a probability row while preserving an exact unit sum for JSON consumers."""
+    if len(values) == 1:
+        return [1.0]
+    rounded = np.round(np.asarray(values, dtype=float), 6)
+    target = int(np.argmax(values))
+    rounded[target] = round(float(rounded[target]) + (1.0 - float(np.sum(rounded))), 6)
+    return [float(max(0.0, value)) for value in rounded]
+
+
+def _forward_outcome_stats(
+    close: np.ndarray,
+    indexes: Sequence[int],
+    *,
+    forward_bars: int,
+) -> dict[str, object]:
+    valid = [index for index in indexes if index + forward_bars < len(close)]
+    if not valid:
+        return {
+            "forward_bars": forward_bars,
+            "sample_size": 0,
+            "mean_return": None,
+            "median_return": None,
+            "positive_rate": None,
+            "mean_absolute_return": None,
+        }
+    source = np.asarray(valid, dtype=int)
+    outcomes = close[source + forward_bars] / np.clip(close[source], EPSILON, None) - 1.0
+    return {
+        "forward_bars": forward_bars,
+        "sample_size": int(len(outcomes)),
+        "mean_return": _rounded(float(np.mean(outcomes)), 6),
+        "median_return": _rounded(float(np.median(outcomes)), 6),
+        "positive_rate": _rounded(float(np.mean(outcomes > 0.0))),
+        "mean_absolute_return": _rounded(float(np.mean(np.abs(outcomes))), 6),
+    }
+
+
+def _build_lexicon_motifs(
+    *,
+    assignments: np.ndarray,
+    evaluation_start: int,
+    close: np.ndarray,
+    state_ids: Sequence[str],
+    state_tokens: Sequence[str],
+    forward_bars: int,
+) -> list[dict[str, object]]:
+    segments = _run_segments(assignments, evaluation_start, len(assignments))
+    if len(segments) < 2:
+        return []
+
+    observed: dict[tuple[int, ...], list[tuple[int, int]]] = {}
+    for length in range(2, 5):
+        for offset in range(0, len(segments) - length + 1):
+            motif = tuple(segment[0] for segment in segments[offset : offset + length])
+            observed.setdefault(motif, []).append((offset, offset + length - 1))
+
+    repeated = [(motif, occurrences) for motif, occurrences in observed.items() if len(occurrences) >= 2]
+    repeated.sort(key=lambda item: (-len(item[1]), -len(item[0]), item[0]))
+    current_states = tuple(segment[0] for segment in segments)
+    results: list[dict[str, object]] = []
+    for motif_index, (motif, occurrences) in enumerate(repeated[:24], start=1):
+        # A phrase becomes recognizable on entry into its final Form. Using the
+        # final run's exit would silently look ahead to a transition not yet seen.
+        detection_indexes = [segments[end][1] for _, end in occurrences]
+        spans = [segments[end][1] - segments[start][1] + 1 for start, end in occurrences]
+        results.append(
+            {
+                "id": f"P.{motif_index:03d}",
+                "states": [state_ids[state] for state in motif],
+                "tokens": [state_tokens[state] for state in motif],
+                "glyph": " → ".join(state_tokens[state] for state in motif),
+                "length": len(motif),
+                "count": len(occurrences),
+                "typical_span_bars": _rounded(float(np.median(spans)), 1),
+                "current": current_states[-len(motif) :] == motif,
+                "outcome": _forward_outcome_stats(
+                    close,
+                    detection_indexes,
+                    forward_bars=forward_bars,
+                ),
+                "outcome_anchor": "entry_into_final_form",
+            }
+        )
+    return results
+
+
+def scope_market_state_lexicon(
+    lexicon: dict[str, object],
+    *,
+    visible_dates: Sequence[str],
+    visible_close: Sequence[float],
+    source_start_index: int,
+) -> dict[str, object]:
+    """Limit evaluation syntax, outcomes, and Phrases to the response window."""
+    sequence = lexicon.get("evaluation_sequence")
+    archetypes = lexicon.get("archetypes")
+    grammar = lexicon.get("grammar")
+    if not isinstance(sequence, list) or not isinstance(archetypes, list) or not isinstance(grammar, dict):
+        return lexicon
+
+    visible_count = len(visible_dates)
+    rebased_sequence: list[dict[str, object]] = []
+    for point in sequence:
+        if not isinstance(point, dict):
+            continue
+        source_index = int(point.get("index", -1))
+        visible_index = source_index - source_start_index
+        if visible_index < 0 or visible_index >= visible_count:
+            continue
+        rebased = dict(point)
+        rebased["index"] = visible_index
+        rebased_sequence.append(rebased)
+    lexicon["evaluation_sequence"] = rebased_sequence
+
+    training_split = lexicon.get("training_split")
+    if isinstance(training_split, dict):
+        training_split.setdefault("evaluation_bars_total", training_split.get("evaluation_bars", 0))
+        training_split["evaluation_bars"] = len(rebased_sequence)
+        training_split["visible_evaluation_start"] = (
+            rebased_sequence[0].get("date") if rebased_sequence else None
+        )
+        training_split["sequence_scope"] = "visible_response_window"
+
+    close = np.asarray(visible_close, dtype=float)
+    state_ids = [str(value) for value in grammar.get("state_ids", [])]
+    state_lookup = {state_id: index for index, state_id in enumerate(state_ids)}
+    visible_indexes_by_state: dict[str, list[int]] = {state_id: [] for state_id in state_ids}
+    for point in rebased_sequence:
+        state_id = str(point.get("state_id", ""))
+        if state_id in visible_indexes_by_state:
+            visible_indexes_by_state[state_id].append(int(point["index"]))
+
+    calibration_total = 0
+    for archetype in archetypes:
+        if not isinstance(archetype, dict):
+            continue
+        calibration_count = int(archetype.get("calibration_count", 0))
+        calibration_total += calibration_count
+        indexes = visible_indexes_by_state.get(str(archetype.get("id", "")), [])
+        archetype["evaluation_count"] = len(indexes)
+        archetype["evaluation_outcome"] = _forward_outcome_stats(
+            close,
+            indexes,
+            forward_bars=5,
+        )
+    scoped_total = max(1, calibration_total + len(rebased_sequence))
+    for archetype in archetypes:
+        if isinstance(archetype, dict):
+            window_frequency = _rounded(
+                (int(archetype.get("calibration_count", 0)) + int(archetype.get("evaluation_count", 0)))
+                / scoped_total
+            )
+            archetype["window_frequency"] = window_frequency
+            archetype["frequency"] = window_frequency
+
+    if rebased_sequence:
+        evaluation_offset = int(rebased_sequence[0]["index"])
+        assignments = np.asarray(
+            [state_lookup[str(point["state_id"])] for point in rebased_sequence],
+            dtype=int,
+        )
+        tokens_by_state = {
+            str(archetype.get("id")): str(archetype.get("token"))
+            for archetype in archetypes
+            if isinstance(archetype, dict)
+        }
+        lexicon["motifs"] = _build_lexicon_motifs(
+            assignments=assignments,
+            evaluation_start=0,
+            close=close[evaluation_offset : evaluation_offset + len(assignments)],
+            state_ids=state_ids,
+            state_tokens=[tokens_by_state.get(state_id, state_id) for state_id in state_ids],
+            forward_bars=5,
+        )
+        current = lexicon.get("current")
+        if isinstance(current, dict):
+            source_age = int(current.get("age_bars", 1))
+            current["age_bars"] = min(source_age, visible_count)
+            current["age_truncated"] = source_age > visible_count
+            current["transition_in_visible_window"] = source_age < visible_count
+            if source_age >= visible_count:
+                current["transition_surprise"] = 0.0
+    else:
+        lexicon["motifs"] = []
+    lexicon["motif_note"] = (
+        "Repeated 2-4-state run-collapsed phrases inside the visible response window; "
+        "outcomes start when the final Form is entered, are descriptive and overlapping, "
+        "and are not corrected for search."
+    )
+    return lexicon
+
+
+def _build_market_state_lexicon(
+    *,
+    dates: Sequence[str],
+    close: np.ndarray,
+    derivative_series: Mapping[str, np.ndarray],
+    strata: Mapping[str, np.ndarray],
+    carriers: Mapping[str, np.ndarray],
+    requested_warmup_bars: int,
+) -> dict[str, object]:
+    """Learn an empirical codebook from the chronological calibration segment only."""
+    feature_arrays = {
+        "pressure": derivative_series["pressure"],
+        "velocity": derivative_series["velocity"],
+        "acceleration": derivative_series["acceleration"],
+        "jerk": derivative_series["jerk"],
+        "snap": derivative_series["snap"],
+        "structure": strata["structure"],
+        "kinematics": strata["kinematics"],
+        "geometry": strata["geometry"],
+        "information": strata["information"],
+        "propagation": strata["propagation"],
+        "cascade_bias": strata["cascade_bias"],
+        "scaling_exponent": strata["scaling_exponent"],
+        "volatility_carrier": carriers["realized_volatility"],
+        "participation_carrier": carriers["participation"],
+        "liquidity_stress_carrier": carriers["liquidity_stress"],
+    }
+    feature_families = {
+        "pressure": "pressure_state",
+        "velocity": "pressure_state",
+        "acceleration": "pressure_state",
+        "jerk": "pressure_state",
+        "snap": "pressure_state",
+        "structure": "field_transform",
+        "kinematics": "field_transform",
+        "geometry": "field_transform",
+        "information": "field_transform",
+        "propagation": "field_transform",
+        "cascade_bias": "field_transform",
+        "scaling_exponent": "field_transform",
+        "volatility_carrier": "ohlcv_carrier",
+        "participation_carrier": "ohlcv_carrier",
+        "liquidity_stress_carrier": "ohlcv_carrier",
+    }
+    feature_names = list(feature_arrays)
+    values = np.column_stack([feature_arrays[name] for name in feature_names])
+    count = len(values)
+    evaluation_start = max(5, min(int(count * 0.60), count - 6))
+    fit_start = min(max(0, requested_warmup_bars), max(0, evaluation_start - 20))
+    standardized, center, scale = _robust_standardize(values, fit_start, evaluation_start)
+    family_counts = Counter(feature_families.values())
+    family_weight = 1.0 / len(family_counts)
+    feature_weights = np.asarray(
+        [family_weight / family_counts[feature_families[name]] for name in feature_names],
+        dtype=float,
+    )
+    metric_scale = np.sqrt(feature_weights)
+    metric_values = standardized * metric_scale[None, :]
+    raw_centroids, minimum_form_support = _select_supported_centroids(
+        metric_values[fit_start:evaluation_start],
+        max_clusters=5,
+    )
+
+    # Canonicalize cluster identities so labels do not depend on seed order.
+    cluster_order = sorted(
+        range(len(raw_centroids)),
+        key=lambda index: tuple(np.round(raw_centroids[index], 10).tolist()) + (index,),
+    )
+    centroids = raw_centroids[np.asarray(cluster_order, dtype=int)]
+    distance_matrix = np.stack(
+        [np.sum(np.square(metric_values - centroid), axis=1) for centroid in centroids],
+        axis=1,
+    )
+    assignments = np.argmin(distance_matrix, axis=1)
+    nearest_distance = np.sqrt(np.min(distance_matrix, axis=1))
+
+    calibration_distance = nearest_distance[fit_start:evaluation_start]
+    distance_median = float(np.median(calibration_distance))
+    distance_high = float(np.quantile(calibration_distance, 0.95))
+    match_scale = max(distance_median, EPSILON)
+    matches = np.clip(np.exp(-nearest_distance / match_scale), 0.0, 1.0)
+    novelty_denominator = max(distance_high - distance_median, EPSILON)
+    novelty = np.clip((nearest_distance - distance_median) / novelty_denominator, 0.0, 1.0)
+
+    state_ids = [f"F.{index + 1:03d}" for index in range(len(centroids))]
+    state_identities = [
+        _lexicon_identity(centroid)
+        for centroid in centroids
+    ]
+    state_tokens = [identity[0] for identity in state_identities]
+    state_signatures = [identity[1] for identity in state_identities]
+
+    smoothing = 0.5
+    transition_counts = np.zeros((len(centroids), len(centroids)), dtype=int)
+    calibration_segments = _run_segments(assignments, fit_start, evaluation_start)
+    for segment_index in range(1, len(calibration_segments)):
+        previous_state = calibration_segments[segment_index - 1][0]
+        state = calibration_segments[segment_index][0]
+        transition_counts[previous_state, state] += 1
+    if len(centroids) == 1:
+        transition_probabilities = np.ones((1, 1), dtype=float)
+    else:
+        transition_probabilities = transition_counts.astype(float) + smoothing
+        np.fill_diagonal(transition_probabilities, 0.0)
+        transition_probabilities /= np.sum(transition_probabilities, axis=1, keepdims=True)
+
+    durations: dict[int, list[int]] = {index: [] for index in range(len(centroids))}
+    for state, start, end in calibration_segments:
+        durations[state].append(end - start + 1)
+
+    standardized_centroids = np.divide(
+        centroids,
+        metric_scale[None, :],
+        out=np.zeros_like(centroids),
+        where=metric_scale[None, :] > EPSILON,
+    )
+    original_centroids = center[None, :] + standardized_centroids * scale[None, :]
+    archetypes: list[dict[str, object]] = []
+    for state_index, state_id in enumerate(state_ids):
+        calibration_indexes = np.flatnonzero(assignments[fit_start:evaluation_start] == state_index) + fit_start
+        evaluation_indexes = np.flatnonzero(assignments[evaluation_start:] == state_index) + evaluation_start
+        total_count = len(calibration_indexes) + len(evaluation_indexes)
+        archetypes.append(
+            {
+                "id": state_id,
+                "token": state_tokens[state_index],
+                "signature": state_signatures[state_index],
+                "centroid": {
+                    name: _rounded(original_centroids[state_index, feature_index], 6)
+                    for feature_index, name in enumerate(feature_names)
+                },
+                "window_frequency": _rounded(total_count / max(1, count - fit_start)),
+                "frequency": _rounded(total_count / max(1, count - fit_start)),
+                "typical_duration_bars": _rounded(
+                    float(np.median(durations[state_index])) if durations[state_index] else 0.0,
+                    1,
+                ),
+                "calibration_count": int(len(calibration_indexes)),
+                "evaluation_count": int(len(evaluation_indexes)),
+                "evaluation_outcome": _forward_outcome_stats(
+                    close,
+                    evaluation_indexes.tolist(),
+                    forward_bars=5,
+                ),
+                "evaluation_outcome_sampling": "Every assigned evaluation bar; forward windows overlap and observations are serially dependent.",
+            }
+        )
+
+    evaluation_sequence: list[dict[str, object]] = []
+    for index in range(evaluation_start, count):
+        previous_state = int(assignments[index - 1])
+        state = int(assignments[index])
+        transition_surprise = 0.0 if previous_state == state else -log(
+            max(float(transition_probabilities[previous_state, state]), EPSILON)
+        )
+        evaluation_sequence.append(
+            {
+                "date": dates[index],
+                "index": index,
+                "state_id": state_ids[state],
+                "match": _rounded(matches[index]),
+                "novelty": _rounded(novelty[index]),
+                "transition_surprise": _rounded(transition_surprise, 6),
+            }
+        )
+
+    latest_state = int(assignments[-1])
+    current_age = 1
+    for index in range(count - 2, -1, -1):
+        if int(assignments[index]) != latest_state:
+            break
+        current_age += 1
+    current_run_start = count - current_age
+    if current_run_start > 0 and int(assignments[current_run_start - 1]) != latest_state:
+        latest_probability = max(
+            float(transition_probabilities[int(assignments[current_run_start - 1]), latest_state]),
+            EPSILON,
+        )
+        latest_surprise = -log(latest_probability)
+    else:
+        latest_surprise = 0.0
+    probability_rows = [_rounded_probability_row(row) for row in transition_probabilities]
+    likely_next = []
+    minimum_transition_support = 5
+    for state_index, row in enumerate(transition_probabilities):
+        count_row = transition_counts[state_index]
+        support = int(np.sum(count_row))
+        leaders = np.flatnonzero(count_row == np.max(count_row)) if support else np.asarray([], dtype=int)
+        ambiguous = support == 0 or len(leaders) != 1
+        reliable = not ambiguous and support >= minimum_transition_support
+        next_state = int(leaders[0]) if reliable else None
+        likely_next.append(
+            {
+                "from_state": state_ids[state_index],
+                "to_state": state_ids[next_state] if next_state is not None else None,
+                "to_token": state_tokens[next_state] if next_state is not None else None,
+                "probability": probability_rows[state_index][next_state] if next_state is not None else None,
+                "support": support,
+                "ambiguous": ambiguous,
+                "reliable": reliable,
+            }
+        )
+
+    motifs = _build_lexicon_motifs(
+        assignments=assignments,
+        evaluation_start=evaluation_start,
+        close=close,
+        state_ids=state_ids,
+        state_tokens=state_tokens,
+        forward_bars=5,
+    )
+    return {
+        "model": "Market State Lexicon",
+        "version": "0.1.0",
+        "description": "A deterministic, window-native empirical codebook learned from this field, not a published market taxonomy, persistent identifier system, or trading signal.",
+        "training_split": {
+            "method": "Warm-up excluded, then chronological calibration through 60%; calibration-only robust scaling and deterministic farthest-first k-means.",
+            "archetype_count": len(centroids),
+            "maximum_archetypes": 5,
+            "minimum_form_support": minimum_form_support,
+            "requested_warmup_bars": requested_warmup_bars,
+            "fit_start_index": fit_start,
+            "fit_start": dates[fit_start],
+            "warmup_complete": fit_start >= requested_warmup_bars,
+            "calibration_bars": evaluation_start - fit_start,
+            "evaluation_bars": count - evaluation_start,
+            "calibration_end": dates[evaluation_start - 1],
+            "evaluation_start": dates[evaluation_start],
+            "evaluation_outcomes_used_for_training": False,
+        },
+        "features": [
+            {
+                "id": name,
+                "family": feature_families[name],
+                "distance_weight": _rounded(feature_weights[index], 8),
+                "calibration_median": _rounded(center[index], 6),
+                "calibration_robust_scale": _rounded(scale[index], 6),
+            }
+            for index, name in enumerate(feature_names)
+        ],
+        "distance_metric": {
+            "method": "Robust-standardized squared Euclidean distance with equal total weight for each feature family; match is an uncalibrated resonance index, not a probability.",
+            "family_weights": {
+                family: _rounded(family_weight, 8)
+                for family in ("pressure_state", "field_transform", "ohlcv_carrier")
+            },
+            "signature_version": "lx1",
+            "signature_quantization": "Metric-space centroids rounded to 0.35-unit bins; identities remain native to the selected rolling window.",
+        },
+        "archetypes": archetypes,
+        "evaluation_sequence": evaluation_sequence,
+        "current": {
+            "state_id": state_ids[latest_state],
+            "token": state_tokens[latest_state],
+            "signature": state_signatures[latest_state],
+            "match": _rounded(matches[-1]),
+            "novelty": _rounded(novelty[-1]),
+            "age_bars": current_age,
+            "transition_surprise": _rounded(latest_surprise, 6),
+        },
+        "grammar": {
+            "training": "Run-collapsed calibration Form exits only; self-persistence and evaluation transitions do not update this matrix.",
+            "smoothing": smoothing,
+            "minimum_transition_support": minimum_transition_support,
+            "state_ids": state_ids,
+            "counts": transition_counts.tolist(),
+            "probabilities": probability_rows,
+            "likely_next": likely_next,
+        },
+        "motifs": motifs,
+        "motif_note": "Repeated 2-4-state run-collapsed phrases discovered in evaluation; outcomes start when the final Form is entered, are descriptive and overlapping, and are not corrected for search.",
+    }
 
 
 def _relationship_result(
@@ -422,6 +1036,14 @@ def build_market_weather_research(
         aggregate_derivatives,
         aggregate_strata,
     )
+    lexicon = _build_market_state_lexicon(
+        dates=dates,
+        close=history["close"].to_numpy(dtype=float),
+        derivative_series=aggregate_derivatives,
+        strata=aggregate_strata,
+        carriers=aggregate_carriers,
+        requested_warmup_bars=max(34, 2 * max(int(horizon) for horizon in horizons)),
+    )
 
     channels = {
         "jerk": jerk,
@@ -460,6 +1082,7 @@ def build_market_weather_research(
             "note": "Price structure, realized volatility, volume participation, and an Amihud-like OHLCV liquidity-stress proxy are separate carriers; the other strata are transformations of the price field.",
         },
         "relationship_atlas": relationship_atlas,
+        "lexicon": lexicon,
         "validation": validation,
         "notes": [
             "All live field features are prefix-invariant and use no future bars.",

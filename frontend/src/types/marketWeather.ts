@@ -90,6 +90,120 @@ export interface MarketWeatherRelationshipResult {
   method: string;
 }
 
+export interface MarketWeatherLexiconOutcome {
+  forward_bars: number;
+  sample_size: number;
+  mean_return: number | null;
+  median_return: number | null;
+  positive_rate: number | null;
+  mean_absolute_return: number | null;
+}
+
+export interface MarketWeatherLexiconArchetype {
+  id: string;
+  token: string;
+  signature: string;
+  centroid: Record<string, number>;
+  window_frequency: number;
+  frequency: number;
+  typical_duration_bars: number;
+  calibration_count: number;
+  evaluation_count: number;
+  evaluation_outcome: MarketWeatherLexiconOutcome;
+  evaluation_outcome_sampling: string;
+}
+
+export interface MarketWeatherLexiconSequencePoint {
+  date: string;
+  index: number;
+  state_id: string;
+  match: number;
+  novelty: number;
+  transition_surprise: number;
+}
+
+export interface MarketWeatherLexiconMotif {
+  id: string;
+  states: string[];
+  tokens: string[];
+  glyph: string;
+  length: number;
+  count: number;
+  typical_span_bars: number;
+  current: boolean;
+  outcome: MarketWeatherLexiconOutcome;
+  outcome_anchor: "entry_into_final_form";
+}
+
+export interface MarketWeatherLexicon {
+  model: string;
+  version: string;
+  description: string;
+  training_split: {
+    method: string;
+    archetype_count: number;
+    maximum_archetypes: number;
+    minimum_form_support: number;
+    requested_warmup_bars: number;
+    fit_start_index: number;
+    fit_start: string;
+    warmup_complete: boolean;
+    calibration_bars: number;
+    evaluation_bars: number;
+    evaluation_bars_total?: number;
+    calibration_end: string;
+    evaluation_start: string;
+    evaluation_outcomes_used_for_training: boolean;
+    visible_evaluation_start?: string | null;
+    sequence_scope?: "visible_response_window";
+  };
+  features: Array<{
+    id: string;
+    family: string;
+    distance_weight: number;
+    calibration_median: number;
+    calibration_robust_scale: number;
+  }>;
+  distance_metric: {
+    method: string;
+    family_weights: Record<string, number>;
+    signature_version: string;
+    signature_quantization: string;
+  };
+  archetypes: MarketWeatherLexiconArchetype[];
+  evaluation_sequence: MarketWeatherLexiconSequencePoint[];
+  current: {
+    state_id: string;
+    token: string;
+    signature: string;
+    match: number;
+    novelty: number;
+    age_bars: number;
+    age_truncated?: boolean;
+    transition_surprise: number;
+    transition_in_visible_window?: boolean;
+  };
+  grammar: {
+    training: string;
+    smoothing: number;
+    minimum_transition_support: number;
+    state_ids: string[];
+    counts: number[][];
+    probabilities: number[][];
+    likely_next: Array<{
+      from_state: string;
+      to_state: string | null;
+      to_token: string | null;
+      probability: number | null;
+      support: number;
+      ambiguous: boolean;
+      reliable: boolean;
+    }>;
+  };
+  motifs: MarketWeatherLexiconMotif[];
+  motif_note: string;
+}
+
 export interface MarketWeatherResearch {
   model?: string;
   coordinate?: Record<string, string>;
@@ -104,6 +218,7 @@ export interface MarketWeatherResearch {
     series: MarketWeatherCarrierPoint[];
   };
   relationship_atlas: MarketWeatherRelationshipResult[];
+  lexicon?: MarketWeatherLexicon;
   validation?: {
     design: string;
     calibration_bars: number;
