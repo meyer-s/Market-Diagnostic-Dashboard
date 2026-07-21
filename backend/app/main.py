@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from app.models import options_alerts  # noqa: F401
 from app.models import option_positions  # noqa: F401
 from app.models import update_post  # noqa: F401
@@ -98,6 +99,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 # Routers
 app.include_router(health_router, prefix="/health", tags=["Health"])
