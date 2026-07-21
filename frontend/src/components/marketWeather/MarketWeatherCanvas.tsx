@@ -44,7 +44,7 @@ function formatDate(value: string, intraday: boolean): string {
 export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: MarketWeatherCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [size, setSize] = useState({ width: 0, height: 430 });
+  const [size, setSize] = useState({ width: 0, height: 560 });
   const [hover, setHover] = useState<HoverState | null>(null);
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
     if (!wrapper) return;
     const update = () => {
       const width = wrapper.clientWidth;
-      setSize({ width, height: width < 640 ? 350 : 430 });
+      setSize({ width, height: width < 640 ? 420 : 560 });
     };
     update();
     const observer = new ResizeObserver(update);
@@ -138,18 +138,7 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
     context.fillText("Horizon (bars)", 0, 0);
     context.restore();
 
-    if (hover) {
-      const visualRow = data.horizons.length - 1 - hover.horizonIndex;
-      context.strokeStyle = "rgba(255, 255, 255, 0.82)";
-      context.lineWidth = 1;
-      context.strokeRect(
-        PADDING.left + hover.dateIndex * cellWidth,
-        PADDING.top + visualRow * cellHeight,
-        Math.max(1, cellWidth),
-        cellHeight,
-      );
-    }
-  }, [data, hover, inspectorChannel, mode, size]);
+  }, [data, inspectorChannel, mode, size]);
 
   useEffect(() => draw(), [draw]);
 
@@ -173,6 +162,21 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
     [data, hover],
   );
 
+  const hoverRect = useMemo(() => {
+    if (!hover || size.width <= 0) return null;
+    const plotWidth = size.width - PADDING.left - PADDING.right;
+    const plotHeight = size.height - PADDING.top - PADDING.bottom;
+    const cellWidth = plotWidth / data.dates.length;
+    const cellHeight = plotHeight / data.horizons.length;
+    const visualRow = data.horizons.length - 1 - hover.horizonIndex;
+    return {
+      left: PADDING.left + hover.dateIndex * cellWidth,
+      top: PADDING.top + visualRow * cellHeight,
+      width: Math.max(1, cellWidth),
+      height: cellHeight,
+    };
+  }, [data.dates.length, data.horizons.length, hover, size]);
+
   return (
     <div ref={wrapperRef} className="relative min-w-0 overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/70">
       <canvas
@@ -182,6 +186,12 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
         aria-label={`${data.symbol} market-weather heatmap. Time runs left to right and analysis horizon runs bottom to top.`}
         className="block w-full touch-none"
       />
+      {hoverRect ? (
+        <div
+          className="pointer-events-none absolute border border-white/80 shadow-[0_0_0_1px_rgba(15,23,42,0.45)]"
+          style={hoverRect}
+        />
+      ) : null}
       {hover && hoveredCell ? (
         <div
           className="pointer-events-none absolute z-10 w-[230px] rounded-xl border border-slate-500/70 bg-slate-950/95 p-3 text-xs shadow-2xl"

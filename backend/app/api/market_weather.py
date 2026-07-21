@@ -35,6 +35,8 @@ TIMEFRAME_LABELS = {
     "1D": "1 day",
     "1W": "1 week",
 }
+MAX_HORIZON_ROWS = 120
+MAX_FIELD_CELLS = 120_000
 
 
 def _source_for(provider: object, method: str) -> str:
@@ -70,8 +72,13 @@ def analyze_market_weather(
     if horizon_max <= horizon_min:
         raise HTTPException(status_code=400, detail="horizon_max must be greater than horizon_min.")
     horizons = list(range(horizon_min, horizon_max + 1, horizon_step))
-    if len(horizons) > 60:
-        raise HTTPException(status_code=400, detail="Choose at most 60 horizon rows.")
+    if len(horizons) > MAX_HORIZON_ROWS:
+        raise HTTPException(status_code=400, detail=f"Choose at most {MAX_HORIZON_ROWS} horizon rows.")
+    if len(horizons) * bars > MAX_FIELD_CELLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requested field is too large. Choose at most {MAX_FIELD_CELLS:,} horizon-by-time cells.",
+        )
 
     settings = MarketWeatherSettings(
         state_smoothing=state_smoothing,

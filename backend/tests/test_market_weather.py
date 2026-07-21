@@ -105,6 +105,42 @@ def test_market_weather_api_keeps_valid_field_when_live_quote_fails(monkeypatch)
     assert payload["quote"]["price"] == payload["price"][-1]["close"]
 
 
+def test_market_weather_api_supports_high_resolution_fields(monkeypatch) -> None:
+    class HighResolutionProvider:
+        name = "test-bars"
+
+        def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+            return _history(bars)
+
+        def quote(self, symbol: str) -> UnderlyingQuote:
+            return UnderlyingQuote(symbol=symbol, last=125.0, source=self.name)
+
+    monkeypatch.setattr(market_weather_api, "get_market_data_provider", lambda: HighResolutionProvider())
+    app = FastAPI()
+    app.include_router(market_weather_api.router)
+    response = TestClient(app).get(
+        "/market-weather/analyze?symbol=SPY&timeframe=1D&bars=750&horizon_min=8&horizon_max=64&horizon_step=1"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["horizons"]) == 57
+    assert payload["available_bars"] == 750
+    assert len(payload["channels"]["pressure"]) == 57
+    assert len(payload["channels"]["pressure"][0]) == 750
+
+
+def test_market_weather_api_rejects_excessive_field_size() -> None:
+    app = FastAPI()
+    app.include_router(market_weather_api.router)
+    response = TestClient(app).get(
+        "/market-weather/analyze?symbol=SPY&timeframe=1D&bars=5000&horizon_min=4&horizon_max=120&horizon_step=1"
+    )
+
+    assert response.status_code == 400
+    assert "field is too large" in response.json()["detail"]
+
+
 @pytest.mark.parametrize("timeframe", ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D", "1W"])
 def test_market_weather_api_accepts_every_supported_timeframe(monkeypatch, timeframe: str) -> None:
     calls: list[tuple[str, int]] = []

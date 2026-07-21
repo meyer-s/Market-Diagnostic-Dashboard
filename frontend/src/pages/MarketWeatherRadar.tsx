@@ -45,10 +45,10 @@ interface RadarConfig {
 const DEFAULT_CONFIG: RadarConfig = {
   symbol: "SPY",
   timeframe: "1D",
-  bars: 504,
-  horizonMin: 12,
-  horizonMax: 48,
-  horizonStep: 2,
+  bars: 750,
+  horizonMin: 8,
+  horizonMax: 64,
+  horizonStep: 1,
   stateSmoothing: 5,
   crossHorizonBlend: 0.32,
   rendererTimeBlur: 3,
@@ -64,15 +64,15 @@ const TIMEFRAMES: Array<{
   defaultBars: number;
   barOptions: number[];
 }> = [
-  { value: "1m", label: "1 minute", defaultBars: 250, barOptions: [180, 250, 350] },
-  { value: "5m", label: "5 minutes", defaultBars: 250, barOptions: [180, 250, 390] },
-  { value: "15m", label: "15 minutes", defaultBars: 250, barOptions: [180, 250, 390] },
-  { value: "30m", label: "30 minutes", defaultBars: 250, barOptions: [180, 250, 390] },
-  { value: "1h", label: "1 hour", defaultBars: 250, barOptions: [180, 250, 500] },
-  { value: "2h", label: "2 hours", defaultBars: 180, barOptions: [120, 180, 250] },
-  { value: "4h", label: "4 hours", defaultBars: 120, barOptions: [90, 120, 144] },
-  { value: "1D", label: "1 day", defaultBars: 504, barOptions: [252, 504, 1260] },
-  { value: "1W", label: "1 week", defaultBars: 260, barOptions: [104, 260, 520] },
+  { value: "1m", label: "1 minute", defaultBars: 750, barOptions: [500, 750, 1200] },
+  { value: "5m", label: "5 minutes", defaultBars: 750, barOptions: [500, 750, 1200] },
+  { value: "15m", label: "15 minutes", defaultBars: 750, barOptions: [500, 750, 900] },
+  { value: "30m", label: "30 minutes", defaultBars: 750, barOptions: [500, 750, 1000] },
+  { value: "1h", label: "1 hour", defaultBars: 500, barOptions: [360, 500, 570] },
+  { value: "2h", label: "2 hours", defaultBars: 250, barOptions: [180, 250, 280] },
+  { value: "4h", label: "4 hours", defaultBars: 120, barOptions: [100, 120, 140] },
+  { value: "1D", label: "1 day", defaultBars: 750, barOptions: [504, 750, 1000] },
+  { value: "1W", label: "1 week", defaultBars: 520, barOptions: [260, 520, 780] },
 ];
 
 const MODES: Array<{ value: MarketWeatherMode; label: string; description: string }> = [
@@ -200,9 +200,9 @@ export default function MarketWeatherRadar() {
 
   const applyPreset = (preset: "balanced" | "tactical" | "structural") => {
     const next = preset === "tactical"
-      ? { ...draft, horizonMin: 8, horizonMax: 32, horizonStep: 2, stateSmoothing: 3, rendererTimeBlur: 2 }
+      ? { ...draft, horizonMin: 4, horizonMax: 48, horizonStep: 1, stateSmoothing: 3, rendererTimeBlur: 2 }
       : preset === "structural"
-        ? { ...draft, horizonMin: 20, horizonMax: 80, horizonStep: 4, stateSmoothing: 7, rendererTimeBlur: 5 }
+        ? { ...draft, horizonMin: 12, horizonMax: 96, horizonStep: 2, stateSmoothing: 7, rendererTimeBlur: 5 }
         : { ...draft, ...DEFAULT_CONFIG, symbol: draft.symbol, timeframe: draft.timeframe, bars: draft.bars };
     setDraft(next);
     setApplied({ ...next, symbol: next.symbol.trim().toUpperCase() || "SPY" });
@@ -233,7 +233,7 @@ export default function MarketWeatherRadar() {
           {data ? (
             <div className="flex flex-wrap gap-2 text-xs text-slate-300">
               <span className="page-badge"><Activity className="h-3.5 w-3.5 text-emerald-300" /> {data.data_source.toUpperCase()} · {data.bar_size} bars</span>
-              <span className="page-badge">{data.available_bars} observations</span>
+              <span className="page-badge">{data.horizons.length} horizons × {data.available_bars} observations</span>
               <span className="page-badge">Updated {formatTimestamp(data.generated_at)}</span>
             </div>
           ) : null}
@@ -303,7 +303,7 @@ export default function MarketWeatherRadar() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {[
               ["Min horizon", "horizonMin", 4, 100, 1],
-              ["Max horizon", "horizonMax", 8, 160, 1],
+              ["Max horizon", "horizonMax", 8, 120, 1],
               ["Horizon step", "horizonStep", 1, 12, 1],
               ["State smoothing", "stateSmoothing", 1, 20, 1],
               ["Cross-horizon blend", "crossHorizonBlend", 0, 1, 0.05],
@@ -358,7 +358,7 @@ export default function MarketWeatherRadar() {
               <div>
                 <span className="page-kicker">Renderer</span>
                 <h2 className="mt-1 text-xl font-semibold text-white">{data.symbol} horizon field</h2>
-                <p className="mt-1 max-w-3xl text-sm text-slate-400">{activeMode.description} Hover any cell to inspect its latent values. Coverage: {formatTimestamp(data.coverage_start)} to {formatTimestamp(data.coverage_end)}.</p>
+                <p className="mt-1 max-w-3xl text-sm text-slate-400">{activeMode.description} Hover any cell to inspect its latent values. Rendering {data.horizons.length.toLocaleString()} × {data.available_bars.toLocaleString()} cells from {formatTimestamp(data.coverage_start)} to {formatTimestamp(data.coverage_end)}.</p>
               </div>
               <div className="flex flex-wrap gap-1 rounded-2xl border border-stealth-700 bg-slate-950/45 p-1.5">
                 {MODES.map((item) => (
@@ -450,9 +450,9 @@ export default function MarketWeatherRadar() {
               <h2 className="mt-1 text-lg font-semibold text-white">Current horizon profile</h2>
               <p className="mt-1 text-xs text-slate-400">The composite remains inspectable: direction should stay anchored to pressure while motion changes confidence and intensity.</p>
             </div>
-            <div className="overflow-x-auto">
+            <div className="max-h-[620px] overflow-auto">
               <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="bg-slate-950/30 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                <thead className="sticky top-0 z-[1] bg-slate-950 text-[10px] uppercase tracking-[0.16em] text-slate-500 shadow-[0_1px_0_rgba(71,85,105,0.45)]">
                   <tr>
                     <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Confidence</th><th className="px-4 py-3">Coherence</th><th className="px-4 py-3">Entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
                   </tr>
