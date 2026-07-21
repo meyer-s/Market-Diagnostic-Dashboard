@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Activity, ArrowRight, BookOpen, ChevronDown, FlaskConical, Info, Layers } from "lucide-react";
 import {
   CartesianGrid,
@@ -86,9 +86,9 @@ function parseTimestamp(value: string): Date {
 function formatDate(value: string, timeframe: MarketWeatherTimeframe): string {
   const date = parseTimestamp(value);
   if (Number.isNaN(date.getTime())) return value;
-  return ["1D", "1W"].includes(timeframe)
-    ? date.toLocaleDateString(undefined, { month: "short", year: "2-digit" })
-    : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
+  if (timeframe === "1D") return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (timeframe === "1W") return date.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
 }
 
 function formatObservationDate(value: string, timeframe: MarketWeatherTimeframe): string {
@@ -186,19 +186,19 @@ function PriceStateChart({
   const lexicon = research.lexicon!;
   const visiblePrice = price.slice(-120);
   const visibleDates = new Set(visiblePrice.map((point) => point.date));
-  const profileById = useMemo(
-    () => new Map(lexicon.archetypes.map((archetype) => [archetype.id, buildGroundedStateProfile(archetype.centroid, lexicon.features)])),
-    [lexicon.archetypes, lexicon.features],
-  );
-  const runs: Array<{ stateId: string; start: string; end: string; duration: number; outside: boolean }> = [];
+  const pressureByDate = new Map(research.derivative_series.map((point) => [point.date, point.pressure]));
+  const stateNumberById = new Map(lexicon.archetypes.map((archetype, index) => [archetype.id, index + 1]));
+  const runs: Array<{ stateId: string; start: string; end: string; duration: number; outside: boolean; direction: "positive" | "negative" | "neutral" }> = [];
   lexicon.evaluation_sequence.filter((point) => visibleDates.has(point.date)).forEach((point) => {
     const previous = runs[runs.length - 1];
     const outside = point.outside_learned_range === true;
-    if (previous?.stateId === point.state_id && previous.outside === outside) {
+    const pressure = pressureByDate.get(point.date) ?? 0;
+    const direction = pressure > 0 ? "positive" : pressure < 0 ? "negative" : "neutral";
+    if (previous?.stateId === point.state_id && previous.outside === outside && previous.direction === direction) {
       previous.end = point.date;
       previous.duration += 1;
     } else {
-      runs.push({ stateId: point.state_id, start: point.date, end: point.date, duration: 1, outside });
+      runs.push({ stateId: point.state_id, start: point.date, end: point.date, duration: 1, outside, direction });
     }
   });
 
@@ -243,20 +243,21 @@ function PriceStateChart({
       </div>
       <div className="mt-3">
         <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400">
-          <span>Recent learned states</span>
+          <span>Measured pressure within learned states</span>
           <span>{runs.length} runs shown</span>
         </div>
         <div className="flex h-8 min-w-0 overflow-hidden rounded-lg border border-stealth-700 bg-slate-900" role="list" aria-label="Recent learned state runs">
           {runs.map((run) => {
-            const profile = profileById.get(run.stateId);
+            const stateNumber = stateNumberById.get(run.stateId) ?? 1;
+            const directionLabel = run.direction === "positive" ? "Positive pressure" : run.direction === "negative" ? "Negative pressure" : "Balanced pressure";
             return (
               <div
                 key={`${run.start}-${run.stateId}`}
                 role="listitem"
                 className="min-w-[3px] border-r border-slate-950/80 last:border-r-0"
-                style={{ flexGrow: run.duration, backgroundColor: run.outside ? "#fbbf24" : stateTone(profile?.direction ?? "neutral") }}
-                title={`${run.outside ? "Outside learned range" : profile?.headline ?? "Learned state"}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}`}
-                aria-label={`${run.outside ? "Outside learned range" : profile?.headline ?? "Learned state"}, ${run.duration} bars`}
+                style={{ flexGrow: run.duration, backgroundColor: run.outside ? "#fbbf24" : stateTone(run.direction) }}
+                title={`${run.outside ? "Outside learned range" : directionLabel}; learned state ${stateNumber}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}`}
+                aria-label={`${run.outside ? "Outside learned range" : directionLabel}, learned state ${stateNumber}, ${run.duration} bars`}
               />
             );
           })}
@@ -330,7 +331,7 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
               {noCloseMatch
                 ? `The current field is farther from its assigned state than nearly all same-state bars in the held-out calibration slice. Its live measurements show ${profile.headline.toLowerCase()}, but that state’s historical behavior is not treated as a current analog.`
-                : `The current field has ${profile.headline.toLowerCase()} and ${profile.characteristic}. ${profile.summary}`}
+                : `The current field has ${profile.headline.toLowerCase()}. ${profile.summary}`}
             </p>
           </div>
           <div className="rounded-xl border border-stealth-600 bg-slate-950/45 px-4 py-3 text-sm text-slate-300">
@@ -549,6 +550,7 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
         <div className="mb-4">
           <h3 className="text-base font-semibold text-white">Learned states in this window</h3>
           <p className="mt-1 text-xs leading-5 text-slate-400">Names come from the sign of directional pressure and whether its first change reinforces or opposes that sign. Profiles show measured differences from the earlier model-fit baseline.</p>
+          {lexicon.archetypes.length === 1 ? <p className="mt-3 rounded-xl border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-xs leading-5 text-sky-100">This window supports one state. Additional divisions did not meet the model’s minimum fit support and separation requirements.</p> : null}
         </div>
         <div className="space-y-3">
           {lexicon.archetypes.map((archetype, index) => (
@@ -752,7 +754,7 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
   const [view, setView] = useState<LanguageView>("now");
   const labels: Record<LanguageView, { tab: string; title: string; description: string }> = {
     now: { tab: "Now", title: "Current market state", description: "What the field measures now, where it appeared in price, and how strong the historical match is." },
-    dictionary: { tab: "Dictionary", title: "Learned state dictionary", description: "Measured state definitions relative to this window’s calibration baseline." },
+    dictionary: { tab: "Dictionary", title: "Learned state dictionary", description: "Measured state definitions relative to this window’s earlier model-fit baseline." },
     methods: { tab: "Methods", title: "Methods and evidence", description: "Higher-order layers, experimental sequences, validation checks, references, and limitations." },
   };
 
