@@ -136,6 +136,15 @@ def analyze_market_weather(
             name: [row[start:] for row in matrix]
             for name, matrix in result["channels"].items()
         }
+        research = result.get("research")
+        if isinstance(research, dict):
+            research["derivative_series"] = research.get("derivative_series", [])[start:]
+            strata = research.get("strata")
+            if isinstance(strata, dict):
+                strata["series"] = strata.get("series", [])[start:]
+            carriers = research.get("carriers")
+            if isinstance(carriers, dict):
+                carriers["series"] = carriers.get("series", [])[start:]
 
     result.update(
         {
@@ -151,8 +160,8 @@ def analyze_market_weather(
             "coverage_end": result["dates"][-1],
             "methodology": {
                 "causal": True,
-                "description": f"Each field cell uses only current and prior {TIMEFRAME_LABELS[normalized_timeframe]} bars; no centered windows or future values.",
-                "research_status": "Experimental diagnostic, not a forecast or trading signal.",
+                "description": f"Each live field cell uses only current and prior {TIMEFRAME_LABELS[normalized_timeframe]} bars on a log-horizon coordinate; no centered windows or future values.",
+                "research_status": "Experimental diagnostic. Relationship cards are chronological holdout summaries, not forecasts, significance tests, or trading signals.",
             },
         }
     )

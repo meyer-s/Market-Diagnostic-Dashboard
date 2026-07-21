@@ -36,6 +36,11 @@ def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
     assert len(result["price"]) == 420
     assert result["summary"]["regime"]
     assert len(result["latest_profile"]) == 19
+    assert result["summary"]["permutation_entropy"] >= 0.0
+    assert len(result["research"]["derivative_series"]) == 420
+    assert len(result["research"]["strata"]["series"]) == 420
+    assert len(result["research"]["carriers"]["series"]) == 420
+    assert len(result["research"]["relationship_atlas"]) == 4
 
     for matrix in result["channels"].values():
         values = np.asarray(matrix)
@@ -53,6 +58,8 @@ def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
         "contraction",
         "reflectivity",
         "convection",
+        "permutation_entropy",
+        "propagation_strength",
     ):
         values = np.asarray(result["channels"][name])
         assert values.min() >= 0.0
@@ -71,6 +78,36 @@ def test_market_weather_has_no_future_leak() -> None:
         prefix_values = np.asarray(prefix["channels"][name])[:, -1]
         complete_values = np.asarray(complete["channels"][name])[:, cutoff - 1]
         np.testing.assert_allclose(prefix_values, complete_values, atol=1e-4)
+
+    for section in ("derivative_series",):
+        prefix_row = prefix["research"][section][-1]
+        complete_row = complete["research"][section][cutoff - 1]
+        assert prefix_row == complete_row
+    for section in ("strata", "carriers"):
+        prefix_row = prefix["research"][section]["series"][-1]
+        complete_row = complete["research"][section]["series"][cutoff - 1]
+        assert prefix_row == complete_row
+
+
+def test_market_weather_log_horizon_geometry_is_resolution_stable() -> None:
+    sparse = build_market_weather(_history(), horizons=range(12, 49, 2))
+    dense = build_market_weather(_history(), horizons=range(12, 49))
+
+    assert abs(sparse["summary"]["coherence"] - dense["summary"]["coherence"]) < 0.03
+    for key in ("structure", "kinematics", "geometry", "information", "propagation"):
+        sparse_value = sparse["research"]["strata"]["latest"][key]
+        dense_value = dense["research"]["strata"]["latest"][key]
+        assert abs(sparse_value - dense_value) < 0.04
+
+
+def test_relationship_atlas_separates_live_features_from_future_outcome_evaluation() -> None:
+    result = build_market_weather(_history(), horizons=range(12, 50, 2))
+    research = result["research"]
+
+    assert research["validation"]["design"].startswith("Chronological 60/40")
+    assert research["validation"]["multiple_testing_adjusted"] is False
+    assert all(item["sample_size"] >= 0 for item in research["relationship_atlas"])
+    assert all("not significance tests" in item["method"] for item in research["relationship_atlas"])
 
 
 def test_market_weather_rejects_insufficient_history() -> None:

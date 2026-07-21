@@ -6,6 +6,8 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from app.services.market_weather_research import build_market_weather_research
+
 
 EPSILON = 1e-9
 
@@ -61,18 +63,22 @@ def _spatial_smooth(values: np.ndarray, blend: float) -> np.ndarray:
     return smoothed
 
 
-def _vertical_derivatives(values: np.ndarray, edge_gain: float) -> tuple[np.ndarray, np.ndarray]:
+def _vertical_derivatives(
+    values: np.ndarray,
+    horizons: list[int],
+    edge_gain: float,
+) -> tuple[np.ndarray, np.ndarray]:
     gradient = np.zeros_like(values)
     laplacian = np.zeros_like(values)
     if len(values) == 1:
         return gradient, laplacian
-    gradient[0] = np.abs(values[1] - values[0]) * edge_gain
-    gradient[-1] = np.abs(values[-1] - values[-2]) * edge_gain
-    laplacian[0] = gradient[0]
-    laplacian[-1] = gradient[-1]
-    if len(values) > 2:
-        gradient[1:-1] = np.abs(values[2:] - values[:-2]) * 0.5 * edge_gain
-        laplacian[1:-1] = np.abs(values[2:] - 2.0 * values[1:-1] + values[:-2]) * edge_gain
+    log_horizons = np.log(np.asarray(horizons, dtype=float))
+    first = np.gradient(values, log_horizons, axis=0, edge_order=1)
+    second = np.gradient(first, log_horizons, axis=0, edge_order=1)
+    gradient_energy = np.abs(first) * edge_gain
+    curvature_energy = np.abs(second) * edge_gain
+    gradient = gradient_energy / (1.0 + gradient_energy)
+    laplacian = curvature_energy / (1.0 + curvature_energy)
     return _clip(gradient), _clip(laplacian)
 
 
@@ -230,11 +236,10 @@ def build_market_weather(
 
     structural_strength = _clip(np.abs(pressure) * 1.8)
     motion_energy = _clip(np.abs(velocity) * 1.4)
-    vertical_gradient, laplacian = _vertical_derivatives(pressure, settings.edge_gain)
+    vertical_gradient, laplacian = _vertical_derivatives(pressure, horizon_values, settings.edge_gain)
     temporal_gradient = _clip(np.abs(np.diff(pressure, axis=1, prepend=pressure[:, :1])) * settings.edge_gain * 2.0)
     boundary_energy = _clip(0.42 * vertical_gradient + 0.33 * temporal_gradient + 0.25 * laplacian)
-    neighbor_pressure = _neighbor_average(pressure)
-    coherence = _clip(1.0 - np.abs(pressure - neighbor_pressure) / 1.45)
+    coherence = _clip(1.0 - vertical_gradient / 1.35)
     entropy_raw = _clip(0.60 * (1.0 - coherence) + 0.40 * motion_energy)
     entropy = _ewm_rows(entropy_raw, settings.entropy_smoothing)
     aligned_velocity = np.where(pressure >= 0.0, velocity, -velocity)
@@ -252,6 +257,21 @@ def build_market_weather(
     reflectivity = np.log1p(compression * _clip(reflectivity_raw)) / np.log1p(compression)
     confidence = _clip(0.48 * coherence + 0.32 * structural_strength + 0.20 * (1.0 - entropy))
     convection = _clip(boundary_energy * (0.45 + 0.55 * motion_energy))
+
+    dates = [pd.Timestamp(timestamp).isoformat() for timestamp in history.index]
+    research_channels, research = build_market_weather_research(
+        history=history,
+        dates=dates,
+        horizons=horizon_values,
+        pressure=pressure,
+        velocity=velocity,
+        acceleration=acceleration,
+        structural_strength=structural_strength,
+        coherence=coherence,
+        field_disorder=entropy,
+        boundary_energy=boundary_energy,
+        motion_normalization_length=settings.motion_normalization_length,
+    )
 
     channels = {
         "pressure": pressure,
@@ -272,6 +292,7 @@ def build_market_weather(
         "reflectivity": reflectivity,
         "convection": convection,
         "swami": np.vstack(swami_rows),
+        **research_channels,
     }
 
     latest_pressure = pressure[:, -1]
@@ -280,6 +301,7 @@ def build_market_weather(
     field_direction = float(np.sum(latest_pressure * weights))
     latest_coherence = float(np.mean(coherence[:, -1]))
     latest_entropy = float(np.mean(entropy[:, -1]))
+    latest_permutation_entropy = float(np.mean(research_channels["permutation_entropy"][:, -1]))
     latest_expansion = float(np.mean(expansion[:, -1]))
     latest_convection = float(np.mean(convection[:, -1]))
     latest_reflectivity = float(np.mean(reflectivity[:, -1]))
@@ -290,7 +312,6 @@ def build_market_weather(
     ]
     expansion_front = max(expanding_horizons) if expanding_horizons else None
 
-    dates = [pd.Timestamp(timestamp).isoformat() for timestamp in history.index]
     price_rows = [
         {
             "date": dates[index],
@@ -309,6 +330,7 @@ def build_market_weather(
             "confidence": round(float(confidence[index, -1]), 4),
             "coherence": round(float(coherence[index, -1]), 4),
             "entropy": round(float(entropy[index, -1]), 4),
+            "permutation_entropy": round(float(research_channels["permutation_entropy"][index, -1]), 4),
             "expansion": round(float(expansion[index, -1]), 4),
             "convection": round(float(convection[index, -1]), 4),
         }
@@ -327,11 +349,13 @@ def build_market_weather(
             "horizon_alignment": round(horizon_alignment, 4),
             "coherence": round(latest_coherence, 4),
             "entropy": round(latest_entropy, 4),
+            "permutation_entropy": round(latest_permutation_entropy, 4),
             "reflectivity": round(latest_reflectivity, 4),
             "convection": round(latest_convection, 4),
             "expansion": round(latest_expansion, 4),
             "expansion_front": expansion_front,
         },
         "latest_profile": latest_profile,
+        "research": research,
         "settings": asdict(settings),
     }

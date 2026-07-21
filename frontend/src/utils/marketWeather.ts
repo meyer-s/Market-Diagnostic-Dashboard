@@ -13,6 +13,15 @@ export const INSPECTOR_CHANNELS = [
   "pressure",
   "velocity",
   "acceleration",
+  "jerk",
+  "snap",
+  "scale_gradient",
+  "scale_curvature",
+  "mixed_derivative",
+  "cascade_velocity",
+  "propagation_strength",
+  "permutation_entropy",
+  "scaling_exponent",
   "structural_strength",
   "boundary_energy",
   "coherence",
@@ -65,10 +74,10 @@ export function marketWeatherCellColor(
 
   if (mode === "inspector") {
     const value = cell[inspectorChannel] ?? 0;
-    if (["pressure", "direction", "velocity", "acceleration"].includes(inspectorChannel)) {
+    if (["pressure", "direction", "velocity", "acceleration", "jerk", "snap", "scale_gradient", "scale_curvature", "mixed_derivative", "cascade_velocity", "scaling_exponent"].includes(inspectorChannel)) {
       return rgb(scale(mix(DARK, value >= 0 ? POSITIVE : NEGATIVE, clamp(Math.abs(value) * 1.35)), 0.72 + 0.35 * clamp(Math.abs(value))));
     }
-    const target = inspectorChannel === "entropy" ? PURPLE : inspectorChannel === "convection" || inspectorChannel === "boundary_energy" ? BLUE : POSITIVE;
+    const target = inspectorChannel === "entropy" || inspectorChannel === "permutation_entropy" ? PURPLE : inspectorChannel === "convection" || inspectorChannel === "boundary_energy" || inspectorChannel === "propagation_strength" ? BLUE : POSITIVE;
     return rgb(mix(DARK, target, clamp(value)));
   }
 
@@ -91,6 +100,8 @@ export function marketWeatherCellColor(
 }
 
 export function channelLabel(channel: string): string {
+  if (channel === "entropy") return "Field Disorder Proxy";
+  if (channel === "permutation_entropy") return "Permutation Entropy";
   return channel
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

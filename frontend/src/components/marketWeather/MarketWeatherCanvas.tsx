@@ -24,6 +24,19 @@ function cellAt(data: MarketWeatherResponse, horizonIndex: number, dateIndex: nu
   ) as MarketWeatherCell;
 }
 
+function renderCellAt(
+  data: MarketWeatherResponse,
+  horizonIndex: number,
+  dateIndex: number,
+  channelNames: string[],
+): MarketWeatherCell {
+  const cell: Record<string, number> = {};
+  channelNames.forEach((name) => {
+    cell[name] = data.channels[name]?.[horizonIndex]?.[dateIndex] ?? 0;
+  });
+  return cell as MarketWeatherCell;
+}
+
 function parseTimestamp(value: string): Date {
   return new Date(value.includes("T") ? value : `${value}T00:00:00`);
 }
@@ -80,12 +93,21 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
     const cellWidth = plotWidth / data.dates.length;
     const cellHeight = plotHeight / data.horizons.length;
     const contourBands = data.settings.contour_bands ?? 7;
+    const renderChannels = mode === "swami"
+      ? ["swami"]
+      : mode === "inspector"
+        ? [inspectorChannel]
+        : mode === "regime"
+          ? ["pressure", "coherence", "entropy", "confidence"]
+          : mode === "topographic"
+            ? ["pressure", "reflectivity", "boundary_energy", "convection"]
+            : ["pressure", "reflectivity", "convection", "expansion"];
 
     data.horizons.forEach((_horizon, horizonIndex) => {
       const visualRow = data.horizons.length - 1 - horizonIndex;
       data.dates.forEach((_date, dateIndex) => {
         context.fillStyle = marketWeatherCellColor(
-          cellAt(data, horizonIndex, dateIndex),
+          renderCellAt(data, horizonIndex, dateIndex, renderChannels),
           mode,
           inspectorChannel,
           contourBands,
@@ -205,9 +227,10 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-slate-300">
             <span>Pressure</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.pressure)}</span>
             <span>Velocity</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.velocity)}</span>
-            <span>Confidence</span><span className="text-right font-mono text-white">{hoveredCell.confidence.toFixed(2)}</span>
+            <span>Organization</span><span className="text-right font-mono text-white">{hoveredCell.confidence.toFixed(2)}</span>
             <span>Coherence</span><span className="text-right font-mono text-white">{hoveredCell.coherence.toFixed(2)}</span>
-            <span>Entropy</span><span className="text-right font-mono text-white">{hoveredCell.entropy.toFixed(2)}</span>
+            <span>Disorder proxy</span><span className="text-right font-mono text-white">{hoveredCell.entropy.toFixed(2)}</span>
+            <span>Permutation entropy</span><span className="text-right font-mono text-violet-200">{hoveredCell.permutation_entropy?.toFixed(2) ?? "-"}</span>
             <span>Reflectivity</span><span className="text-right font-mono text-white">{hoveredCell.reflectivity.toFixed(2)}</span>
             <span>Convection</span><span className="text-right font-mono text-sky-300">{hoveredCell.convection.toFixed(2)}</span>
             <span>{channelLabel(inspectorChannel)}</span><span className="text-right font-mono text-white">{hoveredCell[inspectorChannel]?.toFixed(2) ?? "-"}</span>

@@ -16,6 +16,7 @@ export interface MarketWeatherSummary {
   horizon_alignment: number;
   coherence: number;
   entropy: number;
+  permutation_entropy: number;
   reflectivity: number;
   convection: number;
   expansion: number;
@@ -28,8 +29,92 @@ export interface MarketWeatherProfileRow {
   confidence: number;
   coherence: number;
   entropy: number;
+  permutation_entropy: number;
   expansion: number;
   convection: number;
+}
+
+export interface MarketWeatherDerivativePoint {
+  date: string;
+  pressure: number;
+  velocity: number;
+  acceleration: number;
+  jerk: number;
+  snap: number;
+}
+
+export interface MarketWeatherStrataPoint {
+  date: string;
+  structure: number;
+  kinematics: number;
+  geometry: number;
+  information: number;
+  propagation: number;
+  cascade_bias: number;
+  scaling_exponent: number;
+}
+
+export interface MarketWeatherStrataLatest {
+  structure: number;
+  kinematics: number;
+  geometry: number;
+  information: number;
+  propagation: number;
+  cascade_bias: number;
+  scaling_exponent: number;
+}
+
+export interface MarketWeatherCarrierPoint {
+  date: string;
+  price_structure: number;
+  realized_volatility: number;
+  participation: number;
+  liquidity_stress: number;
+}
+
+export type MarketWeatherCarrierLatest = Omit<MarketWeatherCarrierPoint, "date">;
+
+export interface MarketWeatherRelationshipResult {
+  id: string;
+  label: string;
+  hypothesis: string;
+  outcome: string;
+  forward_bars: number;
+  sample_size: number;
+  event_mean: number | null;
+  baseline_mean: number | null;
+  uplift: number | null;
+  event_hit_rate: number | null;
+  baseline_hit_rate: number | null;
+  status: string;
+  method: string;
+}
+
+export interface MarketWeatherResearch {
+  model?: string;
+  coordinate?: Record<string, string>;
+  definitions: Record<string, string>;
+  derivative_series: MarketWeatherDerivativePoint[];
+  strata: {
+    latest: MarketWeatherStrataLatest;
+    series: MarketWeatherStrataPoint[];
+  };
+  carriers?: {
+    latest: MarketWeatherCarrierLatest;
+    series: MarketWeatherCarrierPoint[];
+  };
+  relationship_atlas: MarketWeatherRelationshipResult[];
+  validation?: {
+    design: string;
+    calibration_bars: number;
+    evaluation_bars: number;
+    calibration_end: string | null;
+    evaluation_start: string | null;
+    forward_bars: number;
+    purged: boolean;
+    multiple_testing_adjusted: boolean;
+  };
+  notes: string[];
 }
 
 export interface MarketWeatherResponse {
@@ -56,6 +141,7 @@ export interface MarketWeatherResponse {
   summary: MarketWeatherSummary;
   latest_profile: MarketWeatherProfileRow[];
   settings: Record<string, number>;
+  research?: MarketWeatherResearch;
   methodology: {
     causal: boolean;
     description: string;
@@ -69,6 +155,15 @@ export interface MarketWeatherCell {
   structural_strength: number;
   velocity: number;
   acceleration: number;
+  jerk: number;
+  snap: number;
+  scale_gradient: number;
+  scale_curvature: number;
+  mixed_derivative: number;
+  cascade_velocity: number;
+  propagation_strength: number;
+  permutation_entropy: number;
+  scaling_exponent: number;
   boundary_energy: number;
   vertical_gradient: number;
   temporal_gradient: number;

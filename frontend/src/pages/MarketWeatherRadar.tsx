@@ -21,6 +21,7 @@ import {
 } from "recharts";
 
 import MarketWeatherCanvas from "../components/marketWeather/MarketWeatherCanvas";
+import MarketWeatherResearchLab from "../components/marketWeather/MarketWeatherResearchLab";
 import MarketLoading from "../components/ui/MarketLoading";
 import { useApi } from "../hooks/useApi";
 import type { MarketWeatherMode, MarketWeatherResponse, MarketWeatherTimeframe } from "../types/marketWeather";
@@ -76,7 +77,7 @@ const TIMEFRAMES: Array<{
 ];
 
 const MODES: Array<{ value: MarketWeatherMode; label: string; description: string }> = [
-  { value: "regime", label: "Regime Health", description: "Direction is primary; confidence and organization control intensity." },
+  { value: "regime", label: "Regime Health", description: "Direction is primary; the uncalibrated organization score controls intensity." },
   { value: "convection", label: "Convection", description: "Adds blue boundary energy where a transition is actively organizing." },
   { value: "topographic", label: "Topographic", description: "Quantizes reflectivity into contour-like intensity bands." },
   { value: "swami", label: "Swami Classic", description: "The categorical benchmark from the original SwamiCharts concept." },
@@ -174,10 +175,14 @@ export default function MarketWeatherRadar() {
 
   const chartData = useMemo(() => {
     if (!data) return [];
+    const weightTotal = data.horizons.reduce((sum, horizon) => sum + horizon, 0);
     return data.price.map((point, dateIndex) => ({
       date: point.date,
       close: point.close,
-      field: data.channels.pressure.reduce((sum, row) => sum + (row[dateIndex] ?? 0), 0) / data.horizons.length,
+      field: data.channels.pressure.reduce(
+        (sum, row, horizonIndex) => sum + (row[dateIndex] ?? 0) * data.horizons[horizonIndex],
+        0,
+      ) / weightTotal,
     }));
   }, [data]);
 
@@ -349,7 +354,7 @@ export default function MarketWeatherRadar() {
             <SummaryCard label="Current regime" value={data.summary.regime} note="Direction plus cross-horizon organization." tone={directionTone(data.summary.field_direction)} />
             <SummaryCard label="Field direction" value={formatSigned(data.summary.field_direction)} note="Weighted pressure; -1 bearish to +1 bullish." tone={directionTone(data.summary.field_direction)} />
             <SummaryCard label="Horizon alignment" value={formatPercent(data.summary.horizon_alignment)} note="Horizons agreeing with the field direction." />
-            <SummaryCard label="Coherence / entropy" value={`${formatPercent(data.summary.coherence)} / ${formatPercent(data.summary.entropy)}`} note="Organization versus local disorder." />
+            <SummaryCard label="Coherence / disorder" value={`${formatPercent(data.summary.coherence)} / ${formatPercent(data.summary.entropy)}`} note="Organization versus the legacy field-disagreement proxy." />
             <SummaryCard label="Expansion front" value={data.summary.expansion_front ? `${data.summary.expansion_front} bars · ${formatHorizon(data.summary.expansion_front, data.timeframe)}` : "None"} note="Longest horizon with active trend-aligned motion." tone={data.summary.expansion_front ? "text-sky-300" : "text-slate-300"} />
           </section>
 
@@ -395,7 +400,7 @@ export default function MarketWeatherRadar() {
               <div className="mb-3">
                 <span className="page-kicker">Price confirmation</span>
                 <h2 className="mt-1 text-lg font-semibold text-white">Price versus aggregate field pressure</h2>
-                <p className="mt-1 text-xs text-slate-400">{data.bar_size} bars · separate axes preserve each series’ scale. Pressure is the simple mean across displayed horizons.</p>
+                <p className="mt-1 text-xs text-slate-400">{data.bar_size} bars · separate axes preserve each series’ scale. Pressure uses the same horizon-weighted aggregation as the headline field direction.</p>
               </div>
               <div className="h-[300px] min-w-0">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -444,17 +449,26 @@ export default function MarketWeatherRadar() {
             </div>
           </section>
 
+          {data.research ? (
+            <MarketWeatherResearchLab
+              research={data.research}
+              symbol={data.symbol}
+              timeframe={data.timeframe}
+              barSize={data.bar_size}
+            />
+          ) : null}
+
           <section className="primary-card overflow-hidden">
             <div className="border-b border-stealth-700 p-4 sm:p-5">
               <span className="page-kicker">Audit the latest column</span>
               <h2 className="mt-1 text-lg font-semibold text-white">Current horizon profile</h2>
-              <p className="mt-1 text-xs text-slate-400">The composite remains inspectable: direction should stay anchored to pressure while motion changes confidence and intensity.</p>
+              <p className="mt-1 text-xs text-slate-400">The composite remains inspectable: direction stays anchored to pressure while motion changes the uncalibrated organization score and intensity.</p>
             </div>
             <div className="max-h-[620px] overflow-auto">
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="sticky top-0 z-[1] bg-slate-950 text-[10px] uppercase tracking-[0.16em] text-slate-500 shadow-[0_1px_0_rgba(71,85,105,0.45)]">
                   <tr>
-                    <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Confidence</th><th className="px-4 py-3">Coherence</th><th className="px-4 py-3">Entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
+                    <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Organization</th><th className="px-4 py-3">Coherence</th><th className="px-4 py-3">Disorder proxy</th><th className="px-4 py-3">Permutation entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -465,6 +479,7 @@ export default function MarketWeatherRadar() {
                       <td className="px-4 py-3 font-mono">{formatPercent(row.confidence)}</td>
                       <td className="px-4 py-3 font-mono">{formatPercent(row.coherence)}</td>
                       <td className="px-4 py-3 font-mono">{formatPercent(row.entropy)}</td>
+                      <td className="px-4 py-3 font-mono text-violet-200">{formatPercent(row.permutation_entropy)}</td>
                       <td className="px-4 py-3 font-mono">{formatPercent(row.expansion)}</td>
                       <td className="px-4 py-3 font-mono text-sky-300">{formatPercent(row.convection)}</td>
                     </tr>
