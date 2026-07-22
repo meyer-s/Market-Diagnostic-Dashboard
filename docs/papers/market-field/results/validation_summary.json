@@ -103,11 +103,11 @@
       "VNQ": "supportive"
     },
     "environment_note": "Single-process local Windows benchmark; excludes data retrieval.",
-    "maximum_ms": 149.24180007074028,
+    "maximum_ms": 147.57360005751252,
     "maximum_payload_bytes": 4407,
-    "median_ms": 111.50659999111667,
+    "median_ms": 110.78869993798435,
     "median_payload_bytes": 4395,
-    "p95_ms": 128.5969200893305,
+    "p95_ms": 132.78759499662556,
     "rank_influence": 0.0,
     "runs": 80,
     "symbols": 8

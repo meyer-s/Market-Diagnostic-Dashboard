@@ -2,19 +2,19 @@
   "artifacts": {
     "count": 13,
     "sha256": {
-      "docs/papers/market-field/figures/calibration_rates.pdf": "f3846f3452bf59908b79177bc4f098c4cdcf0e312c4641b057cb2d7055b2ec65",
+      "docs/papers/market-field/figures/calibration_rates.pdf": "253c1f2dd7f8d4c0ce2ad6845b95144d3a95295119e44709c79240c57599cec0",
       "docs/papers/market-field/figures/calibration_rates.png": "4180b1e20b8fcfbff25aca10521e0df9961520933b20d2f1b223846025171921",
-      "docs/papers/market-field/figures/spy_field_phase.pdf": "e9e81d80c6c056570f72bfbad8e9782495fcb5f6dbf41df00eda5d3ca18081b6",
+      "docs/papers/market-field/figures/spy_field_phase.pdf": "c115040b42773b5c5ff93a519240f2dc1d2a6df054f3a21290988cab4935c52c",
       "docs/papers/market-field/figures/spy_field_phase.png": "6a2864600e747ac248be802755a71e372143c5652e4ebd99721b481441d187e1",
-      "docs/papers/market-field/figures/synthetic_diagnostics.pdf": "157911cf260cff1474b0439f5f09dc918060bb3f99183defcc35e4ae40b13665",
+      "docs/papers/market-field/figures/synthetic_diagnostics.pdf": "381077a1cf52982ba443272309cb1639e3903fa9d2dc16596869b04ad516de22",
       "docs/papers/market-field/figures/synthetic_diagnostics.png": "c97578d4954965c8ed296d8704b8b0ed75d5e93f1fa831fd2e972af97911c1e3",
-      "docs/papers/market-field/figures/system_overview.pdf": "13eceba7949083dd9546286ed6290a3674f3255f7a1f62b11160d74fc12afae6",
+      "docs/papers/market-field/figures/system_overview.pdf": "bddd8a40f86a17545754c83f31f34952cccc0e3f4fed9b129f3cfd144d85e06a",
       "docs/papers/market-field/figures/system_overview.png": "0cb93d6523771940f70a77edb9e2fd46a519e153ac4925c532f67c0b6d2edf1c",
       "docs/papers/market-field/results/asset_summary.csv": "c6bc7c5349363e7638b5dea8ca3bc8c21367d7a10859746185f64bb00b7aca23",
-      "docs/papers/market-field/results/build_receipt.json": "be382cf619d15983a3f4c59efeb6d0afd468f7d30ae106df5fba28d3c8e39d74",
-      "docs/papers/market-field/results/validation_summary.json": "46f75799169eda3894a289884b6c00e12b8eedc26a63e81efd0f353ba5fb5f9e",
+      "docs/papers/market-field/results/build_receipt.json": "9008ac04a379d54762eea0daec76507535741c660b7560745cab950cb374ca04",
+      "docs/papers/market-field/results/validation_summary.json": "1fe057363ba842d5064a27acb191ac9813eda2211d5069ff5e1b49f503577b45",
       "docs/papers/market-field/tables/asset_summary.tex": "60157b590c6e2ffa8d861a7dabc3cdef53d4d5c242237e4847617b1960919426",
-      "docs/papers/market-field/tables/validation_summary.tex": "4005aa4fbb8660656cc3b729ebfc73e5dc07f182803397a048a13767a53fdec7"
+      "docs/papers/market-field/tables/validation_summary.tex": "b09b33b4265b279b1f4d88afbdd58a0de359f6a2ae5c5c9d9108d17ffe82d4ea"
     }
   },
   "backend_sources_sha256": {
@@ -23,54 +23,21 @@
     "backend/app/services/market_weather_research.py": "8c6ce424e71db752e81ac54896d2b2fa5b7d5bb51b9726b4e752433effa9640c",
     "backend/app/services/option_field_context.py": "a341e0f4ff2a04bcb20cab04ae74c0d2fb04c529cdc756886b7cba1a76727f5f"
   },
-  "ended_at_utc": "2026-07-22T23:24:19.025453Z",
+  "ended_at_utc": "2026-07-22T23:26:53.063240Z",
   "generator": {
     "path": "docs/papers/market-field/scripts/generate_assets.py",
     "sha256": "d9e71c3d19e36142cc8259d65543cf565aae56f7f9e06e3d9c01f24662c6a682"
   },
   "git": {
-    "dirty": true,
-    "head": "f5d3884c9112e9cd5aa9442bc546194db9314697",
-    "status_paths": [
-      {
-        "path": "docs/papers/market-field/figures/calibration_rates.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/spy_field_phase.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/synthetic_diagnostics.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/system_overview.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/results/build_receipt.json",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/results/primary_run_receipt.json",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/results/validation_summary.json",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/tables/validation_summary.tex",
-        "status": " M"
-      }
-    ]
+    "dirty": false,
+    "head": "548ec2c804f5406acddf728b07b1ca1ac75dca0a",
+    "status_paths": []
   },
   "invocation": {
     "offline": true,
     "refresh": false
   },
-  "provenance_core_sha256": "7ec0e925c1ef03073ba417c4588468df058b674535171652b1e9e9ad45592ad2",
+  "provenance_core_sha256": "08fe15e081ec0937d2a863be8a7e90a7cc645d1be5f905782c57cf3d49822824",
   "runtime": {
     "dependencies": {
       "matplotlib": "3.11.1",
@@ -84,5 +51,5 @@
     "python_implementation": "CPython"
   },
   "schema_version": "market_field_primary_run_receipt_v1",
-  "started_at_utc": "2026-07-22T23:23:46.854442Z"
+  "started_at_utc": "2026-07-22T23:26:20.983209Z"
 }
