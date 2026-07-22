@@ -7,6 +7,7 @@ interface MarketWeatherCanvasProps {
   data: MarketWeatherResponse;
   mode: MarketWeatherMode;
   inspectorChannel: string;
+  compact?: boolean;
 }
 
 interface HoverState {
@@ -16,7 +17,8 @@ interface HoverState {
   y: number;
 }
 
-const PADDING = { left: 50, right: 12, top: 14, bottom: 34 };
+const FULL_PADDING = { left: 50, right: 12, top: 14, bottom: 34 };
+const CLOUD_PADDING = { left: 2, right: 2, top: 2, bottom: 2 };
 
 function cellAt(data: MarketWeatherResponse, horizonIndex: number, dateIndex: number): MarketWeatherCell {
   return Object.fromEntries(
@@ -54,24 +56,25 @@ function formatDate(value: string, intraday: boolean): string {
   return parseTimestamp(value).toLocaleString(undefined, options);
 }
 
-export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: MarketWeatherCanvasProps) {
+export default function MarketWeatherCanvas({ data, mode, inspectorChannel, compact = false }: MarketWeatherCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [size, setSize] = useState({ width: 0, height: 560 });
+  const [size, setSize] = useState({ width: 0, height: compact ? 184 : 560 });
   const [hover, setHover] = useState<HoverState | null>(null);
+  const padding = compact ? CLOUD_PADDING : FULL_PADDING;
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const update = () => {
       const width = wrapper.clientWidth;
-      setSize({ width, height: width < 640 ? 420 : 560 });
+      setSize({ width, height: compact ? (width < 640 ? 148 : 184) : (width < 640 ? 420 : 560) });
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(wrapper);
     return () => observer.disconnect();
-  }, []);
+  }, [compact]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -88,8 +91,8 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
     context.fillStyle = "rgb(11, 18, 29)";
     context.fillRect(0, 0, size.width, size.height);
 
-    const plotWidth = size.width - PADDING.left - PADDING.right;
-    const plotHeight = size.height - PADDING.top - PADDING.bottom;
+    const plotWidth = size.width - padding.left - padding.right;
+    const plotHeight = size.height - padding.top - padding.bottom;
     const cellWidth = plotWidth / data.dates.length;
     const cellHeight = plotHeight / data.horizons.length;
     const contourBands = data.settings.contour_bands ?? 7;
@@ -113,54 +116,56 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
           contourBands,
         );
         context.fillRect(
-          PADDING.left + dateIndex * cellWidth,
-          PADDING.top + visualRow * cellHeight,
+          padding.left + dateIndex * cellWidth,
+          padding.top + visualRow * cellHeight,
           Math.max(1.1, Math.ceil(cellWidth + 0.35)),
           Math.ceil(cellHeight + 0.35),
         );
       });
     });
 
-    context.strokeStyle = "rgba(148, 163, 184, 0.18)";
-    context.lineWidth = 1;
-    context.fillStyle = "rgba(203, 213, 225, 0.78)";
-    context.font = "11px IBM Plex Sans, Segoe UI, sans-serif";
-    context.textAlign = "right";
-    const horizonTicks = [0, Math.floor((data.horizons.length - 1) / 2), data.horizons.length - 1];
-    horizonTicks.forEach((horizonIndex) => {
-      const visualRow = data.horizons.length - 1 - horizonIndex;
-      const y = PADDING.top + (visualRow + 0.5) * cellHeight;
-      context.beginPath();
-      context.moveTo(PADDING.left - 4, y);
-      context.lineTo(size.width - PADDING.right, y);
-      context.stroke();
-      context.fillText(String(data.horizons[horizonIndex]), PADDING.left - 8, y + 4);
-    });
+    if (!compact) {
+      context.strokeStyle = "rgba(148, 163, 184, 0.18)";
+      context.lineWidth = 1;
+      context.fillStyle = "rgba(203, 213, 225, 0.78)";
+      context.font = "11px IBM Plex Sans, Segoe UI, sans-serif";
+      context.textAlign = "right";
+      const horizonTicks = [0, Math.floor((data.horizons.length - 1) / 2), data.horizons.length - 1];
+      horizonTicks.forEach((horizonIndex) => {
+        const visualRow = data.horizons.length - 1 - horizonIndex;
+        const y = padding.top + (visualRow + 0.5) * cellHeight;
+        context.beginPath();
+        context.moveTo(padding.left - 4, y);
+        context.lineTo(size.width - padding.right, y);
+        context.stroke();
+        context.fillText(String(data.horizons[horizonIndex]), padding.left - 8, y + 4);
+      });
 
-    context.textAlign = "center";
-    const dateTickCount = size.width < 640 ? 3 : 5;
-    const intraday = !["1D", "1W"].includes(data.timeframe);
-    const coverageMs = parseTimestamp(data.dates[data.dates.length - 1]).getTime() - parseTimestamp(data.dates[0]).getTime();
-    for (let index = 0; index < dateTickCount; index += 1) {
-      const dateIndex = Math.round((index / (dateTickCount - 1)) * (data.dates.length - 1));
-      const x = PADDING.left + (dateIndex + 0.5) * cellWidth;
-      const label = parseTimestamp(data.dates[dateIndex]).toLocaleString(undefined, intraday && coverageMs <= 2 * 86_400_000
-        ? { hour: "numeric", minute: "2-digit" }
-        : intraday
-          ? { month: "short", day: "numeric" }
-          : { month: "short", year: "2-digit" });
-      context.fillText(label, x, size.height - 11);
+      context.textAlign = "center";
+      const dateTickCount = size.width < 640 ? 3 : 5;
+      const intraday = !["1D", "1W"].includes(data.timeframe);
+      const coverageMs = parseTimestamp(data.dates[data.dates.length - 1]).getTime() - parseTimestamp(data.dates[0]).getTime();
+      for (let index = 0; index < dateTickCount; index += 1) {
+        const dateIndex = Math.round((index / (dateTickCount - 1)) * (data.dates.length - 1));
+        const x = padding.left + (dateIndex + 0.5) * cellWidth;
+        const label = parseTimestamp(data.dates[dateIndex]).toLocaleString(undefined, intraday && coverageMs <= 2 * 86_400_000
+          ? { hour: "numeric", minute: "2-digit" }
+          : intraday
+            ? { month: "short", day: "numeric" }
+            : { month: "short", year: "2-digit" });
+        context.fillText(label, x, size.height - 11);
+      }
+
+      context.save();
+      context.translate(13, padding.top + plotHeight / 2);
+      context.rotate(-Math.PI / 2);
+      context.textAlign = "center";
+      context.fillStyle = "rgba(148, 163, 184, 0.78)";
+      context.fillText("Horizon (bars)", 0, 0);
+      context.restore();
     }
 
-    context.save();
-    context.translate(13, PADDING.top + plotHeight / 2);
-    context.rotate(-Math.PI / 2);
-    context.textAlign = "center";
-    context.fillStyle = "rgba(148, 163, 184, 0.78)";
-    context.fillText("Horizon (bars)", 0, 0);
-    context.restore();
-
-  }, [data, inspectorChannel, mode, size]);
+  }, [compact, data, inspectorChannel, mode, padding, size]);
 
   useEffect(() => draw(), [draw]);
 
@@ -168,14 +173,14 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
-    const plotWidth = rect.width - PADDING.left - PADDING.right;
-    const plotHeight = size.height - PADDING.top - PADDING.bottom;
-    if (x < PADDING.left || x > PADDING.left + plotWidth || y < PADDING.top || y > PADDING.top + plotHeight) {
+    const plotWidth = rect.width - padding.left - padding.right;
+    const plotHeight = size.height - padding.top - padding.bottom;
+    if (x < padding.left || x > padding.left + plotWidth || y < padding.top || y > padding.top + plotHeight) {
       setHover(null);
       return;
     }
-    const dateIndex = Math.min(data.dates.length - 1, Math.floor(((x - PADDING.left) / plotWidth) * data.dates.length));
-    const visualRow = Math.min(data.horizons.length - 1, Math.floor(((y - PADDING.top) / plotHeight) * data.horizons.length));
+    const dateIndex = Math.min(data.dates.length - 1, Math.floor(((x - padding.left) / plotWidth) * data.dates.length));
+    const visualRow = Math.min(data.horizons.length - 1, Math.floor(((y - padding.top) / plotHeight) * data.horizons.length));
     setHover({ dateIndex, horizonIndex: data.horizons.length - 1 - visualRow, x, y });
   };
 
@@ -186,27 +191,27 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
 
   const hoverRect = useMemo(() => {
     if (!hover || size.width <= 0) return null;
-    const plotWidth = size.width - PADDING.left - PADDING.right;
-    const plotHeight = size.height - PADDING.top - PADDING.bottom;
+    const plotWidth = size.width - padding.left - padding.right;
+    const plotHeight = size.height - padding.top - padding.bottom;
     const cellWidth = plotWidth / data.dates.length;
     const cellHeight = plotHeight / data.horizons.length;
     const visualRow = data.horizons.length - 1 - hover.horizonIndex;
     return {
-      left: PADDING.left + hover.dateIndex * cellWidth,
-      top: PADDING.top + visualRow * cellHeight,
+      left: padding.left + hover.dateIndex * cellWidth,
+      top: padding.top + visualRow * cellHeight,
       width: Math.max(1, cellWidth),
       height: cellHeight,
     };
-  }, [data.dates.length, data.horizons.length, hover, size]);
+  }, [data.dates.length, data.horizons.length, hover, padding, size]);
 
   return (
-    <div ref={wrapperRef} className="relative min-w-0 overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/70">
+    <div ref={wrapperRef} className={`relative min-w-0 overflow-hidden border border-stealth-700 bg-slate-950/70 ${compact ? "rounded-xl shadow-[inset_0_0_28px_rgba(15,23,42,.72)]" : "rounded-2xl"}`}>
       <canvas
         ref={canvasRef}
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHover(null)}
-        aria-label={`${data.symbol} market-weather heatmap. Time runs left to right and analysis horizon runs bottom to top.`}
-        className="block w-full touch-none"
+        aria-label={`${data.symbol} market-weather ${compact ? "horizon cloud" : "heatmap"}. Time runs left to right and analysis horizon runs bottom to top.`}
+        className="block w-full touch-pan-y"
       />
       {hoverRect ? (
         <div
@@ -216,24 +221,24 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel }: Ma
       ) : null}
       {hover && hoveredCell ? (
         <div
-          className="pointer-events-none absolute z-10 w-[230px] rounded-xl border border-slate-500/70 bg-slate-950/95 p-3 text-xs shadow-2xl"
+          className={`pointer-events-none absolute z-10 rounded-xl border border-slate-500/70 bg-slate-950/95 text-xs shadow-2xl ${compact ? "w-[210px] p-2" : "w-[230px] p-3"}`}
           style={{
-            left: Math.min(Math.max(8, hover.x + 12), Math.max(8, size.width - 238)),
-            top: Math.min(Math.max(8, hover.y + 12), size.height - 230),
+            left: Math.min(Math.max(8, hover.x + 12), Math.max(8, size.width - (compact ? 218 : 238))),
+            top: Math.min(Math.max(8, hover.y + 12), Math.max(8, size.height - (compact ? 132 : 230))),
           }}
         >
           <div className="font-semibold text-white">{formatDate(data.dates[hover.dateIndex], !["1D", "1W"].includes(data.timeframe))}</div>
           <div className="mt-0.5 text-slate-400">{data.horizons[hover.horizonIndex]}-bar horizon</div>
-          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-slate-300">
+          <div className={`${compact ? "mt-1.5" : "mt-2"} grid grid-cols-2 gap-x-3 gap-y-1 text-slate-300`}>
             <span>Pressure</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.pressure)}</span>
-            <span>Velocity</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.velocity)}</span>
+            <span>Change</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.velocity)}</span>
             <span>Organization</span><span className="text-right font-mono text-white">{hoveredCell.confidence.toFixed(2)}</span>
-            <span>Coherence</span><span className="text-right font-mono text-white">{hoveredCell.coherence.toFixed(2)}</span>
             <span>Disorder proxy</span><span className="text-right font-mono text-white">{hoveredCell.entropy.toFixed(2)}</span>
-            <span>Permutation entropy</span><span className="text-right font-mono text-violet-200">{hoveredCell.permutation_entropy?.toFixed(2) ?? "-"}</span>
-            <span>Reflectivity</span><span className="text-right font-mono text-white">{hoveredCell.reflectivity.toFixed(2)}</span>
-            <span>Convection</span><span className="text-right font-mono text-sky-300">{hoveredCell.convection.toFixed(2)}</span>
-            <span>{channelLabel(inspectorChannel)}</span><span className="text-right font-mono text-white">{hoveredCell[inspectorChannel]?.toFixed(2) ?? "-"}</span>
+            {!compact ? <><span>Coherence</span><span className="text-right font-mono text-white">{hoveredCell.coherence.toFixed(2)}</span></> : null}
+            {!compact ? <><span>Permutation entropy</span><span className="text-right font-mono text-violet-200">{hoveredCell.permutation_entropy?.toFixed(2) ?? "-"}</span></> : null}
+            {!compact ? <><span>Reflectivity</span><span className="text-right font-mono text-white">{hoveredCell.reflectivity.toFixed(2)}</span></> : null}
+            {!compact ? <><span>Convection</span><span className="text-right font-mono text-sky-300">{hoveredCell.convection.toFixed(2)}</span></> : null}
+            {!compact ? <><span>{channelLabel(inspectorChannel)}</span><span className="text-right font-mono text-white">{hoveredCell[inspectorChannel]?.toFixed(2) ?? "-"}</span></> : null}
           </div>
         </div>
       ) : null}

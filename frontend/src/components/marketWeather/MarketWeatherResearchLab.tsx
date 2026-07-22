@@ -870,18 +870,220 @@ function LearnedStateCard({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`w-full rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selected ? "border-sky-300/55 bg-sky-950/25" : "border-stealth-700 bg-slate-950/25 hover:border-stealth-500"}`}
+      className={`w-full rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selected ? "border-sky-300/55 bg-sky-950/25" : "border-stealth-700 bg-slate-950/25 hover:border-stealth-500"}`}
     >
-      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Learned state {index + 1}</span>
-      <strong className="mt-2 block text-base leading-6 text-white">{profile.headline}</strong>
+      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/15 font-mono text-[10px] text-white" style={{ backgroundColor: `${marketStateColor(archetype.id)}24` }}>F{index + 1}</span>
+        Learned state {index + 1}
+      </span>
+      <strong className="mt-2 block text-sm leading-5 text-white">{profile.headline}</strong>
       <span className="mt-1 block text-xs leading-5 text-slate-400">{profile.characteristic}</span>
-      <div className="mt-4"><StateDeviationBars archetype={archetype} research={research} compact /></div>
-      <span className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/10 pt-3 text-xs text-slate-300">
+      <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/10 pt-2 text-xs text-slate-300">
         <span>{formatRate(archetype.window_frequency)} of window</span>
         <span>Typical run {archetype.typical_duration_bars} bars</span>
         <span>Holdout n={archetype.evaluation_outcome.sample_size}</span>
       </span>
     </button>
+  );
+}
+
+function DefinitionPhaseScope({
+  research,
+  selectedId,
+  onSelect,
+}: {
+  research: MarketWeatherResearch;
+  selectedId: string;
+  onSelect: (stateId: string) => void;
+}) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 220 });
+  const lexicon = research.lexicon!;
+  const phase = useMemo(() => {
+    const source = research.derivative_series.slice(-Math.min(420, research.derivative_series.length));
+    const step = Math.max(1, Math.ceil(source.length / 240));
+    const series = source.filter((_point, index) => index % step === 0 || index === source.length - 1);
+    const pressureValues = [
+      ...series.map((point) => point.pressure),
+      ...lexicon.archetypes.map((archetype) => archetype.centroid.pressure),
+    ].filter((value) => typeof value === "number" && Number.isFinite(value));
+    const changeValues = [
+      ...series.map((point) => point.velocity),
+      ...lexicon.archetypes.map((archetype) => archetype.centroid.velocity),
+    ].filter((value) => typeof value === "number" && Number.isFinite(value));
+    return {
+      series,
+      pressureDomain: Math.max(0.05, ...pressureValues.map((value) => Math.abs(value))) * 1.08,
+      changeDomain: Math.max(0.05, ...changeValues.map((value) => Math.abs(value))) * 1.08,
+    };
+  }, [lexicon.archetypes, research.derivative_series]);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const update = () => setSize({ width: wrapper.clientWidth, height: wrapper.clientWidth < 640 ? 190 : 230 });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, []);
+
+  const layout = useMemo(() => {
+    const padding = size.width < 640
+      ? { left: 30, right: 16, top: 24, bottom: 30 }
+      : { left: 40, right: 20, top: 26, bottom: 34 };
+    const plotWidth = Math.max(1, size.width - padding.left - padding.right);
+    const plotHeight = Math.max(1, size.height - padding.top - padding.bottom);
+    return {
+      padding,
+      plotWidth,
+      plotHeight,
+      x: (value: number) => padding.left + ((value / phase.pressureDomain + 1) / 2) * plotWidth,
+      y: (value: number) => padding.top + (1 - (value / phase.changeDomain + 1) / 2) * plotHeight,
+    };
+  }, [phase.changeDomain, phase.pressureDomain, size]);
+
+  const markers = useMemo(() => lexicon.archetypes.map((archetype, index) => {
+    const anchorX = layout.x(Number(archetype.centroid.pressure) || 0);
+    const anchorY = layout.y(Number(archetype.centroid.velocity) || 0);
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / Math.max(1, lexicon.archetypes.length);
+    return {
+      archetype,
+      index,
+      anchorX,
+      anchorY,
+      labelX: Math.min(size.width - 18, Math.max(18, anchorX + Math.cos(angle) * 24)),
+      labelY: Math.min(size.height - 18, Math.max(18, anchorY + Math.sin(angle) * 24)),
+    };
+  }), [layout, lexicon.archetypes, size]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || size.width <= 0) return;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(size.width * ratio);
+    canvas.height = Math.round(size.height * ratio);
+    canvas.style.width = `${size.width}px`;
+    canvas.style.height = `${size.height}px`;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.fillStyle = "rgb(10, 17, 29)";
+    context.fillRect(0, 0, size.width, size.height);
+
+    const zeroX = layout.x(0);
+    const zeroY = layout.y(0);
+    context.strokeStyle = "rgba(148, 163, 184, .24)";
+    context.lineWidth = 1;
+    context.setLineDash([4, 5]);
+    context.beginPath();
+    context.moveTo(zeroX, layout.padding.top);
+    context.lineTo(zeroX, size.height - layout.padding.bottom);
+    context.moveTo(layout.padding.left, zeroY);
+    context.lineTo(size.width - layout.padding.right, zeroY);
+    context.stroke();
+    context.setLineDash([]);
+
+    context.font = "10px IBM Plex Sans, Segoe UI, sans-serif";
+    context.fillStyle = "rgba(148, 163, 184, .58)";
+    context.textAlign = "left";
+    context.fillText("NEGATIVE · FADING", layout.padding.left + 6, layout.padding.top + 13);
+    context.fillText("NEGATIVE · STRENGTHENING", layout.padding.left + 6, size.height - layout.padding.bottom - 7);
+    context.textAlign = "right";
+    context.fillText("POSITIVE · STRENGTHENING", size.width - layout.padding.right - 6, layout.padding.top + 13);
+    context.fillText("POSITIVE · FADING", size.width - layout.padding.right - 6, size.height - layout.padding.bottom - 7);
+
+    phase.series.forEach((point, index) => {
+      if (index === 0) return;
+      const previous = phase.series[index - 1];
+      const age = index / Math.max(1, phase.series.length - 1);
+      context.strokeStyle = `rgba(125, 211, 252, ${0.08 + age * 0.72})`;
+      context.lineWidth = 0.8 + age * 1.2;
+      context.beginPath();
+      context.moveTo(layout.x(previous.pressure), layout.y(previous.velocity));
+      context.lineTo(layout.x(point.pressure), layout.y(point.velocity));
+      context.stroke();
+    });
+
+    markers.forEach((marker) => {
+      const color = marketStateColor(marker.archetype.id);
+      context.strokeStyle = marker.archetype.id === selectedId ? "rgba(248,250,252,.95)" : "rgba(203,213,225,.35)";
+      context.lineWidth = marker.archetype.id === selectedId ? 1.8 : 1;
+      context.beginPath();
+      context.moveTo(marker.anchorX, marker.anchorY);
+      context.lineTo(marker.labelX, marker.labelY);
+      context.stroke();
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(marker.anchorX, marker.anchorY, marker.archetype.id === selectedId ? 5 : 3.5, 0, Math.PI * 2);
+      context.fill();
+      if (marker.archetype.id === selectedId) {
+        context.strokeStyle = "rgba(248,250,252,.9)";
+        context.beginPath();
+        context.arc(marker.anchorX, marker.anchorY, 8, 0, Math.PI * 2);
+        context.stroke();
+      }
+    });
+
+    const current = phase.series[phase.series.length - 1];
+    if (current) {
+      const currentX = layout.x(current.pressure);
+      const currentY = layout.y(current.velocity);
+      context.fillStyle = "#f8fafc";
+      context.shadowColor = "#7dd3fc";
+      context.shadowBlur = 10;
+      context.beginPath();
+      context.moveTo(currentX, currentY - 5);
+      context.lineTo(currentX + 5, currentY);
+      context.lineTo(currentX, currentY + 5);
+      context.lineTo(currentX - 5, currentY);
+      context.closePath();
+      context.fill();
+      context.shadowBlur = 0;
+    }
+
+    context.fillStyle = "rgba(148, 163, 184, .82)";
+    context.font = "11px IBM Plex Sans, Segoe UI, sans-serif";
+    context.textAlign = "center";
+    context.fillText("Directional pressure →", layout.padding.left + layout.plotWidth / 2, size.height - 9);
+    context.save();
+    context.translate(11, layout.padding.top + layout.plotHeight / 2);
+    context.rotate(-Math.PI / 2);
+    context.fillText("Pressure change →", 0, 0);
+    context.restore();
+  }, [layout, markers, phase.series, selectedId, size]);
+
+  return (
+    <div>
+      <div ref={wrapperRef} className="relative min-w-0 overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/70">
+        <canvas ref={canvasRef} className="block w-full" aria-label="Recent directional pressure by pressure-change trajectory with numbered learned-state centroids and a diamond for the current measurement" />
+        {size.width > 0 ? markers.map((marker) => {
+          const profile = buildGroundedStateProfile(marker.archetype.centroid, lexicon.features);
+          const selected = marker.archetype.id === selectedId;
+          return (
+            <button
+              key={marker.archetype.id}
+              type="button"
+              onClick={() => onSelect(marker.archetype.id)}
+              aria-pressed={selected}
+              aria-label={`Select learned state ${marker.index + 1}: ${profile.headline}`}
+              title={`F${marker.index + 1} · ${profile.headline}`}
+              className={`absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border font-mono text-[10px] font-semibold text-white shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${selected ? "border-white bg-slate-700" : "border-white/35 bg-slate-900/90 hover:border-white/70"}`}
+              style={{ left: marker.labelX, top: marker.labelY }}
+            >
+              F{marker.index + 1}
+            </button>
+          );
+        }) : null}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+        <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Recent path; newer is brighter</span>
+        <span><span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded-full border border-white/40 font-mono text-[8px] text-white">F</span>Learned definition centroid</span>
+        <span><span className="mr-1.5 text-sky-100">◆</span>Current measurement</span>
+      </div>
+      <p className="mt-1 text-xs leading-5 text-slate-500">Axes fit independently to the visible history; dashed lines preserve zero and sign. Loops are measurement trajectories, not detected cycles or forecasts. State identities belong to this selected history window.</p>
+    </div>
   );
 }
 
@@ -932,6 +1134,18 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
 
   return (
     <div className="space-y-4">
+      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <span className="page-kicker">State scope</span>
+            <h3 className="mt-1 text-base font-semibold text-white">Where the learned definitions live</h3>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">The revived phase portrait places each measured definition in pressure × pressure-change space, then traces how the live field moved around them.</p>
+          </div>
+          <span className="rounded-full border border-stealth-600 px-3 py-1 text-xs text-slate-300">F{selectedIndex + 1} selected</span>
+        </div>
+        <DefinitionPhaseScope research={research} selectedId={selected.id} onSelect={setSelectedId} />
+      </section>
+
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(300px,.72fr)_minmax(0,1.28fr)]">
       <section className="min-w-0">
         <div className="mb-4">
@@ -939,7 +1153,7 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
           <p className="mt-1 text-xs leading-5 text-slate-400">Names come from the sign of directional pressure and whether its first change reinforces or opposes that sign. Profiles show measured differences from the earlier model-fit baseline.</p>
           {lexicon.archetypes.length === 1 ? <p className="mt-3 rounded-xl border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-xs leading-5 text-sky-100">This window supports one state. Additional divisions did not meet the model’s minimum fit support and separation requirements.</p> : null}
         </div>
-        <div className="space-y-3">
+        <div className="space-y-2">
           {lexicon.archetypes.map((archetype, index) => (
             <LearnedStateCard
               key={archetype.id}

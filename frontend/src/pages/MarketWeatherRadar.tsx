@@ -157,7 +157,6 @@ export default function MarketWeatherRadar() {
   const [inspectorChannel, setInspectorChannel] = useState("pressure");
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [fieldSurfaceOpen, setFieldSurfaceOpen] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsDialogRef = useRef<HTMLFormElement | null>(null);
   const endpoint = useMemo(() => buildEndpoint(applied), [applied]);
@@ -443,6 +442,26 @@ export default function MarketWeatherRadar() {
         </form>
       </section>
 
+      {data ? (
+        <section className="primary-card overflow-hidden p-2.5 sm:p-3" data-testid="field-surface" data-lens={mode}>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="page-kicker">Horizon cloud</span>
+                <h2 className="text-sm font-semibold text-white">{data.symbol} field surface</h2>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-400">{data.horizons.length} horizons × {data.available_bars.toLocaleString()} bars · time runs left to right · longer horizons rise</p>
+            </div>
+            <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1 text-xs text-slate-300">{activeMode.label}</span>
+          </div>
+          <MarketWeatherCanvas data={data} mode={mode} inspectorChannel={inspectorChannel} compact />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-slate-400" aria-label="Field cloud color key">
+            <span>Older ← time → newer</span>
+            <span>▲ positive · ◆ transition · ▼ negative · rings boundary energy</span>
+          </div>
+        </section>
+      ) : null}
+
       {loading && !data ? (
         <section className="surface-card-strong flex min-h-[430px] items-center justify-center p-8">
           <MarketLoading size={110} variant="scan" label="Building the multi-horizon weather field..." />
@@ -467,41 +486,6 @@ export default function MarketWeatherRadar() {
               barSize={data.bar_size}
             />
           ) : null}
-
-          <details
-            className="group primary-card overflow-hidden"
-            onToggle={(event) => setFieldSurfaceOpen(event.currentTarget.open)}
-            data-testid="field-surface"
-            data-lens={mode}
-          >
-            <summary
-              className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left sm:px-5"
-              aria-expanded={fieldSurfaceOpen}
-              aria-controls="market-field-surface-panel"
-              data-testid="field-surface-toggle"
-            >
-              <div className="min-w-0">
-                <span className="page-kicker">Field surface</span>
-                <h2 className="mt-1 truncate text-base font-semibold text-white">{data.symbol} across horizons</h2>
-                <p className="mt-0.5 text-xs text-slate-400">{data.horizons.length} horizons × {data.available_bars.toLocaleString()} bars · open the full field when needed</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <span className="hidden rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1.5 text-xs text-slate-300 sm:inline-flex">Lens · {activeMode.label}</span>
-                <ChevronDown className="h-5 w-5 text-slate-500 transition-transform group-open:rotate-180" />
-              </div>
-            </summary>
-            <div id="market-field-surface-panel" className={fieldSurfaceOpen ? "border-t border-stealth-700 p-3 sm:p-4" : undefined}>
-              {fieldSurfaceOpen ? (
-                <>
-                <MarketWeatherCanvas data={data} mode={mode} inspectorChannel={inspectorChannel} />
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400" aria-label="Field surface axes and color key">
-                  <span>Time → · Longer horizons ↑</span>
-                  <span>▲ positive · ◆ transition · ▼ negative · rings boundary energy</span>
-                </div>
-                </>
-              ) : null}
-            </div>
-          </details>
 
           <details className="group primary-card overflow-hidden">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4 text-left sm:p-5">
