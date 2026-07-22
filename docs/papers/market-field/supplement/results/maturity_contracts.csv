@@ -1,4 +1,4 @@
-path,visible_bars,hidden_prefetch_bars,computation_bars,note,longest_horizon_bars,carrier_reference_span_bars,bars_per_longest_horizon,reference_span_coverage,post_longest_horizon_observations,meets_reference_span,maturity_mask_emitted
-option_snapshot_minimum,96,0,96,Accepted by the option wrapper; no explicit maturity mask is emitted.,48,96,2.0,1.0,48,True,False
-public_api_min_visible_60_h48,60,96,156,"The endpoint computes on the fetched warm-up plus visible bars, then trims the response.",48,96,3.25,1.0,108,True,False
-paper_compute_benchmark_365,365,0,365,The paper's cached option-snapshot timing window.,48,96,7.604166666666667,1.0,317,True,False
+path,visible_bars,hidden_prefetch_bars,computation_bars,aggregate_maturity_contract,note,longest_horizon_bars,carrier_reference_span_bars,bars_per_longest_horizon,reference_span_coverage,post_longest_horizon_observations,meets_reference_span,aggregate_maturity_metadata_emitted,per_coordinate_maturity_mask_emitted
+option_snapshot_minimum,96,0,96,maturity,"Accepted by the option wrapper; aggregate maturity metadata is emitted, but no per-coordinate maturity mask is available.",48,96,2.0,1.0,48,True,True,False
+public_api_min_visible_60_h48,60,96,156,history_context,"The endpoint computes on the fetched warm-up plus visible bars, trims the response, and emits aggregate history depth and maturity metadata.",48,96,3.25,1.0,108,True,True,False
+paper_compute_benchmark_365,365,0,365,history_context,The paper's cached option-snapshot timing window; the core response reports aggregate history maturity.,48,96,7.604166666666667,1.0,317,True,True,False

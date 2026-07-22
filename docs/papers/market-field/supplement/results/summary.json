@@ -128,43 +128,49 @@
   },
   "maturity_contracts": [
     {
+      "aggregate_maturity_contract": "maturity",
+      "aggregate_maturity_metadata_emitted": true,
       "bars_per_longest_horizon": 2.0,
       "carrier_reference_span_bars": 96,
       "computation_bars": 96,
       "hidden_prefetch_bars": 0,
       "longest_horizon_bars": 48,
-      "maturity_mask_emitted": false,
       "meets_reference_span": true,
-      "note": "Accepted by the option wrapper; no explicit maturity mask is emitted.",
+      "note": "Accepted by the option wrapper; aggregate maturity metadata is emitted, but no per-coordinate maturity mask is available.",
       "path": "option_snapshot_minimum",
+      "per_coordinate_maturity_mask_emitted": false,
       "post_longest_horizon_observations": 48,
       "reference_span_coverage": 1.0,
       "visible_bars": 96
     },
     {
+      "aggregate_maturity_contract": "history_context",
+      "aggregate_maturity_metadata_emitted": true,
       "bars_per_longest_horizon": 3.25,
       "carrier_reference_span_bars": 96,
       "computation_bars": 156,
       "hidden_prefetch_bars": 96,
       "longest_horizon_bars": 48,
-      "maturity_mask_emitted": false,
       "meets_reference_span": true,
-      "note": "The endpoint computes on the fetched warm-up plus visible bars, then trims the response.",
+      "note": "The endpoint computes on the fetched warm-up plus visible bars, trims the response, and emits aggregate history depth and maturity metadata.",
       "path": "public_api_min_visible_60_h48",
+      "per_coordinate_maturity_mask_emitted": false,
       "post_longest_horizon_observations": 108,
       "reference_span_coverage": 1.0,
       "visible_bars": 60
     },
     {
+      "aggregate_maturity_contract": "history_context",
+      "aggregate_maturity_metadata_emitted": true,
       "bars_per_longest_horizon": 7.604166666666667,
       "carrier_reference_span_bars": 96,
       "computation_bars": 365,
       "hidden_prefetch_bars": 0,
       "longest_horizon_bars": 48,
-      "maturity_mask_emitted": false,
       "meets_reference_span": true,
-      "note": "The paper's cached option-snapshot timing window.",
+      "note": "The paper's cached option-snapshot timing window; the core response reports aggregate history maturity.",
       "path": "paper_compute_benchmark_365",
+      "per_coordinate_maturity_mask_emitted": false,
       "post_longest_horizon_observations": 317,
       "reference_span_coverage": 1.0,
       "visible_bars": 365
@@ -178,7 +184,7 @@
     "structure": 0.42
   },
   "option_snapshot_latency": {
-    "all_max_ms": 154.42180004902184,
+    "all_max_ms": 118.83010005112737,
     "environment": {
       "platform": "Windows-11-10.0.26200-SP0",
       "process_model": "single process, sequential, imports already loaded",
@@ -192,12 +198,12 @@
       "fresh-process import time",
       "network and production queueing"
     ],
-    "first_measured_max_ms": 112.27249994408339,
+    "first_measured_max_ms": 109.8411000566557,
     "runs": 70,
     "symbols": 7,
-    "warm_p50_ms": 108.26789995189756,
-    "warm_p95_ms": 110.96095000393689,
-    "warm_p99_ms": 131.37385801412174,
+    "warm_p50_ms": 107.78179997578263,
+    "warm_p95_ms": 110.70032997522503,
+    "warm_p99_ms": 114.21531599014999,
     "warm_runs": 63
   },
   "prefix_invariance": {
@@ -234,7 +240,7 @@
       "iqr_normalized_mae": 0.7304672559442248
     }
   },
-  "runtime_seconds": 50.610163099947385,
+  "runtime_seconds": 50.29579310002737,
   "shadow_boundary": {
     "alignment_sign_flip_holds": true,
     "as_of_bar": "2026-07-21",

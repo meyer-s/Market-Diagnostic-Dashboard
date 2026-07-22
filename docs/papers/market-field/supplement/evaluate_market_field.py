@@ -1077,21 +1077,24 @@ def maturity_contract_checks() -> pd.DataFrame:
             "visible_bars": OPTION_FIELD_MIN_BARS,
             "hidden_prefetch_bars": 0,
             "computation_bars": OPTION_FIELD_MIN_BARS,
-            "note": "Accepted by the option wrapper; no explicit maturity mask is emitted.",
+            "aggregate_maturity_contract": "maturity",
+            "note": "Accepted by the option wrapper; aggregate maturity metadata is emitted, but no per-coordinate maturity mask is available.",
         },
         {
             "path": "public_api_min_visible_60_h48",
             "visible_bars": api_visible,
             "hidden_prefetch_bars": api_prefetch,
             "computation_bars": api_visible + api_prefetch,
-            "note": "The endpoint computes on the fetched warm-up plus visible bars, then trims the response.",
+            "aggregate_maturity_contract": "history_context",
+            "note": "The endpoint computes on the fetched warm-up plus visible bars, trims the response, and emits aggregate history depth and maturity metadata.",
         },
         {
             "path": "paper_compute_benchmark_365",
             "visible_bars": 365,
             "hidden_prefetch_bars": 0,
             "computation_bars": 365,
-            "note": "The paper's cached option-snapshot timing window.",
+            "aggregate_maturity_contract": "history_context",
+            "note": "The paper's cached option-snapshot timing window; the core response reports aggregate history maturity.",
         },
     ]
     rows: list[dict[str, Any]] = []
@@ -1106,7 +1109,8 @@ def maturity_contract_checks() -> pd.DataFrame:
                 "reference_span_coverage": min(1.0, computation_bars / reference_span),
                 "post_longest_horizon_observations": max(0, computation_bars - longest_horizon),
                 "meets_reference_span": computation_bars >= reference_span,
-                "maturity_mask_emitted": False,
+                "aggregate_maturity_metadata_emitted": True,
+                "per_coordinate_maturity_mask_emitted": False,
             }
         )
     return pd.DataFrame(rows)
