@@ -1,7 +1,7 @@
 {
   "artifact_count": 22,
-  "completed_at_utc": "2026-07-22T19:57:10.248565Z",
-  "elapsed_seconds": 50.338861,
+  "completed_at_utc": "2026-07-22T20:10:08.113573Z",
+  "elapsed_seconds": 50.06112,
   "environment": {
     "dependencies": {
       "matplotlib": "3.11.1",
@@ -78,10 +78,10 @@
       "sha256": "ecf953b63357ec287e6eb29237d009de3fc6a78bb323c45ac5714f9711c9addd"
     },
     {
-      "bytes": 4250,
+      "bytes": 4256,
       "kind": "table",
       "path": "results/option_snapshot_latency.csv",
-      "sha256": "4149bae13e02a1b38fb37d7082e7bb7c4eac64ea2d25fa71ffdd4ec8e006adf9"
+      "sha256": "ec5e2d848dcac98b5b743cc20a00e4ed1359b6736966b237368a2431f26c53be"
     },
     {
       "bytes": 2156,
@@ -138,10 +138,10 @@
       "sha256": "670609a8487046a787b6880746c6b7bb001372e7f9d8b648bbf2de10eaccb652"
     },
     {
-      "bytes": 9589,
+      "bytes": 9590,
       "kind": "result",
       "path": "results/summary.json",
-      "sha256": "6c1451d1beed29dea012215e40afd3a801c4f85187f97bdaed138ce1d6eab6d0"
+      "sha256": "8299b1de97acdfa3f2670ea06d7d7c915c677fcb695ef1700b7edb7b0d19c190"
     },
     {
       "bytes": 686,
@@ -164,19 +164,16 @@
     "branch": "reconcile/live-ibkr-main",
     "dirty": true,
     "git_errors": [],
-    "head": "2d1c0b4ca3cef8aba86bf2c7950f1ddcdd103a77",
+    "head": "f0ef66a4b34f72582b48543e4947104370bdf464",
     "provenance_note": "The evaluation used working-tree files. HEAD is recorded only as a repository reference and must not be described as the exact evaluated source snapshot.",
     "status_entries": [
-      "M docs/papers/market-field/supplement/evaluate_market_field.py",
-      " M docs/papers/market-field/supplement/market_field_preliminary.ipynb",
-      " M docs/papers/market-field/supplement/results/maturity_contracts.csv",
-      " M docs/papers/market-field/supplement/results/option_snapshot_latency.csv",
+      "M docs/papers/market-field/supplement/results/option_snapshot_latency.csv",
       " M docs/papers/market-field/supplement/results/run_receipt.json",
       " M docs/papers/market-field/supplement/results/summary.json"
     ],
-    "status_entry_count": 6,
+    "status_entry_count": 3,
     "status_summary": {
-      " M": 5,
+      " M": 2,
       "M ": 1
     }
   },
@@ -189,7 +186,7 @@
       "backend/app/services/market_weather.py": "5ca49e61592b8543744e3e7acef551bdc08465436c36a131c83ae016e6177a11",
       "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
       "backend/app/services/market_weather_research.py": "1855cce8bfee8ae2676b78bc22e08fc635ede1f57d7456c2cc8529c8eec736d9",
-      "backend/app/services/option_field_context.py": "b3c37a8b67a88f5c1ff6342b06f7be701f5cc4e2d493df2175a64359781f30fb",
+      "backend/app/services/option_field_context.py": "afd2bd78ec818db18d6d748d7695436b47422c91e84c3130925098a24cd716aa",
       "docs/papers/market-field/supplement/evaluate_market_field.py": "1ca038da088a5d466f2885d433c947a5a4ef855ecd9aee213bd773f087e00520"
     },
     "sha256_at_start": {
@@ -198,10 +195,10 @@
       "backend/app/services/market_weather.py": "5ca49e61592b8543744e3e7acef551bdc08465436c36a131c83ae016e6177a11",
       "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
       "backend/app/services/market_weather_research.py": "1855cce8bfee8ae2676b78bc22e08fc635ede1f57d7456c2cc8529c8eec736d9",
-      "backend/app/services/option_field_context.py": "b3c37a8b67a88f5c1ff6342b06f7be701f5cc4e2d493df2175a64359781f30fb",
+      "backend/app/services/option_field_context.py": "afd2bd78ec818db18d6d748d7695436b47422c91e84c3130925098a24cd716aa",
       "docs/papers/market-field/supplement/evaluate_market_field.py": "1ca038da088a5d466f2885d433c947a5a4ef855ecd9aee213bd773f087e00520"
     },
     "stable_for_run": true
   },
-  "started_at_utc": "2026-07-22T19:56:19.909704Z"
+  "started_at_utc": "2026-07-22T20:09:18.052453Z"
 }

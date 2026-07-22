@@ -184,7 +184,7 @@
     "structure": 0.42
   },
   "option_snapshot_latency": {
-    "all_max_ms": 118.83010005112737,
+    "all_max_ms": 112.20159998629242,
     "environment": {
       "platform": "Windows-11-10.0.26200-SP0",
       "process_model": "single process, sequential, imports already loaded",
@@ -198,12 +198,12 @@
       "fresh-process import time",
       "network and production queueing"
     ],
-    "first_measured_max_ms": 109.8411000566557,
+    "first_measured_max_ms": 110.13030004687607,
     "runs": 70,
     "symbols": 7,
-    "warm_p50_ms": 107.78179997578263,
-    "warm_p95_ms": 110.70032997522503,
-    "warm_p99_ms": 114.21531599014999,
+    "warm_p50_ms": 107.22360003273934,
+    "warm_p95_ms": 108.91158998711035,
+    "warm_p99_ms": 111.39758399920538,
     "warm_runs": 63
   },
   "prefix_invariance": {
@@ -240,7 +240,7 @@
       "iqr_normalized_mae": 0.7304672559442248
     }
   },
-  "runtime_seconds": 50.29579310002737,
+  "runtime_seconds": 50.02141409995966,
   "shadow_boundary": {
     "alignment_sign_flip_holds": true,
     "as_of_bar": "2026-07-21",
