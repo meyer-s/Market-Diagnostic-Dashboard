@@ -227,8 +227,8 @@ function TimelineTrackHeader({
 
 const RELATIONSHIP_STATUS: Record<MarketWeatherContextRelationship["status"], { label: string; tone: string }> = {
   persistent: { label: "Persistent", tone: "text-sky-200" },
-  directionally_consistent: { label: "Same direction", tone: "text-slate-200" },
-  unstable: { label: "Reversed", tone: "text-violet-200" },
+  directionally_consistent: { label: "Sign held", tone: "text-slate-200" },
+  unstable: { label: "Sign changed", tone: "text-violet-200" },
   insufficient: { label: "Building history", tone: "text-slate-500" },
 };
 
@@ -260,6 +260,12 @@ function ContextEvidenceLens({
 
   const optionality = context.optionality;
   const relationships = context.cross_market?.relationships ?? [];
+  const persistentRelationships = relationships.filter((relationship) => relationship.status === "persistent");
+  const relationshipTakeaway = persistentRelationships.length === 1
+    ? `${persistentRelationships[0].label} is the only relationship that persisted in validation; rising pressure has accompanied ${Number(persistentRelationships[0].holdout_rho) >= 0 ? "stronger" : "weaker"} ticker returns. The others remain exploratory.`
+    : persistentRelationships.length > 1
+      ? `${persistentRelationships.map((relationship) => relationship.label).join(", ")} persisted in validation. The remaining inputs are still exploratory.`
+      : "No cross-market input has repeated strongly enough in validation yet; treat every row as exploratory.";
   const optionsState = optionality?.relative_richness_state === "implied_below_realized"
     ? "IV below realized"
     : optionality?.relative_richness_state === "implied_above_realized"
@@ -270,7 +276,7 @@ function ContextEvidenceLens({
 
   return (
     <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(250px,.82fr)_minmax(0,1.55fr)]">
-      <div className="space-y-3">
+      <div className="order-2 space-y-3 lg:order-1">
         <div className="rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -296,50 +302,60 @@ function ContextEvidenceLens({
             <span className={`rounded-full border px-2 py-1 text-xs ${optionality?.freshness === "fresh" ? "border-sky-400/25 text-sky-200" : "border-amber-300/25 text-amber-200"}`}>{optionality?.freshness ?? "unavailable"}</span>
           </div>
           <strong className="mt-3 block text-base text-white">{optionsState}</strong>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-            <div><span className="block text-slate-500">IV / HV</span><span className="mt-0.5 block font-mono text-slate-200">{optionality?.iv30_pct?.toFixed(1) ?? "—"} / {optionality?.hv30_pct?.toFixed(1) ?? "—"}</span></div>
-            <div><span className="block text-slate-500">Spread</span><span className="mt-0.5 block font-mono text-slate-200">{formatContextValue(optionality?.iv_hv_spread_points, " pts")}</span></div>
-            <div><span className="block text-slate-500">Chain IV pct</span><span className="mt-0.5 block font-mono text-slate-200">{optionality?.iv_cross_section_percentile_pct?.toFixed(0) ?? "—"}%</span></div>
-            <div><span className="block text-slate-500">Extrinsic share</span><span className="mt-0.5 block font-mono text-slate-200">{optionality?.avg_extrinsic_share_pct?.toFixed(1) ?? "—"}%</span></div>
-          </div>
-          <p className="mt-2 text-xs leading-5 text-slate-500">IV/HV shows relative richness, not proven arbitrage. Near-ATM IV percentile is within the current scanned chain, not a historical IV rank. {optionality?.scanner_evidence ? `${optionality.scanner_evidence.events} sparse Secret Options event${optionality.scanner_evidence.events === 1 ? "" : "s"} retained.` : "No Secret Options event history for this ticker."}</p>
+          {optionality?.available ? (
+            <>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <div><span className="block text-slate-500">IV / HV</span><span className="mt-0.5 block font-mono text-slate-200">{optionality.iv30_pct?.toFixed(1) ?? "—"} / {optionality.hv30_pct?.toFixed(1) ?? "—"}</span></div>
+                <div><span className="block text-slate-500">Spread</span><span className="mt-0.5 block font-mono text-slate-200">{formatContextValue(optionality.iv_hv_spread_points, " pts")}</span></div>
+                <div><span className="block text-slate-500">Chain IV pct</span><span className="mt-0.5 block font-mono text-slate-200">{optionality.iv_cross_section_percentile_pct?.toFixed(0) ?? "—"}%</span></div>
+                <div><span className="block text-slate-500">Extrinsic share</span><span className="mt-0.5 block font-mono text-slate-200">{optionality.avg_extrinsic_share_pct?.toFixed(1) ?? "—"}%</span></div>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">IV/HV shows relative richness, not proven arbitrage. Chain IV percentile compares the current scan, not historical IV. {optionality.scanner_evidence ? `${optionality.scanner_evidence.events} dated Secret Options event${optionality.scanner_evidence.events === 1 ? "" : "s"} retained.` : "No Secret Options event history for this ticker."}</p>
+            </>
+          ) : (
+            <p className="mt-1 text-xs leading-5 text-slate-400">No current Stock Analysis options snapshot{optionality?.scanner_evidence ? `; ${optionality.scanner_evidence.events} dated Secret Options event${optionality.scanner_evidence.events === 1 ? " is" : "s are"} retained separately.` : " or dated Secret Options event is available for this ticker."}</p>
+          )}
         </div>
       </div>
 
-      <div className="min-w-0 rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
+      <div className="order-1 min-w-0 rounded-xl border border-stealth-700 bg-slate-950/35 p-3 lg:order-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h4 className="text-sm font-semibold text-white">Cross-market relationship surface</h4>
-            <p className="mt-0.5 text-xs text-slate-400">Daily pressure changes vs ticker returns at the selected lag · trailing 60-observation strips</p>
+            <p className="mt-0.5 text-xs text-slate-400">How daily pressure changes have moved with later ticker returns</p>
           </div>
-          <span className="rounded-full border border-violet-300/20 bg-violet-300/5 px-2 py-1 text-xs text-violet-200">Shadow only</span>
+          <span className="rounded-full border border-violet-300/20 bg-violet-300/5 px-2 py-1 text-xs text-violet-200">Research only</span>
         </div>
+        <p className="mt-3 rounded-lg border border-sky-400/15 bg-sky-400/5 px-3 py-2 text-xs leading-5 text-slate-300">{relationshipTakeaway}</p>
         <div className="mt-3 space-y-2">
           {relationships.map((relationship) => {
             const status = RELATIONSHIP_STATUS[relationship.status];
+            const firstAssociation = relationship.rolling_association[0];
+            const lastAssociation = relationship.rolling_association[relationship.rolling_association.length - 1];
+            const associationLabel = `${relationship.label} rolling association${firstAssociation && lastAssociation ? ` from ${formatObservationDate(firstAssociation.date, "1D")} to ${formatObservationDate(lastAssociation.date, "1D")}` : ""}; validated relationship ${relationship.holdout_rho === null ? "unavailable" : relationship.holdout_rho.toFixed(2)}; ${status.label.toLowerCase()}`;
             return (
-              <div key={relationship.id} className="grid min-w-0 items-center gap-2 rounded-lg border border-stealth-800 bg-slate-950/30 px-2 py-2 sm:grid-cols-[minmax(132px,.9fr)_minmax(120px,1.5fr)_92px]">
+              <div key={relationship.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_78px] items-center gap-2 rounded-lg border border-stealth-800 bg-slate-950/30 px-2 py-2 sm:grid-cols-[minmax(132px,.9fr)_minmax(120px,1.5fr)_92px]">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2"><span className="truncate text-xs font-medium text-slate-200">{relationship.label}</span><span className={`shrink-0 text-[10px] ${relationship.freshness === "fresh" ? "text-sky-300" : "text-amber-300"}`}>●</span></div>
-                  <span className="mt-0.5 block truncate text-[11px] text-slate-500">Δ {formatContextValue(relationship.current_pressure_change)} · lag {relationship.selected_lag_days ?? "—"}d · n={relationship.holdout_observations}</span>
+                  <span className="mt-0.5 block truncate text-xs text-slate-400">Pressure {formatContextValue(relationship.current_pressure_change)} · {relationship.selected_lag_days ?? "—"}-day lag</span>
                 </div>
-                <div className="flex h-5 min-w-0 gap-px overflow-hidden rounded bg-slate-900" role="img" aria-label={`${relationship.label} rolling association history`}>
+                <div className="col-span-2 row-start-2 flex h-5 min-w-0 gap-px overflow-hidden rounded bg-slate-900 sm:col-span-1 sm:row-start-auto" role="img" aria-label={associationLabel}>
                   {relationship.rolling_association.length ? relationship.rolling_association.map((point) => (
                     <span key={point.date} className="min-w-[2px] flex-1" style={{ backgroundColor: associationColor(point.rho) }} title={`${formatObservationDate(point.date, "1D")} · rho ${point.rho > 0 ? "+" : ""}${point.rho.toFixed(2)}`} />
                   )) : <span className="m-auto text-[10px] text-slate-600">insufficient history</span>}
                 </div>
-                <div className="text-right">
+                <div className="col-start-2 row-start-1 text-right sm:col-start-auto sm:row-start-auto">
                   <strong className="block font-mono text-xs text-white">ρ {relationship.holdout_rho === null ? "—" : `${relationship.holdout_rho > 0 ? "+" : ""}${relationship.holdout_rho.toFixed(2)}`}</strong>
-                  <span className={`mt-0.5 block text-[10px] ${status.tone}`}>{status.label}</span>
+                  <span className={`mt-0.5 block text-xs ${status.tone}`}>{status.label}</span>
                 </div>
               </div>
             );
           })}
           {!relationships.length ? <p className="rounded-lg border border-stealth-800 p-3 text-xs text-slate-500">No timestamp-aligned cached histories are available.</p> : null}
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-          <span>violet = inverse · muted = weak · blue = same-direction</span>
-          <span>lag selected on 70% · checked on final 30% · FDR-adjusted</span>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+          <span>Violet = inverse · blue = same direction · faint = weak</span>
+          <span>Lag chosen on earlier data and checked on the final 30%; multiple tests adjusted.</span>
         </div>
       </div>
     </div>
@@ -465,7 +481,7 @@ function MarketStateTimeline({
                   type="button"
                   aria-pressed={timelineWindow === option}
                   onClick={() => setTimelineWindow(option)}
-                  className={`min-h-8 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${timelineWindow === option ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                  className={`min-h-11 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-8 ${timelineWindow === option ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
                 >
                   {option === "all" ? "All" : option}
                 </button>
@@ -584,7 +600,7 @@ function MarketStateTimeline({
                   type="button"
                   aria-pressed={activeLens === lens.id}
                   onClick={() => setActiveLens(lens.id)}
-                  className={`min-h-9 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${activeLens === lens.id ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                  className={`min-h-11 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-9 ${activeLens === lens.id ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
                 >
                   {lens.label}
                 </button>
