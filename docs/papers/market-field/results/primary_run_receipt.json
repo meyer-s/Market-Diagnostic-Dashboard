@@ -2,19 +2,19 @@
   "artifacts": {
     "count": 13,
     "sha256": {
-      "docs/papers/market-field/figures/calibration_rates.pdf": "1a5d487f3d1d17670478414f3bad872fcc6a2fa9af24724b0e5b49e6462cc50d",
+      "docs/papers/market-field/figures/calibration_rates.pdf": "ad22d091cebfa85d4fad168cfa74ec6f0dd5e5574a4a9d27a56771dfcc0a218c",
       "docs/papers/market-field/figures/calibration_rates.png": "4180b1e20b8fcfbff25aca10521e0df9961520933b20d2f1b223846025171921",
-      "docs/papers/market-field/figures/spy_field_phase.pdf": "71460a9990a7102bf169811349b43351856970a9a02e77acd9687c2ed4d3ba7e",
+      "docs/papers/market-field/figures/spy_field_phase.pdf": "f841ab9d8215dca86389c6a1980544bd949043e46a589333829ab9f6bd4a8cea",
       "docs/papers/market-field/figures/spy_field_phase.png": "6a2864600e747ac248be802755a71e372143c5652e4ebd99721b481441d187e1",
-      "docs/papers/market-field/figures/synthetic_diagnostics.pdf": "1f3322a6a515e8486a807511dfca2da49ca602ae7d87974d72d5aeb510ccb7c5",
+      "docs/papers/market-field/figures/synthetic_diagnostics.pdf": "d139e9dfb2f242cd89480752b077ae02987c33d9711a0b716906fd6c8d1d8456",
       "docs/papers/market-field/figures/synthetic_diagnostics.png": "c97578d4954965c8ed296d8704b8b0ed75d5e93f1fa831fd2e972af97911c1e3",
-      "docs/papers/market-field/figures/system_overview.pdf": "4f6d33c50c68fc0e69658d73b007be5eefac03b86faa962f818a70e97cd9e2fa",
+      "docs/papers/market-field/figures/system_overview.pdf": "e85cb09e116e8f504aa8d2b70c168f68a31b6edbd11cac893f18ab46431819d8",
       "docs/papers/market-field/figures/system_overview.png": "0cb93d6523771940f70a77edb9e2fd46a519e153ac4925c532f67c0b6d2edf1c",
       "docs/papers/market-field/results/asset_summary.csv": "c6bc7c5349363e7638b5dea8ca3bc8c21367d7a10859746185f64bb00b7aca23",
-      "docs/papers/market-field/results/build_receipt.json": "d85a68ae47ccf428d8fbb9ffb2436cd9547830fec944422308683db56c2a462c",
-      "docs/papers/market-field/results/validation_summary.json": "af260d7ad44a7f30e8e1131fd97ffc9a4d48e863f668be63c07a7166f012f00d",
+      "docs/papers/market-field/results/build_receipt.json": "dd447d29db9ec2661227383d675063f1476b566ef9c0efb7815a43e96da77a95",
+      "docs/papers/market-field/results/validation_summary.json": "3fac6dce61e93a0671677523cea91866c6a09adec85ee5ec917eb0487ea81089",
       "docs/papers/market-field/tables/asset_summary.tex": "60157b590c6e2ffa8d861a7dabc3cdef53d4d5c242237e4847617b1960919426",
-      "docs/papers/market-field/tables/validation_summary.tex": "291c4e4bc76d2fda1e10efeef520711e415f5bcecee5cf0ff8dfeab1ca7e42b4"
+      "docs/papers/market-field/tables/validation_summary.tex": "9347c384fe4400f161ad4f967129ef01048e2cbec75dd2b4c1c3b7efb7c007c3"
     }
   },
   "backend_sources_sha256": {
@@ -23,318 +23,21 @@
     "backend/app/services/market_weather_research.py": "1855cce8bfee8ae2676b78bc22e08fc635ede1f57d7456c2cc8529c8eec736d9",
     "backend/app/services/option_field_context.py": "b3c37a8b67a88f5c1ff6342b06f7be701f5cc4e2d493df2175a64359781f30fb"
   },
-  "ended_at_utc": "2026-07-22T19:50:11.260484Z",
+  "ended_at_utc": "2026-07-22T19:58:19.366928Z",
   "generator": {
     "path": "docs/papers/market-field/scripts/generate_assets.py",
     "sha256": "d9e71c3d19e36142cc8259d65543cf565aae56f7f9e06e3d9c01f24662c6a682"
   },
   "git": {
-    "dirty": true,
-    "head": "016fa3ae45c999cc2aacef4a9a995d47fd42acaf",
-    "status_paths": [
-      {
-        "path": "backend/app/api/market_weather.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/api/secret_options.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/models/option_decision_learning.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/services/market_weather.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/services/market_weather_context.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/services/market_weather_research.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/services/option_decision_learning.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/services/option_field_context.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/services/option_thesis_engine.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/app/services/options_alerts.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/maintenance_scripts/options_chain_sweep.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/tests/test_market_weather.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/tests/test_option_field_context.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/tests/test_option_field_outcome_learning.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/tests/test_option_thesis_engine.py",
-        "status": " M"
-      },
-      {
-        "path": "backend/tests/test_secret_options_positions.py",
-        "status": " M"
-      },
-      {
-        "path": "docs/market-field-language.md",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/IMPLEMENTATION_MAP.md",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/README.md",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/calibration_rates.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/calibration_rates.png",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/spy_field_phase.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/synthetic_diagnostics.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/synthetic_diagnostics.png",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/figures/system_overview.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/main.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/main.tex",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/market-field-calculus-working-paper.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/market_field_reproducibility.ipynb",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/references.bib",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/results/build_receipt.json",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/results/validation_summary.json",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/scripts/generate_assets.py",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/share.pdf",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/PRELIMINARY_EVALUATION.md",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/README.md",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/build_notebook.py",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/evaluate_market_field.py",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/figures/fig_spy_state_timeline.png",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/market_field_preliminary.ipynb",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/determinism.csv",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/lexicon_diagnostics.csv",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/spy_1d_state_sequence.csv",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/summary.json",
-        "status": " M"
-      },
-      {
-        "path": "docs/papers/market-field/tables/validation_summary.tex",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/components/marketWeather/MarketWeatherCanvas.tsx",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/components/marketWeather/MarketWeatherMethodologyReport.test.tsx",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/components/marketWeather/MarketWeatherMethodologyReport.tsx",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/components/marketWeather/MarketWeatherResearchLab.tsx",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/pages/MarketWeatherRadar.tsx",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/pages/SecretOptions.tsx",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/pages/__tests__/MarketWeatherRadar.test.tsx",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/routes/registry.tsx",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/types/marketWeather.ts",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/utils/__tests__/marketWeatherLexicon.test.ts",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/utils/__tests__/marketWeatherTimeline.test.ts",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/utils/__tests__/scannerPositionMatch.test.ts",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/utils/marketWeatherLexicon.ts",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/utils/marketWeatherTimeline.ts",
-        "status": " M"
-      },
-      {
-        "path": "frontend/src/utils/scannerPositionMatch.ts",
-        "status": " M"
-      },
-      {
-        "path": "backend/alembic/versions/20260722_0017_option_assessment_field_effects.py",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/REVISION_RESPONSE.md",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/requirements-paper-lock.txt",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/results/primary_run_receipt.json",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/figures/fig_sensitivity_audits.png",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/entropy_window_sensitivity.csv",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/history_truncation_sensitivity.csv",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/maturity_contracts.csv",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/null_state_anchor.csv",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/option_snapshot_latency.csv",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/prefix_invariance_full_precision.csv",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/resolution_comparison_counts.csv",
-        "status": "??"
-      },
-      {
-        "path": "docs/papers/market-field/supplement/results/run_receipt.json",
-        "status": "??"
-      },
-      {
-        "path": "frontend/src/components/marketWeather/MarketWeatherResearchLab.test.ts",
-        "status": "??"
-      }
-    ]
+    "dirty": false,
+    "head": "13b7f6b9660a8140ebf0065885745d0ae876d749",
+    "status_paths": []
   },
   "invocation": {
     "offline": true,
     "refresh": false
   },
-  "provenance_core_sha256": "a56ad9f12d677a8eeadc98728bb316064d37ed455d46cc29144d2314157164b5",
+  "provenance_core_sha256": "65cd08d052a99fe2f5a0d6434e7dd193599bc50c169abdace132b0aa61ede3f6",
   "runtime": {
     "dependencies": {
       "matplotlib": "3.11.1",
@@ -348,5 +51,5 @@
     "python_implementation": "CPython"
   },
   "schema_version": "market_field_primary_run_receipt_v1",
-  "started_at_utc": "2026-07-22T19:49:41.364241Z"
+  "started_at_utc": "2026-07-22T19:57:49.542198Z"
 }
