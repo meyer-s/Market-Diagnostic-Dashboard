@@ -66,10 +66,10 @@ const STRATA: Array<{
   key: keyof Pick<MarketWeatherStrataLatest, "structure" | "kinematics" | "geometry" | "information" | "propagation">;
   label: string;
 }> = [
-  { key: "structure", label: "Organization" },
+  { key: "structure", label: "Structure" },
   { key: "kinematics", label: "Reorganization" },
   { key: "geometry", label: "Boundary activity" },
-  { key: "information", label: "Disorder" },
+  { key: "information", label: "Information / ordinal disorder" },
   { key: "propagation", label: "Propagation" },
 ];
 
@@ -430,7 +430,7 @@ function MarketStateTimeline({
   const lensReadout = activeLens === "direction"
     ? { label: "Direction", value: `${formatSignedScore(selected.pressure)} · Δ ${formatSignedScore(selected.pressureChange)}`, detail: null, warning: false }
     : activeLens === "structure"
-      ? { label: "Field structure", value: `${Math.round(selected.organization ?? 0)} org · ${Math.round(selected.disorder ?? 0)} disorder · ${Math.round(selected.propagation ?? 0)} spread`, detail: null, warning: false }
+      ? { label: "Field structure", value: `${Math.round(selected.organization ?? 0)} structure · ${Math.round(selected.disorder ?? 0)} information · ${Math.round(selected.propagation ?? 0)} propagation`, detail: null, warning: false }
       : activeLens === "carriers"
         ? { label: "Market carriers", value: `${formatRatio(selected.volatilityRatio)} vol · ${formatRatio(selected.participationRatio)} participation · ${formatRatio(selected.liquidityRatio)} liquidity`, detail: "Each relative to its own causal baseline", warning: false }
         : activeLens === "range"
@@ -635,11 +635,11 @@ function MarketStateTimeline({
             {activeLens === "structure" ? (
               <>
                 <TimelineTrackHeader title="Field structure" scale="Bounded 0 to 100 model scores; shared scale, distinct measurements">
-                  <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Organization</span>
-                  <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Disorder</span>
+                  <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Structure</span>
+                  <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Information</span>
                   <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Propagation</span>
                 </TimelineTrackHeader>
-                <div className="h-[142px] min-w-0" role="img" aria-label="Organization, disorder, and cross-horizon propagation over the selected window">
+                <div className="h-[142px] min-w-0" role="img" aria-label="Structure, information and ordinal disorder, and cross-horizon propagation over the selected window">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
                       <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
@@ -708,7 +708,7 @@ function MarketStateTimeline({
           </div>
         </section>
       </div>
-      <p className="sr-only">At {formatObservationDate(selected.date, timeframe)}, the close was ${selected.close.toFixed(2)}. {PHASE_STYLES[selected.directionalPhase].label}. Organization {Math.round(selected.organization ?? 0)}, disorder {Math.round(selected.disorder ?? 0)}, and propagation {Math.round(selected.propagation ?? 0)} on zero-to-one-hundred scales. {rangeLabel}.</p>
+      <p className="sr-only">At {formatObservationDate(selected.date, timeframe)}, the close was ${selected.close.toFixed(2)}. {PHASE_STYLES[selected.directionalPhase].label}. Structure {Math.round(selected.organization ?? 0)}, information and ordinal disorder {Math.round(selected.disorder ?? 0)}, and propagation {Math.round(selected.propagation ?? 0)} on zero-to-one-hundred scales. {rangeLabel}.</p>
     </article>
   );
 }

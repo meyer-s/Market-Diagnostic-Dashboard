@@ -100,7 +100,7 @@ export function marketWeatherCellColor(
 }
 
 export function channelLabel(channel: string): string {
-  if (channel === "entropy") return "Field Disorder Proxy";
+  if (channel === "entropy") return "Legacy Disorder Proxy";
   if (channel === "permutation_entropy") return "Permutation Entropy";
   return channel
     .split("_")

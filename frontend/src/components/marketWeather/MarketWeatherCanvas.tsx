@@ -229,11 +229,11 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
         >
           <div className="font-semibold text-white">{formatDate(data.dates[hover.dateIndex], !["1D", "1W"].includes(data.timeframe))}</div>
           <div className="mt-0.5 text-slate-400">{data.horizons[hover.horizonIndex]}-bar horizon</div>
-          <div className={`${compact ? "mt-1.5" : "mt-2"} grid grid-cols-2 gap-x-3 gap-y-1 text-slate-300`}>
+          <div className={`${compact ? "mt-1.5" : "mt-2"} grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-slate-300`}>
             <span>Pressure</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.pressure)}</span>
             <span>Change</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.velocity)}</span>
-            <span>Organization</span><span className="text-right font-mono text-white">{hoveredCell.confidence.toFixed(2)}</span>
-            <span>Disorder proxy</span><span className="text-right font-mono text-white">{hoveredCell.entropy.toFixed(2)}</span>
+            <span>Display organization</span><span className="text-right font-mono text-white">{hoveredCell.confidence.toFixed(2)}</span>
+            <span>Legacy disorder</span><span className="text-right font-mono text-white">{hoveredCell.entropy.toFixed(2)}</span>
             {!compact ? <><span>Coherence</span><span className="text-right font-mono text-white">{hoveredCell.coherence.toFixed(2)}</span></> : null}
             {!compact ? <><span>Permutation entropy</span><span className="text-right font-mono text-violet-200">{hoveredCell.permutation_entropy?.toFixed(2) ?? "-"}</span></> : null}
             {!compact ? <><span>Reflectivity</span><span className="text-right font-mono text-white">{hoveredCell.reflectivity.toFixed(2)}</span></> : null}

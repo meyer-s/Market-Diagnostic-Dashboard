@@ -23,6 +23,7 @@ import {
 } from "recharts";
 
 import MarketWeatherCanvas from "../components/marketWeather/MarketWeatherCanvas";
+import MarketWeatherMethodologyReport from "../components/marketWeather/MarketWeatherMethodologyReport";
 import MarketWeatherResearchLab from "../components/marketWeather/MarketWeatherResearchLab";
 import MarketLoading from "../components/ui/MarketLoading";
 import { useApi } from "../hooks/useApi";
@@ -457,7 +458,7 @@ export default function MarketWeatherRadar() {
           <MarketWeatherCanvas data={data} mode={mode} inspectorChannel={inspectorChannel} compact />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-slate-400" aria-label="Field cloud color key">
             <span>Older ← time → newer</span>
-            <span>▲ positive · ◆ transition · ▼ negative · rings boundary energy</span>
+            <span>Color encodes {activeMode.label.toLowerCase()} · hover for timestamp and core measurements</span>
           </div>
         </section>
       ) : null}
@@ -532,7 +533,7 @@ export default function MarketWeatherRadar() {
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="sticky top-0 z-[1] bg-slate-950 text-xs uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_rgba(71,85,105,0.45)]">
                       <tr>
-                        <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Organization</th><th className="px-4 py-3">Coherence</th><th className="px-4 py-3">Disorder proxy</th><th className="px-4 py-3">Permutation entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
+                        <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Display organization</th><th className="px-4 py-3">Coherence</th><th className="px-4 py-3">Legacy disorder</th><th className="px-4 py-3">Permutation entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -583,6 +584,8 @@ export default function MarketWeatherRadar() {
               </section>
             </div>
           </details>
+
+          <MarketWeatherMethodologyReport data={data} />
         </>
       ) : null}
     </div>

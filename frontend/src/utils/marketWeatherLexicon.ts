@@ -105,8 +105,8 @@ export const MARKET_FIELD_METRICS: MarketFieldMetricDefinition[] = [
   },
   {
     id: "structure",
-    label: "Organization",
-    shortLabel: "Organization",
+    label: "Structure stratum",
+    shortLabel: "Structure",
     scale: "0 diffuse to 100 organized",
     definition: "A blend of structural trend strength and agreement between neighboring horizons.",
     family: "field",
@@ -129,8 +129,8 @@ export const MARKET_FIELD_METRICS: MarketFieldMetricDefinition[] = [
   },
   {
     id: "information",
-    label: "Disorder",
-    shortLabel: "Disorder",
+    label: "Information / ordinal disorder",
+    shortLabel: "Information",
     scale: "0 ordered to 100 disordered",
     definition: "Causal permutation entropy blended with disagreement and motion energy in the field.",
     family: "field",
@@ -286,7 +286,7 @@ export function buildGroundedStateProfile(
   return {
     headline: `${directionLabel} · ${motionLabel}`,
     characteristic,
-    summary: `Organization ${organization}/100, cross-horizon propagation ${propagation}/100, and disorder ${information}/100; ${characteristic}.`,
+    summary: `Structure ${organization}/100, cross-horizon propagation ${propagation}/100, and information/ordinal disorder ${information}/100; ${characteristic}.`,
     direction,
     deviations,
   };
