@@ -1,7 +1,7 @@
 {
   "artifact_count": 22,
-  "completed_at_utc": "2026-07-22T23:25:55.179120Z",
-  "elapsed_seconds": 54.830311,
+  "completed_at_utc": "2026-07-22T23:28:24.827299Z",
+  "elapsed_seconds": 54.413085,
   "environment": {
     "dependencies": {
       "matplotlib": "3.11.1",
@@ -78,10 +78,10 @@
       "sha256": "ecf953b63357ec287e6eb29237d009de3fc6a78bb323c45ac5714f9711c9addd"
     },
     {
-      "bytes": 4261,
+      "bytes": 4263,
       "kind": "table",
       "path": "results/option_snapshot_latency.csv",
-      "sha256": "721fecb775bb903aa0ab8d03e0af57c22a8376669ea5ac322845069729e5d340"
+      "sha256": "6198b6df4c8b13cb54794f4e6e7fecbd0783c1a34f2a9a412573735184d4c597"
     },
     {
       "bytes": 2156,
@@ -138,10 +138,10 @@
       "sha256": "670609a8487046a787b6880746c6b7bb001372e7f9d8b648bbf2de10eaccb652"
     },
     {
-      "bytes": 9742,
+      "bytes": 9746,
       "kind": "result",
       "path": "results/summary.json",
-      "sha256": "31a238c9a185416fb46848a64e489ab1d584c1fadf3c10804595e499914bb2dc"
+      "sha256": "820ecca35f917900c5981aef8863321913dbd29330425f708528d896592641ca"
     },
     {
       "bytes": 686,
@@ -164,7 +164,7 @@
     "branch": "",
     "dirty": false,
     "git_errors": [],
-    "head": "f5d3884c9112e9cd5aa9442bc546194db9314697",
+    "head": "b04d0efd7a2db621742189b1a92fb0c63f3f7d8b",
     "provenance_note": "The working tree was clean at capture time; HEAD identifies the evaluated repository state, subject to the per-file hashes in this receipt.",
     "status_entries": [],
     "status_entry_count": 0,
@@ -193,5 +193,5 @@
     },
     "stable_for_run": true
   },
-  "started_at_utc": "2026-07-22T23:25:00.348809Z"
+  "started_at_utc": "2026-07-22T23:27:30.414214Z"
 }
