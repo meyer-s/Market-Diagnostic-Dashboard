@@ -824,6 +824,7 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
         if not members or group not in effective_weights:
             continue
         scores = [symbol_data[c]["momentum_score"] for c in members]
+        stability_scores = [symbol_data[c]["stability_score"] for c in members]
         group_changes: Dict[str, Optional[float]] = {}
         for lb in LOOKBACK_WINDOWS:
             key = f"{lb}d"
@@ -840,6 +841,7 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
             "effective_weight": round(effective_weights[group], 2),
             "symbol_count": len(members),
             "group_composite": round(float(mean(scores)), 2),
+            "group_stability": round(float(mean(stability_scores)), 2),
             "changes": group_changes,
             "volatility": round(float(mean(vols)), 2) if vols else None,
             "components": [
@@ -856,26 +858,26 @@ def calculate_energy_index(days: int = 365) -> Dict[str, Any]:
             ],
         }
 
-    # Composite score (weighted sum of group scores)
+    # Composite score (weighted sum of group means). Applying the full group
+    # weight to every member overweights groups with multiple symbols and makes
+    # the latest value incomparable with the correctly grouped history.
     composite_score = 50.0
-    if effective_weights and symbol_data:
+    if effective_weights and groups:
         weighted_sum = 0.0
         total_w = 0.0
-        for code, data in symbol_data.items():
-            grp = data["group"]
+        for grp, data in groups.items():
             w = effective_weights.get(grp, 0.0)
-            weighted_sum += data["momentum_score"] * (w / 100.0)
+            weighted_sum += data["group_composite"] * (w / 100.0)
             total_w += w / 100.0
         composite_score = round(weighted_sum / total_w if total_w > 0 else 50.0, 2)
 
     stability_score = 50.0
-    if effective_weights and symbol_data:
+    if effective_weights and groups:
         weighted_sum = 0.0
         total_w = 0.0
-        for code, data in symbol_data.items():
-            grp = data["group"]
+        for grp, data in groups.items():
             w = effective_weights.get(grp, 0.0)
-            weighted_sum += data["stability_score"] * (w / 100.0)
+            weighted_sum += data["group_stability"] * (w / 100.0)
             total_w += w / 100.0
         stability_score = round(weighted_sum / total_w if total_w > 0 else 50.0, 2)
 

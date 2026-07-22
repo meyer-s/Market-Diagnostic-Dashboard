@@ -74,6 +74,112 @@ export interface MarketWeatherCarrierPoint {
 
 export type MarketWeatherCarrierLatest = Omit<MarketWeatherCarrierPoint, "date">;
 
+export interface MarketWeatherTechnicalContextPoint {
+  date: string;
+  close: number | null;
+  support20: number | null;
+  resistance20: number | null;
+  atr14: number | null;
+  range_position20: number | null;
+  support_distance_atr: number | null;
+  resistance_distance_atr: number | null;
+  trend_gap20_pct: number | null;
+  return_5bar_pct: number | null;
+  state: "warming_up" | "breakout" | "breakdown" | "upper_range" | "lower_range" | "mid_range";
+}
+
+export interface MarketWeatherContextRelationship {
+  id: string;
+  label: string;
+  family: string;
+  source: string;
+  level_label: string;
+  unit: string;
+  current_value: number | null;
+  current_pressure_change: number | null;
+  as_of: string | null;
+  freshness: "fresh" | "stale" | "unavailable";
+  freshness_days: number;
+  age_days: number | null;
+  source_observations: number;
+  coverage_start: string | null;
+  coverage_end: string | null;
+  selected_lag_days: number | null;
+  calibration_rho: number | null;
+  calibration_observations: number;
+  holdout_rho: number | null;
+  holdout_p_value: number | null;
+  holdout_q_value: number | null;
+  holdout_observations: number;
+  status: "persistent" | "directionally_consistent" | "unstable" | "insufficient";
+  interpretation: string;
+  rolling_association: Array<{ date: string; rho: number }>;
+  input_definition: string;
+}
+
+export interface MarketWeatherContext {
+  version: string;
+  generated_at?: string;
+  mode: "shadow_only";
+  field_influence: "none";
+  description: string;
+  error?: string;
+  technical?: {
+    available: boolean;
+    method: string;
+    series: MarketWeatherTechnicalContextPoint[];
+    latest: MarketWeatherTechnicalContextPoint | null;
+  };
+  optionality?: {
+    available: boolean;
+    as_of?: string | null;
+    age_hours?: number | null;
+    freshness?: "fresh" | "stale" | "unavailable";
+    history_mode: string;
+    history_note?: string;
+    iv30_pct?: number | null;
+    hv30_pct?: number | null;
+    iv_hv_spread_points?: number | null;
+    iv_cross_section_percentile_pct?: number | null;
+    avg_extrinsic_share_pct?: number | null;
+    relative_richness_state?: "implied_below_realized" | "implied_above_realized" | "near_realized" | "unavailable";
+    data_source?: string | null;
+    quote_source?: string | null;
+    scanner_evidence?: {
+      latest_event_at: string | null;
+      events: number;
+      coverage_start: string | null;
+      opportunity_score: number | null;
+      opportunity_grade: string | null;
+      iv30_pct: number | null;
+      hv30_pct: number | null;
+      iv_cross_section_percentile_pct: number | null;
+      selected_spread_pct: number | null;
+      selected_open_interest: number | null;
+      selected_volume: number | null;
+    } | null;
+  };
+  cross_market?: {
+    available: boolean;
+    relationship_timeframe: "1D";
+    target: string;
+    window: {
+      start: string | null;
+      end: string | null;
+      timezone: "UTC";
+      source_carry_policy: "none";
+    };
+    input_polarity: string;
+    candidate_lags_days: number[];
+    selection: string;
+    validation: string;
+    rolling_window_observations: number;
+    relationships: MarketWeatherContextRelationship[];
+    warnings: string[];
+  };
+  promotion_rule?: string;
+}
+
 export interface MarketWeatherCarrierRatioPoint {
   date: string;
   realized_volatility: number | null;
@@ -273,6 +379,7 @@ export interface MarketWeatherResearch {
     purged: boolean;
     multiple_testing_adjusted: boolean;
   };
+  context?: MarketWeatherContext;
   notes: string[];
 }
 

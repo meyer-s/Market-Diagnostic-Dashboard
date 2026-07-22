@@ -43,3 +43,5 @@ def test_energy_stability_falls_when_large_directional_move_increases_pressure(m
     assert data["stability_score"] < 50
     assert data["stability_score"] < data["composite_score"]
     assert data["stability_history"]
+    assert data["composite_score"] == data["composite_history"][-1]["value"]
+    assert data["stability_score"] == data["stability_history"][-1]["value"]

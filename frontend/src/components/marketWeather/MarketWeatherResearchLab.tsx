@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import type {
+  MarketWeatherContextRelationship,
   MarketWeatherDerivativePoint,
   MarketWeatherLexiconArchetype,
   MarketWeatherLexiconMotif,
@@ -37,12 +38,13 @@ import {
 } from "../../utils/marketWeatherTimeline";
 import type {
   MarketDirectionalPhase,
+  MarketStateTimelinePoint,
   MarketTimelineWindow,
 } from "../../utils/marketWeatherTimeline";
 
 type LanguageView = "now" | "dictionary" | "methods";
 type DerivativeKey = "pressure" | "velocity" | "acceleration" | "jerk" | "snap";
-type TimelineLens = "direction" | "structure" | "carriers" | "range";
+type TimelineLens = "direction" | "structure" | "carriers" | "range" | "context";
 
 interface MarketWeatherResearchLabProps {
   research: MarketWeatherResearch;
@@ -79,6 +81,11 @@ const FOUNDATIONS = [
   ["State-space reconstruction", "Takens (1981)", "https://doi.org/10.1007/BFb0091924"],
   ["Surrogate-data nulls", "Theiler et al. (1992)", "https://doi.org/10.1016/0167-2789(92)90102-S"],
   ["Multiple-test discipline", "Harvey, Liu & Zhu (2016)", "https://academic.oup.com/rfs/article/29/1/5/1843824"],
+  ["Option-implied return information", "Cremers & Weinbaum (2010)", "https://doi.org/10.1017/S002210901000013X"],
+  ["Algorithmic technical patterns", "Lo, Mamaysky & Wang (2000)", "https://doi.org/10.1111/0022-1082.00265"],
+  ["Forecast-origin evaluation", "Tashman (2000)", "https://doi.org/10.1016/S0169-2070(00)00065-0"],
+  ["False-discovery control", "Benjamini & Hochberg (1995)", "https://doi.org/10.1111/j.2517-6161.1995.tb02031.x"],
+  ["Option/equity timestamp alignment", "Wallmeier (2024)", "https://doi.org/10.1002/fut.22495"],
 ] as const;
 
 function formatRate(value: number | null | undefined): string {
@@ -163,6 +170,7 @@ const TIMELINE_LENSES: Array<{ id: TimelineLens; label: string }> = [
   { id: "structure", label: "Structure" },
   { id: "carriers", label: "Carriers" },
   { id: "range", label: "Range" },
+  { id: "context", label: "Context" },
 ];
 
 const PHASE_STYLES: Record<MarketDirectionalPhase, { label: string; color: string }> = {
@@ -213,6 +221,127 @@ function TimelineTrackHeader({
         <p className="mt-0.5 text-xs text-slate-400">{scale}</p>
       </div>
       {children ? <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300">{children}</div> : null}
+    </div>
+  );
+}
+
+const RELATIONSHIP_STATUS: Record<MarketWeatherContextRelationship["status"], { label: string; tone: string }> = {
+  persistent: { label: "Persistent", tone: "text-sky-200" },
+  directionally_consistent: { label: "Same direction", tone: "text-slate-200" },
+  unstable: { label: "Reversed", tone: "text-violet-200" },
+  insufficient: { label: "Building history", tone: "text-slate-500" },
+};
+
+function associationColor(value: number): string {
+  const opacity = Math.min(0.9, 0.12 + Math.abs(value) * 0.78);
+  return value >= 0 ? `rgba(56, 189, 248, ${opacity})` : `rgba(167, 139, 250, ${opacity})`;
+}
+
+function formatContextValue(value: number | null | undefined, suffix = ""): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}${suffix}`;
+}
+
+function ContextEvidenceLens({
+  research,
+  selected,
+}: {
+  research: MarketWeatherResearch;
+  selected: MarketStateTimelinePoint;
+}) {
+  const context = research.context;
+  if (!context || context.error) {
+    return (
+      <div className="rounded-xl border border-stealth-700 bg-slate-950/35 p-4 text-sm text-slate-400">
+        Cross-market context is unavailable. The price-derived field is unchanged.
+      </div>
+    );
+  }
+
+  const optionality = context.optionality;
+  const relationships = context.cross_market?.relationships ?? [];
+  const optionsState = optionality?.relative_richness_state === "implied_below_realized"
+    ? "IV below realized"
+    : optionality?.relative_richness_state === "implied_above_realized"
+      ? "IV above realized"
+      : optionality?.relative_richness_state === "near_realized"
+        ? "IV near realized"
+        : "No current snapshot";
+
+  return (
+    <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(250px,.82fr)_minmax(0,1.55fr)]">
+      <div className="space-y-3">
+        <div className="rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-semibold text-white">Price structure</h4>
+              <p className="mt-0.5 text-xs text-slate-400">Prior 20 bars · causal boundaries</p>
+            </div>
+            <span className="rounded-full border border-stealth-700 px-2 py-1 text-xs capitalize text-slate-300">{selected.priceActionState?.replace(/_/g, " ") ?? "Unavailable"}</span>
+          </div>
+          <div className="mt-3 grid grid-cols-3 divide-x divide-stealth-700 rounded-lg border border-stealth-700">
+            <div className="min-w-0 p-2"><span className="block text-xs text-slate-500">Support</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.support20 === null ? "—" : `$${selected.support20.toFixed(2)}`}</strong></div>
+            <div className="min-w-0 p-2"><span className="block text-xs text-slate-500">Range</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.rangePosition20 === null ? "—" : `${selected.rangePosition20.toFixed(0)}%`}</strong></div>
+            <div className="min-w-0 p-2"><span className="block text-xs text-slate-500">Resistance</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.resistance20 === null ? "—" : `$${selected.resistance20.toFixed(2)}`}</strong></div>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">{formatContextValue(selected.return5BarPct, "%")} over 5 bars · {formatContextValue(selected.trendGap20Pct, "%")} vs 20-bar mean</p>
+        </div>
+
+        <div className="rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-semibold text-white">Option-implied context</h4>
+              <p className="mt-0.5 text-xs text-slate-400">Current snapshot only · not stretched backward</p>
+            </div>
+            <span className={`rounded-full border px-2 py-1 text-xs ${optionality?.freshness === "fresh" ? "border-sky-400/25 text-sky-200" : "border-amber-300/25 text-amber-200"}`}>{optionality?.freshness ?? "unavailable"}</span>
+          </div>
+          <strong className="mt-3 block text-base text-white">{optionsState}</strong>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div><span className="block text-slate-500">IV / HV</span><span className="mt-0.5 block font-mono text-slate-200">{optionality?.iv30_pct?.toFixed(1) ?? "—"} / {optionality?.hv30_pct?.toFixed(1) ?? "—"}</span></div>
+            <div><span className="block text-slate-500">Spread</span><span className="mt-0.5 block font-mono text-slate-200">{formatContextValue(optionality?.iv_hv_spread_points, " pts")}</span></div>
+            <div><span className="block text-slate-500">Chain IV pct</span><span className="mt-0.5 block font-mono text-slate-200">{optionality?.iv_cross_section_percentile_pct?.toFixed(0) ?? "—"}%</span></div>
+            <div><span className="block text-slate-500">Extrinsic share</span><span className="mt-0.5 block font-mono text-slate-200">{optionality?.avg_extrinsic_share_pct?.toFixed(1) ?? "—"}%</span></div>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-500">IV/HV shows relative richness, not proven arbitrage. Near-ATM IV percentile is within the current scanned chain, not a historical IV rank. {optionality?.scanner_evidence ? `${optionality.scanner_evidence.events} sparse Secret Options event${optionality.scanner_evidence.events === 1 ? "" : "s"} retained.` : "No Secret Options event history for this ticker."}</p>
+        </div>
+      </div>
+
+      <div className="min-w-0 rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h4 className="text-sm font-semibold text-white">Cross-market relationship surface</h4>
+            <p className="mt-0.5 text-xs text-slate-400">Daily pressure changes vs ticker returns at the selected lag · trailing 60-observation strips</p>
+          </div>
+          <span className="rounded-full border border-violet-300/20 bg-violet-300/5 px-2 py-1 text-xs text-violet-200">Shadow only</span>
+        </div>
+        <div className="mt-3 space-y-2">
+          {relationships.map((relationship) => {
+            const status = RELATIONSHIP_STATUS[relationship.status];
+            return (
+              <div key={relationship.id} className="grid min-w-0 items-center gap-2 rounded-lg border border-stealth-800 bg-slate-950/30 px-2 py-2 sm:grid-cols-[minmax(132px,.9fr)_minmax(120px,1.5fr)_92px]">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2"><span className="truncate text-xs font-medium text-slate-200">{relationship.label}</span><span className={`shrink-0 text-[10px] ${relationship.freshness === "fresh" ? "text-sky-300" : "text-amber-300"}`}>●</span></div>
+                  <span className="mt-0.5 block truncate text-[11px] text-slate-500">Δ {formatContextValue(relationship.current_pressure_change)} · lag {relationship.selected_lag_days ?? "—"}d · n={relationship.holdout_observations}</span>
+                </div>
+                <div className="flex h-5 min-w-0 gap-px overflow-hidden rounded bg-slate-900" role="img" aria-label={`${relationship.label} rolling association history`}>
+                  {relationship.rolling_association.length ? relationship.rolling_association.map((point) => (
+                    <span key={point.date} className="min-w-[2px] flex-1" style={{ backgroundColor: associationColor(point.rho) }} title={`${formatObservationDate(point.date, "1D")} · rho ${point.rho > 0 ? "+" : ""}${point.rho.toFixed(2)}`} />
+                  )) : <span className="m-auto text-[10px] text-slate-600">insufficient history</span>}
+                </div>
+                <div className="text-right">
+                  <strong className="block font-mono text-xs text-white">ρ {relationship.holdout_rho === null ? "—" : `${relationship.holdout_rho > 0 ? "+" : ""}${relationship.holdout_rho.toFixed(2)}`}</strong>
+                  <span className={`mt-0.5 block text-[10px] ${status.tone}`}>{status.label}</span>
+                </div>
+              </div>
+            );
+          })}
+          {!relationships.length ? <p className="rounded-lg border border-stealth-800 p-3 text-xs text-slate-500">No timestamp-aligned cached histories are available.</p> : null}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+          <span>violet = inverse · muted = weak · blue = same-direction</span>
+          <span>lag selected on 70% · checked on final 30% · FDR-adjusted</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -288,7 +417,9 @@ function MarketStateTimeline({
       ? { label: "Field structure", value: `${Math.round(selected.organization ?? 0)} org · ${Math.round(selected.disorder ?? 0)} disorder · ${Math.round(selected.propagation ?? 0)} spread`, detail: null, warning: false }
       : activeLens === "carriers"
         ? { label: "Market carriers", value: `${formatRatio(selected.volatilityRatio)} vol · ${formatRatio(selected.participationRatio)} participation · ${formatRatio(selected.liquidityRatio)} liquidity`, detail: "Each relative to its own causal baseline", warning: false }
-        : { label: "Learned-range evidence", value: rangeLabel, detail: `score ${selected.distanceTailScore?.toFixed(3) ?? "—"} · cutoff ${cutoff.toFixed(2)}`, warning: Boolean(selected.outsideLearnedRange) };
+        : activeLens === "range"
+          ? { label: "Learned-range evidence", value: rangeLabel, detail: `score ${selected.distanceTailScore?.toFixed(3) ?? "—"} · cutoff ${cutoff.toFixed(2)}`, warning: Boolean(selected.outsideLearnedRange) }
+          : { label: "Price context", value: `${selected.priceActionState?.replace(/_/g, " ") ?? "Unavailable"} · ${selected.rangePosition20?.toFixed(0) ?? "—"}% of prior range`, detail: "Support and resistance use the prior 20 bars", warning: selected.priceActionState === "breakdown" };
 
   const commitSelectedDate = (date: string) => {
     if (!date || date === selectedDateRef.current) return;
@@ -372,7 +503,14 @@ function MarketStateTimeline({
 
       <div className="divide-y divide-stealth-700">
         <section className="p-3 sm:p-4">
-          <TimelineTrackHeader title="Price" scale={`Actual close · ${visible.length} bars`} />
+          <TimelineTrackHeader title="Price" scale={`Actual close · ${visible.length} bars`}>
+            {activeLens === "context" ? (
+              <>
+                <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Prior support</span>
+                <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Prior resistance</span>
+              </>
+            ) : null}
+          </TimelineTrackHeader>
           <div className="h-[165px] min-w-0 sm:h-[180px]" role="img" aria-label="Closing price over the selected window with measured directional phases">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
@@ -386,6 +524,8 @@ function MarketStateTimeline({
                 <YAxis domain={["auto", "auto"]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => `$${Number(value).toFixed(0)}`} axisLine={false} tickLine={false} />
                 <TimelineCursor selectedDate={selected.date} />
                 <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
+                {activeLens === "context" ? <Line type="stepAfter" dataKey="support20" stroke="#c4b5fd" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} /> : null}
+                {activeLens === "context" ? <Line type="stepAfter" dataKey="resistance20" stroke="#fcd34d" strokeWidth={1.5} strokeDasharray="2 4" dot={false} connectNulls={false} isAnimationActive={false} /> : null}
                 <Line type="monotone" dataKey="close" stroke="#7dd3fc" strokeWidth={2.5} dot={false} isAnimationActive={false} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -437,7 +577,7 @@ function MarketStateTimeline({
         <section className="p-3 sm:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-slate-400">Choose one diagnostic lens; price and the inspected bar stay synchronized.</p>
-            <div className="grid w-full grid-cols-4 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto" role="group" aria-label="Timeline diagnostic lens">
+            <div className="grid w-full grid-cols-5 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto" role="group" aria-label="Timeline diagnostic lens">
               {TIMELINE_LENSES.map((lens) => (
                 <button
                   key={lens.id}
@@ -547,6 +687,8 @@ function MarketStateTimeline({
                 </div>
               </>
             ) : null}
+
+            {activeLens === "context" ? <ContextEvidenceLens research={research} selected={selected} /> : null}
           </div>
         </section>
       </div>

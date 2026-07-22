@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_weather import MarketWeatherSettings, build_market_weather
+from app.services.market_weather_context import build_market_weather_context
 from app.services.market_weather_research import scope_market_state_lexicon
 
 
@@ -158,6 +159,32 @@ def analyze_market_weather(
                     source_start_index=start,
                 )
 
+    research = result.get("research")
+    if isinstance(research, dict):
+        daily_history = history if normalized_timeframe == "1D" and len(history) >= 500 else None
+        if daily_history is None:
+            try:
+                daily_history = provider.daily_bars(normalized_symbol, days=1095)
+            except Exception:
+                daily_history = None
+        try:
+            research["context"] = build_market_weather_context(
+                symbol=normalized_symbol,
+                selected_frame=history,
+                daily_frame=daily_history,
+                visible_dates=result["dates"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Context is deliberately supplementary. A cache/table outage must
+            # never discard the core price-derived field.
+            research["context"] = {
+                "version": "shadow_context_v1",
+                "mode": "shadow_only",
+                "field_influence": "none",
+                "description": "The context layer could not be built; the learned field remains valid and unchanged.",
+                "error": str(exc),
+            }
+
     result.update(
         {
             "symbol": normalized_symbol,
@@ -173,7 +200,7 @@ def analyze_market_weather(
             "methodology": {
                 "causal": True,
                 "description": f"Each live field cell uses only current and prior {TIMEFRAME_LABELS[normalized_timeframe]} bars on a log-horizon coordinate; no centered windows or future values.",
-                "research_status": "Experimental diagnostic. Relationship cards are chronological holdout summaries, not forecasts, significance tests, or trading signals.",
+                "research_status": "Experimental diagnostic. Field outcomes and shadow context relationships use chronological holdouts; neither is a forecast or trading signal.",
             },
         }
     )

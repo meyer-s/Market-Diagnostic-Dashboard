@@ -24,6 +24,15 @@ export interface MarketStateTimelinePoint {
   volatilityRatio: number | null;
   participationRatio: number | null;
   liquidityRatio: number | null;
+  support20: number | null;
+  resistance20: number | null;
+  atr14: number | null;
+  rangePosition20: number | null;
+  supportDistanceAtr: number | null;
+  resistanceDistanceAtr: number | null;
+  trendGap20Pct: number | null;
+  return5BarPct: number | null;
+  priceActionState: string | null;
   distanceTailScore: number | null;
   outsideLearnedRange: boolean | null;
   stateId: string | null;
@@ -70,12 +79,14 @@ export function buildMarketStateTimeline(
   const derivatives = new Map(research.derivative_series.map((point) => [point.date, point]));
   const strata = new Map(research.strata.series.map((point) => [point.date, point]));
   const ratios = new Map((research.carriers?.ratios?.series ?? []).map((point) => [point.date, point]));
+  const technical = new Map((research.context?.technical?.series ?? []).map((point) => [point.date, point]));
   const evaluation = new Map((research.lexicon?.evaluation_sequence ?? []).map((point) => [point.date, point]));
 
   return price.map((pricePoint) => {
     const derivative = derivatives.get(pricePoint.date);
     const stratum = strata.get(pricePoint.date);
     const ratio = ratios.get(pricePoint.date);
+    const priceAction = technical.get(pricePoint.date);
     const state = evaluation.get(pricePoint.date);
     const pressure = finite(derivative?.pressure);
     const pressureChange = finite(derivative?.velocity);
@@ -92,6 +103,15 @@ export function buildMarketStateTimeline(
       volatilityRatio: finite(ratio?.realized_volatility),
       participationRatio: finite(ratio?.participation),
       liquidityRatio: finite(ratio?.liquidity_stress),
+      support20: finite(priceAction?.support20),
+      resistance20: finite(priceAction?.resistance20),
+      atr14: finite(priceAction?.atr14),
+      rangePosition20: finite(priceAction?.range_position20),
+      supportDistanceAtr: finite(priceAction?.support_distance_atr),
+      resistanceDistanceAtr: finite(priceAction?.resistance_distance_atr),
+      trendGap20Pct: finite(priceAction?.trend_gap20_pct),
+      return5BarPct: finite(priceAction?.return_5bar_pct),
+      priceActionState: priceAction?.state ?? null,
       distanceTailScore: finite(state?.distance_tail_score),
       outsideLearnedRange: state?.outside_learned_range ?? null,
       stateId: state?.state_id ?? null,

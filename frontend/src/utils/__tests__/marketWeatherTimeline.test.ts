@@ -43,6 +43,13 @@ const research = {
       ],
     },
   },
+  context: {
+    technical: {
+      series: [
+        { date: dates[1], support20: 95, resistance20: 105, atr14: 2, range_position20: 60, support_distance_atr: 3, resistance_distance_atr: 2, trend_gap20_pct: 1.5, return_5bar_pct: 2.2, state: "mid_range" },
+      ],
+    },
+  },
   lexicon: {
     evaluation_sequence: [
       { date: dates[1], state_id: "form-a", distance_tail_score: null, outside_learned_range: null },
@@ -58,6 +65,8 @@ describe("market weather timeline", () => {
     expect(timeline).toHaveLength(3);
     expect(timeline[0]).toMatchObject({ volatilityRatio: 1.1, participationRatio: null, stateId: null });
     expect(timeline[1]).toMatchObject({ volatilityRatio: null, distanceTailScore: null, stateId: "form-a" });
+    expect(timeline[1]).toMatchObject({ support20: 95, resistance20: 105, rangePosition20: 60, priceActionState: "mid_range" });
+    expect(timeline[0]).toMatchObject({ support20: null, resistance20: null, priceActionState: null });
     expect(timeline[2]).toMatchObject({ volatilityRatio: 1.2, distanceTailScore: 0.04, outsideLearnedRange: true });
     expect(timeline.some((point) => point.volatilityRatio === 9)).toBe(false);
   });
