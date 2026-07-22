@@ -41,6 +41,15 @@ def test_technical_context_uses_prior_boundaries_without_future_leak() -> None:
     assert changed_context["series"][45] == inspected
 
 
+def test_technical_context_preserves_visible_price_date_labels() -> None:
+    history = _frame(np.linspace(100.0, 115.0, 40))
+    visible_dates = [timestamp.tz_convert("America/New_York").isoformat() for timestamp in history.index[-3:]]
+
+    context = build_technical_context(history, visible_dates=visible_dates)
+
+    assert [point["date"] for point in context["series"]] == visible_dates
+
+
 def test_cross_market_relationship_selects_lag_on_calibration_and_checks_holdout() -> None:
     count = 420
     index = pd.date_range("2024-01-02", periods=count, freq="B", tz="UTC")

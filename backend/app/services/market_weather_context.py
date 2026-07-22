@@ -127,12 +127,13 @@ def build_technical_context(
     resistance_distance = (resistance20 - history["close"]) / atr14.replace(0.0, np.nan)
 
     visible = None
+    visible_labels: dict[pd.Timestamp, str] = {}
     if visible_dates:
-        visible = {
-            parsed
-            for parsed in (_timestamp(value) for value in visible_dates)
-            if parsed is not None
-        }
+        for value in visible_dates:
+            parsed = _timestamp(value)
+            if parsed is not None:
+                visible_labels[parsed] = str(value)
+        visible = set(visible_labels)
 
     rows: list[dict[str, Any]] = []
     for index, close in history["close"].items():
@@ -154,7 +155,11 @@ def build_technical_context(
             state = "mid_range"
         rows.append(
             {
-                "date": parsed_index.isoformat(),
+                # Preserve the price payload's exact label. The normalized frame
+                # uses UTC instants, while price rows may retain a market offset;
+                # emitting UTC here would break the frontend's date-key join even
+                # though both values represent the same bar.
+                "date": visible_labels.get(parsed_index, parsed_index.isoformat()),
                 "close": _finite(close, 4),
                 "support20": _finite(support20.loc[index], 4),
                 "resistance20": _finite(resistance20.loc[index], 4),
