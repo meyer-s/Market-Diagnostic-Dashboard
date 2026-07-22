@@ -36,6 +36,7 @@ from app.models.option_decision_learning import (
 from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
+from app.services.option_field_context import build_option_field_context
 from app.services.options_quotes import option_quote_from_row
 from app.services.options_review_window import ReviewWindow, compute_review_window, parse_review_window
 from app.services.options_opportunity import (
@@ -1157,6 +1158,27 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
         "volatility_signal": _empty_volatility_signal(),
         "opportunity": None,
         "technical_snapshot": {},
+        "field_context": {
+            "schema_version": "option_market_field_v1",
+            "mode": "shadow_only",
+            "rank_influence": 0.0,
+            "available": False,
+            "quality": {
+                "available": False,
+                "status": "unavailable",
+                "warnings": ["Position metrics could not supply completed OHLCV bars."],
+            },
+            "classification": {
+                "path_state": "unavailable",
+                "eventfulness": "unavailable",
+            },
+            "hypotheses": {},
+            "direction": {
+                "option_aligned_pressure": None,
+                "option_aligned_velocity": None,
+            },
+            "signals": {"path_state": "unavailable"},
+        },
         "dte": None,
         "greeks": None,
         "pnl": {
@@ -1530,6 +1552,17 @@ def _compute_position_metrics(
     except Exception:
         hv30 = None
     technical_snapshot = technical_snapshot_from_frame(hist)
+    field_context = build_option_field_context(
+        hist,
+        option_type=position.option_type,
+        observed_at=_parse_market_timestamp(market.get("last_updated")),
+        data_source=(
+            str(market.get("data_source"))
+            if market.get("data_source")
+            else str(getattr(provider, "name", "unknown"))
+        ),
+        timeframe="1D",
+    )
     
     # Determine spot price
     spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
@@ -1630,6 +1663,7 @@ def _compute_position_metrics(
         "volatility_signal": volatility_signal,
         "opportunity": opportunity_signal,
         "technical_snapshot": technical_snapshot,
+        "field_context": field_context,
         "dte": dte,
         "greeks": greeks,
         "pnl": {

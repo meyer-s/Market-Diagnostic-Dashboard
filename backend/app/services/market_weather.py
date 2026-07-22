@@ -169,6 +169,9 @@ def build_market_weather(
     frame: pd.DataFrame,
     horizons: Iterable[int] = range(12, 50, 2),
     settings: MarketWeatherSettings | None = None,
+    *,
+    include_retrospective_research: bool = True,
+    include_history_payload: bool = True,
 ) -> dict[str, object]:
     settings = settings or MarketWeatherSettings()
     history = _normalize_frame(frame)
@@ -271,6 +274,7 @@ def build_market_weather(
         field_disorder=entropy,
         boundary_energy=boundary_energy,
         motion_normalization_length=settings.motion_normalization_length,
+        include_retrospective=include_retrospective_research,
     )
 
     channels = {
@@ -341,8 +345,12 @@ def build_market_weather(
         "orientation": "horizon_by_time",
         "dates": dates,
         "horizons": horizon_values,
-        "price": price_rows,
-        "channels": {name: _rounded_matrix(values) for name, values in channels.items()},
+        "price": price_rows if include_history_payload else [],
+        "channels": (
+            {name: _rounded_matrix(values) for name, values in channels.items()}
+            if include_history_payload
+            else {}
+        ),
         "summary": {
             "regime": _regime_label(field_direction, latest_coherence, latest_entropy, latest_expansion),
             "field_direction": round(field_direction, 4),
@@ -355,7 +363,7 @@ def build_market_weather(
             "expansion": round(latest_expansion, 4),
             "expansion_front": expansion_front,
         },
-        "latest_profile": latest_profile,
+        "latest_profile": latest_profile if include_history_payload else [],
         "research": research,
         "settings": asdict(settings),
     }

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.models.options_alerts import OptionAlertEvent, OptionAlertWatch
+from app.services.option_field_context import option_field_context_from_event
 from app.services.options_alerts import run_options_alert_scan
 from app.utils.db_helpers import get_db_session
 
@@ -91,6 +92,7 @@ def list_events(limit: int = 50):
                 "hv30": event.hv30,
                 "iv_percentile": event.iv_percentile,
                 "avg_edr": event.avg_edr,
+                "field_context": option_field_context_from_event(event),
                 "selected_contract": {
                     "expiry": event.selected_expiry,
                     "dte": event.selected_dte,

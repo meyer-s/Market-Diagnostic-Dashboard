@@ -8,6 +8,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.models.closed_positions import ClosedPosition
+from app.models.options_alerts import OptionAlertEvent
 from app.models.option_decision_learning import (
     OptionDecisionOutcome,
     OptionModelRegistry,
@@ -17,12 +18,13 @@ from app.models.option_decision_learning import (
     OptionTradeOutcome,
 )
 from app.models.option_position_reviews import OptionPositionReview
+from app.models.option_positions import OptionPosition
 from app.models.stock_price_bar import StockPriceBar
 from app.services.greeks_calculator import black_scholes_price
 from app.services.option_thesis_engine import GRADER_VERSION, json_dumps, json_loads
 
 
-OUTCOME_MODEL_VERSION = "decision_outcomes_v1"
+OUTCOME_MODEL_VERSION = "decision_outcomes_v2_field_shadow"
 RISK_FREE_RATE = 0.0425
 DECISION_SESSION_HORIZONS = (1, 3, 5, 10)
 
@@ -100,6 +102,113 @@ def _scanner_recurrence_attribution(db: Session, position_id: Optional[int]) -> 
         "event_ids": [row.id for row in rows],
         "scanner_event_ids": scanner_event_ids,
     }
+
+
+def _compact_market_field(value: object) -> Optional[dict[str, object]]:
+    """Keep the point-in-time field evidence needed for outcome cohorts.
+
+    The scanner and assessment snapshots are already immutable. Outcome rows
+    retain a compact copy so later model/schema changes cannot silently rewrite
+    the evidence that existed at the decision boundary.
+    """
+    if not isinstance(value, dict):
+        return None
+    classification = value.get("classification")
+    if not isinstance(classification, dict):
+        classification = {}
+    quality = value.get("quality")
+    if not isinstance(quality, dict):
+        quality = {}
+    if not quality.get("available", value.get("available", True)):
+        return None
+    return {
+        key: value.get(key)
+        for key in (
+            "schema_version",
+            "model_version",
+            "mode",
+            "computed_at",
+            "observed_at",
+            "as_of_bar",
+            "timeframe",
+            "option_type",
+            "data_source",
+            "completed_bars",
+            "excluded_incomplete_bars",
+            "quality",
+            "direction",
+            "strata",
+            "carriers",
+            "price_action",
+            "hypotheses",
+            "classification",
+            "signals",
+            "shadow_only",
+            "rank_influence",
+        )
+        if key in value
+    }
+
+
+def _assessment_market_field(assessment: Optional[OptionThesisAssessment]) -> Optional[dict[str, object]]:
+    if assessment is None:
+        return None
+    snapshot = json_loads(assessment.input_snapshot_json, {})
+    if not isinstance(snapshot, dict):
+        return None
+    candidates: list[object] = [
+        snapshot.get("field_context"),
+        snapshot.get("market_field"),
+    ]
+    market = snapshot.get("market")
+    if isinstance(market, dict):
+        candidates.extend((market.get("field_context"), market.get("market_field")))
+    for candidate in candidates:
+        compact = _compact_market_field(candidate)
+        if compact is not None:
+            return compact
+    return None
+
+
+def _event_market_field(
+    db: Session,
+    event_id: Optional[int],
+) -> tuple[Optional[dict[str, object]], Optional[int]]:
+    if event_id is None:
+        return None, None
+    event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == event_id).first()
+    if event is None:
+        return None, None
+    raw = json_loads(getattr(event, "field_context_json", None), {})
+    return _compact_market_field(raw), event.id
+
+
+def _position_entry_market_field(
+    db: Session,
+    closed: ClosedPosition,
+) -> tuple[Optional[dict[str, object]], Optional[int]]:
+    event_id = closed.source_event_id
+    if event_id is None and closed.source_position_id is not None:
+        position = (
+            db.query(OptionPosition)
+            .filter(OptionPosition.id == closed.source_position_id)
+            .first()
+        )
+        if position is not None:
+            event_id = position.source_event_id
+    return _event_market_field(db, event_id)
+
+
+def _market_field_cohort(value: Optional[dict[str, object]]) -> str:
+    if not isinstance(value, dict):
+        return "unavailable"
+    classification = value.get("classification")
+    if not isinstance(classification, dict):
+        classification = value.get("signals")
+    if not isinstance(classification, dict):
+        return "unavailable"
+    state = str(classification.get("path_state") or "").strip().lower()
+    return state if state in {"supportive", "fading", "contradictory", "mixed"} else "unavailable"
 
 
 def _finite(value: object) -> Optional[float]:
@@ -335,6 +444,7 @@ def mature_decision_outcomes(
                 if review.selected_assessment_id:
                     assessment = db.query(OptionThesisAssessment).filter(OptionThesisAssessment.id == review.selected_assessment_id).first()
                 recommended = assessment.proposed_verdict if assessment else None
+                decision_field = _assessment_market_field(assessment)
                 aligned = recommended is not None and recommended == review.verdict
                 process_quality = "aligned_with_shadow" if aligned else "independent_or_override"
                 if incremental is None:
@@ -372,6 +482,13 @@ def mature_decision_outcomes(
                             "actual_execution_verified": False,
                             "review_decision": review.verdict,
                             "shadow_recommendation": recommended,
+                            "market_field": {
+                                "source": "selected_assessment",
+                                "assessment_id": assessment.id if assessment else None,
+                                "cohort": _market_field_cohort(decision_field),
+                                "snapshot": decision_field,
+                                "rank_influence": 0.0,
+                            },
                             "model_version": OUTCOME_MODEL_VERSION,
                         }
                     ),
@@ -537,6 +654,9 @@ def create_trade_outcome(
     event_result = overrides.get("event_result", event_result)
     review_discipline = overrides.get("review_discipline", review_discipline)
     scanner_recurrence = _scanner_recurrence_attribution(db, position_id)
+    entry_field, entry_field_event_id = _position_entry_market_field(db, closed)
+    assessment_field = _assessment_market_field(assessment)
+    field_cohort = _market_field_cohort(entry_field or assessment_field)
 
     row = OptionTradeOutcome(
         closed_position_id=closed.id,
@@ -568,6 +688,7 @@ def create_trade_outcome(
                 "scanner_recurrence_cohort": scanner_recurrence["cohort"],
                 "scanner_recurrence_count": scanner_recurrence["event_count"],
                 "scanner_replacement_cohort": scanner_recurrence["replacement_cohort"],
+                "market_field_entry_cohort": field_cohort,
             }
         ),
         attribution_json=json_dumps(
@@ -577,6 +698,15 @@ def create_trade_outcome(
                 "assessment_id": assessment.id if assessment else None,
                 "actual_trade_outcome": True,
                 "scanner_recurrence": scanner_recurrence,
+                "market_field": {
+                    "entry_event_id": entry_field_event_id,
+                    "entry_snapshot": entry_field,
+                    "latest_assessment_id": assessment.id if assessment else None,
+                    "latest_assessment_snapshot": assessment_field,
+                    "cohort_basis": "entry_snapshot" if entry_field else "latest_assessment_fallback",
+                    "cohort": field_cohort,
+                    "rank_influence": 0.0,
+                },
                 "human_overrides": overrides,
             }
         ),
@@ -688,6 +818,7 @@ def learning_summary(db: Session) -> dict[str, object]:
     models = db.query(OptionModelRegistry).order_by(OptionModelRegistry.created_at.asc()).all()
     recurrence_cohorts: dict[str, dict[str, object]] = {}
     replacement_cohorts: dict[str, dict[str, object]] = {}
+    field_cohorts: dict[str, dict[str, object]] = {}
     for outcome in latest_outcomes:
         metrics = json_loads(outcome.metrics_json, {})
         attribution = json_loads(outcome.attribution_json, {})
@@ -738,6 +869,30 @@ def learning_summary(db: Session) -> dict[str, object]:
             replacement_values = replacement_row["percent_pnl_values"]
             if isinstance(replacement_values, list):
                 replacement_values.append(percent_pnl)
+        field_attribution = attribution.get("market_field") if isinstance(attribution, dict) else None
+        field_cohort = (
+            str(field_attribution.get("cohort"))
+            if isinstance(field_attribution, dict) and field_attribution.get("cohort")
+            else str(metrics.get("market_field_entry_cohort") or "unavailable")
+        )
+        if field_cohort not in {"supportive", "fading", "contradictory", "mixed"}:
+            field_cohort = "unavailable"
+        field_row = field_cohorts.setdefault(
+            field_cohort,
+            {
+                "sample_count": 0,
+                "profitable": 0,
+                "unprofitable": 0,
+                "flat": 0,
+                "percent_pnl_values": [],
+            },
+        )
+        field_row["sample_count"] = int(field_row["sample_count"]) + 1
+        field_row[financial_outcome] = int(field_row.get(financial_outcome, 0)) + 1
+        if percent_pnl is not None:
+            field_values = field_row["percent_pnl_values"]
+            if isinstance(field_values, list):
+                field_values.append(percent_pnl)
     recurrence_outcomes = {}
     for cohort in ("no_repeat", "repeat_seen", "strengthened_seen", "contract_drift_seen"):
         row = recurrence_cohorts.get(
@@ -779,6 +934,23 @@ def learning_summary(db: Session) -> dict[str, object]:
             **row,
             "average_percent_pnl": round(sum(values) / len(values), 2) if values else None,
         }
+    field_outcomes = {}
+    for cohort in ("supportive", "fading", "contradictory", "mixed", "unavailable"):
+        row = field_cohorts.get(
+            cohort,
+            {
+                "sample_count": 0,
+                "profitable": 0,
+                "unprofitable": 0,
+                "flat": 0,
+                "percent_pnl_values": [],
+            },
+        )
+        values = row.pop("percent_pnl_values")
+        field_outcomes[cohort] = {
+            **row,
+            "average_percent_pnl": round(sum(values) / len(values), 2) if values else None,
+        }
     return {
         "sample": {
             "open_review_records": reviews,
@@ -814,6 +986,14 @@ def learning_summary(db: Session) -> dict[str, object]:
             "cohorts": replacement_outcomes,
             "actual_closed_trades_only": True,
             "minimum_sample_before_comparison": 20,
+            "automatic_weight_changes": False,
+        },
+        "market_field_outcomes": {
+            "cohorts": field_outcomes,
+            "actual_closed_trades_only": True,
+            "point_in_time_snapshot_required": True,
+            "minimum_sample_before_comparison": 20,
+            "rank_influence": 0.0,
             "automatic_weight_changes": False,
         },
         "promotion_readiness": {

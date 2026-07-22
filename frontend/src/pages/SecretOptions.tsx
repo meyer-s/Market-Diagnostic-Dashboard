@@ -35,10 +35,18 @@ import { getFamilyColor } from "../theme/metricColors";
 import { buildHolisticSummary } from "../utils/holisticSummary";
 import { buildSummaryInputFromSnapshot, type TechnicalDataLike, type FundamentalsLike, type OptionalityLike } from "../utils/summaryInput";
 import {
+  presentOptionMarketField,
   presentScannerPositionMatch,
+  type OptionMarketFieldAxisResult,
+  type OptionMarketFieldContext,
   type ScannerPositionMatch,
   type ScannerPositionMatchTone,
 } from "../utils/scannerPositionMatch";
+import {
+  DEFAULT_MARKET_WEATHER_QUERY_STATE,
+  serializeMarketWeatherQuery,
+} from "../utils/marketWeatherQuery";
+import type { MarketWeatherTimeframe } from "../types/marketWeather";
 
 interface OptionPosition {
   id: number;
@@ -354,6 +362,12 @@ interface PositionThesisAssessment {
   vetoes: Array<{ code: string; hard?: boolean; detail: string }>;
   reasons: string[];
   missing_inputs: string[];
+  input_snapshot?: ({
+    field_context?: OptionMarketFieldContext | null;
+  } & Record<string, unknown>) | null;
+  axis_results?: ({
+    market_structure?: OptionMarketFieldAxisResult | null;
+  } & Record<string, unknown>) | null;
 }
 
 interface SuggestedDecisionWindow {
@@ -446,6 +460,23 @@ interface OptionLearningSummary {
     >;
     actual_closed_trades_only: boolean;
     minimum_sample_before_comparison: number;
+    automatic_weight_changes: false;
+  };
+  market_field_outcomes?: {
+    cohorts: Record<
+      "supportive" | "fading" | "contradictory" | "mixed" | "unavailable",
+      {
+        sample_count: number;
+        profitable: number;
+        unprofitable: number;
+        flat: number;
+        average_percent_pnl: number | null;
+      }
+    >;
+    actual_closed_trades_only: boolean;
+    point_in_time_snapshot_required: boolean;
+    minimum_sample_before_comparison: number;
+    rank_influence: 0;
     automatic_weight_changes: false;
   };
   promotion_readiness: {
@@ -627,6 +658,7 @@ interface ScannerRankedOpportunity {
     basis: string | null;
   } | null;
   position_match?: ScannerPositionMatch | null;
+  field_context?: OptionMarketFieldContext | null;
   selected_contract: {
     expiry: string | null;
     dte: number | null;
@@ -1222,6 +1254,33 @@ const formatComponentLabel = (value: string) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
+const MARKET_FIELD_TIMEFRAMES = new Set<MarketWeatherTimeframe>([
+  "1m",
+  "5m",
+  "15m",
+  "30m",
+  "1h",
+  "2h",
+  "4h",
+  "1D",
+  "1W",
+]);
+
+const marketFieldPath = (symbol: string, requestedTimeframe?: string | null) => {
+  const timeframe = requestedTimeframe && MARKET_FIELD_TIMEFRAMES.has(requestedTimeframe as MarketWeatherTimeframe)
+    ? requestedTimeframe as MarketWeatherTimeframe
+    : DEFAULT_MARKET_WEATHER_QUERY_STATE.config.timeframe;
+  const query = serializeMarketWeatherQuery({
+    ...DEFAULT_MARKET_WEATHER_QUERY_STATE,
+    config: {
+      ...DEFAULT_MARKET_WEATHER_QUERY_STATE.config,
+      symbol: symbol.trim().toUpperCase(),
+      timeframe,
+    },
+  });
+  return `/market-weather?${query.toString()}`;
+};
+
 const scannerPositionMatchBadgeClass: Record<ScannerPositionMatchTone, string> = {
   neutral: "border-sky-500/30 bg-sky-500/10 text-sky-200",
   positive: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
@@ -1245,6 +1304,8 @@ const replacementGateClass: Record<string, string> = {
 const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportunity }) => {
   const contract = opportunity.selected_contract;
   const positionMatch = presentScannerPositionMatch(opportunity.position_match);
+  const marketField = presentOptionMarketField(opportunity.field_context);
+  const marketFieldHref = marketField ? marketFieldPath(opportunity.symbol, marketField.timeframe) : null;
   const replacementDecision = opportunity.position_match?.replacement_decision || null;
   const replacementComparison = replacementDecision?.comparison || null;
   const sections = parseScannerAlertSections(opportunity.message);
@@ -1392,6 +1453,50 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
             Evidence only · no add signal
           </span>
         </div>
+      ) : null}
+      {marketField && marketFieldHref ? (
+        <section className="mb-3 rounded-lg border border-stealth-700/80 bg-stealth-950/45 px-2.5 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-stealth-500">
+              Mispricing × path fit
+            </span>
+            <span className="rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200">
+              IV pct {formatPercent(opportunity.iv_percentile, 0)}
+            </span>
+            <span
+              aria-label={marketField.accessibleLabel}
+              title={marketField.accessibleLabel}
+              className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[marketField.tone]}`}
+            >
+              {marketField.badgeLabel}
+            </span>
+            {[marketField.directionLabel, marketField.structureLabel, marketField.boundaryLabel].filter(Boolean).map((label) => (
+              <span key={label} className="rounded-full border border-stealth-700 bg-stealth-900/70 px-1.5 py-0.5 text-[9px] text-stealth-300">
+                {label}
+              </span>
+            ))}
+            <Link
+              to={marketFieldHref}
+              className="ml-auto rounded-md border border-sky-500/35 bg-sky-500/10 px-2 py-1 text-[9px] font-semibold text-sky-200 hover:bg-sky-500/20"
+            >
+              Open Market Field
+            </Link>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-stealth-500 tabular-nums">
+            <span>{marketField.pathStateLabel}</span>
+            <span>IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}</span>
+            <span>{marketField.timeframe} · as of {opportunity.field_context?.as_of_bar || "recorded bar"}</span>
+            <span>Advisory · rank influence {formatNumber(opportunity.field_context?.rank_influence, 1)}</span>
+          </div>
+          <details className="mt-1.5 border-t border-stealth-800/80 pt-1.5">
+            <summary className="cursor-pointer text-[9px] font-semibold text-stealth-400">
+              Raw causal field snapshot
+            </summary>
+            <pre className="mt-1.5 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-stealth-950/80 p-2 text-[9px] leading-relaxed text-stealth-400">
+              {JSON.stringify(opportunity.field_context, null, 2)}
+            </pre>
+          </details>
+        </section>
       ) : null}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr]">
         <div className="space-y-2">
@@ -4418,6 +4523,35 @@ export default function SecretOptions() {
   const selectedOpportunityRead = selected ? buildOpportunityRead(selected.metrics.opportunity) : null;
   const selectedDecisionReviews = selected ? decisionReviewsByPosition[selected.position.id] ?? null : null;
   const selectedThesisAssessment = selected ? thesisAssessmentsByPosition[selected.position.id] ?? null : null;
+  const selectedMarketFieldContext = selectedThesisAssessment?.assessment.input_snapshot?.field_context ?? null;
+  const selectedMarketFieldAxis = selectedThesisAssessment?.assessment.axis_results?.market_structure ?? null;
+  const selectedMarketField = presentOptionMarketField(selectedMarketFieldContext, selectedMarketFieldAxis);
+  const selectedMarketFieldPath = selectedSymbol && selectedMarketField
+    ? marketFieldPath(selectedSymbol, selectedMarketField.timeframe)
+    : null;
+  const selectedMarketFieldHistory = (() => {
+    if (!selectedThesisAssessment?.assessment) return [];
+    const byAssessmentId = new Map<number, PositionThesisAssessment>();
+    [...(selectedThesisAssessment.history || []), selectedThesisAssessment.assessment].forEach((assessment) => {
+      byAssessmentId.set(assessment.id, assessment);
+    });
+    const points = Array.from(byAssessmentId.values())
+      .map((assessment) => ({
+        assessment,
+        field: presentOptionMarketField(
+          assessment.input_snapshot?.field_context,
+          assessment.axis_results?.market_structure
+        ),
+      }))
+      .filter((point): point is { assessment: PositionThesisAssessment; field: NonNullable<ReturnType<typeof presentOptionMarketField>> } => Boolean(point.field))
+      .sort((left, right) => {
+        const leftTime = left.assessment.as_of ? new Date(left.assessment.as_of).getTime() : 0;
+        const rightTime = right.assessment.as_of ? new Date(right.assessment.as_of).getTime() : 0;
+        return leftTime - rightTime;
+      });
+    if (points.length <= 3) return points;
+    return [points[0], points[points.length - 2], points[points.length - 1]];
+  })();
   const selectedAssessmentConfirmed = Boolean(
     selectedDecisionReviews?.latest_review
     && selectedThesisAssessment?.assessment
@@ -4526,6 +4660,19 @@ export default function SecretOptions() {
       parts.push(`${cohorts.contract_drift_seen.sample_count} contract drift`);
     }
     return `Repeat evidence: ${parts.join(" · ")}; actual trades only.`;
+  }, [learningSummary]);
+
+  const marketFieldLearning = useMemo(() => {
+    const cohorts = learningSummary?.market_field_outcomes?.cohorts;
+    if (!cohorts) return null;
+    const named = (["supportive", "fading", "contradictory", "mixed"] as const)
+      .map((key) => [key, cohorts[key].sample_count] as const)
+      .filter(([, count]) => count > 0);
+    const observed = named.reduce((sum, [, count]) => sum + count, 0);
+    if (observed === 0) {
+      return "Field challenger: collecting point-in-time closed outcomes; rank weight remains zero.";
+    }
+    return `Field challenger: ${named.map(([key, count]) => `${count} ${key}`).join(" · ")} closed ${observed === 1 ? "cycle" : "cycles"}; rank weight zero.`;
   }, [learningSummary]);
 
   const openAttribution = useMemo(() => {
@@ -4652,6 +4799,11 @@ export default function SecretOptions() {
     const expanded = expandedPositionId === position.id;
     const assessmentResponse = selectedId === position.id ? selectedThesisAssessment : null;
     const assessment = assessmentResponse?.assessment ?? null;
+    const marketField = presentOptionMarketField(
+      assessment?.input_snapshot?.field_context,
+      assessment?.axis_results?.market_structure
+    );
+    const mobileMarketFieldPath = marketField ? marketFieldPath(position.symbol, marketField.timeframe) : null;
     const reviews = selectedId === position.id ? selectedDecisionReviews : null;
     const lane = timelineLaneByPositionId.get(position.id);
     const diagnosis = buildPositionDiagnosis(position, metrics, lane);
@@ -4683,11 +4835,45 @@ export default function SecretOptions() {
                   {decisionLabel(assessment.quality)} quality · {decisionLabel(assessment.urgency)} urgency · {decisionLabel(assessment.confidence)} confidence
                 </div>
               ) : null}
+              {marketField ? (
+                <div className="mt-2 flex flex-wrap gap-1 text-[9px]">
+                  <span className={`rounded border px-1.5 py-0.5 font-semibold ${scannerPositionMatchBadgeClass[marketField.tone]}`}>
+                    {marketField.badgeLabel}
+                  </span>
+                  {[marketField.directionLabel, marketField.structureLabel, marketField.boundaryLabel, marketField.familiarityLabel]
+                    .filter((label): label is string => Boolean(label))
+                    .map((label) => (
+                      <span
+                        key={label}
+                        title={label === marketField.familiarityLabel ? marketField.familiarityReason || undefined : undefined}
+                        className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                </div>
+              ) : null}
             </div>
             <button type="button" onClick={() => toggleMobilePositionDetails(position)} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-stealth-700 text-stealth-300" aria-label={`Collapse ${position.symbol} details`}>
               <ChevronDown className="h-4 w-4 rotate-180" aria-hidden="true" />
             </button>
           </div>
+
+          {marketField && selectedMarketFieldHistory.length > 1 ? (
+            <div className="mt-2 grid grid-cols-3 overflow-hidden rounded-lg border border-stealth-800 bg-stealth-950/40">
+              {selectedMarketFieldHistory.map(({ assessment: historyAssessment, field }, index) => (
+                <div key={historyAssessment.id} className="min-w-0 border-r border-stealth-800 px-2 py-2 last:border-r-0">
+                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">
+                    {index === selectedMarketFieldHistory.length - 1 ? "Now" : index === 0 && selectedMarketFieldHistory.length === 3 ? "First" : "Prior"}
+                  </div>
+                  <div className={`mt-0.5 truncate text-[10px] font-semibold ${scannerPositionMatchTextClass[field.tone]}`}>
+                    {field.badgeLabel}
+                  </div>
+                  <div className="truncate text-[9px] text-stealth-500">{formatRelativeTime(historyAssessment.as_of)}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           <div className={`mt-3 rounded-lg border px-3 py-2 text-sm leading-relaxed ${lane?.urgency === "overdue" ? "border-rose-500/35 bg-rose-500/10 text-rose-100" : lane?.urgency === "due" ? "border-amber-500/35 bg-amber-500/10 text-amber-100" : "border-stealth-700 bg-stealth-900/45 text-stealth-300"}`}>
             {diagnosis}
@@ -4733,7 +4919,10 @@ export default function SecretOptions() {
               <button type="button" onClick={() => openEditModal(position)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-sm font-semibold text-sky-100"><Pencil className="h-4 w-4" aria-hidden="true" />Edit position</button>
               <button type="button" onClick={() => openCloseModal(position.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 text-sm font-semibold text-rose-100"><Trash2 className="h-4 w-4" aria-hidden="true" />Close position</button>
             </div>
-            {selectedStockAnalysisPath ? <Link to={selectedStockAnalysisPath} className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-stealth-700 text-sm font-semibold text-stealth-200">Open {position.symbol} analysis</Link> : null}
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {selectedStockAnalysisPath ? <Link to={selectedStockAnalysisPath} className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-stealth-700 text-sm font-semibold text-stealth-200">Open {position.symbol} analysis</Link> : null}
+              {mobileMarketFieldPath ? <Link to={mobileMarketFieldPath} className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-sky-500/35 bg-sky-500/10 text-sm font-semibold text-sky-100">Open Market Field</Link> : null}
+            </div>
           </div>
         </div>
       ) : null}
@@ -4968,7 +5157,52 @@ export default function SecretOptions() {
                 <div className="space-y-2">{recentScannerRuns.length === 0 ? <p className="text-sm text-stealth-400">No scanner runs yet.</p> : recentScannerRuns.slice(0, 8).map((run) => <button key={run.id} type="button" onClick={() => void handleSelectScannerRun(run.id)} className={`w-full rounded-lg border p-3 text-left ${selectedScannerRunId === run.id ? "border-sky-500/40 bg-sky-500/10" : "border-stealth-800 bg-stealth-950/30"}`}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-stealth-100">{run.universe_label}</span><span className={`rounded-full border px-2 py-0.5 text-[10px] ${scannerStatusClass(run.status)}`}>{run.status}</span></div><div className="mt-1 flex justify-between text-xs text-stealth-500"><span>{formatRelativeTime(run.started_at)}</span><span>{run.hits} hits · {run.scanned_symbols} scanned</span></div></button>)}</div>
               ) : null}
               {mobileScannerView === "hits" ? (
-                <div className="space-y-2">{loadingScannerRunDetail ? <p className="text-sm text-stealth-400">Loading scan hits…</p> : selectedScannerHits.length === 0 ? <p className="text-sm text-stealth-400">Select a completed run to inspect its hits.</p> : selectedScannerHits.map((hit) => { const contract = hit.selected_contract; const match = presentScannerPositionMatch(hit.position_match); return <button key={hit.event_id} type="button" onClick={() => setExpandedScannerHitId(hit.event_id)} className="w-full rounded-lg border border-stealth-800 bg-stealth-950/30 p-3 text-left"><div className="flex items-start justify-between gap-2"><div><span className="text-base font-semibold text-sky-100">{hit.symbol}</span><p className="mt-0.5 text-xs text-stealth-400">{contract.option_type?.toUpperCase() ?? "Option"} {contract.strike !== null ? formatNumber(contract.strike, 2) : "pending"} · {hit.group}</p></div><span className={`rounded border px-2 py-1 text-xs font-semibold ${opportunityScoreClass(hit.score)}`}>{hit.grade ?? hit.score.toFixed(0)}</span></div>{match ? <div className={`mt-2 rounded-md border px-2 py-1 text-xs ${scannerPositionMatchBadgeClass[match.tone]}`}>{match.badgeLabel} · {match.classificationLabel}</div> : null}</button>; })}</div>
+                <div className="space-y-2">
+                  {loadingScannerRunDetail ? (
+                    <p className="text-sm text-stealth-400">Loading scan hits…</p>
+                  ) : selectedScannerHits.length === 0 ? (
+                    <p className="text-sm text-stealth-400">Select a completed run to inspect its hits.</p>
+                  ) : selectedScannerHits.map((hit) => {
+                    const contract = hit.selected_contract;
+                    const match = presentScannerPositionMatch(hit.position_match);
+                    const field = presentOptionMarketField(hit.field_context);
+                    return (
+                      <button
+                        key={hit.event_id}
+                        type="button"
+                        onClick={() => setExpandedScannerHitId(hit.event_id)}
+                        className="w-full rounded-lg border border-stealth-800 bg-stealth-950/30 p-3 text-left"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-base font-semibold text-sky-100">{hit.symbol}</span>
+                              {field ? (
+                                <span
+                                  aria-label={field.accessibleLabel}
+                                  className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${scannerPositionMatchBadgeClass[field.tone]}`}
+                                >
+                                  {field.badgeLabel}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-0.5 truncate text-xs text-stealth-400">
+                              {contract.option_type?.toUpperCase() ?? "Option"} {contract.strike !== null ? formatNumber(contract.strike, 2) : "pending"} · {hit.group}
+                            </p>
+                          </div>
+                          <span className={`rounded border px-2 py-1 text-xs font-semibold ${opportunityScoreClass(hit.score)}`}>
+                            {hit.grade ?? hit.score.toFixed(0)}
+                          </span>
+                        </div>
+                        {match ? (
+                          <div className={`mt-2 rounded-md border px-2 py-1 text-xs ${scannerPositionMatchBadgeClass[match.tone]}`}>
+                            {match.badgeLabel} · {match.classificationLabel}
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
               ) : null}
               {mobileScannerView === "repeated" ? (
                 <div className="space-y-2">{topScannerSymbols.length === 0 ? <p className="text-sm text-stealth-400">No repeat evidence in the current lookback.</p> : topScannerSymbols.slice(0, 10).map((symbol) => <div key={symbol.symbol} className="flex items-center justify-between border-b border-stealth-800 py-2 last:border-0"><div><div className="font-semibold text-stealth-100">{symbol.symbol}</div><div className="text-xs text-stealth-500">{symbol.group} · {formatRelativeTime(symbol.latest_triggered_at)}</div></div><div className="text-right"><div className="text-sm font-semibold text-stealth-100">{symbol.hits} hits</div><div className="text-xs text-emerald-300">+{symbol.recent_hits} recent</div></div></div>)}</div>
@@ -5608,6 +5842,7 @@ export default function SecretOptions() {
                 {selectedScannerHits.map((opportunity) => {
                   const contract = opportunity.selected_contract;
                   const positionMatch = presentScannerPositionMatch(opportunity.position_match);
+                  const marketField = presentOptionMarketField(opportunity.field_context);
                   const isSelected = expandedScannerHitId === opportunity.event_id;
                   const contractLabel =
                     contract.option_type && contract.strike !== null && contract.strike !== undefined
@@ -5639,7 +5874,7 @@ export default function SecretOptions() {
                           {opportunity.symbol}
                         </Link>
                         <div className="min-w-0">
-                          <div className="flex min-w-0 items-center gap-1.5">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                             <div className="truncate text-stealth-200">
                               {contractLabel}
                               {contract.expiry ? ` · ${formatDate(contract.expiry)}` : ""}
@@ -5652,6 +5887,15 @@ export default function SecretOptions() {
                                 className={`shrink-0 rounded border px-1 py-0.5 text-[8px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[positionMatch.tone]}`}
                               >
                                 {positionMatch.badgeLabel}
+                              </span>
+                            ) : null}
+                            {marketField ? (
+                              <span
+                                aria-label={marketField.accessibleLabel}
+                                title={marketField.accessibleLabel}
+                                className={`shrink-0 rounded border px-1 py-0.5 text-[8px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[marketField.tone]}`}
+                              >
+                                {marketField.badgeLabel}
                               </span>
                             ) : null}
                           </div>
@@ -5809,6 +6053,66 @@ export default function SecretOptions() {
                 <div>{selected.metrics.dte ?? "—"} DTE</div>
               </div>
             </div>
+
+            {selectedMarketField ? (
+              <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-sky-800/35 pt-2 text-[9px]">
+                <span
+                  aria-label={selectedMarketField.accessibleLabel}
+                  title={selectedMarketField.accessibleLabel}
+                  className={`rounded border px-1.5 py-0.5 font-semibold tracking-wide ${scannerPositionMatchBadgeClass[selectedMarketField.tone]}`}
+                >
+                  {selectedMarketField.badgeLabel}
+                </span>
+                {[
+                  selectedMarketField.directionLabel,
+                  selectedMarketField.structureLabel,
+                  selectedMarketField.boundaryLabel,
+                  selectedMarketField.familiarityLabel,
+                ].filter((label): label is string => Boolean(label)).map((label) => (
+                  <span
+                    key={label}
+                    title={label === selectedMarketField.familiarityLabel ? selectedMarketField.familiarityReason || undefined : undefined}
+                    className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300"
+                  >
+                    {label}
+                  </span>
+                ))}
+                {selectedMarketFieldPath ? (
+                  <Link
+                    to={selectedMarketFieldPath}
+                    className="ml-auto rounded-md border border-sky-500/35 bg-sky-500/10 px-2 py-1 font-semibold text-sky-100 hover:bg-sky-500/20"
+                  >
+                    Open Market Field
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
+            {selectedMarketFieldHistory.length > 1 ? (
+              <div className="mt-1.5 grid grid-cols-3 overflow-hidden rounded-md border border-stealth-800/80 bg-stealth-950/35">
+                {selectedMarketFieldHistory.map(({ assessment, field }, index) => {
+                  const isLatest = index === selectedMarketFieldHistory.length - 1;
+                  const pointLabel = isLatest ? "Now" : index === 0 && selectedMarketFieldHistory.length === 3 ? "First" : "Prior";
+                  return (
+                    <div
+                      key={assessment.id}
+                      title={`${field.summary}${assessment.as_of ? ` · ${assessment.as_of}` : ""}`}
+                      className="min-w-0 border-r border-stealth-800/80 px-2 py-1.5 last:border-r-0"
+                    >
+                      <div className="flex items-center justify-between gap-1 text-[8px] uppercase tracking-wide text-stealth-500">
+                        <span>{pointLabel}</span>
+                        <span className="truncate normal-case tracking-normal">{formatRelativeTime(assessment.as_of)}</span>
+                      </div>
+                      <div className={`mt-0.5 truncate text-[9px] font-semibold ${scannerPositionMatchTextClass[field.tone]}`}>
+                        {field.badgeLabel}
+                      </div>
+                      <div className="truncate text-[8px] text-stealth-500">
+                        {field.boundaryLabel || field.directionLabel || field.pathStateLabel}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
 
             <div className="mt-3 grid grid-cols-2 gap-1.5">
               <button
@@ -7513,6 +7817,11 @@ export default function SecretOptions() {
                     {scannerRecurrenceLearning ? (
                       <div className="mt-1 text-[10px] text-violet-200/75">
                         {scannerRecurrenceLearning}
+                      </div>
+                    ) : null}
+                    {marketFieldLearning ? (
+                      <div className="mt-1 text-[10px] text-sky-200/75">
+                        {marketFieldLearning}
                       </div>
                     ) : null}
                   </div>

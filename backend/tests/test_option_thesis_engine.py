@@ -7,6 +7,8 @@ import pandas as pd
 
 from app.models.option_decision_learning import OptionPositionMandate, OptionRiskPolicy
 from app.services.option_thesis_engine import (
+    FIELD_SHADOW_FEATURE_SCHEMA_VERSION,
+    FIELD_SHADOW_MODEL_VERSION,
     build_assessment_payload,
     rebase_continuation_condition,
     technical_snapshot_from_frame,
@@ -189,3 +191,109 @@ def test_nonviable_contract_can_be_replaced_without_declaring_company_thesis_bro
     assert result["proposed_target_contracts"] == 0
     assert result["next_review_date"] is None
     assert result["decision_deadline"] == date(2026, 7, 15)
+
+
+def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> None:
+    position = _position(strike=105.0)
+    offsetting_position = _position(
+        id=2,
+        option_type="put",
+        expiration=date(2026, 12, 18),
+        total_cost=2_400.0,
+    )
+    field_context = {
+        "schema_version": "option_market_field_v1",
+        "mode": "shadow_only",
+        "rank_influence": 0.0,
+        "available": True,
+        "computed_at": "2026-07-15T16:05:00Z",
+        "as_of_bar": "2026-07-14T20:00:00Z",
+        "timeframe": "1D",
+        "quality": {"available": True, "status": "complete", "warnings": []},
+        "direction": {
+            "option_aligned_pressure": -0.42,
+            "option_aligned_velocity": -0.27,
+        },
+        "strata": {
+            "structure": 0.61,
+            "kinematics": 0.48,
+            "geometry": 0.55,
+            "information": 0.72,
+            "propagation": 0.31,
+            "cascade_bias": -0.18,
+        },
+        "price_action": {
+            "state": "breakdown",
+            "support_distance_atr": -0.35,
+            "resistance_distance_atr": 2.8,
+        },
+        "classification": {
+            "path_state": "contradictory",
+            "eventfulness": "normal",
+        },
+        "hypotheses": {
+            "organized_expansion": False,
+            "longward_cascade": False,
+            "geometry_disorder_shock": False,
+            "kinematic_exhaustion": False,
+        },
+    }
+    metrics = {
+        "market": {"current_price": 102.0, "last_updated": "2026-07-15T16:00:00Z"},
+        "option_price": 1.4,
+        "quote": {"bid": 1.3, "ask": 1.5, "spread_pct": 14.3},
+        "volatility": 0.25,
+        "dte": 65,
+        "greeks": {"delta": 0.35, "theta": -0.04},
+        "pnl": {"dollar": -240.0, "percent": -30.0},
+        "technical_snapshot": {
+            "price": 102.0,
+            "sma20": 101.0,
+            "sma50": 99.0,
+            "sma20_slope_pct": 1.2,
+            "rsi14": 56.0,
+            "macd_hist": 0.3,
+        },
+        "field_context": field_context,
+    }
+
+    result = build_assessment_payload(
+        position=position,
+        metrics=metrics,
+        mandate=_mandate(),
+        latest_review=None,
+        portfolio_positions=[position, offsetting_position],
+        risk_policy=_policy(),
+        projection_payload={
+            "projections": {"3M": {"direction": "bullish", "conviction": "medium"}},
+            "fundamentals": {
+                "revenue_yoy": {
+                    "series": [
+                        {"date": "2026-03-31", "value": 3.0},
+                        {"date": "2026-06-30", "value": 5.0},
+                    ]
+                },
+                "eps": {
+                    "series": [
+                        {"date": "2026-03-31", "value": 1.0},
+                        {"date": "2026-06-30", "value": 1.2},
+                    ]
+                },
+            },
+        },
+        as_of=datetime(2026, 7, 15, 16, 0),
+    )
+
+    assert result["proposed_verdict"] == "hold"
+    assert result["proposed_target_contracts"] == position.contracts
+    assert not any(item["code"].startswith("market_field") for item in result["vetoes"])
+    assert result["confidence"] == "medium"
+    assert result["urgency"] == "high"
+    assert result["grader_version"] == FIELD_SHADOW_MODEL_VERSION
+    assert result["feature_schema_version"] == FIELD_SHADOW_FEATURE_SCHEMA_VERSION
+    assert result["input_snapshot"]["field_context"] == field_context
+    assert result["axis_results"]["market_structure"]["status"] == "contradictory"
+    assert result["axis_results"]["market_structure"]["familiarity"] == "not_scored"
+    field_evidence = next(item for item in result["evidence"] if item["evidence_id"] == "market_field_path")
+    assert field_evidence["advisory"] is True
+    assert field_evidence["rank_influence"] == 0.0

@@ -22,6 +22,8 @@ from app.services.options_review_window import ReviewWindow, compute_decision_wi
 GRADER_VERSION = "thesis_rules_v2"
 FEATURE_SCHEMA_VERSION = "option_thesis_features_v2"
 MODEL_KEY = "option_thesis_grader"
+FIELD_SHADOW_MODEL_VERSION = "thesis_rules_v2_market_field_shadow_v1"
+FIELD_SHADOW_FEATURE_SCHEMA_VERSION = "option_market_field_features_v1"
 
 _CATALYST_TERMS = (
     "earnings",
@@ -182,7 +184,7 @@ def ensure_default_risk_policy(db: Session) -> OptionRiskPolicy:
 
 
 def ensure_model_registry(db: Session) -> OptionModelRegistry:
-    row = (
+    champion = (
         db.query(OptionModelRegistry)
         .filter(
             OptionModelRegistry.model_key == MODEL_KEY,
@@ -190,26 +192,59 @@ def ensure_model_registry(db: Session) -> OptionModelRegistry:
         )
         .first()
     )
-    if row is not None:
-        return row
-    row = OptionModelRegistry(
-        model_key=MODEL_KEY,
-        model_version=GRADER_VERSION,
-        model_status="champion",
-        feature_schema_version=FEATURE_SCHEMA_VERSION,
-        sample_count=0,
-        metrics_json=json_dumps({"mode": "deterministic_shadow", "live_outcomes": 0}),
-        promotion_gates_json=json_dumps(
-            {
-                "minimum_independent_trade_cycles": 100,
-                "minimum_new_cycles_before_retrain": 25,
-                "automatic_promotion": False,
-            }
-        ),
+    if champion is None:
+        champion = OptionModelRegistry(
+            model_key=MODEL_KEY,
+            model_version=GRADER_VERSION,
+            model_status="champion",
+            feature_schema_version=FEATURE_SCHEMA_VERSION,
+            sample_count=0,
+            metrics_json=json_dumps({"mode": "deterministic_shadow", "live_outcomes": 0}),
+            promotion_gates_json=json_dumps(
+                {
+                    "minimum_independent_trade_cycles": 100,
+                    "minimum_new_cycles_before_retrain": 25,
+                    "automatic_promotion": False,
+                }
+            ),
+        )
+        db.add(champion)
+
+    field_challenger = (
+        db.query(OptionModelRegistry)
+        .filter(
+            OptionModelRegistry.model_key == MODEL_KEY,
+            OptionModelRegistry.model_version == FIELD_SHADOW_MODEL_VERSION,
+        )
+        .first()
     )
-    db.add(row)
+    if field_challenger is None:
+        field_challenger = OptionModelRegistry(
+            model_key=MODEL_KEY,
+            model_version=FIELD_SHADOW_MODEL_VERSION,
+            model_status="challenger",
+            feature_schema_version=FIELD_SHADOW_FEATURE_SCHEMA_VERSION,
+            sample_count=0,
+            metrics_json=json_dumps(
+                {
+                    "mode": "advisory_shadow",
+                    "live_outcomes": 0,
+                    "rank_influence": 0.0,
+                    "automated_execution_enabled": False,
+                }
+            ),
+            promotion_gates_json=json_dumps(
+                {
+                    "minimum_independent_trade_cycles": 100,
+                    "minimum_new_cycles_before_retrain": 25,
+                    "incremental_out_of_sample_value_required": True,
+                    "automatic_promotion": False,
+                }
+            ),
+        )
+        db.add(field_challenger)
     db.flush()
-    return row
+    return champion
 
 
 def latest_risk_policy(db: Session) -> OptionRiskPolicy:
@@ -626,6 +661,126 @@ def _technical_direction_score(option_type: str, technical: dict[str, object]) -
     return max(-5, min(5, score))
 
 
+_FIELD_PATH_STATES = {"supportive", "fading", "contradictory", "mixed", "unavailable"}
+_URGENCY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
+def _nested_mapping(payload: object, key: str) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        return {}
+    value = payload.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _market_structure_axis(field_context: object) -> dict[str, object]:
+    context = field_context if isinstance(field_context, dict) else {}
+    direction = _nested_mapping(context, "direction")
+    strata = _nested_mapping(context, "strata")
+    price_action = _nested_mapping(context, "price_action")
+    classification = _nested_mapping(context, "classification")
+    hypotheses = _nested_mapping(context, "hypotheses")
+    signals = _nested_mapping(context, "signals")
+    quality = context.get("quality")
+    quality_mapping = quality if isinstance(quality, dict) else {}
+    available = bool(quality_mapping.get("available", context.get("available")))
+    path_state = str(
+        classification.get("path_state")
+        or signals.get("path_state")
+        or "unavailable"
+    ).strip().lower()
+    if not available or path_state not in _FIELD_PATH_STATES:
+        path_state = "unavailable"
+    geometry_shock = bool(
+        hypotheses.get("geometry_disorder_shock", signals.get("geometry_disorder_shock"))
+    )
+    exhaustion = bool(
+        hypotheses.get("kinematic_exhaustion", signals.get("kinematic_exhaustion"))
+    )
+    eventfulness = str(classification.get("eventfulness") or "").strip().lower()
+    transition_elevated = eventfulness in {"elevated", "high", "shock", "exhaustion"}
+    transition_risk = (
+        "elevated"
+        if available and (geometry_shock or exhaustion or transition_elevated)
+        else "normal"
+        if available
+        else "unavailable"
+    )
+    if isinstance(quality, dict):
+        quality_label = str(
+            quality.get("status")
+            or quality.get("label")
+            or quality.get("data_quality_status")
+            or "unknown"
+        )
+    else:
+        quality_label = str(quality or "unknown")
+    return {
+        "status": path_state,
+        "advisory": True,
+        "rank_influence": 0.0,
+        "available": available,
+        "schema_version": context.get("schema_version"),
+        "timeframe": context.get("timeframe"),
+        "as_of_bar": context.get("as_of_bar"),
+        "quality": quality_label,
+        "aligned_pressure": _finite(
+            direction.get("option_aligned_pressure", direction.get("aligned_pressure"))
+        ),
+        "aligned_velocity": _finite(
+            direction.get("option_aligned_velocity", direction.get("aligned_velocity"))
+        ),
+        "structure": _finite(strata.get("structure")),
+        "kinematics": _finite(strata.get("kinematics")),
+        "geometry": _finite(strata.get("geometry")),
+        "information": _finite(strata.get("information")),
+        "propagation": _finite(strata.get("propagation")),
+        "cascade_bias": _finite(strata.get("cascade_bias")),
+        "transition_risk": transition_risk,
+        "boundary_state": price_action.get("state"),
+        "support_distance_atr": _finite(price_action.get("support_distance_atr")),
+        "resistance_distance_atr": _finite(price_action.get("resistance_distance_atr")),
+        "familiarity": "not_scored",
+        "familiarity_reason": "Stable cross-review familiarity is not available from the advisory snapshot.",
+        "signals": {
+            "organized_expansion": bool(
+                hypotheses.get("organized_expansion", signals.get("organized_expansion"))
+            ),
+            "longward_cascade": bool(
+                hypotheses.get("longward_cascade", signals.get("longward_cascade"))
+            ),
+            "geometry_disorder_shock": geometry_shock,
+            "kinematic_exhaustion": exhaustion,
+        },
+    }
+
+
+def _lower_confidence(confidence: str) -> str:
+    return {"high": "medium", "medium": "low"}.get(confidence, confidence)
+
+
+def _at_least_urgency(current: str, minimum: str) -> str:
+    return minimum if _URGENCY_RANK.get(current, 0) < _URGENCY_RANK[minimum] else current
+
+
+def _market_structure_fact(axis: dict[str, object]) -> str:
+    if not axis.get("available"):
+        return "Causal Market Field context is unavailable; it did not influence the verdict or target size."
+    fragments = [f"Underlying path is {str(axis['status']).replace('_', ' ')}"]
+    pressure = _finite(axis.get("aligned_pressure"))
+    velocity = _finite(axis.get("aligned_velocity"))
+    propagation = _finite(axis.get("propagation"))
+    if pressure is not None:
+        fragments.append(f"direction-adjusted pressure {pressure:+.2f}")
+    if velocity is not None:
+        fragments.append(f"direction-adjusted velocity {velocity:+.2f}")
+    if propagation is not None:
+        fragments.append(f"propagation {propagation:.2f}")
+    boundary = str(axis.get("boundary_state") or "").replace("_", " ").strip()
+    if boundary:
+        fragments.append(f"price is in a {boundary} state")
+    return "; ".join(fragments) + ". Advisory path evidence only; verdict and size rules remain unchanged."
+
+
 def build_assessment_payload(
     *,
     position: object,
@@ -647,6 +802,8 @@ def build_assessment_payload(
     pnl = metrics.get("pnl") if isinstance(metrics.get("pnl"), dict) else {}
     greeks = metrics.get("greeks") if isinstance(metrics.get("greeks"), dict) else {}
     technical = metrics.get("technical_snapshot") if isinstance(metrics.get("technical_snapshot"), dict) else {}
+    field_context = metrics.get("field_context") if isinstance(metrics.get("field_context"), dict) else {}
+    market_structure = _market_structure_axis(field_context)
     projection = _projection_snapshot(projection_payload)
 
     spot = _finite(market.get("current_price"))
@@ -881,6 +1038,17 @@ def build_assessment_payload(
         confidence = "low"
     else:
         confidence = "medium"
+    field_status = str(market_structure.get("status") or "unavailable")
+    field_transition = market_structure.get("transition_risk") == "elevated"
+    if market_structure.get("available") and (field_status in {"fading", "contradictory"} or field_transition):
+        # This is a challenger-only advisory adjustment. It can make the next
+        # human review sooner or make the grade less confident, but it cannot
+        # change the hard-veto tree, verdict, or target contracts above.
+        confidence = _lower_confidence(confidence)
+        urgency = _at_least_urgency(
+            urgency,
+            "high" if field_status == "contradictory" or field_transition else "medium",
+        )
 
     decision_window = build_actionable_decision_window(
         position=position,
@@ -909,6 +1077,8 @@ def build_assessment_payload(
     else:
         reasons.append("Company thesis is unverified because current business evidence is unavailable; technical price action is not treated as thesis proof.")
     reasons.extend(contract_reasons[:1])
+    if market_structure.get("available"):
+        reasons.append(_market_structure_fact(market_structure))
     if portfolio_status != "acceptable":
         reasons.append(f"Portfolio fit is {portfolio_status.replace('_', ' ')}; same-direction premium is {direction_share:.1f}% of the tracked book." if direction_share is not None else f"Portfolio fit is {portfolio_status.replace('_', ' ')}.")
     elif direction_share is not None:
@@ -960,6 +1130,7 @@ def build_assessment_payload(
             "expected_move_pct": expected_move_pct,
         },
         "technical": technical,
+        "field_context": field_context,
         "projection": projection,
         "portfolio": {
             "tracked_premium": total_premium,
@@ -988,6 +1159,7 @@ def build_assessment_payload(
             "directional_return_pct": directional_return,
             "technical_direction_score": technical_score,
         },
+        "market_structure": market_structure,
         "exact_contract": {
             "status": contract_status,
             "otm_pct": otm_pct,
@@ -1017,6 +1189,15 @@ def build_assessment_payload(
             "fact": f"Directional technical score is {technical_score:+d}; it informs path and timing, not business-thesis truth.",
         },
         {
+            "evidence_id": "market_field_path",
+            "source_type": "causal_market_field",
+            "as_of": market_structure.get("as_of_bar") or field_context.get("computed_at") or as_of_dt.isoformat(),
+            "signal": field_status,
+            "fact": _market_structure_fact(market_structure),
+            "advisory": True,
+            "rank_influence": 0.0,
+        },
+        {
             "evidence_id": "fundamental_state",
             "source_type": "cached_stock_fundamentals",
             "as_of": projection.get("as_of") or as_of_dt.isoformat(),
@@ -1038,8 +1219,10 @@ def build_assessment_payload(
     stable_input = json_dumps({"inputs": input_snapshot, "axes": axes, "vetoes": vetoes, "verdict": verdict, "target": target})
     return {
         "as_of": as_of_dt,
-        "grader_version": GRADER_VERSION,
-        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "grader_version": FIELD_SHADOW_MODEL_VERSION if market_structure.get("available") else GRADER_VERSION,
+        "feature_schema_version": (
+            FIELD_SHADOW_FEATURE_SCHEMA_VERSION if market_structure.get("available") else FEATURE_SCHEMA_VERSION
+        ),
         "input_hash": hashlib.sha256(stable_input.encode("utf-8")).hexdigest(),
         "data_quality_status": data_quality,
         "company_thesis_status": company_status,

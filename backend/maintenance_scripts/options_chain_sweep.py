@@ -1,6 +1,7 @@
 import argparse
 import os
 import time
+from datetime import datetime
 from typing import Any, Callable, Iterable, List, Optional
 
 import pandas as pd
@@ -14,6 +15,7 @@ from app.services.options_alerts import (
     _direction_hint,
     _format_alert_message,
     _is_iv_data_valid,
+    _provider_source,
     _review_window_for_plan,
     _select_training_contract,
     _selected_contract_event_fields,
@@ -21,6 +23,7 @@ from app.services.options_alerts import (
 )
 from app.models.options_alerts import OptionAlertEvent
 from app.services.market_data.factory import get_market_data_provider
+from app.services.option_field_context import build_option_field_context, option_field_event_fields
 from app.services.options_opportunity import opportunity_event_fields
 from app.services.scanner_repeat_evidence import record_scanner_recurrence_events
 from app.services.options_alerts import _send_webhook, _get_current_price
@@ -232,19 +235,24 @@ def _scan_tickers(
         horizon_labels, horizon_returns = _compute_horizon_bias(history)
         plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, history)
         hold_days = int(plan["hold_days"])
-        selected_contract = _select_training_contract(
-            provider=provider,
-            symbol=symbol,
-            current_price=current_price,
-            contract_side=str(plan["contract_side"]),
-            target_dte=60,
-            min_remaining_after_hold=hold_days + 3,
-            hold_days=hold_days,
-            target_move_pct=float(plan["target_move"]),
-            stop_move_pct=float(plan["stop_move"]),
-            iv30=iv30,
-            hv30=hv30,
-            max_expiries=optionality_config.get("contract_max_expiries"),
+        contract_side = plan.get("contract_side")
+        selected_contract = (
+            _select_training_contract(
+                provider=provider,
+                symbol=symbol,
+                current_price=current_price,
+                contract_side=contract_side,
+                target_dte=60,
+                min_remaining_after_hold=hold_days + 3,
+                hold_days=hold_days,
+                target_move_pct=float(plan["target_move"]),
+                stop_move_pct=float(plan["stop_move"]),
+                iv30=iv30,
+                hv30=hv30,
+                max_expiries=optionality_config.get("contract_max_expiries"),
+            )
+            if contract_side in {"CALL", "PUT"}
+            else None
         )
         review_window = _review_window_for_plan(
             base_hold_days=hold_days,
@@ -254,6 +262,14 @@ def _scan_tickers(
             avg_edr=metrics.get("avg_edr"),
             horizon_returns=horizon_returns,
             selected_contract=selected_contract,
+        )
+        event_time = datetime.utcnow()
+        field_context = build_option_field_context(
+            history,
+            option_type=contract_side,
+            observed_at=event_time,
+            data_source=_provider_source(provider, "daily_bars"),
+            timeframe="1D",
         )
         analyzer_url = _build_stock_analyzer_url(symbol)
         message = _format_alert_message(
@@ -292,6 +308,7 @@ def _scan_tickers(
         with get_db_session() as db:
             event = OptionAlertEvent(
                     symbol=symbol,
+                    triggered_at=event_time,
                     iv30=iv30,
                     hv30=metrics.get("hv30"),
                     iv_percentile=iv_percentile,
@@ -304,6 +321,7 @@ def _scan_tickers(
                     review_min_hold_days=review_window.min_hold_days,
                     review_max_hold_days=review_window.max_hold_days,
                     review_window_basis=review_window.basis,
+                    **option_field_event_fields(field_context),
                     **_selected_contract_event_fields(selected_contract),
                     **opportunity_event_fields(
                         iv_percentile=iv_percentile,

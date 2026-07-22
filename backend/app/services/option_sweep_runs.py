@@ -17,6 +17,7 @@ from app.services.discord_sweep_universe import (
     resolve_sweep_universe,
 )
 from app.services.optionality_clusters import classify_optionality_symbol
+from app.services.option_field_context import option_field_context_from_event
 from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_opportunity_score, opportunity_grade
 from app.services.options_review_window import parse_review_window
 from app.services.options_alerts import _send_webhook
@@ -584,6 +585,7 @@ def _ranked_opportunity_from_event(
         "hv30": event.hv30,
         "iv_hv_spread": spread,
         "avg_edr": event.avg_edr,
+        "field_context": option_field_context_from_event(event),
         "review_window": _review_window_payload(event),
         "selected_contract": {
             "expiry": event.selected_expiry,
@@ -849,6 +851,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             "hv30": event.hv30,
             "iv_hv_spread": record["iv_hv_spread"],
             "avg_edr": event.avg_edr,
+            "field_context": option_field_context_from_event(event),
             "review_window": _review_window_payload(event),
             "selected_contract": {
                 "expiry": event.selected_expiry,

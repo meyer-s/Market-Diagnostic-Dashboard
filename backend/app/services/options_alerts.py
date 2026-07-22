@@ -11,6 +11,7 @@ from app.api.stock_projection import compute_historical_volatility, compute_opti
 from app.models.options_alerts import OptionAlertWatch, OptionAlertEvent
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
+from app.services.option_field_context import build_option_field_context, option_field_event_fields
 from app.services.options_opportunity import compute_opportunity_score, opportunity_event_fields, selected_contract_signal_fields
 from app.services.options_quotes import select_atm_contract, select_optimal_contract
 from app.services.options_review_window import ReviewWindow, compute_review_window
@@ -276,6 +277,16 @@ def _format_source_text(data_source: object = None, quote_source: object = None)
     return f"{source} / {quote}" if quote and quote != source else source
 
 
+def _provider_source(provider: MarketDataProvider, method: str) -> str:
+    source_for = getattr(provider, "source_for", None)
+    if callable(source_for):
+        try:
+            return str(source_for(method) or getattr(provider, "name", "unknown"))
+        except Exception:
+            pass
+    return str(getattr(provider, "name", "unknown"))
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -328,8 +339,13 @@ def _review_window_for_plan(
     )
 
 
-def _contract_side_from_direction(direction: str) -> str:
-    return "PUT" if direction.lower() == "puts" else "CALL"
+def _contract_side_from_direction(direction: str) -> Optional[str]:
+    normalized = str(direction or "").strip().lower()
+    if normalized == "calls":
+        return "CALL"
+    if normalized == "puts":
+        return "PUT"
+    return None
 
 
 def _select_training_contract(
@@ -408,7 +424,7 @@ def _training_plan_inputs(
         if contract_side == "CALL":
             stop_price = price * (1 - stop_move / 100.0)
             target_price = price * (1 + target_move / 100.0)
-        else:
+        elif contract_side == "PUT":
             stop_price = price * (1 + stop_move / 100.0)
             target_price = price * (1 - target_move / 100.0)
 
@@ -463,14 +479,14 @@ def _build_training_trade_lines(
     base_hold_days = int(plan["hold_days"])
     target_move = float(plan["target_move"])
     stop_move = float(plan["stop_move"])
-    contract_side = str(plan["contract_side"])
+    contract_side = plan["contract_side"] if isinstance(plan["contract_side"], str) else None
 
     if plan["stop_price"] is None or plan["target_price"] is None:
         stop_target_text = "n/a"
     else:
         stop_target_text = f"{float(plan['stop_price']):.2f} / {float(plan['target_price']):.2f}"
 
-    if selected_contract is None and provider is not None and symbol:
+    if contract_side and selected_contract is None and provider is not None and symbol:
         selected_contract = _select_training_contract(
             provider=provider,
             symbol=symbol,
@@ -496,6 +512,14 @@ def _build_training_trade_lines(
             selected_contract=selected_contract,
         )
     hold_days = review_window.max_hold_days
+
+    if contract_side is None:
+        return [
+            "  Setup     : direction neutral; no CALL/PUT training contract selected",
+            "  Contract  : withheld until a directional signal is present",
+            f"  Review Window: {review_window.min_hold_days}-{review_window.max_hold_days} trading days",
+            f"  Hold      : {hold_days} trading days (max review gate)",
+        ]
 
     if selected_contract:
         est_premium = float(selected_contract["premium"])
@@ -977,18 +1001,23 @@ def run_options_alert_scan() -> dict:
                 horizon_labels, horizon_returns = _compute_horizon_bias(hist)
                 plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, hist)
                 hold_days = int(plan["hold_days"])
-                selected_contract = _select_training_contract(
-                    provider=provider,
-                    symbol=symbol,
-                    current_price=current_price,
-                    contract_side=str(plan["contract_side"]),
-                    target_dte=60,
-                    min_remaining_after_hold=hold_days + 3,
-                    hold_days=hold_days,
-                    target_move_pct=float(plan["target_move"]),
-                    stop_move_pct=float(plan["stop_move"]),
-                    iv30=iv30,
-                    hv30=hv30,
+                contract_side = plan.get("contract_side")
+                selected_contract = (
+                    _select_training_contract(
+                        provider=provider,
+                        symbol=symbol,
+                        current_price=current_price,
+                        contract_side=contract_side,
+                        target_dte=60,
+                        min_remaining_after_hold=hold_days + 3,
+                        hold_days=hold_days,
+                        target_move_pct=float(plan["target_move"]),
+                        stop_move_pct=float(plan["stop_move"]),
+                        iv30=iv30,
+                        hv30=hv30,
+                    )
+                    if contract_side in {"CALL", "PUT"}
+                    else None
                 )
                 review_window = _review_window_for_plan(
                     base_hold_days=hold_days,
@@ -1003,6 +1032,14 @@ def run_options_alert_scan() -> dict:
                     cooldown = timedelta(minutes=watch.cooldown_minutes or 0)
                     if datetime.utcnow() - watch.last_triggered_at < cooldown:
                         continue
+                event_time = datetime.utcnow()
+                field_context = build_option_field_context(
+                    hist,
+                    option_type=contract_side,
+                    observed_at=event_time,
+                    data_source=_provider_source(provider, "daily_bars"),
+                    timeframe="1D",
+                )
                 analyzer_url = _build_stock_analyzer_url(symbol)
 
                 message = _format_alert_message(
@@ -1035,6 +1072,7 @@ def run_options_alert_scan() -> dict:
                 )
                 event = OptionAlertEvent(
                     symbol=symbol,
+                    triggered_at=event_time,
                     iv30=iv30,
                     hv30=metrics.get("hv30"),
                     iv_percentile=iv_percentile,
@@ -1046,6 +1084,7 @@ def run_options_alert_scan() -> dict:
                     review_min_hold_days=review_window.min_hold_days,
                     review_max_hold_days=review_window.max_hold_days,
                     review_window_basis=review_window.basis,
+                    **option_field_event_fields(field_context),
                     **_selected_contract_event_fields(selected_contract),
                     **opportunity_event_fields(
                         iv_percentile=iv_percentile,

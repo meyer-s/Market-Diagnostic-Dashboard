@@ -46,8 +46,9 @@ def _assessment(
     score: float,
     spread_pct: float = 12.0,
     contract_status: str = "attractive",
+    field_path_state: str | None = None,
 ) -> dict[str, object]:
-    return {
+    assessment = {
         "company_thesis_status": "watch",
         "path_status": "behind",
         "contract_status": contract_status,
@@ -61,6 +62,20 @@ def _assessment(
             "opportunity": {"current": {"score": score}},
         },
     }
+    if field_path_state is not None:
+        assessment["input_snapshot"]["field_context"] = {
+            "schema_version": "option_market_field_v1",
+            "mode": "shadow_only",
+            "quality": {"available": True, "status": "complete", "warnings": []},
+            "as_of_bar": "2026-07-19T20:00:00Z",
+            "classification": {"path_state": field_path_state, "eventfulness": "normal"},
+            "direction": {
+                "option_aligned_pressure": -0.44 if field_path_state == "contradictory" else 0.44,
+                "option_aligned_velocity": -0.21 if field_path_state == "contradictory" else 0.21,
+            },
+            "hypotheses": {},
+        }
+    return assessment
 
 
 def test_losing_up_and_out_is_rejected_as_a_rescue_roll() -> None:
@@ -132,3 +147,30 @@ def test_opposite_option_direction_is_a_new_thesis_not_a_roll() -> None:
     assert result["status"] == "rejected"
     assert result["recommendation"] == "direction_change"
     assert result["label"] == "Not a roll"
+
+
+def test_contradictory_underlying_path_is_an_advisory_gate_not_a_standalone_rejection() -> None:
+    result = classify_option_replacement(
+        position=_position(),
+        event=_event(strike=115.0),
+        candidate_score=58.0,
+        held_baseline_score=40.0,
+        repeat_count=2,
+        latest_assessment=_assessment(
+            pnl_pct=-3.0,
+            score=42.0,
+            contract_status="marginal",
+            field_path_state="contradictory",
+        ),
+        latest_decision={"verdict": "conditional_hold", "target_contracts": 5},
+    )
+
+    underlying_gate = next(gate for gate in result["gates"] if gate["key"] == "underlying_path")
+    assert result["model_version"] == "replacement_rules_v2_field_shadow"
+    assert result["status"] == "candidate"
+    assert result["recommendation"] == "roll_out_candidate"
+    assert result["comparison"]["held"]["underlying_path"] == "contradictory"
+    assert underlying_gate["status"] == "fail"
+    assert "advisory only" in underlying_gate["detail"]
+    assert result["implementation_ready"] is False
+    assert result["automated_execution_enabled"] is False

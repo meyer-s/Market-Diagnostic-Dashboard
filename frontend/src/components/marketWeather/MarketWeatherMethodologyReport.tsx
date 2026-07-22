@@ -958,6 +958,12 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                 <MethodBlock title="Interpretation boundary">
                   Cross-market relationships are daily even when the selected field is intraday. Source staleness is labeled but historical estimation can still include older cached observations. Selected lag association is not structural causality, economic transmission, or a guarantee that the relationship will persist.
                 </MethodBlock>
+                <MethodBlock title="Secret Options field challenger">
+                  Scanner hits and position assessments can carry a compact, immutable <span className="font-mono">option_market_field_v1</span> snapshot made only from completed OHLCV bars. It records option-aligned pressure and change, field strata, causal prior-bar boundaries, carrier ratios, hypotheses, quality, and provenance. It deliberately excludes learned Form IDs, forward outcomes, the relationship atlas, and the circular current-options context shown on this page.
+                </MethodBlock>
+                <MethodBlock title="Decision influence and learning">
+                  The option opportunity model remains the champion. Field path is a zero-weight shadow challenger: it may explain a scanner hit, lower assessment confidence, or bring a human review forward, but it cannot change scanner order, hard vetoes, target size, or execution. Entry and review snapshots are retained with later outcomes so supportive, fading, contradictory, mixed, and unavailable cohorts can be compared before any manual promotion.
+                </MethodBlock>
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 <ReportCallout tone="amber" title="Mode">{context?.mode ? context.mode.replace("_", " ") : "shadow only"}</ReportCallout>
@@ -1084,7 +1090,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   Version every formula, feature family, horizon set, smoothing choice, provider rule, and visual mapping. Separate exploratory features from predeclared confirmatory features. The current URL freezes selector state only; durable replication also requires the exact input-data fingerprint or immutable response snapshot.
                 </MethodBlock>
                 <MethodBlock title="2. Build persistent historical inputs">
-                  Replace overwritten options snapshots with timestamped surfaces containing maturity, moneyness, bid/ask, volume, open interest, skew, term structure, and realized-volatility alignment. Preserve cached macro/sector source vintages and revisions. Store Forms so cross-window identity can be studied rather than assumed.
+                  Scanner hits now retain a compact point-in-time field snapshot, but the broader options source still needs timestamped surfaces containing maturity, moneyness, bid/ask, volume, open interest, skew, term structure, and realized-volatility alignment. Preserve cached macro/sector source vintages and revisions. Store Forms so cross-window identity can be studied rather than assumed.
                 </MethodBlock>
                 <MethodBlock title="3. Test dictionary stability">
                   Refit across rolling origins, assets, bar sizes, horizon subsets, and providers. Match centroids across runs with explicit uncertainty. Measure cluster survival, assignment stability, calibration-tail behavior, and label consistency. Compare against one-state, Gaussian-mixture, HMM, and Markov-switching baselines.
@@ -1093,7 +1099,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   Adopt purged or embargoed rolling-origin evaluation, stationary/block bootstrap intervals, surrogate-data nulls, and an untouched final holdout. Correct the entire research family—not only one screen—for multiplicity and researcher degrees of freedom. Report effective sample size and sensitivity, not only point estimates.
                 </MethodBlock>
                 <MethodBlock title="5. Define context promotion gates">
-                  A support, options, or cross-market feature may influence state assignment only after its definition is frozen, timestamp lineage is complete, direction repeats across rolling folds and an external universe, false-discovery control passes, and incremental out-of-sample value survives costs and simpler baselines.
+                  A support, options, cross-market, or option-path feature may influence ranking or state assignment only after its definition is frozen, timestamp lineage is complete, direction repeats across rolling folds and an external universe, false-discovery control passes, and incremental out-of-sample value survives costs and simpler baselines. The option field challenger also requires at least 100 independent trade cycles and explicit manual promotion.
                 </MethodBlock>
                 <MethodBlock title="6. Separate association, prediction, and value">
                   First test whether a relationship is contemporaneously stable. Then test whether lagged information improves a predeclared forecast beyond autoregressive and volatility baselines. Finally test whether the improvement is economically usable after spreads, impact, capacity, and option-specific execution costs.

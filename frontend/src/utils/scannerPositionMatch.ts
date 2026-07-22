@@ -93,6 +93,136 @@ export interface ScannerPositionMatch {
 
 export type ScannerPositionMatchTone = "neutral" | "positive" | "warning" | "negative";
 
+export type OptionMarketFieldPathState =
+  | "supportive"
+  | "fading"
+  | "contradictory"
+  | "mixed"
+  | "unavailable"
+  | string;
+
+export interface OptionMarketFieldDirection {
+  regime?: string | null;
+  pressure?: number | null;
+  velocity?: number | null;
+  acceleration?: number | null;
+  jerk?: number | null;
+  snap?: number | null;
+  aligned_pressure?: number | null;
+  aligned_velocity?: number | null;
+  option_aligned_pressure?: number | null;
+  option_aligned_velocity?: number | null;
+  horizon_alignment?: number | null;
+  coherence?: number | null;
+  entropy?: number | null;
+  permutation_entropy?: number | null;
+  expansion?: number | null;
+  expansion_front?: number | null;
+}
+
+export interface OptionMarketFieldStrata {
+  structure?: number | null;
+  kinematics?: number | null;
+  geometry?: number | null;
+  information?: number | null;
+  propagation?: number | null;
+  cascade_bias?: number | null;
+  scaling_exponent?: number | null;
+}
+
+export interface OptionMarketFieldPriceAction {
+  state?: string | null;
+  range_position20?: number | null;
+  support_distance_atr?: number | null;
+  resistance_distance_atr?: number | null;
+  trend_gap20_pct?: number | null;
+  return_5bar_pct?: number | null;
+}
+
+export interface OptionMarketFieldSignals {
+  path_state?: OptionMarketFieldPathState | null;
+  shock?: boolean | null;
+  organized_expansion?: boolean | null;
+  longward_cascade?: boolean | null;
+  geometry_disorder_shock?: boolean | null;
+  kinematic_exhaustion?: boolean | null;
+}
+
+export interface OptionMarketFieldClassification {
+  path_state?: OptionMarketFieldPathState | null;
+  eventfulness?: string | null;
+}
+
+export interface OptionMarketFieldHypotheses {
+  organized_expansion?: boolean | null;
+  longward_cascade?: boolean | null;
+  geometry_disorder_shock?: boolean | null;
+  kinematic_exhaustion?: boolean | null;
+  shock?: boolean | null;
+}
+
+/** Point-in-time, causal field snapshot. It must remain advisory while rank_influence is zero. */
+export interface OptionMarketFieldContext {
+  schema_version?: string | null;
+  mode?: string | null;
+  rank_influence?: number | null;
+  available?: boolean | null;
+  computed_at?: string | null;
+  as_of_bar?: string | null;
+  timeframe?: string | null;
+  option_type?: string | null;
+  data_source?: string | null;
+  completed_bars?: number | null;
+  excluded_incomplete_bars?: number | null;
+  quality?: ({ available?: boolean | null } & Record<string, unknown>) | string | null;
+  aligned_pressure?: number | null;
+  aligned_velocity?: number | null;
+  option_aligned_pressure?: number | null;
+  option_aligned_velocity?: number | null;
+  direction?: OptionMarketFieldDirection | null;
+  strata?: OptionMarketFieldStrata | null;
+  carriers?: Record<string, unknown> | null;
+  price_action?: OptionMarketFieldPriceAction | null;
+  signals?: OptionMarketFieldSignals | null;
+  classification?: OptionMarketFieldClassification | null;
+  hypotheses?: OptionMarketFieldHypotheses | null;
+}
+
+export interface OptionMarketFieldAxisResult {
+  status?: OptionMarketFieldPathState | null;
+  advisory?: boolean | null;
+  timeframe?: string | null;
+  as_of_bar?: string | null;
+  available?: boolean | null;
+  quality?: unknown;
+  aligned_pressure?: number | null;
+  aligned_velocity?: number | null;
+  structure?: number | null;
+  information?: number | null;
+  propagation?: number | null;
+  cascade_bias?: number | null;
+  transition_risk?: "elevated" | "normal" | "unavailable" | string | null;
+  boundary_state?: string | null;
+  support_distance_atr?: number | null;
+  resistance_distance_atr?: number | null;
+  familiarity?: "familiar" | "transition" | "novel" | "not_scored" | string | null;
+  familiarity_reason?: string | null;
+}
+
+export interface OptionMarketFieldPresentation {
+  badgeLabel: "FIELD UP" | "FIELD FADING" | "CONFLICT" | "SHOCK";
+  tone: ScannerPositionMatchTone;
+  pathStateLabel: string;
+  directionLabel: string | null;
+  structureLabel: string | null;
+  boundaryLabel: string | null;
+  familiarityLabel: string | null;
+  familiarityReason: string | null;
+  timeframe: string;
+  summary: string;
+  accessibleLabel: string;
+}
+
 export interface ScannerPositionMatchPresentation {
   badgeLabel: string;
   classificationLabel: string;
@@ -145,6 +275,119 @@ const humanizeClassification = (classification: string) =>
   classification
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+
+const asFiniteNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const compactMetric = (value: number) => {
+  const rounded = Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1);
+  return value > 0 ? `+${rounded}` : rounded;
+};
+
+const compactLevel = (value: number) =>
+  Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1);
+
+const compactFieldText = (value?: string | null) => {
+  const normalized = value?.trim();
+  return normalized ? humanizeClassification(normalized).replace(/\bAtr\b/g, "ATR") : null;
+};
+
+/**
+ * Converts the causal market-field payload into terse UI language without
+ * manufacturing a learned-state/familiarity label that the payload does not contain.
+ */
+export const presentOptionMarketField = (
+  context?: OptionMarketFieldContext | null,
+  axis?: OptionMarketFieldAxisResult | null
+): OptionMarketFieldPresentation | null => {
+  const qualityAvailable = context?.quality && typeof context.quality === "object"
+    ? context.quality.available
+    : undefined;
+  const contextAvailable = context?.available ?? qualityAvailable;
+  if ((!context || contextAvailable === false) && (!axis || axis.available === false)) return null;
+
+  const signals = context?.signals || null;
+  const hypotheses = context?.hypotheses || null;
+  const pathState = (
+    signals?.path_state
+    || context?.classification?.path_state
+    || axis?.status
+    || "unavailable"
+  ).trim().toLowerCase();
+  const eventfulness = context?.classification?.eventfulness?.trim().toLowerCase() || "";
+  const shock = signals?.shock === true
+    || signals?.geometry_disorder_shock === true
+    || hypotheses?.shock === true
+    || hypotheses?.geometry_disorder_shock === true
+    || eventfulness === "shock";
+  const badge = shock
+    ? { badgeLabel: "SHOCK" as const, tone: "negative" as const, pathStateLabel: "Geometry disorder shock" }
+    : pathState === "supportive"
+      ? { badgeLabel: "FIELD UP" as const, tone: "positive" as const, pathStateLabel: "Path supportive" }
+      : pathState === "fading"
+        ? { badgeLabel: "FIELD FADING" as const, tone: "warning" as const, pathStateLabel: "Path fading" }
+        : pathState === "contradictory" || pathState === "mixed"
+          ? {
+              badgeLabel: "CONFLICT" as const,
+              tone: pathState === "contradictory" ? "negative" as const : "warning" as const,
+              pathStateLabel: pathState === "contradictory" ? "Path contradictory" : "Path mixed",
+            }
+          : signals?.kinematic_exhaustion === true || hypotheses?.kinematic_exhaustion === true
+            ? { badgeLabel: "FIELD FADING" as const, tone: "warning" as const, pathStateLabel: "Kinematic exhaustion" }
+            : signals?.organized_expansion === true
+                || signals?.longward_cascade === true
+                || hypotheses?.organized_expansion === true
+                || hypotheses?.longward_cascade === true
+              ? { badgeLabel: "FIELD UP" as const, tone: "positive" as const, pathStateLabel: "Organized path support" }
+              : null;
+  if (!badge) return null;
+
+  const regime = compactFieldText(context?.direction?.regime);
+  const alignedPressure = asFiniteNumber(
+    context?.direction?.option_aligned_pressure
+    ?? context?.direction?.aligned_pressure
+    ?? context?.option_aligned_pressure
+    ?? context?.aligned_pressure
+    ?? axis?.aligned_pressure
+  );
+  const alignedVelocity = asFiniteNumber(
+    context?.direction?.option_aligned_velocity
+    ?? context?.direction?.aligned_velocity
+    ?? context?.option_aligned_velocity
+    ?? context?.aligned_velocity
+    ?? axis?.aligned_velocity
+  );
+  const directionLabel = regime
+    ? `Direction · ${regime}`
+    : alignedPressure !== null
+      ? `Pressure · ${compactMetric(alignedPressure)}${alignedVelocity !== null ? ` / Δ ${compactMetric(alignedVelocity)}` : ""}`
+      : null;
+  const structure = asFiniteNumber(context?.strata?.structure ?? axis?.structure);
+  const structureLabel = structure !== null ? `Structure · ${compactLevel(structure)}` : null;
+  const boundary = compactFieldText(context?.price_action?.state || axis?.boundary_state);
+  const boundaryLabel = boundary ? `Boundary · ${boundary}` : null;
+  const familiarity = axis?.familiarity?.trim().toLowerCase() || null;
+  const familiarityLabel = familiarity === "not_scored"
+    ? "Novelty · not scored"
+    : familiarity === "familiar" || familiarity === "transition" || familiarity === "novel"
+      ? `Profile · ${compactFieldText(familiarity)}`
+      : null;
+  const timeframe = context?.timeframe || axis?.timeframe || "1D";
+  const detailParts = [badge.pathStateLabel, directionLabel, structureLabel, boundaryLabel].filter(Boolean);
+  const summary = detailParts.join(" · ");
+
+  return {
+    ...badge,
+    directionLabel,
+    structureLabel,
+    boundaryLabel,
+    familiarityLabel,
+    familiarityReason: axis?.familiarity_reason?.trim() || null,
+    timeframe,
+    summary,
+    accessibleLabel: `${badge.badgeLabel}: ${summary}. Advisory point-in-time market field; scanner rank influence is zero.`,
+  };
+};
 
 const replacementTone = (status: ScannerReplacementStatus): ScannerPositionMatchTone => {
   if (status === "candidate") return "positive";

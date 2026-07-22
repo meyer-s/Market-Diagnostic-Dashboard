@@ -1099,6 +1099,7 @@ def build_market_weather_research(
     field_disorder: np.ndarray,
     boundary_energy: np.ndarray,
     motion_normalization_length: int,
+    include_retrospective: bool = True,
 ) -> tuple[dict[str, np.ndarray], dict[str, object]]:
     """Build the experimental field-calculus channels and an auditable evidence layer."""
     jerk = _time_derivative(acceleration, motion_normalization_length)
@@ -1196,20 +1197,29 @@ def build_market_weather_research(
         {"date": date, **{name: _rounded(values[index]) for name, values in aggregate_carrier_ratios.items()}}
         for index, date in enumerate(dates)
     ]
-    relationship_atlas, validation = _build_relationship_atlas(
-        history["close"].to_numpy(dtype=float),
-        dates,
-        aggregate_derivatives,
-        aggregate_strata,
-    )
-    lexicon = _build_market_state_lexicon(
-        dates=dates,
-        close=history["close"].to_numpy(dtype=float),
-        derivative_series=aggregate_derivatives,
-        strata=aggregate_strata,
-        carriers=aggregate_carriers,
-        requested_warmup_bars=max(34, 2 * max(int(horizon) for horizon in horizons)),
-    )
+    if include_retrospective:
+        relationship_atlas, validation = _build_relationship_atlas(
+            history["close"].to_numpy(dtype=float),
+            dates,
+            aggregate_derivatives,
+            aggregate_strata,
+        )
+        lexicon = _build_market_state_lexicon(
+            dates=dates,
+            close=history["close"].to_numpy(dtype=float),
+            derivative_series=aggregate_derivatives,
+            strata=aggregate_strata,
+            carriers=aggregate_carriers,
+            requested_warmup_bars=max(34, 2 * max(int(horizon) for horizon in horizons)),
+        )
+    else:
+        # Scanner snapshots only need causal, live field measurements. Skipping
+        # calibration, holdout outcomes, and learned state labels keeps the hot
+        # sweep path bounded and prevents retrospective evidence from leaking
+        # into a point-in-time candidate record.
+        relationship_atlas = []
+        validation = {"included": False, "reason": "live_only"}
+        lexicon = {"included": False, "reason": "live_only"}
 
     channels = {
         "jerk": jerk,

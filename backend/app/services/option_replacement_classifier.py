@@ -5,7 +5,7 @@ import math
 from typing import Any, Optional
 
 
-REPLACEMENT_MODEL_VERSION = "replacement_rules_v1"
+REPLACEMENT_MODEL_VERSION = "replacement_rules_v2_field_shadow"
 
 # These gates deliberately require a material improvement before contract drift
 # becomes a replacement candidate. Closed-trade learning may later calibrate the
@@ -60,6 +60,48 @@ def _contract_label(option_type: str, strike: Optional[float], expiry: Optional[
 
 def _gate(key: str, label: str, status: str, detail: str) -> dict[str, str]:
     return {"key": key, "label": label, "status": status, "detail": detail}
+
+
+def _underlying_path_advisory(snapshot: object) -> tuple[dict[str, str], str, dict[str, object]]:
+    context_value = _nested(snapshot, "field_context")
+    context = context_value if isinstance(context_value, dict) else {}
+    quality_value = context.get("quality")
+    quality = quality_value if isinstance(quality_value, dict) else {}
+    classification_value = context.get("classification")
+    classification = classification_value if isinstance(classification_value, dict) else {}
+    signals_value = context.get("signals")
+    signals = signals_value if isinstance(signals_value, dict) else {}
+    direction_value = context.get("direction")
+    direction = direction_value if isinstance(direction_value, dict) else {}
+    available = bool(quality.get("available", context.get("available")))
+    path_state = str(
+        classification.get("path_state")
+        or signals.get("path_state")
+        or "unavailable"
+    ).strip().lower()
+    if not available or path_state not in {"supportive", "fading", "contradictory", "mixed"}:
+        path_state = "unavailable"
+    status = "pass" if path_state == "supportive" else "fail" if path_state == "contradictory" else "watch"
+    detail_bits = [f"{path_state.replace('_', ' ').title()} causal underlying path"]
+    aligned_pressure = _finite(
+        direction.get("option_aligned_pressure", direction.get("aligned_pressure"))
+    )
+    aligned_velocity = _finite(
+        direction.get("option_aligned_velocity", direction.get("aligned_velocity"))
+    )
+    if aligned_pressure is not None:
+        detail_bits.append(f"pressure {aligned_pressure:+.2f}")
+    if aligned_velocity is not None:
+        detail_bits.append(f"velocity {aligned_velocity:+.2f}")
+    as_of_bar = context.get("as_of_bar")
+    if as_of_bar:
+        detail_bits.append(f"bar {str(as_of_bar)}")
+    detail_bits.append("advisory only; never a standalone rejection")
+    return (
+        _gate("underlying_path", "Underlying path", status, " · ".join(detail_bits)),
+        path_state,
+        context,
+    )
 
 
 def _structure(
@@ -156,6 +198,7 @@ def classify_option_replacement(
         if isinstance(latest_assessment, dict)
         else {}
     )
+    underlying_path_gate, field_path_state, field_context = _underlying_path_advisory(snapshot)
     held_current_score = _finite(_nested(snapshot, "opportunity", "current", "score"))
     held_score = held_current_score if held_current_score is not None else _finite(held_baseline_score)
     candidate_score_value = _finite(candidate_score)
@@ -260,6 +303,7 @@ def classify_option_replacement(
             f"{repeat_count} post-entry scanner occurrence{'s' if repeat_count != 1 else ''}",
         )
     )
+    gates.append(underlying_path_gate)
     execution_status = (
         "pass"
         if candidate_liquid and held_liquid
@@ -300,6 +344,8 @@ def classify_option_replacement(
         missing_inputs.append("fresh held-contract spread")
     if candidate_spread_pct is None:
         missing_inputs.append("candidate spread")
+    if field_path_state == "unavailable":
+        missing_inputs.append("causal underlying-path context")
 
     status = "watch"
     recommendation = "watch_replacement"
@@ -462,6 +508,8 @@ def classify_option_replacement(
                 "contract_status": held_contract_status,
                 "path_status": path_status,
                 "verdict": latest_verdict,
+                "underlying_path": field_path_state,
+                "field_as_of_bar": field_context.get("as_of_bar"),
             },
             "candidate": {
                 "event_id": getattr(event, "id", None),

@@ -29,6 +29,7 @@ from app.models.closed_positions import ClosedPosition
 from app.models.option_training_outcomes import OptionTrainingOutcome
 from app.models.option_position_reviews import OptionPositionReview
 from app.models.option_decision_learning import (
+    OptionModelRegistry,
     OptionPositionEvent,
     OptionPositionMandate,
     OptionThesisAssessment,
@@ -169,6 +170,93 @@ def test_quote_payload_preserves_market_data_source() -> None:
     assert payload["ask"] == 1.3
 
 
+def test_position_metrics_reuses_daily_history_for_causal_field_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = pd.DataFrame(
+        {
+            "Open": [99.0, 100.0],
+            "High": [101.0, 102.0],
+            "Low": [98.0, 99.0],
+            "Close": [100.0, 101.0],
+            "Volume": [1_000_000, 1_100_000],
+        },
+        index=pd.to_datetime(["2026-07-20", "2026-07-21"]),
+    )
+    calls: dict[str, object] = {}
+
+    class Provider:
+        name = "fixture_provider"
+
+        def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
+            calls["daily_bars"] = (symbol, days)
+            return history
+
+    field_context = {
+        "schema_version": "option_market_field_v1",
+        "mode": "shadow_only",
+        "rank_influence": 0.0,
+        "quality": {"available": True, "status": "complete", "warnings": []},
+        "classification": {"path_state": "supportive", "eventfulness": "normal"},
+        "hypotheses": {},
+        "direction": {
+            "option_aligned_pressure": 0.4,
+            "option_aligned_velocity": 0.2,
+        },
+    }
+
+    def field_builder(frame, **kwargs):
+        calls["field_frame"] = frame
+        calls["field_kwargs"] = kwargs
+        return field_context
+
+    def technical_builder(frame):
+        calls["technical_frame"] = frame
+        return {"price": 101.0, "observations": 2}
+
+    monkeypatch.setattr(
+        secret_options,
+        "_market_data_for_symbol",
+        lambda *_args, **_kwargs: {
+            "current_price": 101.0,
+            "last_updated": "2026-07-21T20:00:00Z",
+            "data_source": "ibkr",
+        },
+    )
+    monkeypatch.setattr(secret_options, "_resolve_option_row", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(secret_options, "compute_historical_volatility", lambda *_args: 25.0)
+    monkeypatch.setattr(secret_options, "technical_snapshot_from_frame", technical_builder)
+    monkeypatch.setattr(secret_options, "build_option_field_context", field_builder)
+    monkeypatch.setattr(secret_options, "_compute_volatility_signal", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(secret_options, "_compute_position_opportunity_signal", lambda *_args: None)
+
+    position = types.SimpleNamespace(
+        symbol="SYY",
+        expiration=date.today() + timedelta(days=60),
+        option_type="call",
+        strike=105.0,
+        underlying_reference=100.0,
+        underlying_at_entry=99.0,
+        fill_price=2.0,
+        contracts=2,
+        total_cost=400.0,
+        source_event_id=None,
+    )
+
+    metrics = secret_options._compute_position_metrics(position, Provider())
+
+    assert calls["daily_bars"] == ("SYY", 180)
+    assert calls["technical_frame"] is history
+    assert calls["field_frame"] is history
+    assert calls["field_kwargs"] == {
+        "option_type": "call",
+        "observed_at": datetime(2026, 7, 21, 20, 0),
+        "data_source": "ibkr",
+        "timeframe": "1D",
+    }
+    assert metrics["field_context"] == field_context
+
+
 def test_legacy_discord_training_recipe_derives_gate() -> None:
     message = """
 ---
@@ -253,6 +341,39 @@ def secret_options_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(secret_options, "get_market_data_provider", lambda: None)
 
     return TestClient(app), testing_session_local
+
+
+def test_market_field_registry_is_a_non_promoting_shadow_challenger(
+    secret_options_client,
+) -> None:
+    _client, session_local = secret_options_client
+
+    with session_local() as db:
+        first = secret_options.ensure_model_registry(db)
+        second = secret_options.ensure_model_registry(db)
+        db.commit()
+        rows = (
+            db.query(OptionModelRegistry)
+            .filter(OptionModelRegistry.model_key == "option_thesis_grader")
+            .order_by(OptionModelRegistry.id.asc())
+            .all()
+        )
+
+    assert first.id == second.id
+    assert len(rows) == 2
+    champion = next(row for row in rows if row.model_status == "champion")
+    challenger = next(row for row in rows if row.model_status == "challenger")
+    assert champion.model_version == "thesis_rules_v2"
+    assert champion.feature_schema_version == "option_thesis_features_v2"
+    assert challenger.model_version == "thesis_rules_v2_market_field_shadow_v1"
+    assert challenger.feature_schema_version == "option_market_field_features_v1"
+    challenger_metrics = secret_options.json_loads(challenger.metrics_json, {})
+    promotion_gates = secret_options.json_loads(challenger.promotion_gates_json, {})
+    assert challenger_metrics["mode"] == "advisory_shadow"
+    assert challenger_metrics["rank_influence"] == 0.0
+    assert challenger_metrics["automated_execution_enabled"] is False
+    assert promotion_gates["incremental_out_of_sample_value_required"] is True
+    assert promotion_gates["automatic_promotion"] is False
 
 
 def _position_payload() -> dict[str, object]:
@@ -1459,6 +1580,78 @@ def test_closed_trade_learning_keeps_scanner_recurrence_as_actual_outcome_cohort
     assert summary["scanner_recurrence_outcomes"]["cohorts"]["strengthened_seen"]["sample_count"] == 1
     assert summary["scanner_recurrence_outcomes"]["cohorts"]["strengthened_seen"]["average_percent_pnl"] == 25.0
     assert summary["scanner_recurrence_outcomes"]["automatic_weight_changes"] is False
+
+
+def test_closed_trade_learning_keeps_point_in_time_market_field_cohort(secret_options_client) -> None:
+    _client, session_local = secret_options_client
+    field_json = """{
+      "schema_version":"option_market_field_v1",
+      "mode":"shadow_only",
+      "rank_influence":0.0,
+      "quality":{"available":true,"completed_bars_only":true},
+      "direction":{"option_aligned_pressure":0.42,"option_aligned_velocity":0.11},
+      "classification":{"path_state":"supportive","eventfulness":"quiet"}
+    }"""
+    with session_local() as db:
+        event = OptionAlertEvent(
+            symbol="FIELD",
+            triggered_at=datetime(2026, 6, 1, 20, 0),
+            selected_option_type="call",
+            field_context_version="option_market_field_v1",
+            field_context_as_of=datetime(2026, 5, 29),
+            field_context_json=field_json,
+            message="field snapshot",
+        )
+        db.add(event)
+        db.flush()
+        position = OptionPosition(
+            trade_date=date(2026, 6, 1),
+            contracts=1,
+            symbol="FIELD",
+            expiration=date(2026, 8, 21),
+            strike=105.0,
+            option_type="call",
+            fill_price=3.0,
+            total_cost=300.0,
+            source_event_id=event.id,
+        )
+        db.add(position)
+        db.flush()
+        closed = ClosedPosition(
+            source_position_id=position.id,
+            source_event_id=event.id,
+            symbol="FIELD",
+            option_type="call",
+            strike=105.0,
+            expiration=date(2026, 8, 21),
+            contracts=1,
+            trade_date=date(2026, 6, 1),
+            fill_price=3.0,
+            total_cost=300.0,
+            underlying_at_entry=100.0,
+            close_date=date(2026, 6, 20),
+            exit_price=4.5,
+            total_proceeds=450.0,
+            underlying_at_exit=107.0,
+            dollar_pnl=150.0,
+            percent_pnl=50.0,
+        )
+        db.add(closed)
+        db.flush()
+
+        outcome = create_trade_outcome(db, closed)
+        summary = learning_summary(db)
+        attribution = secret_options.json_loads(outcome.attribution_json, {})
+        outcome_model_version = outcome.model_version
+        db.commit()
+
+    assert attribution["market_field"]["cohort_basis"] == "entry_snapshot"
+    assert attribution["market_field"]["entry_snapshot"]["classification"]["path_state"] == "supportive"
+    assert outcome_model_version == "decision_outcomes_v2_field_shadow"
+    assert summary["market_field_outcomes"]["cohorts"]["supportive"]["sample_count"] == 1
+    assert summary["market_field_outcomes"]["cohorts"]["supportive"]["average_percent_pnl"] == 50.0
+    assert summary["market_field_outcomes"]["rank_influence"] == 0.0
+    assert summary["market_field_outcomes"]["automatic_weight_changes"] is False
 
 
 def test_scanner_run_detail_uses_direct_sweep_run_id(secret_options_client) -> None:
