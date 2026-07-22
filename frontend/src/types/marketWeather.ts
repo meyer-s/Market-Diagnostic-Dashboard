@@ -1,5 +1,7 @@
 export type MarketWeatherMode = "regime" | "convection" | "topographic" | "swami" | "inspector";
 export type MarketWeatherTimeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "2h" | "4h" | "1D" | "1W";
+export type MarketWeatherLanguageView = "now" | "dictionary" | "methods";
+export type MarketWeatherTimelineLens = "direction" | "structure" | "carriers" | "range" | "context";
 
 export interface MarketWeatherPricePoint {
   date: string;

@@ -16,12 +16,14 @@ import {
 import type {
   MarketWeatherContextRelationship,
   MarketWeatherDerivativePoint,
+  MarketWeatherLanguageView,
   MarketWeatherLexiconArchetype,
   MarketWeatherLexiconMotif,
   MarketWeatherPricePoint,
   MarketWeatherResearch,
   MarketWeatherStrataLatest,
   MarketWeatherTimeframe,
+  MarketWeatherTimelineLens,
 } from "../../types/marketWeather";
 import {
   buildGroundedStateProfile,
@@ -42,9 +44,7 @@ import type {
   MarketTimelineWindow,
 } from "../../utils/marketWeatherTimeline";
 
-type LanguageView = "now" | "dictionary" | "methods";
 type DerivativeKey = "pressure" | "velocity" | "acceleration" | "jerk" | "snap";
-type TimelineLens = "direction" | "structure" | "carriers" | "range" | "context";
 
 interface MarketWeatherResearchLabProps {
   research: MarketWeatherResearch;
@@ -52,6 +52,12 @@ interface MarketWeatherResearchLabProps {
   symbol: string;
   timeframe: MarketWeatherTimeframe;
   barSize: string;
+  view?: MarketWeatherLanguageView;
+  onViewChange?: (view: MarketWeatherLanguageView) => void;
+  timelineLens?: MarketWeatherTimelineLens;
+  onTimelineLensChange?: (lens: MarketWeatherTimelineLens) => void;
+  timelineWindow?: MarketTimelineWindow;
+  onTimelineWindowChange?: (window: MarketTimelineWindow) => void;
 }
 
 const DERIVATIVES: Array<{ key: DerivativeKey; label: string }> = [
@@ -165,7 +171,7 @@ function StateDeviationBars({
 }
 
 const TIMELINE_WINDOWS: MarketTimelineWindow[] = [60, 120, 250, "all"];
-const TIMELINE_LENSES: Array<{ id: TimelineLens; label: string }> = [
+const TIMELINE_LENSES: Array<{ id: MarketWeatherTimelineLens; label: string }> = [
   { id: "direction", label: "Direction" },
   { id: "structure", label: "Structure" },
   { id: "carriers", label: "Carriers" },
@@ -366,15 +372,33 @@ function MarketStateTimeline({
   price,
   research,
   timeframe,
+  timelineWindow: controlledTimelineWindow,
+  onTimelineWindowChange,
+  timelineLens: controlledTimelineLens,
+  onTimelineLensChange,
 }: {
   price: MarketWeatherPricePoint[];
   research: MarketWeatherResearch;
   timeframe: MarketWeatherTimeframe;
+  timelineWindow?: MarketTimelineWindow;
+  onTimelineWindowChange?: (window: MarketTimelineWindow) => void;
+  timelineLens?: MarketWeatherTimelineLens;
+  onTimelineLensChange?: (lens: MarketWeatherTimelineLens) => void;
 }) {
   const lexicon = research.lexicon!;
   const timeline = useMemo(() => buildMarketStateTimeline(price, research), [price, research]);
-  const [timelineWindow, setTimelineWindow] = useState<MarketTimelineWindow>(120);
-  const [activeLens, setActiveLens] = useState<TimelineLens>("direction");
+  const [internalTimelineWindow, setInternalTimelineWindow] = useState<MarketTimelineWindow>(120);
+  const [internalTimelineLens, setInternalTimelineLens] = useState<MarketWeatherTimelineLens>("direction");
+  const timelineWindow = controlledTimelineWindow ?? internalTimelineWindow;
+  const activeLens = controlledTimelineLens ?? internalTimelineLens;
+  const chooseTimelineWindow = (nextWindow: MarketTimelineWindow) => {
+    if (onTimelineWindowChange) onTimelineWindowChange(nextWindow);
+    else setInternalTimelineWindow(nextWindow);
+  };
+  const chooseTimelineLens = (nextLens: MarketWeatherTimelineLens) => {
+    if (onTimelineLensChange) onTimelineLensChange(nextLens);
+    else setInternalTimelineLens(nextLens);
+  };
   const visible = useMemo(() => sliceMarketStateTimeline(timeline, timelineWindow), [timeline, timelineWindow]);
   const latestDate = visible[visible.length - 1]?.date ?? "";
   const [selectedDate, setSelectedDate] = useState(latestDate);
@@ -480,7 +504,7 @@ function MarketStateTimeline({
                   key={option}
                   type="button"
                   aria-pressed={timelineWindow === option}
-                  onClick={() => setTimelineWindow(option)}
+                  onClick={() => chooseTimelineWindow(option)}
                   className={`min-h-11 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-8 ${timelineWindow === option ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
                 >
                   {option === "all" ? "All" : option}
@@ -593,13 +617,13 @@ function MarketStateTimeline({
         <section className="p-3 sm:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-slate-400">Choose one diagnostic lens; price and the inspected bar stay synchronized.</p>
-            <div className="grid w-full grid-cols-5 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto" role="group" aria-label="Timeline diagnostic lens">
+            <div className="grid w-full grid-cols-3 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto sm:grid-cols-5" role="group" aria-label="Timeline diagnostic lens">
               {TIMELINE_LENSES.map((lens) => (
                 <button
                   key={lens.id}
                   type="button"
                   aria-pressed={activeLens === lens.id}
-                  onClick={() => setActiveLens(lens.id)}
+                  onClick={() => chooseTimelineLens(lens.id)}
                   className={`min-h-11 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-9 ${activeLens === lens.id ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
                 >
                   {lens.label}
@@ -713,7 +737,17 @@ function MarketStateTimeline({
   );
 }
 
-function CurrentStateView({ research, price, symbol, timeframe, barSize }: MarketWeatherResearchLabProps) {
+function CurrentStateView({
+  research,
+  price,
+  symbol,
+  timeframe,
+  barSize,
+  timelineWindow,
+  onTimelineWindowChange,
+  timelineLens,
+  onTimelineLensChange,
+}: MarketWeatherResearchLabProps) {
   const lexicon = research.lexicon!;
   const current = lexicon.current;
   const archetype = lexicon.archetypes.find((item) => item.id === current.state_id) ?? lexicon.archetypes[0];
@@ -777,7 +811,15 @@ function CurrentStateView({ research, price, symbol, timeframe, barSize }: Marke
         {!lexicon.training_split.warmup_complete ? <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">This history does not fully cover the requested horizon warm-up. Treat the learned state and its comparisons as provisional.</p> : null}
       </section>
 
-      <MarketStateTimeline price={price} research={research} timeframe={timeframe} />
+      <MarketStateTimeline
+        price={price}
+        research={research}
+        timeframe={timeframe}
+        timelineWindow={timelineWindow}
+        onTimelineWindowChange={onTimelineWindowChange}
+        timelineLens={timelineLens}
+        onTimelineLensChange={onTimelineLensChange}
+      />
 
       <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -887,76 +929,190 @@ function LearnedStateCard({
   );
 }
 
-function DefinitionPhaseScope({
+type RelationshipScopeId = "direction" | "organization" | "propagation";
+
+interface RelationshipScopePoint {
+  date: string;
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface RelationshipScopeSpec {
+  id: RelationshipScopeId;
+  title: string;
+  description: string;
+  xLabel: string;
+  yLabel: string;
+  zLabel: string;
+  xKey: string;
+  yKey: string;
+  zKey: string;
+  xDomain: "signed-auto" | [number, number];
+  yDomain: "signed-auto" | [number, number];
+  guideX: number;
+  guideY: number;
+  cornerLabels: [string, string, string, string];
+  point: (derivative: MarketWeatherDerivativePoint, strata: MarketWeatherResearch["strata"]["series"][number]) => RelationshipScopePoint;
+}
+
+const RELATIONSHIP_SCOPES: RelationshipScopeSpec[] = [
+  {
+    id: "direction",
+    title: "Directional phase",
+    description: "Pressure × its first change",
+    xLabel: "Directional pressure",
+    yLabel: "Pressure change",
+    zLabel: "Structure",
+    xKey: "pressure",
+    yKey: "velocity",
+    zKey: "structure",
+    xDomain: "signed-auto",
+    yDomain: "signed-auto",
+    guideX: 0,
+    guideY: 0,
+    cornerLabels: ["negative · fading", "positive · strengthening", "negative · strengthening", "positive · fading"],
+    point: (derivative, strata) => ({ date: derivative.date, x: derivative.pressure, y: derivative.velocity, z: strata.structure }),
+  },
+  {
+    id: "organization",
+    title: "Organization / disorder",
+    description: "Structure × ordinal disorder",
+    xLabel: "Structure",
+    yLabel: "Information disorder",
+    zLabel: "Reorganization",
+    xKey: "structure",
+    yKey: "information",
+    zKey: "kinematics",
+    xDomain: [0, 1],
+    yDomain: [0, 1],
+    guideX: 0.5,
+    guideY: 0.5,
+    cornerLabels: ["diffuse · disordered", "organized · disordered", "diffuse · ordered", "organized · ordered"],
+    point: (derivative, strata) => ({ date: derivative.date, x: strata.structure, y: strata.information, z: strata.kinematics }),
+  },
+  {
+    id: "propagation",
+    title: "Scale propagation",
+    description: "Propagation × cascade direction",
+    xLabel: "Cross-horizon propagation",
+    yLabel: "Cascade bias",
+    zLabel: "Boundary activity",
+    xKey: "propagation",
+    yKey: "cascade_bias",
+    zKey: "geometry",
+    xDomain: [0, 1],
+    yDomain: [-1, 1],
+    guideX: 0.5,
+    guideY: 0,
+    cornerLabels: ["local · slower", "broad · slower", "local · faster", "broad · faster"],
+    point: (derivative, strata) => ({ date: derivative.date, x: strata.propagation, y: strata.cascade_bias, z: strata.geometry }),
+  },
+];
+
+function fitRelativeTraceStyle(
+  value: number,
+  feature?: { calibration_median: number; calibration_robust_scale: number },
+) {
+  if (!feature || !Number.isFinite(value)) return { color: "148, 163, 184", width: 1.4, label: "typical" };
+  const deviation = (value - feature.calibration_median) / Math.max(Math.abs(feature.calibration_robust_scale), 1e-6);
+  if (deviation < -1) return { color: "148, 163, 184", width: 1.25, label: "low" };
+  if (deviation > 1) return { color: "251, 191, 36", width: 2.7, label: "elevated" };
+  return { color: "56, 189, 248", width: 2, label: "typical" };
+}
+
+function RelationshipScopeCanvas({
   research,
+  spec,
   selectedId,
   onSelect,
 }: {
   research: MarketWeatherResearch;
+  spec: RelationshipScopeSpec;
   selectedId: string;
   onSelect: (stateId: string) => void;
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [size, setSize] = useState({ width: 0, height: 220 });
+  const [size, setSize] = useState({ width: 0, height: 205 });
   const lexicon = research.lexicon!;
-  const phase = useMemo(() => {
-    const source = research.derivative_series.slice(-Math.min(420, research.derivative_series.length));
-    const step = Math.max(1, Math.ceil(source.length / 240));
-    const series = source.filter((_point, index) => index % step === 0 || index === source.length - 1);
-    const pressureValues = [
-      ...series.map((point) => point.pressure),
-      ...lexicon.archetypes.map((archetype) => archetype.centroid.pressure),
-    ].filter((value) => typeof value === "number" && Number.isFinite(value));
-    const changeValues = [
-      ...series.map((point) => point.velocity),
-      ...lexicon.archetypes.map((archetype) => archetype.centroid.velocity),
-    ].filter((value) => typeof value === "number" && Number.isFinite(value));
-    return {
-      series,
-      pressureDomain: Math.max(0.05, ...pressureValues.map((value) => Math.abs(value))) * 1.08,
-      changeDomain: Math.max(0.05, ...changeValues.map((value) => Math.abs(value))) * 1.08,
-    };
-  }, [lexicon.archetypes, research.derivative_series]);
+  const series = useMemo(() => {
+    const strataByDate = new Map(research.strata.series.map((point) => [point.date, point]));
+    return research.derivative_series
+      .map((derivative) => {
+        const strata = strataByDate.get(derivative.date);
+        return strata ? spec.point(derivative, strata) : null;
+      })
+      .filter((point): point is RelationshipScopePoint => Boolean(point && [point.x, point.y, point.z].every(Number.isFinite)))
+      .slice(-420);
+  }, [research.derivative_series, research.strata.series, spec]);
+  const smoothed = useMemo(() => {
+    const alpha = 0.5;
+    return series.reduce<RelationshipScopePoint[]>((points, point) => {
+      const previous = points[points.length - 1];
+      points.push(previous ? {
+        date: point.date,
+        x: alpha * point.x + (1 - alpha) * previous.x,
+        y: alpha * point.y + (1 - alpha) * previous.y,
+        z: alpha * point.z + (1 - alpha) * previous.z,
+      } : point);
+      return points;
+    }, []);
+  }, [series]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-    const update = () => setSize({ width: wrapper.clientWidth, height: wrapper.clientWidth < 640 ? 190 : 230 });
+    const update = () => setSize({ width: wrapper.clientWidth, height: wrapper.clientWidth < 350 ? 190 : 205 });
     update();
     const observer = new ResizeObserver(update);
     observer.observe(wrapper);
     return () => observer.disconnect();
   }, []);
 
+  const domains = useMemo(() => {
+    const centroidX = lexicon.archetypes.map((archetype) => Number(archetype.centroid[spec.xKey])).filter(Number.isFinite);
+    const centroidY = lexicon.archetypes.map((archetype) => Number(archetype.centroid[spec.yKey])).filter(Number.isFinite);
+    const signedDomain = (values: number[]) => {
+      const extent = Math.max(0.05, ...values.map((value) => Math.abs(value))) * 1.08;
+      return [-extent, extent] as [number, number];
+    };
+    return {
+      x: spec.xDomain === "signed-auto" ? signedDomain([...series.map((point) => point.x), ...centroidX]) : spec.xDomain,
+      y: spec.yDomain === "signed-auto" ? signedDomain([...series.map((point) => point.y), ...centroidY]) : spec.yDomain,
+    };
+  }, [lexicon.archetypes, series, spec]);
+
   const layout = useMemo(() => {
-    const padding = size.width < 640
-      ? { left: 30, right: 16, top: 24, bottom: 30 }
-      : { left: 40, right: 20, top: 26, bottom: 34 };
+    const padding = { left: 29, right: 12, top: 20, bottom: 29 };
     const plotWidth = Math.max(1, size.width - padding.left - padding.right);
     const plotHeight = Math.max(1, size.height - padding.top - padding.bottom);
+    const scale = (value: number, domain: [number, number], start: number, length: number, reverse = false) => {
+      const fraction = Math.min(1, Math.max(0, (value - domain[0]) / Math.max(1e-9, domain[1] - domain[0])));
+      return start + (reverse ? 1 - fraction : fraction) * length;
+    };
     return {
       padding,
       plotWidth,
       plotHeight,
-      x: (value: number) => padding.left + ((value / phase.pressureDomain + 1) / 2) * plotWidth,
-      y: (value: number) => padding.top + (1 - (value / phase.changeDomain + 1) / 2) * plotHeight,
+      x: (value: number) => scale(value, domains.x, padding.left, plotWidth),
+      y: (value: number) => scale(value, domains.y, padding.top, plotHeight, true),
     };
-  }, [phase.changeDomain, phase.pressureDomain, size]);
+  }, [domains, size]);
 
   const markers = useMemo(() => lexicon.archetypes.map((archetype, index) => {
-    const anchorX = layout.x(Number(archetype.centroid.pressure) || 0);
-    const anchorY = layout.y(Number(archetype.centroid.velocity) || 0);
+    const anchorX = layout.x(Number(archetype.centroid[spec.xKey]) || 0);
+    const anchorY = layout.y(Number(archetype.centroid[spec.yKey]) || 0);
     const angle = -Math.PI / 2 + index * Math.PI * 2 / Math.max(1, lexicon.archetypes.length);
     return {
       archetype,
       index,
       anchorX,
       anchorY,
-      labelX: Math.min(size.width - 18, Math.max(18, anchorX + Math.cos(angle) * 24)),
-      labelY: Math.min(size.height - 18, Math.max(18, anchorY + Math.sin(angle) * 24)),
+      labelX: Math.min(size.width - 22, Math.max(22, anchorX + Math.cos(angle) * 19)),
+      labelY: Math.min(size.height - 22, Math.max(22, anchorY + Math.sin(angle) * 19)),
     };
-  }), [layout, lexicon.archetypes, size]);
+  }), [layout, lexicon.archetypes, size, spec.xKey, spec.yKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -971,93 +1127,142 @@ function DefinitionPhaseScope({
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.fillStyle = "rgb(10, 17, 29)";
     context.fillRect(0, 0, size.width, size.height);
+    context.lineCap = "round";
+    context.lineJoin = "round";
 
-    const zeroX = layout.x(0);
-    const zeroY = layout.y(0);
-    context.strokeStyle = "rgba(148, 163, 184, .24)";
+    context.strokeStyle = "rgba(148, 163, 184, .23)";
     context.lineWidth = 1;
     context.setLineDash([4, 5]);
     context.beginPath();
-    context.moveTo(zeroX, layout.padding.top);
-    context.lineTo(zeroX, size.height - layout.padding.bottom);
-    context.moveTo(layout.padding.left, zeroY);
-    context.lineTo(size.width - layout.padding.right, zeroY);
+    context.moveTo(layout.x(spec.guideX), layout.padding.top);
+    context.lineTo(layout.x(spec.guideX), size.height - layout.padding.bottom);
+    context.moveTo(layout.padding.left, layout.y(spec.guideY));
+    context.lineTo(size.width - layout.padding.right, layout.y(spec.guideY));
     context.stroke();
     context.setLineDash([]);
 
-    context.font = "10px IBM Plex Sans, Segoe UI, sans-serif";
-    context.fillStyle = "rgba(148, 163, 184, .58)";
+    context.font = "9px IBM Plex Sans, Segoe UI, sans-serif";
+    context.fillStyle = "rgba(148, 163, 184, .56)";
     context.textAlign = "left";
-    context.fillText("NEGATIVE · FADING", layout.padding.left + 6, layout.padding.top + 13);
-    context.fillText("NEGATIVE · STRENGTHENING", layout.padding.left + 6, size.height - layout.padding.bottom - 7);
+    context.fillText(spec.cornerLabels[0].toUpperCase(), layout.padding.left + 5, layout.padding.top + 11);
+    context.fillText(spec.cornerLabels[2].toUpperCase(), layout.padding.left + 5, size.height - layout.padding.bottom - 6);
     context.textAlign = "right";
-    context.fillText("POSITIVE · STRENGTHENING", size.width - layout.padding.right - 6, layout.padding.top + 13);
-    context.fillText("POSITIVE · FADING", size.width - layout.padding.right - 6, size.height - layout.padding.bottom - 7);
+    context.fillText(spec.cornerLabels[1].toUpperCase(), size.width - layout.padding.right - 5, layout.padding.top + 11);
+    context.fillText(spec.cornerLabels[3].toUpperCase(), size.width - layout.padding.right - 5, size.height - layout.padding.bottom - 6);
 
-    phase.series.forEach((point, index) => {
-      if (index === 0) return;
-      const previous = phase.series[index - 1];
-      const age = index / Math.max(1, phase.series.length - 1);
-      context.strokeStyle = `rgba(125, 211, 252, ${0.08 + age * 0.72})`;
-      context.lineWidth = 0.8 + age * 1.2;
+    context.save();
+    context.beginPath();
+    context.rect(layout.padding.left, layout.padding.top, layout.plotWidth, layout.plotHeight);
+    context.clip();
+
+    if (series.length > 1) {
+      context.strokeStyle = "rgba(148, 163, 184, .13)";
+      context.lineWidth = 0.8;
+      context.setLineDash([2, 3]);
       context.beginPath();
-      context.moveTo(layout.x(previous.pressure), layout.y(previous.velocity));
-      context.lineTo(layout.x(point.pressure), layout.y(point.velocity));
+      series.forEach((point, index) => {
+        const x = layout.x(point.x);
+        const y = layout.y(point.y);
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      });
+      context.stroke();
+      context.setLineDash([]);
+    }
+
+    const zFeature = lexicon.features.find((feature) => feature.id === spec.zKey);
+    smoothed.forEach((point, index) => {
+      if (index === 0) return;
+      const previous = smoothed[index - 1];
+      const startX = layout.x(previous.x);
+      const startY = layout.y(previous.y);
+      const endX = layout.x(point.x);
+      const endY = layout.y(point.y);
+      const style = fitRelativeTraceStyle(point.z, zFeature);
+      const age = index / Math.max(1, smoothed.length - 1);
+      context.strokeStyle = `rgba(${style.color}, ${0.22 + age * 0.76})`;
+      context.lineWidth = style.width * (0.78 + age * 0.28);
+      context.beginPath();
+      context.moveTo(startX, startY);
+      context.lineTo(endX, endY);
       context.stroke();
     });
 
+    const rawCurrent = series[series.length - 1];
+    const smoothCurrent = smoothed[smoothed.length - 1];
+    if (rawCurrent && smoothCurrent) {
+      context.strokeStyle = "rgba(226,232,240,.32)";
+      context.lineWidth = 1;
+      context.setLineDash([2, 3]);
+      context.beginPath();
+      context.moveTo(layout.x(smoothCurrent.x), layout.y(smoothCurrent.y));
+      context.lineTo(layout.x(rawCurrent.x), layout.y(rawCurrent.y));
+      context.stroke();
+      context.setLineDash([]);
+    }
+
+    context.restore();
+
     markers.forEach((marker) => {
-      const color = marketStateColor(marker.archetype.id);
-      context.strokeStyle = marker.archetype.id === selectedId ? "rgba(248,250,252,.95)" : "rgba(203,213,225,.35)";
-      context.lineWidth = marker.archetype.id === selectedId ? 1.8 : 1;
+      const selected = marker.archetype.id === selectedId;
+      context.strokeStyle = selected ? "rgba(248,250,252,.9)" : "rgba(203,213,225,.32)";
+      context.lineWidth = selected ? 1.7 : 1;
       context.beginPath();
       context.moveTo(marker.anchorX, marker.anchorY);
       context.lineTo(marker.labelX, marker.labelY);
       context.stroke();
-      context.fillStyle = color;
+      context.fillStyle = marketStateColor(marker.archetype.id);
       context.beginPath();
-      context.arc(marker.anchorX, marker.anchorY, marker.archetype.id === selectedId ? 5 : 3.5, 0, Math.PI * 2);
+      context.arc(marker.anchorX, marker.anchorY, selected ? 4.5 : 3, 0, Math.PI * 2);
       context.fill();
-      if (marker.archetype.id === selectedId) {
+      if (selected) {
         context.strokeStyle = "rgba(248,250,252,.9)";
         context.beginPath();
-        context.arc(marker.anchorX, marker.anchorY, 8, 0, Math.PI * 2);
+        context.arc(marker.anchorX, marker.anchorY, 7, 0, Math.PI * 2);
         context.stroke();
       }
     });
 
-    const current = phase.series[phase.series.length - 1];
-    if (current) {
-      const currentX = layout.x(current.pressure);
-      const currentY = layout.y(current.velocity);
+    if (rawCurrent) {
+      const currentX = layout.x(rawCurrent.x);
+      const currentY = layout.y(rawCurrent.y);
       context.fillStyle = "#f8fafc";
       context.shadowColor = "#7dd3fc";
-      context.shadowBlur = 10;
+      context.shadowBlur = 8;
       context.beginPath();
-      context.moveTo(currentX, currentY - 5);
-      context.lineTo(currentX + 5, currentY);
-      context.lineTo(currentX, currentY + 5);
-      context.lineTo(currentX - 5, currentY);
+      context.moveTo(currentX, currentY - 4.5);
+      context.lineTo(currentX + 4.5, currentY);
+      context.lineTo(currentX, currentY + 4.5);
+      context.lineTo(currentX - 4.5, currentY);
       context.closePath();
       context.fill();
       context.shadowBlur = 0;
     }
 
     context.fillStyle = "rgba(148, 163, 184, .82)";
-    context.font = "11px IBM Plex Sans, Segoe UI, sans-serif";
+    context.font = "10px IBM Plex Sans, Segoe UI, sans-serif";
     context.textAlign = "center";
-    context.fillText("Directional pressure →", layout.padding.left + layout.plotWidth / 2, size.height - 9);
+    context.fillText(`${spec.xLabel} →`, layout.padding.left + layout.plotWidth / 2, size.height - 8);
     context.save();
-    context.translate(11, layout.padding.top + layout.plotHeight / 2);
+    context.translate(10, layout.padding.top + layout.plotHeight / 2);
     context.rotate(-Math.PI / 2);
-    context.fillText("Pressure change →", 0, 0);
+    context.fillText(`${spec.yLabel} →`, 0, 0);
     context.restore();
-  }, [layout, markers, phase.series, selectedId, size]);
+  }, [layout, lexicon.features, markers, series, selectedId, size, smoothed, spec]);
 
+  const current = series[series.length - 1];
+  const currentStyle = fitRelativeTraceStyle(current?.z ?? 0, lexicon.features.find((feature) => feature.id === spec.zKey));
   return (
-    <div>
-      <div ref={wrapperRef} className="relative min-w-0 overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/70">
-        <canvas ref={canvasRef} className="block w-full" aria-label="Recent directional pressure by pressure-change trajectory with numbered learned-state centroids and a diamond for the current measurement" />
+    <article className="min-w-[min(84vw,340px)] snap-start overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/45 md:min-w-0">
+      <header className="flex min-h-[74px] items-start justify-between gap-3 border-b border-stealth-700 px-3 py-2.5">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-white">{spec.title}</h4>
+          <p className="mt-0.5 text-xs text-slate-400">{spec.description}</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-white/10 px-2 py-1 text-[10px] text-slate-300" title={`Trace color and width encode ${spec.zLabel.toLowerCase()} relative to the model-fit baseline.`}>{spec.zLabel}</span>
+      </header>
+      <div ref={wrapperRef} className="relative min-w-0 overflow-hidden bg-slate-950/70">
+        <canvas ref={canvasRef} className="block w-full" aria-label={`${spec.title}: ${spec.xLabel} by ${spec.yLabel}. Trace color and width encode ${spec.zLabel} relative to fit. Numbered markers are learned Form centroids and the diamond is the exact current measurement.`} />
         {size.width > 0 ? markers.map((marker) => {
           const profile = buildGroundedStateProfile(marker.archetype.centroid, lexicon.features);
           const selected = marker.archetype.id === selectedId;
@@ -1067,22 +1272,48 @@ function DefinitionPhaseScope({
               type="button"
               onClick={() => onSelect(marker.archetype.id)}
               aria-pressed={selected}
-              aria-label={`Select learned state ${marker.index + 1}: ${profile.headline}`}
+              aria-label={`Select learned Form ${marker.index + 1}: ${profile.headline}`}
               title={`F${marker.index + 1} · ${profile.headline}`}
-              className={`absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border font-mono text-[10px] font-semibold text-white shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${selected ? "border-white bg-slate-700" : "border-white/35 bg-slate-900/90 hover:border-white/70"}`}
+              className="absolute grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
               style={{ left: marker.labelX, top: marker.labelY }}
             >
-              F{marker.index + 1}
+              <span className={`grid h-7 w-7 place-items-center rounded-full border font-mono text-[9px] font-semibold text-white shadow-lg ${selected ? "border-white bg-slate-700" : "border-white/35 bg-slate-900/90"}`}>F{marker.index + 1}</span>
             </button>
           );
         }) : null}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
-        <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Recent path; newer is brighter</span>
-        <span><span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded-full border border-white/40 font-mono text-[8px] text-white">F</span>Learned definition centroid</span>
-        <span><span className="mr-1.5 text-sky-100">◆</span>Current measurement</span>
+      <div className="flex items-center justify-between gap-3 border-t border-stealth-700 px-3 py-2 text-xs text-slate-400">
+        <span>Latest {spec.zLabel.toLowerCase()}</span>
+        <span className={currentStyle.label === "elevated" ? "text-amber-200" : currentStyle.label === "typical" ? "text-sky-200" : "text-slate-300"}>{currentStyle.label}</span>
       </div>
-      <p className="mt-1 text-xs leading-5 text-slate-500">Axes fit independently to the visible history; dashed lines preserve zero and sign. Loops are measurement trajectories, not detected cycles or forecasts. State identities belong to this selected history window.</p>
+      <p className="sr-only">Current exact coordinates are {current ? `${current.x.toFixed(3)} on ${spec.xLabel} and ${current.y.toFixed(3)} on ${spec.yLabel}` : "not available"}.</p>
+    </article>
+  );
+}
+
+function DefinitionScopeDeck({
+  research,
+  selectedId,
+  onSelect,
+}: {
+  research: MarketWeatherResearch;
+  selectedId: string;
+  onSelect: (stateId: string) => void;
+}) {
+  return (
+    <div>
+      <div className="grid auto-cols-[84vw] grid-flow-col gap-3 overflow-x-auto pb-2 [scrollbar-width:thin] snap-x snap-mandatory sm:auto-cols-[360px] lg:auto-cols-auto lg:grid-flow-row lg:grid-cols-3 lg:overflow-visible lg:pb-0" role="group" aria-label="Three measured relationship scopes">
+        {RELATIONSHIP_SCOPES.map((spec) => (
+          <RelationshipScopeCanvas key={spec.id} research={research} spec={spec} selectedId={selectedId} onSelect={onSelect} />
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+        <span><span className="mr-1.5 inline-block w-5 border-t border-dashed border-slate-400 align-middle" />Exact raw trace</span>
+        <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Causal display EWM · α 0.5 (span 3)</span>
+        <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-amber-300 align-middle" />Third measure elevated vs fit</span>
+        <span><span className="mr-1.5 text-sky-100">◆</span>Exact current measurement</span>
+      </div>
+      <p className="mt-1 text-xs leading-5 text-slate-400">Color and width encode each panel’s named third measure in low, typical, or elevated fit-relative bands. Direction auto-fits while the two bounded scopes use fixed axes. These are 2D projections—not correlations, detected cycles, causal flows, or forecasts.</p>
     </div>
   );
 }
@@ -1139,11 +1370,11 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
           <div>
             <span className="page-kicker">State scope</span>
             <h3 className="mt-1 text-base font-semibold text-white">Where the learned definitions live</h3>
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">The revived phase portrait places each measured definition in pressure × pressure-change space, then traces how the live field moved around them.</p>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Three linked scopes project the same learned Forms through direction, organization, and cross-horizon propagation. Scroll the deck on smaller screens.</p>
           </div>
           <span className="rounded-full border border-stealth-600 px-3 py-1 text-xs text-slate-300">F{selectedIndex + 1} selected</span>
         </div>
-        <DefinitionPhaseScope research={research} selectedId={selected.id} onSelect={setSelectedId} />
+        <DefinitionScopeDeck research={research} selectedId={selected.id} onSelect={setSelectedId} />
       </section>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(300px,.72fr)_minmax(0,1.28fr)]">
@@ -1352,8 +1583,14 @@ function MethodsView({ research, symbol, timeframe, barSize }: Omit<MarketWeathe
 export default function MarketWeatherResearchLab(props: MarketWeatherResearchLabProps) {
   const { research } = props;
   const lexicon = research.lexicon;
-  const [view, setView] = useState<LanguageView>("now");
-  const labels: Record<LanguageView, { tab: string; title: string; description: string }> = {
+  const [internalView, setInternalView] = useState<MarketWeatherLanguageView>("now");
+  const view = props.view ?? internalView;
+  const chooseView = (nextView: MarketWeatherLanguageView) => {
+    if (props.onViewChange) props.onViewChange(nextView);
+    else setInternalView(nextView);
+  };
+  const viewOptions: MarketWeatherLanguageView[] = ["now", "dictionary", "methods"];
+  const labels: Record<MarketWeatherLanguageView, { tab: string; title: string; description: string }> = {
     now: { tab: "Now", title: "Current market state", description: "How the current reading formed and how its measured components changed together over time." },
     dictionary: { tab: "Dictionary", title: "Learned state dictionary", description: "Measured state definitions relative to this window’s earlier model-fit baseline." },
     methods: { tab: "Methods", title: "Methods and evidence", description: "Higher-order layers, experimental sequences, validation checks, references, and limitations." },
@@ -1369,7 +1606,7 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
             <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">{labels[view].description}</p>
           </div>
           <div className="grid min-h-11 w-full grid-cols-3 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto" role="tablist" aria-label="Field language view">
-            {(["now", "dictionary", "methods"] as LanguageView[]).map((option) => (
+            {viewOptions.map((option) => (
               <button
                 key={option}
                 type="button"
@@ -1377,7 +1614,25 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
                 id={`field-language-${option}-tab`}
                 aria-controls={`field-language-${option}-panel`}
                 aria-selected={view === option}
-                onClick={() => setView(option)}
+                tabIndex={view === option ? 0 : -1}
+                onClick={() => chooseView(option)}
+                onKeyDown={(event) => {
+                  const currentIndex = viewOptions.indexOf(option);
+                  const nextIndex = event.key === "ArrowRight" || event.key === "ArrowDown"
+                    ? (currentIndex + 1) % viewOptions.length
+                    : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                      ? (currentIndex - 1 + viewOptions.length) % viewOptions.length
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? viewOptions.length - 1
+                          : -1;
+                  if (nextIndex < 0) return;
+                  event.preventDefault();
+                  const nextView = viewOptions[nextIndex];
+                  chooseView(nextView);
+                  window.requestAnimationFrame(() => document.getElementById(`field-language-${nextView}-tab`)?.focus());
+                }}
                 className={`min-h-10 min-w-0 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-w-[96px] ${view === option ? "bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/30" : "text-slate-400 hover:text-white"}`}
               >
                 {labels[option].tab}

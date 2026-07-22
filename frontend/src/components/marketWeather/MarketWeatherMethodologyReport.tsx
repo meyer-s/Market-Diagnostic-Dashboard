@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useId, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   BookOpen,
@@ -157,8 +157,14 @@ const PRODUCT_EVOLUTION: EvolutionStep[] = [
   {
     stage: "06",
     title: "Cloud plus grounded scope",
-    description: "The horizon field became a compact cloud beneath the search controls. The oscilloscope returned inside the Dictionary as an auto-fit pressure-versus-change trajectory tied to learned Forms.",
+    description: "The horizon field became a compact cloud beneath the search controls. The oscilloscope returned inside the Dictionary as a measured pressure-versus-change trajectory tied to learned Forms.",
     disposition: "Adapted",
+  },
+  {
+    stage: "07",
+    title: "Relationship scopes and report links",
+    description: "The single phase portrait became three linked projections with exact raw traces, a display-only causal EWM, fit-relative color, fixed bounded axes, keyboard inspection, and versioned URLs for reproducible selector recipes.",
+    disposition: "Added on the web",
   },
 ];
 
@@ -448,8 +454,15 @@ function MethodBlock({ title, formula, children }: { title: string; formula?: Re
   );
 }
 
+const ChapterAccordionContext = createContext<{
+  activeChapter: string | null;
+  setActiveChapter: (chapter: string | null) => void;
+} | null>(null);
+
 function Chapter({ number, title, synopsis, children }: { number: string; title: string; synopsis: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const accordion = useContext(ChapterAccordionContext);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = accordion ? accordion.activeChapter === number : localOpen;
   const contentId = useId();
 
   return (
@@ -459,7 +472,10 @@ function Chapter({ number, title, synopsis, children }: { number: string; title:
         className="flex w-full items-start justify-between gap-4 p-3 text-left transition hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:p-4"
         aria-expanded={open}
         aria-controls={contentId}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (accordion) accordion.setActiveChapter(open ? null : number);
+          else setLocalOpen((current) => !current);
+        }}
       >
         <span className="flex min-w-0 items-start gap-3">
           <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/[0.07] font-mono text-[10px] font-semibold text-sky-200">{number}</span>
@@ -561,7 +577,7 @@ function SplitBar({ data }: { data: MarketWeatherResponse }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] leading-4 text-slate-500">Denominator: n={formatInteger(total)} chronological bars reported for model fitting, calibration, and later evaluation. Segment widths encode bar counts, not model importance.</p>
+      <p className="mt-2 text-xs leading-5 text-slate-400">Denominator: n={formatInteger(total)} chronological bars reported for model fitting, calibration, and later evaluation. Segment widths encode bar counts, not model importance.</p>
     </div>
   );
 }
@@ -625,23 +641,23 @@ function CurrentRunAudit({ data }: { data: MarketWeatherResponse }) {
       <div className="mt-3 grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-stealth-700 bg-stealth-700 min-[360px]:grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
         {facts.map(([label, value, detail]) => (
           <div key={label} className="min-w-0 bg-slate-950/75 p-2.5">
-            <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</div>
             <div className="mt-1 break-words text-xs font-semibold text-white" title={value}>{value}</div>
-            <div className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-slate-500" title={detail}>{detail}</div>
+            <div className="mt-0.5 line-clamp-2 text-xs leading-4 text-slate-400" title={detail}>{detail}</div>
           </div>
         ))}
       </div>
       <div className="mt-3 rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <span className="text-xs font-semibold text-white">Chronological model split</span>
-          <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500">earlier → later</span>
+          <span className="text-xs uppercase tracking-[0.1em] text-slate-400">earlier → later</span>
         </div>
         <SplitBar data={data} />
       </div>
       <div className="mt-3 rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-semibold text-white">Applied analytical configuration</span>
-          <span className="font-mono text-[10px] text-slate-500" title={data.horizons.join(", ")}>horizons {horizonRange} · step {horizonStep}</span>
+          <span className="font-mono text-xs text-slate-400" title={data.horizons.join(", ")}>horizons {horizonRange} · step {horizonStep}</span>
         </div>
         {appliedSettings.length ? (
           <div className="mt-2 grid gap-px overflow-hidden rounded-lg border border-stealth-700 bg-stealth-700 min-[360px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -653,7 +669,7 @@ function CurrentRunAudit({ data }: { data: MarketWeatherResponse }) {
             ))}
           </div>
         ) : <p className="mt-2 text-xs text-slate-500">No applied settings were returned.</p>}
-        <p className="mt-2 text-[10px] leading-4 text-slate-500">
+        <p className="mt-2 text-xs leading-5 text-slate-400">
           Carrier evidence: realized volatility {formatAvailability(carrierAvailability?.realized_volatility)}; participation {formatAvailability(carrierAvailability?.participation)}; liquidity stress {formatAvailability(carrierAvailability?.liquidity_stress)}. These are response values, not settings-dialog drafts.
         </p>
       </div>
@@ -663,6 +679,7 @@ function CurrentRunAudit({ data }: { data: MarketWeatherResponse }) {
 
 export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMethodologyReportProps) {
   const [open, setOpen] = useState(false);
+  const [activeChapter, setActiveChapter] = useState<string | null>(null);
   const reportId = useId();
   const context = data.research?.context;
   const contextRelationships = context?.cross_market?.relationships ?? [];
@@ -678,7 +695,10 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
         className="flex w-full items-center justify-between gap-3 p-3 text-left transition hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:p-4"
         aria-expanded={open}
         aria-controls={`${reportId}-body`}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (open) setActiveChapter(null);
+          setOpen((current) => !current);
+        }}
       >
         <span className="flex min-w-0 items-center gap-3">
           <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-400/[0.07] text-violet-200">
@@ -700,12 +720,12 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
           <header className="relative overflow-hidden rounded-2xl border border-sky-400/15 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.11),transparent_42%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.7))] p-4 sm:p-5">
             <div className="relative z-[1] max-w-4xl">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="page-kicker">Technical summary · working paper v0.1</span>
+                <span className="page-kicker">Technical summary · working paper v0.2</span>
                 <span className="rounded-full border border-amber-400/25 bg-amber-400/[0.06] px-2 py-0.5 text-[10px] font-semibold text-amber-200">Descriptive research instrument</span>
               </div>
               <h2 className="mt-2 text-xl font-semibold tracking-tight text-white sm:text-2xl">A translation layer for how market structure changes across time and horizon</h2>
               <p className="mt-2 text-sm leading-6 text-slate-300">
-                This page begins with one instrument's timestamped OHLCV bars, constructs a causal horizon-by-time pressure field, derives kinematic, geometric, informational, and carrier measurements, and learns a small request-specific dictionary of recurring aggregate states. It then translates those measurements into a compact cloud, synchronized timelines, a state scope, plain-language definitions, and separately labeled context. Its purpose is to make multiscale structure inspectable and to generate testable hypotheses—not to hide a trading rule behind a visual metaphor.
+                This page begins with one instrument's timestamped OHLCV bars, constructs a causal horizon-by-time pressure field, derives kinematic, geometric, informational, and carrier measurements, and learns a small request-specific dictionary of recurring aggregate states. It then translates those measurements into a compact cloud, synchronized timelines, three relationship scopes, plain-language definitions, and separately labeled context. Its purpose is to make multiscale structure inspectable and to generate testable hypotheses—not to hide a trading rule behind a visual metaphor.
               </p>
             </div>
           </header>
@@ -736,7 +756,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                 <article key={stage.title} className={`relative rounded-xl border p-3 ${stage.tone}`}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-[10px] font-semibold text-slate-300">{String(index + 1).padStart(2, "0")}</span>
-                    <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">{stage.label}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{stage.label}</span>
                   </div>
                   <h4 className="mt-2 text-xs font-semibold text-white">{stage.title}</h4>
                   <p className="mt-1 text-[11px] leading-4 text-slate-400">{stage.detail}</p>
@@ -760,7 +780,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                 <div key={number} className="bg-slate-950/75 p-3">
                   <div className="font-mono text-[9px] text-sky-300">{number}</div>
                   <div className="mt-1 text-xs font-semibold text-white">{label}</div>
-                  <p className="mt-1 text-[10px] leading-4 text-slate-500">{description}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">{description}</p>
                 </div>
               ))}
             </div>
@@ -768,6 +788,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
 
           <CurrentRunAudit data={data} />
 
+          <ChapterAccordionContext.Provider value={{ activeChapter, setActiveChapter }}>
           <div className="space-y-2">
             <Chapter
               number="01"
@@ -952,7 +973,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
             >
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <MethodBlock title="Horizon cloud">
-                  Rectangular cells map time left-to-right and configured horizons bottom-to-top. Color encodes the selected lens; it does not add data. The compact height deliberately makes the surface feel like a weather cloud and preserves diagonal fronts without claiming precise contour geometry. Hover restores the timestamp, horizon, and four core measurements: pressure, pressure change, display organization, and legacy disorder.
+                  Rectangular cells map time left-to-right and configured horizons bottom-to-top. Color encodes the selected lens; it does not add data. The compact height deliberately makes the surface feel like a weather cloud and preserves diagonal fronts without claiming precise contour geometry. Pointer, touch, or keyboard inspection restores the timestamp, horizon, pressure, pressure change, display organization, and legacy disorder.
                 </MethodBlock>
                 <MethodBlock title="Five renderer lenses">
                   Regime Health maps pressure sign to directional hue while coherence, legacy disorder, and the uncalibrated display-organization score alter intensity. Convection scales the directional base by reflectivity and mixes in blue from convection and expansion. Topographic quantizes reflectivity into bands and mixes in blue from boundary energy and convection. Swami Classic shows the five-category benchmark. Channel Inspector isolates one returned matrix. Every lens renders shared data; changing a lens does not refit the field.
@@ -960,8 +981,11 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                 <MethodBlock title="Now timeline">
                   Price, directional phase, Form identity, field structure, carriers, and learned-range evidence share one time axis and one inspected-bar cursor. This is the primary answer to “what changed together?” Selectable lenses reduce render cost and prevent every derived series from competing simultaneously.
                 </MethodBlock>
-                <MethodBlock title="Dictionary scope">
-                  The oscilloscope places aggregate pressure on x and pressure change on y, draws a recent trajectory, learned centroids, and the newest observation. Each axis auto-fits independently while preserving zero. A loop is only a loop in these two displayed coordinates—not a detected cycle, attractor, or forecast.
+                <MethodBlock title="Dictionary relationship scopes">
+                  Directional phase places pressure on x and pressure change on y with independently auto-fit signed axes. Organization / disorder places structure on x and information / ordinal disorder on y, each fixed from 0 to 1. Scale propagation places propagation on x from 0 to 1 and cascade bias on y from −1 to +1. Every panel joins derivative and strata observations by timestamp and projects the same exact learned Form centroids and current observation.
+                </MethodBlock>
+                <MethodBlock title="Scope trace, smoothing, and color">
+                  A faint dashed line preserves the exact raw path. The brighter trace applies a causal exponential display average with α=0.5 (the standard span parameter is 3) and round line caps only to reduce visual aliasing; it does not feed the field, Form learning, state assignment, outcomes, or any other analysis. The diamond and centroids remain exact. Trace color and redundant width classify the display-smoothed third measure below −1, within ±1, or above +1 model-fit robust-scale units as low, typical, or elevated: structure for direction, reorganization for organization / disorder, and boundary activity for propagation.
                 </MethodBlock>
                 <MethodBlock title="Methods derivative stack">
                   The Methods view unfolds pressure through velocity, acceleration, jerk, and snap so a definition becomes a changing trajectory rather than a paragraph. The stack is an audit surface for sign, timing, and smoothing sensitivity; it is not a claim that higher derivatives are inherently more predictive.
@@ -970,7 +994,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   Price boundaries, optionality, and cross-market relationships are visibly separated from the learned field. This protects the distinction between explaining the current environment and changing the state model. Promotion into the field requires a predeclared, repeated validation protocol.
                 </MethodBlock>
                 <MethodBlock title="Raw data and this report">
-                  Raw profile tables, provenance, and response-specific settings allow the visuals to be checked. The report stays collapsed and lazy-mounted by default so methodological depth does not recreate the page-density and performance problems that earlier versions exposed.
+                  Raw profile tables, provenance, and response-specific settings allow the visuals to be checked. Raw Data lazy-mounts only when opened, and the report mounts at most one detailed chapter at a time. The versioned URL records symbol, timeframe, field construction, renderer, inspector channel, language view, and timeline lens/window; it recreates a selector recipe, not a frozen market-data snapshot.
                 </MethodBlock>
               </div>
               <div className="mt-3">
@@ -1019,16 +1043,16 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   The internal four-hypothesis relationship atlas and motif search currently have no family-wide multiple-test adjustment. The separate cross-market screen does use block permutation and Benjamini–Hochberg correction. That distinction must remain explicit rather than being summarized as one global validation claim.
                 </MethodBlock>
                 <MethodBlock title="Window and configuration dependence">
-                  Forms, centroids, scaling, labels, range scores, and scope geometry can change with symbol, timeframe, history length, horizon set, or smoothing. The scope independently auto-fits x and y, so visual size and shape are not directly comparable across runs without fixed axes and stored calibration.
+                  Forms, centroids, scaling, labels, range scores, and scope geometry can change with symbol, timeframe, history length, horizon set, or analytical smoothing. Directional phase independently auto-fits x and y, so its visual size and shape are not directly comparable across runs. The two bounded scopes use fixed axes, but their learned centroids and fit-relative color thresholds still remain request-specific.
                 </MethodBlock>
                 <MethodBlock title="Provider and market microstructure risk">
                   IBKR and Yahoo can differ in session rules, adjustments, partial bars, timestamps, and volume. Aggregated 2h/4h Yahoo bars inherit 60m sampling choices. Intraday correlations suffer asynchronous-trading effects; stale cached sources and sparse options history further limit cross-system comparisons.
                 </MethodBlock>
                 <MethodBlock title="Derivative and smoothing risk">
-                  Normalized derivatives can amplify microstructure noise and change sign near small denominators. Causal smoothing reduces noise but adds lag and changes the field being learned. Sensitivity analysis must vary smoothing, horizons, baseline span, and data source rather than treating defaults as natural constants.
+                  Normalized derivatives can amplify microstructure noise and change sign near small denominators. Analytical causal smoothing reduces noise but adds lag and changes the field being learned. Separately, the scope deck uses a disclosed display-only EWM and curve interpolation that changes only the rendered trace. Sensitivity analysis must vary analytical smoothing, horizons, baseline span, and data source rather than treating defaults as natural constants.
                 </MethodBlock>
                 <MethodBlock title="Human interpretation risk">
-                  Dense color fields invite pareidolia, especially diagonal bands and loops. Naming a configuration makes it memorable but can make it feel more stable than it is. Direct values, provenance, support counts, holdout boundaries, and falsifiable promotion rules are safeguards against narrative overreach.
+                  Dense color fields invite pareidolia, especially diagonal bands and loops. A loop in any scope is only a path through two displayed coordinates; no correlation coefficient, recurrence test, cycle detector, attractor reconstruction, or causal-flow estimate is calculated. Direct values, raw traces, provenance, support counts, holdout boundaries, and falsifiable promotion rules are safeguards against narrative overreach.
                 </MethodBlock>
               </div>
               <div className="mt-3 flex items-start gap-3 rounded-xl border border-rose-400/25 bg-rose-400/[0.05] p-3">
@@ -1057,7 +1081,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
             >
               <div className="grid gap-3 lg:grid-cols-2">
                 <MethodBlock title="1. Freeze the measurement registry">
-                  Version every formula, feature family, horizon set, smoothing choice, provider rule, and visual mapping. Separate exploratory features from predeclared confirmatory features. Store the exact configuration and input-data fingerprint with every result so later comparisons are reproducible.
+                  Version every formula, feature family, horizon set, smoothing choice, provider rule, and visual mapping. Separate exploratory features from predeclared confirmatory features. The current URL freezes selector state only; durable replication also requires the exact input-data fingerprint or immutable response snapshot.
                 </MethodBlock>
                 <MethodBlock title="2. Build persistent historical inputs">
                   Replace overwritten options snapshots with timestamped surfaces containing maturity, moneyness, bid/ask, volume, open interest, skew, term structure, and realized-volatility alignment. Preserve cached macro/sector source vintages and revisions. Store Forms so cross-window identity can be studied rather than assumed.
@@ -1094,15 +1118,16 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                     <div key={number} className="rounded-xl border border-emerald-400/15 bg-slate-950/35 p-3">
                       <div className="font-mono text-[9px] text-emerald-300">{number}</div>
                       <div className="mt-1 text-xs font-semibold text-white">{title}</div>
-                      <p className="mt-1 text-[10px] leading-4 text-slate-500">{detail}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-400">{detail}</p>
                     </div>
                   ))}
                 </div>
               </div>
             </Chapter>
           </div>
+          </ChapterAccordionContext.Provider>
 
-          <footer className="flex flex-col gap-2 rounded-xl border border-stealth-700 bg-slate-950/35 p-3 text-[11px] leading-5 text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <footer className="flex flex-col gap-2 rounded-xl border border-stealth-700 bg-slate-950/35 p-3 text-xs leading-5 text-slate-400 sm:flex-row sm:items-center sm:justify-between">
             <span className="inline-flex items-center gap-2"><Database className="h-3.5 w-3.5" /> Current response: {data.symbol} · {data.bar_size} · {formatInteger(data.available_bars)} bars · {formatInteger(data.horizons.length)} horizons</span>
             <span>Working methodology · definitions should evolve only with versioned evidence</span>
           </footer>

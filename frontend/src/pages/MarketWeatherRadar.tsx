@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   Activity,
+  Check,
   ChevronDown,
   FlaskConical,
   Info,
+  Link2,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -27,40 +30,23 @@ import MarketWeatherMethodologyReport from "../components/marketWeather/MarketWe
 import MarketWeatherResearchLab from "../components/marketWeather/MarketWeatherResearchLab";
 import MarketLoading from "../components/ui/MarketLoading";
 import { useApi } from "../hooks/useApi";
-import type { MarketWeatherMode, MarketWeatherResponse, MarketWeatherTimeframe } from "../types/marketWeather";
+import type {
+  MarketWeatherLanguageView,
+  MarketWeatherMode,
+  MarketWeatherResponse,
+  MarketWeatherTimeframe,
+  MarketWeatherTimelineLens,
+} from "../types/marketWeather";
 import { channelLabel, formatSigned, INSPECTOR_CHANNELS } from "../utils/marketWeather";
-
-interface RadarConfig {
-  symbol: string;
-  timeframe: MarketWeatherTimeframe;
-  bars: number;
-  horizonMin: number;
-  horizonMax: number;
-  horizonStep: number;
-  stateSmoothing: number;
-  crossHorizonBlend: number;
-  rendererTimeBlur: number;
-  rendererSpatialBlend: number;
-  edgeGain: number;
-  reflectivityCompression: number;
-  contourBands: number;
-}
-
-const DEFAULT_CONFIG: RadarConfig = {
-  symbol: "SPY",
-  timeframe: "1D",
-  bars: 750,
-  horizonMin: 8,
-  horizonMax: 64,
-  horizonStep: 1,
-  stateSmoothing: 5,
-  crossHorizonBlend: 0.32,
-  rendererTimeBlur: 3,
-  rendererSpatialBlend: 0.42,
-  edgeGain: 1.35,
-  reflectivityCompression: 4,
-  contourBands: 7,
-};
+import {
+  DEFAULT_MARKET_WEATHER_CONFIG,
+  marketWeatherAnalysisParams,
+  parseMarketWeatherQuery,
+  serializeMarketWeatherQuery,
+  type MarketWeatherQueryState,
+  type MarketWeatherRecipeConfig,
+} from "../utils/marketWeatherQuery";
+import type { MarketTimelineWindow } from "../utils/marketWeatherTimeline";
 
 const TIMEFRAMES: Array<{
   value: MarketWeatherTimeframe;
@@ -87,7 +73,7 @@ const MODES: Array<{ value: MarketWeatherMode; label: string; description: strin
   { value: "inspector", label: "Channel Inspector", description: "Isolates one latent field so the composite can be audited." },
 ];
 
-const inputClass = "rounded-xl border border-stealth-600 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/70 focus:ring-2 focus:ring-sky-400/10";
+const inputClass = "min-h-11 rounded-xl border border-stealth-600 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/70 focus:ring-2 focus:ring-sky-400/10 sm:min-h-10";
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
@@ -132,36 +118,58 @@ function directionTone(value: number): string {
   return "text-amber-300";
 }
 
-function buildEndpoint(config: RadarConfig): string {
-  const params = new URLSearchParams({
-    symbol: config.symbol,
-    timeframe: config.timeframe,
-    bars: String(config.bars),
-    horizon_min: String(config.horizonMin),
-    horizon_max: String(config.horizonMax),
-    horizon_step: String(config.horizonStep),
-    state_smoothing: String(config.stateSmoothing),
-    cross_horizon_blend: String(config.crossHorizonBlend),
-    renderer_time_blur: String(config.rendererTimeBlur),
-    renderer_spatial_blend: String(config.rendererSpatialBlend),
-    edge_gain: String(config.edgeGain),
-    reflectivity_compression: String(config.reflectivityCompression),
-    contour_bands: String(config.contourBands),
-  });
-  return `/market-weather/analyze?${params.toString()}`;
+function buildEndpoint(config: MarketWeatherRecipeConfig): string {
+  return `/market-weather/analyze?${marketWeatherAnalysisParams(config).toString()}`;
 }
 
 export default function MarketWeatherRadar() {
-  const [draft, setDraft] = useState<RadarConfig>(DEFAULT_CONFIG);
-  const [applied, setApplied] = useState<RadarConfig>(DEFAULT_CONFIG);
-  const [mode, setMode] = useState<MarketWeatherMode>("regime");
-  const [inspectorChannel, setInspectorChannel] = useState("pressure");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialQueryRef = useRef<MarketWeatherQueryState | null>(null);
+  if (!initialQueryRef.current) initialQueryRef.current = parseMarketWeatherQuery(searchParams);
+  const initialQuery = initialQueryRef.current;
+  const [draft, setDraft] = useState<MarketWeatherRecipeConfig>(initialQuery.config);
+  const [applied, setApplied] = useState<MarketWeatherRecipeConfig>(initialQuery.config);
+  const [mode, setMode] = useState<MarketWeatherMode>(initialQuery.mode);
+  const [draftMode, setDraftMode] = useState<MarketWeatherMode>(initialQuery.mode);
+  const [inspectorChannel, setInspectorChannel] = useState(initialQuery.channel);
+  const [draftInspectorChannel, setDraftInspectorChannel] = useState(initialQuery.channel);
+  const [languageView, setLanguageView] = useState<MarketWeatherLanguageView>(initialQuery.view);
+  const [timelineLens, setTimelineLens] = useState<MarketWeatherTimelineLens>(initialQuery.timelineLens);
+  const [timelineWindow, setTimelineWindow] = useState<MarketTimelineWindow>(initialQuery.timelineWindow);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [rawDataOpen, setRawDataOpen] = useState(false);
+  const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">("idle");
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsDialogRef = useRef<HTMLFormElement | null>(null);
+  const queryStateRef = useRef<MarketWeatherQueryState>(initialQuery);
+  const appliedKeyRef = useRef(marketWeatherAnalysisParams(initialQuery.config).toString());
+  const shareTimerRef = useRef<number | null>(null);
   const endpoint = useMemo(() => buildEndpoint(applied), [applied]);
   const { data, loading, error, refetch } = useApi<MarketWeatherResponse>(endpoint);
+  const queryString = searchParams.toString();
+
+  useEffect(() => {
+    const next = parseMarketWeatherQuery(queryString);
+    queryStateRef.current = next;
+    const nextAnalysisKey = marketWeatherAnalysisParams(next.config).toString();
+    if (nextAnalysisKey !== appliedKeyRef.current) {
+      appliedKeyRef.current = nextAnalysisKey;
+      setApplied(next.config);
+      setDraft(next.config);
+    }
+    setMode(next.mode);
+    setDraftMode(next.mode);
+    setInspectorChannel(next.channel);
+    setDraftInspectorChannel(next.channel);
+    setLanguageView(next.view);
+    setTimelineLens(next.timelineLens);
+    setTimelineWindow(next.timelineWindow);
+  }, [queryString]);
+
+  useEffect(() => () => {
+    if (shareTimerRef.current !== null) window.clearTimeout(shareTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -207,7 +215,7 @@ export default function MarketWeatherRadar() {
   }, [settingsOpen]);
 
   const chartData = useMemo(() => {
-    if (!data) return [];
+    if (!data || !rawDataOpen) return [];
     const weightTotal = data.horizons.reduce((sum, horizon) => sum + horizon, 0);
     return data.price.map((point, dateIndex) => ({
       date: point.date,
@@ -217,30 +225,79 @@ export default function MarketWeatherRadar() {
         0,
       ) / weightTotal,
     }));
-  }, [data]);
+  }, [data, rawDataOpen]);
 
   const applyPreset = (preset: "balanced" | "tactical" | "structural") => {
     const next = preset === "tactical"
       ? { ...draft, horizonMin: 4, horizonMax: 48, horizonStep: 1, stateSmoothing: 3, rendererTimeBlur: 2 }
       : preset === "structural"
         ? { ...draft, horizonMin: 12, horizonMax: 96, horizonStep: 2, stateSmoothing: 7, rendererTimeBlur: 5 }
-        : { ...draft, ...DEFAULT_CONFIG, symbol: draft.symbol, timeframe: draft.timeframe, bars: draft.bars };
+        : { ...draft, ...DEFAULT_MARKET_WEATHER_CONFIG, symbol: draft.symbol, timeframe: draft.timeframe, bars: draft.bars };
     setDraft(next);
+  };
+
+  const currentQueryState = (overrides: Partial<MarketWeatherQueryState> = {}): MarketWeatherQueryState => ({
+    ...queryStateRef.current,
+    ...overrides,
+  });
+
+  const commitAnalysis = (config: MarketWeatherRecipeConfig, nextMode = mode, nextChannel = inspectorChannel) => {
+    const normalized = parseMarketWeatherQuery(serializeMarketWeatherQuery({
+      ...currentQueryState(),
+      config: { ...config, symbol: config.symbol.trim().toUpperCase() || "SPY" },
+      mode: nextMode,
+      channel: nextChannel,
+    }));
+    queryStateRef.current = normalized;
+    appliedKeyRef.current = marketWeatherAnalysisParams(normalized.config).toString();
+    setApplied(normalized.config);
+    setDraft(normalized.config);
+    setMode(normalized.mode);
+    setDraftMode(normalized.mode);
+    setInspectorChannel(normalized.channel);
+    setDraftInspectorChannel(normalized.channel);
+    setSearchParams(serializeMarketWeatherQuery(normalized), { replace: false });
   };
 
   const runAnalysis = (event: React.FormEvent) => {
     event.preventDefault();
-    setApplied({ ...draft, symbol: draft.symbol.trim().toUpperCase() || "SPY" });
+    commitAnalysis(draft);
   };
 
   const applySettings = () => {
-    setApplied({ ...draft, symbol: draft.symbol.trim().toUpperCase() || "SPY" });
+    commitAnalysis(draft, draftMode, draftInspectorChannel);
     setSettingsOpen(false);
     window.requestAnimationFrame(() => settingsButtonRef.current?.focus());
   };
 
+  const updatePresentation = (overrides: Partial<MarketWeatherQueryState>) => {
+    const next = currentQueryState(overrides);
+    queryStateRef.current = next;
+    if (overrides.mode) setMode(overrides.mode);
+    if (overrides.channel) setInspectorChannel(overrides.channel);
+    if (overrides.view) setLanguageView(overrides.view);
+    if (overrides.timelineLens) setTimelineLens(overrides.timelineLens);
+    if (overrides.timelineWindow) setTimelineWindow(overrides.timelineWindow);
+    setSearchParams(serializeMarketWeatherQuery(next), { replace: true });
+  };
+
+  const copyReportLink = async () => {
+    const url = new URL(window.location.href);
+    url.search = serializeMarketWeatherQuery(currentQueryState()).toString();
+    url.hash = "";
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setShareStatus("copied");
+    } catch {
+      setShareStatus("error");
+    }
+    if (shareTimerRef.current !== null) window.clearTimeout(shareTimerRef.current);
+    shareTimerRef.current = window.setTimeout(() => setShareStatus("idle"), 2600);
+  };
+
   const activeMode = MODES.find((item) => item.value === mode) ?? MODES[0];
   const activeTimeframe = TIMEFRAMES.find((item) => item.value === draft.timeframe) ?? TIMEFRAMES[7];
+  const historyOptions = Array.from(new Set([...activeTimeframe.barOptions, draft.bars])).sort((left, right) => left - right);
 
   const settingsDialog = settingsOpen ? createPortal(
     <div
@@ -275,7 +332,7 @@ export default function MarketWeatherRadar() {
               setSettingsOpen(false);
               window.requestAnimationFrame(() => settingsButtonRef.current?.focus());
             }}
-            className="rounded-full border border-stealth-600 p-2 text-slate-300 transition hover:border-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            className="grid h-11 w-11 place-items-center rounded-full border border-stealth-600 text-slate-300 transition hover:border-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
             aria-label="Close field settings"
           >
             <X className="h-4 w-4" />
@@ -291,7 +348,7 @@ export default function MarketWeatherRadar() {
                   key={preset}
                   type="button"
                   onClick={() => applyPreset(preset)}
-                  className="rounded-xl border border-stealth-600 px-3 py-2 text-xs capitalize text-slate-300 transition hover:border-sky-400/50 hover:text-white"
+                  className="min-h-11 rounded-xl border border-stealth-600 px-3 py-2 text-xs capitalize text-slate-300 transition hover:border-sky-400/50 hover:text-white sm:min-h-10"
                 >
                   {preset}
                 </button>
@@ -303,19 +360,19 @@ export default function MarketWeatherRadar() {
             <label className="flex flex-col gap-1.5">
               <span className="text-xs uppercase tracking-[0.12em] text-slate-400">History</span>
               <select value={draft.bars} onChange={(event) => setDraft((current) => ({ ...current, bars: Number(event.target.value) }))} className={inputClass}>
-                {activeTimeframe.barOptions.map((value) => <option key={value} value={value}>{value.toLocaleString()} bars</option>)}
+                {historyOptions.map((value) => <option key={value} value={value}>{value.toLocaleString()} bars</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs uppercase tracking-[0.12em] text-slate-400">Field lens</span>
-              <select value={mode} onChange={(event) => setMode(event.target.value as MarketWeatherMode)} className={inputClass}>
+                <select value={draftMode} onChange={(event) => setDraftMode(event.target.value as MarketWeatherMode)} className={inputClass}>
                 {MODES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
-            {mode === "inspector" ? (
+            {draftMode === "inspector" ? (
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs uppercase tracking-[0.12em] text-slate-400">Inspector channel</span>
-                <select value={inspectorChannel} onChange={(event) => setInspectorChannel(event.target.value)} className={inputClass}>
+                <select value={draftInspectorChannel} onChange={(event) => setDraftInspectorChannel(event.target.value)} className={inputClass}>
                   {INSPECTOR_CHANNELS.map((channel) => <option key={channel} value={channel}>{channelLabel(channel)}</option>)}
                 </select>
               </label>
@@ -344,7 +401,7 @@ export default function MarketWeatherRadar() {
                     min={Number(min)}
                     max={Number(max)}
                     step={Number(step)}
-                    value={draft[key as keyof RadarConfig]}
+                    value={draft[key as keyof MarketWeatherRecipeConfig]}
                     onChange={(event) => setDraft((current) => ({ ...current, [key]: Number(event.target.value) }))}
                     className={inputClass}
                   />
@@ -360,10 +417,10 @@ export default function MarketWeatherRadar() {
         </div>
 
         <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-white/8 bg-slate-900/95 px-5 py-4 backdrop-blur-xl sm:px-6">
-          <button type="button" onClick={refetch} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/50 disabled:opacity-50">
+          <button type="button" onClick={refetch} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/50 disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh current
           </button>
-          <button type="submit" disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-60">
+          <button type="submit" disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-60">
             <Activity className="h-4 w-4" /> Apply & analyze
           </button>
         </div>
@@ -427,20 +484,37 @@ export default function MarketWeatherRadar() {
             </label>
             <span className="mb-0.5 hidden rounded-xl border border-stealth-700 bg-slate-950/35 px-3 py-2 text-xs text-slate-400 sm:inline-flex">{draft.bars.toLocaleString()} bars · {activeMode.label}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               ref={settingsButtonRef}
               type="button"
-              onClick={() => setSettingsOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+              onClick={() => {
+                setDraftMode(mode);
+                setDraftInspectorChannel(inspectorChannel);
+                setSettingsOpen(true);
+              }}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
             >
               <SlidersHorizontal className="h-4 w-4" /> Settings
             </button>
-            <button type="submit" disabled={loading} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-60 sm:flex-none">
+            <button
+              type="button"
+              onClick={() => void copyReportLink()}
+              title="Shares the symbol, construction settings, and visible lenses. Data refreshes when opened."
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            >
+              {shareStatus === "copied" ? <Check className="h-4 w-4 text-emerald-300" /> : <Link2 className="h-4 w-4" />}
+              <span>{shareStatus === "copied" ? "Copied" : "Copy link"}</span>
+            </button>
+            <button type="submit" disabled={loading} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-60 sm:flex-none">
               <Activity className="h-4 w-4" /> Analyze
             </button>
           </div>
         </form>
+        <p className="mt-2 text-xs leading-5 text-slate-400">
+          {shareStatus === "error" ? <span className="text-rose-300">Clipboard access failed. Allow clipboard access and try again.</span> : "Report links preserve the analysis recipe and visible lenses; current provider data is loaded when opened."}
+          <span className="sr-only" aria-live="polite">{shareStatus === "copied" ? "Report link copied." : shareStatus === "error" ? "The report link could not be copied." : ""}</span>
+        </p>
       </section>
 
       {data ? (
@@ -469,8 +543,10 @@ export default function MarketWeatherRadar() {
         </section>
       ) : null}
 
+      {loading && data ? <p className="sr-only" role="status" aria-live="polite">Updating the applied market field.</p> : null}
+
       {error ? (
-        <section className="rounded-2xl border border-rose-500/30 bg-rose-950/25 p-5 text-sm text-rose-200">
+        <section role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-950/25 p-5 text-sm text-rose-200">
           <div className="font-semibold">The field could not be built.</div>
           <div className="mt-1 text-rose-200/80">{error}</div>
         </section>
@@ -485,10 +561,20 @@ export default function MarketWeatherRadar() {
               symbol={data.symbol}
               timeframe={data.timeframe}
               barSize={data.bar_size}
+              view={languageView}
+              onViewChange={(view) => updatePresentation({ view })}
+              timelineLens={timelineLens}
+              onTimelineLensChange={(nextLens) => updatePresentation({ timelineLens: nextLens })}
+              timelineWindow={timelineWindow}
+              onTimelineWindowChange={(nextWindow) => updatePresentation({ timelineWindow: nextWindow })}
             />
           ) : null}
 
-          <details className="group primary-card overflow-hidden">
+          <details
+            open={rawDataOpen}
+            onToggle={(event) => setRawDataOpen(event.currentTarget.open)}
+            className="group primary-card overflow-hidden"
+          >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4 text-left sm:p-5">
               <div>
                 <span className="page-kicker">Raw data</span>
@@ -497,7 +583,7 @@ export default function MarketWeatherRadar() {
               <ChevronDown className="h-5 w-5 shrink-0 text-slate-500 transition-transform group-open:rotate-180" />
             </summary>
 
-            <div className="space-y-6 border-t border-stealth-700 p-4 sm:p-5">
+            {rawDataOpen ? <div className="space-y-6 border-t border-stealth-700 p-4 sm:p-5">
               <section>
                 <div className="mb-3">
                   <span className="page-kicker">Outcome overlay</span>
@@ -582,7 +668,7 @@ export default function MarketWeatherRadar() {
                   </div>
                 </div>
               </section>
-            </div>
+            </div> : null}
           </details>
 
           <MarketWeatherMethodologyReport data={data} />

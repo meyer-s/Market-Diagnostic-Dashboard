@@ -184,6 +184,44 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
     setHover({ dateIndex, horizonIndex: data.horizons.length - 1 - visualRow, x, y });
   };
 
+  const inspectCell = (dateIndex: number, horizonIndex: number) => {
+    const boundedDate = Math.min(data.dates.length - 1, Math.max(0, dateIndex));
+    const boundedHorizon = Math.min(data.horizons.length - 1, Math.max(0, horizonIndex));
+    const plotWidth = size.width - padding.left - padding.right;
+    const plotHeight = size.height - padding.top - padding.bottom;
+    const visualRow = data.horizons.length - 1 - boundedHorizon;
+    setHover({
+      dateIndex: boundedDate,
+      horizonIndex: boundedHorizon,
+      x: padding.left + ((boundedDate + 0.5) / data.dates.length) * plotWidth,
+      y: padding.top + ((visualRow + 0.5) / data.horizons.length) * plotHeight,
+    });
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const current = hover ?? { dateIndex: data.dates.length - 1, horizonIndex: Math.floor(data.horizons.length / 2) };
+    const next = event.key === "ArrowLeft"
+      ? [current.dateIndex - 1, current.horizonIndex]
+      : event.key === "ArrowRight"
+        ? [current.dateIndex + 1, current.horizonIndex]
+        : event.key === "ArrowUp"
+          ? [current.dateIndex, current.horizonIndex + 1]
+          : event.key === "ArrowDown"
+            ? [current.dateIndex, current.horizonIndex - 1]
+            : event.key === "Home"
+              ? [0, current.horizonIndex]
+              : event.key === "End"
+                ? [data.dates.length - 1, current.horizonIndex]
+                : null;
+    if (event.key === "Escape") {
+      setHover(null);
+      return;
+    }
+    if (!next) return;
+    event.preventDefault();
+    inspectCell(next[0], next[1]);
+  };
+
   const hoveredCell = useMemo(
     () => (hover ? cellAt(data, hover.horizonIndex, hover.dateIndex) : null),
     [data, hover],
@@ -209,9 +247,17 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
       <canvas
         ref={canvasRef}
         onPointerMove={onPointerMove}
-        onPointerLeave={() => setHover(null)}
-        aria-label={`${data.symbol} market-weather ${compact ? "horizon cloud" : "heatmap"}. Time runs left to right and analysis horizon runs bottom to top.`}
-        className="block w-full touch-pan-y"
+        onPointerDown={onPointerMove}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") setHover(null);
+        }}
+        onFocus={() => {
+          if (!hover) inspectCell(data.dates.length - 1, Math.floor(data.horizons.length / 2));
+        }}
+        onKeyDown={onKeyDown}
+        tabIndex={0}
+        aria-label={`${data.symbol} market-weather ${compact ? "horizon cloud" : "heatmap"}. Time runs left to right and analysis horizon runs bottom to top. Use arrow keys to inspect cells, Home or End to move through time, and Escape to clear.`}
+        className="block w-full touch-pan-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300"
       />
       {hoverRect ? (
         <div
@@ -242,6 +288,9 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
           </div>
         </div>
       ) : null}
+      <span className="sr-only" aria-live="polite">
+        {hover && hoveredCell ? `${formatDate(data.dates[hover.dateIndex], !["1D", "1W"].includes(data.timeframe))}; ${data.horizons[hover.horizonIndex]}-bar horizon; pressure ${formatSigned(hoveredCell.pressure)}; pressure change ${formatSigned(hoveredCell.velocity)}; display organization ${hoveredCell.confidence.toFixed(2)}; legacy disorder ${hoveredCell.entropy.toFixed(2)}.` : ""}
+      </span>
     </div>
   );
 }

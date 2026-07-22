@@ -114,6 +114,18 @@ describe("MarketWeatherMethodologyReport", () => {
     expect(screen.getByText("Midprice and true range")).not.toBeNull();
   });
 
+  it("documents the relationship scopes, display-only smoothing, and live-link boundary", () => {
+    render(<MarketWeatherMethodologyReport data={DATA} />);
+    fireEvent.click(screen.getByRole("button", { name: /From Swami heatmaps to a Market Field Language/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Design breakdown: how the interface translates the model/i }));
+
+    expect(screen.getByText("Dictionary relationship scopes")).not.toBeNull();
+    expect(screen.getByText(/Organization \/ disorder places structure on x/i)).not.toBeNull();
+    expect(screen.getByText(/causal exponential display average with α=0.5/i)).not.toBeNull();
+    expect(screen.getByText(/does not feed the field, Form learning, state assignment/i)).not.toBeNull();
+    expect(screen.getByText(/recreates a selector recipe, not a frozen market-data snapshot/i)).not.toBeNull();
+  });
+
   it("degrades honestly when research metadata is absent", () => {
     const withoutResearch = { ...DATA, research: undefined } as MarketWeatherResponse;
     render(<MarketWeatherMethodologyReport data={withoutResearch} />);
