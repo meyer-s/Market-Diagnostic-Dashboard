@@ -59,6 +59,28 @@ def test_assessment_field_snapshot_supports_the_versioned_top_level_contract() -
     assert _market_field_cohort(snapshot) == "contradictory"
 
 
+def test_v12_cohort_uses_canonical_initialization_without_relabelling_v11() -> None:
+    current = _field_context("supportive")
+    current["semantic_revision"] = "1.2"
+    current["initialization"] = {
+        "minimum_input_satisfied": True,
+        "initialization_target_covered": True,
+        "initialization_status": "target_covered",
+        "completed_bars": 250,
+    }
+
+    compact = _compact_market_field(current)
+
+    assert compact is not None
+    assert compact["semantic_revision"] == "1.2"
+    assert compact["initialization"]["initialization_target_covered"] is True
+    assert _market_field_cohort(compact) == "supportive"
+
+    missing_initialization = _field_context("supportive")
+    missing_initialization["semantic_revision"] = "1.2"
+    assert _market_field_cohort(_compact_market_field(missing_initialization)) == "unavailable"
+
+
 def test_unavailable_or_unknown_field_states_are_not_forced_into_a_cohort() -> None:
     unavailable = _field_context("supportive")
     unavailable["quality"] = {"available": False}
@@ -68,7 +90,7 @@ def test_unavailable_or_unknown_field_states_are_not_forced_into_a_cohort() -> N
     assert _market_field_cohort({"classification": {"path_state": "new_label"}}) == "unavailable"
 
 
-def test_legacy_and_immature_snapshots_do_not_mix_with_v11_complete_cohorts() -> None:
+def test_legacy_and_incomplete_snapshots_do_not_mix_with_supported_cohorts() -> None:
     legacy = _field_context("supportive")
     legacy.pop("semantic_revision")
     legacy.pop("maturity")

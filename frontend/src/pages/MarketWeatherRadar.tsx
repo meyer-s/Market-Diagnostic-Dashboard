@@ -301,6 +301,18 @@ export default function MarketWeatherRadar() {
   const requestedHistoryShortfall = data?.history_context
     ? Math.max(0, data.history_context.requested_visible_bars - data.history_context.visible_bars)
     : 0;
+  const minimumInputSatisfied = data?.history_context
+    ? data.history_context.minimum_input_satisfied
+      ?? data.history_context.status !== "insufficient"
+    : false;
+  const initializationTargetCovered = data?.history_context
+    ? data.history_context.initialization_target_covered
+      ?? data.history_context.warmup_complete
+    : false;
+  const initializationTargetBars = data?.history_context
+    ? data.history_context.initialization_target_bars
+      ?? data.history_context.target_warmup_bars
+    : 0;
 
   const settingsDialog = settingsOpen ? createPortal(
     <div
@@ -541,10 +553,10 @@ export default function MarketWeatherRadar() {
               ) : null}
               {data.history_context ? (
                 <span
-                  className={`rounded-full border px-3 py-1 text-xs ${data.history_context.warmup_complete ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : "border-amber-400/30 bg-amber-400/10 text-amber-200"}`}
-                  title={`Initialization only: ${data.history_context.analysis_bars} calculation bars; ${data.history_context.warmup_buffer_received} hidden warm-up bars received; ${data.history_context.target_warmup_bars}-bar reference. Requested visible-history coverage is reported separately.`}
+                  className={`rounded-full border px-3 py-1 text-xs ${initializationTargetCovered ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : minimumInputSatisfied ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-rose-400/30 bg-rose-400/10 text-rose-200"}`}
+                  title={`Initialization coverage only: ${data.history_context.analysis_bars} calculation bars; ${data.history_context.warmup_buffer_received} hidden leading bars received; ${initializationTargetBars}-bar target. Target coverage is not a convergence guarantee. Requested visible-history coverage is reported separately.`}
                 >
-                  {data.history_context.warmup_complete ? "Initialization mature" : "Provisional initialization"}
+                  {initializationTargetCovered ? "Initialization target covered" : minimumInputSatisfied ? "Minimum input met · target not covered" : "Minimum input not met"}
                 </span>
               ) : null}
               <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1 text-xs text-slate-300">{activeMode.label}</span>
@@ -557,12 +569,12 @@ export default function MarketWeatherRadar() {
           </div>
           {data.history_context && requestedHistoryShortfall > 0 ? (
             <p className="mx-1 mt-2 rounded-lg border border-rose-400/25 bg-rose-400/[0.08] px-3 py-2 text-xs leading-5 text-rose-100" role="status">
-              Requested-history shortfall: the provider returned {data.history_context.visible_bars.toLocaleString()} of {data.history_context.requested_visible_bars.toLocaleString()} visible bars ({requestedHistoryShortfall.toLocaleString()} missing). {data.history_context.warmup_complete ? "Initialization is mature, but that does not make this a full requested-history response." : "Initialization is also provisional."}
+              Requested-history shortfall: the provider returned {data.history_context.visible_bars.toLocaleString()} of {data.history_context.requested_visible_bars.toLocaleString()} visible bars ({requestedHistoryShortfall.toLocaleString()} missing). {initializationTargetCovered ? "The initialization target is covered, but that does not make this a full requested-history response." : "The initialization target is also not covered."}
             </p>
           ) : null}
-          {data.history_context && !data.history_context.warmup_complete ? (
+          {data.history_context && !initializationTargetCovered ? (
             <p className="mx-1 mt-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">
-              Provisional initialization: {data.history_context.analysis_bars} calculation bars were available against a {data.history_context.target_warmup_bars}-bar reference. The field remains non-anticipative, but current levels can still depend materially on retained history.
+              Initialization target not covered: {data.history_context.analysis_bars} calculation bars were available against a {initializationTargetBars}-bar target. The minimum input is {minimumInputSatisfied ? "satisfied" : "not satisfied"}. The field remains non-anticipative, but current levels can still depend materially on retained history; target coverage is not a convergence guarantee.
             </p>
           ) : null}
           {data.input_quality && data.input_quality.status !== "valid" ? (

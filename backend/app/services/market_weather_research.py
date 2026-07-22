@@ -13,6 +13,13 @@ EPSILON = 1e-9
 DISTANCE_TAIL_CUTOFF = 0.05
 DISTANCE_TAIL_MINIMUM_SUPPORT = 20
 SCALING_DIFFUSIVE_REFERENCE = 0.5
+# With the implemented rolling realized-volatility definition, increasing the
+# horizon only adds non-negative squared returns.  Its log-log slope is
+# therefore non-negative in exact arithmetic.  Keep a small floating-point
+# tolerance, but never interpret a materially negative estimate as a market
+# property.  The wider [-2, 2] channel bounds remain defensive storage only.
+SCALING_NEGATIVE_TOLERANCE = 1e-10
+SCALING_DEFENSIVE_STORAGE_BOUNDS = (-2.0, 2.0)
 
 
 def _clip(values: np.ndarray, low: float = 0.0, high: float = 1.0) -> np.ndarray:
@@ -22,7 +29,15 @@ def _clip(values: np.ndarray, low: float = 0.0, high: float = 1.0) -> np.ndarray
 def _ewm_rows(values: np.ndarray, span: int) -> np.ndarray:
     return np.vstack(
         [
-            pd.Series(row).ewm(span=max(1, span), adjust=False).mean().to_numpy(dtype=float)
+            pd.Series(row)
+            .ewm(
+                span=max(1, span),
+                adjust=False,
+                ignore_na=False,
+                min_periods=0,
+            )
+            .mean()
+            .to_numpy(dtype=float)
             for row in values
         ]
     )
@@ -98,6 +113,33 @@ def _rolling_realized_volatility(close: pd.Series, horizons: Sequence[int]) -> n
         for horizon in horizons
     ]
     return np.vstack(rows)
+
+
+def _log_horizon_scaling_exponent(
+    realized_volatility: np.ndarray,
+    horizons: Sequence[int],
+) -> np.ndarray:
+    """Return the v1 log-horizon slope with its exact-arithmetic contract visible."""
+
+    values = np.asarray(realized_volatility, dtype=float)
+    horizon_values = np.asarray(horizons, dtype=float)
+    if values.ndim != 2 or values.shape[0] != len(horizon_values):
+        raise ValueError("Realized volatility must be horizon by time.")
+    if len(horizon_values) == 1:
+        return np.zeros_like(values)
+    if np.any(horizon_values <= 0.0) or np.any(np.diff(horizon_values) <= 0.0):
+        raise ValueError("Scaling horizons must be positive and strictly increasing.")
+    exponent = np.gradient(
+        np.log(values + EPSILON),
+        np.log(horizon_values),
+        axis=0,
+        edge_order=1,
+    )
+    return np.clip(
+        np.nan_to_num(exponent),
+        SCALING_DEFENSIVE_STORAGE_BOUNDS[0],
+        SCALING_DEFENSIVE_STORAGE_BOUNDS[1],
+    )
 
 
 def _relative_level(values: np.ndarray, span: int) -> np.ndarray:
@@ -206,6 +248,39 @@ def _rounded(value: float | np.floating[object] | None, digits: int = 4) -> floa
     if value is None or not np.isfinite(float(value)):
         return None
     return round(float(value), digits)
+
+
+def _scaling_reference_quality(
+    aggregate_exponent: np.ndarray,
+    realized_volatility: np.ndarray,
+    per_horizon_exponent: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Validate the displayed scaling estimate against its arithmetic contract.
+
+    Rolling realized variance is a sum of squared returns. At a fixed date it
+    cannot decrease as the horizon expands in exact arithmetic, so the
+    corresponding log-log slope cannot be materially negative.  Tiny negative
+    values within the declared tolerance are reported as zero; larger negative
+    values remain available only in the defensive diagnostic channel and are
+    invalid as interpretable scaling estimates. Any such violation suppresses
+    retrospective learned outputs for the request.
+    """
+    exponent = np.asarray(aggregate_exponent, dtype=float)
+    has_variance = np.max(realized_volatility, axis=0) > EPSILON
+    violates_contract = exponent < -SCALING_NEGATIVE_TOLERANCE
+    if per_horizon_exponent is not None:
+        raw = np.asarray(per_horizon_exponent, dtype=float)
+        if raw.ndim != 2 or raw.shape[1] != exponent.shape[0]:
+            raise ValueError("Per-horizon scaling estimates must be horizon by time.")
+        violates_contract |= np.any(raw < -SCALING_NEGATIVE_TOLERANCE, axis=0)
+    valid = has_variance & ~violates_contract
+    reasons = np.full(exponent.shape, None, dtype=object)
+    reasons[~has_variance] = "zero_realized_variance"
+    reasons[has_variance & violates_contract] = "negative_exponent_violates_exact_arithmetic_contract"
+    reported = exponent.copy()
+    near_zero_negative = valid & (reported < 0.0)
+    reported[near_zero_negative] = 0.0
+    return valid, reasons, reported
 
 
 def _empirical_distance_tail_score(
@@ -1203,17 +1278,7 @@ def build_market_weather_research(
         horizons,
         structure,
     )
-    if len(horizons) < 2:
-        scaling_exponent = np.zeros_like(realized_volatility)
-    else:
-        log_horizons = np.log(np.asarray(horizons, dtype=float))
-        scaling_exponent = np.gradient(
-            np.log(realized_volatility + EPSILON),
-            log_horizons,
-            axis=0,
-            edge_order=1,
-        )
-        scaling_exponent = np.clip(np.nan_to_num(scaling_exponent), -2.0, 2.0)
+    scaling_exponent = _log_horizon_scaling_exponent(realized_volatility, horizons)
 
     kinematics = _clip(
         0.18 * np.abs(velocity)
@@ -1261,11 +1326,18 @@ def build_market_weather_research(
             _clip(0.48 * coherence + 0.32 * structural_strength + 0.20 * (1.0 - field_disorder))
         ),
     }
-    scaling_valid = np.max(realized_volatility, axis=0) > EPSILON
+    scaling_valid, scaling_reason, reported_scaling_exponent = _scaling_reference_quality(
+        aggregate_strata["scaling_exponent"],
+        realized_volatility,
+        scaling_exponent,
+    )
     scaling_excess = np.where(
         scaling_valid,
-        aggregate_strata["scaling_exponent"] - SCALING_DIFFUSIVE_REFERENCE,
+        reported_scaling_exponent - SCALING_DIFFUSIVE_REFERENCE,
         np.nan,
+    )
+    material_scaling_violation = bool(
+        np.any(scaling_reason == "negative_exponent_violates_exact_arithmetic_contract")
     )
     aggregate_carriers = {name: _aggregate(values) for name, values in carriers.items()}
     aggregate_carrier_ratios = {
@@ -1291,11 +1363,11 @@ def build_market_weather_research(
     scaling_reference_series = [
         {
             "date": date,
-            "exponent": _rounded(aggregate_strata["scaling_exponent"][index]),
+            "exponent": _rounded(reported_scaling_exponent[index]),
             "reference": SCALING_DIFFUSIVE_REFERENCE,
             "excess": _rounded(scaling_excess[index]),
             "valid": bool(scaling_valid[index]),
-            "reason": None if scaling_valid[index] else "zero_realized_variance",
+            "reason": scaling_reason[index],
         }
         for index, date in enumerate(dates)
     ]
@@ -1307,7 +1379,7 @@ def build_market_weather_research(
         {"date": date, **{name: _rounded(values[index]) for name, values in aggregate_carrier_ratios.items()}}
         for index, date in enumerate(dates)
     ]
-    if include_retrospective:
+    if include_retrospective and not material_scaling_violation:
         relationship_atlas, validation = _build_relationship_atlas(
             history["close"].to_numpy(dtype=float),
             dates,
@@ -1322,6 +1394,26 @@ def build_market_weather_research(
             carriers=aggregate_carriers,
             requested_warmup_bars=max(34, 2 * max(int(horizon) for horizon in horizons)),
         )
+    elif include_retrospective:
+        invalid_bars = int(
+            np.sum(scaling_reason == "negative_exponent_violates_exact_arithmetic_contract")
+        )
+        # Scaling is part of the 15-coordinate Form vector. An impossible value
+        # must never be silently clipped into, or otherwise influence, a learned
+        # dictionary. Keep the raw value only in the explicitly invalid
+        # diagnostic series and suppress all retrospective products for this
+        # request so there is no partial, ambiguous research result.
+        relationship_atlas = []
+        validation = {
+            "included": False,
+            "reason": "scaling_exponent_quality_failure",
+            "invalid_bars": invalid_bars,
+        }
+        lexicon = {
+            "included": False,
+            "reason": "scaling_exponent_quality_failure",
+            "invalid_bars": invalid_bars,
+        }
     else:
         # Scanner snapshots only need causal, live field measurements. Skipping
         # calibration, holdout outcomes, and learned state labels keeps the hot
@@ -1344,7 +1436,7 @@ def build_market_weather_research(
     }
     research = {
         "model": "Market Field Calculus v1",
-        "semantic_revision": "1.1",
+        "semantic_revision": "1.2",
         "coordinate": {
             "time": "causal bar sequence",
             "scale": "natural log of horizon in bars",
@@ -1352,10 +1444,10 @@ def build_market_weather_research(
         },
         "definitions": {
             "entropy / field_disorder": "Legacy heuristic: log-horizon disagreement plus motion energy; not information entropy.",
-            "coherence": "Log-horizon neighbor-agreement score; not spectral or wavelet coherence.",
+            "coherence": "Log-horizon neighbor-agreement score with effective range (7/27, 1] under bounded pressure; not spectral or wavelet coherence. Its 0.42 weight contributes more than 49/450 to the legacy Structure coordinate.",
             "permutation_entropy": "Causal normalized Bandt-Pompe ordinal-pattern entropy (order 3, trailing 24 patterns).",
             "cascade_velocity": "Regularized local level-set velocity -P_t/P_s; positive indicates motion toward longer horizons.",
-            "scaling_exponent": "Local slope of log realized volatility versus log horizon; descriptive, not a Hurst estimate.",
+            "scaling_exponent": "Local slope of log realized volatility versus log horizon. Because rolling realized variance only adds squared returns as horizon grows, the estimate is nonnegative in exact arithmetic; materially negative values are invalid, not market signals. Descriptive, not a Hurst estimate.",
             "confidence": "Uncalibrated organization score; not a probability.",
         },
         "derivative_series": derivative_series,
@@ -1375,16 +1467,23 @@ def build_market_weather_research(
                 "display_organization": 0.68,
             },
             "changes_v1_state_vector": False,
-            "note": "Activity and horizon agreement expose the two inputs to the existing v1 composite; no Form identity or v1 feature value is changed.",
+            "note": "Activity and horizon agreement expose the two inputs to the existing v1 composite; no Form identity or v1 feature value is changed. Under bounded pressure, horizon agreement lies in (7/27, 1], so its 0.42 weight contributes more than 49/450 to Structure.",
         },
         "scaling_reference": {
             "stationary_finite_variance_reference": SCALING_DIFFUSIVE_REFERENCE,
-            "latest_exponent": _rounded(aggregate_strata["scaling_exponent"][-1]),
+            "latest_exponent": _rounded(reported_scaling_exponent[-1]),
             "latest_excess": _rounded(scaling_excess[-1]),
             "valid": bool(scaling_valid[-1]),
-            "reason": None if scaling_valid[-1] else "zero_realized_variance",
+            "reason": scaling_reason[-1],
             "series": scaling_reference_series,
             "reference_scope": "Square-root-of-time reference for non-degenerate stationary finite-variance increments; not a Hurst estimate or proof of persistence.",
+            "exact_arithmetic_contract": {
+                "nonnegative": True,
+                "floating_point_tolerance": SCALING_NEGATIVE_TOLERANCE,
+                "defensive_storage_bounds": list(SCALING_DEFENSIVE_STORAGE_BOUNDS),
+                "violation_status": "invalid",
+                "note": "At a fixed date, expanding-horizon realized variance only adds squared returns. A materially negative log-log slope therefore violates the implemented measure's exact-arithmetic contract, is withheld from interpretation, and suppresses retrospective learned outputs for that request.",
+            },
         },
         "carriers": {
             "latest": {name: _rounded(values[-1]) for name, values in aggregate_carriers.items()},

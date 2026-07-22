@@ -1066,7 +1066,7 @@ def entropy_window_checks(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def maturity_contract_checks() -> pd.DataFrame:
+def initialization_contract_checks() -> pd.DataFrame:
     longest_horizon = max(int(value) for value in OPTION_FIELD_HORIZONS)
     reference_span = max(34, longest_horizon * 2)
     api_visible = PUBLIC_API_MIN_VISIBLE_BARS
@@ -1077,24 +1077,24 @@ def maturity_contract_checks() -> pd.DataFrame:
             "visible_bars": OPTION_FIELD_MIN_BARS,
             "hidden_prefetch_bars": 0,
             "computation_bars": OPTION_FIELD_MIN_BARS,
-            "aggregate_maturity_contract": "maturity",
-            "note": "Accepted by the option wrapper; aggregate maturity metadata is emitted, but no per-coordinate maturity mask is available.",
+            "aggregate_initialization_contract": "initialization (maturity is a legacy alias)",
+            "note": "Accepted by the option wrapper; minimum-input and initialization-target coverage metadata are emitted, but no per-coordinate initialization mask is available.",
         },
         {
             "path": "public_api_min_visible_60_h48",
             "visible_bars": api_visible,
             "hidden_prefetch_bars": api_prefetch,
             "computation_bars": api_visible + api_prefetch,
-            "aggregate_maturity_contract": "history_context",
-            "note": "The endpoint computes on the fetched warm-up plus visible bars, trims the response, and emits aggregate history depth and maturity metadata.",
+            "aggregate_initialization_contract": "history_context",
+            "note": "The endpoint computes on the fetched prefix plus visible bars, trims the response, and emits minimum-input and initialization-target coverage metadata.",
         },
         {
             "path": "paper_compute_benchmark_365",
             "visible_bars": 365,
             "hidden_prefetch_bars": 0,
             "computation_bars": 365,
-            "aggregate_maturity_contract": "history_context",
-            "note": "The paper's cached option-snapshot timing window; the core response reports aggregate history maturity.",
+            "aggregate_initialization_contract": "history_context",
+            "note": "The paper's cached option-snapshot timing window; the core response reports aggregate initialization coverage.",
         },
     ]
     rows: list[dict[str, Any]] = []
@@ -1109,8 +1109,8 @@ def maturity_contract_checks() -> pd.DataFrame:
                 "reference_span_coverage": min(1.0, computation_bars / reference_span),
                 "post_longest_horizon_observations": max(0, computation_bars - longest_horizon),
                 "meets_reference_span": computation_bars >= reference_span,
-                "aggregate_maturity_metadata_emitted": True,
-                "per_coordinate_maturity_mask_emitted": False,
+                "aggregate_initialization_metadata_emitted": True,
+                "per_coordinate_initialization_mask_emitted": False,
             }
         )
     return pd.DataFrame(rows)
@@ -1667,7 +1667,7 @@ def summarize_results(
     resolution: pd.DataFrame,
     history: pd.DataFrame,
     entropy: pd.DataFrame,
-    maturity: pd.DataFrame,
+    initialization: pd.DataFrame,
     null_state: pd.DataFrame,
     latency: pd.DataFrame,
     timeframe: pd.DataFrame,
@@ -1765,7 +1765,7 @@ def summarize_results(
                 entropy_nonreference["entropy_correlation_vs_window24"].min()
             ),
         },
-        "maturity_contracts": maturity.to_dict(orient="records"),
+        "initialization_contracts": initialization.to_dict(orient="records"),
         "null_state_anchor": {
             "pressure": float(anchor["pressure"]),
             "structure": float(anchor["structure"]),
@@ -1849,7 +1849,7 @@ def run_analysis(*, fetch: bool = False, force_fetch: bool = False) -> dict[str,
     resolution = resolution_checks(frames)
     history = history_truncation_checks(frames)
     entropy = entropy_window_checks(frames)
-    maturity = maturity_contract_checks()
+    initialization = initialization_contract_checks()
     null_state = null_state_anchor_checks()
     timeframe, series_by_timeframe = timeframe_checks(frames)
     lexicon, stability, state_sequence, _spy_field = lexicon_checks(frames)
@@ -1873,7 +1873,7 @@ def run_analysis(*, fetch: bool = False, force_fetch: bool = False) -> dict[str,
         "resolution_comparison_counts.csv": resolution_counts,
         "history_truncation_sensitivity.csv": history,
         "entropy_window_sensitivity.csv": entropy,
-        "maturity_contracts.csv": maturity,
+        "initialization_contracts.csv": initialization,
         "null_state_anchor.csv": null_state,
         "option_snapshot_latency.csv": latency,
         "timeframe_behavior.csv": timeframe,
@@ -1901,7 +1901,7 @@ def run_analysis(*, fetch: bool = False, force_fetch: bool = False) -> dict[str,
         resolution=resolution,
         history=history,
         entropy=entropy,
-        maturity=maturity,
+        initialization=initialization,
         null_state=null_state,
         latency=latency,
         timeframe=timeframe,

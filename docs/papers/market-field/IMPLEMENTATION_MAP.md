@@ -4,12 +4,13 @@ This map connects paper sections to the implementation that generated them. It
 is an audit aid, not part of the ICLR page-limited main text.
 
 Version legend: `market_field_calculus_v1` is the formula model;
-`semantic_revision=1.1` is the additive metadata/authority contract; and
+`semantic_revision=1.2` is the current additive metadata/authority contract
+(legacy 1.0/1.1 payloads remain immutable/readable); and
 `market_field_preliminary_v2` is the evaluation harness, not a v2 formula.
 
 | Paper topic | Production source | Claim boundary |
 |---|---|---|
-| Pressure surface, prefix-only smoothing, base channels, input quality, and maturity | backend/app/services/market_weather.py | Engineered bounded representation with visible initialization/input contracts; not physical pressure or a convergence guarantee |
+| Pressure surface, prefix-only smoothing, base channels, input quality, and initialization coverage | backend/app/services/market_weather.py | Engineered bounded representation with visible minimum-input/initialization contracts; `maturity` remains a legacy serialized alias, not a convergence guarantee |
 | Derivative hierarchy, log-horizon geometry, permutation entropy, strata, carriers, and semantic anchors | backend/app/services/market_weather_research.py | Finite differences and operational analogues; activity/agreement and scaling references do not change the v1 state vector |
 | Form dictionary, chronology, distance tails | backend/app/services/market_weather_research.py | Request-local empirical codebook; upper calibration-distance tail, not a coordinatewise range test, universal latent regime, or formal p-value |
 | Scope projections and display smoothing | frontend/src/components/marketWeather/MarketWeatherResearchLab.tsx | Visualization only; loops are not detected cycles or attractors |

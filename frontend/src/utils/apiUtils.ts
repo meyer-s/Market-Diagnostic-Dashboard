@@ -1,3 +1,10 @@
+import {
+  getSecretOptionsScope,
+  isSecretOptionsEndpoint,
+  notifySecretOptionsAuthRequired,
+  withSecretOptionsAuthorization,
+} from "./secretOptionsAuth";
+
 /**
  * API Utilities
  * 
@@ -51,7 +58,26 @@ export function getLegacyApiUrl(): string {
  */
 export async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = buildApiUrl(endpoint);
-  const response = await fetch(url, options);
+  const requestOptions = withSecretOptionsAuthorization(endpoint, options);
+  const method = String(requestOptions?.method || "GET").toUpperCase();
+  if (
+    isSecretOptionsEndpoint(endpoint)
+    && getSecretOptionsScope() === "read"
+    && !["GET", "HEAD", "OPTIONS"].includes(method)
+  ) {
+    notifySecretOptionsAuthRequired(403);
+    throw new ApiError(
+      endpoint,
+      403,
+      "This Secret Options session is read-only. Enter a write-scoped credential to make changes.",
+    );
+  }
+  const response = await fetch(url, requestOptions);
+  if (isSecretOptionsEndpoint(endpoint)) {
+    if (response.status === 401 || response.status === 403) {
+      notifySecretOptionsAuthRequired(response.status);
+    }
+  }
   const contentType = response.headers.get("content-type") || "";
   const body = contentType.includes("application/json")
     ? await response.json().catch(() => null)

@@ -103,6 +103,13 @@ export interface MarketWeatherScalingReference {
     reason: string | null;
   }>;
   reference_scope?: string;
+  exact_arithmetic_contract?: {
+    nonnegative: true;
+    floating_point_tolerance: number;
+    defensive_storage_bounds: [number, number] | number[];
+    violation_status: "invalid" | string;
+    note?: string;
+  };
 }
 
 export interface MarketWeatherCarrierPoint {
@@ -478,6 +485,15 @@ export interface MarketWeatherResponse {
     warmup_buffer_received: number;
     maximum_horizon_bars: number;
     minimum_observed_window_bars: number;
+    minimum_input_bars?: number;
+    minimum_input_satisfied?: boolean;
+    initialization_target_bars?: number;
+    initialization_target_covered?: boolean;
+    initialization_status?: "minimum_not_satisfied" | "minimum_satisfied" | "target_covered" | string;
+    bars_needed_to_minimum_input?: number;
+    bars_needed_to_initialization_target?: number;
+    initialization_note?: string;
+    /** Compatibility aliases for pre-v1.2 responses. */
     target_warmup_bars: number;
     warmup_complete: boolean;
     status: "complete" | "provisional" | "insufficient";

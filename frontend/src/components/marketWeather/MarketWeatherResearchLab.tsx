@@ -820,6 +820,15 @@ function CurrentStateView({
   const latestDerivative = research.derivative_series[research.derivative_series.length - 1];
   const latestStrata = research.strata.latest;
   const latestCarriers = research.carriers?.latest;
+  const scalingReference = research.scaling_reference;
+  const scalingExponent = scalingReference?.latest_exponent;
+  const scalingTolerance = Math.abs(
+    scalingReference?.exact_arithmetic_contract?.floating_point_tolerance ?? 1e-10,
+  );
+  const scalingContractViolation = typeof scalingExponent === "number"
+    && scalingExponent < -scalingTolerance;
+  const scalingQualityViolation = scalingContractViolation
+    || scalingReference?.reason === "negative_exponent_violates_exact_arithmetic_contract";
   const currentValues: Record<string, number> = {
     ...archetype.centroid,
     pressure: latestDerivative?.pressure ?? archetype.centroid.pressure ?? 0,
@@ -838,7 +847,11 @@ function CurrentStateView({
     participation_carrier: latestCarriers?.participation ?? archetype.centroid.participation_carrier ?? 0,
     liquidity_stress_carrier: latestCarriers?.liquidity_stress ?? archetype.centroid.liquidity_stress_carrier ?? 0,
   };
-  const profile = buildGroundedStateProfile(currentValues, lexicon.features);
+  const profile = buildGroundedStateProfile(
+    currentValues,
+    lexicon.features,
+    scalingQualityViolation ? ["scaling_exponent"] : [],
+  );
   const canonicalTailFlag = current.in_extreme_calibration_distance_tail ?? current.outside_learned_range;
   const canonicalTailRank = current.calibration_distance_tail_rank ?? current.distance_tail_score;
   const canonicalTailSupport = current.calibration_distance_support ?? current.distance_tail_support;
@@ -853,7 +866,12 @@ function CurrentStateView({
     minimumSupport: minimumTailSupport,
   });
   const structureComponents = research.structure_components?.latest;
-  const scalingReference = research.scaling_reference;
+  const scalingDisplayValid = scalingReference?.valid === true
+    && typeof scalingExponent === "number"
+    && !scalingContractViolation;
+  const displayedScalingExponent = scalingDisplayValid && typeof scalingExponent === "number"
+    ? Math.max(0, scalingExponent)
+    : null;
 
   return (
     <div className="space-y-3">
@@ -893,7 +911,7 @@ function CurrentStateView({
             <div className="border-t border-white/10 p-3 sm:border-l sm:border-t-0">
               <span className="block text-[10px] uppercase tracking-wider text-slate-500">Horizon agreement</span>
               <strong className="mt-1 block font-mono text-base text-violet-200">{structureComponents ? Math.round(structureComponents.horizon_agreement * 100) : "—"}</strong>
-              <span className="text-[11px] text-slate-400">Agreement can be high while activity is zero</span>
+              <span className="text-[11px] text-slate-400">Effective range (7/27, 1]; contributes &gt;49/450 to Structure</span>
             </div>
             <div className="border-t border-white/10 p-3 lg:border-l lg:border-t-0">
               <span className="block text-[10px] uppercase tracking-wider text-slate-500">Trend + agreement</span>
@@ -902,12 +920,12 @@ function CurrentStateView({
             </div>
             <div className="border-t border-white/10 p-3 sm:border-l lg:border-t-0">
               <span className="block text-[10px] uppercase tracking-wider text-slate-500">Volatility scaling</span>
-              <strong className="mt-1 block font-mono text-base text-amber-200">{scalingReference?.valid && typeof scalingReference.latest_exponent === "number" ? scalingReference.latest_exponent.toFixed(2) : "Unavailable"}</strong>
-              <span className="text-[11px] text-slate-400">{scalingReference?.valid && typeof scalingReference.latest_excess === "number" ? `${scalingReference.latest_excess >= 0 ? "+" : ""}${scalingReference.latest_excess.toFixed(2)} vs 0.50 reference` : "Degenerate or unsupported path"}</span>
+              <strong className={`mt-1 block font-mono text-base ${scalingQualityViolation ? "text-rose-200" : "text-amber-200"}`}>{displayedScalingExponent !== null ? displayedScalingExponent.toFixed(2) : scalingQualityViolation ? "Quality flag · withheld" : "Unavailable"}</strong>
+              <span className="text-[11px] text-slate-400">{displayedScalingExponent !== null && typeof scalingReference?.latest_excess === "number" ? `${scalingReference.latest_excess >= 0 ? "+" : ""}${scalingReference.latest_excess.toFixed(2)} vs 0.50 reference` : scalingQualityViolation ? "Negative violates the nonnegative exact-arithmetic contract; not a market signal" : "Degenerate or unsupported path"}</span>
             </div>
           </div>
         ) : null}
-        {!lexicon.training_split.warmup_complete ? <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">This history does not fully cover the requested horizon warm-up. Treat the learned state and its comparisons as provisional.</p> : null}
+        {!lexicon.training_split.warmup_complete ? <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">This history does not cover the requested initialization target. The learned state remains available, but its retained-history sensitivity is higher; target coverage is not a convergence guarantee.</p> : null}
       </section>
 
       <MarketStateTimeline

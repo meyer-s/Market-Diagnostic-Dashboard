@@ -145,10 +145,10 @@ pd.DataFrame(
             "result": f'Spearman rho = {synthetic["horizon_delay_spearman_rho"]:.3f}',
         },
         {
-            "diagnostic": "Supported distance tails",
+            "diagnostic": "Supported calibration-distance tails",
             "result": (
                 f'{100 * validation["distance_tail"]["pooled_outside_range_rate"]:.2f}% '
-                "outside descriptive range"
+                "in the upper state-conditional calibration-distance tail"
             ),
         },
         {
@@ -171,8 +171,13 @@ asset_display = assets[
         "transitions_per_100_bars",
     ]
 ].copy()
+asset_display = asset_display.rename(
+    columns={"outside_range_rate": "upper_calibration_distance_tail_rate"}
+)
 asset_display["fit_silhouette"] = asset_display["fit_silhouette"].map("{:.3f}".format)
-asset_display["outside_range_rate"] = asset_display["outside_range_rate"].map("{:.2%}".format)
+asset_display["upper_calibration_distance_tail_rate"] = asset_display[
+    "upper_calibration_distance_tail_rate"
+].map("{:.2%}".format)
 asset_display["transitions_per_100_bars"] = asset_display[
     "transitions_per_100_bars"
 ].map("{:.2f}".format)

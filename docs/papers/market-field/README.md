@@ -66,10 +66,6 @@ used instead. The checked PDFs were built with Tectonic 0.16.9.
 
 - Implementation repository:
   https://github.com/meyer-s/Market-Diagnostic-Dashboard
-- Implementation snapshot used for the first paper run:
-  cd67fb48c1ee747fb8b447bc9d59fb8eaf7ec430
-- Clean implementation snapshot used for the current primary rerun:
-  b1755d23d834786af733cb5a66ee177acf848318
 - Primary data: Yahoo Finance through yfinance 1.1.0 with auto_adjust=True.
 - Sample: SPY, QQQ, IWM, TLT, GLD, USO, VNQ, and BTC-USD.
 - Requested range: 2018-01-01 through 2026-07-21 inclusive.
@@ -77,6 +73,18 @@ used instead. The checked PDFs were built with Tectonic 0.16.9.
   results/validation_summary.json.
 - Raw provider cache: cache; retained locally and excluded from Git. Yahoo
   Finance data is not redistributed by this package.
+
+The primary evidence has an explicit two-commit implementation lineage:
+
+| Commit | Role | Claim boundary |
+|---|---|---|
+| `cd67fb48c1ee747fb8b447bc9d59fb8eaf7ec430` | Repository reference recorded for the first paper run and retained raw-input manifest | Historical first-run context only; it is not the source identity for the current derived primary artifacts. |
+| `b1755d23d834786af733cb5a66ee177acf848318` | Clean implementation source used for the current primary rerun | `results/primary_run_receipt.json` binds this commit, evaluated source hashes, and generated table/figure/result hashes. |
+
+The supplementary v2 audit was run from a dirty working tree whose parent was
+`f0ef66a4b34f72582b48543e4947104370bdf464`; that parent is not presented as
+the evaluated source identity. Its per-file start/completion hashes in
+`supplement/results/run_receipt.json` are authoritative for that run.
 
 The committed manifest, hashes, derived CSVs, figures, tables, executed
 notebooks, direct requirements, and full environment version capture document
@@ -103,6 +111,10 @@ secrets, or secret-option records are part of this package.
 - The option integration has algorithmic ranking weight zero and cannot execute
   trades. Human-visible confidence or urgency can still influence a decision,
   so `shadow_only` does not mean zero behavioral exposure.
+- Production Secret Options requests use distinct memory-only, non-cookie bearer
+  credentials for read and mutation scopes. The application boundary fails
+  closed and emits redacted structured audit events, but the shared configured
+  actor is not proof of an individual identity and log retention is operational.
 
 ## Directory map
 

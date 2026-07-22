@@ -7,9 +7,22 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import market_weather as market_weather_api
+from app.services import market_weather_research
 from app.services.market_data.provider import UnderlyingQuote
-from app.services.market_weather import MarketWeatherSettings, build_market_weather
-from app.services.market_weather_research import _build_lexicon_motifs, _select_supported_centroids
+from app.services.market_weather import (
+    MarketWeatherSettings,
+    _ewm_rows as field_ewm_rows,
+    build_market_weather,
+)
+from app.services.market_weather_research import (
+    SCALING_NEGATIVE_TOLERANCE,
+    _build_lexicon_motifs,
+    _ewm_rows as research_ewm_rows,
+    _log_horizon_scaling_exponent,
+    _rolling_realized_volatility,
+    _scaling_reference_quality,
+    _select_supported_centroids,
+)
 
 
 def _history(count: int = 420) -> pd.DataFrame:
@@ -28,10 +41,20 @@ def _history(count: int = 420) -> pd.DataFrame:
     )
 
 
+def test_ewm_missing_row_contract_is_explicit_and_shared() -> None:
+    values = np.asarray([[1.0, np.nan, 3.0]])
+    # pandas 2.2.3, pinned in production: the missing observation advances the
+    # absolute position while ignore_na=False; the post-gap value is 7/3.
+    expected = np.asarray([[1.0, 1.0, 7.0 / 3.0]])
+
+    np.testing.assert_allclose(field_ewm_rows(values, span=3), expected)
+    np.testing.assert_allclose(research_ewm_rows(values, span=3), expected)
+
+
 def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
     result = build_market_weather(_history(), horizons=range(12, 50, 2))
 
-    assert result["semantic_revision"] == "1.1"
+    assert result["semantic_revision"] == "1.2"
     assert result["orientation"] == "horizon_by_time"
     assert len(result["horizons"]) == 19
     assert len(result["dates"]) == 420
@@ -54,9 +77,22 @@ def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
     assert result["history_context"]["minimum_observed_window_bars"] == 49
     assert result["history_context"]["minimum_valid_bars"] == 60
     assert result["history_context"]["minimum_required_bars"] == 60
+    assert result["history_context"]["minimum_input_bars"] == 60
+    assert result["history_context"]["minimum_input_satisfied"] is True
+    assert result["history_context"]["initialization_target_bars"] == 96
+    assert result["history_context"]["initialization_target_covered"] is True
+    assert result["history_context"]["initialization_status"] == "target_covered"
+    assert "not an EWM convergence guarantee" in result["history_context"]["initialization_note"]
     assert result["input_quality"]["status"] == "valid"
     assert len(result["research"]["structure_components"]["series"]) == 420
     assert len(result["research"]["scaling_reference"]["series"]) == 420
+    assert result["research"]["scaling_reference"]["exact_arithmetic_contract"] == {
+        "nonnegative": True,
+        "floating_point_tolerance": SCALING_NEGATIVE_TOLERANCE,
+        "defensive_storage_bounds": [-2.0, 2.0],
+        "violation_status": "invalid",
+        "note": result["research"]["scaling_reference"]["exact_arithmetic_contract"]["note"],
+    }
 
     for matrix in result["channels"].values():
         values = np.asarray(matrix)
@@ -80,6 +116,97 @@ def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
         values = np.asarray(result["channels"][name])
         assert values.min() >= 0.0
         assert values.max() <= 1.0
+
+
+def test_scaling_reference_rejects_materially_negative_exponents() -> None:
+    exponent = np.asarray([-0.2, 0.25, -SCALING_NEGATIVE_TOLERANCE / 2.0, 0.35])
+    realized_volatility = np.ones((3, len(exponent)), dtype=float)
+    per_horizon = np.tile(exponent, (3, 1))
+    # A positive aggregate cannot hide a pointwise contract violation.
+    per_horizon[0, 1] = -0.1
+
+    valid, reason, reported = _scaling_reference_quality(
+        exponent,
+        realized_volatility,
+        per_horizon,
+    )
+
+    assert valid.tolist() == [False, False, True, True]
+    assert reason.tolist() == [
+        "negative_exponent_violates_exact_arithmetic_contract",
+        "negative_exponent_violates_exact_arithmetic_contract",
+        None,
+        None,
+    ]
+    assert reported.tolist() == [-0.2, 0.25, 0.0, 0.35]
+
+
+def test_scaling_construction_is_nonnegative_for_nested_windows_and_zero_for_one_horizon() -> None:
+    rng = np.random.default_rng(20260722)
+    close = pd.Series(100.0 * np.exp(np.cumsum(rng.normal(0.0002, 0.012, 480))))
+    horizons = [4, 7, 12, 20, 33, 55]
+    realized = _rolling_realized_volatility(close, horizons)
+    exponent = _log_horizon_scaling_exponent(realized, horizons)
+
+    assert float(np.min(exponent)) >= -SCALING_NEGATIVE_TOLERANCE
+    np.testing.assert_array_equal(
+        _log_horizon_scaling_exponent(realized[[0]], [horizons[0]]),
+        np.zeros_like(realized[[0]]),
+    )
+
+
+def test_scaling_construction_rejects_unsorted_or_repeated_horizons() -> None:
+    realized = np.ones((3, 8), dtype=float)
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        _log_horizon_scaling_exponent(realized, [4, 4, 8])
+    with pytest.raises(ValueError, match="strictly increasing"):
+        _log_horizon_scaling_exponent(realized, [8, 4, 12])
+
+
+def test_impossible_scaling_value_cannot_influence_learned_outputs(monkeypatch) -> None:
+    original = market_weather_research._log_horizon_scaling_exponent
+
+    def inject_contract_violation(realized_volatility, horizons):
+        values = original(realized_volatility, horizons)
+        values[0, len(values[0]) // 2] = -0.25
+        return values
+
+    monkeypatch.setattr(
+        market_weather_research,
+        "_log_horizon_scaling_exponent",
+        inject_contract_violation,
+    )
+
+    research = build_market_weather(_history(), horizons=range(12, 50, 2))["research"]
+
+    assert research["relationship_atlas"] == []
+    assert research["validation"] == {
+        "included": False,
+        "reason": "scaling_exponent_quality_failure",
+        "invalid_bars": 1,
+    }
+    assert research["lexicon"] == {
+        "included": False,
+        "reason": "scaling_exponent_quality_failure",
+        "invalid_bars": 1,
+    }
+    invalid_rows = [row for row in research["scaling_reference"]["series"] if not row["valid"]]
+    assert any(
+        row["reason"] == "negative_exponent_violates_exact_arithmetic_contract"
+        for row in invalid_rows
+    )
+
+
+def test_initialization_target_never_falls_below_minimum_input() -> None:
+    result = build_market_weather(_history(60), horizons=[8, 12])
+    context = result["history_context"]
+
+    assert context["minimum_input_bars"] == 60
+    assert context["minimum_input_satisfied"] is True
+    assert context["initialization_target_bars"] == 60
+    assert context["initialization_target_covered"] is True
+    assert context["initialization_status"] == "target_covered"
 
 
 def test_volume_dependent_ratios_are_unavailable_without_positive_volume() -> None:
@@ -578,7 +705,7 @@ def test_market_weather_api_supports_high_resolution_fields(monkeypatch) -> None
     assert payload["available_bars"] == 750
     assert len(payload["channels"]["pressure"]) == 57
     assert len(payload["channels"]["pressure"][0]) == 750
-    assert payload["semantic_revision"] == "1.1"
+    assert payload["semantic_revision"] == "1.2"
     assert payload["history_context"]["requested_visible_bars"] == 750
     assert payload["history_context"]["visible_bars"] == 750
     assert payload["history_context"]["analysis_bars"] == 878

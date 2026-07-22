@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LineChart,
   Line,
@@ -19,6 +19,7 @@ import {
   ChevronDown,
   HelpCircle,
   History,
+  KeyRound,
   MoreVertical,
   Pencil,
   Play,
@@ -29,6 +30,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
+import {
+  clearSecretOptionsToken,
+  getSecretOptionsScope,
+  getSecretOptionsToken,
+  SECRET_OPTIONS_AUTH_REQUIRED_EVENT,
+  setSecretOptionsScope,
+  setSecretOptionsToken,
+  type SecretOptionsScope,
+} from "../utils/secretOptionsAuth";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
 import { getFamilyColor } from "../theme/metricColors";
@@ -195,6 +205,13 @@ interface PositionMetrics {
 interface PositionPayload {
   position: OptionPosition;
   metrics: PositionMetrics;
+}
+
+interface SecretOptionsAccess {
+  actor: string;
+  scope: Exclude<SecretOptionsScope, null>;
+  request_id: string;
+  auth_mode: "bearer" | "development_bypass";
 }
 
 interface PositionIndexMembership {
@@ -2866,6 +2883,15 @@ export default function SecretOptions() {
   const [loading, setLoading] = useState(false);
   const [loadingGreeks, setLoadingGreeks] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Start closed even when an in-memory token exists. The access endpoint is
+  // the only authority allowed to open the workspace, so a stale or rejected
+  // credential can never produce a transient private-workspace render.
+  const [secretAuthRequired, setSecretAuthRequired] = useState(true);
+  const [secretAuthMessage, setSecretAuthMessage] = useState("");
+  const [secretTokenDraft, setSecretTokenDraft] = useState("");
+  const [hasSecretToken, setHasSecretToken] = useState(() => Boolean(getSecretOptionsToken()));
+  const [secretAuthScope, setSecretAuthScopeState] = useState<SecretOptionsScope>(() => getSecretOptionsScope());
+  const secretWriteUpgradeRequiredRef = useRef(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [closingSubmitting, setClosingSubmitting] = useState(false);
@@ -2955,6 +2981,53 @@ export default function SecretOptions() {
   // that shared lifecycle on each affected row so status stays attached to the
   // data it describes instead of looking like a page-wide warning.
   const listRefreshPending = listRefreshInFlight || positionsRefreshing;
+  const secretOptionsReadOnly = secretAuthScope === "read";
+  const secretMutationDisabled = secretOptionsReadOnly || secretAuthRequired;
+
+  const resetSecretWorkspace = useCallback(() => {
+    setPositions([]);
+    setPositionRowContexts({});
+    setSelectedId(null);
+    setExpandedPositionId(null);
+    setGreeksData(null);
+    setGreeksPositionId(null);
+    setGreeksLoadedAt(null);
+    setClosedPositions([]);
+    setTrainingOutcomes([]);
+    setTrainingSummary(null);
+    setOpportunityBacktest(null);
+    setOptionalityClusters([]);
+    setScannerData(null);
+    setSelectedScannerRunId(null);
+    selectedScannerRunIdRef.current = null;
+    setScannerRunDetail(null);
+    scannerRunDetailRef.current = null;
+    setExpandedScannerHitId(null);
+    setPositionsLoadedAt(null);
+    setZoneInputsByPosition({});
+    setSpotWeightBySymbol({});
+    setDecisionReviewsByPosition({});
+    setDecisionWindowsByPosition({});
+    setThesisAssessmentsByPosition({});
+    setLearningSummary(null);
+    setPortfolioCapitalInput("");
+    setHoveredPositionId(null);
+    setScannerTradePrefill(null);
+    setFormSourceEventId(null);
+    setShowAddModal(false);
+    setShowCloseModal(false);
+    setShowClosedLog(false);
+    setShowClosedEditModal(false);
+    setShowTrainingOutcomes(false);
+    setShowDecisionReviewModal(false);
+    setExpandedScannerHitId(null);
+    setEditingPositionId(null);
+    setClosingPositionId(null);
+    setEditingClosedPositionId(null);
+    setMobileActionsOpen(false);
+    setMobileMonitoringOpen(false);
+    setError(null);
+  }, []);
 
   const anyModalOpen =
     showAddModal ||
@@ -2970,6 +3043,32 @@ export default function SecretOptions() {
     }
     return createPortal(node, document.body);
   };
+
+  useEffect(() => {
+    const handleRequired = (event: Event) => {
+      const status = Number((event as CustomEvent<{ status?: number }>).detail?.status || 401);
+      if (status === 401) {
+        secretWriteUpgradeRequiredRef.current = false;
+        clearSecretOptionsToken();
+        setSecretTokenDraft("");
+        setHasSecretToken(false);
+        setSecretAuthScopeState(null);
+        resetSecretWorkspace();
+      } else if (status === 403) {
+        secretWriteUpgradeRequiredRef.current = true;
+      }
+      setSecretAuthRequired(true);
+      setSecretAuthMessage(
+        status === 403
+          ? "This session is read-only. Enter a write-scoped credential to make changes."
+          : "Enter a Secret Options read or write credential to open this private workspace.",
+      );
+    };
+    window.addEventListener(SECRET_OPTIONS_AUTH_REQUIRED_EVENT, handleRequired);
+    return () => {
+      window.removeEventListener(SECRET_OPTIONS_AUTH_REQUIRED_EVENT, handleRequired);
+    };
+  }, [resetSecretWorkspace]);
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 1280px)");
@@ -3150,6 +3249,38 @@ export default function SecretOptions() {
       ]);
     } finally {
       setListRefreshInFlight(false);
+    }
+  };
+
+  const validateSecretOptionsAccess = async (): Promise<boolean> => {
+    try {
+      const access = await apiFetch<SecretOptionsAccess>("/secret/options/access");
+      setSecretOptionsScope(access.scope);
+      setSecretAuthScopeState(access.scope);
+      setHasSecretToken(Boolean(getSecretOptionsToken()));
+      if (
+        secretWriteUpgradeRequiredRef.current
+        && access.scope !== "write"
+        && access.scope !== "development"
+      ) {
+        setSecretAuthRequired(true);
+        setSecretAuthMessage("That credential is read-only. Enter a write-scoped credential to enable changes.");
+        return false;
+      }
+      secretWriteUpgradeRequiredRef.current = false;
+      setSecretAuthRequired(false);
+      setSecretAuthMessage("");
+      return true;
+    } catch {
+      secretWriteUpgradeRequiredRef.current = false;
+      clearSecretOptionsToken();
+      setHasSecretToken(false);
+      setSecretOptionsScope(null);
+      setSecretAuthScopeState(null);
+      setSecretAuthRequired(true);
+      setSecretAuthMessage("That credential was rejected. Enter a valid Secret Options read or write credential.");
+      resetSecretWorkspace();
+      return false;
     }
   };
 
@@ -3415,6 +3546,39 @@ export default function SecretOptions() {
           : "",
     });
     setShowAddModal(true);
+  };
+
+  const unlockSecretOptions = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const token = secretTokenDraft.trim();
+    if (!token) {
+      setSecretAuthMessage("Enter a credential before unlocking the workspace.");
+      return;
+    }
+    setSecretOptionsToken(token);
+    setSecretOptionsScope(null);
+    setSecretAuthScopeState(null);
+    setError(null);
+    if (!(await validateSecretOptionsAccess())) return;
+    setSecretTokenDraft("");
+    await loadPositions();
+    await Promise.all([
+      loadPositionRowContexts(),
+      loadDecisionReviewWindows(),
+      loadOptionalityClusters(),
+      loadScannerSummary(),
+    ]);
+  };
+
+  const lockSecretOptions = () => {
+    secretWriteUpgradeRequiredRef.current = false;
+    clearSecretOptionsToken();
+    setSecretTokenDraft("");
+    setHasSecretToken(false);
+    setSecretAuthScopeState(null);
+    setSecretAuthRequired(true);
+    setSecretAuthMessage("The in-memory credential was cleared.");
+    resetSecretWorkspace();
   };
 
   const openScannerTradePrefill = (opportunity: ScannerRankedOpportunity) => {
@@ -4005,7 +4169,9 @@ export default function SecretOptions() {
 
   useEffect(() => {
     let cancelled = false;
-    void loadPositions().finally(() => {
+    void (async () => {
+      if (!(await validateSecretOptionsAccess()) || cancelled) return;
+      await loadPositions();
       if (cancelled) return;
       void loadPositionRowContexts();
       void loadDecisionReviewWindows();
@@ -4014,7 +4180,7 @@ export default function SecretOptions() {
       // data only when its corresponding control is opened.
       void loadOptionalityClusters();
       void loadScannerSummary();
-    });
+    })();
     return () => {
       cancelled = true;
       if (positionsRefreshTimerRef.current !== null) {
@@ -5042,6 +5208,53 @@ export default function SecretOptions() {
     </div>
   );
 
+  if (secretAuthRequired) {
+    return (
+      <div className="page-shell-wide space-y-3 text-gray-100">
+        <div className="px-1">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stealth-500">Private</span>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-white">Options Performance</h1>
+        </div>
+        <form
+          onSubmit={(event) => void unlockSecretOptions(event)}
+          className="rounded-xl border border-amber-700/60 bg-amber-950/20 p-3 sm:flex sm:items-end sm:gap-3"
+          aria-label="Unlock Secret Options"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-100">
+              <KeyRound className="h-4 w-4" aria-hidden="true" /> Private workspace locked
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-amber-200/75">
+              {secretAuthMessage || "Enter a Secret Options credential. It stays only in page memory and clears on reload or lock."}
+            </p>
+            <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-200/70" htmlFor="secret-options-token-gate">
+              Bearer credential
+            </label>
+            <input
+              id="secret-options-token-gate"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={secretTokenDraft}
+              onChange={(event) => setSecretTokenDraft(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded-lg border border-amber-800/70 bg-stealth-950 px-3 font-mono text-sm text-white outline-none focus:border-amber-400"
+            />
+          </div>
+          <div className="mt-3 flex gap-2 sm:mt-0">
+            <button type="submit" className="min-h-11 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-slate-950 hover:bg-amber-400">
+              Unlock session
+            </button>
+            {hasSecretToken ? (
+              <button type="button" onClick={lockSecretOptions} className="min-h-11 rounded-lg border border-stealth-600 px-3 text-sm text-stealth-200">
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="page-shell-wide space-y-2.5 text-gray-100 md:space-y-3">
       <div className="hidden flex-wrap items-center justify-between gap-2 px-1 xl:flex">
@@ -5049,10 +5262,39 @@ export default function SecretOptions() {
           <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stealth-500">Private</span>
           <h1 className="text-lg font-semibold leading-none tracking-tight text-white md:text-xl">Options Performance</h1>
         </div>
-        <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stealth-400">
-          /secret/options
-        </span>
+        <div className="flex items-center gap-2">
+          {hasSecretToken ? (
+            <button
+              type="button"
+              onClick={lockSecretOptions}
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-200"
+              title="Clear the in-memory Secret Options credential"
+            >
+              <KeyRound className="h-3 w-3" aria-hidden="true" /> {secretAuthScope === "write" ? "Write access" : secretAuthScope === "read" ? "Read access" : "Session unlocked"}
+            </button>
+          ) : null}
+          <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stealth-400">
+            /secret/options
+          </span>
+        </div>
       </div>
+
+      {secretOptionsReadOnly ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-700/50 bg-sky-950/25 px-3 py-2 text-xs text-sky-100">
+          <span>Read-only session: portfolio and research data are available; mutations are blocked before an API request is sent.</span>
+          <button
+            type="button"
+            onClick={() => {
+              secretWriteUpgradeRequiredRef.current = true;
+              setSecretAuthRequired(true);
+              setSecretAuthMessage("Enter a write-scoped credential to enable changes.");
+            }}
+            className="rounded-md border border-sky-500/45 px-2.5 py-1 font-semibold hover:bg-sky-800/30"
+          >
+            Use write credential
+          </button>
+        </div>
+      ) : null}
 
       {error && (
         <div className="rounded-lg border border-red-700 bg-red-900/20 p-3 text-sm text-red-300">
@@ -5071,10 +5313,23 @@ export default function SecretOptions() {
             <button
               type="button"
               onClick={openAddTrade}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white active:bg-emerald-600"
+              disabled={secretMutationDisabled}
+              title={secretOptionsReadOnly ? "A write-scoped credential is required to add a position" : undefined}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white active:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Plus className="h-4 w-4" aria-hidden="true" /> Add
             </button>
+            {hasSecretToken ? (
+              <button
+                type="button"
+                aria-label={`Lock Secret Options ${secretAuthScope || "session"} access`}
+                title={`Clear ${secretAuthScope || "Secret Options"} access from this tab`}
+                onClick={lockSecretOptions}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-800/70 bg-emerald-950/30 text-emerald-200"
+              >
+                <KeyRound className="h-4 w-4" aria-hidden="true" />
+              </button>
+            ) : null}
             <button
               type="button"
               aria-label="Open position actions"
@@ -5428,7 +5683,9 @@ export default function SecretOptions() {
             </button>
             <button
               onClick={openAddTrade}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
+              disabled={secretMutationDisabled}
+              title={secretOptionsReadOnly ? "A write-scoped credential is required to add a position" : undefined}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <span className="text-base leading-none">+</span> Add Trade
             </button>

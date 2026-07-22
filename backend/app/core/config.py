@@ -3,8 +3,14 @@ from typing import Optional
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Market Stability Dashboard API"
+    APP_ENV: str = "development"
     DATABASE_URL: str = "sqlite:///./market.db"
     ADMIN_API_KEY: Optional[str] = None
+    SECRET_OPTIONS_AUTH_REQUIRED: Optional[bool] = None
+    SECRET_OPTIONS_READ_API_KEY: Optional[str] = None
+    SECRET_OPTIONS_WRITE_API_KEY: Optional[str] = None
+    SECRET_OPTIONS_READ_ACTOR: Optional[str] = None
+    SECRET_OPTIONS_WRITE_ACTOR: Optional[str] = None
     FRED_API_KEY: Optional[str] = None
     EIA_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None

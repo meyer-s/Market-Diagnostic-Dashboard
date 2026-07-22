@@ -80,4 +80,35 @@ describe("market weather glyph grammar", () => {
     expect(marketFieldReading("participation_carrier", 0.3)).toBe("below baseline");
     expect(marketFieldReading("cascade_bias", 0.4)).toBe("toward slower horizons");
   });
+
+  it("treats a materially negative scaling slope as a quality flag, not a state feature", () => {
+    const features = [
+      { id: "scaling_exponent", calibration_median: 0.5, calibration_robust_scale: 0.05 },
+      { id: "structure", calibration_median: 0.5, calibration_robust_scale: 0.1 },
+    ];
+    const values = {
+      pressure: 0.2,
+      velocity: 0.1,
+      acceleration: 0,
+      scaling_exponent: -0.2,
+      structure: 0.6,
+      information: 0.5,
+      propagation: 0.5,
+    };
+
+    const deviations = robustFieldDeviations(values, features);
+    expect(deviations.some((item) => item.id === "scaling_exponent")).toBe(false);
+    expect(buildGroundedStateProfile(values, features).characteristic).not.toContain("scaling");
+    expect(marketFieldReading("scaling_exponent", -0.2)).toBe("invalid quality flag");
+    expect(marketFieldReading("scaling_exponent", 0.7)).toBe("above square-root-of-time reference");
+
+    const positiveAggregateWithPointwiseViolation = { ...values, scaling_exponent: 0.9 };
+    expect(
+      buildGroundedStateProfile(
+        positiveAggregateWithPointwiseViolation,
+        features,
+        ["scaling_exponent"],
+      ).characteristic,
+    ).not.toContain("scaling");
+  });
 });

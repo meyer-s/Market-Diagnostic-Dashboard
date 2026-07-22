@@ -126,6 +126,17 @@ describe("MarketWeatherMethodologyReport", () => {
     expect(screen.getByText(/recreates a selector recipe, not a frozen market-data snapshot/i)).not.toBeNull();
   });
 
+  it("discloses bounded agreement, entropy sensitivity, and scaling quality contracts", () => {
+    render(<MarketWeatherMethodologyReport data={DATA} />);
+    fireEvent.click(screen.getByRole("button", { name: /From Swami heatmaps to a Market Field Language/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Field calculus, strata, and OHLCV carriers/i }));
+
+    expect(screen.getByText(/effective range is \(7\/27, 1\]/i)).not.toBeNull();
+    expect(screen.getByText(/0\.34–0\.63 correlation/i)).not.toBeNull();
+    expect(screen.getByText(/nonnegative in exact arithmetic/i)).not.toBeNull();
+    expect(screen.getByText(/quality-flagged and withheld/i)).not.toBeNull();
+  });
+
   it("degrades honestly when research metadata is absent", () => {
     const withoutResearch = { ...DATA, research: undefined } as MarketWeatherResponse;
     render(<MarketWeatherMethodologyReport data={withoutResearch} />);

@@ -2,14 +2,14 @@
 
 ## Result in one paragraph
 
-On a locally retained snapshot containing 9,235 completed OHLCV bars across 15 symbol-timeframe datasets, the live Market Field transform was exactly prefix-invariant in 46/46 audits both at API precision and after response-only rounding was bypassed: 24,472 unrounded numeric comparisons had maximum deviation 0 at a `1e-12` tolerance. That supports the narrow engineering claim that the evaluated live computation is nonanticipative for the tested prefixes; it does not establish predictive or trading value. The new maturity audits also show why causality is not the same as numerical stability. Recomputing the last 32 measurements from only 60 trailing bars produced median IQR-normalized error 0.501 and 90th-percentile error 2.009 relative to full-history computation, while 96 bars reduced the median to 0.035 but left the 90th percentile at 0.931. In response, semantic revision 1.1 raises option-context availability from the audited 60-bar baseline to 96 completed bars and exposes aggregate maturity metadata; this is a disclosed heuristic, not a convergence guarantee. The public API separately fetches up to 96 hidden warm-up bars. The production order-3 permutation entropy has six possible ordinal patterns and is sensitive to its trailing-pattern window: median correlations with the 24-pattern setting ranged from 0.342 to 0.630 across alternatives. A constant-price path correctly produced pressure 0, yet formula anchors left Structure at 0.42 and display confidence at 0.68. These are material specification and interpretation findings, not performance evidence.
+On a locally retained snapshot containing 9,235 completed OHLCV bars across 15 symbol-timeframe datasets, the live Market Field transform was exactly prefix-invariant in 46/46 audits both at API precision and after response-only rounding was bypassed: 24,472 unrounded numeric comparisons had maximum deviation 0 at a `1e-12` tolerance. That supports the narrow engineering claim that the evaluated live computation is nonanticipative for the tested prefixes; it does not establish predictive or trading value. The initialization-sensitivity audits also show why prefix-only computation is not the same as numerical stability. Recomputing the last 32 measurements from only 60 trailing bars produced median IQR-normalized error 0.501 and 90th-percentile error 2.009 relative to full-history computation, while 96 bars reduced the median to 0.035 but left the 90th percentile at 0.931. Semantic revision 1.2 requires 96 completed bars for option context and exposes canonical minimum-input and initialization-target coverage; this is a disclosed heuristic, not a convergence guarantee. The serialized `maturity` object remains a compatibility alias. The public API separately requests up to 96 hidden prefix bars. The production order-3 permutation entropy has six possible ordinal patterns and is sensitive to its trailing-pattern window: median correlations with the 24-pattern setting ranged from 0.342 to 0.630 across alternatives. A constant-price path correctly produced pressure 0, yet formula anchors left Structure at 0.42 and display confidence at 0.68. These are material specification and interpretation findings, not performance evidence.
 
 ## Questions evaluated
 
 1. Do future bars change already-computed live field values?
 2. Does prefix invariance persist before response-only scalar and matrix rounding?
 3. How sensitive are current measurements to trailing-history truncation and EWM initialization?
-4. How mature are the audited 60-bar baseline and the revised 96-bar option threshold relative to full retained history?
+4. How sensitive are the audited 60-bar baseline and the 96-bar option initialization target relative to full retained history?
 5. How much do results move when the log-horizon grid or permutation-entropy window changes?
 6. What values do the named measures assign to a mathematically constant-price path?
 7. Does fixed input produce bitwise-identical serialized output?
@@ -42,11 +42,11 @@ The dense horizon grid, bars 8 through 64 at step 1, was treated as a numerical 
 
 There are 180 dataset-feature rows for each grid step: 180 reference rows for step 1 and 180 rows each for steps 2, 4, and 8. Thus the non-reference total is 540, while the step-4 result alone contains 180 comparisons.
 
-### History-truncation and maturity audit
+### History-truncation and initialization-coverage audit
 
 For each of the 15 datasets, the full retained history was the endpoint reference. The field was recomputed from trailing windows of 60, 96, 128, 192, 256, and 365 bars, and the final 32 aggregate derivative, stratum, carrier, and carrier-ratio observations were compared with the same timestamps from the full-history computation. Errors were divided by each feature's full-history IQR. This measures initialization and retained-history sensitivity; it does not designate the full-history result as economic truth.
 
-The static maturity contract separately records the option wrapper's minimum, the public endpoint's hidden prefetch, the longest horizon, and the 96-bar carrier reference span. The current payload emits no feature-level maturity mask.
+The static initialization contract separately records the option wrapper's minimum, the public endpoint's hidden prefix request, the longest horizon, and the 96-bar carrier reference span. The current payload emits no feature-level initialization-coverage mask.
 
 ### Entropy-window and null-anchor audit
 
@@ -82,7 +82,7 @@ The daily options context was evaluated after appending an intentionally extreme
 
 This is strong implementation evidence for the evaluated input families. It should be phrased as tested prefix invariance or nonanticipativity, not as causal inference or a theorem about every possible input and later code revision. The audit covers the live matrices and aggregate derivatives, strata, carriers, and carrier ratios. It does not claim that a retrospective dictionary fitted on a longer window will preserve its earlier labels; the separate window-stability audit shows that it does not.
 
-### 2. Sixty bars were materially immature; 96 is better but not converged
+### 2. Sixty bars were materially history-sensitive; 96 is better but not converged
 
 | Trailing input bars | Median IQR-normalized MAE | 90th percentile |
 |---:|---:|---:|
@@ -93,9 +93,9 @@ This is strong implementation evidence for the evaluated input families. It shou
 | 256 | 0.00002 | 0.030 |
 | 365 | 0.0000003 | 0.003 |
 
-The audited baseline accepted 60 completed bars. At that point it had only 12 observations after the 48-bar shift boundary and covered 62.5% of the 96-bar carrier reference span. The computation returned finite values because rolling operations permit partial windows and EWMs initialize at their first observation; finiteness must not be translated as maturity. Semantic revision 1.1 now requires 96 completed bars for option context and emits aggregate availability and maturity metadata. The public endpoint still permits a 60-visible-bar request, but requests 96 additional hidden bars and can compute on up to 156 bars before trimming the visible response.
+The audited baseline accepted 60 completed bars. At that point it had only 12 observations after the 48-bar shift boundary and covered 62.5% of the 96-bar carrier reference span. The computation returned finite values because rolling operations permit partial windows and EWMs initialize at their first observation; finiteness must not be translated as convergence. Semantic revision 1.2 requires 96 completed bars for option context and emits minimum-input and initialization-target coverage metadata. The public endpoint still permits a 60-visible-bar request, but requests 96 additional hidden prefix bars and can compute on up to 156 bars before trimming the visible response.
 
-The practical research conclusion is not that 365 is universally sufficient or that 96 has converged. Revision 1.1 closes the clearest availability gap, labels sub-threshold snapshots as warming, and reports retained-history depth, but it still lacks per-coordinate maturity masks. A 96-bar option snapshot must not be interpreted as equivalent to a 365-bar snapshot.
+The practical research conclusion is not that 365 is universally sufficient or that 96 has converged. Revision 1.2 closes the clearest availability gap, labels minimum-input and initialization-target coverage separately, and reports retained-history depth, but it still lacks per-coordinate initialization-coverage masks. A 96-bar option snapshot must not be interpreted as equivalent to a 365-bar snapshot.
 
 ### 3. The entropy window is a material model parameter
 
@@ -161,7 +161,7 @@ The focused repository checks also passed: 32 market-weather/context tests and 9
 |---|---|---|
 | Table 1: dataset and integrity profile | `results/dataset_profile.csv` | Coverage, exclusions, and basic input quality |
 | Table 2: invariant and repeatability audit | `results/prefix_invariance.csv`, `results/prefix_invariance_full_precision.csv`, `results/determinism.csv` | Tested prefix behavior before and after response serialization; deterministic execution |
-| Table 3: initialization, maturity, and entropy sensitivity | `results/history_truncation_sensitivity.csv`, `results/maturity_contracts.csv`, `results/entropy_window_sensitivity.csv` | Limited-history and entropy-window parameters materially change descriptive measurements |
+| Table 3: initialization coverage and entropy sensitivity | `results/history_truncation_sensitivity.csv`, `results/initialization_contracts.csv`, `results/entropy_window_sensitivity.csv` | Limited-history and entropy-window parameters materially change descriptive measurements |
 | Table 4: horizon-resolution accounting | `results/resolution_convergence.csv`, `results/resolution_comparison_counts.csv` | Exactly 180 comparisons per grid step; sparse grids alter several features |
 | Table 5: semantic anchors and latency | `results/null_state_anchor.csv`, `results/option_snapshot_latency.csv` | Formula floors on flat input and a bounded compute-only benchmark |
 | Table 6: lexicon calibration and support | `results/lexicon_diagnostics.csv`, `results/lexicon_window_stability.csv` | Sparse grammar, unsupported rows, calibration limits, and window dependence |
@@ -172,14 +172,14 @@ The focused repository checks also passed: 32 market-weather/context tests and 9
 | Figure 4: sensitivity and semantic anchors | `figures/fig_sensitivity_audits.png` | History depth, entropy window, and flat-state formula anchors must be disclosed |
 | Figure 5: state timeline | `figures/fig_spy_state_timeline.png` | Learned states are descriptive regimes; upper calibration-distance-tail flags cluster through time |
 
-For the main paper, the unrounded prefix row, maturity contract, per-step comparison count, and Figure 4 are the strongest peer-review responses. The state timeline belongs in a limitations or diagnostics section unless future prequential validation shows stable calibration.
+For the main paper, the unrounded prefix row, initialization contract, per-step comparison count, and Figure 4 are the strongest peer-review responses. The state timeline belongs in a limitations or diagnostics section unless future prequential validation shows stable calibration.
 
 ## Claims that are currently supportable
 
 - For the locally retained datasets and implementation hashes in the manifest, live field outputs passed the specified future-prefix audit before and after response-only rounding was removed, and fixed inputs passed repeated-run audits.
 - The implementation yields finite bounded measurements on every supported SPY timeframe in this snapshot.
 - Horizon-grid density materially affects several feature families and must be fixed or reported.
-- Trailing-history depth materially affects current measurements; revision 1.1's 96-bar option threshold materially improves the audited 60-bar baseline but remains a heuristic rather than a convergence result.
+- Trailing-history depth materially affects current measurements; semantic revision 1.2's 96-bar option initialization target materially improves the audited 60-bar baseline but remains a heuristic rather than a convergence result.
 - The production permutation-entropy window is a material parameter and has not been shown optimal.
 - Structure 0.42 and display confidence 0.68 are formula anchors on constant prices, not evidence of market organization.
 - The learned state layer is retrospective, data-window dependent, and currently better interpreted as a descriptive compression than a predictive grammar.
@@ -190,7 +190,7 @@ For the main paper, the unrounded prefix row, maturity contract, per-step compar
 - That the field, learned state, transition grammar, or tail score predicts future returns, volatility, option P&L, drawdowns, or execution quality.
 - That the 0.05 distance threshold is a valid p-value or a uniformly calibrated anomaly probability.
 - That state IDs represent universal market regimes across symbols, timeframes, samples, or code versions.
-- That any minimum input length is fully mature merely because the computation returns finite values.
+- That any minimum input length is converged merely because the computation returns finite values.
 - That window 24 is an optimal entropy setting, or that the current Structure/confidence anchors have a uniquely correct semantic interpretation.
 - That performance generalizes beyond this single local snapshot or survives costs, spreads, latency, and revisions.
 - That highly autocorrelated bar-level observations provide independent sample size.

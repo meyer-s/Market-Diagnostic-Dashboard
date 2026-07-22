@@ -13,11 +13,17 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 import yfinance as yf
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 import traceback
 from pydantic import BaseModel
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
+from app.api.secret_options_security import (
+    SecretOptionsAuditRoute,
+    require_secret_options_access,
+    secret_options_access_payload,
+    set_secret_options_audit_change,
+)
 from app.models.option_positions import OptionPosition
 from app.models.option_position_reviews import OptionPositionReview
 from app.models.closed_positions import ClosedPosition
@@ -94,7 +100,12 @@ from app.services.greeks_calculator import (
     generate_theta_curve
 )
 
-router = APIRouter(prefix="/secret/options", tags=["SecretOptions"])
+router = APIRouter(
+    prefix="/secret/options",
+    tags=["SecretOptions"],
+    dependencies=[Depends(require_secret_options_access)],
+    route_class=SecretOptionsAuditRoute,
+)
 
 _POSITION_METRICS_CACHE: Dict[tuple[object, ...], tuple[float, Dict[str, object]]] = {}
 _POSITION_METRICS_CACHE_LOCK = Lock()
@@ -120,6 +131,13 @@ _POSITION_INDEX_UNIVERSES = (
 
 # Risk-free rate configuration (can be adjusted based on current T-bill rates)
 RISK_FREE_RATE = 0.0425  # 4.25% - adjust as needed
+
+
+@router.get("/access")
+def get_secret_options_access(request: Request):
+    """Validate the current Secret Options session without loading portfolio data."""
+
+    return secret_options_access_payload(request)
 
 
 def _is_finite_number(value: object) -> bool:
@@ -503,6 +521,8 @@ def _collect_training_outcomes(
     include_green_marker: bool,
     include_linked: bool,
     force_recompute: bool,
+    *,
+    materialize: bool = True,
 ) -> dict[str, object]:
     cutoff = datetime.utcnow() - timedelta(days=lookback_days)
     cutoff_day = cutoff.date()
@@ -553,42 +573,43 @@ def _collect_training_outcomes(
         )
         rows_by_event_id = {row.event_id: row for row in existing_rows}
 
-        for event in candidate_events:
-            row = rows_by_event_id.get(event.id)
-            needs_compute = _training_outcome_needs_compute(row)
-            if not force_recompute and not needs_compute:
-                continue
+        if materialize:
+            for event in candidate_events:
+                row = rows_by_event_id.get(event.id)
+                needs_compute = _training_outcome_needs_compute(row)
+                if not force_recompute and not needs_compute:
+                    continue
 
-            if row is None:
-                row = OptionTrainingOutcome(
-                    event_id=event.id,
-                    symbol=event.symbol.upper(),
-                    triggered_at=event.triggered_at,
-                    status="pending",
-                    compute_status="pending",
-                    computed_at=datetime.utcnow(),
-                )
-                db.add(row)
-                rows_by_event_id[event.id] = row
+                if row is None:
+                    row = OptionTrainingOutcome(
+                        event_id=event.id,
+                        symbol=event.symbol.upper(),
+                        triggered_at=event.triggered_at,
+                        status="pending",
+                        compute_status="pending",
+                        computed_at=datetime.utcnow(),
+                    )
+                    db.add(row)
+                    rows_by_event_id[event.id] = row
 
-            try:
-                linked_trade = _best_linked_trade_for_event(
-                    event,
-                    linked_trades_by_event_id.get(event.id, []),
-                )
-                outcome = (
-                    _compute_training_outcome_for_linked_event(event, linked_trade)
-                    if linked_trade is not None
-                    else _compute_training_outcome_with_cache(event)
-                )
-                if outcome:
-                    _apply_training_outcome_payload(row, event, outcome)
-                else:
-                    raise ValueError("Training outcome could not be computed from event recipe or price history.")
-            except Exception as exc:
-                _mark_training_outcome_error(row, event, exc)
+                try:
+                    linked_trade = _best_linked_trade_for_event(
+                        event,
+                        linked_trades_by_event_id.get(event.id, []),
+                    )
+                    outcome = (
+                        _compute_training_outcome_for_linked_event(event, linked_trade)
+                        if linked_trade is not None
+                        else _compute_training_outcome_with_cache(event)
+                    )
+                    if outcome:
+                        _apply_training_outcome_payload(row, event, outcome)
+                    else:
+                        raise ValueError("Training outcome could not be computed from event recipe or price history.")
+                except Exception as exc:
+                    _mark_training_outcome_error(row, event, exc)
 
-        db.commit()
+            db.commit()
         outcomes = [
             {
                 **_training_outcome_payload(rows_by_event_id[event.id]),
@@ -961,81 +982,40 @@ def _resolve_signal_attribution(
     }
 
 
-def _seed_positions(db) -> None:
-    if db.query(OptionPosition).count() > 0:
-        return
-    seed = [
-        OptionPosition(
-            trade_date=_parse_date("2026-01-22"),
-            account="ACTIVE TRADING ***9557",
-            action="Buy to Open",
-            contracts=5,
-            symbol="KTOS",
-            expiration=_parse_date("2026-03-20"),
-            strike=125.0,
-            option_type="call",
-            fill_price=8.83,
-            total_cost=4418.37,
-            underlying_at_entry=113.85,
-            estimated_delta=0.35,
-            shares_equivalent=500,
-            dte_at_entry=56,
-            underlying_reference=130.50,
+def _read_only_risk_policy(db) -> OptionRiskPolicy | SimpleNamespace:
+    """Return persisted policy state or an unpersisted draft preview for GETs."""
+
+    policy = (
+        db.query(OptionRiskPolicy)
+        .filter(OptionRiskPolicy.active.is_(True))
+        .order_by(OptionRiskPolicy.policy_version.desc())
+        .first()
+    )
+    if policy is None:
+        policy = db.query(OptionRiskPolicy).order_by(OptionRiskPolicy.policy_version.desc()).first()
+    if policy is not None:
+        return policy
+    return SimpleNamespace(
+        id=None,
+        policy_version=1,
+        name="Draft tracked-options guardrails",
+        active=False,
+        approval_status="draft",
+        portfolio_capital=None,
+        default_trade_risk_budget=None,
+        max_single_position_premium_pct=30.0,
+        max_directional_premium_pct=75.0,
+        max_expiry_bucket_premium_pct=45.0,
+        max_option_spread_pct=25.0,
+        min_dte_for_add=21,
+        settings_json=json_dumps(
+            {
+                "basis": "tracked_option_premium",
+                "note": "Unpersisted preview; approve a policy with the write endpoint.",
+            }
         ),
-        OptionPosition(
-            trade_date=_parse_date("2026-01-22"),
-            account="ROTH IRA ***9197",
-            action="Buy to Open",
-            contracts=5,
-            symbol="NEOG",
-            expiration=_parse_date("2026-03-20"),
-            strike=10.0,
-            option_type="call",
-            fill_price=0.76,
-            total_cost=383.37,
-            underlying_at_entry=9.93,
-            estimated_delta=0.4,
-            shares_equivalent=500,
-            dte_at_entry=56,
-            underlying_reference=11.25,
-        ),
-        OptionPosition(
-            trade_date=_parse_date("2026-01-22"),
-            account="ACTIVE TRADING ***9557",
-            action="Buy to Open",
-            contracts=10,
-            symbol="ERAS",
-            expiration=_parse_date("2026-02-20"),
-            strike=7.5,
-            option_type="call",
-            fill_price=3.40,
-            total_cost=3406.74,
-            underlying_at_entry=10.29,
-            estimated_delta=0.45,
-            shares_equivalent=1000,
-            dte_at_entry=28,
-            underlying_reference=9.85,
-        ),
-        OptionPosition(
-            trade_date=_parse_date("2026-01-22"),
-            account="ACTIVE TRADING ***9557",
-            action="Buy to Open",
-            contracts=5,
-            symbol="NKE",
-            expiration=_parse_date("2026-02-20"),
-            strike=65.0,
-            option_type="call",
-            fill_price=2.86,
-            total_cost=1433.37,
-            underlying_at_entry=65.46,
-            estimated_delta=0.3,
-            shares_equivalent=500,
-            dte_at_entry=28,
-            underlying_reference=68.40,
-        ),
-    ]
-    db.add_all(seed)
-    db.commit()
+        effective_from=date.today(),
+    )
 
 
 def _resolve_option_row(
@@ -2702,7 +2682,6 @@ def _schedule_position_metrics_refresh(positions: list[Any]) -> bool:
 def get_positions(refresh: bool = Query(False)):
     try:
         with get_db_session() as db:
-            _seed_positions(db)
             positions = db.query(OptionPosition).order_by(OptionPosition.trade_date.desc()).all()
             cache_keys = [_position_metrics_cache_key(position) for position in positions]
             valid_cache_keys = set(cache_keys)
@@ -2827,9 +2806,9 @@ def get_scanner_summary(
 
 
 @router.post("/scanner-run")
-def run_scanner_from_dashboard(payload: ScannerRunRequest):
+def run_scanner_from_dashboard(http_request: Request, payload: ScannerRunRequest):
     try:
-        return _json_safe(
+        result = _json_safe(
             {
                 "status": "queued",
                 "run": start_dashboard_sweep(
@@ -2838,6 +2817,15 @@ def run_scanner_from_dashboard(payload: ScannerRunRequest):
                 ),
             }
         )
+        run_payload = result.get("run") if isinstance(result, dict) else None
+        run_id = run_payload.get("id") if isinstance(run_payload, dict) else None
+        set_secret_options_audit_change(
+            http_request,
+            object_type="scanner_run",
+            object_id=run_id,
+            after=run_payload,
+        )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
@@ -2853,15 +2841,28 @@ def get_scanner_run(run_id: int):
 
 
 @router.post("/scanner-run/{run_id}/stop")
-def stop_scanner_run(run_id: int):
+def stop_scanner_run(run_id: int, http_request: Request):
     try:
-        return _json_safe(request_stop_dashboard_sweep(run_id))
+        try:
+            existing = _json_safe(build_scanner_run_detail(run_id))
+            before = existing.get("run") if isinstance(existing, dict) else existing
+        except LookupError:
+            before = {"id": run_id, "status": "unknown"}
+        result = _json_safe(request_stop_dashboard_sweep(run_id))
+        set_secret_options_audit_change(
+            http_request,
+            object_type="scanner_run",
+            object_id=run_id,
+            before=before,
+            after=result,
+        )
+        return result
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.post("/positions")
-def create_position(payload: OptionPositionCreate):
+def create_position(http_request: Request, payload: OptionPositionCreate):
     with get_db_session() as db:
         trade_date = _parse_date(payload.trade_date)
         expiration = _parse_date(payload.expiration)
@@ -2940,11 +2941,18 @@ def create_position(payload: OptionPositionCreate):
         sync_trade_sell_reminder(db, position)
         db.commit()
         db.refresh(position)
-        return _json_safe({"position": _serialize_position(position, _position_evaluation_window(db, position))})
+        serialized = _serialize_position(position, _position_evaluation_window(db, position))
+        set_secret_options_audit_change(
+            http_request,
+            object_type="position",
+            object_id=position.id,
+            after=serialized,
+        )
+        return _json_safe({"position": serialized})
 
 
 @router.put("/positions/{position_id}")
-def update_position(position_id: int, payload: OptionPositionCreate):
+def update_position(position_id: int, http_request: Request, payload: OptionPositionCreate):
     with get_db_session() as db:
         position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
         if not position:
@@ -3035,7 +3043,15 @@ def update_position(position_id: int, payload: OptionPositionCreate):
 
         db.commit()
         db.refresh(position)
-        return _json_safe({"position": _serialize_position(position, _position_evaluation_window(db, position))})
+        serialized = _serialize_position(position, _position_evaluation_window(db, position))
+        set_secret_options_audit_change(
+            http_request,
+            object_type="position",
+            object_id=position.id,
+            before=prior_snapshot,
+            after=serialized,
+        )
+        return _json_safe({"position": serialized})
 
 
 @router.get("/decision-review-windows")
@@ -3150,7 +3166,7 @@ def _assessment_response(
         "risk_policy": serialize_risk_policy(policy),
         "history": [serialize_assessment(row) for row in history],
         "automated_execution_enabled": False,
-        "execution_note": "This endpoint grades and records a decision snapshot; it never submits an order.",
+        "execution_note": "GET reads the latest persisted snapshot; POST refreshes and records one. Neither endpoint submits an order.",
     }
 
 
@@ -3171,26 +3187,25 @@ def get_position_thesis_assessment(position_id: int):
                 db.query(OptionPositionMandate)
                 .filter(OptionPositionMandate.id == assessment.mandate_id)
                 .first()
-            ) or get_or_create_mandate(db, position)
-            policy = latest_risk_policy(db)
+            )
+            if mandate is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The persisted assessment references a missing mandate; refresh it with the write endpoint.",
+                )
+            policy = _read_only_risk_policy(db)
         else:
-            try:
-                metrics = _compute_position_metrics(position, get_market_data_provider())
-            except Exception as exc:
-                metrics = _empty_position_metrics(str(exc))
-            mandate, assessment, policy = _generate_position_assessment(
-                db,
-                position,
-                metrics,
-                trigger="dashboard_load",
+            raise HTTPException(
+                status_code=404,
+                detail="No thesis assessment has been recorded; create one with POST /positions/{position_id}/thesis-assessment.",
             )
         response = _assessment_response(db, position, mandate, assessment, policy)
-        db.commit()
         return _json_safe(response)
 
 
 @router.post("/positions/{position_id}/thesis-assessment")
 def refresh_position_thesis_assessment(
+    http_request: Request,
     position_id: int,
     force: bool = Query(True),
 ):
@@ -3211,11 +3226,20 @@ def refresh_position_thesis_assessment(
         )
         response = _assessment_response(db, position, mandate, assessment, policy)
         db.commit()
+        set_secret_options_audit_change(
+            http_request,
+            object_type="thesis_assessment",
+            object_id=assessment.id,
+            after=serialize_assessment(assessment),
+        )
         return _json_safe(response)
 
 
 @router.post("/thesis-assessments/refresh-due")
-def refresh_due_thesis_assessments(limit: int = Query(100, ge=1, le=500)):
+def refresh_due_thesis_assessments(
+    http_request: Request,
+    limit: int = Query(100, ge=1, le=500),
+):
     with get_db_session() as db:
         positions = db.query(OptionPosition).order_by(OptionPosition.id.asc()).limit(limit).all()
         provider = get_market_data_provider()
@@ -3243,14 +3267,24 @@ def refresh_due_thesis_assessments(limit: int = Query(100, ge=1, le=500)):
             except Exception as exc:
                 errors.append({"position_id": position.id, "symbol": position.symbol, "error": str(exc)})
         db.commit()
-        return _json_safe(
-            {
+        response = {
+            "checked": len(positions),
+            "refreshed": refreshed,
+            "errors": errors,
+            "automated_execution_enabled": False,
+        }
+        set_secret_options_audit_change(
+            http_request,
+            object_type="thesis_assessment_batch",
+            object_id="refresh-due",
+            after={
                 "checked": len(positions),
-                "refreshed": refreshed,
-                "errors": errors,
-                "automated_execution_enabled": False,
-            }
+                "refreshed": len(refreshed),
+                "errors": len(errors),
+                "limit": limit,
+            },
         )
+        return _json_safe(response)
 
 
 @router.get("/positions/{position_id}/lifecycle-events")
@@ -3268,7 +3302,11 @@ def get_position_lifecycle_events(position_id: int):
 
 
 @router.post("/positions/{position_id}/lifecycle-events")
-def create_position_lifecycle_event(position_id: int, payload: OptionLifecycleEventCreate):
+def create_position_lifecycle_event(
+    position_id: int,
+    http_request: Request,
+    payload: OptionLifecycleEventCreate,
+):
     allowed = {"add", "partial_close", "reduce", "close_execution", "adjustment"}
     if payload.event_type not in allowed:
         raise HTTPException(status_code=422, detail=f"Invalid event_type. Expected one of: {', '.join(sorted(allowed))}.")
@@ -3305,9 +3343,16 @@ def create_position_lifecycle_event(position_id: int, payload: OptionLifecycleEv
             },
         )
         db.commit()
+        serialized_event = serialize_position_event(row)
+        set_secret_options_audit_change(
+            http_request,
+            object_type="position_event",
+            object_id=row.id,
+            after=serialized_event,
+        )
         return _json_safe(
             {
-                "event": serialize_position_event(row),
+                "event": serialized_event,
                 "position_mutated": False,
                 "automated_execution_enabled": False,
             }
@@ -3317,13 +3362,12 @@ def create_position_lifecycle_event(position_id: int, payload: OptionLifecycleEv
 @router.get("/risk-policy")
 def get_option_risk_policy():
     with get_db_session() as db:
-        policy = latest_risk_policy(db)
-        db.commit()
+        policy = _read_only_risk_policy(db)
         return _json_safe({"risk_policy": serialize_risk_policy(policy)})
 
 
 @router.post("/risk-policy")
-def create_option_risk_policy(payload: OptionRiskPolicyCreate):
+def create_option_risk_policy(http_request: Request, payload: OptionRiskPolicyCreate):
     if payload.approval_status not in {"draft", "approved", "retired"}:
         raise HTTPException(status_code=422, detail="approval_status must be draft, approved, or retired.")
     for name in (
@@ -3341,6 +3385,7 @@ def create_option_risk_policy(payload: OptionRiskPolicyCreate):
         raise HTTPException(status_code=422, detail="min_dte_for_add cannot be negative.")
     with get_db_session() as db:
         latest = db.query(OptionRiskPolicy).order_by(OptionRiskPolicy.policy_version.desc()).first()
+        prior_policy = serialize_risk_policy(latest) if latest is not None else None
         policy = OptionRiskPolicy(
             policy_version=(latest.policy_version + 1) if latest else 1,
             name=payload.name.strip() or "Tracked options risk policy",
@@ -3364,20 +3409,27 @@ def create_option_risk_policy(payload: OptionRiskPolicyCreate):
         db.add(policy)
         db.commit()
         db.refresh(policy)
-        return _json_safe({"risk_policy": serialize_risk_policy(policy)})
+        serialized_policy = serialize_risk_policy(policy)
+        set_secret_options_audit_change(
+            http_request,
+            object_type="risk_policy",
+            object_id=policy.id,
+            before=prior_policy,
+            after=serialized_policy,
+        )
+        return _json_safe({"risk_policy": serialized_policy})
 
 
 @router.get("/learning-summary")
 def get_option_learning_summary():
     with get_db_session() as db:
-        ensure_model_registry(db)
         result = learning_summary(db)
-        db.commit()
         return _json_safe(result)
 
 
 @router.post("/learning-outcomes/backfill")
 def backfill_option_learning_outcomes(
+    http_request: Request,
     limit: int = Query(1000, ge=1, le=5000),
     mature_decisions: bool = Query(True),
 ):
@@ -3395,19 +3447,33 @@ def backfill_option_learning_outcomes(
         )
         summary = learning_summary(db)
         db.commit()
-        return _json_safe(
-            {
+        response = {
+            "trade_outcomes": trade_result,
+            "decision_outcomes": decision_result,
+            "summary": summary,
+            "automated_model_promotion": False,
+            "automated_execution_enabled": False,
+        }
+        set_secret_options_audit_change(
+            http_request,
+            object_type="learning_outcome_batch",
+            object_id="backfill",
+            after={
+                "limit": limit,
+                "mature_decisions": mature_decisions,
                 "trade_outcomes": trade_result,
                 "decision_outcomes": decision_result,
-                "summary": summary,
-                "automated_model_promotion": False,
-                "automated_execution_enabled": False,
-            }
+            },
         )
+        return _json_safe(response)
 
 
 @router.post("/positions/{position_id}/decision-reviews")
-def create_position_decision_review(position_id: int, payload: OptionPositionReviewCreate):
+def create_position_decision_review(
+    position_id: int,
+    http_request: Request,
+    payload: OptionPositionReviewCreate,
+):
     if payload.threshold_approval_status not in {"draft", "approved"}:
         raise HTTPException(status_code=422, detail="threshold_approval_status must be draft or approved.")
     if payload.target_contracts is not None and payload.target_contracts < 0:
@@ -3642,6 +3708,13 @@ def create_position_decision_review(position_id: int, payload: OptionPositionRev
         db.commit()
         db.refresh(review)
         status = _position_review_status(review, position)
+        set_secret_options_audit_change(
+            http_request,
+            object_type="position_review",
+            object_id=review.id,
+            before=_serialize_position_review(latest) if latest is not None else None,
+            after=_serialize_position_review(review),
+        )
         return _json_safe(
             {
                 "review": _serialize_position_review(review),
@@ -3746,7 +3819,11 @@ def get_position_greeks(
 
 
 @router.delete("/positions/{position_id}")
-def close_position(position_id: int, request: ClosePositionRequest):
+def close_position(
+    position_id: int,
+    http_request: Request,
+    payload: ClosePositionRequest,
+):
     """
     Close a position by moving it to closed_position table and deleting from active positions.
     Calculates P/L and tracks historical performance.
@@ -3755,12 +3832,13 @@ def close_position(position_id: int, request: ClosePositionRequest):
         position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
         if not position:
             raise HTTPException(status_code=404, detail="Position not found")
+        prior_position = _serialize_position(position)
         
         # Calculate P/L
-        total_proceeds = request.exit_price * position.contracts * 100
+        total_proceeds = payload.exit_price * position.contracts * 100
         dollar_pnl = total_proceeds - position.total_cost
         percent_pnl = (dollar_pnl / position.total_cost) * 100 if position.total_cost else 0
-        close_date = _parse_date(request.close_date) if request.close_date else date.today()
+        close_date = _parse_date(payload.close_date) if payload.close_date else date.today()
         duplicate = _find_duplicate_closed_position(
             db,
             trade_date=position.trade_date,
@@ -3772,7 +3850,7 @@ def close_position(position_id: int, request: ClosePositionRequest):
             strike=position.strike,
             option_type=position.option_type,
             fill_price=position.fill_price,
-            exit_price=request.exit_price,
+            exit_price=payload.exit_price,
             total_cost=position.total_cost,
         )
         if duplicate:
@@ -3798,13 +3876,13 @@ def close_position(position_id: int, request: ClosePositionRequest):
             total_cost=position.total_cost,
             underlying_at_entry=position.underlying_at_entry,
             close_date=close_date,
-            exit_price=request.exit_price,
+            exit_price=payload.exit_price,
             total_proceeds=total_proceeds,
             underlying_at_exit=underlying_at_exit,
             dollar_pnl=dollar_pnl,
             percent_pnl=percent_pnl,
             account=position.account,
-            notes=request.notes,
+            notes=payload.notes,
             source_event_id=position.source_event_id,
             source_triggered_at=position.source_triggered_at,
             source_match_method=position.source_match_method,
@@ -3820,10 +3898,10 @@ def close_position(position_id: int, request: ClosePositionRequest):
             event_type="closed",
             quantity_before=position.contracts,
             quantity_after=0,
-            execution_price=request.exit_price,
+            execution_price=payload.exit_price,
             total_cost_before=position.total_cost,
             total_cost_after=0.0,
-            details={"close_date": close_date.isoformat(), "notes": request.notes},
+            details={"close_date": close_date.isoformat(), "notes": payload.notes},
         )
         trade_outcome = create_trade_outcome(db, closed)
         skip_trade_sell_reminder(db, position.id, "Position was closed before the reminder fired.")
@@ -3831,6 +3909,17 @@ def close_position(position_id: int, request: ClosePositionRequest):
         # Delete active position
         db.delete(position)
         db.commit()
+        set_secret_options_audit_change(
+            http_request,
+            object_type="position",
+            object_id=position_id,
+            before=prior_position,
+            after={
+                "id": position_id,
+                "closed_position_id": closed.id,
+                "status": "closed",
+            },
+        )
         
         return _json_safe({
             "message": "Position closed successfully",
@@ -3955,6 +4044,7 @@ def get_closed_position_learning(closed_position_id: int):
 @router.post("/closed-positions/{closed_position_id}/learning-feedback")
 def create_closed_position_learning_feedback(
     closed_position_id: int,
+    http_request: Request,
     payload: OptionTradeOutcomeFeedback,
 ):
     allowed = {
@@ -4004,8 +4094,22 @@ def create_closed_position_learning_feedback(
         closed = db.query(ClosedPosition).filter(ClosedPosition.id == closed_position_id).first()
         if not closed:
             raise HTTPException(status_code=404, detail="Closed position not found")
+        prior_outcome = (
+            db.query(OptionTradeOutcome)
+            .filter(OptionTradeOutcome.closed_position_id == closed_position_id)
+            .order_by(OptionTradeOutcome.outcome_version.desc(), OptionTradeOutcome.id.desc())
+            .first()
+        )
+        prior_serialized = serialize_trade_outcome(prior_outcome) if prior_outcome else None
         outcome = create_trade_outcome(db, closed, force=True, human_overrides=overrides)
         db.commit()
+        set_secret_options_audit_change(
+            http_request,
+            object_type="trade_outcome",
+            object_id=outcome.id,
+            before=prior_serialized,
+            after=serialize_trade_outcome(outcome),
+        )
         return _json_safe(
             {
                 "learning_outcome": serialize_trade_outcome(outcome),
@@ -4015,11 +4119,16 @@ def create_closed_position_learning_feedback(
 
 
 @router.put("/closed-positions/{closed_position_id}")
-def update_closed_position(closed_position_id: int, payload: ClosedPositionUpdate):
+def update_closed_position(
+    closed_position_id: int,
+    http_request: Request,
+    payload: ClosedPositionUpdate,
+):
     with get_db_session() as db:
         position = db.query(ClosedPosition).filter(ClosedPosition.id == closed_position_id).first()
         if not position:
             raise HTTPException(status_code=404, detail="Closed position not found")
+        prior_position = _serialize_closed_position(position, None)
 
         trade_date = _parse_date(payload.trade_date)
         close_date = _parse_date(payload.close_date)
@@ -4079,23 +4188,41 @@ def update_closed_position(closed_position_id: int, payload: ClosedPositionUpdat
         )
         serialized = _serialize_closed_position(position, source_event)
         serialized["learning_outcome"] = serialize_trade_outcome(learning_outcome)
+        set_secret_options_audit_change(
+            http_request,
+            object_type="closed_position",
+            object_id=position.id,
+            before=prior_position,
+            after=serialized,
+        )
         return _json_safe({"closed_position": serialized})
 
 
 @router.delete("/closed-positions/{closed_position_id}")
-def delete_closed_position(closed_position_id: int):
+def delete_closed_position(closed_position_id: int, http_request: Request):
     with get_db_session() as db:
         position = db.query(ClosedPosition).filter(ClosedPosition.id == closed_position_id).first()
         if not position:
             raise HTTPException(status_code=404, detail="Closed position not found")
+        prior_position = _serialize_closed_position(position, None)
 
         db.delete(position)
         db.commit()
+        set_secret_options_audit_change(
+            http_request,
+            object_type="closed_position",
+            object_id=closed_position_id,
+            before=prior_position,
+            after={"id": closed_position_id, "status": "deleted"},
+        )
         return {"message": "Closed position deleted successfully"}
 
 
 @router.post("/attribution/backfill")
-def backfill_signal_attribution(limit: int = Query(1000, ge=1, le=10000)):
+def backfill_signal_attribution(
+    http_request: Request,
+    limit: int = Query(1000, ge=1, le=10000),
+):
     """
     Backfill signal attribution for existing open/closed positions that do not
     yet have a linked sweep event.
@@ -4140,12 +4267,19 @@ def backfill_signal_attribution(limit: int = Query(1000, ge=1, le=10000)):
                 closed_linked += 1
 
         db.commit()
-        return _json_safe({
+        response = {
             "open_positions_checked": len(open_positions),
             "open_positions_linked": open_linked,
             "closed_positions_checked": len(closed_positions),
             "closed_positions_linked": closed_linked,
-        })
+        }
+        set_secret_options_audit_change(
+            http_request,
+            object_type="signal_attribution_batch",
+            object_id="backfill",
+            after={**response, "limit": limit},
+        )
+        return _json_safe(response)
 
 
 def _apply_event_opportunity_fields(event: OptionAlertEvent, force: bool = False) -> bool:
@@ -4404,6 +4538,7 @@ def _trade_outcome_stats(rows: list[Dict[str, object]]) -> Dict[str, object]:
 
 @router.post("/opportunity-scores/backfill")
 def backfill_opportunity_scores(
+    http_request: Request,
     lookback_days: int = Query(3650, ge=30, le=3650),
     limit: int = Query(5000, ge=1, le=20000),
     force: bool = Query(False),
@@ -4423,19 +4558,25 @@ def backfill_opportunity_scores(
                 updated += 1
                 db.add(event)
         db.commit()
-    return _json_safe(
-        {
-            "checked": len(events),
-            "updated": updated,
-            "lookback_days": lookback_days,
-            "force": force,
-            "model_version": OPPORTUNITY_MODEL_VERSION,
-        }
+    response = {
+        "checked": len(events),
+        "updated": updated,
+        "lookback_days": lookback_days,
+        "force": force,
+        "model_version": OPPORTUNITY_MODEL_VERSION,
+    }
+    set_secret_options_audit_change(
+        http_request,
+        object_type="opportunity_score_batch",
+        object_id="backfill",
+        after={**response, "limit": limit},
     )
+    return _json_safe(response)
 
 
 @router.post("/review-windows/backfill")
 def backfill_review_windows(
+    http_request: Request,
     lookback_days: int = Query(3650, ge=30, le=3650),
     limit: int = Query(5000, ge=1, le=20000),
     linked_only: bool = Query(True),
@@ -4447,16 +4588,21 @@ def backfill_review_windows(
     Backfill computed min/max review windows onto historical sweep events, then
     refresh linked reminders and evaluated training outcomes from those windows.
     """
-    return _json_safe(
-        _backfill_review_windows(
-            lookback_days=lookback_days,
-            limit=limit,
-            linked_only=linked_only,
-            force=force,
-            recompute_training=recompute_training,
-            dry_run=dry_run,
-        )
+    response = _backfill_review_windows(
+        lookback_days=lookback_days,
+        limit=limit,
+        linked_only=linked_only,
+        force=force,
+        recompute_training=recompute_training,
+        dry_run=dry_run,
     )
+    set_secret_options_audit_change(
+        http_request,
+        object_type="review_window_batch",
+        object_id="backfill",
+        after=response,
+    )
+    return _json_safe(response)
 
 
 @router.get("/opportunity-backtest")
@@ -4584,12 +4730,14 @@ def get_training_outcomes(
         include_green_marker=include_green_marker,
         include_linked=include_linked,
         force_recompute=False,
+        materialize=False,
     )
     return _json_safe(payload)
 
 
 @router.post("/training-outcomes/backfill")
 def backfill_training_outcomes(
+    http_request: Request,
     lookback_days: int = Query(3650, ge=30, le=3650),
     limit: int = Query(5000, ge=1, le=10000),
     include_green_marker: bool = Query(True),
@@ -4606,5 +4754,14 @@ def backfill_training_outcomes(
         include_green_marker=include_green_marker,
         include_linked=include_linked,
         force_recompute=force_recompute,
+    )
+    set_secret_options_audit_change(
+        http_request,
+        object_type="training_outcome_batch",
+        object_id="backfill",
+        after={
+            "summary": payload.get("summary"),
+            "outcome_count": len(payload.get("outcomes") or []),
+        },
     )
     return _json_safe(payload)

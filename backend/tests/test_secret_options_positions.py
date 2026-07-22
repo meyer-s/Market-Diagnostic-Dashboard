@@ -24,6 +24,7 @@ sys.modules.setdefault("ibkr_cli", ibkr_cli_module)
 sys.modules.setdefault("ibkr_cli.ib_service", ib_service_module)
 
 from app.api import secret_options
+from app.core.config import settings
 from app.core.db import Base
 from app.models.closed_positions import ClosedPosition
 from app.models.option_training_outcomes import OptionTrainingOutcome
@@ -32,6 +33,7 @@ from app.models.option_decision_learning import (
     OptionModelRegistry,
     OptionPositionEvent,
     OptionPositionMandate,
+    OptionRiskPolicy,
     OptionThesisAssessment,
     OptionTradeOutcome,
 )
@@ -93,7 +95,6 @@ def test_positions_endpoint_replaces_non_finite_metrics(monkeypatch: pytest.Monk
         return True
 
     monkeypatch.setattr(secret_options, "get_db_session", _fake_db_session)
-    monkeypatch.setattr(secret_options, "_seed_positions", lambda _db: None)
     monkeypatch.setattr(secret_options, "_schedule_position_metrics_refresh", schedule_refresh)
     monkeypatch.setattr(
         secret_options,
@@ -170,11 +171,11 @@ def test_quote_payload_preserves_market_data_source() -> None:
     assert payload["ask"] == 1.3
 
 
-def test_empty_position_metrics_preserves_v11_field_contract() -> None:
+def test_empty_position_metrics_preserves_current_field_contract() -> None:
     payload = secret_options._empty_position_metrics("fixture failure")
     field = payload["field_context"]
 
-    assert field["semantic_revision"] == "1.1"
+    assert field["semantic_revision"] == "1.2"
     assert field["authority"]["manager_verdict"] == "none"
     assert field["authority"]["automated_execution"] == "none"
     assert field["maturity"]["status"] == "insufficient"
@@ -358,6 +359,88 @@ def secret_options_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(secret_options, "get_market_data_provider", lambda: None)
 
     return TestClient(app), testing_session_local
+
+
+def test_read_scope_get_matrix_does_not_mutate_database(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_local = secret_options_client
+    read_key = "read-" + ("r" * 40)
+    write_key = "write-" + ("w" * 40)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "SECRET_OPTIONS_AUTH_REQUIRED", None)
+    monkeypatch.setattr(settings, "SECRET_OPTIONS_READ_API_KEY", read_key)
+    monkeypatch.setattr(settings, "SECRET_OPTIONS_WRITE_API_KEY", write_key)
+    monkeypatch.setattr(settings, "SECRET_OPTIONS_READ_ACTOR", "read-invariance-test")
+    monkeypatch.setattr(
+        secret_options,
+        "_compute_position_metrics_batch",
+        lambda positions: [secret_options._empty_position_metrics("test fixture") for _ in positions],
+    )
+    monkeypatch.setattr(secret_options, "_schedule_position_metrics_refresh", lambda _positions: False)
+
+    with session_local() as db:
+        position = OptionPosition(
+            trade_date=date.today(),
+            account="Read-only fixture",
+            action="Buy to Open",
+            contracts=1,
+            symbol="READ",
+            expiration=date.today() + timedelta(days=45),
+            strike=100.0,
+            option_type="call",
+            fill_price=1.0,
+            total_cost=100.0,
+        )
+        event = OptionAlertEvent(
+            symbol="READ",
+            triggered_at=datetime.utcnow(),
+            selected_option_type="call",
+            selected_expiry=(date.today() + timedelta(days=45)).isoformat(),
+            selected_strike=100.0,
+            selected_premium=1.0,
+            message=(
+                "Setup: 1x ATM CALL\n"
+                f"Contract: {(date.today() + timedelta(days=45)).isoformat()} 100.0 CALL\n"
+                "Hold: 10 trading days\nEst Prem: $1.00"
+            ),
+        )
+        db.add_all([position, event])
+        db.commit()
+        position_id = int(position.id)
+
+    tracked_models = (
+        OptionPosition,
+        OptionPositionMandate,
+        OptionThesisAssessment,
+        OptionRiskPolicy,
+        OptionModelRegistry,
+        OptionTrainingOutcome,
+    )
+
+    def counts() -> dict[str, int]:
+        with session_local() as db:
+            return {model.__tablename__: db.query(model).count() for model in tracked_models}
+
+    before = counts()
+    headers = {"Authorization": f"Bearer {read_key}"}
+    responses = [
+        client.get("/secret/options/positions", headers=headers),
+        client.get(f"/secret/options/positions/{position_id}/thesis-assessment", headers=headers),
+        client.get("/secret/options/risk-policy", headers=headers),
+        client.get("/secret/options/learning-summary", headers=headers),
+        client.get(
+            "/secret/options/training-outcomes",
+            params={"lookback_days": 365, "limit": 50},
+            headers=headers,
+        ),
+    ]
+
+    assert [response.status_code for response in responses] == [200, 404, 200, 200, 200]
+    assert responses[2].json()["risk_policy"]["id"] is None
+    assert responses[4].json()["outcomes"] == []
+    assert counts() == before
 
 
 def test_market_field_registry_is_a_non_promoting_shadow_challenger(
@@ -658,7 +741,7 @@ def test_automatic_assessment_prefills_review_and_close_learning(
         position_metrics,
     )
 
-    assessment_response = client.get(
+    assessment_response = client.post(
         f"/secret/options/positions/{position_id}/thesis-assessment"
     )
 
@@ -2295,7 +2378,7 @@ def test_training_outcomes_are_persisted(secret_options_client, monkeypatch: pyt
 
     monkeypatch.setattr(secret_options, "_compute_training_outcome_with_cache", _fake_compute)
 
-    first = client.get("/secret/options/training-outcomes", params={"lookback_days": 365, "limit": 50})
+    first = client.post("/secret/options/training-outcomes/backfill", params={"lookback_days": 365, "limit": 50})
     second = client.get("/secret/options/training-outcomes", params={"lookback_days": 365, "limit": 50})
 
     assert first.status_code == 200
@@ -2378,7 +2461,7 @@ def test_training_outcomes_include_linked_non_candidate_events(
 
     monkeypatch.setattr(secret_options, "_compute_training_outcome_for_linked_event", _fake_compute)
 
-    response = client.get("/secret/options/training-outcomes", params={"lookback_days": 365, "limit": 50})
+    response = client.post("/secret/options/training-outcomes/backfill", params={"lookback_days": 365, "limit": 50})
 
     assert response.status_code == 200
     assert calls["count"] == 1

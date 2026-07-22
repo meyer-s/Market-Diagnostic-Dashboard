@@ -155,8 +155,8 @@ export const MARKET_FIELD_METRICS: MarketFieldMetricDefinition[] = [
     id: "scaling_exponent",
     label: "Volatility scaling slope",
     shortLabel: "Scaling slope",
-    scale: "−2 to +2 log-log slope; 0.5 is the square-root-of-time reference",
-    definition: "Local slope of log realized volatility versus log horizon. A stationary finite-variance reference is near 0.5; degenerate zero-variation paths are not interpretable. This is not a Hurst exponent.",
+    scale: "0 to +2 interpretable log-log slope; −2 to +2 is defensive storage only; 0.5 is the square-root-of-time reference",
+    definition: "Local slope of log realized volatility versus log horizon. Nested windows make it nonnegative in exact arithmetic; a materially negative value is an implementation-quality flag and is excluded from translation. A stationary finite-variance reference is near 0.5; degenerate zero-variation paths are not interpretable. This is not a Hurst exponent.",
     family: "field",
   },
   {
@@ -218,11 +218,15 @@ export function clampSigned(value: number | undefined): number {
 export function robustFieldDeviations(
   values: Record<string, number>,
   features: MarketWeatherCalibrationFeature[],
+  excludedFeatureIds: readonly string[] = [],
 ): MarketFieldDeviation[] {
   const featureById = new Map(features.map((feature) => [feature.id, feature]));
   const definitionById = new Map(MARKET_FIELD_METRICS.map((metric) => [metric.id, metric]));
+  const excluded = new Set(excludedFeatureIds);
 
-  return STATE_PROFILE_IDS.map((id) => {
+  return STATE_PROFILE_IDS.filter(
+    (id) => !excluded.has(id) && (id !== "scaling_exponent" || finite(values[id]) >= -1e-10),
+  ).map((id) => {
     const feature = featureById.get(id);
     const metric = definitionById.get(id)!;
     const value = finite(values[id]);
@@ -253,6 +257,7 @@ function relativeCharacteristic(deviations: MarketFieldDeviation[]): string {
 export function buildGroundedStateProfile(
   values: Record<string, number>,
   features: MarketWeatherCalibrationFeature[],
+  excludedFeatureIds: readonly string[] = [],
 ): GroundedMarketStateProfile {
   const pressure = clampSigned(values.pressure);
   const velocity = clampSigned(values.velocity);
@@ -277,7 +282,7 @@ export function buildGroundedStateProfile(
   else if (alignedAcceleration < 0) motionLabel = "decelerating";
   else if (alignedAcceleration > 0) motionLabel = "re-accelerating";
 
-  const deviations = robustFieldDeviations(values, features);
+  const deviations = robustFieldDeviations(values, features, excludedFeatureIds);
   const characteristic = relativeCharacteristic(deviations);
   const trendAgreement = Math.round(clampUnit(values.structure) * 100);
   const propagation = Math.round(clampUnit(values.propagation) * 100);
@@ -293,6 +298,12 @@ export function buildGroundedStateProfile(
 }
 
 export function marketFieldReading(id: MarketFieldMetricId, value: number): string {
+  if (id === "scaling_exponent") {
+    if (!Number.isFinite(value) || value < -1e-10) return "invalid quality flag";
+    if (value > 0.5) return "above square-root-of-time reference";
+    if (value < 0.5) return "below square-root-of-time reference";
+    return "at square-root-of-time reference";
+  }
   const bounded = id === "pressure" || id === "velocity" || id === "cascade_bias"
     ? clampSigned(value)
     : clampUnit(value);

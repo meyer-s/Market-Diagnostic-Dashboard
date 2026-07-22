@@ -29,7 +29,7 @@ Every evaluation writes `results/run_receipt.json` after the tables and figures.
 - `market_field_preliminary.ipynb`: executed, top-to-bottom notebook companion.
 - `PRELIMINARY_EVALUATION.md`: result narrative, claim boundaries, and paper-ready table/figure plan.
 - `data/raw/`: local-only completed-bar OHLCV files plus the tracked hash manifest; CSVs are not redistributed.
-- `results/`: machine-readable diagnostics covering unrounded prefix invariance, history and entropy sensitivity, maturity contracts, semantic anchors, latency, state sequence, shadow-boundary audit, the evaluation run receipt, and the separate live endpoint probe.
+- `results/`: machine-readable diagnostics covering unrounded prefix invariance, history and entropy sensitivity, initialization contracts, semantic anchors, latency, state sequence, shadow-boundary audit, the evaluation run receipt, and the separate live endpoint probe.
 - `figures/`: five paper-oriented diagnostic figures.
 - `probe_live_endpoint.py`: operational probe of the deployed endpoint; this is not part of the frozen empirical experiment.
 

@@ -32,6 +32,7 @@ services:
       - path: ./devops/env/backend.env
         required: false
     environment:
+      APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://market:market@db:5432/market_diagnostic}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://marketdiagnostictool.com,https://www.marketdiagnostictool.com}
@@ -65,6 +66,7 @@ services:
       - path: ./devops/env/backend.env
         required: false
     environment:
+      APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://market:market@db:5432/market_diagnostic}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://marketdiagnostictool.com,https://www.marketdiagnostictool.com}

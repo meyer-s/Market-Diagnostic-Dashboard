@@ -1,6 +1,7 @@
 services:
   backend:
     environment:
+      APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: ${DATABASE_URL:-sqlite:///./market.db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       UVICORN_RELOAD: "true"
@@ -13,6 +14,7 @@ services:
   scheduler:
     profiles: ["scheduler"]
     environment:
+      APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: ${DATABASE_URL:-sqlite:///./market.db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     volumes:

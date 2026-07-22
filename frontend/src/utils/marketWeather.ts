@@ -74,7 +74,11 @@ export function marketWeatherCellColor(
 
   if (mode === "inspector") {
     const value = cell[inspectorChannel] ?? 0;
-    if (["pressure", "direction", "velocity", "acceleration", "jerk", "snap", "scale_gradient", "scale_curvature", "mixed_derivative", "cascade_velocity", "scaling_exponent"].includes(inspectorChannel)) {
+    if (inspectorChannel === "scaling_exponent") {
+      if (!Number.isFinite(value) || value < -1e-10) return "rgb(100, 116, 139)";
+      return rgb(scale(mix(DARK, BLUE, clamp(value / 2)), 0.72 + 0.28 * clamp(value / 2)));
+    }
+    if (["pressure", "direction", "velocity", "acceleration", "jerk", "snap", "scale_gradient", "scale_curvature", "mixed_derivative", "cascade_velocity"].includes(inspectorChannel)) {
       return rgb(scale(mix(DARK, value >= 0 ? POSITIVE : NEGATIVE, clamp(Math.abs(value) * 1.35)), 0.72 + 0.35 * clamp(Math.abs(value))));
     }
     const target = inspectorChannel === "entropy" || inspectorChannel === "permutation_entropy" ? PURPLE : inspectorChannel === "convection" || inspectorChannel === "boundary_energy" || inspectorChannel === "propagation_strength" ? BLUE : POSITIVE;

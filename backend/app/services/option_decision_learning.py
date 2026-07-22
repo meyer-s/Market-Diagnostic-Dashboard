@@ -138,6 +138,7 @@ def _compact_market_field(value: object) -> Optional[dict[str, object]]:
             "excluded_incomplete_bars",
             "quality",
             "input_quality",
+            "initialization",
             "maturity",
             "alignment",
             "authority",
@@ -210,20 +211,31 @@ def _position_entry_market_field(
 def _market_field_cohort(value: Optional[dict[str, object]]) -> str:
     if not isinstance(value, dict):
         return "unavailable"
-    # Cohort comparisons deliberately exclude legacy and immature snapshots so
-    # the old 60-bar contract cannot be pooled with the v1.1 96-bar contract.
-    if str(value.get("semantic_revision") or "") != "1.1":
+    # Cohort comparisons deliberately exclude legacy initialization contracts.
+    # v1.2 adds quality/terminology metadata without changing the field vector,
+    # so complete v1.1 snapshots remain comparable without being relabeled.
+    semantic_revision = str(value.get("semantic_revision") or "")
+    if semantic_revision not in {"1.1", "1.2"}:
         return "unavailable"
     quality = value.get("quality")
     maturity = value.get("maturity")
+    initialization = value.get("initialization")
     alignment = value.get("alignment")
     if not isinstance(quality, dict) or not quality.get("available"):
         return "unavailable"
-    if (
-        not isinstance(maturity, dict)
-        or maturity.get("status") != "complete"
-        or not maturity.get("warmup_complete")
-    ):
+    if semantic_revision == "1.2":
+        initialization_covered = (
+            isinstance(initialization, dict)
+            and initialization.get("minimum_input_satisfied") is True
+            and initialization.get("initialization_target_covered") is True
+        )
+    else:
+        initialization_covered = (
+            isinstance(maturity, dict)
+            and maturity.get("status") == "complete"
+            and maturity.get("warmup_complete") is True
+        )
+    if not initialization_covered:
         return "unavailable"
     if not isinstance(alignment, dict) or not alignment.get("supported"):
         return "unavailable"
@@ -1018,10 +1030,11 @@ def learning_summary(db: Session) -> dict[str, object]:
             "actual_closed_trades_only": True,
             "point_in_time_snapshot_required": True,
             "eligibility_contract": {
-                "semantic_revision": "1.1",
-                "maturity_status": "complete",
+                "semantic_revisions": ["1.1", "1.2"],
+                "initialization_target_covered": True,
+                "v11_compatibility_maturity_status": "complete",
                 "directional_alignment_required": True,
-                "legacy_or_immature_bucket": "unavailable",
+                "legacy_or_incomplete_initialization_bucket": "unavailable",
             },
             "minimum_sample_before_comparison": 20,
             "rank_influence": 0.0,

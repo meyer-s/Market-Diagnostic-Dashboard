@@ -123,6 +123,11 @@ def test_field_context_is_live_only_shadow_evidence() -> None:
     }
     assert payload["maturity"]["status"] == "complete"
     assert payload["maturity"]["target_warmup_bars"] == OPTION_FIELD_TARGET_WARMUP_BARS
+    assert payload["initialization"]["minimum_input_bars"] == 60
+    assert payload["initialization"]["minimum_input_satisfied"] is True
+    assert payload["initialization"]["initialization_target_bars"] == OPTION_FIELD_TARGET_WARMUP_BARS
+    assert payload["initialization"]["initialization_target_covered"] is True
+    assert payload["initialization"]["initialization_status"] == "target_covered"
     assert payload["alignment"]["basis"] == "legacy_long_single_leg_option_type"
     assert payload["alignment"]["scope"] == "long_single_leg"
     assert payload["quality"]["available"] is True
@@ -131,6 +136,8 @@ def test_field_context_is_live_only_shadow_evidence() -> None:
     assert payload["quality"]["as_of_bar"] == "2026-07-22"
     assert payload["direction"]["option_aligned_pressure"] == -payload["direction"]["pressure"]
     assert payload["direction"]["option_aligned_velocity"] == -payload["direction"]["velocity"]
+    assert payload["scaling_reference"]["exact_arithmetic_contract"]["nonnegative"] is True
+    assert payload["scaling_reference"]["exact_arithmetic_contract"]["violation_status"] == "invalid"
     assert not {
         "relationship_atlas",
         "lexicon",
@@ -157,6 +164,43 @@ def test_field_context_does_not_execute_retrospective_research(monkeypatch: pyte
     assert payload["quality"]["available"] is True
 
 
+def test_field_context_withholds_impossible_scaling_without_changing_hypotheses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_at = datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc)
+    baseline = build_option_field_context(
+        _history(),
+        option_type="call",
+        observed_at=observed_at,
+    )
+    original = market_weather_research._log_horizon_scaling_exponent
+
+    def inject_contract_violation(realized_volatility, horizons):
+        values = original(realized_volatility, horizons)
+        values[0, -1] = -0.25
+        return values
+
+    monkeypatch.setattr(
+        market_weather_research,
+        "_log_horizon_scaling_exponent",
+        inject_contract_violation,
+    )
+
+    payload = build_option_field_context(
+        _history(),
+        option_type="call",
+        observed_at=observed_at,
+    )
+
+    assert payload["strata"]["scaling_exponent"] is None
+    assert payload["scaling_reference"]["valid"] is False
+    assert payload["scaling_reference"]["reason"] == (
+        "negative_exponent_violates_exact_arithmetic_contract"
+    )
+    assert "scaling_exponent" in payload["quality"]["missing_features"]
+    assert payload["hypotheses"] == baseline["hypotheses"]
+
+
 def test_field_context_returns_stable_unavailable_shape_without_enough_bars() -> None:
     payload = build_option_field_context(
         _history(20),
@@ -171,6 +215,9 @@ def test_field_context_returns_stable_unavailable_shape_without_enough_bars() ->
     assert payload["rank_influence"] == 0.0
     assert payload["maturity"]["status"] == "insufficient"
     assert payload["maturity"]["bars_needed"] == OPTION_FIELD_TARGET_WARMUP_BARS - 20
+    assert payload["initialization"]["minimum_input_satisfied"] is False
+    assert payload["initialization"]["initialization_target_covered"] is False
+    assert payload["initialization"]["initialization_status"] == "minimum_not_satisfied"
 
 
 def test_field_context_requires_full_two_horizon_warmup_at_95_and_96_bars() -> None:
@@ -191,11 +238,16 @@ def test_field_context_requires_full_two_horizon_warmup_at_95_and_96_bars() -> N
     assert immature["maturity"]["status"] == "insufficient"
     assert immature["maturity"]["warmup_complete"] is False
     assert immature["maturity"]["bars_needed"] == 1
+    assert immature["initialization"]["minimum_input_satisfied"] is True
+    assert immature["initialization"]["initialization_target_covered"] is False
+    assert immature["initialization"]["initialization_status"] == "minimum_satisfied"
     assert "requires_96_completed_bars" in immature["quality"]["warnings"]
     assert mature["quality"]["available"] is True
     assert mature["maturity"]["status"] == "complete"
     assert mature["maturity"]["warmup_complete"] is True
     assert mature["maturity"]["bars_needed"] == 0
+    assert mature["initialization"]["initialization_target_covered"] is True
+    assert mature["initialization"]["initialization_status"] == "target_covered"
 
 
 @pytest.mark.parametrize(
@@ -286,7 +338,7 @@ def test_event_snapshot_round_trip_is_immutable_shadow_context() -> None:
     assert restored["authority"]["manager_verdict"] == "none"
 
 
-def test_legacy_event_readback_is_not_relabelled_as_semantic_v11() -> None:
+def test_legacy_event_readback_is_not_relabelled_as_current_semantics() -> None:
     event = OptionAlertEvent(
         symbol="SPY",
         field_context_version=OPTION_FIELD_SCHEMA_VERSION,
@@ -307,6 +359,7 @@ def test_legacy_event_readback_is_not_relabelled_as_semantic_v11() -> None:
     assert restored is not None
     assert restored["semantic_revision"] == "1.0"
     assert restored["maturity"]["status"] == "complete"
+    assert restored["initialization"]["initialization_target_covered"] is True
     assert restored["alignment"]["basis"] == "legacy_long_single_leg_option_type"
 
 

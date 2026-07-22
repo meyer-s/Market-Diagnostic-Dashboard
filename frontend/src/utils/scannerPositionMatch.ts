@@ -143,6 +143,12 @@ export interface OptionMarketFieldScalingReference {
   latest_excess?: number | null;
   valid?: boolean | null;
   reason?: string | null;
+  exact_arithmetic_contract?: {
+    nonnegative?: boolean | null;
+    floating_point_tolerance?: number | null;
+    defensive_storage_bounds?: number[] | null;
+    violation_status?: string | null;
+  } | null;
 }
 
 export interface OptionMarketFieldInputQuality {
@@ -236,6 +242,13 @@ export interface OptionMarketFieldMaturity {
   completed_bars?: number | null;
   maximum_horizon_bars?: number | null;
   minimum_observed_window_bars?: number | null;
+  minimum_input_bars?: number | null;
+  minimum_input_satisfied?: boolean | null;
+  initialization_target_bars?: number | null;
+  initialization_target_covered?: boolean | null;
+  initialization_status?: string | null;
+  bars_needed_to_minimum_input?: number | null;
+  bars_needed_to_initialization_target?: number | null;
   target_warmup_bars?: number | null;
   warmup_complete?: boolean | null;
   status?: OptionMarketFieldMaturityStatus | null;
@@ -293,6 +306,7 @@ export interface OptionMarketFieldContext {
   hypotheses?: OptionMarketFieldHypotheses | null;
   authority?: OptionMarketFieldAuthority | null;
   alignment?: OptionMarketFieldAlignment | null;
+  initialization?: OptionMarketFieldMaturity | null;
   maturity?: OptionMarketFieldMaturity | null;
   semantic_revision?: string | null;
   effects_applied?: OptionMarketFieldEffectsApplied | null;
@@ -319,6 +333,7 @@ export interface OptionMarketFieldAxisResult {
   familiarity_reason?: string | null;
   authority?: OptionMarketFieldAuthority | null;
   alignment?: OptionMarketFieldAlignment | null;
+  initialization?: OptionMarketFieldMaturity | null;
   maturity?: OptionMarketFieldMaturity | null;
   semantic_revision?: string | null;
   effects_applied?: OptionMarketFieldEffectsApplied | null;
@@ -444,11 +459,20 @@ const scalingPresentation = (context?: OptionMarketFieldContext | null) => {
   const reference = asFiniteNumber(scaling.stationary_finite_variance_reference) ?? 0.5;
   const exponent = asFiniteNumber(scaling.latest_exponent);
   const reportedExcess = asFiniteNumber(scaling.latest_excess);
-  const excess = reportedExcess ?? (exponent !== null ? exponent - reference : null);
-  if (scaling.valid === true && exponent !== null) {
+  const tolerance = asFiniteNumber(scaling.exact_arithmetic_contract?.floating_point_tolerance) ?? 1e-10;
+  const violatesNonnegativeContract = exponent !== null && exponent < -Math.abs(tolerance);
+  const displayedExponent = exponent !== null && exponent < 0 && !violatesNonnegativeContract ? 0 : exponent;
+  const excess = reportedExcess ?? (displayedExponent !== null ? displayedExponent - reference : null);
+  if (scaling.valid === true && displayedExponent !== null && !violatesNonnegativeContract) {
     return {
-      scalingLabel: `Scaling · ${exponent.toFixed(2)}${excess !== null ? ` (${excess >= 0 ? "+" : ""}${excess.toFixed(2)} vs ${reference.toFixed(2)})` : ""}`,
+      scalingLabel: `Scaling · ${displayedExponent.toFixed(2)}${excess !== null ? ` (${excess >= 0 ? "+" : ""}${excess.toFixed(2)} vs ${reference.toFixed(2)})` : ""}`,
       scalingCaveat: null,
+    };
+  }
+  if (violatesNonnegativeContract || scaling.reason === "negative_exponent_violates_exact_arithmetic_contract") {
+    return {
+      scalingLabel: "Scaling · quality flag",
+      scalingCaveat: "Scaling estimate withheld: a negative exponent violates the implemented measure's nonnegative exact-arithmetic contract; it is not interpreted as a market signal.",
     };
   }
   const reason = diagnosticText(scaling.reason);
@@ -549,7 +573,11 @@ const maturityPresentation = (
   context?: OptionMarketFieldContext | null,
   axis?: OptionMarketFieldAxisResult | null
 ) => {
-  const maturity = context?.maturity || axis?.maturity || null;
+  const maturity = context?.initialization
+    || axis?.initialization
+    || context?.maturity
+    || axis?.maturity
+    || null;
   const quality = context?.quality && typeof context.quality === "object" ? context.quality : null;
   const warnings = Array.isArray(quality?.warnings)
     ? quality.warnings.filter((warning): warning is string => typeof warning === "string")
@@ -559,34 +587,49 @@ const maturityPresentation = (
     .find((match): match is RegExpMatchArray => Boolean(match))?.[1];
   const completedBars = asFiniteNumber(maturity?.completed_bars ?? context?.completed_bars);
   const maximumHorizon = asFiniteNumber(maturity?.maximum_horizon_bars) ?? 48;
-  const minimumObserved = asFiniteNumber(maturity?.minimum_observed_window_bars)
+  const minimumObserved = asFiniteNumber(maturity?.minimum_input_bars)
+    ?? asFiniteNumber(maturity?.minimum_observed_window_bars)
     ?? (warningMinimum ? Number(warningMinimum) : 60);
-  const targetWarmup = asFiniteNumber(maturity?.target_warmup_bars) ?? Math.max(96, maximumHorizon * 2);
-  const reportedBarsNeeded = asFiniteNumber(maturity?.bars_needed);
-  const explicitStatus = normalizeMaturityStatus(maturity?.status);
+  const targetWarmup = asFiniteNumber(maturity?.initialization_target_bars)
+    ?? asFiniteNumber(maturity?.target_warmup_bars)
+    ?? Math.max(96, maximumHorizon * 2);
+  const reportedBarsNeeded = asFiniteNumber(maturity?.bars_needed_to_initialization_target)
+    ?? asFiniteNumber(maturity?.bars_needed);
+  const explicitStatus = normalizeMaturityStatus(maturity?.initialization_status ?? maturity?.status);
   const explicitInsufficient = ["insufficient", "unavailable", "not_ready", "blocked"].includes(explicitStatus);
-  const explicitProvisional = ["provisional", "warming", "warmup", "partial", "limited"].includes(explicitStatus);
-  const explicitComplete = ["complete", "mature", "ready", "full"].includes(explicitStatus);
+  const explicitProvisional = ["provisional", "warming", "warmup", "partial", "limited", "minimum_satisfied"].includes(explicitStatus);
+  const explicitComplete = ["complete", "mature", "ready", "full", "target_covered"].includes(explicitStatus);
 
   let status: OptionMarketFieldPresentation["maturityStatus"] = "unknown";
-  if (explicitInsufficient || (completedBars !== null && completedBars < minimumObserved)) {
+  if (
+    explicitInsufficient
+    || explicitStatus === "minimum_not_satisfied"
+    || maturity?.minimum_input_satisfied === false
+    || (completedBars !== null && completedBars < minimumObserved)
+  ) {
     status = "insufficient";
   } else if (
     explicitProvisional
+    || maturity?.initialization_target_covered === false
     || maturity?.warmup_complete === false
     || (completedBars !== null && completedBars < targetWarmup)
   ) {
     status = "provisional";
-  } else if (explicitComplete || maturity?.warmup_complete === true || (completedBars !== null && completedBars >= targetWarmup)) {
+  } else if (
+    explicitComplete
+    || maturity?.initialization_target_covered === true
+    || maturity?.warmup_complete === true
+    || (completedBars !== null && completedBars >= targetWarmup)
+  ) {
     status = "complete";
   }
 
   const barsNeeded = reportedBarsNeeded
-    ?? (completedBars !== null && status === "insufficient" ? Math.max(0, targetWarmup - completedBars) : null);
+    ?? (completedBars !== null && status !== "complete" ? Math.max(0, targetWarmup - completedBars) : null);
   const maturityLabel = status === "insufficient"
-    ? `Maturity · insufficient${completedBars !== null ? ` (${compactCount(completedBars)}/${compactCount(targetWarmup)} required bars${barsNeeded ? `; ${compactCount(barsNeeded)} needed` : ""})` : ""}`
+    ? `Initialization · minimum input not met${completedBars !== null ? ` (${compactCount(completedBars)}/${compactCount(minimumObserved)} bars)` : ""}`
     : status === "provisional"
-      ? `Maturity · provisional${completedBars !== null ? ` (${compactCount(completedBars)}/${compactCount(targetWarmup)} warm-up bars)` : ""}`
+      ? `Initialization · target not covered${completedBars !== null ? ` (${compactCount(completedBars)}/${compactCount(targetWarmup)} bars${barsNeeded ? `; ${compactCount(barsNeeded)} needed` : ""})` : ""}`
       : null;
   const maturityReason = maturity?.note?.trim() || (
     status === "insufficient"
@@ -594,7 +637,7 @@ const maturityPresentation = (
       : status === "provisional"
         ? "The field is computable, but initialization and long-horizon carrier values remain history-sensitive."
         : status === "complete"
-          ? `Warm-up target met${completedBars !== null ? ` with ${compactCount(completedBars)} completed bars` : ""}.`
+          ? `Initialization target covered${completedBars !== null ? ` with ${compactCount(completedBars)} completed bars` : ""}; this is not a convergence guarantee.`
           : null
   );
   return { status, maturityLabel, maturityReason };

@@ -202,7 +202,7 @@ describe("presentOptionMarketField", () => {
     expect(presentOptionMarketField({ available: true, signals: { path_state: "unavailable" } })).toBeNull();
   });
 
-  it("presents canonical authority, signed exposure alignment, maturity, and applied advisory effects", () => {
+  it("presents canonical authority, signed exposure alignment, initialization, and applied advisory effects", () => {
     const result = presentOptionMarketField(
       {
         available: true,
@@ -224,16 +224,22 @@ describe("presentOptionMarketField", () => {
           directional_exposure_sign: -1,
           assumptions: [],
         },
-        maturity: {
+        initialization: {
           completed_bars: 80,
           maximum_horizon_bars: 48,
           minimum_observed_window_bars: 49,
+          minimum_input_bars: 60,
+          minimum_input_satisfied: true,
+          initialization_target_bars: 96,
+          initialization_target_covered: false,
+          initialization_status: "minimum_satisfied",
+          bars_needed_to_initialization_target: 16,
           target_warmup_bars: 96,
           warmup_complete: false,
           status: "provisional",
           bars_needed: 16,
         },
-        semantic_revision: "1.1",
+        semantic_revision: "1.2",
       },
       null,
       {
@@ -255,15 +261,15 @@ describe("presentOptionMarketField", () => {
       alignmentLabel: "Alignment · Signed Delta",
       alignmentCaveat: null,
       maturityStatus: "provisional",
-      maturityLabel: "Maturity · provisional (80/96 warm-up bars)",
-      semanticRevision: "1.1",
+      maturityLabel: "Initialization · target not covered (80/96 bars; 16 needed)",
+      semanticRevision: "1.2",
     });
   });
 
-  it("honors the v1.1 canonical structure, scaling, and input-quality payload contract", () => {
+  it("honors the v1.2 canonical structure, scaling, and input-quality payload contract", () => {
     const result = presentOptionMarketField({
       available: true,
-      semantic_revision: "1.1",
+      semantic_revision: "1.2",
       signals: { path_state: "supportive" },
       // The canonical component must win over the legacy v1 strata alias.
       structure_components: {
@@ -279,6 +285,12 @@ describe("presentOptionMarketField", () => {
         latest_excess: 0.13,
         valid: true,
         reason: null,
+        exact_arithmetic_contract: {
+          nonnegative: true,
+          floating_point_tolerance: 1e-10,
+          defensive_storage_bounds: [-2, 2],
+          violation_status: "invalid",
+        },
       },
       input_quality: {
         status: "limited",
@@ -310,7 +322,7 @@ describe("presentOptionMarketField", () => {
       scalingCaveat: null,
       inputQualityLabel: "Input · limited · 119/120 rows",
       diagnosticsLabel: "Scaling · 0.63 (+0.13 vs 0.50) · Input · limited · 119/120 rows",
-      semanticRevision: "1.1",
+      semanticRevision: "1.2",
     });
     expect(result?.inputQualityCaveat).toContain("1 price row rejected");
     expect(result?.inputQualityCaveat).toContain("invalid price rows dropped");
@@ -345,13 +357,46 @@ describe("presentOptionMarketField", () => {
     });
   });
 
+  it("withholds a negative scaling estimate as a quality flag", () => {
+    const result = presentOptionMarketField({
+      available: true,
+      signals: { path_state: "supportive" },
+      scaling_reference: {
+        stationary_finite_variance_reference: 0.5,
+        latest_exponent: -0.12,
+        latest_excess: -0.62,
+        valid: true,
+        reason: null,
+        exact_arithmetic_contract: {
+          nonnegative: true,
+          floating_point_tolerance: 1e-10,
+          defensive_storage_bounds: [-2, 2],
+          violation_status: "invalid",
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      scalingLabel: "Scaling · quality flag",
+    });
+    expect(result?.scalingCaveat).toContain("estimate withheld");
+    expect(result?.scalingCaveat).toContain("not interpreted as a market signal");
+  });
+
   it("renders an unavailable field as warming when completed history is insufficient", () => {
     const result = presentOptionMarketField({
       available: false,
-      maturity: {
+      initialization: {
         completed_bars: 40,
         maximum_horizon_bars: 48,
         minimum_observed_window_bars: 49,
+        minimum_input_bars: 60,
+        minimum_input_satisfied: false,
+        initialization_target_bars: 96,
+        initialization_target_covered: false,
+        initialization_status: "minimum_not_satisfied",
+        bars_needed_to_minimum_input: 20,
+        bars_needed_to_initialization_target: 56,
         target_warmup_bars: 96,
         warmup_complete: false,
         status: "insufficient",
@@ -364,7 +409,7 @@ describe("presentOptionMarketField", () => {
       tone: "neutral",
       pathStateLabel: "Field history insufficient",
       maturityStatus: "insufficient",
-      maturityLabel: "Maturity · insufficient (40/96 required bars; 56 needed)",
+      maturityLabel: "Initialization · minimum input not met (40/60 bars)",
     });
   });
 

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from app.services.market_weather import (
+    MARKET_WEATHER_MINIMUM_BARS,
     MarketWeatherSettings,
     build_market_weather,
     normalize_market_history,
@@ -19,16 +20,20 @@ from app.services.market_weather_context import build_technical_context
 
 OPTION_FIELD_SCHEMA_VERSION = "option_market_field_v1"
 OPTION_FIELD_MODEL_VERSION = "market_field_calculus_v1"
-OPTION_FIELD_SEMANTIC_REVISION = "1.1"
+OPTION_FIELD_SEMANTIC_REVISION = "1.2"
 OPTION_FIELD_LEGACY_SEMANTIC_REVISION = "1.0"
 OPTION_FIELD_MODE = "shadow_only"
 OPTION_FIELD_RANK_INFLUENCE = 0.0
 OPTION_FIELD_HORIZONS = tuple(range(12, 50, 2))
 OPTION_FIELD_MAX_BARS = 365
 OPTION_FIELD_MINIMUM_OBSERVED_WINDOW_BARS = max(OPTION_FIELD_HORIZONS) + 1
+OPTION_FIELD_MINIMUM_INPUT_BARS = max(
+    MARKET_WEATHER_MINIMUM_BARS,
+    OPTION_FIELD_MINIMUM_OBSERVED_WINDOW_BARS,
+)
 OPTION_FIELD_TARGET_WARMUP_BARS = max(OPTION_FIELD_HORIZONS) * 2
 # Retained as the public minimum constant for existing imports. Availability now
-# requires the disclosed two-times-maximum-horizon maturity target.
+# requires the disclosed two-times-maximum-horizon initialization target.
 OPTION_FIELD_MIN_BARS = OPTION_FIELD_TARGET_WARMUP_BARS
 OPTION_FIELD_DAILY_CLOSE = time(16, 15)
 OPTION_FIELD_MARKET_TIMEZONE = ZoneInfo("America/New_York")
@@ -113,18 +118,44 @@ def _authority_payload() -> dict[str, object]:
     }
 
 
-def _maturity_payload(completed_bars: int) -> dict[str, object]:
-    warmup_complete = completed_bars >= OPTION_FIELD_TARGET_WARMUP_BARS
+def _initialization_payload(completed_bars: int) -> dict[str, object]:
+    minimum_input_satisfied = completed_bars >= OPTION_FIELD_MINIMUM_INPUT_BARS
+    initialization_target_covered = completed_bars >= OPTION_FIELD_TARGET_WARMUP_BARS
     return {
         "completed_bars": completed_bars,
         "maximum_horizon_bars": max(OPTION_FIELD_HORIZONS),
         "minimum_observed_window_bars": OPTION_FIELD_MINIMUM_OBSERVED_WINDOW_BARS,
+        "minimum_input_bars": OPTION_FIELD_MINIMUM_INPUT_BARS,
+        "minimum_input_satisfied": minimum_input_satisfied,
+        "initialization_target_bars": OPTION_FIELD_TARGET_WARMUP_BARS,
+        "initialization_target_covered": initialization_target_covered,
+        "initialization_status": (
+            "minimum_not_satisfied"
+            if not minimum_input_satisfied
+            else "minimum_satisfied"
+            if not initialization_target_covered
+            else "target_covered"
+        ),
+        "bars_needed_to_minimum_input": max(
+            0,
+            OPTION_FIELD_MINIMUM_INPUT_BARS - completed_bars,
+        ),
+        "bars_needed_to_initialization_target": max(
+            0,
+            OPTION_FIELD_TARGET_WARMUP_BARS - completed_bars,
+        ),
+        "note": "Availability requires the disclosed two-times-maximum-horizon initialization target. Target coverage is an initialization diagnostic, not an EWM convergence guarantee.",
+        # Compatibility aliases retained for stored and v1.1 consumers.
         "target_warmup_bars": OPTION_FIELD_TARGET_WARMUP_BARS,
-        "warmup_complete": warmup_complete,
-        "status": "complete" if warmup_complete else "insufficient",
+        "warmup_complete": initialization_target_covered,
+        "status": "complete" if initialization_target_covered else "insufficient",
         "bars_needed": max(0, OPTION_FIELD_TARGET_WARMUP_BARS - completed_bars),
-        "note": "Availability requires the disclosed two-times-maximum-horizon target; this is a maturity heuristic, not an EWM convergence guarantee.",
     }
+
+
+def _maturity_payload(completed_bars: int) -> dict[str, object]:
+    """Compatibility alias for pre-v1.2 callers."""
+    return _initialization_payload(completed_bars)
 
 
 def _normalized_action(value: str | None) -> str | None:
@@ -261,6 +292,7 @@ def _empty_payload(
         "data_source": source,
         "completed_bars": completed_bars,
         "excluded_incomplete_bars": excluded_incomplete_bars,
+        "initialization": _initialization_payload(completed_bars),
         "maturity": _maturity_payload(completed_bars),
         "input_quality": dict(input_quality or {}),
         "alignment": dict(alignment or {}),
@@ -295,6 +327,12 @@ def _empty_payload(
             "latest_excess": None,
             "valid": False,
             "reason": "field_unavailable",
+            "exact_arithmetic_contract": {
+                "nonnegative": True,
+                "floating_point_tolerance": 1e-10,
+                "defensive_storage_bounds": [-2.0, 2.0],
+                "violation_status": "invalid",
+            },
         },
         "carriers": {
             "realized_volatility_ratio": None,
@@ -549,6 +587,27 @@ def build_option_field_context(
         side = float(exposure_sign) if alignment.get("supported") and exposure_sign is not None else None
         aligned_pressure = _finite(pressure * side) if pressure is not None and side is not None else None
         aligned_velocity = _finite(velocity * side) if velocity is not None and side is not None else None
+        scaling_valid = bool(scaling_block.get("valid"))
+        strata_payload = {
+            key: _finite(strata_latest.get(key))
+            for key in (
+                "structure",
+                "kinematics",
+                "geometry",
+                "information",
+                "propagation",
+                "cascade_bias",
+                "scaling_exponent",
+            )
+        }
+        if not scaling_valid:
+            # The defensive field payload may retain an impossible raw value for
+            # diagnosis. It has no place in an option snapshot or downstream
+            # decision context, so expose the quality reason and withhold it.
+            strata_payload["scaling_exponent"] = None
+            missing_features.append("scaling_exponent")
+            scaling_reason = str(scaling_block.get("reason") or "unavailable")
+            warnings.append(f"scaling_exponent_withheld:{scaling_reason}")
         hypotheses, hypothesis_missing = _current_hypotheses(derivative_rows, strata_rows)
         missing_features.extend(hypothesis_missing)
         if not carrier_availability.get("participation", False):
@@ -585,6 +644,7 @@ def build_option_field_context(
             "data_source": source,
             "completed_bars": len(completed),
             "excluded_incomplete_bars": excluded,
+            "initialization": _initialization_payload(len(completed)),
             "maturity": _maturity_payload(len(completed)),
             "input_quality": input_quality,
             "alignment": alignment,
@@ -614,18 +674,7 @@ def build_option_field_context(
                 "expansion": _finite(summary.get("expansion")),
                 "expansion_front": summary.get("expansion_front"),
             },
-            "strata": {
-                key: _finite(strata_latest.get(key))
-                for key in (
-                    "structure",
-                    "kinematics",
-                    "geometry",
-                    "information",
-                    "propagation",
-                    "cascade_bias",
-                    "scaling_exponent",
-                )
-            },
+            "strata": strata_payload,
             "structure_components": {
                 key: _finite(structure_latest.get(key))
                 for key in (
@@ -641,8 +690,9 @@ def build_option_field_context(
                 ),
                 "latest_exponent": _finite(scaling_block.get("latest_exponent")),
                 "latest_excess": _finite(scaling_block.get("latest_excess")),
-                "valid": bool(scaling_block.get("valid")),
+                "valid": scaling_valid,
                 "reason": scaling_block.get("reason"),
+                "exact_arithmetic_contract": scaling_block.get("exact_arithmetic_contract"),
             },
             "carriers": {
                 "realized_volatility_ratio": _finite(ratios_latest.get("realized_volatility")),
@@ -689,6 +739,11 @@ def option_field_event_fields(payload: Mapping[str, object]) -> dict[str, object
     canonical["rank_influence"] = OPTION_FIELD_RANK_INFLUENCE
     canonical["automated_execution_enabled"] = False
     canonical["authority"] = _authority_payload()
+    completed_bars = int(canonical.get("completed_bars") or 0)
+    if not isinstance(canonical.get("initialization"), dict):
+        canonical["initialization"] = _initialization_payload(completed_bars)
+    if not isinstance(canonical.get("maturity"), dict):
+        canonical["maturity"] = dict(canonical["initialization"])
     return {
         "field_context_version": OPTION_FIELD_SCHEMA_VERSION,
         "field_context_as_of": as_of_datetime,
@@ -721,8 +776,12 @@ def option_field_context_from_event(event: object) -> dict[str, object] | None:
     parsed["rank_influence"] = OPTION_FIELD_RANK_INFLUENCE
     parsed["automated_execution_enabled"] = False
     parsed["authority"] = _authority_payload()
+    if not isinstance(parsed.get("initialization"), dict):
+        parsed["initialization"] = _initialization_payload(int(parsed.get("completed_bars") or 0))
     if not isinstance(parsed.get("maturity"), dict):
-        parsed["maturity"] = _maturity_payload(int(parsed.get("completed_bars") or 0))
+        # Do not rewrite the stored semantic revision; this is a read-time
+        # compatibility view over the canonical initialization metadata.
+        parsed["maturity"] = dict(parsed["initialization"])
     if not isinstance(parsed.get("alignment"), dict):
         parsed["alignment"] = _alignment_payload(
             option_type=_normalized_option_type(parsed.get("option_type")),

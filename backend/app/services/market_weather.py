@@ -10,7 +10,7 @@ from app.services.market_weather_research import build_market_weather_research
 
 
 EPSILON = 1e-9
-MARKET_WEATHER_SEMANTIC_REVISION = "1.1"
+MARKET_WEATHER_SEMANTIC_REVISION = "1.2"
 MARKET_WEATHER_MINIMUM_BARS = 60
 OHLC_BOUNDARY_RTOL = 1e-12
 OHLC_BOUNDARY_ATOL = 1e-12
@@ -39,7 +39,18 @@ def _clip(values: np.ndarray, low: float = 0.0, high: float = 1.0) -> np.ndarray
 
 def _ewm_rows(values: np.ndarray, span: int) -> np.ndarray:
     return np.vstack(
-        [pd.Series(row).ewm(span=max(1, span), adjust=False).mean().to_numpy(dtype=float) for row in values]
+        [
+            pd.Series(row)
+            .ewm(
+                span=max(1, span),
+                adjust=False,
+                ignore_na=False,
+                min_periods=0,
+            )
+            .mean()
+            .to_numpy(dtype=float)
+            for row in values
+        ]
     )
 
 
@@ -346,7 +357,7 @@ def build_market_weather(
     maximum_horizon = max(horizon_values)
     minimum_observed_window = maximum_horizon + 1
     minimum_required_bars = max(MARKET_WEATHER_MINIMUM_BARS, minimum_observed_window)
-    target_warmup = maximum_horizon * 2
+    target_warmup = max(minimum_required_bars, maximum_horizon * 2)
     history_status = (
         "insufficient"
         if len(history) < minimum_required_bars
@@ -369,15 +380,24 @@ def build_market_weather(
     state_rows: list[np.ndarray] = []
     swami_rows: list[np.ndarray] = []
     for horizon in horizon_values:
-        fast = price.ewm(span=max(2, horizon // 2), adjust=False).mean()
-        slow = price.ewm(span=horizon, adjust=False).mean()
+        fast = price.ewm(
+            span=max(2, horizon // 2), adjust=False, ignore_na=False, min_periods=0
+        ).mean()
+        slow = price.ewm(
+            span=horizon, adjust=False, ignore_na=False, min_periods=0
+        ).mean()
         atr = true_range.rolling(horizon, min_periods=1).mean().replace(0.0, np.nan)
         spread = ((fast - slow) / atr).replace([np.inf, -np.inf], np.nan).fillna(0.0)
         bounded_direction = spread / (1.0 + spread.abs())
         path = absolute_move.rolling(horizon, min_periods=1).sum().replace(0.0, np.nan)
         efficiency = ((price - price.shift(horizon)).abs() / path).clip(0.0, 1.0).fillna(0.0)
         state_raw = bounded_direction * efficiency
-        state = state_raw.ewm(span=settings.state_smoothing, adjust=False).mean()
+        state = state_raw.ewm(
+            span=settings.state_smoothing,
+            adjust=False,
+            ignore_na=False,
+            min_periods=0,
+        ).mean()
         raw_direction_rows.append(bounded_direction.to_numpy(dtype=float))
         state_rows.append(state.to_numpy(dtype=float))
         swami_rows.append(_swami_mode(price.to_numpy(dtype=float), horizon))
@@ -547,12 +567,28 @@ def build_market_weather(
             "minimum_observed_window_bars": minimum_observed_window,
             "minimum_valid_bars": MARKET_WEATHER_MINIMUM_BARS,
             "minimum_required_bars": minimum_required_bars,
+            "minimum_input_bars": minimum_required_bars,
+            "minimum_input_satisfied": len(history) >= minimum_required_bars,
+            "initialization_target_bars": target_warmup,
+            "initialization_target_covered": len(history) >= target_warmup,
+            "initialization_status": (
+                "minimum_not_satisfied"
+                if len(history) < minimum_required_bars
+                else "minimum_satisfied"
+                if len(history) < target_warmup
+                else "target_covered"
+            ),
+            "bars_needed_to_minimum_input": max(0, minimum_required_bars - len(history)),
+            "bars_needed_to_initialization_target": max(0, target_warmup - len(history)),
+            "initialization_note": "The two-times-maximum-horizon target is a disclosed initialization-coverage reference, not an EWM convergence guarantee.",
+            # Compatibility aliases retained for v1.1 clients. New consumers
+            # should prefer the explicit minimum-input and initialization keys.
             "target_warmup_bars": target_warmup,
             "warmup_complete": history_status == "complete",
             "status": history_status,
             "bars_needed_to_minimum": max(0, minimum_required_bars - len(history)),
             "bars_needed_to_target": max(0, target_warmup - len(history)),
-            "warmup_note": "The two-times-maximum-horizon target is a disclosed maturity heuristic, not an EWM convergence guarantee.",
+            "warmup_note": "Compatibility alias: initialization-target coverage is not an EWM convergence guarantee.",
         },
         "input_quality": input_quality,
     }

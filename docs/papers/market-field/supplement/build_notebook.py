@@ -47,7 +47,7 @@ def build_notebook():
 
 ## tl;dr
 
-This notebook reruns an engineering and descriptive-empirical audit from a locally retained, hash-identified data snapshot. The tested field passed **{summary['prefix_invariance_full_precision']['passes']}/{summary['prefix_invariance_full_precision']['checks']}** unrounded prefix checks across **{summary['prefix_invariance_full_precision']['numeric_value_comparisons']:,}** numeric comparisons with maximum error **{summary['prefix_invariance_full_precision']['max_abs_error']:.1f}**. That strong causal-computation result coexists with material initialization sensitivity: the current **{summary['history_truncation']['option_minimum_window_bars']}-bar** option availability threshold produced median IQR-normalized error **{summary['history_truncation']['option_minimum_median_iqr_normalized_mae']:.3f}** against full-history endpoints. A constant-price path still anchors Structure at **{summary['null_state_anchor']['structure']:.2f}** and display confidence at **{summary['null_state_anchor']['display_confidence']:.2f}**. These are implementation, maturity, and semantic diagnostics—not evidence of forecast skill or trading performance.
+This notebook reruns an engineering and descriptive-empirical audit from a locally retained, hash-identified data snapshot. The tested field passed **{summary['prefix_invariance_full_precision']['passes']}/{summary['prefix_invariance_full_precision']['checks']}** unrounded prefix checks across **{summary['prefix_invariance_full_precision']['numeric_value_comparisons']:,}** numeric comparisons with maximum error **{summary['prefix_invariance_full_precision']['max_abs_error']:.1f}**. That strong non-anticipative-computation result coexists with material initialization sensitivity: the current **{summary['history_truncation']['option_minimum_window_bars']}-bar** option availability threshold produced median IQR-normalized error **{summary['history_truncation']['option_minimum_median_iqr_normalized_mae']:.3f}** against full-history endpoints. A constant-price path still anchors Structure at **{summary['null_state_anchor']['structure']:.2f}** and display confidence at **{summary['null_state_anchor']['display_confidence']:.2f}**. These are implementation, initialization-coverage, and semantic diagnostics—not evidence of forecast skill or trading performance.
 """
         ),
         code(
@@ -77,7 +77,7 @@ print(f"Recomputed {summary['dataset_count']} datasets / {summary['completed_bar
             """
 ## Context & Methods
 
-The audit asks whether the current implementation is nonanticipative at tested prefixes, repeatable, numerically mature under limited retained history, sensitive to horizon-grid and permutation-entropy choices, well-defined across supported timeframes, and semantically honest at a constant-price anchor. It also measures same-state calibration support, the options wrapper's completed-bar and zero-algorithmic-authority boundaries, and the sequential compute-only latency distribution.
+The audit asks whether the current implementation is nonanticipative at tested prefixes, repeatable, sensitive to limited retained history, sensitive to horizon-grid and permutation-entropy choices, well-defined across supported timeframes, and semantically honest at a constant-price anchor. It also measures same-state calibration support, the options wrapper's completed-bar and zero-algorithmic-authority boundaries, and the sequential compute-only latency distribution.
 
 The prefix check compares full-history outputs with outputs recomputed from 60%, 80%, and 95% prefixes for all live channels, derivatives, strata, carriers, and carrier ratios. A separate stress test mutates the full future suffix after a SPY-daily cutoff. It runs at both API precision and with only response rounding bypassed. The history audit recomputes the last 32 values from trailing windows of 60–365 bars. The resolution check treats horizons 8–64 at step 1 as a numerical reference, while the entropy audit compares trailing-pattern windows against the production setting of 24. Lexicons use chronological fit, calibration, and evaluation partitions.
 
@@ -119,10 +119,10 @@ display(Image(filename=str(HERE / "figures" / "fig_causal_prefix_audit.png")))
             """
 history = pd.read_csv(HERE / "results" / "history_truncation_sensitivity.csv")
 entropy = pd.read_csv(HERE / "results" / "entropy_window_sensitivity.csv")
-maturity = pd.read_csv(HERE / "results" / "maturity_contracts.csv")
+initialization = pd.read_csv(HERE / "results" / "initialization_contracts.csv")
 null_state = pd.read_csv(HERE / "results" / "null_state_anchor.csv")
 display(pd.DataFrame(summary["history_truncation"]["window_summary"]))
-display(maturity)
+display(initialization)
 display(null_state)
 display(
     entropy[entropy["window_patterns"] != 24]
@@ -173,7 +173,7 @@ display(pd.DataFrame([live["summary"]]))
 ## Takeaways
 
 1. **Tested nonanticipativity and determinism are strong.** Fixed local inputs yielded exact prefix agreement before response rounding and exact repeated hashes in every audit performed.
-2. **Computable is not mature.** The audited 60-bar option baseline was much more initialization-sensitive than 128–365-bar histories. Revision 1.1 raises availability to 96 completed bars and discloses aggregate maturity, but that threshold is not a convergence guarantee.
+2. **Computable is not converged.** The audited 60-bar option baseline was much more initialization-sensitive than 128–365-bar histories. Semantic revision 1.2 requires 96 completed bars and discloses minimum-input and initialization-target coverage, but that threshold is not a convergence guarantee. The serialized `maturity` object remains only a legacy alias.
 3. **Grid density and entropy window are model parameters.** Neither has been shown optimal, and both materially alter descriptive measurements.
 4. **Flat-state formula floors need semantic care.** Structure 0.42 and display confidence 0.68 on constant prices are coherence-derived anchors, not evidence of direction or conviction.
 5. **Cross-timeframe rendering is feasible, but adjacent bars are not independent evidence.** Every evaluated feature was finite, while pressure lag-one autocorrelation exceeded 0.995 on every SPY timeframe.
