@@ -29,10 +29,10 @@ self-contained copy of the exact market-data inputs.
   boundary audit with an executed notebook.
 
 The official ICLR 2026 style and bibliography files are included unchanged from
-the conference template. In the Tectonic 0.16.9 build, the conclusion and the
-start of the references share page 9, the references continue through page 11,
-and the appendix begins on page 11. This remains within the conference's
-nine-page main-text limit, which excludes references and appendices.
+the conference template. In the Tectonic 0.16.9 build, the conclusion occupies
+page 9, references begin on page 9 and continue through page 11, and Appendix A
+begins on page 12. This remains within the conference's nine-page main-text
+limit, which excludes references and appendices.
 
 ## Rebuild
 
@@ -74,17 +74,21 @@ used instead. The checked PDFs were built with Tectonic 0.16.9.
 - Raw provider cache: cache; retained locally and excluded from Git. Yahoo
   Finance data is not redistributed by this package.
 
-The primary evidence has an explicit two-commit implementation lineage:
+The revised package has an explicit implementation, execution, and artifact
+lineage:
 
 | Commit | Role | Claim boundary |
 |---|---|---|
 | `cd67fb48c1ee747fb8b447bc9d59fb8eaf7ec430` | Repository reference recorded for the first paper run and retained raw-input manifest | Historical first-run context only; it is not the source identity for the current derived primary artifacts. |
-| `b1755d23d834786af733cb5a66ee177acf848318` | Clean implementation source used for the current primary rerun | `results/primary_run_receipt.json` binds this commit, evaluated source hashes, and generated table/figure/result hashes. |
+| `f5d3884c9112e9cd5aa9442bc546194db9314697` | Reviewed implementation source | Contains the round-two mathematics, semantics, application security boundary, tests, and notebook generators. |
+| `548ec2c804f5406acddf728b07b1ca1ac75dca0a` | Clean primary execution head | `results/primary_run_receipt.json` records a clean tree, pandas 2.2.3, evaluated source hashes, and generated artifact hashes. Its evaluated implementation files are byte-identical to `f5d3884`. |
+| `205fda042f5e3a0e6a3598b6aab5b84a1437aa8e` | Clean supplementary execution head | `supplement/results/run_receipt.json` records a clean tree, stable start/completion source hashes, and hashes for the broader derived evidence. Its evaluated implementation files are byte-identical to `f5d3884`. |
+| `6c7a23cece2460c67437c64b3ff5e8719eecd353` | Paper and final derived-artifact commit | Contains the compiled anonymous and named PDFs after both clean execution receipts and the final source revision. |
 
-The supplementary v2 audit was run from a dirty working tree whose parent was
-`f0ef66a4b34f72582b48543e4947104370bdf464`; that parent is not presented as
-the evaluated source identity. Its per-file start/completion hashes in
-`supplement/results/run_receipt.json` are authoritative for that run.
+Paper and derived-artifact commit: `6c7a23cece2460c67437c64b3ff5e8719eecd353`.
+Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
+the two clean execution heads above differ only by already-generated evidence
+artifacts and bind the same implementation files by SHA-256.
 
 The committed manifest, hashes, derived CSVs, figures, tables, executed
 notebooks, direct requirements, and full environment version capture document
