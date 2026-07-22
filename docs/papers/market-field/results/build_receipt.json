@@ -10,7 +10,7 @@
   "paper_as_of": "2026-07-21",
   "prefix_comparisons": 6688,
   "primary_run_receipt": "primary_run_receipt.json",
-  "provenance_core_sha256": "bbed7cf4246fdae5a477461e3c2ae0f841e7c78c435e6e10df9a33acc47c1048",
+  "provenance_core_sha256": "7ec0e925c1ef03073ba417c4588468df058b674535171652b1e9e9ad45592ad2",
   "status": "ok",
   "tables": [
     "asset_summary.tex",
