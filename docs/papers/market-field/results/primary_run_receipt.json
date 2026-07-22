@@ -2,42 +2,42 @@
   "artifacts": {
     "count": 13,
     "sha256": {
-      "docs/papers/market-field/figures/calibration_rates.pdf": "ad22d091cebfa85d4fad168cfa74ec6f0dd5e5574a4a9d27a56771dfcc0a218c",
+      "docs/papers/market-field/figures/calibration_rates.pdf": "8ed4bf78859fb1c0466ed04daeaa8c5d084647c56135145d794f76d97792de37",
       "docs/papers/market-field/figures/calibration_rates.png": "4180b1e20b8fcfbff25aca10521e0df9961520933b20d2f1b223846025171921",
-      "docs/papers/market-field/figures/spy_field_phase.pdf": "f841ab9d8215dca86389c6a1980544bd949043e46a589333829ab9f6bd4a8cea",
+      "docs/papers/market-field/figures/spy_field_phase.pdf": "e58f3a5e4add87508b33cea1cede5e649348d18c1b199a78a77675a9e3c0de17",
       "docs/papers/market-field/figures/spy_field_phase.png": "6a2864600e747ac248be802755a71e372143c5652e4ebd99721b481441d187e1",
-      "docs/papers/market-field/figures/synthetic_diagnostics.pdf": "d139e9dfb2f242cd89480752b077ae02987c33d9711a0b716906fd6c8d1d8456",
+      "docs/papers/market-field/figures/synthetic_diagnostics.pdf": "f805b85765abe0bd50012f653f4b691e96a911d8a7980ffdfdaecd9766ade442",
       "docs/papers/market-field/figures/synthetic_diagnostics.png": "c97578d4954965c8ed296d8704b8b0ed75d5e93f1fa831fd2e972af97911c1e3",
-      "docs/papers/market-field/figures/system_overview.pdf": "e85cb09e116e8f504aa8d2b70c168f68a31b6edbd11cac893f18ab46431819d8",
+      "docs/papers/market-field/figures/system_overview.pdf": "290d990dabfae3a2c8e30c5846a0a5994bef826a52ceb0ca7e3994ed2c78570b",
       "docs/papers/market-field/figures/system_overview.png": "0cb93d6523771940f70a77edb9e2fd46a519e153ac4925c532f67c0b6d2edf1c",
       "docs/papers/market-field/results/asset_summary.csv": "c6bc7c5349363e7638b5dea8ca3bc8c21367d7a10859746185f64bb00b7aca23",
-      "docs/papers/market-field/results/build_receipt.json": "dd447d29db9ec2661227383d675063f1476b566ef9c0efb7815a43e96da77a95",
-      "docs/papers/market-field/results/validation_summary.json": "3fac6dce61e93a0671677523cea91866c6a09adec85ee5ec917eb0487ea81089",
+      "docs/papers/market-field/results/build_receipt.json": "0e8576ef41ff78e57a39a066ad921c9fdf446417b7ab8f2e1d63d96fd0ccc6ad",
+      "docs/papers/market-field/results/validation_summary.json": "7dedcc242d259d8d348db8168be13ff01e2dfdf7d271f59e90deaa680eda1a3e",
       "docs/papers/market-field/tables/asset_summary.tex": "60157b590c6e2ffa8d861a7dabc3cdef53d4d5c242237e4847617b1960919426",
-      "docs/papers/market-field/tables/validation_summary.tex": "9347c384fe4400f161ad4f967129ef01048e2cbec75dd2b4c1c3b7efb7c007c3"
+      "docs/papers/market-field/tables/validation_summary.tex": "190a32b41e5449e88151797696b02d43d9fbf76368cdb74c4387a59d66f2412b"
     }
   },
   "backend_sources_sha256": {
     "backend/app/services/market_weather.py": "5ca49e61592b8543744e3e7acef551bdc08465436c36a131c83ae016e6177a11",
     "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
     "backend/app/services/market_weather_research.py": "1855cce8bfee8ae2676b78bc22e08fc635ede1f57d7456c2cc8529c8eec736d9",
-    "backend/app/services/option_field_context.py": "b3c37a8b67a88f5c1ff6342b06f7be701f5cc4e2d493df2175a64359781f30fb"
+    "backend/app/services/option_field_context.py": "afd2bd78ec818db18d6d748d7695436b47422c91e84c3130925098a24cd716aa"
   },
-  "ended_at_utc": "2026-07-22T19:58:19.366928Z",
+  "ended_at_utc": "2026-07-22T20:11:04.906270Z",
   "generator": {
     "path": "docs/papers/market-field/scripts/generate_assets.py",
     "sha256": "d9e71c3d19e36142cc8259d65543cf565aae56f7f9e06e3d9c01f24662c6a682"
   },
   "git": {
     "dirty": false,
-    "head": "13b7f6b9660a8140ebf0065885745d0ae876d749",
+    "head": "b1755d23d834786af733cb5a66ee177acf848318",
     "status_paths": []
   },
   "invocation": {
     "offline": true,
     "refresh": false
   },
-  "provenance_core_sha256": "65cd08d052a99fe2f5a0d6434e7dd193599bc50c169abdace132b0aa61ede3f6",
+  "provenance_core_sha256": "bbed7cf4246fdae5a477461e3c2ae0f841e7c78c435e6e10df9a33acc47c1048",
   "runtime": {
     "dependencies": {
       "matplotlib": "3.11.1",
@@ -51,5 +51,5 @@
     "python_implementation": "CPython"
   },
   "schema_version": "market_field_primary_run_receipt_v1",
-  "started_at_utc": "2026-07-22T19:57:49.542198Z"
+  "started_at_utc": "2026-07-22T20:10:35.519619Z"
 }

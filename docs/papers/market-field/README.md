@@ -69,7 +69,7 @@ used instead. The checked PDFs were built with Tectonic 0.16.9.
 - Implementation snapshot used for the first paper run:
   cd67fb48c1ee747fb8b447bc9d59fb8eaf7ec430
 - Clean implementation snapshot used for the current primary rerun:
-  13b7f6b9660a8140ebf0065885745d0ae876d749
+  b1755d23d834786af733cb5a66ee177acf848318
 - Primary data: Yahoo Finance through yfinance 1.1.0 with auto_adjust=True.
 - Sample: SPY, QQQ, IWM, TLT, GLD, USO, VNQ, and BTC-USD.
 - Requested range: 2018-01-01 through 2026-07-21 inclusive.
