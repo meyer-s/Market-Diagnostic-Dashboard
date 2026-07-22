@@ -286,6 +286,30 @@ def test_event_snapshot_round_trip_is_immutable_shadow_context() -> None:
     assert restored["authority"]["manager_verdict"] == "none"
 
 
+def test_legacy_event_readback_is_not_relabelled_as_semantic_v11() -> None:
+    event = OptionAlertEvent(
+        symbol="SPY",
+        field_context_version=OPTION_FIELD_SCHEMA_VERSION,
+        field_context_json=json.dumps(
+            {
+                "schema_version": OPTION_FIELD_SCHEMA_VERSION,
+                "model_version": OPTION_FIELD_MODEL_VERSION,
+                "option_type": "call",
+                "completed_bars": 250,
+                "quality": {"available": True},
+                "classification": {"path_state": "supportive"},
+            }
+        ),
+    )
+
+    restored = option_field_context_from_event(event)
+
+    assert restored is not None
+    assert restored["semantic_revision"] == "1.0"
+    assert restored["maturity"]["status"] == "complete"
+    assert restored["alignment"]["basis"] == "legacy_long_single_leg_option_type"
+
+
 def test_scanner_serialization_exposes_field_context_without_changing_rank() -> None:
     base_kwargs = {
         "id": 1,

@@ -38,6 +38,8 @@ Semantic revision `1.1` makes initialization and source quality explicit. The pu
 
 The option payload also carries an authority contract. Market Field has no scanner-rank, hard-veto, manager-verdict, target-size, or execution authority. It may advise displayed assessment confidence and review priority; higher advisory urgency can recompute the next human review date, so it is algorithmically shadowed but still behaviorally visible. Alignment uses signed delta when supplied, otherwise explicit action plus option type, otherwise a labeled legacy long-single-leg assumption; unsupported exposure abstains. Outcome cohorts retain revision, maturity, alignment, and input-quality metadata and exclude legacy, immature, or directionally unsupported snapshots from named v1.1 state cohorts.
 
+Stored event snapshots that predate `semantic_revision` remain labeled `1.0` when read. They receive safe display fallbacks for authority, maturity, and alignment, but are not silently promoted into the v1.1 outcome cohort.
+
 ## Forms and resonance
 
 Up to five prototypes are learned from the proper fit interval before the held-out calibration interval and the evaluation history. Candidate codebooks require at least 20 bars and 5% of fit history per Form, distinct quantized identities, and mean fit silhouette of at least `0.25`. The most separated supported candidate is selected, with one Form as the honest fallback; a flat or weakly separated field therefore does not manufacture five labels. For prototype `lambda_k`, family-balanced distance is

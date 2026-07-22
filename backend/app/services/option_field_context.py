@@ -20,6 +20,7 @@ from app.services.market_weather_context import build_technical_context
 OPTION_FIELD_SCHEMA_VERSION = "option_market_field_v1"
 OPTION_FIELD_MODEL_VERSION = "market_field_calculus_v1"
 OPTION_FIELD_SEMANTIC_REVISION = "1.1"
+OPTION_FIELD_LEGACY_SEMANTIC_REVISION = "1.0"
 OPTION_FIELD_MODE = "shadow_only"
 OPTION_FIELD_RANK_INFLUENCE = 0.0
 OPTION_FIELD_HORIZONS = tuple(range(12, 50, 2))
@@ -709,8 +710,11 @@ def option_field_context_from_event(event: object) -> dict[str, object] | None:
         getattr(event, "field_context_version", None) or parsed.get("schema_version") or OPTION_FIELD_SCHEMA_VERSION
     )
     parsed["model_version"] = str(parsed.get("model_version") or OPTION_FIELD_MODEL_VERSION)
+    # Reading an old stored snapshot must not relabel it as v1.1. Outcome
+    # cohorts use this boundary to keep legacy 60-bar/implicit-side records out
+    # of the stricter v1.1 comparison set.
     parsed["semantic_revision"] = str(
-        parsed.get("semantic_revision") or OPTION_FIELD_SEMANTIC_REVISION
+        parsed.get("semantic_revision") or OPTION_FIELD_LEGACY_SEMANTIC_REVISION
     )
     parsed["mode"] = OPTION_FIELD_MODE
     parsed["shadow_only"] = True
