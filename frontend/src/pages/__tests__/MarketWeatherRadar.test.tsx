@@ -121,4 +121,36 @@ describe("MarketWeatherRadar report state", () => {
     fireEvent(details, new Event("toggle", { bubbles: true }));
     await waitFor(() => expect(screen.getByText("Price versus aggregate pressure")).not.toBeNull());
   });
+
+  it("reports requested-history shortfall separately from mature initialization", () => {
+    useApiMock.mockReturnValue({
+      data: {
+        ...DATA,
+        available_bars: 480,
+        history_context: {
+          requested_visible_bars: 750,
+          visible_bars: 480,
+          analysis_bars: 608,
+          warmup_buffer_requested: 128,
+          warmup_buffer_received: 128,
+          maximum_horizon_bars: 64,
+          minimum_observed_window_bars: 96,
+          target_warmup_bars: 128,
+          warmup_complete: true,
+          status: "complete",
+        },
+      } as MarketWeatherResponse,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText("History 480 / 750")).not.toBeNull();
+    expect(screen.getByText("Initialization mature")).not.toBeNull();
+    expect(screen.getByText(/Requested-history shortfall: the provider returned 480 of 750 visible bars \(270 missing\)/i)).not.toBeNull();
+    expect(screen.getByText(/does not make this a full requested-history response/i)).not.toBeNull();
+    expect(screen.queryByText("Warm-up covered")).toBeNull();
+  });
 });

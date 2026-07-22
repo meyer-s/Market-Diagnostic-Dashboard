@@ -95,6 +95,7 @@ class OptionThesisAssessment(Base):
     missing_inputs_json = Column(Text, nullable=False, default="[]")
     input_snapshot_json = Column(Text, nullable=False, default="{}")
     axis_results_json = Column(Text, nullable=False, default="{}")
+    market_field_effects_json = Column(Text, nullable=True)
     evidence_json = Column(Text, nullable=False, default="[]")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 

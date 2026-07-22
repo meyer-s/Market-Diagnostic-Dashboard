@@ -105,10 +105,10 @@ export const MARKET_FIELD_METRICS: MarketFieldMetricDefinition[] = [
   },
   {
     id: "structure",
-    label: "Structure stratum",
-    shortLabel: "Structure",
-    scale: "0 diffuse to 100 organized",
-    definition: "A blend of structural trend strength and agreement between neighboring horizons.",
+    label: "Trend-agreement composite",
+    shortLabel: "Trend + agreement",
+    scale: "0 to 100 engineered composite; a flat coherent field anchors at 42",
+    definition: "A 58% directional-activity and 42% neighboring-horizon-agreement blend. Agreement at zero activity creates a 42-point formula floor; this is not standalone evidence of an organized trend.",
     family: "field",
   },
   {
@@ -155,8 +155,8 @@ export const MARKET_FIELD_METRICS: MarketFieldMetricDefinition[] = [
     id: "scaling_exponent",
     label: "Volatility scaling slope",
     shortLabel: "Scaling slope",
-    scale: "−2 to +2 log-log slope",
-    definition: "Local slope of log realized volatility versus log horizon. It describes cross-horizon scaling and is not a Hurst exponent.",
+    scale: "−2 to +2 log-log slope; 0.5 is the square-root-of-time reference",
+    definition: "Local slope of log realized volatility versus log horizon. A stationary finite-variance reference is near 0.5; degenerate zero-variation paths are not interpretable. This is not a Hurst exponent.",
     family: "field",
   },
   {
@@ -279,14 +279,14 @@ export function buildGroundedStateProfile(
 
   const deviations = robustFieldDeviations(values, features);
   const characteristic = relativeCharacteristic(deviations);
-  const organization = Math.round(clampUnit(values.structure) * 100);
+  const trendAgreement = Math.round(clampUnit(values.structure) * 100);
   const propagation = Math.round(clampUnit(values.propagation) * 100);
   const information = Math.round(clampUnit(values.information) * 100);
 
   return {
     headline: `${directionLabel} · ${motionLabel}`,
     characteristic,
-    summary: `Structure ${organization}/100, cross-horizon propagation ${propagation}/100, and information/ordinal disorder ${information}/100; ${characteristic}.`,
+    summary: `Trend + horizon agreement ${trendAgreement}/100 (flat coherent reference 42), cross-horizon propagation ${propagation}/100, and information/ordinal disorder ${information}/100; ${characteristic}.`,
     direction,
     deviations,
   };
@@ -344,7 +344,7 @@ export function marketStateColor(stateId: string): string {
 
 export function describeMarketGlyph(centroid: Record<string, number>): string {
   const glyph = buildMarketGlyphEncoding(centroid);
-  const organization = clampUnit(centroid.structure) > 0.66 ? "organized" : clampUnit(centroid.structure) < 0.34 ? "diffuse" : "forming";
+  const organization = clampUnit(centroid.structure) > 0.66 ? "high trend/agreement composite" : clampUnit(centroid.structure) < 0.34 ? "low trend/agreement composite" : "mid trend/agreement composite";
   const motion = clampUnit(centroid.kinematics) > 0.66 ? "high-motion" : clampUnit(centroid.kinematics) < 0.34 ? "quiet" : "active";
   const propagation = glyph.trailCount >= 3 ? "strongly propagating" : glyph.trailCount === 0 ? "stationary" : "propagating";
   return `${glyph.direction}, ${organization}, ${motion}, ${propagation}`;

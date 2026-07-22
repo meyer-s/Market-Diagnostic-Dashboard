@@ -1,0 +1,270 @@
+{
+  "artifact_count": 22,
+  "completed_at_utc": "2026-07-22T19:40:59.683609Z",
+  "elapsed_seconds": 50.638148,
+  "environment": {
+    "dependencies": {
+      "matplotlib": "3.11.1",
+      "numpy": "2.4.2",
+      "pandas": "3.0.0",
+      "scipy": "1.17.0",
+      "yfinance": "1.1.0"
+    },
+    "machine": "AMD64",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+    "python": "3.13.14",
+    "python_implementation": "CPython"
+  },
+  "generated_artifacts": [
+    {
+      "bytes": 2520,
+      "kind": "table",
+      "path": "results/dataset_profile.csv",
+      "sha256": "e781b7f55ea986c64143d3e347aff9fcf1bbaa562d9d9788fd204636a2e0228d"
+    },
+    {
+      "bytes": 2298,
+      "kind": "table",
+      "path": "results/prefix_invariance.csv",
+      "sha256": "d524099d408f88a97aba149f30a2eaacbbb0e9a476f4cbe02114b7df5ca6d5ee"
+    },
+    {
+      "bytes": 4303,
+      "kind": "table",
+      "path": "results/prefix_invariance_full_precision.csv",
+      "sha256": "42c1341c3ca21077b090190691a1fa0497bda419ed0be27f6d03be20f58e87a8"
+    },
+    {
+      "bytes": 1547,
+      "kind": "table",
+      "path": "results/determinism.csv",
+      "sha256": "f605f7d5fcc5284dd0240ded1753647adea10b74559e46a87ab3f50a26b19766"
+    },
+    {
+      "bytes": 76662,
+      "kind": "table",
+      "path": "results/resolution_convergence.csv",
+      "sha256": "c780ea714ed8d6395bb4e5232dd50d66f2fdb8fc31e89c2596dcff00395d1168"
+    },
+    {
+      "bytes": 119,
+      "kind": "table",
+      "path": "results/resolution_comparison_counts.csv",
+      "sha256": "1ed14b97599baa96bc176bd4f00b3e9d1977db8d15f13268c6295c90e9170541"
+    },
+    {
+      "bytes": 218805,
+      "kind": "table",
+      "path": "results/history_truncation_sensitivity.csv",
+      "sha256": "74bad82ad2fbc0dcbf1957cd4ad0ceac3dc34611946c709920a0795c096b6d03"
+    },
+    {
+      "bytes": 8123,
+      "kind": "table",
+      "path": "results/entropy_window_sensitivity.csv",
+      "sha256": "138a09482d43b6f89d828cf54ff266319f96139a2344660f91f6370337b55033"
+    },
+    {
+      "bytes": 662,
+      "kind": "table",
+      "path": "results/maturity_contracts.csv",
+      "sha256": "3b4e61841382907a0af3453972fa4639c7f6d750046bb01b90cdb274f96a7502"
+    },
+    {
+      "bytes": 595,
+      "kind": "table",
+      "path": "results/null_state_anchor.csv",
+      "sha256": "ecf953b63357ec287e6eb29237d009de3fc6a78bb323c45ac5714f9711c9addd"
+    },
+    {
+      "bytes": 4253,
+      "kind": "table",
+      "path": "results/option_snapshot_latency.csv",
+      "sha256": "634947f57ee67c5876146cd42927bdd23de5f14167aef5b0620093c2749f4a98"
+    },
+    {
+      "bytes": 2156,
+      "kind": "table",
+      "path": "results/timeframe_behavior.csv",
+      "sha256": "e5ad4880b27c0aada9d6b0b438188bc61eb9d5fe061987e14e5b986aca626650"
+    },
+    {
+      "bytes": 1046,
+      "kind": "table",
+      "path": "results/lexicon_diagnostics.csv",
+      "sha256": "b02d4f0200e961d925425ac0003acfbeb12850b72137368870fbfaff727d1603"
+    },
+    {
+      "bytes": 336,
+      "kind": "table",
+      "path": "results/lexicon_window_stability.csv",
+      "sha256": "66c2c7c23b744d78ac66bbdce5946b90b96d5516039717d046ecac943e61f002"
+    },
+    {
+      "bytes": 62467,
+      "kind": "table",
+      "path": "results/spy_1d_state_sequence.csv",
+      "sha256": "071ec2e753aaf866f57a2a7489611b5aa39a09e18431e79487054e47c04190d4"
+    },
+    {
+      "bytes": 127058,
+      "kind": "figure",
+      "path": "figures/fig_causal_prefix_audit.png",
+      "sha256": "d222b2598cf8a4650eee3627fb3fc961c0292106d42ae115177a1498566cee82"
+    },
+    {
+      "bytes": 784401,
+      "kind": "figure",
+      "path": "figures/fig_timeframe_phase_portraits.png",
+      "sha256": "b272ca053d96583dc76eac87bc97cfcf5f26f19430b4ed194d5b929f0abaf44f"
+    },
+    {
+      "bytes": 153543,
+      "kind": "figure",
+      "path": "figures/fig_resolution_convergence.png",
+      "sha256": "0715d018c930996c4cdabfbca2905c8346dc6a9fe9192a0af84c9b928efd57e4"
+    },
+    {
+      "bytes": 205103,
+      "kind": "figure",
+      "path": "figures/fig_sensitivity_audits.png",
+      "sha256": "8261caac8307ee6f60eabd7224df75eaba668c195c2b790e127c4dddc670adf9"
+    },
+    {
+      "bytes": 235263,
+      "kind": "figure",
+      "path": "figures/fig_spy_state_timeline.png",
+      "sha256": "670609a8487046a787b6880746c6b7bb001372e7f9d8b648bbf2de10eaccb652"
+    },
+    {
+      "bytes": 9068,
+      "kind": "result",
+      "path": "results/summary.json",
+      "sha256": "9a75d4a0d465491c2e3efa5bbd8b5c3effd2ef1f5d4e9faa3b1994606a621f5f"
+    },
+    {
+      "bytes": 686,
+      "kind": "result",
+      "path": "results/shadow_boundary.json",
+      "sha256": "db6fc333543666ae27f8c39ef3310a7d3586646339f60894ed0e1e68e6119b7e"
+    }
+  ],
+  "input_snapshot": {
+    "dataset_count": 15,
+    "frozen_manifest_was_not_rewritten_by_receipt": true,
+    "manifest_path": "data/raw/manifest.json",
+    "manifest_sha256": "7cc6b6e9d698d1feb01601c143be0f953dd35ab08b69947d0b90cce7c811e6fb",
+    "observed_at_utc": "2026-07-22T15:48:24.325098+00:00",
+    "snapshot_version": "market_field_public_snapshot_v1"
+  },
+  "receipt_self_hash_excluded": true,
+  "receipt_version": "market_field_supplement_run_receipt_v1",
+  "repository_at_start": {
+    "branch": "reconcile/live-ibkr-main",
+    "dirty": true,
+    "git_errors": [],
+    "head": "016fa3ae45c999cc2aacef4a9a995d47fd42acaf",
+    "provenance_note": "The evaluation used working-tree files. HEAD is recorded only as a repository reference and must not be described as the exact evaluated source snapshot.",
+    "status_entries": [
+      "M backend/app/api/market_weather.py",
+      " M backend/app/api/secret_options.py",
+      " M backend/app/models/option_decision_learning.py",
+      " M backend/app/services/market_weather.py",
+      " M backend/app/services/market_weather_context.py",
+      " M backend/app/services/market_weather_research.py",
+      " M backend/app/services/option_decision_learning.py",
+      " M backend/app/services/option_field_context.py",
+      " M backend/app/services/option_thesis_engine.py",
+      " M backend/app/services/options_alerts.py",
+      " M backend/maintenance_scripts/options_chain_sweep.py",
+      " M backend/tests/test_market_weather.py",
+      " M backend/tests/test_option_field_context.py",
+      " M backend/tests/test_option_field_outcome_learning.py",
+      " M backend/tests/test_option_thesis_engine.py",
+      " M backend/tests/test_secret_options_positions.py",
+      " M docs/market-field-language.md",
+      " M docs/papers/market-field/IMPLEMENTATION_MAP.md",
+      " M docs/papers/market-field/README.md",
+      " M docs/papers/market-field/figures/calibration_rates.pdf",
+      " M docs/papers/market-field/figures/spy_field_phase.pdf",
+      " M docs/papers/market-field/figures/synthetic_diagnostics.pdf",
+      " M docs/papers/market-field/figures/system_overview.pdf",
+      " M docs/papers/market-field/main.pdf",
+      " M docs/papers/market-field/main.tex",
+      " M docs/papers/market-field/market_field_reproducibility.ipynb",
+      " M docs/papers/market-field/references.bib",
+      " M docs/papers/market-field/results/validation_summary.json",
+      " M docs/papers/market-field/scripts/generate_assets.py",
+      " M docs/papers/market-field/share.pdf",
+      " M docs/papers/market-field/supplement/PRELIMINARY_EVALUATION.md",
+      " M docs/papers/market-field/supplement/README.md",
+      " M docs/papers/market-field/supplement/build_notebook.py",
+      " M docs/papers/market-field/supplement/evaluate_market_field.py",
+      " M docs/papers/market-field/supplement/figures/fig_spy_state_timeline.png",
+      " M docs/papers/market-field/supplement/market_field_preliminary.ipynb",
+      " M docs/papers/market-field/supplement/results/determinism.csv",
+      " M docs/papers/market-field/supplement/results/lexicon_diagnostics.csv",
+      " M docs/papers/market-field/supplement/results/spy_1d_state_sequence.csv",
+      " M docs/papers/market-field/supplement/results/summary.json",
+      " M docs/papers/market-field/tables/validation_summary.tex",
+      " M frontend/src/components/marketWeather/MarketWeatherCanvas.tsx",
+      " M frontend/src/components/marketWeather/MarketWeatherMethodologyReport.test.tsx",
+      " M frontend/src/components/marketWeather/MarketWeatherMethodologyReport.tsx",
+      " M frontend/src/components/marketWeather/MarketWeatherResearchLab.tsx",
+      " M frontend/src/pages/MarketWeatherRadar.tsx",
+      " M frontend/src/pages/SecretOptions.tsx",
+      " M frontend/src/pages/__tests__/MarketWeatherRadar.test.tsx",
+      " M frontend/src/routes/registry.tsx",
+      " M frontend/src/types/marketWeather.ts",
+      " M frontend/src/utils/__tests__/marketWeatherTimeline.test.ts",
+      " M frontend/src/utils/__tests__/scannerPositionMatch.test.ts",
+      " M frontend/src/utils/marketWeatherLexicon.ts",
+      " M frontend/src/utils/marketWeatherTimeline.ts",
+      " M frontend/src/utils/scannerPositionMatch.ts",
+      "?? backend/alembic/versions/20260722_0017_option_assessment_field_effects.py",
+      "?? docs/papers/market-field/REVISION_RESPONSE.md",
+      "?? docs/papers/market-field/requirements-paper-lock.txt",
+      "?? docs/papers/market-field/supplement/figures/fig_sensitivity_audits.png",
+      "?? docs/papers/market-field/supplement/results/entropy_window_sensitivity.csv",
+      "?? docs/papers/market-field/supplement/results/history_truncation_sensitivity.csv",
+      "?? docs/papers/market-field/supplement/results/maturity_contracts.csv",
+      "?? docs/papers/market-field/supplement/results/null_state_anchor.csv",
+      "?? docs/papers/market-field/supplement/results/option_snapshot_latency.csv",
+      "?? docs/papers/market-field/supplement/results/prefix_invariance_full_precision.csv",
+      "?? docs/papers/market-field/supplement/results/resolution_comparison_counts.csv",
+      "?? docs/papers/market-field/supplement/results/run_receipt.json",
+      "?? frontend/src/components/marketWeather/MarketWeatherResearchLab.test.ts"
+    ],
+    "status_entry_count": 68,
+    "status_summary": {
+      " M": 54,
+      "??": 13,
+      "M ": 1
+    }
+  },
+  "sources": {
+    "changed_during_run": [],
+    "identity_rule": "Per-file SHA-256 values identify evaluated source. A dirty HEAD is a parent reference only, not an exact source snapshot.",
+    "sha256_at_completion": {
+      "backend/app/api/market_weather.py": "a732f62afca4092e404a74ab949e8a53c61310bb2f90b20d6558c0038c7966b2",
+      "backend/app/services/market_data/yahoo_provider.py": "e83e78d71a84eb139ee77459c46d5aa099ceb4274fb0c5d4d07f1df9f178e14c",
+      "backend/app/services/market_weather.py": "5ca49e61592b8543744e3e7acef551bdc08465436c36a131c83ae016e6177a11",
+      "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
+      "backend/app/services/market_weather_research.py": "1855cce8bfee8ae2676b78bc22e08fc635ede1f57d7456c2cc8529c8eec736d9",
+      "backend/app/services/option_field_context.py": "b3c37a8b67a88f5c1ff6342b06f7be701f5cc4e2d493df2175a64359781f30fb",
+      "docs/papers/market-field/supplement/evaluate_market_field.py": "104b0d3e888c21890c9a904c179ea2eff0dfb0fee76b048e2bd8ea3ddf2cbd43"
+    },
+    "sha256_at_start": {
+      "backend/app/api/market_weather.py": "a732f62afca4092e404a74ab949e8a53c61310bb2f90b20d6558c0038c7966b2",
+      "backend/app/services/market_data/yahoo_provider.py": "e83e78d71a84eb139ee77459c46d5aa099ceb4274fb0c5d4d07f1df9f178e14c",
+      "backend/app/services/market_weather.py": "5ca49e61592b8543744e3e7acef551bdc08465436c36a131c83ae016e6177a11",
+      "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
+      "backend/app/services/market_weather_research.py": "1855cce8bfee8ae2676b78bc22e08fc635ede1f57d7456c2cc8529c8eec736d9",
+      "backend/app/services/option_field_context.py": "b3c37a8b67a88f5c1ff6342b06f7be701f5cc4e2d493df2175a64359781f30fb",
+      "docs/papers/market-field/supplement/evaluate_market_field.py": "104b0d3e888c21890c9a904c179ea2eff0dfb0fee76b048e2bd8ea3ddf2cbd43"
+    },
+    "stable_for_run": true
+  },
+  "started_at_utc": "2026-07-22T19:40:09.045461Z"
+}

@@ -130,6 +130,47 @@ export interface OptionMarketFieldStrata {
   scaling_exponent?: number | null;
 }
 
+export interface OptionMarketFieldStructureComponents {
+  activity?: number | null;
+  horizon_agreement?: number | null;
+  trend_agreement_composite?: number | null;
+  display_organization?: number | null;
+}
+
+export interface OptionMarketFieldScalingReference {
+  stationary_finite_variance_reference?: number | null;
+  latest_exponent?: number | null;
+  latest_excess?: number | null;
+  valid?: boolean | null;
+  reason?: string | null;
+}
+
+export interface OptionMarketFieldInputQuality {
+  status?: "valid" | "limited" | "invalid" | string | null;
+  rows_received?: number | null;
+  rows_used?: number | null;
+  completed_rows_used?: number | null;
+  dropped?: {
+    bad_timestamp?: number | null;
+    nonfinite_ohlc?: number | null;
+    nonpositive_ohlc?: number | null;
+    inconsistent_ohlc?: number | null;
+    duplicate_timestamp?: number | null;
+    [key: string]: unknown;
+  } | null;
+  volume?: {
+    available?: boolean | null;
+    carrier_usable?: boolean | null;
+    available_observations?: number | null;
+    positive_observations?: number | null;
+    coverage?: number | null;
+    invalid_observations?: number | null;
+    [key: string]: unknown;
+  } | null;
+  warnings?: string[] | null;
+  [key: string]: unknown;
+}
+
 export interface OptionMarketFieldPriceAction {
   state?: string | null;
   range_position20?: number | null;
@@ -161,11 +202,72 @@ export interface OptionMarketFieldHypotheses {
   shock?: boolean | null;
 }
 
+export type OptionMarketFieldAuthorityValue = boolean | number | string | null;
+
+export interface OptionMarketFieldAuthority {
+  scanner_rank?: OptionMarketFieldAuthorityValue;
+  hard_veto?: OptionMarketFieldAuthorityValue;
+  manager_verdict?: OptionMarketFieldAuthorityValue;
+  target_size?: OptionMarketFieldAuthorityValue;
+  assessment_confidence?: OptionMarketFieldAuthorityValue;
+  review_priority?: OptionMarketFieldAuthorityValue;
+  human_visible?: OptionMarketFieldAuthorityValue;
+  automated_execution?: OptionMarketFieldAuthorityValue;
+}
+
+export interface OptionMarketFieldAlignment {
+  supported?: boolean | null;
+  basis?: string | null;
+  scope?: string | null;
+  position_action?: string | null;
+  directional_exposure_sign?: number | null;
+  assumptions?: string[] | string | null;
+}
+
+export type OptionMarketFieldMaturityStatus =
+  | "insufficient"
+  | "provisional"
+  | "complete"
+  | "mature"
+  | "unknown"
+  | string;
+
+export interface OptionMarketFieldMaturity {
+  completed_bars?: number | null;
+  maximum_horizon_bars?: number | null;
+  minimum_observed_window_bars?: number | null;
+  target_warmup_bars?: number | null;
+  warmup_complete?: boolean | null;
+  status?: OptionMarketFieldMaturityStatus | null;
+  bars_needed?: number | null;
+  note?: string | null;
+}
+
+export interface OptionMarketFieldAdvisoryEffect<T = string> {
+  before?: T | null;
+  after?: T | null;
+  changed?: boolean | null;
+}
+
+export interface OptionMarketFieldEffectsApplied {
+  confidence?: OptionMarketFieldAdvisoryEffect;
+  urgency?: OptionMarketFieldAdvisoryEffect;
+  review_window_recomputed_from_advisory_urgency?: boolean | null;
+  rank_changed?: boolean | null;
+  veto_changed?: boolean | null;
+  verdict_changed?: boolean | null;
+  target_size_changed?: boolean | null;
+  execution_authority?: OptionMarketFieldAuthorityValue;
+  [key: string]: unknown;
+}
+
 /** Point-in-time, causal field snapshot. It must remain advisory while rank_influence is zero. */
 export interface OptionMarketFieldContext {
   schema_version?: string | null;
   mode?: string | null;
   rank_influence?: number | null;
+  shadow_only?: boolean | null;
+  automated_execution_enabled?: boolean | null;
   available?: boolean | null;
   computed_at?: string | null;
   as_of_bar?: string | null;
@@ -181,11 +283,19 @@ export interface OptionMarketFieldContext {
   option_aligned_velocity?: number | null;
   direction?: OptionMarketFieldDirection | null;
   strata?: OptionMarketFieldStrata | null;
+  structure_components?: OptionMarketFieldStructureComponents | null;
+  scaling_reference?: OptionMarketFieldScalingReference | null;
+  input_quality?: OptionMarketFieldInputQuality | null;
   carriers?: Record<string, unknown> | null;
   price_action?: OptionMarketFieldPriceAction | null;
   signals?: OptionMarketFieldSignals | null;
   classification?: OptionMarketFieldClassification | null;
   hypotheses?: OptionMarketFieldHypotheses | null;
+  authority?: OptionMarketFieldAuthority | null;
+  alignment?: OptionMarketFieldAlignment | null;
+  maturity?: OptionMarketFieldMaturity | null;
+  semantic_revision?: string | null;
+  effects_applied?: OptionMarketFieldEffectsApplied | null;
 }
 
 export interface OptionMarketFieldAxisResult {
@@ -207,17 +317,37 @@ export interface OptionMarketFieldAxisResult {
   resistance_distance_atr?: number | null;
   familiarity?: "familiar" | "transition" | "novel" | "not_scored" | string | null;
   familiarity_reason?: string | null;
+  authority?: OptionMarketFieldAuthority | null;
+  alignment?: OptionMarketFieldAlignment | null;
+  maturity?: OptionMarketFieldMaturity | null;
+  semantic_revision?: string | null;
+  effects_applied?: OptionMarketFieldEffectsApplied | null;
 }
 
 export interface OptionMarketFieldPresentation {
-  badgeLabel: "FIELD UP" | "FIELD FADING" | "CONFLICT" | "SHOCK";
+  badgeLabel: "FIELD UP" | "FIELD FADING" | "CONFLICT" | "SHOCK" | "FIELD WARMING";
   tone: ScannerPositionMatchTone;
   pathStateLabel: string;
   directionLabel: string | null;
-  structureLabel: string | null;
+  trendAgreementLabel: string | null;
   boundaryLabel: string | null;
   familiarityLabel: string | null;
   familiarityReason: string | null;
+  authorityLabel: string;
+  advisoryEffectsLabel: string;
+  authorityCaveat: string | null;
+  alignmentLabel: string | null;
+  alignmentCaveat: string | null;
+  maturityStatus: "insufficient" | "provisional" | "complete" | "unknown";
+  maturityLabel: string | null;
+  maturityReason: string | null;
+  scalingLabel: string | null;
+  scalingCaveat: string | null;
+  inputQualityLabel: string | null;
+  inputQualityCaveat: string | null;
+  diagnosticsLabel: string | null;
+  diagnosticsCaveat: string | null;
+  semanticRevision: string | null;
   timeframe: string;
   summary: string;
   accessibleLabel: string;
@@ -284,12 +414,252 @@ const compactMetric = (value: number) => {
   return value > 0 ? `+${rounded}` : rounded;
 };
 
-const compactLevel = (value: number) =>
-  Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1);
+const compactScore = (value: number) => {
+  const score = Math.abs(value) <= 1 ? value * 100 : value;
+  return `${Math.round(score)}/100`;
+};
+
+const compactCount = (value: number) => Math.round(value).toLocaleString("en-US");
 
 const compactFieldText = (value?: string | null) => {
   const normalized = value?.trim();
   return normalized ? humanizeClassification(normalized).replace(/\bAtr\b/g, "ATR") : null;
+};
+
+const diagnosticText = (value?: string | null) => {
+  const normalized = value?.trim();
+  if (!normalized) return null;
+  return normalized
+    .replace(/^field_calculation_failed:/i, "field calculation failed: ")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const scalingPresentation = (context?: OptionMarketFieldContext | null) => {
+  const scaling = context?.scaling_reference || null;
+  if (!scaling) {
+    return { scalingLabel: null, scalingCaveat: null };
+  }
+  const reference = asFiniteNumber(scaling.stationary_finite_variance_reference) ?? 0.5;
+  const exponent = asFiniteNumber(scaling.latest_exponent);
+  const reportedExcess = asFiniteNumber(scaling.latest_excess);
+  const excess = reportedExcess ?? (exponent !== null ? exponent - reference : null);
+  if (scaling.valid === true && exponent !== null) {
+    return {
+      scalingLabel: `Scaling · ${exponent.toFixed(2)}${excess !== null ? ` (${excess >= 0 ? "+" : ""}${excess.toFixed(2)} vs ${reference.toFixed(2)})` : ""}`,
+      scalingCaveat: null,
+    };
+  }
+  const reason = diagnosticText(scaling.reason);
+  return {
+    scalingLabel: "Scaling · unavailable",
+    scalingCaveat: `Volatility scaling is unavailable${reason ? `: ${reason}` : "."}`,
+  };
+};
+
+const inputQualityPresentation = (context?: OptionMarketFieldContext | null) => {
+  const input = context?.input_quality || null;
+  if (!input) {
+    return { inputQualityLabel: null, inputQualityCaveat: null };
+  }
+  const status = input.status?.trim().toLowerCase() || "unknown";
+  const rowsReceived = asFiniteNumber(input.rows_received);
+  const rowsUsed = asFiniteNumber(input.rows_used);
+  const rowLabel = rowsReceived !== null && rowsUsed !== null
+    ? `${compactCount(rowsUsed)}/${compactCount(rowsReceived)} rows`
+    : null;
+  const inputQualityLabel = `Input · ${status}${rowLabel ? ` · ${rowLabel}` : ""}`;
+  const warnings = Array.isArray(input.warnings)
+    ? input.warnings.map(diagnosticText).filter((value): value is string => Boolean(value))
+    : [];
+  const droppedCount: number = input.dropped
+    ? Object.values(input.dropped).reduce<number>((sum, value) => sum + (asFiniteNumber(value) ?? 0), 0)
+    : 0;
+  const volumeCoverage = asFiniteNumber(input.volume?.coverage);
+  const caveatParts = [
+    droppedCount > 0 ? `${compactCount(droppedCount)} price ${droppedCount === 1 ? "row" : "rows"} rejected` : null,
+    ...warnings,
+    input.volume?.carrier_usable === false ? "volume-dependent carriers unavailable" : null,
+    volumeCoverage !== null && volumeCoverage < 0.999
+      ? `volume coverage ${Math.round(volumeCoverage * 100)}%`
+      : null,
+  ].filter((value): value is string => Boolean(value));
+  return {
+    inputQualityLabel,
+    inputQualityCaveat: status !== "valid" || caveatParts.length > 0
+      ? `Input quality ${status}${caveatParts.length > 0 ? `: ${Array.from(new Set(caveatParts)).join("; ")}` : "."}`
+      : null,
+  };
+};
+
+const MARKET_FIELD_AUTHORITY_LABEL = "No rank, veto, verdict, size, or execution authority";
+const MARKET_FIELD_ADVISORY_EFFECTS_LABEL = "May advise confidence and review priority";
+const LEGACY_ALIGNMENT_CAVEAT =
+  "Legacy call/put alignment assumes a long, directional single-leg position; it is not valid for short, spread, hedge, or multi-leg exposure.";
+
+const authorityValueIsActive = (value: OptionMarketFieldAuthorityValue | undefined) => {
+  if (value === null || value === undefined || value === false || value === 0) return false;
+  if (value === true || (typeof value === "number" && value !== 0)) return true;
+  const normalized = String(value).trim().toLowerCase();
+  return !["", "0", "false", "none", "no", "disabled", "off", "zero"].includes(normalized);
+};
+
+const authorityPresentation = (
+  context?: OptionMarketFieldContext | null,
+  axis?: OptionMarketFieldAxisResult | null,
+  effectsApplied?: OptionMarketFieldEffectsApplied | null
+) => {
+  const authority = context?.authority || axis?.authority || null;
+  const effects = effectsApplied || context?.effects_applied || axis?.effects_applied || null;
+  const protectedAuthority = [
+    authority?.scanner_rank,
+    authority?.hard_veto,
+    authority?.manager_verdict,
+    authority?.target_size,
+    authority?.automated_execution,
+  ];
+  const metadataConflict = protectedAuthority.some(authorityValueIsActive)
+    || (typeof context?.rank_influence === "number" && context.rank_influence !== 0)
+    || context?.automated_execution_enabled === true
+    || effects?.rank_changed === true
+    || effects?.veto_changed === true
+    || effects?.verdict_changed === true
+    || effects?.target_size_changed === true
+    || authorityValueIsActive(effects?.execution_authority);
+  const confidenceChanged = effects?.confidence?.changed === true;
+  const priorityChanged = effects?.urgency?.changed === true
+    || effects?.review_window_recomputed_from_advisory_urgency === true;
+  const applied = [confidenceChanged ? "confidence" : null, priorityChanged ? "review priority" : null]
+    .filter((value): value is string => Boolean(value));
+  return {
+    authorityLabel: MARKET_FIELD_AUTHORITY_LABEL,
+    advisoryEffectsLabel: applied.length > 0
+      ? `Advisory applied · ${applied.join(" and ")}`
+      : MARKET_FIELD_ADVISORY_EFFECTS_LABEL,
+    authorityCaveat: metadataConflict
+      ? "Authority metadata conflicts with the review-only contract; do not use this field to rank, veto, grade, size, or execute."
+      : null,
+  };
+};
+
+const normalizeMaturityStatus = (value?: string | null) => value?.trim().toLowerCase().replace(/\s+/g, "_") || "";
+
+const maturityPresentation = (
+  context?: OptionMarketFieldContext | null,
+  axis?: OptionMarketFieldAxisResult | null
+) => {
+  const maturity = context?.maturity || axis?.maturity || null;
+  const quality = context?.quality && typeof context.quality === "object" ? context.quality : null;
+  const warnings = Array.isArray(quality?.warnings)
+    ? quality.warnings.filter((warning): warning is string => typeof warning === "string")
+    : [];
+  const warningMinimum = warnings
+    .map((warning) => warning.match(/^requires_(\d+)_completed_bars$/i))
+    .find((match): match is RegExpMatchArray => Boolean(match))?.[1];
+  const completedBars = asFiniteNumber(maturity?.completed_bars ?? context?.completed_bars);
+  const maximumHorizon = asFiniteNumber(maturity?.maximum_horizon_bars) ?? 48;
+  const minimumObserved = asFiniteNumber(maturity?.minimum_observed_window_bars)
+    ?? (warningMinimum ? Number(warningMinimum) : 60);
+  const targetWarmup = asFiniteNumber(maturity?.target_warmup_bars) ?? Math.max(96, maximumHorizon * 2);
+  const reportedBarsNeeded = asFiniteNumber(maturity?.bars_needed);
+  const explicitStatus = normalizeMaturityStatus(maturity?.status);
+  const explicitInsufficient = ["insufficient", "unavailable", "not_ready", "blocked"].includes(explicitStatus);
+  const explicitProvisional = ["provisional", "warming", "warmup", "partial", "limited"].includes(explicitStatus);
+  const explicitComplete = ["complete", "mature", "ready", "full"].includes(explicitStatus);
+
+  let status: OptionMarketFieldPresentation["maturityStatus"] = "unknown";
+  if (explicitInsufficient || (completedBars !== null && completedBars < minimumObserved)) {
+    status = "insufficient";
+  } else if (
+    explicitProvisional
+    || maturity?.warmup_complete === false
+    || (completedBars !== null && completedBars < targetWarmup)
+  ) {
+    status = "provisional";
+  } else if (explicitComplete || maturity?.warmup_complete === true || (completedBars !== null && completedBars >= targetWarmup)) {
+    status = "complete";
+  }
+
+  const barsNeeded = reportedBarsNeeded
+    ?? (completedBars !== null && status === "insufficient" ? Math.max(0, targetWarmup - completedBars) : null);
+  const maturityLabel = status === "insufficient"
+    ? `Maturity · insufficient${completedBars !== null ? ` (${compactCount(completedBars)}/${compactCount(targetWarmup)} required bars${barsNeeded ? `; ${compactCount(barsNeeded)} needed` : ""})` : ""}`
+    : status === "provisional"
+      ? `Maturity · provisional${completedBars !== null ? ` (${compactCount(completedBars)}/${compactCount(targetWarmup)} warm-up bars)` : ""}`
+      : null;
+  const maturityReason = maturity?.note?.trim() || (
+    status === "insufficient"
+      ? "There is not enough completed history to support the configured observed window."
+      : status === "provisional"
+        ? "The field is computable, but initialization and long-horizon carrier values remain history-sensitive."
+        : status === "complete"
+          ? `Warm-up target met${completedBars !== null ? ` with ${compactCount(completedBars)} completed bars` : ""}.`
+          : null
+  );
+  return { status, maturityLabel, maturityReason };
+};
+
+const alignmentPresentation = (
+  context?: OptionMarketFieldContext | null,
+  axis?: OptionMarketFieldAxisResult | null
+) => {
+  const alignment = context?.alignment || axis?.alignment || null;
+  const assumptions = Array.isArray(alignment?.assumptions)
+    ? alignment.assumptions.filter((assumption): assumption is string => typeof assumption === "string" && Boolean(assumption.trim()))
+    : typeof alignment?.assumptions === "string" && alignment.assumptions.trim()
+      ? [alignment.assumptions.trim()]
+      : [];
+  const scope = alignment?.scope?.trim().toLowerCase() || "";
+  const basis = compactFieldText(alignment?.basis);
+  const hasExplicitAlignment = Boolean(
+    alignment
+    && (
+      typeof alignment.supported === "boolean"
+      || alignment.basis
+      || alignment.scope
+      || alignment.position_action
+      || asFiniteNumber(alignment.directional_exposure_sign) !== null
+      || assumptions.length > 0
+    )
+  );
+  if (alignment?.supported === false) {
+    return {
+      alignmentLabel: "Alignment · unsupported",
+      alignmentCaveat: assumptions.join(" ") || "Directional alignment is not supported for this position structure or action.",
+      supported: false,
+    };
+  }
+  if (alignment && hasExplicitAlignment) {
+    const longSingleLegScope = scope.includes("long") && (scope.includes("single") || scope.includes("directional"));
+    const legacyLongSingleLeg = alignment.basis?.trim().toLowerCase().includes("legacy_long_single_leg") === true;
+    const caveats = [
+      ...assumptions,
+      legacyLongSingleLeg || (longSingleLegScope && assumptions.length === 0) ? LEGACY_ALIGNMENT_CAVEAT : null,
+    ].filter((value): value is string => Boolean(value));
+    return {
+      alignmentLabel: basis ? `Alignment · ${basis}` : "Alignment · supported exposure",
+      alignmentCaveat: caveats.join(" ") || null,
+      supported: true,
+    };
+  }
+
+  const legacySide = context?.option_type?.trim().toLowerCase();
+  const hasLegacyAlignedValue = [
+    context?.direction?.option_aligned_pressure,
+    context?.direction?.aligned_pressure,
+    context?.option_aligned_pressure,
+    context?.aligned_pressure,
+    axis?.aligned_pressure,
+  ].some((value) => asFiniteNumber(value) !== null);
+  if (legacySide === "call" || legacySide === "put" || hasLegacyAlignedValue) {
+    return {
+      alignmentLabel: "Alignment · legacy side proxy",
+      alignmentCaveat: LEGACY_ALIGNMENT_CAVEAT,
+      supported: true,
+    };
+  }
+  return { alignmentLabel: null, alignmentCaveat: null, supported: null };
 };
 
 /**
@@ -298,13 +668,20 @@ const compactFieldText = (value?: string | null) => {
  */
 export const presentOptionMarketField = (
   context?: OptionMarketFieldContext | null,
-  axis?: OptionMarketFieldAxisResult | null
+  axis?: OptionMarketFieldAxisResult | null,
+  effectsApplied?: OptionMarketFieldEffectsApplied | null
 ): OptionMarketFieldPresentation | null => {
+  const maturity = maturityPresentation(context, axis);
+  const authority = authorityPresentation(context, axis, effectsApplied);
+  const alignment = alignmentPresentation(context, axis);
+  const scaling = scalingPresentation(context);
+  const inputQuality = inputQualityPresentation(context);
   const qualityAvailable = context?.quality && typeof context.quality === "object"
     ? context.quality.available
     : undefined;
   const contextAvailable = context?.available ?? qualityAvailable;
-  if ((!context || contextAvailable === false) && (!axis || axis.available === false)) return null;
+  const explicitlyUnavailable = (!context || contextAvailable === false) && (!axis || axis.available === false);
+  if (explicitlyUnavailable && maturity.status !== "insufficient" && maturity.status !== "provisional") return null;
 
   const signals = context?.signals || null;
   const hypotheses = context?.hypotheses || null;
@@ -320,7 +697,7 @@ export const presentOptionMarketField = (
     || hypotheses?.shock === true
     || hypotheses?.geometry_disorder_shock === true
     || eventfulness === "shock";
-  const badge = shock
+  const baseBadge = shock
     ? { badgeLabel: "SHOCK" as const, tone: "negative" as const, pathStateLabel: "Geometry disorder shock" }
     : pathState === "supportive"
       ? { badgeLabel: "FIELD UP" as const, tone: "positive" as const, pathStateLabel: "Path supportive" }
@@ -340,30 +717,49 @@ export const presentOptionMarketField = (
                 || hypotheses?.longward_cascade === true
               ? { badgeLabel: "FIELD UP" as const, tone: "positive" as const, pathStateLabel: "Organized path support" }
               : null;
+  const badge = maturity.status === "insufficient"
+    ? { badgeLabel: "FIELD WARMING" as const, tone: "neutral" as const, pathStateLabel: "Field history insufficient" }
+    : baseBadge
+      ? maturity.status === "provisional"
+        ? { ...baseBadge, tone: "warning" as const }
+        : baseBadge
+      : maturity.status === "provisional"
+        ? { badgeLabel: "FIELD WARMING" as const, tone: "warning" as const, pathStateLabel: "Field history provisional" }
+        : null;
   if (!badge) return null;
 
   const regime = compactFieldText(context?.direction?.regime);
-  const alignedPressure = asFiniteNumber(
-    context?.direction?.option_aligned_pressure
-    ?? context?.direction?.aligned_pressure
-    ?? context?.option_aligned_pressure
-    ?? context?.aligned_pressure
-    ?? axis?.aligned_pressure
-  );
-  const alignedVelocity = asFiniteNumber(
-    context?.direction?.option_aligned_velocity
-    ?? context?.direction?.aligned_velocity
-    ?? context?.option_aligned_velocity
-    ?? context?.aligned_velocity
-    ?? axis?.aligned_velocity
-  );
+  const alignedPressure = alignment.supported === false
+    ? null
+    : asFiniteNumber(
+        context?.direction?.option_aligned_pressure
+        ?? context?.direction?.aligned_pressure
+        ?? context?.option_aligned_pressure
+        ?? context?.aligned_pressure
+        ?? axis?.aligned_pressure
+      );
+  const alignedVelocity = alignment.supported === false
+    ? null
+    : asFiniteNumber(
+        context?.direction?.option_aligned_velocity
+        ?? context?.direction?.aligned_velocity
+        ?? context?.option_aligned_velocity
+        ?? context?.aligned_velocity
+        ?? axis?.aligned_velocity
+      );
   const directionLabel = regime
     ? `Direction · ${regime}`
     : alignedPressure !== null
       ? `Pressure · ${compactMetric(alignedPressure)}${alignedVelocity !== null ? ` / Δ ${compactMetric(alignedVelocity)}` : ""}`
       : null;
-  const structure = asFiniteNumber(context?.strata?.structure ?? axis?.structure);
-  const structureLabel = structure !== null ? `Structure · ${compactLevel(structure)}` : null;
+  const trendAgreement = asFiniteNumber(
+    context?.structure_components?.trend_agreement_composite
+    ?? context?.strata?.structure
+    ?? axis?.structure
+  );
+  const trendAgreementLabel = trendAgreement !== null
+    ? `Trend + agreement · ${compactScore(trendAgreement)}`
+    : null;
   const boundary = compactFieldText(context?.price_action?.state || axis?.boundary_state);
   const boundaryLabel = boundary ? `Boundary · ${boundary}` : null;
   const familiarity = axis?.familiarity?.trim().toLowerCase() || null;
@@ -373,19 +769,47 @@ export const presentOptionMarketField = (
       ? `Profile · ${compactFieldText(familiarity)}`
       : null;
   const timeframe = context?.timeframe || axis?.timeframe || "1D";
-  const detailParts = [badge.pathStateLabel, directionLabel, structureLabel, boundaryLabel].filter(Boolean);
+  const detailParts = [
+    badge.pathStateLabel,
+    directionLabel,
+    trendAgreementLabel,
+    boundaryLabel,
+    alignment.alignmentLabel,
+    maturity.maturityLabel,
+  ].filter(Boolean);
   const summary = detailParts.join(" · ");
+  const diagnosticsLabel = [scaling.scalingLabel, inputQuality.inputQualityLabel]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ") || null;
+  const diagnosticsCaveat = [scaling.scalingCaveat, inputQuality.inputQualityCaveat]
+    .filter((value): value is string => Boolean(value))
+    .join(" ") || null;
+  const caveats = [authority.authorityCaveat, alignment.alignmentCaveat, maturity.maturityReason, diagnosticsCaveat]
+    .filter((value): value is string => Boolean(value));
 
   return {
     ...badge,
     directionLabel,
-    structureLabel,
+    trendAgreementLabel,
     boundaryLabel,
     familiarityLabel,
     familiarityReason: axis?.familiarity_reason?.trim() || null,
+    ...authority,
+    alignmentLabel: alignment.alignmentLabel,
+    alignmentCaveat: alignment.alignmentCaveat,
+    maturityStatus: maturity.status,
+    maturityLabel: maturity.maturityLabel,
+    maturityReason: maturity.maturityReason,
+    ...scaling,
+    ...inputQuality,
+    diagnosticsLabel,
+    diagnosticsCaveat,
+    semanticRevision: context?.semantic_revision?.trim() || axis?.semantic_revision?.trim() || null,
     timeframe,
     summary,
-    accessibleLabel: `${badge.badgeLabel}: ${summary}. Advisory point-in-time market field; scanner rank influence is zero.`,
+    accessibleLabel: `${badge.badgeLabel}: ${summary}.${diagnosticsLabel ? ` ${diagnosticsLabel}.` : ""} ${authority.authorityLabel}. ${authority.advisoryEffectsLabel}.${
+      caveats.length > 0 ? ` ${caveats.join(" ")}` : ""
+    }`,
   };
 };
 

@@ -132,6 +132,7 @@ describe("MarketWeatherMethodologyReport", () => {
     fireEvent.click(screen.getByRole("button", { name: /From Swami heatmaps to a Market Field Language/i }));
 
     expect(screen.getByText("This response did not include a learned Form split.")).not.toBeNull();
+    expect(screen.getByText("Unknown")).not.toBeNull();
     expect(screen.getAllByText("Not supplied").length).toBeGreaterThan(0);
     expect(screen.getByText(/realized volatility not reported/i)).not.toBeNull();
   });

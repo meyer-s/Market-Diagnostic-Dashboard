@@ -1124,6 +1124,19 @@ def _market_data_for_symbol(provider: MarketDataProvider, symbol: str) -> Dict[s
 
 
 def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
+    field_context = build_option_field_context(
+        None,
+        option_type=None,
+        observed_at=datetime.utcnow(),
+        data_source=None,
+        timeframe="1D",
+        strategy_scope="single_leg",
+    )
+    field_quality = field_context.get("quality")
+    if isinstance(field_quality, dict):
+        warnings = list(field_quality.get("warnings") or [])
+        warnings.append("position_metrics_unavailable")
+        field_quality["warnings"] = list(dict.fromkeys(str(item) for item in warnings))
     payload: Dict[str, object] = {
         "market": {
             "current_price": None,
@@ -1158,27 +1171,7 @@ def _empty_position_metrics(error: Optional[str] = None) -> Dict[str, object]:
         "volatility_signal": _empty_volatility_signal(),
         "opportunity": None,
         "technical_snapshot": {},
-        "field_context": {
-            "schema_version": "option_market_field_v1",
-            "mode": "shadow_only",
-            "rank_influence": 0.0,
-            "available": False,
-            "quality": {
-                "available": False,
-                "status": "unavailable",
-                "warnings": ["Position metrics could not supply completed OHLCV bars."],
-            },
-            "classification": {
-                "path_state": "unavailable",
-                "eventfulness": "unavailable",
-            },
-            "hypotheses": {},
-            "direction": {
-                "option_aligned_pressure": None,
-                "option_aligned_velocity": None,
-            },
-            "signals": {"path_state": "unavailable"},
-        },
+        "field_context": field_context,
         "dte": None,
         "greeks": None,
         "pnl": {
@@ -1555,6 +1548,8 @@ def _compute_position_metrics(
     field_context = build_option_field_context(
         hist,
         option_type=position.option_type,
+        position_action=getattr(position, "action", None),
+        strategy_scope="single_leg",
         observed_at=_parse_market_timestamp(market.get("last_updated")),
         data_source=(
             str(market.get("data_source"))

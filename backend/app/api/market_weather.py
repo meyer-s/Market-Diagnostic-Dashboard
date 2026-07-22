@@ -109,6 +109,7 @@ def analyze_market_weather(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Market data could not be loaded: {exc}") from exc
 
+    analysis_bars = len(result["dates"])
     latest_close = float(result["price"][-1]["close"])
     quote_payload: dict[str, object] = {
         "price": latest_close,
@@ -144,6 +145,12 @@ def analyze_market_weather(
             strata = research.get("strata")
             if isinstance(strata, dict):
                 strata["series"] = strata.get("series", [])[start:]
+            structure_components = research.get("structure_components")
+            if isinstance(structure_components, dict):
+                structure_components["series"] = structure_components.get("series", [])[start:]
+            scaling_reference = research.get("scaling_reference")
+            if isinstance(scaling_reference, dict):
+                scaling_reference["series"] = scaling_reference.get("series", [])[start:]
             carriers = research.get("carriers")
             if isinstance(carriers, dict):
                 carriers["series"] = carriers.get("series", [])[start:]
@@ -184,6 +191,18 @@ def analyze_market_weather(
                 "description": "The context layer could not be built; the learned field remains valid and unchanged.",
                 "error": str(exc),
             }
+
+    history_context = result.get("history_context")
+    if isinstance(history_context, dict):
+        history_context.update(
+            {
+                "requested_visible_bars": bars,
+                "visible_bars": len(result["dates"]),
+                "analysis_bars": analysis_bars,
+                "warmup_buffer_requested": requested_bars - bars,
+                "warmup_buffer_received": max(0, analysis_bars - len(result["dates"])),
+            }
+        )
 
     result.update(
         {

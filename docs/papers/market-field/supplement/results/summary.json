@@ -4,13 +4,22 @@
       "figures/fig_causal_prefix_audit.png",
       "figures/fig_timeframe_phase_portraits.png",
       "figures/fig_resolution_convergence.png",
+      "figures/fig_sensitivity_audits.png",
       "figures/fig_spy_state_timeline.png"
     ],
+    "run_receipt": "results/run_receipt.json",
     "tables": [
       "results/dataset_profile.csv",
       "results/prefix_invariance.csv",
+      "results/prefix_invariance_full_precision.csv",
       "results/determinism.csv",
       "results/resolution_convergence.csv",
+      "results/resolution_comparison_counts.csv",
+      "results/history_truncation_sensitivity.csv",
+      "results/entropy_window_sensitivity.csv",
+      "results/maturity_contracts.csv",
+      "results/null_state_anchor.csv",
+      "results/option_snapshot_latency.csv",
       "results/timeframe_behavior.csv",
       "results/lexicon_diagnostics.csv",
       "results/lexicon_window_stability.csv",
@@ -32,11 +41,76 @@
     "max_unique_hashes": 1,
     "passes": 16
   },
-  "evaluation_version": "market_field_preliminary_v1",
+  "entropy_window_sensitivity": {
+    "median_correlations_vs_window24": [
+      {
+        "median_correlation_vs_window24": 0.45067381371254056,
+        "window_patterns": 8
+      },
+      {
+        "median_correlation_vs_window24": 0.630115079439542,
+        "window_patterns": 12
+      },
+      {
+        "median_correlation_vs_window24": 0.6057132895155354,
+        "window_patterns": 48
+      },
+      {
+        "median_correlation_vs_window24": 0.34165309930958365,
+        "window_patterns": 96
+      }
+    ],
+    "minimum_dataset_correlation_vs_window24": -0.013785125190672617,
+    "order": 3,
+    "possible_ordinal_patterns": 6,
+    "production_window_patterns": 24
+  },
+  "evaluation_version": "market_field_preliminary_v2",
+  "history_truncation": {
+    "comparison_tail_bars": 32,
+    "option_minimum_median_iqr_normalized_mae": 0.035421775918126557,
+    "option_minimum_p90_iqr_normalized_mae": 0.9313821764445408,
+    "option_minimum_window_bars": 96,
+    "window_summary": [
+      {
+        "input_window_bars": 60,
+        "median": 0.5009676620111578,
+        "p90": 2.008644872119695
+      },
+      {
+        "input_window_bars": 96,
+        "median": 0.035421775918126557,
+        "p90": 0.9313821764445408
+      },
+      {
+        "input_window_bars": 128,
+        "median": 0.005515255284227283,
+        "p90": 0.45684097535338375
+      },
+      {
+        "input_window_bars": 192,
+        "median": 0.0004062617654932609,
+        "p90": 0.11756459217626523
+      },
+      {
+        "input_window_bars": 256,
+        "median": 2.426959641800481e-05,
+        "p90": 0.03044065875240084
+      },
+      {
+        "input_window_bars": 365,
+        "median": 2.805001718416333e-07,
+        "p90": 0.0031523827622563457
+      }
+    ]
+  },
   "lexicon": {
     "archetype_count_max": 2,
     "archetype_count_min": 1,
     "daily_datasets": 7,
+    "distance_tail_supported_bars": 1823,
+    "distance_tail_unsupported_bars": 277,
+    "lower_calibration_tail_count": 317,
     "outside_range_rate_max_when_scored": 0.4266666666666667,
     "outside_range_rate_min_when_scored": 0.0,
     "reliable_next_state_count_total": 2,
@@ -52,14 +126,104 @@
       }
     ]
   },
+  "maturity_contracts": [
+    {
+      "bars_per_longest_horizon": 2.0,
+      "carrier_reference_span_bars": 96,
+      "computation_bars": 96,
+      "hidden_prefetch_bars": 0,
+      "longest_horizon_bars": 48,
+      "maturity_mask_emitted": false,
+      "meets_reference_span": true,
+      "note": "Accepted by the option wrapper; no explicit maturity mask is emitted.",
+      "path": "option_snapshot_minimum",
+      "post_longest_horizon_observations": 48,
+      "reference_span_coverage": 1.0,
+      "visible_bars": 96
+    },
+    {
+      "bars_per_longest_horizon": 3.25,
+      "carrier_reference_span_bars": 96,
+      "computation_bars": 156,
+      "hidden_prefetch_bars": 96,
+      "longest_horizon_bars": 48,
+      "maturity_mask_emitted": false,
+      "meets_reference_span": true,
+      "note": "The endpoint computes on the fetched warm-up plus visible bars, then trims the response.",
+      "path": "public_api_min_visible_60_h48",
+      "post_longest_horizon_observations": 108,
+      "reference_span_coverage": 1.0,
+      "visible_bars": 60
+    },
+    {
+      "bars_per_longest_horizon": 7.604166666666667,
+      "carrier_reference_span_bars": 96,
+      "computation_bars": 365,
+      "hidden_prefetch_bars": 0,
+      "longest_horizon_bars": 48,
+      "maturity_mask_emitted": false,
+      "meets_reference_span": true,
+      "note": "The paper's cached option-snapshot timing window.",
+      "path": "paper_compute_benchmark_365",
+      "post_longest_horizon_observations": 317,
+      "reference_span_coverage": 1.0,
+      "visible_bars": 365
+    }
+  ],
+  "null_state_anchor": {
+    "display_confidence": 0.6799999999999999,
+    "information": 0.0,
+    "interpretation": "Nonzero structure/confidence are formula anchors from coherence, not detected market organization.",
+    "pressure": 0.0,
+    "structure": 0.42
+  },
+  "option_snapshot_latency": {
+    "all_max_ms": 154.42180004902184,
+    "environment": {
+      "platform": "Windows-11-10.0.26200-SP0",
+      "process_model": "single process, sequential, imports already loaded",
+      "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+      "python": "3.13.14"
+    },
+    "exclusions": [
+      "data retrieval",
+      "persistence",
+      "concurrent load",
+      "fresh-process import time",
+      "network and production queueing"
+    ],
+    "first_measured_max_ms": 112.27249994408339,
+    "runs": 70,
+    "symbols": 7,
+    "warm_p50_ms": 108.26789995189756,
+    "warm_p95_ms": 110.96095000393689,
+    "warm_p99_ms": 131.37385801412174,
+    "warm_runs": 63
+  },
   "prefix_invariance": {
     "checks": 46,
     "max_abs_error": 0.0,
     "passes": 46,
     "tolerance": 0.0001
   },
+  "prefix_invariance_full_precision": {
+    "checks": 46,
+    "max_abs_error": 0.0,
+    "numeric_value_comparisons": 24472,
+    "passes": 46,
+    "scope": "Live field matrices plus aggregate derivatives, strata, carriers, and carrier ratios; response-only rounding bypassed.",
+    "tolerance": 1e-12
+  },
   "resolution": {
     "comparisons": 540,
+    "comparisons_by_step": {
+      "1": 180,
+      "2": 180,
+      "4": 180,
+      "8": 180
+    },
+    "nonreference_comparisons": 540,
+    "reference_comparisons": 180,
     "step4_median_correlation": 0.940469363991026,
     "step4_median_iqr_normalized_mae": 0.20335284765628248,
     "step4_p95_iqr_normalized_mae": 0.4283581201844823,
@@ -70,7 +234,7 @@
       "iqr_normalized_mae": 0.7304672559442248
     }
   },
-  "runtime_seconds": 23.51795990008395,
+  "runtime_seconds": 50.610163099947385,
   "shadow_boundary": {
     "alignment_sign_flip_holds": true,
     "as_of_bar": "2026-07-21",

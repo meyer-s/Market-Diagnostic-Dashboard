@@ -257,14 +257,13 @@ def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> Non
         "field_context": field_context,
     }
 
-    result = build_assessment_payload(
-        position=position,
-        metrics=metrics,
-        mandate=_mandate(),
-        latest_review=None,
-        portfolio_positions=[position, offsetting_position],
-        risk_policy=_policy(),
-        projection_payload={
+    assessment_kwargs = {
+        "position": position,
+        "mandate": _mandate(),
+        "latest_review": None,
+        "portfolio_positions": [position, offsetting_position],
+        "risk_policy": _policy(),
+        "projection_payload": {
             "projections": {"3M": {"direction": "bullish", "conviction": "medium"}},
             "fundamentals": {
                 "revenue_yoy": {
@@ -281,9 +280,25 @@ def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> Non
                 },
             },
         },
-        as_of=datetime(2026, 7, 15, 16, 0),
+        "as_of": datetime(2026, 7, 15, 16, 0),
+    }
+    baseline_metrics = dict(metrics)
+    baseline_metrics.pop("field_context")
+    baseline = build_assessment_payload(metrics=baseline_metrics, **assessment_kwargs)
+    result = build_assessment_payload(
+        metrics=metrics,
+        **assessment_kwargs,
     )
 
+    for immutable_field in (
+        "company_thesis_status",
+        "contract_status",
+        "portfolio_fit_status",
+        "proposed_verdict",
+        "proposed_target_contracts",
+    ):
+        assert result[immutable_field] == baseline[immutable_field]
+    assert result["vetoes"] == baseline["vetoes"]
     assert result["proposed_verdict"] == "hold"
     assert result["proposed_target_contracts"] == position.contracts
     assert not any(item["code"].startswith("market_field") for item in result["vetoes"])
@@ -294,6 +309,19 @@ def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> Non
     assert result["input_snapshot"]["field_context"] == field_context
     assert result["axis_results"]["market_structure"]["status"] == "contradictory"
     assert result["axis_results"]["market_structure"]["familiarity"] == "not_scored"
+    assert result["axis_results"]["market_structure"]["authority"]["manager_verdict"] == "none"
+    assert result["axis_results"]["market_structure"]["authority"]["review_priority"] == "advisory"
+    assert result["market_field_effects"] == {
+        "confidence": {"before": "high", "after": "medium", "changed": True},
+        "urgency": {"before": "low", "after": "high", "changed": True},
+        "review_window_recomputed_from_advisory_urgency": True,
+        "rank_changed": False,
+        "veto_changed": False,
+        "verdict_changed": False,
+        "target_size_changed": False,
+        "execution_authority": "none",
+    }
     field_evidence = next(item for item in result["evidence"] if item["evidence_id"] == "market_field_path")
     assert field_evidence["advisory"] is True
     assert field_evidence["rank_influence"] == 0.0
+    assert field_evidence["authority"]["target_size"] == "none"

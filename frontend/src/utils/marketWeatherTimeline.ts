@@ -33,8 +33,8 @@ export interface MarketStateTimelinePoint {
   trendGap20Pct: number | null;
   return5BarPct: number | null;
   priceActionState: string | null;
-  distanceTailScore: number | null;
-  outsideLearnedRange: boolean | null;
+  calibrationDistanceTailRank: number | null;
+  inExtremeCalibrationTail: boolean | null;
   stateId: string | null;
   directionalPhase: MarketDirectionalPhase;
 }
@@ -45,7 +45,7 @@ export interface MarketDirectionalPhaseRun {
   start: string;
   end: string;
   duration: number;
-  outsideLearnedRange: boolean;
+  inExtremeCalibrationTail: boolean;
 }
 
 export interface MarketLearnedFormRun {
@@ -112,8 +112,11 @@ export function buildMarketStateTimeline(
       trendGap20Pct: finite(priceAction?.trend_gap20_pct),
       return5BarPct: finite(priceAction?.return_5bar_pct),
       priceActionState: priceAction?.state ?? null,
-      distanceTailScore: finite(state?.distance_tail_score),
-      outsideLearnedRange: state?.outside_learned_range ?? null,
+      calibrationDistanceTailRank: finite(
+        state?.calibration_distance_tail_rank ?? state?.distance_tail_score,
+      ),
+      inExtremeCalibrationTail:
+        state?.in_extreme_calibration_distance_tail ?? state?.outside_learned_range ?? null,
       stateId: state?.state_id ?? null,
       directionalPhase: marketDirectionalPhase(pressure, pressureChange),
     };
@@ -133,11 +136,11 @@ export function buildDirectionalPhaseRuns(
   const runs: MarketDirectionalPhaseRun[] = [];
   points.forEach((point) => {
     const previous = runs[runs.length - 1];
-    const outsideLearnedRange = point.outsideLearnedRange === true;
+    const inExtremeCalibrationTail = point.inExtremeCalibrationTail === true;
     if (
       previous
       && previous.phase === point.directionalPhase
-      && previous.outsideLearnedRange === outsideLearnedRange
+      && previous.inExtremeCalibrationTail === inExtremeCalibrationTail
     ) {
       previous.end = point.date;
       previous.duration += 1;
@@ -149,7 +152,7 @@ export function buildDirectionalPhaseRuns(
       start: point.date,
       end: point.date,
       duration: 1,
-      outsideLearnedRange,
+      inExtremeCalibrationTail,
     });
   });
   return runs;

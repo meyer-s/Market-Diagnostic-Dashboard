@@ -126,6 +126,7 @@ def _compact_market_field(value: object) -> Optional[dict[str, object]]:
         for key in (
             "schema_version",
             "model_version",
+            "semantic_revision",
             "mode",
             "computed_at",
             "observed_at",
@@ -136,8 +137,14 @@ def _compact_market_field(value: object) -> Optional[dict[str, object]]:
             "completed_bars",
             "excluded_incomplete_bars",
             "quality",
+            "input_quality",
+            "maturity",
+            "alignment",
+            "authority",
             "direction",
             "strata",
+            "structure_components",
+            "scaling_reference",
             "carriers",
             "price_action",
             "hypotheses",
@@ -145,6 +152,7 @@ def _compact_market_field(value: object) -> Optional[dict[str, object]]:
             "signals",
             "shadow_only",
             "rank_influence",
+            "automated_execution_enabled",
         )
         if key in value
     }
@@ -201,6 +209,23 @@ def _position_entry_market_field(
 
 def _market_field_cohort(value: Optional[dict[str, object]]) -> str:
     if not isinstance(value, dict):
+        return "unavailable"
+    # Cohort comparisons deliberately exclude legacy and immature snapshots so
+    # the old 60-bar contract cannot be pooled with the v1.1 96-bar contract.
+    if str(value.get("semantic_revision") or "") != "1.1":
+        return "unavailable"
+    quality = value.get("quality")
+    maturity = value.get("maturity")
+    alignment = value.get("alignment")
+    if not isinstance(quality, dict) or not quality.get("available"):
+        return "unavailable"
+    if (
+        not isinstance(maturity, dict)
+        or maturity.get("status") != "complete"
+        or not maturity.get("warmup_complete")
+    ):
+        return "unavailable"
+    if not isinstance(alignment, dict) or not alignment.get("supported"):
         return "unavailable"
     classification = value.get("classification")
     if not isinstance(classification, dict):
@@ -992,6 +1017,12 @@ def learning_summary(db: Session) -> dict[str, object]:
             "cohorts": field_outcomes,
             "actual_closed_trades_only": True,
             "point_in_time_snapshot_required": True,
+            "eligibility_contract": {
+                "semantic_revision": "1.1",
+                "maturity_status": "complete",
+                "directional_alignment_required": True,
+                "legacy_or_immature_bucket": "unavailable",
+            },
             "minimum_sample_before_comparison": 20,
             "rank_influence": 0.0,
             "automatic_weight_changes": False,

@@ -1036,6 +1036,8 @@ def run_options_alert_scan() -> dict:
                 field_context = build_option_field_context(
                     hist,
                     option_type=contract_side,
+                    position_action="buy_to_open",
+                    strategy_scope="single_leg",
                     observed_at=event_time,
                     data_source=_provider_source(provider, "daily_bars"),
                     timeframe="1D",

@@ -12,9 +12,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import platform
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +49,28 @@ START_DATE = "2018-01-01"
 END_DATE_EXCLUSIVE = "2026-07-22"
 AS_OF_DATE = "2026-07-21"
 SYMBOLS = ("SPY", "QQQ", "IWM", "TLT", "GLD", "USO", "VNQ", "BTC-USD")
+PRIMARY_SOURCE_PATHS = (
+    Path("backend/app/services/market_weather.py"),
+    Path("backend/app/services/market_weather_research.py"),
+    Path("backend/app/services/market_weather_context.py"),
+    Path("backend/app/services/option_field_context.py"),
+    Path("docs/papers/market-field/scripts/generate_assets.py"),
+)
+PRIMARY_ARTIFACT_PATHS = (
+    Path("docs/papers/market-field/results/asset_summary.csv"),
+    Path("docs/papers/market-field/results/validation_summary.json"),
+    Path("docs/papers/market-field/results/build_receipt.json"),
+    Path("docs/papers/market-field/tables/asset_summary.tex"),
+    Path("docs/papers/market-field/tables/validation_summary.tex"),
+    Path("docs/papers/market-field/figures/system_overview.pdf"),
+    Path("docs/papers/market-field/figures/system_overview.png"),
+    Path("docs/papers/market-field/figures/spy_field_phase.pdf"),
+    Path("docs/papers/market-field/figures/spy_field_phase.png"),
+    Path("docs/papers/market-field/figures/synthetic_diagnostics.pdf"),
+    Path("docs/papers/market-field/figures/synthetic_diagnostics.png"),
+    Path("docs/papers/market-field/figures/calibration_rates.pdf"),
+    Path("docs/papers/market-field/figures/calibration_rates.png"),
+)
 PREFIX_CHANNELS = (
     "pressure",
     "velocity",
@@ -93,6 +118,91 @@ def _write_json(path: Path, payload: object) -> None:
         json.dumps(payload, indent=2, sort_keys=True, default=_json_default) + "\n",
         encoding="utf-8",
     )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _canonical_json_sha256(payload: object) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=_json_default,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _git_worktree_state() -> dict[str, object]:
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    porcelain = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    status_paths = [
+        {"status": line[:2], "path": line[3:]}
+        for line in porcelain
+        if len(line) >= 4
+    ]
+    return {
+        "head": head,
+        "dirty": bool(status_paths),
+        "status_paths": status_paths,
+    }
+
+
+def _dependency_versions() -> dict[str, str]:
+    packages = ("matplotlib", "numpy", "pandas", "scipy", "yfinance")
+    versions: dict[str, str] = {}
+    for package in packages:
+        try:
+            versions[package] = version(package)
+        except PackageNotFoundError:
+            versions[package] = "not-installed"
+    return versions
+
+
+def _primary_run_core(started_at_utc: str) -> dict[str, object]:
+    missing = [str(path) for path in PRIMARY_SOURCE_PATHS if not (REPO_ROOT / path).is_file()]
+    if missing:
+        raise RuntimeError(f"Primary provenance sources are missing: {missing}")
+    return {
+        "schema_version": "market_field_primary_run_receipt_v1",
+        "started_at_utc": started_at_utc,
+        "git": _git_worktree_state(),
+        "backend_sources_sha256": {
+            path.as_posix(): _sha256_file(REPO_ROOT / path)
+            for path in PRIMARY_SOURCE_PATHS[:-1]
+        },
+        "generator": {
+            "path": PRIMARY_SOURCE_PATHS[-1].as_posix(),
+            "sha256": _sha256_file(REPO_ROOT / PRIMARY_SOURCE_PATHS[-1]),
+        },
+        "runtime": {
+            "python": platform.python_version(),
+            "python_implementation": platform.python_implementation(),
+            "platform": platform.platform(),
+            "dependencies": _dependency_versions(),
+        },
+    }
 
 
 def _history_hash(frame: pd.DataFrame) -> str:
@@ -234,10 +344,17 @@ def _analyze_assets(
     prefix_max_abs_difference = 0.0
     deterministic_matches = 0
     deterministic_hashes: dict[str, str] = {}
+    input_rows_received = 0
+    input_rows_used = 0
+    input_price_rows_dropped = 0
 
     for symbol, history in histories.items():
         full = build_market_weather(history)
         fields[symbol] = full
+        input_quality = full["input_quality"]
+        input_rows_received += int(input_quality["rows_received"])
+        input_rows_used += int(input_quality["rows_used"])
+        input_price_rows_dropped += int(input_quality["rows_received"]) - int(input_quality["rows_used"])
         lexicon = full["research"]["lexicon"]
         repeated = build_market_weather(history)["research"]["lexicon"]
         first_hash = _lexicon_hash(lexicon)
@@ -256,9 +373,9 @@ def _analyze_assets(
         rows.append(
             {
                 "symbol": symbol,
-                "bars": len(history),
-                "start": history.index[0].date().isoformat(),
-                "end": history.index[-1].date().isoformat(),
+                "bars": len(full["dates"]),
+                "start": pd.Timestamp(full["dates"][0]).date().isoformat(),
+                "end": pd.Timestamp(full["dates"][-1]).date().isoformat(),
                 "forms": int(training["archetype_count"]),
                 "fit_silhouette": float(training["fit_mean_silhouette"]),
                 "evaluation_bars": len(evaluation),
@@ -275,6 +392,7 @@ def _analyze_assets(
             history,
             include_retrospective_research=False,
         )
+        full_date_indexes = {date: index for index, date in enumerate(live_full["dates"])}
         cuts = sorted(
             {
                 max(120, len(history) // 3),
@@ -288,8 +406,10 @@ def _analyze_assets(
                 history.iloc[:cut],
                 include_retrospective_research=False,
             )
+            prefix_endpoint = prefix["dates"][-1]
+            full_endpoint_index = full_date_indexes[prefix_endpoint]
             for channel_name in PREFIX_CHANNELS:
-                full_values = np.asarray(live_full["channels"][channel_name], dtype=float)[:, cut - 1]
+                full_values = np.asarray(live_full["channels"][channel_name], dtype=float)[:, full_endpoint_index]
                 prefix_values = np.asarray(prefix["channels"][channel_name], dtype=float)[:, -1]
                 differences = np.abs(full_values - prefix_values)
                 prefix_comparisons += int(differences.size)
@@ -322,6 +442,13 @@ def _analyze_assets(
             "pooled_outside_range_rate": outside_total / supported_total if supported_total else None,
             "cutoff": 0.05,
             "coverage_guarantee": False,
+            "asset_rate_min": float(summary_frame["outside_range_rate"].min()),
+            "asset_rate_max": float(summary_frame["outside_range_rate"].max()),
+        },
+        "input_quality": {
+            "rows_received": input_rows_received,
+            "rows_used": input_rows_used,
+            "price_rows_dropped": input_price_rows_dropped,
         },
         "codebook_gate": {
             "nontrivial_codebooks": int((summary_frame["forms"] > 1).sum()),
@@ -607,7 +734,7 @@ def _plot_synthetic_diagnostics(payload: dict[str, Any]) -> None:
     comparison_axis.legend(frameon=False, fontsize=7, loc="upper right")
     _style_axes(comparison_axis)
 
-    figure.suptitle("Synthetic diagnostics isolate causal scale propagation and state separation", x=0.01, ha="left", fontsize=11, color=INK, weight="bold")
+    figure.suptitle("Synthetic diagnostics isolate scale propagation and state separation", x=0.01, ha="left", fontsize=11, color=INK, weight="bold")
     figure.text(
         0.01,
         -0.01,
@@ -634,7 +761,7 @@ def _plot_calibration_rates(asset_summary: pd.DataFrame) -> None:
             color=INK,
         )
     axis.set_xlim(0, max(12.0, float(values.max()) + 2.4))
-    axis.set_xlabel("Evaluation bars outside learned range (%)", fontsize=8, color=MUTED)
+    axis.set_xlabel("Evaluation bars in the upper calibration-distance tail (%)", fontsize=8, color=MUTED)
     axis.set_title("State-conditional distance-tail diagnostics by asset", loc="left", fontsize=11, color=INK, weight="bold")
     axis.legend(frameon=False, fontsize=7, loc="lower right")
     _style_axes(axis, grid_axis="x")
@@ -695,10 +822,10 @@ def _write_validation_table(
         r"Fixed inputs yield byte-identical versioned lexicons. \\",
         f"Synthetic propagation & $\\rho={synthetic['horizon_delay_spearman_rho']:.3f}$ & "
         r"Longer horizons cross the reversal threshold later by construction. \\",
-        f"Distance-tail diagnostic & {100.0 * tail['pooled_outside_range_rate']:.1f}\\% pooled & "
-        r"Near the 5\% cutoff in aggregate, but heterogeneous and non-exchangeable. \\",
+        f"Distance-tail diagnostic & {100.0 * tail['asset_rate_min']:.1f}--{100.0 * tail['asset_rate_max']:.1f}\\% by asset & "
+        r"State-conditional empirical ranks are heterogeneous and non-exchangeable. \\",
         f"Codebook support gate & {codebook['nontrivial_codebooks']}/{codebook['symbols']} multi-Form & "
-        r"Weak separation falls back to one Form instead of inventing states. \\",
+        r"Multi-Form solutions appear only when the declared metric, support, and silhouette gates pass. \\",
         f"Compact snapshot & {benchmark['median_ms']:.1f} ms median; {benchmark['median_payload_bytes']:,} bytes & "
         r"Local compute-only benchmark; ranking and execution remain disabled. \\",
         r"\bottomrule",
@@ -708,10 +835,17 @@ def _write_validation_table(
 
 
 def main() -> None:
+    started_at_utc = _utc_now()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--refresh", action="store_true", help="Ignore local raw-data cache.")
     parser.add_argument("--offline", action="store_true", help="Require local cached market data.")
     args = parser.parse_args()
+    run_core = _primary_run_core(started_at_utc)
+    run_core["invocation"] = {
+        "offline": bool(args.offline),
+        "refresh": bool(args.refresh),
+    }
+    provenance_core_sha256 = _canonical_json_sha256(run_core)
 
     for directory in ("cache", "figures", "results", "tables"):
         (PAPER_ROOT / directory).mkdir(parents=True, exist_ok=True)
@@ -765,8 +899,35 @@ def main() -> None:
         "prefix_comparisons": validation["prefix_invariance"]["serialized_value_comparisons"],
         "figures": sorted(path.name for path in (PAPER_ROOT / "figures").glob("*.pdf")),
         "tables": sorted(path.name for path in (PAPER_ROOT / "tables").glob("*.tex")),
+        "primary_run_receipt": "primary_run_receipt.json",
+        "provenance_core_sha256": provenance_core_sha256,
     }
     _write_json(PAPER_ROOT / "results" / "build_receipt.json", receipt)
+
+    missing_artifacts = [
+        path.as_posix()
+        for path in PRIMARY_ARTIFACT_PATHS
+        if not (REPO_ROOT / path).is_file()
+    ]
+    if missing_artifacts:
+        raise RuntimeError(f"Primary generated artifacts are missing: {missing_artifacts}")
+    artifact_hashes = {
+        path.as_posix(): _sha256_file(REPO_ROOT / path)
+        for path in PRIMARY_ARTIFACT_PATHS
+    }
+    primary_run_receipt = {
+        **run_core,
+        "ended_at_utc": _utc_now(),
+        "provenance_core_sha256": provenance_core_sha256,
+        "artifacts": {
+            "count": len(artifact_hashes),
+            "sha256": artifact_hashes,
+        },
+    }
+    _write_json(
+        PAPER_ROOT / "results" / "primary_run_receipt.json",
+        primary_run_receipt,
+    )
     print(json.dumps(receipt, indent=2))
 
 

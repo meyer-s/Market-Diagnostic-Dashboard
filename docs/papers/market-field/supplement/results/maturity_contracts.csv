@@ -1,0 +1,4 @@
+path,visible_bars,hidden_prefetch_bars,computation_bars,note,longest_horizon_bars,carrier_reference_span_bars,bars_per_longest_horizon,reference_span_coverage,post_longest_horizon_observations,meets_reference_span,maturity_mask_emitted
+option_snapshot_minimum,96,0,96,Accepted by the option wrapper; no explicit maturity mask is emitted.,48,96,2.0,1.0,48,True,False
+public_api_min_visible_60_h48,60,96,156,"The endpoint computes on the fetched warm-up plus visible bars, then trims the response.",48,96,3.25,1.0,108,True,False
+paper_compute_benchmark_365,365,0,365,The paper's cached option-snapshot timing window.,48,96,7.604166666666667,1.0,317,True,False

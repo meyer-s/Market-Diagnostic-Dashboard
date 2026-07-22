@@ -39,6 +39,7 @@ import {
   presentScannerPositionMatch,
   type OptionMarketFieldAxisResult,
   type OptionMarketFieldContext,
+  type OptionMarketFieldEffectsApplied,
   type ScannerPositionMatch,
   type ScannerPositionMatchTone,
 } from "../utils/scannerPositionMatch";
@@ -356,6 +357,7 @@ interface PositionThesisAssessment {
   quality: string;
   urgency: string;
   confidence: string;
+  market_field_effects?: OptionMarketFieldEffectsApplied | null;
   continuation_condition: string | null;
   next_review_date: string | null;
   decision_deadline: string | null;
@@ -1470,8 +1472,18 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
             >
               {marketField.badgeLabel}
             </span>
-            {[marketField.directionLabel, marketField.structureLabel, marketField.boundaryLabel].filter(Boolean).map((label) => (
-              <span key={label} className="rounded-full border border-stealth-700 bg-stealth-900/70 px-1.5 py-0.5 text-[9px] text-stealth-300">
+            {[
+              marketField.directionLabel,
+              marketField.trendAgreementLabel,
+              marketField.boundaryLabel,
+              marketField.alignmentLabel,
+              marketField.maturityLabel,
+            ].filter((label): label is string => Boolean(label)).map((label) => (
+              <span
+                key={label}
+                title={label === marketField.alignmentLabel ? marketField.alignmentCaveat || undefined : label === marketField.maturityLabel ? marketField.maturityReason || undefined : undefined}
+                className="rounded-full border border-stealth-700 bg-stealth-900/70 px-1.5 py-0.5 text-[9px] text-stealth-300"
+              >
                 {label}
               </span>
             ))}
@@ -1486,12 +1498,23 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
             <span>{marketField.pathStateLabel}</span>
             <span>IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}</span>
             <span>{marketField.timeframe} · as of {opportunity.field_context?.as_of_bar || "recorded bar"}</span>
-            <span>Advisory · rank influence {formatNumber(opportunity.field_context?.rank_influence, 1)}</span>
+            <span>{marketField.authorityLabel}</span>
+            <span>{marketField.advisoryEffectsLabel}</span>
           </div>
+          {marketField.authorityCaveat || marketField.alignmentCaveat || marketField.maturityLabel || marketField.diagnosticsCaveat ? (
+            <div className="mt-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[9px] leading-relaxed text-amber-100/80">
+              {[marketField.authorityCaveat, marketField.alignmentCaveat, marketField.maturityLabel ? marketField.maturityReason : null, marketField.diagnosticsCaveat]
+                .filter((value): value is string => Boolean(value))
+                .join(" ")}
+            </div>
+          ) : null}
           <details className="mt-1.5 border-t border-stealth-800/80 pt-1.5">
             <summary className="cursor-pointer text-[9px] font-semibold text-stealth-400">
-              Raw causal field snapshot
+              Field diagnostics{marketField.diagnosticsLabel ? ` · ${marketField.diagnosticsLabel}` : ""}
             </summary>
+            {marketField.diagnosticsCaveat ? (
+              <p className="mt-1.5 text-[9px] leading-relaxed text-amber-100/80">{marketField.diagnosticsCaveat}</p>
+            ) : null}
             <pre className="mt-1.5 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-stealth-950/80 p-2 text-[9px] leading-relaxed text-stealth-400">
               {JSON.stringify(opportunity.field_context, null, 2)}
             </pre>
@@ -4525,7 +4548,11 @@ export default function SecretOptions() {
   const selectedThesisAssessment = selected ? thesisAssessmentsByPosition[selected.position.id] ?? null : null;
   const selectedMarketFieldContext = selectedThesisAssessment?.assessment.input_snapshot?.field_context ?? null;
   const selectedMarketFieldAxis = selectedThesisAssessment?.assessment.axis_results?.market_structure ?? null;
-  const selectedMarketField = presentOptionMarketField(selectedMarketFieldContext, selectedMarketFieldAxis);
+  const selectedMarketField = presentOptionMarketField(
+    selectedMarketFieldContext,
+    selectedMarketFieldAxis,
+    selectedThesisAssessment?.assessment.market_field_effects
+  );
   const selectedMarketFieldPath = selectedSymbol && selectedMarketField
     ? marketFieldPath(selectedSymbol, selectedMarketField.timeframe)
     : null;
@@ -4540,7 +4567,8 @@ export default function SecretOptions() {
         assessment,
         field: presentOptionMarketField(
           assessment.input_snapshot?.field_context,
-          assessment.axis_results?.market_structure
+          assessment.axis_results?.market_structure,
+          assessment.market_field_effects
         ),
       }))
       .filter((point): point is { assessment: PositionThesisAssessment; field: NonNullable<ReturnType<typeof presentOptionMarketField>> } => Boolean(point.field))
@@ -4801,7 +4829,8 @@ export default function SecretOptions() {
     const assessment = assessmentResponse?.assessment ?? null;
     const marketField = presentOptionMarketField(
       assessment?.input_snapshot?.field_context,
-      assessment?.axis_results?.market_structure
+      assessment?.axis_results?.market_structure,
+      assessment?.market_field_effects
     );
     const mobileMarketFieldPath = marketField ? marketFieldPath(position.symbol, marketField.timeframe) : null;
     const reviews = selectedId === position.id ? selectedDecisionReviews : null;
@@ -4840,18 +4869,43 @@ export default function SecretOptions() {
                   <span className={`rounded border px-1.5 py-0.5 font-semibold ${scannerPositionMatchBadgeClass[marketField.tone]}`}>
                     {marketField.badgeLabel}
                   </span>
-                  {[marketField.directionLabel, marketField.structureLabel, marketField.boundaryLabel, marketField.familiarityLabel]
+                  {[
+                    marketField.directionLabel,
+                    marketField.trendAgreementLabel,
+                    marketField.boundaryLabel,
+                    marketField.familiarityLabel,
+                    marketField.alignmentLabel,
+                    marketField.maturityLabel,
+                  ]
                     .filter((label): label is string => Boolean(label))
                     .map((label) => (
                       <span
                         key={label}
-                        title={label === marketField.familiarityLabel ? marketField.familiarityReason || undefined : undefined}
+                        title={label === marketField.familiarityLabel ? marketField.familiarityReason || undefined : label === marketField.alignmentLabel ? marketField.alignmentCaveat || undefined : label === marketField.maturityLabel ? marketField.maturityReason || undefined : undefined}
                         className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300"
                       >
                         {label}
                       </span>
                     ))}
                 </div>
+              ) : null}
+              {marketField ? (
+                <div className="mt-1 text-[9px] leading-relaxed text-stealth-500">
+                  {marketField.authorityLabel} · {marketField.advisoryEffectsLabel}
+                </div>
+              ) : null}
+              {marketField?.authorityCaveat || marketField?.alignmentCaveat || marketField?.maturityLabel || marketField?.diagnosticsCaveat ? (
+                <div className="mt-1 text-[9px] leading-relaxed text-amber-200/80">
+                  {[marketField.authorityCaveat, marketField.alignmentCaveat, marketField.maturityLabel ? marketField.maturityReason : null, marketField.diagnosticsCaveat]
+                    .filter((value): value is string => Boolean(value))
+                    .join(" ")}
+                </div>
+              ) : null}
+              {marketField?.diagnosticsLabel ? (
+                <details className="mt-1 text-[9px] text-stealth-500">
+                  <summary className="cursor-pointer font-semibold text-stealth-400">Field diagnostics</summary>
+                  <p className="mt-1 leading-relaxed">{marketField.diagnosticsLabel}</p>
+                </details>
               ) : null}
             </div>
             <button type="button" onClick={() => toggleMobilePositionDetails(position)} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-stealth-700 text-stealth-300" aria-label={`Collapse ${position.symbol} details`}>
@@ -6065,13 +6119,15 @@ export default function SecretOptions() {
                 </span>
                 {[
                   selectedMarketField.directionLabel,
-                  selectedMarketField.structureLabel,
+                  selectedMarketField.trendAgreementLabel,
                   selectedMarketField.boundaryLabel,
                   selectedMarketField.familiarityLabel,
+                  selectedMarketField.alignmentLabel,
+                  selectedMarketField.maturityLabel,
                 ].filter((label): label is string => Boolean(label)).map((label) => (
                   <span
                     key={label}
-                    title={label === selectedMarketField.familiarityLabel ? selectedMarketField.familiarityReason || undefined : undefined}
+                    title={label === selectedMarketField.familiarityLabel ? selectedMarketField.familiarityReason || undefined : label === selectedMarketField.alignmentLabel ? selectedMarketField.alignmentCaveat || undefined : label === selectedMarketField.maturityLabel ? selectedMarketField.maturityReason || undefined : undefined}
                     className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300"
                   >
                     {label}
@@ -6084,6 +6140,22 @@ export default function SecretOptions() {
                   >
                     Open Market Field
                   </Link>
+                ) : null}
+                <span className="basis-full text-[8px] leading-relaxed text-stealth-500">
+                  {selectedMarketField.authorityLabel} · {selectedMarketField.advisoryEffectsLabel}
+                </span>
+                {selectedMarketField.authorityCaveat || selectedMarketField.alignmentCaveat || selectedMarketField.maturityLabel || selectedMarketField.diagnosticsCaveat ? (
+                  <span className="basis-full text-[8px] leading-relaxed text-amber-200/80">
+                    {[selectedMarketField.authorityCaveat, selectedMarketField.alignmentCaveat, selectedMarketField.maturityLabel ? selectedMarketField.maturityReason : null, selectedMarketField.diagnosticsCaveat]
+                      .filter((value): value is string => Boolean(value))
+                      .join(" ")}
+                  </span>
+                ) : null}
+                {selectedMarketField.diagnosticsLabel ? (
+                  <details className="basis-full text-[8px] text-stealth-500">
+                    <summary className="cursor-pointer font-semibold text-stealth-400">Field diagnostics</summary>
+                    <span className="mt-0.5 block leading-relaxed">{selectedMarketField.diagnosticsLabel}</span>
+                  </details>
                 ) : null}
               </div>
             ) : null}

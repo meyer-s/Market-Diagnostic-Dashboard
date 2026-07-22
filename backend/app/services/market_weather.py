@@ -10,6 +10,10 @@ from app.services.market_weather_research import build_market_weather_research
 
 
 EPSILON = 1e-9
+MARKET_WEATHER_SEMANTIC_REVISION = "1.1"
+MARKET_WEATHER_MINIMUM_BARS = 60
+OHLC_BOUNDARY_RTOL = 1e-12
+OHLC_BOUNDARY_ATOL = 1e-12
 
 
 @dataclass(frozen=True)
@@ -119,29 +123,188 @@ def _swami_mode(price: np.ndarray, horizon: int) -> np.ndarray:
     return np.clip(mode.fillna(0.0).to_numpy(dtype=float), -2.0, 2.0)
 
 
-def _normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
+def _empty_history_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
+
+def normalize_market_history(
+    frame: pd.DataFrame | None,
+    *,
+    minimum_bars: int = MARKET_WEATHER_MINIMUM_BARS,
+    allow_empty: bool = False,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Normalize OHLCV history and report every rejected input row.
+
+    Price rows must be finite, strictly positive, and internally consistent.
+    Invalid volume does not discard an otherwise valid price observation; it is
+    made unavailable for the volume-dependent carriers and reported instead.
+    """
+    rows_received = 0 if frame is None else len(frame)
     if frame is None or frame.empty:
-        raise ValueError("No daily price history was returned.")
+        if not allow_empty:
+            raise ValueError("No daily price history was returned.")
+        return _empty_history_frame(), {
+            "status": "invalid",
+            "rows_received": rows_received,
+            "rows_used": 0,
+            "dropped": {
+                "bad_timestamp": 0,
+                "nonfinite_ohlc": 0,
+                "nonpositive_ohlc": 0,
+                "inconsistent_ohlc": 0,
+                "duplicate_timestamp": 0,
+            },
+            "volume": {
+                "available": False,
+                "carrier_usable": False,
+                "available_observations": 0,
+                "positive_observations": 0,
+                "coverage": 0.0,
+                "invalid_observations": 0,
+            },
+            "warnings": ["no_price_history"],
+        }
     column_lookup = {str(column).lower(): column for column in frame.columns}
     required = ("open", "high", "low", "close")
     missing = [column for column in required if column not in column_lookup]
     if missing:
-        raise ValueError(f"Daily history is missing required columns: {', '.join(missing)}")
+        if not allow_empty:
+            raise ValueError(f"Daily history is missing required columns: {', '.join(missing)}")
+        return _empty_history_frame(), {
+            "status": "invalid",
+            "rows_received": rows_received,
+            "rows_used": 0,
+            "dropped": {
+                "bad_timestamp": 0,
+                "nonfinite_ohlc": rows_received,
+                "nonpositive_ohlc": 0,
+                "inconsistent_ohlc": 0,
+                "duplicate_timestamp": 0,
+            },
+            "volume": {
+                "available": False,
+                "carrier_usable": False,
+                "available_observations": 0,
+                "positive_observations": 0,
+                "coverage": 0.0,
+                "invalid_observations": rows_received,
+            },
+            "warnings": [f"missing_ohlc_columns:{','.join(missing)}"],
+        }
 
     normalized = pd.DataFrame(index=pd.to_datetime(frame.index, errors="coerce"))
     for name in required:
         normalized[name] = pd.to_numeric(frame[column_lookup[name]], errors="coerce").to_numpy()
     volume_column = column_lookup.get("volume")
-    normalized["volume"] = (
-        pd.to_numeric(frame[volume_column], errors="coerce").fillna(0.0).to_numpy()
+    raw_volume = (
+        pd.to_numeric(frame[volume_column], errors="coerce").to_numpy(dtype=float)
         if volume_column is not None
-        else 0.0
+        else np.full(rows_received, np.nan, dtype=float)
     )
-    normalized = normalized[normalized.index.notna()]
-    normalized = normalized.dropna(subset=["open", "high", "low", "close"])
+    normalized["volume"] = raw_volume
+
+    ohlc = normalized[list(required)].to_numpy(dtype=float)
+    valid_timestamp = np.asarray(normalized.index.notna(), dtype=bool)
+    finite_ohlc = np.all(np.isfinite(ohlc), axis=1)
+    positive_ohlc = np.all(ohlc > 0.0, axis=1)
+    open_values, high_values, low_values, close_values = (ohlc[:, index] for index in range(4))
+    close_enough = {
+        "high_low": np.isclose(
+            high_values,
+            low_values,
+            rtol=OHLC_BOUNDARY_RTOL,
+            atol=OHLC_BOUNDARY_ATOL,
+        ),
+        "high_open": np.isclose(
+            high_values,
+            open_values,
+            rtol=OHLC_BOUNDARY_RTOL,
+            atol=OHLC_BOUNDARY_ATOL,
+        ),
+        "high_close": np.isclose(
+            high_values,
+            close_values,
+            rtol=OHLC_BOUNDARY_RTOL,
+            atol=OHLC_BOUNDARY_ATOL,
+        ),
+        "low_open": np.isclose(
+            low_values,
+            open_values,
+            rtol=OHLC_BOUNDARY_RTOL,
+            atol=OHLC_BOUNDARY_ATOL,
+        ),
+        "low_close": np.isclose(
+            low_values,
+            close_values,
+            rtol=OHLC_BOUNDARY_RTOL,
+            atol=OHLC_BOUNDARY_ATOL,
+        ),
+    }
+    consistent_ohlc = (
+        ((high_values >= low_values) | close_enough["high_low"])
+        & ((high_values >= open_values) | close_enough["high_open"])
+        & ((high_values >= close_values) | close_enough["high_close"])
+        & ((low_values <= open_values) | close_enough["low_open"])
+        & ((low_values <= close_values) | close_enough["low_close"])
+    )
+    bad_timestamp = ~valid_timestamp
+    nonfinite_ohlc = valid_timestamp & ~finite_ohlc
+    nonpositive_ohlc = valid_timestamp & finite_ohlc & ~positive_ohlc
+    inconsistent_ohlc = valid_timestamp & finite_ohlc & positive_ohlc & ~consistent_ohlc
+    valid_price = valid_timestamp & finite_ohlc & positive_ohlc & consistent_ohlc
+
+    volume_valid = np.isfinite(raw_volume) & (raw_volume >= 0.0)
+    normalized.loc[~volume_valid, "volume"] = np.nan
+    normalized = normalized.loc[valid_price].copy()
+    before_deduplication = len(normalized)
     normalized = normalized[~normalized.index.duplicated(keep="last")].sort_index()
-    if len(normalized) < 60:
-        raise ValueError("At least 60 daily bars are required to build the market-weather field.")
+    duplicate_timestamp = before_deduplication - len(normalized)
+    used_volume = normalized["volume"].to_numpy(dtype=float)
+    available_volume_observations = int(np.sum(np.isfinite(used_volume)))
+    positive_volume_observations = int(np.sum(used_volume > 0.0))
+    invalid_volume_observations = int(np.sum(valid_price & ~volume_valid))
+    price_drop_count = int(np.sum(~valid_price)) + duplicate_timestamp
+    warnings: list[str] = []
+    if price_drop_count:
+        warnings.append("invalid_price_rows_dropped")
+    if volume_column is None:
+        warnings.append("volume_column_unavailable")
+    elif invalid_volume_observations:
+        warnings.append("invalid_volume_observations_unavailable")
+    if positive_volume_observations == 0:
+        warnings.append("volume_carriers_unavailable")
+
+    quality = {
+        "status": "valid" if not warnings else "limited",
+        "rows_received": rows_received,
+        "rows_used": len(normalized),
+        "dropped": {
+            "bad_timestamp": int(np.sum(bad_timestamp)),
+            "nonfinite_ohlc": int(np.sum(nonfinite_ohlc)),
+            "nonpositive_ohlc": int(np.sum(nonpositive_ohlc)),
+            "inconsistent_ohlc": int(np.sum(inconsistent_ohlc)),
+            "duplicate_timestamp": duplicate_timestamp,
+        },
+        "volume": {
+            "available": available_volume_observations > 0,
+            "carrier_usable": positive_volume_observations > 0,
+            "available_observations": available_volume_observations,
+            "positive_observations": positive_volume_observations,
+            "coverage": round(available_volume_observations / max(1, len(normalized)), 6),
+            "invalid_observations": invalid_volume_observations,
+        },
+        "warnings": warnings,
+    }
+    if len(normalized) < max(0, int(minimum_bars)):
+        raise ValueError(
+            f"At least {int(minimum_bars)} daily bars are required to build the market-weather field "
+            f"after input validation; {len(normalized)} valid bars remain."
+        )
+    return normalized, quality
+
+
+def _normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    normalized, _ = normalize_market_history(frame)
     return normalized
 
 
@@ -174,12 +337,23 @@ def build_market_weather(
     include_history_payload: bool = True,
 ) -> dict[str, object]:
     settings = settings or MarketWeatherSettings()
-    history = _normalize_frame(frame)
+    history, input_quality = normalize_market_history(frame)
     horizon_values = [int(value) for value in horizons]
     if not horizon_values or any(value < 4 for value in horizon_values):
         raise ValueError("Horizons must contain values of at least 4 bars.")
     if horizon_values != sorted(set(horizon_values)):
         raise ValueError("Horizons must be unique and sorted in ascending order.")
+    maximum_horizon = max(horizon_values)
+    minimum_observed_window = maximum_horizon + 1
+    minimum_required_bars = max(MARKET_WEATHER_MINIMUM_BARS, minimum_observed_window)
+    target_warmup = maximum_horizon * 2
+    history_status = (
+        "insufficient"
+        if len(history) < minimum_required_bars
+        else "provisional"
+        if len(history) < target_warmup
+        else "complete"
+    )
 
     high = history["high"]
     low = history["low"]
@@ -323,7 +497,7 @@ def build_market_weather(
             "high": round(float(row.high), 4),
             "low": round(float(row.low), 4),
             "close": round(float(row.close), 4),
-            "volume": round(float(row.volume), 2),
+            "volume": round(float(row.volume), 2) if np.isfinite(float(row.volume)) else None,
         }
         for index, row in enumerate(history.itertuples())
     ]
@@ -342,6 +516,7 @@ def build_market_weather(
     ]
 
     return {
+        "semantic_revision": MARKET_WEATHER_SEMANTIC_REVISION,
         "orientation": "horizon_by_time",
         "dates": dates,
         "horizons": horizon_values,
@@ -366,4 +541,18 @@ def build_market_weather(
         "latest_profile": latest_profile if include_history_payload else [],
         "research": research,
         "settings": asdict(settings),
+        "history_context": {
+            "analysis_bars": len(history),
+            "maximum_horizon_bars": maximum_horizon,
+            "minimum_observed_window_bars": minimum_observed_window,
+            "minimum_valid_bars": MARKET_WEATHER_MINIMUM_BARS,
+            "minimum_required_bars": minimum_required_bars,
+            "target_warmup_bars": target_warmup,
+            "warmup_complete": history_status == "complete",
+            "status": history_status,
+            "bars_needed_to_minimum": max(0, minimum_required_bars - len(history)),
+            "bars_needed_to_target": max(0, target_warmup - len(history)),
+            "warmup_note": "The two-times-maximum-horizon target is a disclosed maturity heuristic, not an EWM convergence guarantee.",
+        },
+        "input_quality": input_quality,
     }

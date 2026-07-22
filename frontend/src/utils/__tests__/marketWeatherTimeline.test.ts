@@ -53,7 +53,7 @@ const research = {
   lexicon: {
     evaluation_sequence: [
       { date: dates[1], state_id: "form-a", distance_tail_score: null, outside_learned_range: null },
-      { date: dates[2], state_id: "form-a", distance_tail_score: 0.04, outside_learned_range: true },
+      { date: dates[2], state_id: "form-a", calibration_distance_tail_rank: 0.04, in_extreme_calibration_distance_tail: true },
     ],
   },
 } as unknown as MarketWeatherResearch;
@@ -64,10 +64,10 @@ describe("market weather timeline", () => {
 
     expect(timeline).toHaveLength(3);
     expect(timeline[0]).toMatchObject({ volatilityRatio: 1.1, participationRatio: null, stateId: null });
-    expect(timeline[1]).toMatchObject({ volatilityRatio: null, distanceTailScore: null, stateId: "form-a" });
+    expect(timeline[1]).toMatchObject({ volatilityRatio: null, calibrationDistanceTailRank: null, stateId: "form-a" });
     expect(timeline[1]).toMatchObject({ support20: 95, resistance20: 105, rangePosition20: 60, priceActionState: "mid_range" });
     expect(timeline[0]).toMatchObject({ support20: null, resistance20: null, priceActionState: null });
-    expect(timeline[2]).toMatchObject({ volatilityRatio: 1.2, distanceTailScore: 0.04, outsideLearnedRange: true });
+    expect(timeline[2]).toMatchObject({ volatilityRatio: 1.2, calibrationDistanceTailRank: 0.04, inExtremeCalibrationTail: true });
     expect(timeline.some((point) => point.volatilityRatio === 9)).toBe(false);
   });
 

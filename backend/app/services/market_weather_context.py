@@ -552,7 +552,7 @@ def build_cross_market_relationships(
         "input_polarity": "Positive source changes always mean rising cross-market pressure.",
         "candidate_lags_days": list(RELATIONSHIP_LAGS),
         "selection": "Lag selected on the first 70% of aligned observations by absolute Spearman rho.",
-        "validation": "The selected lag is re-estimated on the final 30%; five-observation block-permutation p-values are Benjamini-Hochberg adjusted across available sources.",
+        "validation": "The lag selected on the first 70% is evaluated without refitting on the final 30%; five-observation block-permutation p-values are Benjamini-Hochberg adjusted across available sources.",
         "rolling_window_observations": ROLLING_ASSOCIATION_WINDOW,
         "relationships": relationships,
         "warnings": warnings,

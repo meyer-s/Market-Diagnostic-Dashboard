@@ -298,6 +298,9 @@ export default function MarketWeatherRadar() {
   const activeMode = MODES.find((item) => item.value === mode) ?? MODES[0];
   const activeTimeframe = TIMEFRAMES.find((item) => item.value === draft.timeframe) ?? TIMEFRAMES[7];
   const historyOptions = Array.from(new Set([...activeTimeframe.barOptions, draft.bars])).sort((left, right) => left - right);
+  const requestedHistoryShortfall = data?.history_context
+    ? Math.max(0, data.history_context.requested_visible_bars - data.history_context.visible_bars)
+    : 0;
 
   const settingsDialog = settingsOpen ? createPortal(
     <div
@@ -440,7 +443,7 @@ export default function MarketWeatherRadar() {
               <span className="page-badge border-sky-400/20 text-sky-200"><FlaskConical className="h-3.5 w-3.5" /> Grounded field model</span>
             </div>
             <h1 className="page-title">Market Field Language</h1>
-            <p className="page-subtitle max-w-3xl">Direction, organization, disorder, and cross-horizon movement are shown in measured terms. Learned states are named from their calibration-relative profiles.</p>
+            <p className="page-subtitle max-w-3xl">Direction, activity, horizon agreement, disorder, and cross-horizon movement are shown as separate measurements. Learned states are named from calibration-relative profiles.</p>
           </div>
           {data ? (
             <div className="flex flex-wrap gap-2 text-xs text-slate-300">
@@ -527,13 +530,46 @@ export default function MarketWeatherRadar() {
               </div>
               <p className="mt-0.5 text-xs text-slate-400">{data.horizons.length} horizons × {data.available_bars.toLocaleString()} bars · time runs left to right · longer horizons rise</p>
             </div>
-            <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1 text-xs text-slate-300">{activeMode.label}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              {data.history_context && requestedHistoryShortfall > 0 ? (
+                <span
+                  className="rounded-full border border-rose-400/30 bg-rose-400/10 px-3 py-1 text-xs font-medium text-rose-100"
+                  title={`The provider returned ${data.history_context.visible_bars} of ${data.history_context.requested_visible_bars} requested visible bars.`}
+                >
+                  History {data.history_context.visible_bars.toLocaleString()} / {data.history_context.requested_visible_bars.toLocaleString()}
+                </span>
+              ) : null}
+              {data.history_context ? (
+                <span
+                  className={`rounded-full border px-3 py-1 text-xs ${data.history_context.warmup_complete ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : "border-amber-400/30 bg-amber-400/10 text-amber-200"}`}
+                  title={`Initialization only: ${data.history_context.analysis_bars} calculation bars; ${data.history_context.warmup_buffer_received} hidden warm-up bars received; ${data.history_context.target_warmup_bars}-bar reference. Requested visible-history coverage is reported separately.`}
+                >
+                  {data.history_context.warmup_complete ? "Initialization mature" : "Provisional initialization"}
+                </span>
+              ) : null}
+              <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1 text-xs text-slate-300">{activeMode.label}</span>
+            </div>
           </div>
           <MarketWeatherCanvas data={data} mode={mode} inspectorChannel={inspectorChannel} compact />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-slate-400" aria-label="Field cloud color key">
             <span>Older ← time → newer</span>
             <span>Color encodes {activeMode.label.toLowerCase()} · hover for timestamp and core measurements</span>
           </div>
+          {data.history_context && requestedHistoryShortfall > 0 ? (
+            <p className="mx-1 mt-2 rounded-lg border border-rose-400/25 bg-rose-400/[0.08] px-3 py-2 text-xs leading-5 text-rose-100" role="status">
+              Requested-history shortfall: the provider returned {data.history_context.visible_bars.toLocaleString()} of {data.history_context.requested_visible_bars.toLocaleString()} visible bars ({requestedHistoryShortfall.toLocaleString()} missing). {data.history_context.warmup_complete ? "Initialization is mature, but that does not make this a full requested-history response." : "Initialization is also provisional."}
+            </p>
+          ) : null}
+          {data.history_context && !data.history_context.warmup_complete ? (
+            <p className="mx-1 mt-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">
+              Provisional initialization: {data.history_context.analysis_bars} calculation bars were available against a {data.history_context.target_warmup_bars}-bar reference. The field remains non-anticipative, but current levels can still depend materially on retained history.
+            </p>
+          ) : null}
+          {data.input_quality && data.input_quality.status !== "valid" ? (
+            <p className="mx-1 mt-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">
+              Input quality is {data.input_quality.status}: {data.input_quality.rows_used.toLocaleString()} of {data.input_quality.rows_received.toLocaleString()} rows were used. {data.input_quality.warnings.join("; ").replace(/_/g, " ") || "Some carrier evidence is unavailable."}
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -619,7 +655,7 @@ export default function MarketWeatherRadar() {
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="sticky top-0 z-[1] bg-slate-950 text-xs uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_rgba(71,85,105,0.45)]">
                       <tr>
-                        <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Display organization</th><th className="px-4 py-3">Coherence</th><th className="px-4 py-3">Legacy disorder</th><th className="px-4 py-3">Permutation entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
+                        <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Renderer composite</th><th className="px-4 py-3">Horizon agreement</th><th className="px-4 py-3">Legacy disorder</th><th className="px-4 py-3">Permutation entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">

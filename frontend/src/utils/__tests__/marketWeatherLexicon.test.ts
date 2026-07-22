@@ -72,7 +72,7 @@ describe("market weather glyph grammar", () => {
     const profile = buildGroundedStateProfile(values, features);
     expect(profile.headline).toBe("Positive pressure · strengthening");
     expect(profile.characteristic).toContain("volatility is 4.0 fit-spread units lower");
-    expect(profile.summary).toContain("Structure 55/100");
+    expect(profile.summary).toContain("Trend + horizon agreement 55/100");
   });
 
   it("uses explicit, interpretable readings instead of presenting indices as probabilities", () => {

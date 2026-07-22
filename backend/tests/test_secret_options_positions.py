@@ -170,6 +170,20 @@ def test_quote_payload_preserves_market_data_source() -> None:
     assert payload["ask"] == 1.3
 
 
+def test_empty_position_metrics_preserves_v11_field_contract() -> None:
+    payload = secret_options._empty_position_metrics("fixture failure")
+    field = payload["field_context"]
+
+    assert field["semantic_revision"] == "1.1"
+    assert field["authority"]["manager_verdict"] == "none"
+    assert field["authority"]["automated_execution"] == "none"
+    assert field["maturity"]["status"] == "insufficient"
+    assert field["alignment"]["supported"] is False
+    assert field["input_quality"]["rows_used"] == 0
+    assert "position_metrics_unavailable" in field["quality"]["warnings"]
+    assert payload["error"] == "fixture failure"
+
+
 def test_position_metrics_reuses_daily_history_for_causal_field_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -234,6 +248,7 @@ def test_position_metrics_reuses_daily_history_for_causal_field_context(
         symbol="SYY",
         expiration=date.today() + timedelta(days=60),
         option_type="call",
+        action="Buy to Open",
         strike=105.0,
         underlying_reference=100.0,
         underlying_at_entry=99.0,
@@ -250,6 +265,8 @@ def test_position_metrics_reuses_daily_history_for_causal_field_context(
     assert calls["field_frame"] is history
     assert calls["field_kwargs"] == {
         "option_type": "call",
+        "position_action": "Buy to Open",
+        "strategy_scope": "single_leg",
         "observed_at": datetime(2026, 7, 21, 20, 0),
         "data_source": "ibkr",
         "timeframe": "1D",
@@ -655,6 +672,8 @@ def test_automatic_assessment_prefills_review_and_close_learning(
         "replacement_candidate",
         "manual_review",
     }
+    assert assessment_body["assessment"]["market_field_effects"]["execution_authority"] == "none"
+    assert assessment_body["assessment"]["market_field_effects"]["verdict_changed"] is False
     assert assessment_body["review_defaults"]["selected_assessment_id"] == assessment_body["assessment"]["id"]
     assert assessment_body["mandate"]["threshold_origin"] == "system_draft"
     assert assessment_body["suggested_window"]["decision_deadline"] >= date.today().isoformat()
@@ -1586,9 +1605,12 @@ def test_closed_trade_learning_keeps_point_in_time_market_field_cohort(secret_op
     _client, session_local = secret_options_client
     field_json = """{
       "schema_version":"option_market_field_v1",
+      "semantic_revision":"1.1",
       "mode":"shadow_only",
       "rank_influence":0.0,
       "quality":{"available":true,"completed_bars_only":true},
+      "maturity":{"status":"complete","warmup_complete":true,"completed_bars":250},
+      "alignment":{"supported":true,"basis":"legacy_long_single_leg_option_type"},
       "direction":{"option_aligned_pressure":0.42,"option_aligned_velocity":0.11},
       "classification":{"path_state":"supportive","eventfulness":"quiet"}
     }"""

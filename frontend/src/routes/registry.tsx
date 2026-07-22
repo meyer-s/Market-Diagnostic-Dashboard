@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { lazy, Suspense, type ReactElement } from "react";
 import { Navigate, Route, Routes, matchPath, useParams } from "react-router-dom";
 
 import Dashboard from "../pages/Dashboard";
@@ -9,7 +9,6 @@ import SystemBreakdown from "../pages/SystemBreakdown";
 import MarketMap from "../pages/MarketMap";
 import SectorProjections from "../pages/SectorProjections";
 import StockAnalysis from "../pages/StockAnalysis";
-import SecretOptions from "../pages/SecretOptions";
 import PreciousMetalsDiagnostic from "../pages/PreciousMetalsDiagnostic";
 import CryptoDiagnostic from "../pages/CryptoDiagnostic";
 import AASComponentBreakdown from "../pages/AASComponentBreakdown";
@@ -21,7 +20,9 @@ import RealEstateDiagnostic from "../pages/RealEstateDiagnostic";
 import RecapIndex from "../pages/tools/RecapIndex";
 import RecapPost from "../pages/tools/RecapPost";
 import VolumeBreadthTools from "../pages/tools/VolumeBreadthTools";
-import MarketWeatherRadar from "../pages/MarketWeatherRadar";
+
+const SecretOptions = lazy(() => import("../pages/SecretOptions"));
+const MarketWeatherRadar = lazy(() => import("../pages/MarketWeatherRadar"));
 
 type NavGroup = "primary" | "tools";
 type ToolGroup = "market-views" | "asset-classes" | "research";
@@ -61,6 +62,20 @@ function NotFoundPage() {
   );
 }
 
+function DeferredPage({ children }: { children: ReactElement }) {
+  return (
+    <Suspense
+      fallback={(
+        <div className="page-shell page-stack" role="status" aria-live="polite">
+          <div className="surface-card-strong p-6 text-sm text-slate-300">Loading research workspace…</div>
+        </div>
+      )}
+    >
+      {children}
+    </Suspense>
+  );
+}
+
 export const routeRegistry: AppRouteDefinition[] = [
   { path: "/", label: "Dashboard", analyticsName: "Dashboard", navGroup: "primary", visible: true, activeMatch: "/", element: <Dashboard /> },
   { path: "/vision", label: "Vision", analyticsName: "Vision", navGroup: "primary", visible: true, activeMatch: "/vision", element: <Vision /> },
@@ -75,8 +90,8 @@ export const routeRegistry: AppRouteDefinition[] = [
   { path: "/stock-analysis/:symbol", analyticsName: "Stock Analysis", element: <StockAnalysis /> },
   { path: "/stock-analysis", label: "Stock Analysis", analyticsName: "Stock Analysis", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/stock-analysis", element: <StockAnalysis /> },
   { path: "/institutional-flow", label: "Institutional Flow", analyticsName: "Institutional Flow", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/institutional-flow", element: <InstitutionalFlow /> },
-  { path: "/market-weather", label: "Market Weather Lab", analyticsName: "Market Weather Lab", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/market-weather", element: <MarketWeatherRadar /> },
-  { path: "/secret/options", analyticsName: "Secret Options", element: <SecretOptions /> },
+  { path: "/market-weather", label: "Market Weather Lab", analyticsName: "Market Weather Lab", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/market-weather", element: <DeferredPage><MarketWeatherRadar /></DeferredPage> },
+  { path: "/secret/options", analyticsName: "Secret Options", element: <DeferredPage><SecretOptions /></DeferredPage> },
   { path: "/tools/recap", label: "Recap", analyticsName: "Recap", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/tools/recap", element: <RecapIndex /> },
   { path: "/tools/recap/:slug", analyticsName: "Recap", element: <RecapPost /> },
   { path: "/tools/volume-breadth", analyticsName: "Volume & Breadth", element: <VolumeBreadthTools /> },

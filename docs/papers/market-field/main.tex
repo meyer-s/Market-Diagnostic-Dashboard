@@ -19,9 +19,9 @@
 \newcommand{\R}{\mathbb{R}}
 
 \hypersetup{
-  pdftitle={Causal Market Field Calculus: An Auditable Multiscale Representation for Option-Path Decision Support},
+  pdftitle={Non-Anticipative Market Field Calculus: An Auditable Multiscale Representation for Option-Path Decision Support},
   pdfsubject={Preliminary systems and methods paper},
-  pdfkeywords={financial time series, multiscale representation, causal computation, options, interpretability}
+  pdfkeywords={financial time series, multiscale representation, non-anticipative computation, options, interpretability}
 }
 \ifdefined\marketfieldsharecopy
 \hypersetup{pdfauthor={Steven J. Meyer}}
@@ -29,7 +29,7 @@
 \hypersetup{pdfauthor={Anonymous}}
 \fi
 
-\title{Causal Market Field Calculus: An Auditable Multiscale Representation for Option-Path Decision Support}
+\title{Non-Anticipative Market Field Calculus:\\ An Auditable Multiscale Representation for\\ Option-Path Decision Support}
 
 \author{
 Steven J. Meyer\\
@@ -48,20 +48,23 @@ Independent Researcher\\
 \fi
 
 \begin{abstract}
-We introduce \method{}, a causal multiscale representation of market path organization designed for interpretable research and prospective option-decision support. Completed OHLCV bars are transformed into a bounded horizon--time pressure surface; causal temporal differences, derivatives over log horizon, ordinal disorder, propagation analogues, and OHLCV carrier ratios produce a compact state vector. A deterministic, request-local Form dictionary translates that vector into calibration-relative descriptions while preserving a strict fit--calibration--evaluation chronology. A production integration attaches completed-daily-bar snapshots to option scanner events and position reviews, but assigns them zero ranking weight and no execution authority. On eight adjusted daily series from 2018 through 2026, 6,688 prefix comparisons show no future-suffix dependence at the API's $10^{-4}$ precision and all eight learned dictionaries reproduce exactly. Controlled paths produce ordered horizon-response delays ($\rho=1.000$), while a support gate falls back to one Form for six of eight assets instead of manufacturing separation. A pooled distance-tail rate of 5.46\% masks substantial asset heterogeneity, illustrating why the diagnostic is not a calibrated probability. These results validate software mechanics and representation behavior, not forecast skill, option profitability, or a physical law of markets. We provide source, frozen-data hashes, figures, tables, and a rerunnable notebook.
+We introduce \method{}, a non-anticipative multiscale representation of market path organization designed for interpretable research and prospective option-decision support. OHLCV bars are transformed into a bounded horizon--time pressure surface; paper experiments and option snapshots use completed bars, while the live research screen may include a provider's forming bar. Prefix-only temporal differences, derivatives over log horizon, ordinal disorder, propagation analogues, and OHLCV carriers produce a compact state vector. A deterministic, request-local Form dictionary translates that vector into calibration-relative descriptions while preserving a strict fit--calibration--evaluation chronology. A production integration attaches completed-daily-bar snapshots to option scanner events and position reviews, but assigns them zero algorithmic ranking weight and no execution authority; displayed advice may still influence a human. Across 32 tested daily prefix endpoints, comprising 6,688 serialized channel--horizon scalar checks, we observe no mismatches at $10^{-4}$ output precision, and all eight fixed-input dictionaries reproduce exactly. A broader nine-timeframe audit passes 46/46 full-precision prefix checks covering 24,472 live numeric values with maximum error zero at tolerance $10^{-12}$. Controlled paths produce ordered horizon-response delays ($\rho=1.000$). Under the chosen weighted distance, support rule, and silhouette gate, multi-Form codebooks are accepted for two of eight assets. State-conditional upper-distance-tail rates vary materially across assets and windows. These tests exercise selected software invariants and representation behavior; they do not establish forecast skill, option profitability, or a physical law of markets. We provide source, hashes of locally retained inputs, derived results, figures, tables, and executed notebooks, while provider restrictions prevent redistribution of the raw snapshots.
 \end{abstract}
 
 \section{Introduction}
 
 Market analysis interfaces usually compress a path into a small set of single-window indicators. This makes the output easy to scan but obscures whether a move is coherent across horizons, confined to one scale, accelerating, fragmenting, or changing its relationship to activity and liquidity. The opposite response---adding more indicators---often produces a wall of numbers with no stable visual or semantic grammar. Both patterns become especially problematic for options: a volatility-dislocation thesis and the underlying price path are distinct objects, yet they are often blended into one opaque score.
 
-We study a narrower question: can a multiscale state representation remain causal, inspectable, visually legible, and safe to introduce into an existing decision system before economic efficacy is known? Our answer is \method{}, an engineered field over time $t$ and lookback horizon $h$. The word \emph{field} describes the data structure, not a claim that prices obey fluid mechanics. Likewise, pressure, velocity, acceleration, jerk, and snap are names for bounded discrete measurements, not literal forces or hidden physical dimensions.
+We study a narrower question: can a multiscale state representation remain non-anticipative, inspectable, visually legible, and safe to introduce into an existing decision system before economic efficacy is known? Our answer is \method{}, an engineered field over time $t$ and lookback horizon $h$. The word \emph{field} describes the data structure, not a claim that prices obey fluid mechanics. Likewise, pressure, velocity, acceleration, jerk, and snap are names for bounded discrete measurements, not literal forces or hidden physical dimensions.
 
 The system evolved from SwamiChart-style horizon strips \citep{ehlersway2012introducing,ehlersway2012strategies} through a signed pressure surface, a derivative and scale geometry, a human translation layer, and finally a versioned shadow integration for option research. This progression preserves the original multiscale visual intuition while replacing indicator voting with an explicit measurement pipeline.
 
+\paragraph{Version boundary.}
+\texttt{market\_field\_calculus\_v1} names the formulas evaluated here. Additive \texttt{semantic\_revision=1.1} names aliases, maturity/input-quality metadata, alignment precedence, authority, and effect receipts that leave that formula vector unchanged. \texttt{market\_field\_preliminary\_v2} names the expanded evaluation harness, not a v2 field model; formula-changing alternatives remain explicit future ablations.
+
 Our contributions are:
 \begin{enumerate}
-    \item a prefix-invariant bounded pressure surface over causal time and log-horizon coordinates, with directional, kinematic, geometric, information, propagation, and OHLCV carrier strata;
+    \item a non-anticipative bounded pressure surface over causal time and log-horizon coordinates, with directional, kinematic, geometric, information, propagation, and OHLCV carrier strata;
     \item a deterministic empirical Form dictionary whose robust scaling, model selection, calibration evidence, and evaluation sequence are chronologically separated;
     \item a human-facing visual grammar combining a narrow horizon cloud with engineered phase portraits, while explicitly distinguishing trajectories from cycles or reconstructed attractors;
     \item a prospective options interface that stores point-in-time field snapshots with immutable decision history under zero-rank, no-execution safeguards; and
@@ -80,30 +83,36 @@ Markov switching, structural-break, and online change-point models estimate late
 Prior work gives statistical definitions to technical patterns and price barriers \citep{lo2000technical,chungbellotti2021support}. The present support and resistance layer is deliberately simpler: shifted 20-bar extrema used as causal context, not learned order-book structure. Implied-versus-realized volatility and variance-risk-premium measures are established \citep{carrwu2009variance,bollerslev2009variance,goyalsaretto2009options}. Our open question is whether separately measured path fit conditions such optionality signals, not whether the volatility spread itself is novel. Similarly, cross-market dependence and connectedness are well studied \citep{dieboldyilmaz2012spillovers,barunikkrehlik2018connectedness}; the current cached-source atlas is an association screen, not causal discovery.
 
 \paragraph{Validation discipline.}
-Financial feature search is exposed to dependence, selection, and multiple testing \citep{white2000reality,harvey2016crosssection,bailey2017pbo}. We therefore separate representation diagnostics from economic evaluation and treat rolling-origin, purged, cost-aware option tests as future work. This distinction is central: a correct causal implementation can still have no predictive or economic value.
+Financial feature search is exposed to dependence, selection, and multiple testing \citep{white2000reality,harvey2016crosssection,bailey2017pbo}. We therefore separate representation diagnostics from economic evaluation and treat rolling-origin, purged, cost-aware option tests as future work. This distinction is central: a correctly non-anticipative implementation can still have no predictive or economic value.
 
-\section{Causal Market Field}
+\section{Non-Anticipative Market Field}
 \label{sec:method}
 
 \subsection{Pressure over time and horizon}
 
-Let $O_t,H_t,L_t,C_t,V_t$ denote a sorted, deduplicated OHLCV prefix and let
-$M_t=(H_t+L_t)/2$. For horizon $h$, a gap-aware true range normalizes the displacement between a fast EMA with span $\max(2,\lfloor h/2\rfloor)$ and an EMA with span $h$:
+Let $O_t,H_t,L_t,C_t,V_t$ denote a sorted, deduplicated OHLCV prefix, let
+$M_t=(H_t+L_t)/2$, and index an ordered horizon grid by
+$h_1<\cdots<h_J$. For row $j$, a gap-aware true range normalizes the displacement between a fast EMA with span $\max(2,\lfloor h_j/2\rfloor)$ and an EMA with span $h_j$:
 \begin{align}
-z_{h,t} &=
-\frac{\EMA_{\max(2,\lfloor h/2\rfloor)}(M)_t-\EMA_h(M)_t}
-     {\operatorname{Mean}_h(TR)_t}, &
-d_{h,t}&=\frac{z_{h,t}}{1+|z_{h,t}|}, \label{eq:direction}\\
-e_{h,t} &=
+z_{j,t} &=
+\frac{\EMA_{\max(2,\lfloor h_j/2\rfloor)}(M)_t-\EMA_{h_j}(M)_t}
+     {\operatorname{Mean}_{h_j}(TR)_t}, &
+d_{j,t}&=\frac{z_{j,t}}{1+|z_{j,t}|}, \label{eq:direction}\\
+e_{j,t} &=
 \clip_{[0,1]}
-\frac{|M_t-M_{t-h}|}{\sum_{i=t-h+1}^{t}|M_i-M_{i-1}|}. \label{eq:efficiency}
+\frac{|M_t-M_{t-h_j}|}{\sum_{i=t-h_j+1}^{t}|M_i-M_{i-1}|}. \label{eq:efficiency}
 \end{align}
-The raw signed state $d_{h,t}e_{h,t}$ is smoothed causally in time and blended only with adjacent horizon rows to obtain $\pressure_{h,t}$. Thus $\pressure$ is bounded, directional, and attenuated when net displacement is small relative to path length. The blend is analytical: all downstream measurements are calculated from the blended surface. Exact coefficients and edge behavior appear in Appendix~\ref{app:calculus}.
+Equation~\ref{eq:efficiency} is Kaufman's efficiency-ratio construction \citep{kaufman1995smarter}. The raw signed state $d_{j,t}e_{j,t}$ is smoothed causally in time and blended only with adjacent \emph{rows} to obtain $\pressure_{j,t}$. Thus $\pressure$ is bounded, directional, and attenuated when net displacement is small relative to path length. Row adjacency is part of v1: it is not a log-distance kernel, so changing horizon density changes the effective model as well as its discretization. The blend is analytical, and all downstream measurements are calculated from the blended surface. Exact coefficients, initialization, zero conventions, and edge behavior appear in Appendix~\ref{app:calculus}.
+
+\paragraph{Proposition 1 (boundedness and prefix measurability).}
+Let $\mathcal H=(h_1,\ldots,h_J)$ be fixed. Assume finite valid OHLC inputs, positive closes, the numerical conventions in Appendix~\ref{app:calculus}, and EWM recursions initialized from the observed prefix only. Then $e_{j,t}\in[0,1]$, $d_{j,t},\pressure_{j,t},D_q(X)_{j,t}\in(-1,1)$ except for their defined zero cases, clipped unsigned channels lie in $[0,1]$, and every \emph{live field} output at $t$ is a deterministic function of the OHLCV prefix $X_{1:t}$.
+
+\emph{Proof.} The triangle inequality bounds endpoint displacement by total path length. The map $x/(1+|x|)$ is bounded; prefix-initialized EWMs and the stated nonnegative blends are convex; and past-only rolling windows and recursions preserve prefix measurability by induction in $t$. Clipping preserves the asserted unsigned bounds. The zero-denominator conventions close the degenerate cases. This result covers the live field and its point-in-time option snapshot, not the window-refit Form dictionary, retrospective outcome atlas, cross-market cache, or any future label. The 32 endpoint audits in Section~\ref{sec:evaluation} are regression tests of the implementation of this property, not a statistical proof of causality.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\linewidth]{system_overview.pdf}
-    \caption{The auditable computation boundary. Completed bars generate the field and translation layer; outcomes are recorded later and never refit the current field. The option integration is explicitly shadow-only.}
+    \caption{The auditable computation boundary. Audited experiments and option snapshots use completed bars; outcomes are recorded later and never refit the current field. The live research screen may include a provider's forming bar. The option integration has zero algorithmic rank and execution authority, although a displayed advisory may influence a human.}
     \label{fig:system}
 \end{figure}
 
@@ -115,31 +124,31 @@ D_q(X)_t=\frac{r_t}{1+|r_t|},\qquad
 r_t=\frac{\Delta X_t}{\EWM_q(|\Delta X|)_t}.
 \label{eq:bounded-difference}
 \end{equation}
-Successive applications form velocity $v=D_{13}(\pressure)$, acceleration $a=D_{13}(v)$, jerk $j=D_{13}(a)$, and snap $s_4=D_{13}(j)$. Numerical derivatives across $\log h$ yield scale gradient $g$, scale curvature $c$, and the temporal change of scale gradient $m$. These are normalized finite differences; the kinematic vocabulary is mnemonic.
+Successive applications form velocity $v=D_{13}(\pressure)$, acceleration $a=D_{13}(v)$, jerk $j=D_{13}(a)$, and snap $s_4=D_{13}(j)$. Numerical derivatives across $u_j=\log h_j$ yield scale gradient $g$, scale curvature $c$, and the bounded temporal change of scale gradient $m$. These are normalized finite differences; the kinematic vocabulary is mnemonic. Appendix~\ref{app:calculus} specifies the nonuniform-grid interior and edge stencils and every horizon reduction used to obtain the state vector.
 
 The derivative surfaces are reduced into five interpretable strata. Structure combines signed-state strength and cross-horizon coherence. Kinematics weights $|v|,|a|,|j|,|s_4|$. Geometry combines $|g|$, $|c|$, $|m|$, and boundary energy. Information combines causal order-3 Bandt--Pompe entropy with an engineered disorder channel. Propagation summarizes co-occurring time and scale change; its signed cascade bias indicates the orientation of that change. Separate carriers report realized variation, volume participation, and an Amihud-like price-impact ratio \citep{amihud2002illiquidity}. All are descriptive measurements. In particular, organization is not a probability, propagation is not causal transmission, and the scaling exponent is not a Hurst exponent.
 
 \subsection{A calibration-relative language}
 
-The research interface aggregates five derivatives, seven strata, and three carriers into $\mathbf{x}_t\in\R^{15}$. Derivative, stratum, and carrier families each receive one third of total distance weight. Robust center and scale are estimated only on the proper-fit segment. A deterministic farthest-first $k$-means procedure \citep{macqueen1967methods} considers at most five Forms, requires each cluster to contain at least $\max(20,\lceil0.05n\rceil)$ fit bars, and accepts a multi-Form codebook only when mean silhouette is at least 0.25 \citep{rousseeuw1987silhouettes}. Otherwise it emits one Form.
+The research interface aggregates five derivatives, seven strata, and three carriers into $\mathbf{x}_t\in\R^{15}$. Derivative, stratum, and carrier families each receive one third of total squared-distance weight. Robust center and scale are estimated only on the proper-fit segment. A deterministic farthest-point-initialized $k$-means procedure \citep{macqueen1967methods,gonzalez1985clustering} considers at most five Forms, requires each cluster to contain at least $\max(20,\lceil0.05n\rceil)$ fit bars, and accepts a multi-Form codebook only when mean silhouette is at least 0.25 \citep{rousseeuw1987silhouettes}. Otherwise it emits one Form. The initialization is a deterministic variant, not MacQueen's original seeding rule; exact candidate selection and tie handling are given in Appendix~\ref{app:dictionary}.
 
 The later calibration segment provides state-conditional nearest-centroid distances. For evaluation distance $d_t$ in state $k$,
 \begin{equation}
 \tau_t=\frac{1+\#\{d_i^{\mathrm{cal},k}\ge d_t\}}{n_k+1}.
 \label{eq:tail}
 \end{equation}
-The interface labels $\tau_t<0.05$ as outside the learned range only when $n_k\ge20$. Equation~\ref{eq:tail} is an empirical rank diagnostic, not a formal $p$-value, exchangeable coverage guarantee, or forecast. Form identifiers are request-local: F.001 for one symbol/window has no asserted identity elsewhere.
+The v1 payload's legacy key \texttt{outside\_learned\_range} is true when $\tau_t<0.05$ and $n_k\ge20$; throughout this paper we call that event the \emph{upper state-conditional calibration-distance tail}. It does not imply coordinatewise range violation, convex-hull exclusion, density support, or a forecast. Equation~\ref{eq:tail} is a discrete empirical rank diagnostic: for $n_k=20$ its minimum is $1/21$, so the strict 0.05 rule fires only beyond every same-state calibration distance. Form identifiers are request-local: F.001 for one symbol/window has no asserted identity elsewhere.
 
-The visual translation layer shows the horizon cloud and three scopes: direction $(\pressure,v)$ colored by structure, organization (structure, information) colored by kinematics, and propagation (propagation, cascade bias) colored by geometry. Display-only smoothing can soften the trace, but the raw path remains available. Loops are trajectories, not detected cycles.
+The visual translation layer shows the horizon cloud and three scopes: direction $(\pressure,v)$ colored by structure, structure--information colored by kinematics, and propagation--cascade bias colored by geometry. The second scope does not plot the legacy organization channel $O$. Display-only smoothing can soften the trace, but the raw path remains available. Loops are trajectories, not detected cycles.
 
 \section{Prospective Option Integration}
 \label{sec:options}
 
-The key design separates \emph{option mispricing} from \emph{underlying path fit}. Existing scanner eligibility and the champion opportunity score remain functions of cheapness, volatility edge, contract quality, and execution quality. A field snapshot is constructed only after an option already qualifies under the existing optionality logic. It cannot create eligibility or alter rank.
+The key design separates \emph{option mispricing} from \emph{underlying path fit}. Existing scanner eligibility and the champion opportunity score remain functions of cheapness, volatility edge, contract quality, execution quality, and a pre-existing recurrence term. A field snapshot is constructed only after an option already qualifies under the existing optionality logic. It cannot create eligibility or alter algorithmic rank.
 
-For completed daily bars, calls take side $r=+1$ and puts $r=-1$. Aggregate pressure and velocity are aligned as $p^\star=rp$ and $v^\star=rv$. The advisory state is mixed when $|p^\star|\le0.02$, contradictory when $p^\star<0$, fading when $p^\star>0$ and $v^\star<0$, and supportive otherwise. Four exploratory hypotheses---organized expansion, longward cascade, geometry/disorder shock, and kinematic exhaustion---use quantiles computed from prior rows only. The precise conditions appear in Appendix~\ref{app:option}.
+The original v1 contract interprets scanner candidates as long, directional, single-leg calls or puts: calls take side $r=+1$ and puts $r=-1$. The additive v1.1 semantic contract instead uses, in order, signed net delta, explicit opening action plus option type, or the legacy long-single-leg assumption; unsupported exposure abstains. Aggregate pressure and velocity are aligned as $p^\star=rp$ and $v^\star=rv$. The advisory state is mixed when $|p^\star|\le0.02$, contradictory when $p^\star<0$, fading when $p^\star>0$ and $v^\star<0$, and supportive otherwise. Separately, the kinematic-exhaustion hypothesis uses pressure-aligned velocity $\widetilde v=\operatorname{sign}(p)v$. Four exploratory hypotheses---organized expansion, longward cascade, geometry/disorder shock, and kinematic exhaustion---use quantiles computed from prior rows only. The precise conditions appear in Appendix~\ref{app:option}.
 
-Every snapshot states its contract: schema \texttt{option\_market\_field\_v1}, model \texttt{market\_field\_calculus\_v1}, mode \texttt{shadow\_only}, rank influence 0, and automatic execution false. It excludes the retrospective Form atlas, future outcomes, cross-market caches, and option-derived inputs. Scanner events, position entry, and reassessments preserve their point-in-time snapshots rather than overwriting history. Closed positions can later be grouped by entry state. At present, those cohorts are descriptive and do not control decisions.
+Every snapshot states its contract: schema \texttt{option\_market\_field\_v1}, model \texttt{market\_field\_calculus\_v1}, additive \texttt{semantic\_revision=1.1}, legacy mode label \texttt{shadow\_only}, rank influence 0, and automatic execution false. A machine-readable authority object assigns no scanner-rank, hard-veto, manager-verdict, target-size, or execution authority while marking displayed confidence and review priority as advisory. It excludes the retrospective Form atlas, future outcomes, cross-market caches, and option-derived inputs. ``Shadow'' therefore means zero \emph{algorithmic} scoring and execution authority, not zero behavioral influence: a human may act on the display. Scanner events, position entry, reassessments, and their field snapshots are append-only. Any prospective outcome study must record whether the user saw the field and what action followed, or hide the field during collection; otherwise treatment exposure can contaminate discretionary closure outcomes. At present, cohorts are descriptive and do not control algorithmic decisions.
 
 \section{Diagnostic Evaluation}
 \label{sec:evaluation}
@@ -151,12 +160,12 @@ We evaluate representation mechanics, not trading performance:
     \item[RQ1] Is the serialized field prefix-invariant and the learned dictionary deterministic?
     \item[RQ2] Do controlled paths produce the intended directional, organizational, and cross-horizon behavior?
     \item[RQ3] Does the codebook decline weak separation, and how does its range diagnostic behave across assets?
-    \item[RQ4] Is a compact option snapshot operationally small enough for shadow instrumentation?
+    \item[RQ4] What local cache-only compute and payload scale does a compact option snapshot require?
 \end{description}
 
-The primary audit uses adjusted daily Yahoo Finance OHLCV from 2018-01-01 through 2026-07-21 for SPY, QQQ, IWM, TLT, GLD, USO, VNQ, and BTC-USD. Each normalized dataset is hashed; the manifest records requested bounds, actual bounds, row count, adjustment mode, and SHA-256. Tests execute the production Python calculation functions at repository commit \texttt{cd67fb4}. The companion script can refresh the provider data or rerun strictly from its local cache. Provider revision remains a reproducibility risk, so hashes, not ticker/date alone, identify inputs. A supplementary frozen audit covers 15 datasets and all nine supported SPY timeframes, tests horizon-grid steps 1, 2, 4, and 8, and probes dictionary window stability (Appendix~\ref{app:resolution}).
+The primary audit uses adjusted daily Yahoo Finance OHLCV from 2018-01-01 through 2026-07-21 for SPY, QQQ, IWM, TLT, GLD, USO, VNQ, and BTC-USD. Each normalized local snapshot is hashed; the manifest records requested bounds, actual bounds, row count, adjustment mode, and SHA-256. The first-run manifest records \texttt{cd67fb4} as its repository reference together with source-file hashes; it must not be read as the identity of later reruns. The current supplementary receipt records a dirty working tree and parent HEAD \texttt{016fa3a}; its per-file start/completion hashes, not that parent commit, identify the evaluated source, and it reports whether any source changed during the run. The companion script can rerun exactly only when the local raw cache is retained, or retrieve a fresh provider snapshot whose hashes and results may differ. Provider terms prevent redistribution of the raw CSVs; the public package contains the manifest, hashes, derived results, and executed notebooks. Thus a hash identifies the original input but does not make that input recoverable from a fresh clone. A supplementary locally retained audit covers 15 datasets and all nine supported SPY timeframes, tests horizon-grid steps 1, 2, 4, and 8, and probes dictionary window stability (Appendix~\ref{app:resolution}).
 
-For prefix invariance, we compare 11 channels across 19 horizons at four historical cut points per asset against the same timestamps computed with the complete suffix present. Determinism reruns the full versioned lexicon and compares canonical JSON hashes. A deterministic 800-bar construction reverses log drift at bar 400; a second construction contrasts an organized trend with alternating chop. We also time 80 completed-daily option snapshots over eight symbols using 365 in-memory bars, explicitly excluding retrieval.
+For prefix invariance, we compare 11 channels across 19 horizons at four historical cut points per asset against the same timestamps computed with the complete suffix present. These are 32 prefix endpoints with 209 related, four-decimal serialized values at each endpoint, not 6,688 independent tests. Determinism reruns the full versioned lexicon and compares canonical JSON hashes. A deterministic 800-bar construction reverses log drift at bar 400; a second construction contrasts an organized trend with alternating chop. We also time 80 completed-daily option snapshots over eight symbols using 365 in-memory bars, explicitly excluding retrieval, persistence, cold start, and concurrency.
 
 \subsection{Results}
 
@@ -176,11 +185,11 @@ For prefix invariance, we compare 11 channels across 19 horizons at four histori
     \label{tab:validation}
 \end{table}
 
-All 6,688 serialized prefix comparisons are identical at $10^{-4}$ precision, with maximum observed difference zero. All eight lexicons reproduce byte-for-byte. On the synthetic reversal, threshold-crossing delays range from 10 to 28 bars over horizons 12 through 48, with Spearman $\rho=1.000$. The organized segment has mean $|\pressure|=0.508$ and structure $0.859$, versus $0.001$ and $0.419$ for alternating chop; permutation entropy increases from $0.385$ to $0.568$.
+Across all 32 primary endpoints, the 6,688 serialized scalar comparisons are identical at $10^{-4}$ precision, with maximum observed serialized difference zero. The supplementary audit bypasses response rounding and passes 46/46 prefix checks spanning 24,472 full-precision values from live field matrices and aggregate derivatives, strata, carriers, and carrier ratios; maximum absolute error is zero at tolerance $10^{-12}$. It does not yet exhaust dictionary assignments, maturity metadata, hypothesis flags, or every downstream option field. All eight tested primary lexicons reproduce byte-for-byte. On the synthetic reversal, threshold-crossing delays range from 10 to 28 bars over horizons 12 through 48, with Spearman $\rho=1.000$. The organized segment has mean $|\pressure|=0.508$ and structure $0.859$, versus $0.001$ and $0.419$ for alternating chop; permutation entropy increases from $0.385$ to $0.568$. The nonzero trend entropy reflects entropy of transformed pressure rows including startup and transition behavior, not entropy of a strictly monotone price sequence.
 
-The support gate produces more than one Form only for SPY (two) and USO (three); the other six assets fall back to one. This is desirable restraint, but also shows that the current dictionary often adds no segmentation beyond the continuous field. Among 7,237 evaluation bars with state-conditional support, 395 are below the 0.05 tail cutoff (5.46\% pooled). Rates vary from 1.51\% for VNQ to 10.58\% for SPY (Figure~\ref{fig:field}). Serial dependence, changing distributions, and state conditioning prevent a nominal coverage interpretation.
+Under the chosen weighted Euclidean representation, $k$-means family, minimum-support rule, and silhouette threshold, multi-Form codebooks are accepted only for SPY (two) and USO (three). This may reflect weak separation, nonspherical structure, temporal drift, limited support, or a conservative gate; it is not proof that other assets have one natural state. Among 7,237 evaluation bars with state-conditional support, 395 enter the upper 5\% calibration-distance tail (5.46\% pooled). Rates vary from 1.51\% for VNQ to 10.58\% for SPY (Figure~\ref{fig:tailrates}); 33 USO evaluation bars lack the required same-state support and are reported separately from the denominator. Serial dependence, distribution shift, discrete ranks, and state conditioning prevent a nominal coverage interpretation. The shorter-window rates and Form instability in Appendix~\ref{app:resolution} are more consequential than the pooled proximity to 5\%.
 
-Resolution sensitivity is material. Relative to a dense step-1 horizon grid, the supplementary step-4 audit has median correlation 0.940 but median IQR-normalized MAE 0.203 across 540 dataset--feature comparisons; the 95th percentile error is 0.428. Pressure is comparatively stable, while geometric and propagation summaries move more. Horizon density is therefore a model parameter, not a rendering preference.
+Resolution sensitivity is material. Relative to a dense step-1 horizon grid over 8--64 bars, the supplementary step-4 audit has median correlation 0.940 but median IQR-normalized MAE 0.203 across 180 dataset--feature pairs; the 95th percentile error is 0.428. The reported total of 540 covers all three coarser grids (steps 2, 4, and 8), not step 4 alone. Pressure is comparatively stable, while geometric and propagation summaries move more. Because row-adjacent blending also changes with the grid, horizon density is a model parameter, not a rendering preference or pure numerical-resolution choice.
 
 \begin{figure}[t]
     \centering
@@ -189,29 +198,31 @@ Resolution sensitivity is material. Relative to a dense step-1 horizon grid, the
     \label{fig:field}
 \end{figure}
 
-The compact option snapshot requires roughly 0.1 seconds per snapshot and produces about 1.6 kB at the median in the local single-process Windows benchmark; the exact rerun values appear in Table~\ref{tab:validation}. These values establish an implementation scale only; they exclude data retrieval and do not predict production tail latency. The emitted payloads retain rank influence 0 and automatic execution false.
+The run-specific primary compute and payload measurements appear in Table~\ref{tab:validation}; the current supplementary distribution is preserved row-by-row in \texttt{option\_snapshot\_latency.csv} and linked to its source hashes by the run receipt. These volatile local measurements show feasibility for cache-only instrumentation, not a stable latency or payload contract. They exclude retrieval, persistence, fresh-process import, concurrent load, network and queueing, and a declared budget; live endpoint timing is a separate operational artifact. The emitted payloads retain rank influence 0 and automatic execution false.
 
 \section{Discussion and Limitations}
 
-The diagnostics support a modest claim: the implementation is causal at tested prefixes, deterministic for fixed inputs, responsive to controlled path structure, and operationally feasible as shadow metadata. They do not show that the representation predicts returns or improves option outcomes.
+The diagnostics support a modest claim: the serialized implementation is prefix-invariant at the tested endpoints, deterministic for fixed inputs, responsive to controlled path structure, and computationally plausible in a cache-only local benchmark. They do not show that the representation predicts returns, improves option outcomes, or meets a production latency service level.
 
-Several limitations are material. Parameters, horizon sets, smoothing coefficients, aggregation weights, clustering gates, and hypothesis quantiles are hand designed. High-order differences amplify noise, and the grid audit shows that some derived channels are resolution-sensitive. The research page may include a provider's partial bar, although the option snapshot removes incomplete daily bars using a fixed 16:15 America/New\_York cutoff that is not exchange-calendar-aware. The carrier baseline includes the current observation. Missing or zero volume can make participation and impact unavailable. Equal visual row spacing differs from the log-horizon coordinate used in derivatives.
+Several limitations are material. Parameters, horizon sets, smoothing coefficients, aggregation weights, clustering gates, and hypothesis quantiles are hand designed. High-order differences amplify noise, and the grid audit shows that some derived channels are resolution-sensitive. Row-adjacent smoothing is not invariant to log-horizon spacing. The research page may include a provider's partial bar, although the option snapshot removes incomplete daily bars using a fixed 16:15 America/New\_York cutoff that is not exchange-calendar-aware. The public API requests a hidden prefix of $\max(72,2h_{\max})$ bars beyond the visible response, but providers may return fewer bars. V1.1 reports visible versus calculation bars, input-quality counts, and whether a disclosed $2h_{\max}$ initialization target was covered; it still has no per-coordinate maturity mask. The option gate now requires 96 completed bars rather than the audited 60-bar baseline. A truncation audit over the final 32 bars confirms both the reason and the residual limitation: relative to full history, median/p90 IQR-normalized MAE is 0.501/2.009 at 60 bars, 0.035/0.931 at 96, 0.006/0.457 at 128, 0.0004/0.118 at 192, 0.00002/0.030 at 256, and approximately 0/0.003 at 365. Thus 96 is an explicit availability heuristic, not a convergence guarantee. The carrier baseline includes the current available observation. Sparse missing volume can leave participation windows unavailable; missing or zero volume makes the corresponding impact observation unavailable, although a rolling impact mean may still use earlier admissible observations. Equal visual row spacing differs from the log-horizon coordinate used in derivatives.
+
+The v1 null state also requires careful language. If $\pressure=v=G=0$, then $Coh=1$, state strength $S=0$, disorder $E=0$, Structure $=0.42$, and the legacy organization channel $O=0.68$. These values encode cross-horizon agreement and low motion, not active directional organization; the alternating-chop structure value 0.419 is essentially this floor. V1.1 exposes activity and horizon agreement separately, labels their composite, and reports the flat-field anchors without changing the v1 state vector. A gated alternative such as $S(0.58+0.42Coh)$ remains a candidate v2 ablation, not a silent reinterpretation of the reported v1 results.
 
 The Form dictionary clusters aggregate state vectors rather than complete cloud shapes; identities are not stable across windows. Evaluation bars and future option windows are serially dependent and overlapping. The current outcome ledger does not adjust for duration, delta, moneyness, spread, commission, slippage, early exercise, or capacity. Scanner selection and discretionary closure can create selection and survivorship bias. Cached cross-market sources have heterogeneous vintages, and association is not causation. A current IV-minus-HV snapshot is not a historical volatility surface or arbitrage measure.
 
-The next empirical stage should freeze an untouched symbol/period holdout, use rolling-origin evaluation with a purge and embargo at least as long as the outcome horizon, compare against price/volume, single-horizon EMA, HMM, change-point, wavelet/scattering, and persistent-homology baselines, and perform ablations by removing blending, higher derivatives, geometry/information, carriers, boundaries, and path fit. Option tests must normalize exposure and include executable quotes and costs. Dependence-aware intervals, family-level multiplicity control, and an explicit trial registry are prerequisites for any economic claim.
+The next empirical stage should freeze an untouched symbol/period holdout, use rolling-origin evaluation with a purge and embargo at least as long as the outcome horizon \citep{lopezdeprado2018advances}, compare against price/volume, single-horizon EMA, HMM, change-point, wavelet/scattering, and persistent-homology baselines, and perform ablations by removing blending, higher derivatives, geometry/information, carriers, boundaries, and path fit. Option tests must normalize exposure and include executable quotes and costs. Dependence-aware intervals, an explicit trial registry, and a predeclared multiplicity target are prerequisites for any economic claim. Benjamini--Hochberg controls false discovery rate, not family-wise error rate; those targets must not be conflated.
 
 \section{Conclusion}
 
-\method{} is best understood as an auditable representation and research protocol. It converts completed OHLCV prefixes into a multiscale surface, derives bounded time/scale measurements, translates them through a restrained request-local dictionary, and records option-aligned context without granting it decision authority. The present evidence establishes engineering properties and exposes calibration heterogeneity. The central hypothesis---that optionality mispricing behaves differently under different causal path configurations---remains deliberately unproven and is now instrumented for prospective evaluation.
+\method{} is best understood as an auditable representation and research protocol. It converts completed OHLCV prefixes into a multiscale surface, derives bounded time/scale measurements, translates them through a restrained request-local dictionary, and records option-aligned context without granting it algorithmic ranking or execution authority. The present evidence exercises selected engineering properties and exposes calibration heterogeneity; visible advice can still influence human judgment and must be logged as exposure. The central hypothesis---that optionality mispricing behaves differently under different non-anticipative path configurations---remains deliberately unproven and is now instrumented for prospective evaluation.
 
 \section*{Reproducibility Statement}
 
-The paper package contains the official unmodified ICLR 2026 style files, source \texttt{main.tex}, bibliography, generated tables and figures, data hashes, a cache-first asset script, and an executed notebook. The script imports the same production functions used by the application. It records the paper as-of date and distinguishes provider retrieval from cached reruns. Exact environment and commands are in the package README. No credentials, proprietary IBKR data, open positions, or secret-option records are included.
+The paper package contains the official unmodified ICLR 2026 style files, source \texttt{main.tex}, bibliography, generated tables and figures, input hashes, a cache-first asset script, executed notebooks, direct paper requirements, a full environment version capture, and a supplementary receipt with per-file hashes for evaluated dirty-tree source. The script imports the same production functions used by the application. It records the paper as-of date and distinguishes provider retrieval from a same-machine cached rerun. Raw Yahoo Finance snapshots are not publicly redistributed; consequently a fresh clone can reproduce the code path and derived artifacts but cannot reconstruct the exact historical sample without an independently matching provider response. Commands and environment limitations are in the package README. No credentials, proprietary IBKR data, open positions, or secret-option records are included.
 
 \section*{Ethics and Intended Use}
 
-This is an exploratory financial-research system, not investment advice or an autonomous trading agent. Visual fluency can create unwarranted confidence, so the interface and paper state which quantities are engineered analogues and which claims remain untested. The deployed option integration has no ranking or execution authority. Any later promotion requires new out-of-sample evidence and manual approval.
+This is an exploratory financial-research system, not investment advice or an autonomous trading agent. Visual fluency can create unwarranted confidence, so the interface and paper state which quantities are engineered analogues and which claims remain untested. The deployed option integration has no algorithmic ranking or execution authority, but its display may affect a human decision. Any later promotion requires new out-of-sample evidence, exposure-aware evaluation, and manual approval.
 
 \bibliography{references}
 \bibliographystyle{iclr2026_conference}
@@ -224,26 +235,50 @@ This is an exploratory financial-research system, not investment advice or an au
 \subsection{Input contract and pressure construction}
 
 The public research API accepts one symbol and one timeframe from
-\{1m, 5m, 15m, 30m, 1h, 2h, 4h, 1D, 1W\}. Horizons are bar counts within that timeframe; the current system does not fuse nine timeframes into one model. Requests permit 60--5,000 visible bars and horizons 4--160, subject to 120 horizon rows and 120,000 field cells. Input is sorted and deduplicated, OHLC is required, and missing volume becomes zero.
+\{1m, 5m, 15m, 30m, 1h, 2h, 4h, 1D, 1W\}. Horizons are bar counts within that timeframe; the current system does not fuse nine timeframes into one model. Requests permit 60--5,000 visible bars and horizons 4--160, subject to 120 horizon rows and 120,000 visible field cells. The API requests an additional hidden prefix of $\max(72,2h_J)$ bars, computes on all returned bars, and then trims the response. This is a requested warm-up, not a guarantee that the provider supplies it.
 
-True range is
+Let $\epsilon=10^{-9}$, let unqualified $\clip$ mean $\clip_{[0,1]}$, and define $\phi(x)=x/(1+|x|)$. The unsigned numerical clip first maps NaN to 0, $+\infty$ to 1, and $-\infty$ to 0. For span $q$, every EWM in the field uses the pandas \texttt{adjust=False} recursion
 \begin{equation}
-TR_t=\max(H_t-L_t,\ |H_t-C_{t-1}|,\ |L_t-C_{t-1}|).
+\EWM_q(x)_1=x_1,\qquad
+\EWM_q(x)_t=(1-\alpha_q)\EWM_q(x)_{t-1}+\alpha_qx_t,
+\quad \alpha_q=\frac{2}{q+1}.
+\label{eq:ewm}
 \end{equation}
-After Equations~\ref{eq:direction}--\ref{eq:efficiency}, $s^{(0)}_{h,t}=d_{h,t}e_{h,t}$ receives an EWM span 5. The first adjacent-horizon blend is
+The normalizer coerces timestamps and OHLC values, requires finite strictly positive OHLC with $H_t\ge\max(O_t,C_t,L_t)$ and $L_t\le\min(O_t,C_t,H_t)$, drops invalid price rows, keeps the last duplicate timestamp, sorts rows, and reports every rejection category. Boundary comparisons accept only a tight \texttt{isclose} tolerance (relative and absolute tolerance $10^{-12}$) to avoid rejecting floating-point boundary noise. Invalid or missing volume does not discard a valid price bar; it becomes unavailable for volume-dependent carriers and its coverage is reported. At least 60 valid price rows must remain for the public field. This visible input-quality contract is part of semantic revision 1.1.
+
+True range follows Wilder \citep{wilder1978new}:
 \begin{equation}
-q_{h,t}=0.68s_{h,t}+0.32N_h(s)_t,
+TR_t=\begin{cases}
+H_t-L_t,&t=1,\\
+\max(H_t-L_t,\ |H_t-C_{t-1}|,\ |L_t-C_{t-1}|),&t>1.
+\end{cases}
 \end{equation}
-where $N_h$ is the mean of adjacent rows with one-sided endpoints. After an EWM span-3 blur, the second blend is
+The true-range mean uses the available trailing $\min(h_j,t)$ observations. In Equation~\ref{eq:direction}, $z_{j,t}=0$ when that mean is zero. In Equation~\ref{eq:efficiency}, $e_{j,t}=0$ when the path sum is zero or $M_{t-h_j}$ is unavailable. Otherwise the triangle inequality makes clipping mathematically redundant. Let
+$s_{j,t}=\EWM_5(d_{j,t}e_{j,t})$. The first adjacent-row blend is
 \begin{equation}
-\pressure_{h,t}=0.58x_{h,t}
-+0.42\frac{x_{h-1,t}+2x_{h,t}+x_{h+1,t}}{4}.
+q_{j,t}=0.68s_{j,t}+0.32N_j(s)_t,
 \end{equation}
-At an edge, the neighbor expression becomes $(2x_{\mathrm{edge}}+x_{\mathrm{neighbor}})/3$.
+where $N_1(s)=s_2$, $N_J(s)=s_{J-1}$, and
+$N_j(s)=(s_{j-1}+s_{j+1})/2$ in the interior (with $N_1(s)=s_1$ when $J=1$). After $x_{j,t}=\EWM_3(q_j)_t$, the second blend is
+\begin{equation}
+\pressure_{j,t}=0.58x_{j,t}
++0.42\frac{x_{j-1,t}+2x_{j,t}+x_{j+1,t}}{4},\qquad 1<j<J.
+\end{equation}
+At an edge, the bracketed neighborhood becomes $(2x_{\mathrm{edge}}+x_{\mathrm{neighbor}})/3$; for $J=1$, $\pressure=x$. These convex operations preserve the pressure bound. Equal row adjacency, rather than distance in $\log h$, is the declared v1 smoothing model.
 
 \subsection{Base field channels}
 
-Let $G$ and $L$ denote unsigned first and second differences over the horizon axis, each transformed by $x/(1+x)$, and let $T=\clip(2.70|\Delta \pressure|)$. Then
+Write $u_j=\log h_j$ and let $\mathcal G_u$ denote the same nonuniform-grid derivative used by \texttt{numpy.gradient(..., edge\_order=1)}. Its endpoints are one-sided slopes. For an interior row, with $a=u_j-u_{j-1}$ and $b=u_{j+1}-u_j$,
+\begin{equation}
+(\mathcal G_uX)_j=
+-\frac{bX_{j-1}}{a(a+b)}+\frac{(b-a)X_j}{ab}
++\frac{aX_{j+1}}{b(a+b)}.
+\label{eq:scale-stencil}
+\end{equation}
+Let $R_1=\mathcal G_u\pressure$, $R_2=\mathcal G_uR_1$,
+$G=1.35|R_1|/(1+1.35|R_1|)$,
+$L=1.35|R_2|/(1+1.35|R_2|)$, and
+$T=\clip(2.70|\Delta_t\pressure|)$, where the first temporal difference is zero. Then
 \begin{align}
 S&=\clip(1.8|\pressure|), &
 Q&=\clip(1.4|v|),\\
@@ -253,7 +288,7 @@ E^{(0)}&=\clip(0.60(1-Coh)+0.40Q),&
 E&=\EWM_4(E^{(0)}),\\
 O&=\clip(0.48Coh+0.32S+0.20(1-E)).
 \end{align}
-Here $S,Q,B,Coh,E,O$ are state strength, velocity strength, boundary energy, coherence analogue, disorder analogue, and organization. Further channels are
+Here $S,Q,B,Coh,E,O$ are state strength, velocity strength, boundary energy, coherence analogue, disorder analogue, and the legacy display channel serialized as \texttt{confidence}. The state-vector stratum called Structure is different from $O$. Under the zero field, $(S,Q,G,L,T,E)=(0,0,0,0,0,0)$, $Coh=1$, and $O=0.68$; this means agreement at zero and low disorder, not active organization. Further display channels are
 \begin{align}
 \mathrm{Expansion}&=\clip(1.8\,\operatorname{sign}(\pressure)v),\\
 \mathrm{Contraction}&=\clip(-1.8\,\operatorname{sign}(\pressure)v),\\
@@ -265,46 +300,129 @@ These names are operational. Coherence is not spectral coherence; disorder is no
 
 \subsection{Research strata and carriers}
 
-Order-3 permutation entropy is evaluated causally over at most 24 ordinal patterns:
+For any row field $Y$, define signed normalization and causal difference operators
 \begin{equation}
-H_{\mathrm{perm}}=-\frac{\sum_\pi p_\pi\log p_\pi}{\log(3!)}.
+\mathcal N_q(Y)_{j,t}=\phi\!\left(\frac{Y_{j,t}}{\EWM_q(|Y_j|)_t}\right),
+\qquad
+\mathcal D_q(Y)_{j,t}=\mathcal N_q(Y_{j,t}-Y_{j,t-1}),
 \end{equation}
-Stable sorting breaks ties deterministically. With bounded scale gradient $g$ and velocity $v$,
-\begin{align}
-c_v&=\tanh\left(-\frac{vg}{g^2+0.08}\right),\\
-Pr&=\clip\left(1.8\sqrt{|v||g|}(0.45+0.55Coh)\right).
-\end{align}
-Horizon-reduced strata are
-\begin{align}
-\mathrm{Structure}&=0.58S+0.42Coh,\\
-\mathrm{Kinematics}&=0.18|v|+0.24|a|+0.27|j|+0.31|s_4|,\\
-\mathrm{Geometry}&=0.32|g|+0.28|c|+0.20|m|+0.20B,\\
-\mathrm{Information}&=0.72H_{\mathrm{perm}}+0.28E,\\
-\mathrm{Propagation}&=\mean_h Pr_h,\\
-\mathrm{CascadeBias}&=\frac{\sum_h Pr_hc_{v,h}}{\sum_hPr_h}.
-\end{align}
-The local scaling exponent is $\partial\log(RV+\epsilon)/\partial\log h$, clipped to $[-2,2]$; it is not a Hurst exponent or multifractal spectrum.
+with first difference and result zero when the denominator is at most $\epsilon$. Thus $v=\mathcal D_{13}(\pressure)$, $a=\mathcal D_{13}(v)$, $j=\mathcal D_{13}(a)$, and $s_4=\mathcal D_{13}(j)$. The research scale channels are
+\begin{equation}
+g=\mathcal N_{13}(\mathcal G_u\pressure),\qquad
+c=\mathcal N_{13}(\mathcal G_u\mathcal G_u\pressure),\qquad
+m=\mathcal D_{13}(g),
+\end{equation}
+where every EWM normalizes along time, row by row. Thus $m$ is a bounded temporal difference of the bounded scale gradient, not a raw mixed partial.
 
-Realized variation is $RV_{h,t}=\sqrt{\sum_{i=t-h+1}^t(\Delta\log C_i)^2}$ without annualization. Volume participation uses horizon rolling mean volume. The Amihud-like impact input is $|\Delta\log C_t|/(C_tV_t)$ before horizon averaging. Each carrier is divided by an EWM baseline with span $\max(34,2\max\mathcal{H})$ and clipped. The baseline includes the current observation.
+Order-3 permutation entropy is evaluated separately on each pressure row. At time $t$, a stable sort maps $(\pressure_{j,t-2},\pressure_{j,t-1},\pressure_{j,t})$ to one of $3!=6$ possible ordinal patterns, with earlier positions winning ties. The plug-in distribution uses the most recent at most 24 observed pattern \emph{instances}:
+\begin{equation}
+H^{\mathrm{perm}}_{j,t}=-\frac{\sum_{\pi\in S_3}p_{\pi,j,t}\log p_{\pi,j,t}}{\log 6},
+\end{equation}
+with $0\log0=0$. Before two pattern instances exist, the value is zero. This short-window plug-in estimator is descriptive and can be downward biased. A nine-timeframe sensitivity audit compares alternative instance windows with v1's 24: median entropy correlations are 0.451 (8), 0.630 (12), 0.606 (48), and 0.342 (96), with a minimum dataset correlation of $-0.014$. Window length is therefore a material model parameter rather than an innocuous variance setting. With bounded scale gradient $g$ and velocity $v$,
+\begin{align}
+c_{v,j,t}&=\tanh\left(-\frac{v_{j,t}g_{j,t}}{g_{j,t}^2+0.08}\right),\\
+Pr_{j,t}&=\clip\left(1.8\sqrt{|v_{j,t}||g_{j,t}|}(0.45+0.55Coh_{j,t})\right).
+\end{align}
+The constant 0.08 is an engineered regularizer. For an idealized translating front $P(u,t)=F(t-\beta u)$, $P_t=F'$ and $P_u=-\beta F'$, so $-P_tP_u=\beta(F')^2$. This supports the sign convention---positive indicates motion toward larger horizons---but amplitude deformation can produce the same analogue.
+
+The row-level strata are
+\begin{align}
+\mathrm{Structure}_{j,t}&=\clip(0.58S_{j,t}+0.42Coh_{j,t}),\\
+\mathrm{Kinematics}_{j,t}&=\clip(0.18|v|+0.24|a|+0.27|j|+0.31|s_4|)_{j,t},\\
+\mathrm{Geometry}_{j,t}&=\clip(0.32|g|+0.28|c|+0.20|m|+0.20B)_{j,t},\\
+\mathrm{Information}_{j,t}&=\clip(0.72H^{\mathrm{perm}}_{j,t}+0.28E_{j,t}).
+\end{align}
+Define horizon-weighted and arithmetic reductions
+\begin{equation}
+\mathcal A_h(Y)_t=\frac{\sum_{j=1}^Jh_jY_{j,t}}{\sum_{j=1}^Jh_j},
+\qquad
+\mathcal A_0(Y)_t=\frac1J\sum_{j=1}^JY_{j,t}.
+\label{eq:reductions}
+\end{equation}
+The five derivative coordinates use $\mathcal A_h$. Structure, Kinematics, Geometry, Information, and Propagation use $\mathcal A_0$, with
+\begin{equation}
+\mathrm{Propagation}_t=\mathcal A_0(Pr)_t,\qquad
+\mathrm{CascadeBias}_t=
+\begin{cases}
+\dfrac{\sum_jPr_{j,t}c_{v,j,t}}{\sum_jPr_{j,t}},&\sum_jPr_{j,t}>\epsilon,\\
+0,&\text{otherwise}.
+\end{cases}
+\end{equation}
+
+Let $C_t^+=\max(C_t,\epsilon)$ and $r_t=\Delta\log C_t^+$ with $r_1=0$. Realized variation is
+$RV_{j,t}=\sqrt{\sum_{i=t-h_j+1}^t r_i^2}$ over available observations, without annualization. The local scaling exponent is
+\begin{equation}
+\gamma_{j,t}=\clip_{[-2,2]}\left[\mathcal G_u\log(RV+\epsilon)\right]_{j,t},
+\qquad \mathrm{ScalingExponent}_t=\clip_{[-2,2]}\mathcal A_0(\gamma)_t.
+\end{equation}
+It is not a Hurst exponent or multifractal spectrum. For equal per-bar squared variation, $RV_h\propto h^{1/2}$ and $\gamma\approx0.5$ is the natural reference. A value near 0 means accumulated variation changes little across the local scale neighborhood (for example, one common shock dominates); 1 means approximately linear growth in $RV_h$; and a negative finite-difference estimate is a local stencil/startup irregularity rather than evidence of anti-persistence.
+
+Let $\widetilde V_t=V_t$ when volume is finite and nonnegative, and let it be unavailable otherwise. Define the pointwise impact observation
+\begin{equation}
+Z_t=\begin{cases}|r_t|/(C_t^+\widetilde V_t),&\widetilde V_t>0,\\
+\mathrm{NaN},&\text{otherwise},\end{cases}
+\end{equation}
+so missing, invalid, and zero volume make that impact observation unavailable rather than zero. The row inputs
+\begin{equation}
+U_{j,t}=\operatorname{mean}_{i=t-h_j+1}^{t,\,\widetilde V_i\ \mathrm{available}}\widetilde V_i,
+\qquad
+I_{j,t}=\operatorname{mean}_{i=t-h_j+1}^{t,\,Z_i\ \mathrm{available}}Z_i
+\end{equation}
+use available observations only (pandas rolling means with \texttt{min\_periods=1}); either mean is unavailable when its window has no admissible observation. Here $I$ is Amihud-like \citep{amihud2002illiquidity}. For $X\in\{RV,U,I\}$ and $b=\max(34,2h_J)$, the bounded carrier field and separately displayed direct ratio are
+\begin{align}
+L_b(X)_{j,t}&=\clip\left[0.5+0.5\tanh\left(2\log\frac{X_{j,t}+\epsilon}{\EWM_b(X_j)_t+\epsilon}\right)\right],\\
+R_b(X)_{j,t}&=\clip_{[0,10]}\frac{X_{j,t}+\epsilon}{\EWM_b(X_j)_t+\epsilon}.
+\end{align}
+The three state-vector carriers are $\mathcal A_0(L_b(RV))$, $\mathcal A_0(L_b(U))$, and $\mathcal A_0(L_b(I))$. The pandas EWM baseline is evaluated on the masked series and includes the current available observation. A direct ratio is unavailable wherever its current rolling input is unavailable; participation and impact ratios also require at least one positive-volume observation in the input. Missing internal carrier cells are filled with 0.5 only after this calculation to keep the optional retrospective clustering path finite: 0.5 is a neutral computational placeholder, not an observation, and must not be reported as a measured $1.0\times$ ratio. Impact cannot be observed from a zero-volume bar.
 
 \section{Dictionary Chronology and Semantics}
 \label{app:dictionary}
 
-The state vector contains five horizon-weighted derivatives, seven strata, and three aggregate carriers. Each family receives total distance weight $1/3$, divided equally among its members. Proper-fit medians and IQRs standardize features, with MAD, standard deviation, and unit fallback scales.
+Using Equation~\ref{eq:reductions}, the exact state vector is
+\begin{align}
+\mathbf x_t=(&\mathcal A_h(\pressure),\mathcal A_h(v),\mathcal A_h(a),\nonumber\\
+&\mathcal A_h(j),\mathcal A_h(s_4),
+\mathcal A_0(\mathrm{Structure}),\mathcal A_0(\mathrm{Kinematics}),\nonumber\\
+&\mathcal A_0(\mathrm{Geometry}),\mathcal A_0(\mathrm{Information}),
+\mathrm{Propagation},\mathrm{CascadeBias},\nonumber\\
+&\mathrm{ScalingExponent},\mathcal A_0(L_b(RV)),
+\mathcal A_0(L_b(U)),\mathcal A_0(L_b(I)))\in\R^{15}.
+\label{eq:state-vector}
+\end{align}
+The first five, next seven, and final three coordinates form derivative, field-transform, and OHLCV-carrier families.
 
-Evaluation begins at 60\% of the available sequence, subject to minimal-length guards. The preceding post-warm-up interval is split so the later calibration segment contains approximately one third, at least 20 bars where possible, while at least 20 proper-fit bars remain. Robust scaling, farthest-first initialization, $k$ selection, centroids, and naming grammar use proper fit only. Calibration supplies distance references. Evaluation supplies the displayed sequence and descriptive forward annotations.
+For $N$ available rows, v1 uses zero-based split indexes
+\begin{align}
+t_E&=\max(5,\min(\lfloor0.60N\rfloor,N-6)),\\
+t_F&=\min(w,\max(0,t_E-40)),\qquad w=\max(34,2h_J),\\
+n_{cal}&=\min\{\max(20,\lfloor(t_E-t_F)/3\rfloor),\max(0,t_E-t_F-20)\},\\
+t_C&=t_E-n_{cal}.
+\end{align}
+Proper fit is $[t_F,t_C)$, held-out distance calibration is $[t_C,t_E)$, and evaluation is $[t_E,N)$. Thus the fit and calibration segments retain at least 20 rows when the input guards permit. Scaling, codebook selection, centroids, and transition grammar use proper fit only; state-conditional distance references use calibration; evaluation supplies displayed sequences and descriptive forward annotations.
 
-The reported match score is
+For feature $\ell$, proper-fit center is the median and initial scale is the interquartile range. If scale is at most $\epsilon$, fallback order is $1.4826$ times median absolute deviation, population standard deviation, and finally 1, each selected only when greater than $\epsilon$. Let $z_{t\ell}=(x_{t\ell}-m_\ell)/s_\ell$. Squared metric distance is
 \begin{equation}
-\mathrm{match}_t=\exp\left(-d_t/\med(d^{\mathrm{cal}})\right),
+d(\mathbf x_t,\boldsymbol\mu)^2=
+\frac1{15}\sum_{\ell\in\mathcal D}(z_{t\ell}-\mu_\ell)^2+
+\frac1{21}\sum_{\ell\in\mathcal S}(z_{t\ell}-\mu_\ell)^2+
+\frac1{9}\sum_{\ell\in\mathcal C}(z_{t\ell}-\mu_\ell)^2,
+\label{eq:metric}
 \end{equation}
-and is not a probability. Evaluation outcomes use overlapping windows and are not independent. Form names summarize calibration-relative measurement profiles; they are not universal economic regimes or concepts learned independently of the feature design.
+where family sizes are 5, 7, and 3. Equivalently, coordinates are multiplied by the square root of their displayed weight before Euclidean $k$-means and silhouette computation.
+
+For each candidate $k=2,\ldots,\min(5,\lfloor n_{fit}/n_{min}\rfloor)$, where $n_{min}=\max(20,\lceil0.05n_{fit}\rceil)$, the first seed is the fit point closest to the metric-space origin. Each later seed is the point farthest from its nearest existing seed; first row wins an exact tie. Lloyd updates run for at most 40 iterations, nearest-centroid ties choose the lowest index, and an empty cluster retains its previous centroid. Convergence requires unchanged assignments and centroids within absolute tolerance $10^{-12}$ and zero relative tolerance. A candidate is discarded if any cluster lacks $n_{min}$ rows, any centroid separation is at most $10^{-6}$, two centroids share the same coordinatewise 0.35-bin signature, or mean metric-space silhouette is below 0.25. The accepted candidate maximizes silhouette, with smaller $k$ winning a tie; if none passes, $k=1$. Final centroids are ordered lexicographically after rounding metric coordinates to 10 decimals. These choices are deterministic engineering rules, not evidence that the resulting Forms are natural latent states.
+
+The reported legacy match transform uses the median of \emph{pooled} calibration nearest-centroid distances (falling back to fit distances only if calibration is empty):
+\begin{equation}
+\mathrm{match}_t=\exp\left(-d_t/\max(\med(d^{\mathrm{cal}}),\epsilon)\right).
+\end{equation}
+It is a monotone resonance transform, not a probability; the state-conditional empirical tail rank in Equation~\ref{eq:tail} is the more transparent distance context. Evaluation outcomes use overlapping windows and are not independent. Form names summarize calibration-relative measurement profiles; they are not universal economic regimes or concepts learned independently of the feature design.
 
 \begin{table}[h]
     \centering
     \small
     \input{tables/asset_summary.tex}
-    \caption{Daily-series dictionary diagnostics. Silhouette is zero when the support gate returns one Form. Tail $n$ counts evaluation bars with at least 20 state-conditional calibration references.}
+    \caption{Daily-series dictionary diagnostics. Silhouette is zero when the support gate returns one Form. Tail $n$ counts evaluation bars with at least 20 state-conditional calibration references. The table's ``Outside'' column preserves the v1 legacy label and means upper 5\% calibration-distance tail.}
     \label{tab:assets}
 \end{table}
 
@@ -318,45 +436,55 @@ and is not a probability. Evaluation outcomes use overlapping windows and are no
 \section{Completed-Bar Option Contract}
 \label{app:option}
 
-The option snapshot retains at most 365 daily bars, requires at least 60, and treats a session as complete after 16:15 America/New\_York. It uses horizons $\{12,14,\ldots,48\}$ and excludes retrospective dictionary sections. Support and resistance are strictly shifted:
+The option snapshot retains at most 365 daily bars, requires at least 96, and treats a session as complete after 16:15 America/New\_York. It uses horizons $\{12,14,\ldots,48\}$ and excludes retrospective dictionary sections. The 96-bar threshold is the disclosed $2h_{\max}$ initialization target adopted after the truncation audit; snapshots with 60--95 bars are unavailable and report how many bars are still needed. The payload also records alignment basis, maturity, input quality, and authority. It has no per-coordinate maturity mask, and 96 bars do not make the infinite-memory EWM identical to a full-history calculation. Support and resistance are strictly shifted:
 \begin{equation}
-\mathrm{Support}_t=\min(L_{t-20:t-1}),\qquad
-\mathrm{Resistance}_t=\max(H_{t-20:t-1}).
+\mathrm{Support}_t=\min_{i=t-20}^{t-1}L_i,\qquad
+\mathrm{Resistance}_t=\max_{i=t-20}^{t-1}H_i.
 \end{equation}
 ATR is a trailing 14-bar simple mean of true range. Range position, close-to-SMA20, five-bar return, and ATR distance to the boundaries provide price-action context.
 
-All hypothesis thresholds are computed on prior rows and require at least 20 observations:
+All hypothesis thresholds are computed from rows strictly before the current row and require at least 20 finite observations. Quantiles use NumPy's default linear interpolation:
 \begin{itemize}
     \item \textbf{Organized expansion:} structure $\ge q_{70}$, propagation $\ge q_{60}$, information $\le q_{50}$, and $|p|\ge q_{60}$.
     \item \textbf{Longward cascade:} propagation $\ge q_{72}$, cascade bias $\ge\max(0.08,q_{62})$, and $|p|\ge q_{55}$.
     \item \textbf{Geometry/disorder shock:} geometry $\ge q_{75}$ and information $\ge q_{60}$.
-    \item \textbf{Kinematic exhaustion:} kinematics $\ge q_{75}$, $|p|\ge q_{65}$, and aligned velocity $\le q_{35}$.
+    \item \textbf{Kinematic exhaustion:} kinematics $\ge q_{75}$, $|p|\ge q_{65}$, and pressure-aligned velocity $\widetilde v=\operatorname{sign}(p)v\le q_{35}$.
 \end{itemize}
-These are deterministic exploratory definitions, not trained classifiers.
+These are deterministic exploratory definitions, not trained classifiers. The legacy fallback assumes a long directional single-leg interpretation; semantic v1.1 instead prefers signed delta or opening action plus option type, and abstains for unsupported exposure rather than applying that fallback to a known short or multi-leg structure.
 
-The scanner's champion score remains
+Each scanner component is an existing heuristic on $[0,100]$. Its base score remains
 \begin{equation}
-0.30\,\mathrm{cheapness}+0.28\,\mathrm{volEdge}
-+0.27\,\mathrm{contractQuality}+0.15\,\mathrm{executionQuality},
+B=0.30\,\mathrm{cheapness}+0.28\,\mathrm{volEdge}
++0.27\,\mathrm{contractQuality}+0.15\,\mathrm{executionQuality}.
 \end{equation}
-apart from an existing recurrence increment. \method{} has zero score weight. In the manager, field evidence may lower a displayed shadow confidence by one level or increase displayed urgency, but cannot change hard vetoes, verdicts, targets, sizing, or execution. The challenger remains unpromoted until at least 100 cycles, 25 additional new cycles, incremental out-of-sample value, and manual approval.
+For nonnegative integer recent-symbol, total-symbol, and recent-group counts $(s_r,s_T,g_r)$, the pre-existing recurrence component is
+\begin{align}
+R=\clip_{[0,100]}(&18\min(s_r,4)+4\min(\max(s_T-1,0),5)\nonumber\\
+&+3\min(\max(g_r-s_r,0),6)),\qquad
+\mathrm{rank}=\clip_{[0,100]}(B+0.12R).
+\end{align}
+\method{} has zero weight in both equations. In the manager, field evidence may lower displayed advisory confidence or increase displayed urgency; because the decision window is rebuilt after that advisory change, urgency may also recompute \texttt{next\_review\_date}. It cannot change hard vetoes, verdicts, targets, sizing, or execution. The challenger remains unpromoted until at least 100 cycles, 25 additional new cycles, incremental out-of-sample value, and manual approval. Existing targeted tests compare scanner scores and manager verdict/target-size fields with and without the field. The reported audit still lacks one complete eligibility-through-execution metamorphic proof and impression-level exposure logging.
 
 \section{Cross-Market Shadow Atlas}
 
-The research page can read cached energy, real estate, agriculture, metals, sector-divergence, and crypto measures. For each source, it screens Spearman association \citep{spearman1904association} between source pressure change and daily target log return at lags 0, 1, 5, and 20. The first 70\% selects the largest absolute association. Holdout inference uses 199 fixed-block permutations of ranked source values with block length five and Benjamini--Hochberg correction \citep{benjaminihochberg1995fdr}. A relationship is called persistent only when calibration and holdout signs agree, holdout $|\rho|\ge0.15$, and $q\le0.10$.
+The research page can read cached energy, real estate, agriculture, metals, sector-divergence, and crypto measures. For each source, it screens Spearman association \citep{spearman1904association} between source pressure change and daily target log return at lags 0, 1, 5, and 20. The first 70\% selects the largest absolute association. Holdout inference uses 199 fixed-block permutations of ranked source values with block length five and Benjamini--Hochberg correction \citep{benjaminihochberg1995fdr}. This controls false discovery rate under its assumptions, not family-wise error rate. A relationship is called persistent only when calibration and holdout signs agree, holdout $|\rho|\ge0.15$, and $q\le0.10$.
 
 This atlas is explicitly \texttt{shadow\_only} with no field influence. It is association screening, not evidence of a spillover mechanism. Sources have heterogeneous cache vintages and are daily even when the selected field is intraday. The option snapshot intentionally excludes them until stronger alignment, provenance, and prospective validation exist.
 
 \section{Multi-Timeframe and Resolution Sensitivity}
 \label{app:resolution}
 
-The supplementary audit freezes 9,235 completed bars across 15 datasets: SPY at 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1D, and 1W, plus six additional daily markets. It excludes 15 latest rows under a conservative completion policy and finds zero duplicate timestamps, missing OHLCV cells, or invalid OHLC rows. All 46 prefix checks, including a direct mutation of the unseen SPY suffix, have zero serialized deviation; all 16 repeated canonical-hash checks match. Every evaluated channel is finite across all nine timeframes. These are availability and invariance results, not evidence that one parameterization transfers economically across sampling frequencies.
+The supplementary locally retained snapshot contains 9,235 completed bars across 15 datasets: SPY at 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1D, and 1W, plus six additional daily markets. It excludes 15 latest rows under a conservative completion policy and finds zero duplicate timestamps, missing OHLCV cells, or invalid OHLC rows. All 46 prefix checks, including a direct mutation of the unseen SPY suffix, have zero error across 24,472 full-precision numeric values at tolerance $10^{-12}$; all 16 repeated canonical-hash checks match. The audit covers live matrices and aggregate derivatives, strata, carriers, and ratios while bypassing response rounding. Every evaluated channel is finite across all nine timeframes. These are availability and implementation-invariance results, not evidence that one parameterization transfers economically across sampling frequencies.
 
-For grid sensitivity, step 1 over horizons 12--48 is the reference and steps 2, 4, and 8 are recomputed from the same completed prefixes after a 128-bar warm-up. Across 15 datasets and 12 aggregate features, step 4 produces median correlation 0.940 and median IQR-normalized MAE 0.203; its 95th-percentile normalized error is 0.428. The worst step-4 pair is the SPY 15m scaling exponent (normalized MAE 0.730, correlation 0.911). This does not define an optimal grid. It demonstrates that convergence must be measured per channel and that denser horizon resolution cannot be described as a purely visual enhancement.
+For grid sensitivity, step 1 over horizons 8--64 is the reference and steps 2, 4, and 8 are recomputed from the same completed prefixes. The audit discards $W=\min(128,\max(60,\lfloor N/3\rfloor))$ startup rows. For reference series $y$ and candidate $\widehat y$, it reports
+\begin{equation}
+\mathrm{NMAE}_{IQR}=\frac{\mean_t|y_t-\widehat y_t|}{Q_{0.75}(y)-Q_{0.25}(y)},
+\end{equation}
+and leaves the statistic unavailable when the denominator is at most $10^{-9}$. Across 15 datasets and 12 aggregate features, step 4 contains 180 pairs and produces median correlation 0.940 and median NMAE$_{IQR}$ 0.203; its 95th-percentile error is 0.428. All three coarser grids together contain 540 pairs. The worst step-4 pair is the SPY 15m scaling exponent (NMAE$_{IQR}$ 0.730, correlation 0.911). This does not define an optimal grid. It demonstrates that convergence must be measured per channel and that denser horizon resolution cannot be described as a purely visual enhancement.
 
-Dictionary stability is weaker. On the 749-bar SPY daily window, the 70\% prefix selects one Form while the full window selects two, producing adjusted Rand index 0.000 on their overlap. The 85\% prefix and full window both select two and achieve 0.873. On this shorter frozen window, SPY and QQQ outside-range rates are 36.7\% and 42.7\%, versus 10.6\% and 4.4\% in the longer primary sample. The difference is not pooled away: it is direct evidence that Form identity and empirical distance ranks are window- and distribution-dependent. Only two next-state entries meet the current reliability support across seven daily dictionaries.
+Dictionary stability is weaker. On the 749-bar SPY daily window, the 70\% prefix selects one Form while the full window selects two, producing adjusted Rand index \citep{hubertarabie1985comparing} 0.000 on their overlap. The 85\% prefix and full window both select two and achieve 0.873. On this shorter local window, SPY and QQQ upper calibration-distance-tail rates are 36.7\% and 42.7\%, versus 10.6\% and 4.4\% in the longer primary sample. The difference is not pooled away: it is direct evidence that Form identity and empirical distance ranks are window- and distribution-dependent. Only two next-state entries meet the current reliability support across seven daily dictionaries.
 
-A live operational probe returned HTTP 200 for all nine timeframe selectors, with median end-to-end latency 6.41 seconds, but conservatively flagged all latest provider bars as possibly forming. Consequently, paper results use frozen completed prefixes. Live endpoint availability is reported only as an operational check.
+A live operational probe artifact records HTTP 200 for all nine timeframe selectors and its run-specific endpoint timings, but conservatively flagged all latest provider bars as possibly forming. Consequently, paper results use locally retained completed prefixes. Live endpoint availability and timing are reported only as an operational check, not a stable performance distribution.
 
 \section{Evaluation Details and Threats to Validity}
 
@@ -364,16 +492,16 @@ A live operational probe returned HTTP 200 for all nine timeframe selectors, wit
 The deterministic reversal series contains 800 bars, a positive log drift before bar 400 and a negative drift afterward, with fixed OHLC ranges and volume. Threshold delay is the first post-reversal bar where $\pressure_{h,t}<-0.05$. The trend/chop contrast holds bar ranges and deterministic generation fixed while changing directional path organization. These tests are useful precisely because the expected behavior follows from construction; they do not estimate generalization.
 
 \paragraph{Prefix audit.}
-For each of eight daily series and four cut points, the script rebuilds both the prefix and full history. It compares 11 serialized channels over 19 horizon rows at the matching final prefix timestamp. A zero difference means the tested implementation did not use the later suffix. It does not prove causal inference, provider timestamp correctness, or absence of bugs outside the selected paths.
+For each of eight daily series and four cut points, the primary script rebuilds both the prefix and full history. It compares 11 four-decimal serialized channels over 19 horizon rows at the matching final prefix timestamp. The supplementary full-precision audit expands live numeric coverage as described above. Zero difference means the tested paths did not use the later suffix; it does not prove causal inference, provider timestamp correctness, or absence of bugs outside those paths. Remaining regression scope includes maturity metadata, hypothesis flags, lexicon fields under a fixed split, and the complete final option snapshot.
 
 \paragraph{Distance tails.}
 The pooled rate in Table~\ref{tab:validation} is descriptive. Bars are serially dependent; calibration sizes vary by state; the same hyperparameters were developed while observing related markets; and distributions drift. Asset-level dispersion in Figure~\ref{fig:tailrates} is more informative than the pooled proximity to 5\%.
 
 \paragraph{Operational benchmark.}
-Timing uses one local Windows process, eight cached in-memory histories, ten repetitions per symbol, and excludes retrieval and persistence. It cannot be compared directly to production request latency.
+Timing uses one local Windows process with imports already loaded and cached in-memory histories. The supplementary distribution contains 63 warm runs across seven symbols; it excludes retrieval, persistence, fresh-process import time, concurrent load, network, and production queueing. It cannot be compared directly to production request latency or a service-level objective.
 
 \paragraph{Data quality.}
-Yahoo Finance adjusted OHLCV is convenient and reproducible only up to provider revisions. It is not the live IBKR path used by every application request. Corporate-action adjustments alter historical levels. The package therefore records canonical row hashes and never presents the sample as immutable exchange truth.
+Yahoo Finance adjusted OHLCV is convenient and reproducible only up to provider revisions. It is not the live IBKR path used by every application request. Corporate-action adjustments alter historical levels. The package therefore records canonical row hashes and never presents the sample as immutable exchange truth. Raw snapshots are retained locally but not redistributed; a fresh provider retrieval is a new sample even when its requested ticker and dates match.
 
 \section{Research Progression and Design Rationale}
 
@@ -392,17 +520,17 @@ This progression is a design synthesis of established ideas, not a claim of new 
 
 \section{Planned Economic Evaluation}
 
-A preregistered next study should define a frozen universe, start date, option entry rule, holding horizon, and no-touch final holdout. At each origin, all scaling, thresholds, codebooks, and optionality baselines must be refit using only admissible history. The purge/embargo must cover the maximum holding horizon. Primary endpoints should be stated before inspection and include both statistical and economic measures. Dependence-aware resampling should use a documented block procedure such as the stationary bootstrap \citep{politisromano1994stationary}.
+A preregistered next study should define a frozen universe, start date, option entry rule, holding horizon, and no-touch final holdout. At each origin, all scaling, thresholds, codebooks, and optionality baselines must be refit using only admissible history. The purge/embargo must cover the maximum holding horizon \citep{lopezdeprado2018advances}. Primary endpoints should be stated before inspection and include both statistical and economic measures. Dependence-aware resampling should use a documented block procedure such as the stationary bootstrap \citep{politisromano1994stationary}.
 
 Baselines should include price/volume technical features, a single-horizon EMA system, HMM or sticky-HMM state estimates, structural or Bayesian change points, wavelet/scattering features, a sliding-window persistent-homology representation \citep{pereaharer2015sliding,gideakatz2018tda}, IV-minus-realized-volatility alone, and a cross-market connectedness model. Ablations should remove one family at a time and replace dictionary labels with the raw continuous vector.
 
-Option outcomes require executable bid/ask observations, commissions, slippage, stale-quote controls, exercise conventions, and normalization by maturity, moneyness, delta, vega, exposure, and holding period. Dependence-aware bootstrap intervals and family-wise discovery control must accompany repeated variants. A positive retrospective average is insufficient for promotion.
+Option outcomes require executable bid/ask observations, commissions, slippage, stale-quote controls, exercise conventions, and normalization by maturity, moneyness, delta, vega, exposure, and holding period. Dependence-aware bootstrap intervals and a predeclared multiplicity procedure must accompany repeated variants; the study must state whether it targets exploratory FDR or confirmatory family-wise error. A positive retrospective average is insufficient for promotion.
 
 \section{Implementation Scope and Non-Claims}
 
 The current repository does not implement a Voss tactical wave, Takens embedding, optical flow, transfer entropy, Granger-causal propagation, Hurst or multifractal estimation, persistent cross-window Form identity, multi-symbol or nine-timeframe fusion, historical option surfaces, or a validated execution model. The renderer uses Canvas2D color quantization and display smoothing rather than true contour geometry, Gaussian/Sobel shaders, or WebGL.
 
-Accordingly, the paper does not claim universal states, attractors, cycles, arbitrage, predictive return skill, profitable option selection, cross-market causation, or autonomous decision quality. The words \emph{causal} and \emph{prospective} refer respectively to prefix-only computation and time-stamped future evaluation.
+Accordingly, the paper does not claim universal states, attractors, cycles, arbitrage, predictive return skill, profitable option selection, cross-market causation, or autonomous decision quality. The words \emph{causal} and \emph{prospective} refer respectively to non-anticipative prefix computation---not causal inference---and time-stamped future evaluation.
 
 \section{LLM Usage Statement}
 

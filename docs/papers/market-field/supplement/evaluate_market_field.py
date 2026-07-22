@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import math
 import platform
@@ -40,14 +41,38 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.services.market_data.yahoo_provider import YahooProvider  # noqa: E402
+from app.services import market_weather as market_weather_module  # noqa: E402
+from app.services import market_weather_research as market_weather_research_module  # noqa: E402
 from app.services.market_weather import MarketWeatherSettings, build_market_weather  # noqa: E402
-from app.services.option_field_context import build_option_field_context  # noqa: E402
+from app.services.option_field_context import (  # noqa: E402
+    OPTION_FIELD_HORIZONS,
+    OPTION_FIELD_MIN_BARS,
+    build_option_field_context,
+)
 
 
 RAW_DIR = HERE / "data" / "raw"
 RESULTS_DIR = HERE / "results"
 FIGURES_DIR = HERE / "figures"
 MANIFEST_PATH = RAW_DIR / "manifest.json"
+RUN_RECEIPT_PATH = RESULTS_DIR / "run_receipt.json"
+
+RECEIPT_SOURCE_PATHS = (
+    Path("backend/app/services/market_weather.py"),
+    Path("backend/app/services/market_weather_research.py"),
+    Path("backend/app/services/market_weather_context.py"),
+    Path("backend/app/services/option_field_context.py"),
+    Path("backend/app/services/market_data/yahoo_provider.py"),
+    Path("backend/app/api/market_weather.py"),
+    Path("docs/papers/market-field/supplement/evaluate_market_field.py"),
+)
+RECEIPT_DEPENDENCIES = (
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "scipy",
+    "yfinance",
+)
 
 BASE_HORIZONS = tuple(range(12, 50, 2))
 RESOLUTION_STEPS = (1, 2, 4, 8)
@@ -55,6 +80,10 @@ TIMEFRAMES = ("1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D", "1W")
 DAILY_SYMBOLS = ("SPY", "QQQ", "IWM", "TLT", "GLD", "USO", "BTC-USD")
 PREFIX_FRACTIONS = (0.60, 0.80, 0.95)
 PREFIX_TOLERANCE = 1e-4
+FULL_PRECISION_TOLERANCE = 1e-12
+HISTORY_WINDOWS = (60, 96, 128, 192, 256, 365)
+ENTROPY_WINDOWS = (8, 12, 24, 48, 96)
+PUBLIC_API_MIN_VISIBLE_BARS = 60
 MARKET_TZ = ZoneInfo("America/New_York")
 DAILY_COMPLETION_TIME = wall_time(16, 15)
 
@@ -124,6 +153,159 @@ def sha256_file(path: Path) -> str:
 def canonical_hash(payload: Any) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=json_default).encode("utf-8")
     return sha256_bytes(encoded)
+
+
+def _git_command(*args: str) -> tuple[int, str, str]:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
+
+
+def repository_run_context() -> dict[str, Any]:
+    head_code, head, head_error = _git_command("rev-parse", "HEAD")
+    branch_code, branch, branch_error = _git_command("branch", "--show-current")
+    status_code, status, status_error = _git_command(
+        "status",
+        "--short",
+        "--untracked-files=all",
+    )
+    status_entries = status.splitlines() if status_code == 0 and status else []
+    status_summary: dict[str, int] = {}
+    for entry in status_entries:
+        code = entry[:2] if len(entry) >= 2 else "??"
+        status_summary[code] = status_summary.get(code, 0) + 1
+    dirty = bool(status_entries) if status_code == 0 else None
+    if dirty is True:
+        provenance_note = (
+            "The evaluation used working-tree files. HEAD is recorded only as a repository "
+            "reference and must not be described as the exact evaluated source snapshot."
+        )
+    elif dirty is False:
+        provenance_note = (
+            "The working tree was clean at capture time; HEAD identifies the evaluated "
+            "repository state, subject to the per-file hashes in this receipt."
+        )
+    else:
+        provenance_note = (
+            "Git status was unavailable. Use the per-file hashes, not HEAD, as the evaluated "
+            "source identity."
+        )
+    errors = [
+        message
+        for code, message in (
+            (head_code, head_error),
+            (branch_code, branch_error),
+            (status_code, status_error),
+        )
+        if code != 0 and message
+    ]
+    return {
+        "head": head if head_code == 0 else None,
+        "branch": branch if branch_code == 0 else None,
+        "dirty": dirty,
+        "status_entry_count": len(status_entries),
+        "status_summary": dict(sorted(status_summary.items())),
+        "status_entries": status_entries,
+        "provenance_note": provenance_note,
+        "git_errors": errors,
+    }
+
+
+def receipt_source_hashes() -> dict[str, str | None]:
+    return {
+        path.as_posix(): sha256_file(REPO_ROOT / path) if (REPO_ROOT / path).is_file() else None
+        for path in RECEIPT_SOURCE_PATHS
+    }
+
+
+def receipt_dependency_versions() -> dict[str, str | None]:
+    versions: dict[str, str | None] = {}
+    for distribution in RECEIPT_DEPENDENCIES:
+        try:
+            versions[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            versions[distribution] = None
+    return versions
+
+
+def artifact_receipt_entry(path: Path, *, kind: str) -> dict[str, Any]:
+    return {
+        "path": str(path.relative_to(HERE)).replace("\\", "/"),
+        "kind": kind,
+        "bytes": path.stat().st_size,
+        "sha256": sha256_file(path),
+    }
+
+
+def build_run_receipt(
+    *,
+    started_at_utc: datetime,
+    repository_at_start: Mapping[str, Any],
+    source_hashes_at_start: Mapping[str, str | None],
+    manifest: Mapping[str, Any],
+    tables: Mapping[str, pd.DataFrame],
+    figures: Sequence[Path],
+) -> dict[str, Any]:
+    completed_at_utc = datetime.now(timezone.utc)
+    source_hashes_at_completion = receipt_source_hashes()
+    source_changes = sorted(
+        path
+        for path in set(source_hashes_at_start).union(source_hashes_at_completion)
+        if source_hashes_at_start.get(path) != source_hashes_at_completion.get(path)
+    )
+    generated_artifacts = [
+        artifact_receipt_entry(RESULTS_DIR / filename, kind="table")
+        for filename in tables
+    ]
+    generated_artifacts.extend(
+        artifact_receipt_entry(path, kind="figure")
+        for path in figures
+    )
+    generated_artifacts.extend(
+        artifact_receipt_entry(RESULTS_DIR / filename, kind="result")
+        for filename in ("summary.json", "shadow_boundary.json")
+    )
+    return {
+        "receipt_version": "market_field_supplement_run_receipt_v1",
+        "started_at_utc": started_at_utc.isoformat().replace("+00:00", "Z"),
+        "completed_at_utc": completed_at_utc.isoformat().replace("+00:00", "Z"),
+        "elapsed_seconds": (completed_at_utc - started_at_utc).total_seconds(),
+        "repository_at_start": dict(repository_at_start),
+        "sources": {
+            "sha256_at_start": dict(source_hashes_at_start),
+            "sha256_at_completion": source_hashes_at_completion,
+            "changed_during_run": source_changes,
+            "stable_for_run": not source_changes,
+            "identity_rule": (
+                "Per-file SHA-256 values identify evaluated source. A dirty HEAD is a parent "
+                "reference only, not an exact source snapshot."
+            ),
+        },
+        "input_snapshot": {
+            "manifest_path": str(MANIFEST_PATH.relative_to(HERE)).replace("\\", "/"),
+            "manifest_sha256": sha256_file(MANIFEST_PATH),
+            "snapshot_version": manifest.get("snapshot_version"),
+            "observed_at_utc": manifest.get("observed_at_utc"),
+            "dataset_count": len(manifest.get("datasets", [])),
+            "frozen_manifest_was_not_rewritten_by_receipt": True,
+        },
+        "environment": {
+            "python": platform.python_version(),
+            "python_implementation": platform.python_implementation(),
+            "platform": platform.platform(),
+            "machine": platform.machine() or None,
+            "processor": platform.processor() or None,
+            "dependencies": receipt_dependency_versions(),
+        },
+        "generated_artifacts": generated_artifacts,
+        "artifact_count": len(generated_artifacts),
+        "receipt_self_hash_excluded": True,
+    }
 
 
 def git_context() -> dict[str, Any]:
@@ -291,6 +473,21 @@ def fetch_public_snapshot(*, force: bool = False) -> dict[str, Any]:
 
 
 def load_snapshot(manifest: Mapping[str, Any]) -> dict[str, pd.DataFrame]:
+    missing_paths = [
+        HERE / entry["path"]
+        for entry in manifest["datasets"]
+        if not (HERE / entry["path"]).exists()
+    ]
+    if missing_paths:
+        missing = ", ".join(path.name for path in missing_paths[:4])
+        if len(missing_paths) > 4:
+            missing += f", and {len(missing_paths) - 4} more"
+        raise FileNotFoundError(
+            "The local retained Yahoo snapshot is not present "
+            f"({missing}). Raw Yahoo CSVs are intentionally not redistributed. "
+            "Run evaluate_market_field.py --force-fetch to create a new, explicitly "
+            "versioned local snapshot; it will not reproduce the historical hashes."
+        )
     frames: dict[str, pd.DataFrame] = {}
     for entry in manifest["datasets"]:
         path = HERE / entry["path"]
@@ -368,6 +565,187 @@ def build_field(
         include_retrospective_research=retrospective,
         include_history_payload=history_payload,
     )
+
+
+def _full_precision_value(value: Any, digits: int = 4) -> float | None:
+    del digits
+    if value is None or not np.isfinite(float(value)):
+        return None
+    return float(value)
+
+
+def build_field_full_precision(
+    frame: pd.DataFrame,
+    *,
+    horizons: Sequence[int] = BASE_HORIZONS,
+    retrospective: bool = False,
+    history_payload: bool = True,
+) -> dict[str, Any]:
+    """Build the production transform while bypassing response-only rounding.
+
+    The production modules intentionally serialize matrices to four decimals and
+    scalar research series to four or six decimals. This single-threaded audit
+    temporarily replaces only those serializers; it does not replace any field
+    transform, filter, reduction, or clustering operation.
+    """
+
+    original_matrix_serializer = market_weather_module._rounded_matrix
+    original_scalar_serializer = market_weather_research_module._rounded
+    market_weather_module._rounded_matrix = lambda values: np.nan_to_num(  # type: ignore[assignment]
+        values,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    ).tolist()
+    market_weather_research_module._rounded = _full_precision_value  # type: ignore[assignment]
+    try:
+        return build_field(
+            frame,
+            horizons=horizons,
+            retrospective=retrospective,
+            history_payload=history_payload,
+        )
+    finally:
+        market_weather_module._rounded_matrix = original_matrix_serializer  # type: ignore[assignment]
+        market_weather_research_module._rounded = original_scalar_serializer  # type: ignore[assignment]
+
+
+def _finite_pair_count(left: Sequence[Any], right: Sequence[Any]) -> int:
+    left_values = np.asarray([np.nan if value is None else float(value) for value in left], dtype=float)
+    right_values = np.asarray([np.nan if value is None else float(value) for value in right], dtype=float)
+    return int(np.sum(np.isfinite(left_values) & np.isfinite(right_values)))
+
+
+def _mapping_pair_count(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+    excluded: Iterable[str] = ("date",),
+) -> int:
+    excluded_set = set(excluded)
+    return sum(
+        1
+        for key in set(left).intersection(right) - excluded_set
+        if isinstance(left[key], (int, float))
+        and isinstance(right[key], (int, float))
+        and np.isfinite(float(left[key]))
+        and np.isfinite(float(right[key]))
+    )
+
+
+def _endpoint_component_audit(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+    *,
+    left_index: int,
+    right_index: int,
+) -> dict[str, Any]:
+    channel_error = 0.0
+    channel_comparisons = 0
+    left_channels = left.get("channels") if isinstance(left.get("channels"), dict) else {}
+    right_channels = right.get("channels") if isinstance(right.get("channels"), dict) else {}
+    for channel in sorted(set(left_channels).intersection(right_channels)):
+        left_values = [row[left_index] for row in left_channels[channel]]
+        right_values = [row[right_index] for row in right_channels[channel]]
+        channel_error = max(channel_error, _numeric_max_error(left_values, right_values))
+        channel_comparisons += _finite_pair_count(left_values, right_values)
+
+    component_specs = {
+        "derivative": (
+            left["research"]["derivative_series"][left_index],
+            right["research"]["derivative_series"][right_index],
+        ),
+        "strata": (
+            left["research"]["strata"]["series"][left_index],
+            right["research"]["strata"]["series"][right_index],
+        ),
+        "carrier": (
+            left["research"]["carriers"]["series"][left_index],
+            right["research"]["carriers"]["series"][right_index],
+        ),
+        "carrier_ratio": (
+            left["research"]["carriers"]["ratios"]["series"][left_index],
+            right["research"]["carriers"]["ratios"]["series"][right_index],
+        ),
+    }
+    errors = {
+        f"{name}_max_abs_error": _mapping_max_error(left_row, right_row)
+        for name, (left_row, right_row) in component_specs.items()
+    }
+    comparisons = {
+        f"{name}_comparisons": _mapping_pair_count(left_row, right_row)
+        for name, (left_row, right_row) in component_specs.items()
+    }
+    overall = max(channel_error, *errors.values())
+    return {
+        "channel_max_abs_error": channel_error,
+        **errors,
+        "overall_max_abs_error": overall,
+        "channel_comparisons": channel_comparisons,
+        **comparisons,
+        "numeric_value_comparisons": channel_comparisons + sum(comparisons.values()),
+    }
+
+
+def prefix_invariance_full_precision_checks(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for dataset_id, frame in frames.items():
+        full = build_field_full_precision(frame, retrospective=False, history_payload=True)
+        count = len(frame)
+        cutoffs = sorted({max(60, min(count - 1, int(round(count * fraction)))) for fraction in PREFIX_FRACTIONS})
+        for cutoff in cutoffs:
+            prefix = build_field_full_precision(
+                frame.iloc[:cutoff],
+                retrospective=False,
+                history_payload=True,
+            )
+            audit = _endpoint_component_audit(
+                prefix,
+                full,
+                left_index=-1,
+                right_index=cutoff - 1,
+            )
+            rows.append(
+                {
+                    "dataset_id": dataset_id,
+                    "audit_kind": "historical_prefix",
+                    "cutoff_bars": cutoff,
+                    "total_bars": count,
+                    **audit,
+                    "tolerance": FULL_PRECISION_TOLERANCE,
+                    "passes_tolerance": audit["overall_max_abs_error"] <= FULL_PRECISION_TOLERANCE,
+                }
+            )
+
+    mutation_frame = frames["spy_1d"].copy()
+    cutoff = int(len(mutation_frame) * 0.75)
+    baseline = build_field_full_precision(mutation_frame, retrospective=False, history_payload=True)
+    mutated = mutation_frame.astype(
+        {"Open": "float64", "High": "float64", "Low": "float64", "Close": "float64", "Volume": "float64"}
+    ).copy()
+    suffix = mutated.index[cutoff:]
+    multiplier = np.linspace(0.35, 2.75, len(suffix))
+    for column in ("Open", "High", "Low", "Close"):
+        mutated.loc[suffix, column] = mutated.loc[suffix, column].to_numpy() * multiplier
+    mutated.loc[suffix, "Volume"] = mutated.loc[suffix, "Volume"].to_numpy() * multiplier[::-1]
+    stressed = build_field_full_precision(mutated, retrospective=False, history_payload=True)
+    mutation_audit = _endpoint_component_audit(
+        baseline,
+        stressed,
+        left_index=cutoff - 1,
+        right_index=cutoff - 1,
+    )
+    rows.append(
+        {
+            "dataset_id": "spy_1d_future_suffix_mutation",
+            "audit_kind": "future_suffix_mutation",
+            "cutoff_bars": cutoff,
+            "total_bars": len(mutation_frame),
+            **mutation_audit,
+            "tolerance": FULL_PRECISION_TOLERANCE,
+            "passes_tolerance": mutation_audit["overall_max_abs_error"] <= FULL_PRECISION_TOLERANCE,
+        }
+    )
+    return pd.DataFrame(rows)
 
 
 def prefix_invariance_checks(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
@@ -556,6 +934,261 @@ def resolution_checks(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _research_measure_frame(field: Mapping[str, Any]) -> pd.DataFrame:
+    derivative = pd.DataFrame(field["research"]["derivative_series"])
+    strata = pd.DataFrame(field["research"]["strata"]["series"])
+    carriers = pd.DataFrame(field["research"]["carriers"]["series"]).rename(
+        columns=lambda name: name if name == "date" else f"carrier_{name}"
+    )
+    ratios = pd.DataFrame(field["research"]["carriers"]["ratios"]["series"]).rename(
+        columns=lambda name: name if name == "date" else f"ratio_{name}"
+    )
+    return derivative.merge(strata, on="date").merge(carriers, on="date").merge(ratios, on="date")
+
+
+def history_truncation_checks(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    """Compare trailing-history recomputations with the same full-history endpoint."""
+
+    family_by_feature = {
+        **{name: "derivative" for name in ("pressure", "velocity", "acceleration", "jerk", "snap")},
+        **{
+            name: "stratum"
+            for name in (
+                "structure",
+                "kinematics",
+                "geometry",
+                "information",
+                "propagation",
+                "cascade_bias",
+                "scaling_exponent",
+            )
+        },
+    }
+    rows: list[dict[str, Any]] = []
+    for dataset_id, frame in frames.items():
+        full = _research_measure_frame(
+            build_field_full_precision(frame, retrospective=False, history_payload=False)
+        )
+        feature_names = [name for name in full.columns if name != "date"]
+        reference_start = min(128, max(0, len(full) // 3))
+        reference_iqr: dict[str, float] = {}
+        for feature in feature_names:
+            values = pd.to_numeric(full[feature].iloc[reference_start:], errors="coerce").to_numpy(dtype=float)
+            finite = values[np.isfinite(values)]
+            reference_iqr[feature] = (
+                float(np.quantile(finite, 0.75) - np.quantile(finite, 0.25))
+                if len(finite)
+                else math.nan
+            )
+
+        for requested_window in HISTORY_WINDOWS:
+            if requested_window > len(frame):
+                continue
+            candidate = _research_measure_frame(
+                build_field_full_precision(
+                    frame.iloc[-requested_window:],
+                    retrospective=False,
+                    history_payload=False,
+                )
+            )
+            comparison_tail = min(32, len(candidate))
+            for feature in feature_names:
+                left = pd.to_numeric(full[feature].iloc[-comparison_tail:], errors="coerce").to_numpy(dtype=float)
+                right = pd.to_numeric(candidate[feature].iloc[-comparison_tail:], errors="coerce").to_numpy(dtype=float)
+                valid = np.isfinite(left) & np.isfinite(right)
+                difference = np.abs(left[valid] - right[valid])
+                scale = reference_iqr[feature]
+                mae = float(np.mean(difference)) if len(difference) else math.nan
+                rows.append(
+                    {
+                        "dataset_id": dataset_id,
+                        "input_window_bars": requested_window,
+                        "full_history_bars": len(frame),
+                        "comparison_tail_bars": int(valid.sum()),
+                        "feature_family": family_by_feature.get(
+                            feature,
+                            "carrier_ratio" if feature.startswith("ratio_") else "carrier",
+                        ),
+                        "feature": feature,
+                        "mae": mae,
+                        "reference_iqr": scale,
+                        "iqr_normalized_mae": (
+                            mae / scale if np.isfinite(mae) and np.isfinite(scale) and scale > 1e-9 else math.nan
+                        ),
+                        "final_abs_error": float(difference[-1]) if len(difference) else math.nan,
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def entropy_window_checks(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for dataset_id, frame in frames.items():
+        field = build_field_full_precision(frame, retrospective=False, history_payload=True)
+        pressure = np.asarray(field["channels"]["pressure"], dtype=float)
+        legacy_disorder = np.asarray(field["channels"]["entropy"], dtype=float)
+        permutation_by_window = {
+            window: market_weather_research_module.rolling_permutation_entropy(
+                pressure,
+                order=3,
+                window=window,
+            )
+            for window in ENTROPY_WINDOWS
+        }
+        aggregate_entropy = {
+            window: np.mean(values, axis=0)
+            for window, values in permutation_by_window.items()
+        }
+        aggregate_information = {
+            window: np.mean(np.clip(0.72 * values + 0.28 * legacy_disorder, 0.0, 1.0), axis=0)
+            for window, values in permutation_by_window.items()
+        }
+        evaluation = slice(min(128, max(0, len(frame) // 3)), None)
+        entropy_reference = aggregate_entropy[24][evaluation]
+        information_reference = aggregate_information[24][evaluation]
+        for window in ENTROPY_WINDOWS:
+            entropy = aggregate_entropy[window][evaluation]
+            information = aggregate_information[window][evaluation]
+            rows.append(
+                {
+                    "dataset_id": dataset_id,
+                    "order": 3,
+                    "possible_ordinal_patterns": math.factorial(3),
+                    "window_patterns": window,
+                    "comparison_bars": len(entropy),
+                    "entropy_mean": float(np.mean(entropy)),
+                    "entropy_mae_vs_window24": float(np.mean(np.abs(entropy - entropy_reference))),
+                    "entropy_correlation_vs_window24": _safe_corr(entropy, entropy_reference),
+                    "information_mae_vs_window24": float(np.mean(np.abs(information - information_reference))),
+                    "information_correlation_vs_window24": _safe_corr(information, information_reference),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def maturity_contract_checks() -> pd.DataFrame:
+    longest_horizon = max(int(value) for value in OPTION_FIELD_HORIZONS)
+    reference_span = max(34, longest_horizon * 2)
+    api_visible = PUBLIC_API_MIN_VISIBLE_BARS
+    api_prefetch = max(72, longest_horizon * 2)
+    scenarios = [
+        {
+            "path": "option_snapshot_minimum",
+            "visible_bars": OPTION_FIELD_MIN_BARS,
+            "hidden_prefetch_bars": 0,
+            "computation_bars": OPTION_FIELD_MIN_BARS,
+            "note": "Accepted by the option wrapper; no explicit maturity mask is emitted.",
+        },
+        {
+            "path": "public_api_min_visible_60_h48",
+            "visible_bars": api_visible,
+            "hidden_prefetch_bars": api_prefetch,
+            "computation_bars": api_visible + api_prefetch,
+            "note": "The endpoint computes on the fetched warm-up plus visible bars, then trims the response.",
+        },
+        {
+            "path": "paper_compute_benchmark_365",
+            "visible_bars": 365,
+            "hidden_prefetch_bars": 0,
+            "computation_bars": 365,
+            "note": "The paper's cached option-snapshot timing window.",
+        },
+    ]
+    rows: list[dict[str, Any]] = []
+    for scenario in scenarios:
+        computation_bars = int(scenario["computation_bars"])
+        rows.append(
+            {
+                **scenario,
+                "longest_horizon_bars": longest_horizon,
+                "carrier_reference_span_bars": reference_span,
+                "bars_per_longest_horizon": computation_bars / longest_horizon,
+                "reference_span_coverage": min(1.0, computation_bars / reference_span),
+                "post_longest_horizon_observations": max(0, computation_bars - longest_horizon),
+                "meets_reference_span": computation_bars >= reference_span,
+                "maturity_mask_emitted": False,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def null_state_anchor_checks() -> pd.DataFrame:
+    index = pd.date_range("2020-01-01", periods=256, freq="D", tz="UTC")
+    rows: list[dict[str, Any]] = []
+    for scenario, volume in (("constant_price_positive_volume", 1_000_000.0), ("constant_price_zero_volume", 0.0)):
+        frame = pd.DataFrame(
+            {
+                "Open": np.full(len(index), 100.0),
+                "High": np.full(len(index), 100.0),
+                "Low": np.full(len(index), 100.0),
+                "Close": np.full(len(index), 100.0),
+                "Volume": np.full(len(index), volume),
+            },
+            index=index,
+        )
+        field = build_field_full_precision(frame, retrospective=False, history_payload=True)
+        derivative = field["research"]["derivative_series"][-1]
+        strata = field["research"]["strata"]["series"][-1]
+        channels = field["channels"]
+        availability = field["research"]["carriers"]["availability"]
+        rows.append(
+            {
+                "scenario": scenario,
+                "bars": len(frame),
+                "pressure": float(derivative["pressure"]),
+                "velocity": float(derivative["velocity"]),
+                "structural_strength": float(np.mean(np.asarray(channels["structural_strength"], dtype=float)[:, -1])),
+                "coherence": float(np.mean(np.asarray(channels["coherence"], dtype=float)[:, -1])),
+                "legacy_disorder": float(np.mean(np.asarray(channels["entropy"], dtype=float)[:, -1])),
+                "permutation_entropy": float(np.mean(np.asarray(channels["permutation_entropy"], dtype=float)[:, -1])),
+                "structure": float(strata["structure"]),
+                "information": float(strata["information"]),
+                "propagation": float(strata["propagation"]),
+                "display_confidence": float(np.mean(np.asarray(channels["confidence"], dtype=float)[:, -1])),
+                "volume_carriers_available": bool(availability["participation"]),
+                "semantic_interpretation": "Nonzero structure/confidence are formula anchors from coherence, not detected market organization.",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def option_snapshot_latency_checks(
+    frames: Mapping[str, pd.DataFrame],
+    observed_at: datetime,
+    *,
+    repetitions: int = 10,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for symbol in DAILY_SYMBOLS:
+        dataset_id = f"{symbol.lower().replace('-', '_')}_1d"
+        compact = frames[dataset_id].iloc[-365:].copy()
+        for repetition in range(repetitions):
+            started = time.perf_counter()
+            payload = build_option_field_context(
+                compact,
+                option_type="call",
+                observed_at=observed_at,
+                data_source="local_retained_yahoo_snapshot",
+            )
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            rows.append(
+                {
+                    "dataset_id": dataset_id,
+                    "symbol": symbol,
+                    "repetition": repetition,
+                    "measurement_phase": "first_measured" if repetition == 0 else "warm",
+                    "input_bars": len(compact),
+                    "elapsed_ms": elapsed_ms,
+                    "payload_bytes": len(
+                        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=json_default).encode("utf-8")
+                    ),
+                    "rank_influence": payload.get("rank_influence"),
+                    "automated_execution_enabled": payload.get("automated_execution_enabled"),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def _run_lengths(states: Sequence[str]) -> list[int]:
     if not states:
         return []
@@ -680,7 +1313,12 @@ def lexicon_checks(frames: Mapping[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd
                 "fit_bars": int(split["fit_bars"]),
                 "calibration_bars": int(split["calibration_bars"]),
                 "evaluation_bars": int(split["evaluation_bars"]),
+                "distance_tail_supported_bars": len(available_tail),
+                "distance_tail_unsupported_bars": len(sequence) - len(available_tail),
                 "distance_tail_coverage": len(available_tail) / max(1, len(sequence)),
+                "lower_calibration_tail_count": sum(
+                    bool(row["outside_learned_range"]) for row in available_tail
+                ),
                 "outside_range_rate_when_scored": (
                     sum(bool(row["outside_learned_range"]) for row in available_tail) / len(available_tail)
                     if available_tail
@@ -904,6 +1542,75 @@ def figure_resolution_convergence(resolution: pd.DataFrame) -> Path:
     return path
 
 
+def figure_sensitivity_audits(
+    history: pd.DataFrame,
+    entropy: pd.DataFrame,
+    null_state: pd.DataFrame,
+) -> Path:
+    fig, axes = plt.subplots(1, 3, figsize=(13.4, 4.2), constrained_layout=True)
+
+    history_clean = history.dropna(subset=["iqr_normalized_mae"])
+    history_summary = history_clean.groupby("input_window_bars")["iqr_normalized_mae"].agg(
+        median="median",
+        p90=lambda values: values.quantile(0.90),
+    )
+    axes[0].plot(history_summary.index, history_summary["median"], marker="o", color=PALETTE["blue"], label="median")
+    axes[0].plot(history_summary.index, history_summary["p90"], marker="o", color=PALETTE["orange"], label="90th percentile")
+    axes[0].set_xlabel("Trailing input history (bars)")
+    axes[0].set_ylabel("IQR-normalized MAE")
+    axes[0].set_title("A. History initialization sensitivity", loc="left", fontweight="bold")
+    axes[0].legend(frameon=False, fontsize=8)
+    _style_axes(axes[0])
+
+    entropy_nonreference = entropy[entropy["window_patterns"] != 24].copy()
+    entropy_summary = entropy_nonreference.groupby("window_patterns")["entropy_correlation_vs_window24"].agg(
+        median="median",
+        lower=lambda values: values.quantile(0.25),
+        upper=lambda values: values.quantile(0.75),
+    )
+    axes[1].plot(entropy_summary.index, entropy_summary["median"], marker="o", color=PALETTE["blue"])
+    axes[1].fill_between(
+        entropy_summary.index,
+        entropy_summary["lower"],
+        entropy_summary["upper"],
+        color=PALETTE["blue"],
+        alpha=0.18,
+        label="dataset IQR",
+    )
+    axes[1].axhline(1.0, color=PALETTE["muted"], linewidth=0.8, linestyle="--")
+    axes[1].set_xlabel("Trailing ordinal patterns")
+    axes[1].set_ylabel("Correlation with window 24")
+    axes[1].set_ylim(0.0, 1.04)
+    axes[1].set_title("B. Entropy-window sensitivity", loc="left", fontweight="bold")
+    axes[1].legend(frameon=False, fontsize=8)
+    _style_axes(axes[1])
+
+    anchor = null_state[null_state["scenario"] == "constant_price_positive_volume"].iloc[0]
+    labels = ["Pressure", "Structure", "Display\nconfidence", "Information"]
+    values = [anchor["pressure"], anchor["structure"], anchor["display_confidence"], anchor["information"]]
+    colors = [PALETTE["blue"], PALETTE["gold"], PALETTE["orange"], PALETTE["olive"]]
+    bars = axes[2].bar(labels, values, color=colors, width=0.66)
+    axes[2].set_ylim(0.0, 1.0)
+    axes[2].set_ylabel("Observed formula value")
+    axes[2].set_title("C. Constant-price semantic anchor", loc="left", fontweight="bold")
+    for bar, value in zip(bars, values):
+        axes[2].text(bar.get_x() + bar.get_width() / 2, value + 0.025, f"{value:.2f}", ha="center", fontsize=8)
+    _style_axes(axes[2])
+
+    fig.suptitle(
+        "Sensitivity and semantic-anchor audits (descriptive; no performance target)",
+        x=0.01,
+        ha="left",
+        fontsize=13,
+        fontweight="bold",
+        color=PALETTE["ink"],
+    )
+    path = FIGURES_DIR / "fig_sensitivity_audits.png"
+    fig.savefig(path, dpi=220, facecolor="white")
+    plt.close(fig)
+    return path
+
+
 def figure_state_timeline(state_sequence: pd.DataFrame) -> Path:
     sequence = state_sequence.copy()
     sequence["date"] = pd.to_datetime(sequence["date"], utc=True)
@@ -927,13 +1634,13 @@ def figure_state_timeline(state_sequence: pd.DataFrame) -> Path:
     price_ax.legend(handles=handles, frameon=False, fontsize=8, ncol=min(5, len(states)), loc="upper left")
 
     tail = pd.to_numeric(sequence["distance_tail_score"], errors="coerce")
-    tail_ax.plot(sequence["date"], tail, color=PALETTE["gold"], linewidth=1.1, label="state-conditional empirical tail score")
-    tail_ax.axhline(0.05, color=PALETTE["ink"], linestyle="--", linewidth=1.0, label="outside-range cutoff")
+    tail_ax.plot(sequence["date"], tail, color=PALETTE["gold"], linewidth=1.1, label="state-conditional calibration-distance upper-tail rank")
+    tail_ax.axhline(0.05, color=PALETTE["ink"], linestyle="--", linewidth=1.0, label="lower-rank cutoff (upper distance tail)")
     unscored = tail.isna()
     if unscored.any():
         tail_ax.scatter(sequence.loc[unscored, "date"], np.full(int(unscored.sum()), 0.01), facecolors="none", edgecolors=PALETTE["muted"], s=16, label="insufficient same-state support")
     tail_ax.set_ylim(-0.02, 1.02)
-    tail_ax.set_ylabel("tail score")
+    tail_ax.set_ylabel("upper-tail rank (lower = farther)")
     tail_ax.set_xlabel("evaluation date")
     tail_ax.legend(frameon=False, fontsize=8, ncol=2, loc="upper left")
     tail_ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=5, maxticks=9))
@@ -951,8 +1658,14 @@ def summarize_results(
     manifest: Mapping[str, Any],
     profile: pd.DataFrame,
     prefix: pd.DataFrame,
+    prefix_full_precision: pd.DataFrame,
     determinism: pd.DataFrame,
     resolution: pd.DataFrame,
+    history: pd.DataFrame,
+    entropy: pd.DataFrame,
+    maturity: pd.DataFrame,
+    null_state: pd.DataFrame,
+    latency: pd.DataFrame,
     timeframe: pd.DataFrame,
     lexicon: pd.DataFrame,
     stability: pd.DataFrame,
@@ -962,8 +1675,27 @@ def summarize_results(
     nonreference_resolution = resolution[resolution["horizon_step"] > 1]
     step4 = resolution[resolution["horizon_step"] == 4]
     available_tail = lexicon["distance_tail_coverage"].dropna()
+    history_clean = history.dropna(subset=["iqr_normalized_mae"])
+    history_summary = (
+        history_clean.groupby("input_window_bars")["iqr_normalized_mae"]
+        .agg(median="median", p90=lambda values: values.quantile(0.90))
+        .reset_index()
+    )
+    entropy_nonreference = entropy[entropy["window_patterns"] != 24]
+    entropy_summary = (
+        entropy_nonreference.groupby("window_patterns")["entropy_correlation_vs_window24"]
+        .median()
+        .reset_index(name="median_correlation_vs_window24")
+    )
+    warm_latency = latency[latency["measurement_phase"] == "warm"]["elapsed_ms"]
+    all_latency = latency["elapsed_ms"]
+    resolution_counts = {
+        str(int(step)): int(count)
+        for step, count in resolution.groupby("horizon_step").size().items()
+    }
+    anchor = null_state[null_state["scenario"] == "constant_price_positive_volume"].iloc[0]
     return {
-        "evaluation_version": "market_field_preliminary_v1",
+        "evaluation_version": "market_field_preliminary_v2",
         "snapshot_observed_at_utc": manifest["observed_at_utc"],
         "dataset_count": int(profile["dataset_id"].nunique()),
         "completed_bar_count": int(profile["rows"].sum()),
@@ -980,6 +1712,14 @@ def summarize_results(
             "max_abs_error": float(prefix["overall_max_abs_error"].max()),
             "tolerance": PREFIX_TOLERANCE,
         },
+        "prefix_invariance_full_precision": {
+            "checks": len(prefix_full_precision),
+            "passes": int(prefix_full_precision["passes_tolerance"].sum()),
+            "numeric_value_comparisons": int(prefix_full_precision["numeric_value_comparisons"].sum()),
+            "max_abs_error": float(prefix_full_precision["overall_max_abs_error"].max()),
+            "tolerance": FULL_PRECISION_TOLERANCE,
+            "scope": "Live field matrices plus aggregate derivatives, strata, carriers, and carrier ratios; response-only rounding bypassed.",
+        },
         "determinism": {
             "checks": len(determinism),
             "passes": int(determinism["deterministic"].sum()),
@@ -987,10 +1727,47 @@ def summarize_results(
         },
         "resolution": {
             "comparisons": len(nonreference_resolution),
+            "comparisons_by_step": resolution_counts,
+            "reference_comparisons": int(resolution_counts.get("1", 0)),
+            "nonreference_comparisons": int(sum(value for key, value in resolution_counts.items() if key != "1")),
             "step4_median_iqr_normalized_mae": float(step4["iqr_normalized_mae"].median()),
             "step4_p95_iqr_normalized_mae": float(step4["iqr_normalized_mae"].quantile(0.95)),
             "step4_median_correlation": float(step4["correlation"].median()),
             "step4_worst_feature_dataset": step4.sort_values("iqr_normalized_mae", ascending=False).iloc[0][["dataset_id", "feature", "iqr_normalized_mae", "correlation"]].to_dict(),
+        },
+        "history_truncation": {
+            "comparison_tail_bars": 32,
+            "window_summary": history_summary.to_dict(orient="records"),
+            "option_minimum_window_bars": OPTION_FIELD_MIN_BARS,
+            "option_minimum_median_iqr_normalized_mae": float(
+                history_clean.loc[
+                    history_clean["input_window_bars"] == OPTION_FIELD_MIN_BARS,
+                    "iqr_normalized_mae",
+                ].median()
+            ),
+            "option_minimum_p90_iqr_normalized_mae": float(
+                history_clean.loc[
+                    history_clean["input_window_bars"] == OPTION_FIELD_MIN_BARS,
+                    "iqr_normalized_mae",
+                ].quantile(0.90)
+            ),
+        },
+        "entropy_window_sensitivity": {
+            "order": 3,
+            "possible_ordinal_patterns": math.factorial(3),
+            "production_window_patterns": 24,
+            "median_correlations_vs_window24": entropy_summary.to_dict(orient="records"),
+            "minimum_dataset_correlation_vs_window24": float(
+                entropy_nonreference["entropy_correlation_vs_window24"].min()
+            ),
+        },
+        "maturity_contracts": maturity.to_dict(orient="records"),
+        "null_state_anchor": {
+            "pressure": float(anchor["pressure"]),
+            "structure": float(anchor["structure"]),
+            "display_confidence": float(anchor["display_confidence"]),
+            "information": float(anchor["information"]),
+            "interpretation": str(anchor["semantic_interpretation"]),
         },
         "timeframe_behavior": {
             "timeframes": int(timeframe["timeframe"].nunique()),
@@ -1013,8 +1790,36 @@ def summarize_results(
             "tail_score_coverage_median": float(available_tail.median()) if len(available_tail) else None,
             "outside_range_rate_min_when_scored": float(lexicon["outside_range_rate_when_scored"].min()),
             "outside_range_rate_max_when_scored": float(lexicon["outside_range_rate_when_scored"].max()),
+            "distance_tail_supported_bars": int(lexicon["distance_tail_supported_bars"].sum()),
+            "distance_tail_unsupported_bars": int(lexicon["distance_tail_unsupported_bars"].sum()),
+            "lower_calibration_tail_count": int(lexicon["lower_calibration_tail_count"].sum()),
             "reliable_next_state_count_total": int(lexicon["reliable_next_state_count"].sum()),
             "window_stability_ari": stability[["prefix_fraction", "adjusted_rand_index"]].to_dict(orient="records"),
+        },
+        "option_snapshot_latency": {
+            "runs": len(latency),
+            "symbols": int(latency["symbol"].nunique()),
+            "warm_runs": len(warm_latency),
+            "warm_p50_ms": float(warm_latency.quantile(0.50)),
+            "warm_p95_ms": float(warm_latency.quantile(0.95)),
+            "warm_p99_ms": float(warm_latency.quantile(0.99)),
+            "all_max_ms": float(all_latency.max()),
+            "first_measured_max_ms": float(
+                latency.loc[latency["measurement_phase"] == "first_measured", "elapsed_ms"].max()
+            ),
+            "environment": {
+                "python": platform.python_version(),
+                "platform": platform.platform(),
+                "processor": platform.processor() or "not_reported",
+                "process_model": "single process, sequential, imports already loaded",
+            },
+            "exclusions": [
+                "data retrieval",
+                "persistence",
+                "concurrent load",
+                "fresh-process import time",
+                "network and production queueing",
+            ],
         },
         "shadow_boundary": dict(shadow),
         "runtime_seconds": runtime_seconds,
@@ -1023,25 +1828,50 @@ def summarize_results(
 
 
 def run_analysis(*, fetch: bool = False, force_fetch: bool = False) -> dict[str, Any]:
+    started_at_utc = datetime.now(timezone.utc)
     started = time.perf_counter()
     ensure_directories()
+    repository_at_start = repository_run_context()
+    source_hashes_at_start = receipt_source_hashes()
     manifest = fetch_public_snapshot(force=force_fetch) if fetch or not MANIFEST_PATH.exists() else json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     frames = load_snapshot(manifest)
 
     profile = profile_snapshot(manifest, frames)
+    observed_at = datetime.fromisoformat(str(manifest["observed_at_utc"]).replace("Z", "+00:00"))
+    latency = option_snapshot_latency_checks(frames, observed_at)
     prefix = prefix_invariance_checks(frames)
+    prefix_full_precision = prefix_invariance_full_precision_checks(frames)
     determinism = determinism_checks(frames)
     resolution = resolution_checks(frames)
+    history = history_truncation_checks(frames)
+    entropy = entropy_window_checks(frames)
+    maturity = maturity_contract_checks()
+    null_state = null_state_anchor_checks()
     timeframe, series_by_timeframe = timeframe_checks(frames)
     lexicon, stability, state_sequence, _spy_field = lexicon_checks(frames)
-    observed_at = datetime.fromisoformat(str(manifest["observed_at_utc"]).replace("Z", "+00:00"))
     shadow = shadow_boundary_check(frames["spy_1d"], observed_at)
+    resolution_counts = (
+        resolution.groupby(["reference_step", "horizon_step"], as_index=False)
+        .agg(
+            comparisons=("feature", "size"),
+            datasets=("dataset_id", "nunique"),
+            features=("feature", "nunique"),
+        )
+        .sort_values("horizon_step")
+    )
 
     tables = {
         "dataset_profile.csv": profile,
         "prefix_invariance.csv": prefix,
+        "prefix_invariance_full_precision.csv": prefix_full_precision,
         "determinism.csv": determinism,
         "resolution_convergence.csv": resolution,
+        "resolution_comparison_counts.csv": resolution_counts,
+        "history_truncation_sensitivity.csv": history,
+        "entropy_window_sensitivity.csv": entropy,
+        "maturity_contracts.csv": maturity,
+        "null_state_anchor.csv": null_state,
+        "option_snapshot_latency.csv": latency,
         "timeframe_behavior.csv": timeframe,
         "lexicon_diagnostics.csv": lexicon,
         "lexicon_window_stability.csv": stability,
@@ -1054,6 +1884,7 @@ def run_analysis(*, fetch: bool = False, force_fetch: bool = False) -> dict[str,
         figure_prefix_audit(prefix),
         figure_timeframe_phase_portraits(series_by_timeframe),
         figure_resolution_convergence(resolution),
+        figure_sensitivity_audits(history, entropy, null_state),
         figure_state_timeline(state_sequence),
     ]
     runtime_seconds = time.perf_counter() - started
@@ -1061,8 +1892,14 @@ def run_analysis(*, fetch: bool = False, force_fetch: bool = False) -> dict[str,
         manifest=manifest,
         profile=profile,
         prefix=prefix,
+        prefix_full_precision=prefix_full_precision,
         determinism=determinism,
         resolution=resolution,
+        history=history,
+        entropy=entropy,
+        maturity=maturity,
+        null_state=null_state,
+        latency=latency,
         timeframe=timeframe,
         lexicon=lexicon,
         stability=stability,
@@ -1072,9 +1909,19 @@ def run_analysis(*, fetch: bool = False, force_fetch: bool = False) -> dict[str,
     summary["artifacts"] = {
         "tables": [str((RESULTS_DIR / filename).relative_to(HERE)).replace("\\", "/") for filename in tables],
         "figures": [str(path.relative_to(HERE)).replace("\\", "/") for path in figures],
+        "run_receipt": str(RUN_RECEIPT_PATH.relative_to(HERE)).replace("\\", "/"),
     }
     write_json(RESULTS_DIR / "summary.json", summary)
     write_json(RESULTS_DIR / "shadow_boundary.json", shadow)
+    receipt = build_run_receipt(
+        started_at_utc=started_at_utc,
+        repository_at_start=repository_at_start,
+        source_hashes_at_start=source_hashes_at_start,
+        manifest=manifest,
+        tables=tables,
+        figures=figures,
+    )
+    write_json(RUN_RECEIPT_PATH, receipt)
     return summary
 
 

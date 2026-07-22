@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import type {
+  MarketWeatherAnalogStatus,
   MarketWeatherContextRelationship,
   MarketWeatherDerivativePoint,
   MarketWeatherLanguageView,
@@ -72,7 +73,7 @@ const STRATA: Array<{
   key: keyof Pick<MarketWeatherStrataLatest, "structure" | "kinematics" | "geometry" | "information" | "propagation">;
   label: string;
 }> = [
-  { key: "structure", label: "Structure" },
+  { key: "structure", label: "Trend + horizon agreement" },
   { key: "kinematics", label: "Reorganization" },
   { key: "geometry", label: "Boundary activity" },
   { key: "information", label: "Information / ordinal disorder" },
@@ -128,6 +129,70 @@ function sampleLabel(sampleSize: number): string {
   if (sampleSize < 5) return "Too few holdout observations";
   if (sampleSize < 20) return "Limited holdout evidence";
   return "Descriptive holdout evidence";
+}
+
+export interface MarketWeatherAnalogPresentation {
+  status: MarketWeatherAnalogStatus;
+  withhold: boolean;
+  headline: string | null;
+  calibrationLabel: string;
+  summary: string | null;
+  holdoutTitle: string;
+  holdoutMessage: string | null;
+}
+
+export function resolveAnalogPresentation({
+  status,
+  legacyTailFlag,
+  support,
+  minimumSupport,
+}: {
+  status?: MarketWeatherAnalogStatus;
+  legacyTailFlag?: boolean | null;
+  support: number;
+  minimumSupport: number;
+}): MarketWeatherAnalogPresentation {
+  const resolvedStatus = status ?? (
+    typeof legacyTailFlag !== "boolean"
+      ? "insufficient_calibration_support"
+      : legacyTailFlag
+        ? "withheld_extreme_calibration_tail"
+        : "descriptive_reference_available"
+  );
+
+  if (resolvedStatus === "insufficient_calibration_support") {
+    return {
+      status: resolvedStatus,
+      withhold: true,
+      headline: "Historical analog unavailable",
+      calibrationLabel: "Insufficient same-Form support",
+      summary: `Only ${support} same-Form calibration observations are available; ${minimumSupport} are required before similarity can be assessed.`,
+      holdoutTitle: "Similar-holdout outcomes unavailable",
+      holdoutMessage: "The state has descriptive holdout outcomes, but this bar does not have enough independent same-Form calibration support to establish that they are a relevant analog. The outcome values are therefore not shown.",
+    };
+  }
+
+  if (resolvedStatus === "withheld_extreme_calibration_tail") {
+    return {
+      status: resolvedStatus,
+      withhold: true,
+      headline: "Historical analog withheld",
+      calibrationLabel: "Extreme calibration-distance tail",
+      summary: "The current centroid distance is more extreme than the supported same-Form calibration reference.",
+      holdoutTitle: "Similar-holdout outcomes withheld",
+      holdoutMessage: "This bar falls in the extreme calibration-distance tail for its assigned Form. The state-level outcomes exist, but presenting them here would imply a similarity the calibration evidence does not support.",
+    };
+  }
+
+  return {
+    status: resolvedStatus,
+    withhold: false,
+    headline: null,
+    calibrationLabel: "Within calibration reference",
+    summary: null,
+    holdoutTitle: "What followed similar holdout bars",
+    holdoutMessage: null,
+  };
 }
 
 function StateDeviationBars({
@@ -442,11 +507,11 @@ function MarketStateTimeline({
     [learnedFormRuns],
   );
   const cutoff = lexicon.distance_metric.outside_range_cutoff ?? 0.05;
-  const rangeLabel = selected?.distanceTailScore === null || selected?.distanceTailScore === undefined
-    ? "Not range-scored"
-    : selected.outsideLearnedRange
-      ? "Outside learned range"
-      : "Within learned range";
+  const rangeLabel = selected?.calibrationDistanceTailRank === null || selected?.calibrationDistanceTailRank === undefined
+    ? "Same-Form calibration reference unavailable"
+    : selected.inExtremeCalibrationTail
+      ? "Extreme calibration-distance tail"
+      : "Within calibration-distance reference";
   const selectedStateNumber = selected?.stateId ? stateNumberById.get(selected.stateId) : undefined;
 
   if (!selected) return null;
@@ -454,11 +519,11 @@ function MarketStateTimeline({
   const lensReadout = activeLens === "direction"
     ? { label: "Direction", value: `${formatSignedScore(selected.pressure)} · Δ ${formatSignedScore(selected.pressureChange)}`, detail: null, warning: false }
     : activeLens === "structure"
-      ? { label: "Field structure", value: `${Math.round(selected.organization ?? 0)} structure · ${Math.round(selected.disorder ?? 0)} information · ${Math.round(selected.propagation ?? 0)} propagation`, detail: null, warning: false }
+      ? { label: "Trend and agreement", value: `${Math.round(selected.organization ?? 0)} composite · ${Math.round(selected.disorder ?? 0)} information · ${Math.round(selected.propagation ?? 0)} propagation`, detail: "Composite includes a 42-point flat-field agreement reference", warning: false }
       : activeLens === "carriers"
         ? { label: "Market carriers", value: `${formatRatio(selected.volatilityRatio)} vol · ${formatRatio(selected.participationRatio)} participation · ${formatRatio(selected.liquidityRatio)} liquidity`, detail: "Each relative to its own causal baseline", warning: false }
         : activeLens === "range"
-          ? { label: "Learned-range evidence", value: rangeLabel, detail: `score ${selected.distanceTailScore?.toFixed(3) ?? "—"} · cutoff ${cutoff.toFixed(2)}`, warning: Boolean(selected.outsideLearnedRange) }
+          ? { label: "Calibration-distance evidence", value: rangeLabel, detail: `upper-tail rank ${selected.calibrationDistanceTailRank?.toFixed(3) ?? "—"} · cutoff ${cutoff.toFixed(2)}`, warning: Boolean(selected.inExtremeCalibrationTail) }
           : { label: "Price context", value: `${selected.priceActionState?.replace(/_/g, " ") ?? "Unavailable"} · ${selected.rangePosition20?.toFixed(0) ?? "—"}% of prior range`, detail: "Support and resistance use the prior 20 bars", warning: selected.priceActionState === "breakdown" };
 
   const commitSelectedDate = (date: string) => {
@@ -574,13 +639,13 @@ function MarketStateTimeline({
           <div className="mt-2 space-y-2 pl-[58px] pr-2">
             <div>
               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400"><span>Measured directional phase</span><span>{Math.max(0, directionalRuns.length - 1)} phase changes</span></div>
-              <div className="flex h-6 min-w-0 overflow-hidden rounded-md border border-stealth-700 bg-slate-900" role="img" aria-label={`${directionalRuns.length} measured directional phase runs; amber underline marks outside learned range`}>
+              <div className="flex h-6 min-w-0 overflow-hidden rounded-md border border-stealth-700 bg-slate-900" role="img" aria-label={`${directionalRuns.length} measured directional phase runs; amber underline marks an extreme calibration-distance tail`}>
                 {directionalRuns.map((run) => (
                   <span
                     key={run.key}
                     className="min-w-[3px] border-r border-slate-950/80 last:border-r-0"
-                    style={{ flexGrow: run.duration, backgroundColor: PHASE_STYLES[run.phase].color, borderBottom: run.outsideLearnedRange ? "3px solid #fbbf24" : undefined }}
-                    title={`${PHASE_STYLES[run.phase].label}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}${run.outsideLearnedRange ? "; outside learned range" : ""}`}
+                    style={{ flexGrow: run.duration, backgroundColor: PHASE_STYLES[run.phase].color, borderBottom: run.inExtremeCalibrationTail ? "3px solid #fbbf24" : undefined }}
+                    title={`${PHASE_STYLES[run.phase].label}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}${run.inExtremeCalibrationTail ? "; extreme calibration-distance tail" : ""}`}
                   />
                 ))}
               </div>
@@ -658,18 +723,19 @@ function MarketStateTimeline({
 
             {activeLens === "structure" ? (
               <>
-                <TimelineTrackHeader title="Field structure" scale="Bounded 0 to 100 model scores; shared scale, distinct measurements">
-                  <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Structure</span>
+                <TimelineTrackHeader title="Trend agreement, disorder, and propagation" scale="Bounded 0 to 100 model scores; composite flat-field reference is 42">
+                  <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Trend + agreement</span>
                   <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Information</span>
                   <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Propagation</span>
                 </TimelineTrackHeader>
-                <div className="h-[142px] min-w-0" role="img" aria-label="Structure, information and ordinal disorder, and cross-horizon propagation over the selected window">
+                <div className="h-[142px] min-w-0" role="img" aria-label="Trend-and-horizon-agreement composite, information and ordinal disorder, and cross-horizon propagation over the selected window">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
                       <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
                       <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
                       <YAxis domain={[0, 100]} ticks={[0, 50, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
                       <ReferenceLine y={50} stroke="#475569" strokeDasharray="3 4" />
+                      <ReferenceLine y={42} stroke="#7dd3fc" strokeOpacity={0.38} strokeDasharray="2 5" />
                       <TimelineCursor selectedDate={selected.date} />
                       <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
                       <Line type="monotone" dataKey="organization" stroke="#7dd3fc" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
@@ -708,8 +774,8 @@ function MarketStateTimeline({
 
             {activeLens === "range" ? (
               <>
-                <TimelineTrackHeader title="Learned-range evidence" scale={`Same-state distance-tail rank · lower means farther · outside below ${cutoff.toFixed(2)}`}>
-                  <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-300/30 ring-1 ring-amber-300/60" />Outside-range zone</span>
+                <TimelineTrackHeader title="Calibration-distance evidence" scale={`Same-Form upper-tail rank · lower means farther · extreme below ${cutoff.toFixed(2)}`}>
+                  <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-300/30 ring-1 ring-amber-300/60" />Extreme-distance zone</span>
                 </TimelineTrackHeader>
                 <div className="h-[142px] min-w-0" role="img" aria-label="Same-state distance-tail rank over the learned evaluation window; lower values are farther from the learned Form">
                   <ResponsiveContainer width="100%" height="100%">
@@ -721,7 +787,7 @@ function MarketStateTimeline({
                       <ReferenceLine y={cutoff} stroke="#fbbf24" strokeDasharray="4 4" />
                       <TimelineCursor selectedDate={selected.date} />
                       <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
-                      <Area type="monotone" dataKey="distanceTailScore" stroke="#fcd34d" strokeWidth={2} fill="#fbbf24" fillOpacity={0.08} dot={false} connectNulls={false} isAnimationActive={false} />
+                      <Area type="monotone" dataKey="calibrationDistanceTailRank" stroke="#fcd34d" strokeWidth={2} fill="#fbbf24" fillOpacity={0.08} dot={false} connectNulls={false} isAnimationActive={false} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -732,7 +798,7 @@ function MarketStateTimeline({
           </div>
         </section>
       </div>
-      <p className="sr-only">At {formatObservationDate(selected.date, timeframe)}, the close was ${selected.close.toFixed(2)}. {PHASE_STYLES[selected.directionalPhase].label}. Structure {Math.round(selected.organization ?? 0)}, information and ordinal disorder {Math.round(selected.disorder ?? 0)}, and propagation {Math.round(selected.propagation ?? 0)} on zero-to-one-hundred scales. {rangeLabel}.</p>
+      <p className="sr-only">At {formatObservationDate(selected.date, timeframe)}, the close was ${selected.close.toFixed(2)}. {PHASE_STYLES[selected.directionalPhase].label}. The trend-and-agreement composite was {Math.round(selected.organization ?? 0)}, information and ordinal disorder {Math.round(selected.disorder ?? 0)}, and propagation {Math.round(selected.propagation ?? 0)} on zero-to-one-hundred scales. {rangeLabel}.</p>
     </article>
   );
 }
@@ -773,12 +839,21 @@ function CurrentStateView({
     liquidity_stress_carrier: latestCarriers?.liquidity_stress ?? archetype.centroid.liquidity_stress_carrier ?? 0,
   };
   const profile = buildGroundedStateProfile(currentValues, lexicon.features);
-  const rangeCheckAvailable = typeof current.outside_learned_range === "boolean";
-  const noCloseMatch = current.outside_learned_range === true;
+  const canonicalTailFlag = current.in_extreme_calibration_distance_tail ?? current.outside_learned_range;
+  const canonicalTailRank = current.calibration_distance_tail_rank ?? current.distance_tail_score;
+  const canonicalTailSupport = current.calibration_distance_support ?? current.distance_tail_support;
   const currentDate = price[price.length - 1]?.date ?? lexicon.evaluation_sequence[lexicon.evaluation_sequence.length - 1]?.date;
   const outcome = archetype.evaluation_outcome;
   const distanceTailCutoff = lexicon.distance_metric.outside_range_cutoff;
   const minimumTailSupport = lexicon.distance_metric.minimum_distance_tail_support ?? 20;
+  const analog = resolveAnalogPresentation({
+    status: current.analog_status,
+    legacyTailFlag: canonicalTailFlag,
+    support: canonicalTailSupport,
+    minimumSupport: minimumTailSupport,
+  });
+  const structureComponents = research.structure_components?.latest;
+  const scalingReference = research.scaling_reference;
 
   return (
     <div className="space-y-3">
@@ -786,19 +861,19 @@ function CurrentStateView({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">{symbol} · {barSize} · {currentDate ? formatObservationDate(currentDate, timeframe) : "Latest bar"}</p>
-            <h3 className={`mt-1.5 text-xl font-semibold tracking-tight sm:text-2xl ${noCloseMatch ? "text-amber-200" : "text-white"}`}>
-              {noCloseMatch ? "No reliable learned-state match" : profile.headline}
+            <h3 className={`mt-1.5 text-xl font-semibold tracking-tight sm:text-2xl ${analog.withhold ? "text-amber-200" : "text-white"}`}>
+              {analog.headline ?? profile.headline}
             </h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-              {noCloseMatch
-                ? `The current measurements read ${profile.headline.toLowerCase()}, but this bar falls outside the learned Form’s held-out range, so its historical analog is disabled.`
+              {analog.withhold
+                ? `The current measurements read ${profile.headline.toLowerCase()}. ${analog.summary}`
                 : profile.summary}
             </p>
           </div>
           <div className="min-w-[250px] rounded-xl border border-stealth-600 bg-slate-950/45 px-4 py-3 text-sm text-slate-300">
-            <span className="text-xs uppercase tracking-wider text-slate-400">Learned-range check</span>
-            <span className={`mt-1 block text-base font-semibold ${noCloseMatch ? "text-amber-200" : "text-white"}`}>{!rangeCheckAvailable ? "Insufficient history" : noCloseMatch ? "Outside range" : "Within range"}</span>
-            <span className="mt-1 block font-mono text-xs text-slate-400">score {current.distance_tail_score?.toFixed(3) ?? "—"}{distanceTailCutoff !== undefined ? ` · cutoff ${distanceTailCutoff.toFixed(2)}` : ""} · n={current.distance_tail_support}</span>
+            <span className="text-xs uppercase tracking-wider text-slate-400">Calibration-distance check</span>
+            <span className={`mt-1 block text-base font-semibold ${analog.withhold ? "text-amber-200" : "text-white"}`}>{analog.calibrationLabel}</span>
+            <span className="mt-1 block font-mono text-xs text-slate-400">distance-tail rank {canonicalTailRank?.toFixed(3) ?? "—"}{distanceTailCutoff !== undefined ? ` · cutoff ${distanceTailCutoff.toFixed(2)}` : ""} · n={canonicalTailSupport}</span>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-white/10 pt-2.5 text-xs text-slate-400">
@@ -806,8 +881,32 @@ function CurrentStateView({
           <span>Typical learned run <strong className="font-medium text-slate-200">{archetype.typical_duration_bars} bars</strong></span>
           <span>Window frequency <strong className="font-medium text-slate-200">{formatRate(archetype.window_frequency)}</strong></span>
           <span>Evidence <strong className="font-medium text-slate-200">{archetype.fit_count} fit · {archetype.calibration_count} range-check · {archetype.evaluation_count} holdout</strong></span>
-          <span>Range support minimum <strong className="font-medium text-slate-200">{minimumTailSupport}</strong></span>
+          <span>Same-Form support minimum <strong className="font-medium text-slate-200">{minimumTailSupport}</strong></span>
         </div>
+        {structureComponents || scalingReference ? (
+          <div className="mt-3 grid overflow-hidden rounded-xl border border-white/10 bg-slate-950/35 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="p-3">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Directional activity</span>
+              <strong className="mt-1 block font-mono text-base text-sky-200">{structureComponents ? Math.round(structureComponents.activity * 100) : "—"}</strong>
+              <span className="text-[11px] text-slate-400">Pressure magnitude, 0–100</span>
+            </div>
+            <div className="border-t border-white/10 p-3 sm:border-l sm:border-t-0">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Horizon agreement</span>
+              <strong className="mt-1 block font-mono text-base text-violet-200">{structureComponents ? Math.round(structureComponents.horizon_agreement * 100) : "—"}</strong>
+              <span className="text-[11px] text-slate-400">Agreement can be high while activity is zero</span>
+            </div>
+            <div className="border-t border-white/10 p-3 lg:border-l lg:border-t-0">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Trend + agreement</span>
+              <strong className="mt-1 block font-mono text-base text-white">{structureComponents ? Math.round(structureComponents.trend_agreement_composite * 100) : Math.round(latestStrata.structure * 100)}</strong>
+              <span className="text-[11px] text-slate-400">Flat coherent formula reference: 42</span>
+            </div>
+            <div className="border-t border-white/10 p-3 sm:border-l lg:border-t-0">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Volatility scaling</span>
+              <strong className="mt-1 block font-mono text-base text-amber-200">{scalingReference?.valid && typeof scalingReference.latest_exponent === "number" ? scalingReference.latest_exponent.toFixed(2) : "Unavailable"}</strong>
+              <span className="text-[11px] text-slate-400">{scalingReference?.valid && typeof scalingReference.latest_excess === "number" ? `${scalingReference.latest_excess >= 0 ? "+" : ""}${scalingReference.latest_excess.toFixed(2)} vs 0.50 reference` : "Degenerate or unsupported path"}</span>
+            </div>
+          </div>
+        ) : null}
         {!lexicon.training_split.warmup_complete ? <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">This history does not fully cover the requested horizon warm-up. Treat the learned state and its comparisons as provisional.</p> : null}
       </section>
 
@@ -824,22 +923,29 @@ function CurrentStateView({
       <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-base font-semibold text-white">What followed similar holdout bars</h3>
-            <p className="mt-1 text-xs leading-5 text-slate-400">Every evaluation bar assigned to the nearest state; forward windows overlap and are serially dependent.</p>
+            <h3 className="text-base font-semibold text-white">{analog.holdoutTitle}</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-400">{analog.withhold ? "Similarity is gated by independent same-Form calibration evidence." : "Every evaluation bar assigned to the nearest state; forward windows overlap and are serially dependent."}</p>
           </div>
-          <span className={`rounded-full border px-3 py-1 text-xs ${outcome.sample_size < 20 ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-sky-400/30 bg-sky-400/10 text-sky-200"}`}>
-            {sampleLabel(outcome.sample_size)}
+          <span className={`rounded-full border px-3 py-1 text-xs ${analog.withhold || outcome.sample_size < 20 ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-sky-400/30 bg-sky-400/10 text-sky-200"}`}>
+            {analog.status === "insufficient_calibration_support" ? `${canonicalTailSupport}/${minimumTailSupport} calibration support` : analog.status === "withheld_extreme_calibration_tail" ? "Extreme distance tail" : sampleLabel(outcome.sample_size)}
           </span>
         </div>
-        <div className={`mt-3 overflow-hidden rounded-xl border border-white/10 ${noCloseMatch ? "opacity-55" : ""}`} aria-disabled={noCloseMatch || undefined}>
-          <div className="grid sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-white/10">
-            <div className="p-3"><span className="text-xs text-slate-400">Forward window</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{outcome.forward_bars} bars</strong></div>
-            <div className="border-t border-white/10 p-3 sm:border-t-0"><span className="text-xs text-slate-400">Median return</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatReturn(outcome.median_return)}</strong></div>
-            <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-slate-400">Positive observations</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatRate(outcome.positive_rate)}</strong></div>
-            <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-slate-400">Holdout sample</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">n={outcome.sample_size}</strong></div>
-          </div>
+        <div className="mt-3 overflow-hidden rounded-xl border border-white/10" aria-disabled={analog.withhold || undefined}>
+          {analog.withhold ? (
+            <div className="flex items-start gap-2 border border-amber-400/15 bg-amber-400/[0.06] p-3 text-xs leading-5 text-amber-100">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{analog.holdoutMessage}</span>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-white/10">
+              <div className="p-3"><span className="text-xs text-slate-400">Forward window</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{outcome.forward_bars} bars</strong></div>
+              <div className="border-t border-white/10 p-3 sm:border-t-0"><span className="text-xs text-slate-400">Median return</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatReturn(outcome.median_return)}</strong></div>
+              <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-slate-400">Positive observations</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatRate(outcome.positive_rate)}</strong></div>
+              <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-slate-400">Holdout sample</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">n={outcome.sample_size}</strong></div>
+            </div>
+          )}
         </div>
-        <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-400"><Info className="mt-0.5 h-4 w-4 shrink-0" />Descriptive historical context only, not a forecast or trading signal.{noCloseMatch ? " The current bar is novel, so this analog is especially weak." : ""}</p>
+        <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-400"><Info className="mt-0.5 h-4 w-4 shrink-0" />{analog.withhold ? "No forward-outcome values are being transmitted for this current bar." : "Descriptive historical context only, not a forecast or trading signal."}</p>
       </section>
     </div>
   );
@@ -963,7 +1069,7 @@ const RELATIONSHIP_SCOPES: RelationshipScopeSpec[] = [
     description: "Pressure × its first change",
     xLabel: "Directional pressure",
     yLabel: "Pressure change",
-    zLabel: "Structure",
+    zLabel: "Trend + agreement",
     xKey: "pressure",
     yKey: "velocity",
     zKey: "structure",
@@ -976,9 +1082,9 @@ const RELATIONSHIP_SCOPES: RelationshipScopeSpec[] = [
   },
   {
     id: "organization",
-    title: "Organization / disorder",
-    description: "Structure × ordinal disorder",
-    xLabel: "Structure",
+    title: "Trend agreement / disorder",
+    description: "Trend-agreement composite × ordinal disorder",
+    xLabel: "Trend + agreement",
     yLabel: "Information disorder",
     zLabel: "Reorganization",
     xKey: "structure",
@@ -988,7 +1094,7 @@ const RELATIONSHIP_SCOPES: RelationshipScopeSpec[] = [
     yDomain: [0, 1],
     guideX: 0.5,
     guideY: 0.5,
-    cornerLabels: ["diffuse · disordered", "organized · disordered", "diffuse · ordered", "organized · ordered"],
+    cornerLabels: ["low composite · disordered", "high composite · disordered", "low composite · ordered", "high composite · ordered"],
     point: (derivative, strata) => ({ date: derivative.date, x: strata.structure, y: strata.information, z: strata.kinematics }),
   },
   {
@@ -1370,7 +1476,7 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
           <div>
             <span className="page-kicker">State scope</span>
             <h3 className="mt-1 text-base font-semibold text-white">Where the learned definitions live</h3>
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Three linked scopes project the same learned Forms through direction, organization, and cross-horizon propagation. Scroll the deck on smaller screens.</p>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Three linked scopes project the same learned Forms through direction, trend agreement versus disorder, and cross-horizon propagation. Scroll the deck on smaller screens.</p>
           </div>
           <span className="rounded-full border border-stealth-600 px-3 py-1 text-xs text-slate-300">F{selectedIndex + 1} selected</span>
         </div>

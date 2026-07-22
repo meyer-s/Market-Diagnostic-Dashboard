@@ -148,7 +148,7 @@ describe("presentOptionMarketField", () => {
     ).toMatchObject({ badgeLabel, tone });
   });
 
-  it("surfaces measured direction, strata, boundary, and explicit novelty limits", () => {
+  it("surfaces measured direction, trend agreement, boundary, and explicit novelty limits", () => {
     const result = presentOptionMarketField(
       {
         available: true,
@@ -168,13 +168,14 @@ describe("presentOptionMarketField", () => {
     expect(result).toMatchObject({
       badgeLabel: "FIELD UP",
       directionLabel: "Direction · Positive Strengthening",
-      structureLabel: "Structure · 61.4",
+      trendAgreementLabel: "Trend + agreement · 61/100",
       boundaryLabel: "Boundary · Upper Range",
       familiarityLabel: "Novelty · not scored",
       familiarityReason: "Stable cross-review familiarity is not available.",
       timeframe: "1D",
     });
-    expect(result?.accessibleLabel).toContain("rank influence is zero");
+    expect(result?.accessibleLabel).toContain("No rank, veto, verdict, size, or execution authority");
+    expect(result?.accessibleLabel).toContain("May advise confidence and review priority");
   });
 
   it("accepts cached classification, hypotheses, quality, and aligned-direction aliases", () => {
@@ -190,7 +191,7 @@ describe("presentOptionMarketField", () => {
     expect(result).toMatchObject({
       badgeLabel: "SHOCK",
       directionLabel: "Pressure · -12.5 / Δ +4.3",
-      structureLabel: "Structure · 44.0",
+      trendAgreementLabel: "Trend + agreement · 44/100",
       boundaryLabel: "Boundary · Lower Range",
     });
   });
@@ -199,5 +200,237 @@ describe("presentOptionMarketField", () => {
     expect(presentOptionMarketField(undefined)).toBeNull();
     expect(presentOptionMarketField({ available: false })).toBeNull();
     expect(presentOptionMarketField({ available: true, signals: { path_state: "unavailable" } })).toBeNull();
+  });
+
+  it("presents canonical authority, signed exposure alignment, maturity, and applied advisory effects", () => {
+    const result = presentOptionMarketField(
+      {
+        available: true,
+        completed_bars: 80,
+        signals: { path_state: "supportive" },
+        authority: {
+          scanner_rank: "none",
+          hard_veto: "none",
+          manager_verdict: "none",
+          target_size: "none",
+          assessment_confidence: "advisory",
+          review_priority: "advisory",
+          automated_execution: "none",
+        },
+        alignment: {
+          supported: true,
+          basis: "signed_delta",
+          scope: "explicit_exposure",
+          directional_exposure_sign: -1,
+          assumptions: [],
+        },
+        maturity: {
+          completed_bars: 80,
+          maximum_horizon_bars: 48,
+          minimum_observed_window_bars: 49,
+          target_warmup_bars: 96,
+          warmup_complete: false,
+          status: "provisional",
+          bars_needed: 16,
+        },
+        semantic_revision: "1.1",
+      },
+      null,
+      {
+        confidence: { before: "high", after: "medium", changed: true },
+        urgency: { before: "normal", after: "due", changed: true },
+        rank_changed: false,
+        veto_changed: false,
+        verdict_changed: false,
+        target_size_changed: false,
+        execution_authority: "none",
+      }
+    );
+
+    expect(result).toMatchObject({
+      badgeLabel: "FIELD UP",
+      tone: "warning",
+      authorityLabel: "No rank, veto, verdict, size, or execution authority",
+      advisoryEffectsLabel: "Advisory applied · confidence and review priority",
+      alignmentLabel: "Alignment · Signed Delta",
+      alignmentCaveat: null,
+      maturityStatus: "provisional",
+      maturityLabel: "Maturity · provisional (80/96 warm-up bars)",
+      semanticRevision: "1.1",
+    });
+  });
+
+  it("honors the v1.1 canonical structure, scaling, and input-quality payload contract", () => {
+    const result = presentOptionMarketField({
+      available: true,
+      semantic_revision: "1.1",
+      signals: { path_state: "supportive" },
+      // The canonical component must win over the legacy v1 strata alias.
+      structure_components: {
+        activity: 0.41,
+        horizon_agreement: 0.82,
+        trend_agreement_composite: 0.734,
+        display_organization: 0.68,
+      },
+      strata: { structure: 0.11 },
+      scaling_reference: {
+        stationary_finite_variance_reference: 0.5,
+        latest_exponent: 0.63,
+        latest_excess: 0.13,
+        valid: true,
+        reason: null,
+      },
+      input_quality: {
+        status: "limited",
+        rows_received: 120,
+        rows_used: 119,
+        completed_rows_used: 119,
+        dropped: {
+          bad_timestamp: 0,
+          nonfinite_ohlc: 0,
+          nonpositive_ohlc: 0,
+          inconsistent_ohlc: 0,
+          duplicate_timestamp: 1,
+        },
+        volume: {
+          available: true,
+          carrier_usable: true,
+          available_observations: 95,
+          positive_observations: 95,
+          coverage: 0.798319,
+          invalid_observations: 24,
+        },
+        warnings: ["invalid_price_rows_dropped"],
+      },
+    });
+
+    expect(result).toMatchObject({
+      trendAgreementLabel: "Trend + agreement · 73/100",
+      scalingLabel: "Scaling · 0.63 (+0.13 vs 0.50)",
+      scalingCaveat: null,
+      inputQualityLabel: "Input · limited · 119/120 rows",
+      diagnosticsLabel: "Scaling · 0.63 (+0.13 vs 0.50) · Input · limited · 119/120 rows",
+      semanticRevision: "1.1",
+    });
+    expect(result?.inputQualityCaveat).toContain("1 price row rejected");
+    expect(result?.inputQualityCaveat).toContain("invalid price rows dropped");
+    expect(result?.inputQualityCaveat).toContain("volume coverage 80%");
+    expect(result?.accessibleLabel).toContain("Scaling · 0.63 (+0.13 vs 0.50)");
+  });
+
+  it("discloses a degenerate scaling path without manufacturing an exponent", () => {
+    const result = presentOptionMarketField({
+      available: true,
+      signals: { path_state: "mixed" },
+      scaling_reference: {
+        stationary_finite_variance_reference: 0.5,
+        latest_exponent: null,
+        latest_excess: null,
+        valid: false,
+        reason: "zero_realized_variance",
+      },
+      input_quality: {
+        status: "valid",
+        rows_received: 96,
+        rows_used: 96,
+        warnings: [],
+      },
+    });
+
+    expect(result).toMatchObject({
+      scalingLabel: "Scaling · unavailable",
+      scalingCaveat: "Volatility scaling is unavailable: zero realized variance",
+      inputQualityLabel: "Input · valid · 96/96 rows",
+      inputQualityCaveat: null,
+    });
+  });
+
+  it("renders an unavailable field as warming when completed history is insufficient", () => {
+    const result = presentOptionMarketField({
+      available: false,
+      maturity: {
+        completed_bars: 40,
+        maximum_horizon_bars: 48,
+        minimum_observed_window_bars: 49,
+        target_warmup_bars: 96,
+        warmup_complete: false,
+        status: "insufficient",
+        bars_needed: 56,
+      },
+    });
+
+    expect(result).toMatchObject({
+      badgeLabel: "FIELD WARMING",
+      tone: "neutral",
+      pathStateLabel: "Field history insufficient",
+      maturityStatus: "insufficient",
+      maturityLabel: "Maturity · insufficient (40/96 required bars; 56 needed)",
+    });
+  });
+
+  it("flags unsupported complex-position alignment without showing an aligned pressure", () => {
+    const result = presentOptionMarketField({
+      available: true,
+      signals: { path_state: "contradictory" },
+      direction: { option_aligned_pressure: -22 },
+      alignment: {
+        supported: false,
+        basis: "unsupported",
+        scope: "vertical_spread",
+        assumptions: ["An explicit signed delta is required for multi-leg exposure."],
+      },
+    });
+
+    expect(result).toMatchObject({
+      badgeLabel: "CONFLICT",
+      alignmentLabel: "Alignment · unsupported",
+      alignmentCaveat: "An explicit signed delta is required for multi-leg exposure.",
+      directionLabel: null,
+    });
+    expect(result?.accessibleLabel).toContain("explicit signed delta");
+  });
+
+  it("keeps legacy call/put snapshots visible while disclosing their long-single-leg assumption", () => {
+    const result = presentOptionMarketField({
+      available: true,
+      option_type: "call",
+      completed_bars: 80,
+      signals: { path_state: "supportive" },
+      direction: { option_aligned_pressure: 12 },
+    });
+
+    expect(result).toMatchObject({
+      badgeLabel: "FIELD UP",
+      tone: "warning",
+      alignmentLabel: "Alignment · legacy side proxy",
+      maturityStatus: "provisional",
+    });
+    expect(result?.alignmentCaveat).toContain("long, directional single-leg");
+    expect(result?.alignmentCaveat).toContain("short, spread, hedge, or multi-leg");
+
+    const canonicalLegacy = presentOptionMarketField({
+      available: true,
+      signals: { path_state: "supportive" },
+      alignment: {
+        supported: true,
+        basis: "legacy_long_single_leg_option_type",
+        scope: "long_single_leg",
+        directional_exposure_sign: 1,
+        assumptions: ["Legacy callers provide option type but not position action."],
+      },
+    });
+    expect(canonicalLegacy?.alignmentCaveat).toContain("Legacy callers provide option type");
+    expect(canonicalLegacy?.alignmentCaveat).toContain("short, spread, hedge, or multi-leg");
+  });
+
+  it("raises a visible contract warning if protected authority metadata is ever enabled", () => {
+    const result = presentOptionMarketField({
+      available: true,
+      signals: { path_state: "supportive" },
+      authority: { scanner_rank: "weighted", automated_execution: "none" },
+    });
+
+    expect(result?.authorityCaveat).toContain("metadata conflicts with the review-only contract");
+    expect(result?.accessibleLabel).toContain("do not use this field to rank, veto, grade, size, or execute");
   });
 });

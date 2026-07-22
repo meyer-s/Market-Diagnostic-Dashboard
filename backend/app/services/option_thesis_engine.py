@@ -718,6 +718,16 @@ def _market_structure_axis(field_context: object) -> dict[str, object]:
         "status": path_state,
         "advisory": True,
         "rank_influence": 0.0,
+        "authority": {
+            "scanner_rank": "none",
+            "hard_veto": "none",
+            "manager_verdict": "none",
+            "target_size": "none",
+            "assessment_confidence": "advisory",
+            "review_priority": "advisory",
+            "human_visible": True,
+            "automated_execution": "none",
+        },
         "available": available,
         "schema_version": context.get("schema_version"),
         "timeframe": context.get("timeframe"),
@@ -1038,6 +1048,8 @@ def build_assessment_payload(
         confidence = "low"
     else:
         confidence = "medium"
+    pre_field_confidence = confidence
+    pre_field_urgency = urgency
     field_status = str(market_structure.get("status") or "unavailable")
     field_transition = market_structure.get("transition_risk") == "elevated"
     if market_structure.get("available") and (field_status in {"fading", "contradictory"} or field_transition):
@@ -1066,6 +1078,24 @@ def build_assessment_payload(
         deadline=decision_deadline,
         verdict=verdict,
     )
+    market_field_effects = {
+        "confidence": {
+            "before": pre_field_confidence,
+            "after": confidence,
+            "changed": pre_field_confidence != confidence,
+        },
+        "urgency": {
+            "before": pre_field_urgency,
+            "after": urgency,
+            "changed": pre_field_urgency != urgency,
+        },
+        "review_window_recomputed_from_advisory_urgency": pre_field_urgency != urgency,
+        "rank_changed": False,
+        "veto_changed": False,
+        "verdict_changed": False,
+        "target_size_changed": False,
+        "execution_authority": "none",
+    }
 
     reasons = []
     if company_status_source == "latest_human_review":
@@ -1196,6 +1226,7 @@ def build_assessment_payload(
             "fact": _market_structure_fact(market_structure),
             "advisory": True,
             "rank_influence": 0.0,
+            "authority": market_structure.get("authority"),
         },
         {
             "evidence_id": "fundamental_state",
@@ -1237,6 +1268,7 @@ def build_assessment_payload(
         "quality": quality,
         "urgency": urgency,
         "confidence": confidence,
+        "market_field_effects": market_field_effects,
         "continuation_condition": continuation,
         "next_review_date": next_review,
         "decision_deadline": decision_deadline,
@@ -1302,6 +1334,7 @@ def persist_assessment(
         missing_inputs_json=json_dumps(payload["missing_inputs"]),
         input_snapshot_json=json_dumps(payload["input_snapshot"]),
         axis_results_json=json_dumps(payload["axis_results"]),
+        market_field_effects_json=json_dumps(payload.get("market_field_effects") or {}),
         evidence_json=json_dumps(payload["evidence"]),
     )
     db.add(assessment)
@@ -1342,6 +1375,10 @@ def serialize_assessment(assessment: OptionThesisAssessment | None) -> Optional[
         "missing_inputs": json_loads(assessment.missing_inputs_json, []),
         "input_snapshot": json_loads(assessment.input_snapshot_json, {}),
         "axis_results": json_loads(assessment.axis_results_json, {}),
+        "market_field_effects": json_loads(
+            getattr(assessment, "market_field_effects_json", None),
+            {},
+        ),
         "evidence": json_loads(assessment.evidence_json, []),
         "created_at": assessment.created_at.isoformat() if assessment.created_at else None,
     }

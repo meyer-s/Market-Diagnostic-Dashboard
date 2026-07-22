@@ -9,17 +9,26 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
-from app.services.market_weather import MarketWeatherSettings, build_market_weather
+from app.services.market_weather import (
+    MarketWeatherSettings,
+    build_market_weather,
+    normalize_market_history,
+)
 from app.services.market_weather_context import build_technical_context
 
 
 OPTION_FIELD_SCHEMA_VERSION = "option_market_field_v1"
 OPTION_FIELD_MODEL_VERSION = "market_field_calculus_v1"
+OPTION_FIELD_SEMANTIC_REVISION = "1.1"
 OPTION_FIELD_MODE = "shadow_only"
 OPTION_FIELD_RANK_INFLUENCE = 0.0
 OPTION_FIELD_HORIZONS = tuple(range(12, 50, 2))
 OPTION_FIELD_MAX_BARS = 365
-OPTION_FIELD_MIN_BARS = 60
+OPTION_FIELD_MINIMUM_OBSERVED_WINDOW_BARS = max(OPTION_FIELD_HORIZONS) + 1
+OPTION_FIELD_TARGET_WARMUP_BARS = max(OPTION_FIELD_HORIZONS) * 2
+# Retained as the public minimum constant for existing imports. Availability now
+# requires the disclosed two-times-maximum-horizon maturity target.
+OPTION_FIELD_MIN_BARS = OPTION_FIELD_TARGET_WARMUP_BARS
 OPTION_FIELD_DAILY_CLOSE = time(16, 15)
 OPTION_FIELD_MARKET_TIMEZONE = ZoneInfo("America/New_York")
 
@@ -43,42 +52,34 @@ def _latest_completed_session_date(observed_at: datetime) -> date:
     return local.date() - timedelta(days=1)
 
 
-def _normalized_daily_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
-    if frame is None or frame.empty:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-    lookup = {str(column).lower(): column for column in frame.columns}
-    required = ("open", "high", "low", "close")
-    if any(name not in lookup for name in required):
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-
-    index = pd.to_datetime(frame.index, errors="coerce")
-    normalized = pd.DataFrame(index=index)
-    for name in required:
-        normalized[name] = pd.to_numeric(frame[lookup[name]], errors="coerce").to_numpy()
-    volume_column = lookup.get("volume")
-    normalized["volume"] = (
-        pd.to_numeric(frame[volume_column], errors="coerce").fillna(0.0).to_numpy()
-        if volume_column is not None
-        else 0.0
+def _normalized_daily_frame(
+    frame: pd.DataFrame | None,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    return normalize_market_history(
+        frame,
+        minimum_bars=0,
+        allow_empty=True,
     )
-    normalized = normalized[normalized.index.notna()]
-    normalized = normalized.dropna(subset=list(required))
-    return normalized[~normalized.index.duplicated(keep="last")].sort_index()
 
 
 def _completed_daily_frame(
     frame: pd.DataFrame | None,
     observed_at: datetime,
-) -> tuple[pd.DataFrame, int]:
-    history = _normalized_daily_frame(frame)
+) -> tuple[pd.DataFrame, int, dict[str, object]]:
+    history, input_quality = _normalized_daily_frame(frame)
     if history.empty:
-        return history, 0
+        return history, 0, input_quality
     completed_through = _latest_completed_session_date(observed_at)
     # Daily provider indices are session labels. Comparing their calendar date
     # avoids shifting a midnight UTC label into the prior US market session.
     completed_mask = np.asarray([pd.Timestamp(value).date() <= completed_through for value in history.index])
     excluded = int((~completed_mask).sum())
-    return history.loc[completed_mask].tail(OPTION_FIELD_MAX_BARS), excluded
+    completed = history.loc[completed_mask].tail(OPTION_FIELD_MAX_BARS)
+    input_quality = {
+        **input_quality,
+        "completed_rows_used": len(completed),
+    }
+    return completed, excluded, input_quality
 
 
 def _finite(value: object, digits: int = 4) -> float | None:
@@ -96,6 +97,116 @@ def _normalized_option_type(value: str | None) -> str | None:
     if normalized in {"put", "puts", "p"}:
         return "put"
     return None
+
+
+def _authority_payload() -> dict[str, object]:
+    return {
+        "scanner_rank": "none",
+        "hard_veto": "none",
+        "manager_verdict": "none",
+        "target_size": "none",
+        "assessment_confidence": "advisory",
+        "review_priority": "advisory",
+        "human_visible": True,
+        "automated_execution": "none",
+    }
+
+
+def _maturity_payload(completed_bars: int) -> dict[str, object]:
+    warmup_complete = completed_bars >= OPTION_FIELD_TARGET_WARMUP_BARS
+    return {
+        "completed_bars": completed_bars,
+        "maximum_horizon_bars": max(OPTION_FIELD_HORIZONS),
+        "minimum_observed_window_bars": OPTION_FIELD_MINIMUM_OBSERVED_WINDOW_BARS,
+        "target_warmup_bars": OPTION_FIELD_TARGET_WARMUP_BARS,
+        "warmup_complete": warmup_complete,
+        "status": "complete" if warmup_complete else "insufficient",
+        "bars_needed": max(0, OPTION_FIELD_TARGET_WARMUP_BARS - completed_bars),
+        "note": "Availability requires the disclosed two-times-maximum-horizon target; this is a maturity heuristic, not an EWM convergence guarantee.",
+    }
+
+
+def _normalized_action(value: str | None) -> str | None:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "bto": "buy_to_open",
+        "buy": "buy_to_open",
+        "buy_to_open": "buy_to_open",
+        "sto": "sell_to_open",
+        "sell": "sell_to_open",
+        "sell_to_open": "sell_to_open",
+    }
+    return aliases.get(normalized)
+
+
+def _alignment_payload(
+    *,
+    option_type: str | None,
+    position_action: str | None,
+    signed_delta: float | None,
+    strategy_scope: str | None,
+) -> dict[str, object]:
+    normalized_action = _normalized_action(position_action)
+    normalized_scope = str(strategy_scope or "").strip().lower().replace("-", "_").replace(" ", "_")
+    finite_delta = _finite(signed_delta, digits=12)
+    if finite_delta is not None and abs(finite_delta) > 1e-12:
+        return {
+            "supported": True,
+            "basis": "signed_delta",
+            "scope": normalized_scope or "explicit_exposure",
+            "position_action": normalized_action,
+            "directional_exposure_sign": 1 if finite_delta > 0.0 else -1,
+            "assumptions": [],
+        }
+
+    if normalized_scope and normalized_scope not in {
+        "single_leg",
+        "long_single_leg",
+        "short_single_leg",
+    }:
+        return {
+            "supported": False,
+            "basis": "unsupported",
+            "scope": normalized_scope,
+            "position_action": normalized_action,
+            "directional_exposure_sign": None,
+            "assumptions": [
+                "Multi-leg or complex exposure requires an explicit signed delta for directional alignment."
+            ],
+        }
+
+    option_sign = 1 if option_type == "call" else -1 if option_type == "put" else None
+    if normalized_action is not None and option_sign is not None:
+        action_sign = 1 if normalized_action == "buy_to_open" else -1
+        return {
+            "supported": True,
+            "basis": "action_and_option_type",
+            "scope": normalized_scope or ("long_single_leg" if action_sign > 0 else "short_single_leg"),
+            "position_action": normalized_action,
+            "directional_exposure_sign": option_sign * action_sign,
+            "assumptions": [],
+        }
+
+    if position_action is None and option_sign is not None:
+        return {
+            "supported": True,
+            "basis": "legacy_long_single_leg_option_type",
+            "scope": normalized_scope or "long_single_leg",
+            "position_action": None,
+            "directional_exposure_sign": option_sign,
+            "assumptions": [
+                "Legacy callers provide option type but not position action; alignment assumes a long single-leg exposure."
+            ],
+        }
+
+    return {
+        "supported": False,
+        "basis": "unsupported",
+        "scope": normalized_scope or "unknown",
+        "position_action": normalized_action,
+        "directional_exposure_sign": None,
+        "assumptions": ["Directional exposure could not be established from signed delta or action and option type."],
+    }
 
 
 def _blank_direction() -> dict[str, object]:
@@ -128,15 +239,19 @@ def _empty_payload(
     as_of_bar: str | None = None,
     warnings: Sequence[str] = (),
     missing_features: Sequence[str] = (),
+    input_quality: Mapping[str, object] | None = None,
+    alignment: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     source = str(data_source).strip() if data_source else None
     return {
         "schema_version": OPTION_FIELD_SCHEMA_VERSION,
         "model_version": OPTION_FIELD_MODEL_VERSION,
+        "semantic_revision": OPTION_FIELD_SEMANTIC_REVISION,
         "mode": OPTION_FIELD_MODE,
         "shadow_only": True,
         "rank_influence": OPTION_FIELD_RANK_INFLUENCE,
         "automated_execution_enabled": False,
+        "authority": _authority_payload(),
         "computed_at": _iso_utc(datetime.now(timezone.utc)),
         "observed_at": _iso_utc(observed_at),
         "as_of_bar": as_of_bar,
@@ -145,6 +260,9 @@ def _empty_payload(
         "data_source": source,
         "completed_bars": completed_bars,
         "excluded_incomplete_bars": excluded_incomplete_bars,
+        "maturity": _maturity_payload(completed_bars),
+        "input_quality": dict(input_quality or {}),
+        "alignment": dict(alignment or {}),
         "quality": {
             "available": False,
             "status": "unavailable",
@@ -163,6 +281,19 @@ def _empty_payload(
             "propagation": None,
             "cascade_bias": None,
             "scaling_exponent": None,
+        },
+        "structure_components": {
+            "activity": None,
+            "horizon_agreement": None,
+            "trend_agreement_composite": None,
+            "display_organization": None,
+        },
+        "scaling_reference": {
+            "stationary_finite_variance_reference": 0.5,
+            "latest_exponent": None,
+            "latest_excess": None,
+            "valid": False,
+            "reason": "field_unavailable",
         },
         "carriers": {
             "realized_volatility_ratio": None,
@@ -291,12 +422,12 @@ def _current_hypotheses(
 
 def _classification(
     *,
-    option_type: str | None,
+    alignment_supported: bool,
     aligned_pressure: float | None,
     aligned_velocity: float | None,
     hypotheses: Mapping[str, bool],
 ) -> dict[str, str]:
-    if option_type is None or aligned_pressure is None or aligned_velocity is None:
+    if not alignment_supported or aligned_pressure is None or aligned_velocity is None:
         path_state = "unavailable"
     elif abs(aligned_pressure) <= 0.02:
         path_state = "mixed"
@@ -326,6 +457,9 @@ def build_option_field_context(
     observed_at: datetime | None = None,
     data_source: str | None = None,
     timeframe: str = "1D",
+    position_action: str | None = None,
+    signed_delta: float | None = None,
+    strategy_scope: str | None = None,
 ) -> dict[str, object]:
     """Build a causal, point-in-time Market Field snapshot for an option path.
 
@@ -336,12 +470,20 @@ def build_option_field_context(
     observation_time = _as_utc(observed_at)
     normalized_option_type = _normalized_option_type(option_type)
     normalized_timeframe = str(timeframe or "1D").strip() or "1D"
-    completed, excluded = _completed_daily_frame(frame, observation_time)
+    completed, excluded, input_quality = _completed_daily_frame(frame, observation_time)
     as_of_bar = pd.Timestamp(completed.index[-1]).date().isoformat() if not completed.empty else None
+    alignment = _alignment_payload(
+        option_type=normalized_option_type,
+        position_action=position_action,
+        signed_delta=signed_delta,
+        strategy_scope=strategy_scope,
+    )
     missing_features: list[str] = []
-    warnings: list[str] = []
-    if normalized_option_type is None:
+    warnings = [str(value) for value in input_quality.get("warnings", [])]
+    if normalized_option_type is None and alignment.get("basis") != "signed_delta":
         missing_features.append("option_type")
+    elif not alignment.get("supported"):
+        missing_features.append("directional_alignment")
     if len(completed) < OPTION_FIELD_MIN_BARS:
         missing_features.append("completed_daily_history")
         warnings.append(f"requires_{OPTION_FIELD_MIN_BARS}_completed_bars")
@@ -355,6 +497,8 @@ def build_option_field_context(
             as_of_bar=as_of_bar,
             warnings=warnings,
             missing_features=missing_features,
+            input_quality=input_quality,
+            alignment=alignment,
         )
 
     try:
@@ -379,13 +523,29 @@ def build_option_field_context(
             if isinstance(carriers_block.get("availability"), dict)
             else {}
         )
+        structure_block = (
+            research.get("structure_components")
+            if isinstance(research.get("structure_components"), dict)
+            else {}
+        )
+        structure_latest = (
+            structure_block.get("latest")
+            if isinstance(structure_block.get("latest"), dict)
+            else {}
+        )
+        scaling_block = (
+            research.get("scaling_reference")
+            if isinstance(research.get("scaling_reference"), dict)
+            else {}
+        )
         derivative_latest = derivative_rows[-1] if derivative_rows else {}
         technical = build_technical_context(completed)
         price_action_latest = technical.get("latest") if isinstance(technical.get("latest"), dict) else {}
 
         pressure = _finite(derivative_latest.get("pressure"))
         velocity = _finite(derivative_latest.get("velocity"))
-        side = 1.0 if normalized_option_type == "call" else -1.0 if normalized_option_type == "put" else None
+        exposure_sign = _finite(alignment.get("directional_exposure_sign"), digits=0)
+        side = float(exposure_sign) if alignment.get("supported") and exposure_sign is not None else None
         aligned_pressure = _finite(pressure * side) if pressure is not None and side is not None else None
         aligned_velocity = _finite(velocity * side) if velocity is not None and side is not None else None
         hypotheses, hypothesis_missing = _current_hypotheses(derivative_rows, strata_rows)
@@ -396,20 +556,26 @@ def build_option_field_context(
             missing_features.append("liquidity_stress")
 
         classification = _classification(
-            option_type=normalized_option_type,
+            alignment_supported=bool(alignment.get("supported")),
             aligned_pressure=aligned_pressure,
             aligned_velocity=aligned_velocity,
             hypotheses=hypotheses,
         )
         source = str(data_source).strip() if data_source else None
-        quality_status = "complete" if not missing_features else "limited"
+        quality_status = (
+            "complete"
+            if not missing_features and input_quality.get("status") == "valid"
+            else "limited"
+        )
         return {
             "schema_version": OPTION_FIELD_SCHEMA_VERSION,
             "model_version": OPTION_FIELD_MODEL_VERSION,
+            "semantic_revision": OPTION_FIELD_SEMANTIC_REVISION,
             "mode": OPTION_FIELD_MODE,
             "shadow_only": True,
             "rank_influence": OPTION_FIELD_RANK_INFLUENCE,
             "automated_execution_enabled": False,
+            "authority": _authority_payload(),
             "computed_at": _iso_utc(datetime.now(timezone.utc)),
             "observed_at": _iso_utc(observation_time),
             "as_of_bar": as_of_bar,
@@ -418,6 +584,9 @@ def build_option_field_context(
             "data_source": source,
             "completed_bars": len(completed),
             "excluded_incomplete_bars": excluded,
+            "maturity": _maturity_payload(len(completed)),
+            "input_quality": input_quality,
+            "alignment": alignment,
             "quality": {
                 "available": True,
                 "status": quality_status,
@@ -456,6 +625,24 @@ def build_option_field_context(
                     "scaling_exponent",
                 )
             },
+            "structure_components": {
+                key: _finite(structure_latest.get(key))
+                for key in (
+                    "activity",
+                    "horizon_agreement",
+                    "trend_agreement_composite",
+                    "display_organization",
+                )
+            },
+            "scaling_reference": {
+                "stationary_finite_variance_reference": _finite(
+                    scaling_block.get("stationary_finite_variance_reference")
+                ),
+                "latest_exponent": _finite(scaling_block.get("latest_exponent")),
+                "latest_excess": _finite(scaling_block.get("latest_excess")),
+                "valid": bool(scaling_block.get("valid")),
+                "reason": scaling_block.get("reason"),
+            },
             "carriers": {
                 "realized_volatility_ratio": _finite(ratios_latest.get("realized_volatility")),
                 "participation_ratio": _finite(ratios_latest.get("participation")),
@@ -483,6 +670,8 @@ def build_option_field_context(
             as_of_bar=as_of_bar,
             warnings=[f"field_calculation_failed:{type(exc).__name__}"],
             missing_features=[*missing_features, "market_field"],
+            input_quality=input_quality,
+            alignment=alignment,
         )
 
 
@@ -493,10 +682,12 @@ def option_field_event_fields(payload: Mapping[str, object]) -> dict[str, object
     canonical = dict(payload)
     canonical["schema_version"] = OPTION_FIELD_SCHEMA_VERSION
     canonical["model_version"] = OPTION_FIELD_MODEL_VERSION
+    canonical["semantic_revision"] = OPTION_FIELD_SEMANTIC_REVISION
     canonical["mode"] = OPTION_FIELD_MODE
     canonical["shadow_only"] = True
     canonical["rank_influence"] = OPTION_FIELD_RANK_INFLUENCE
     canonical["automated_execution_enabled"] = False
+    canonical["authority"] = _authority_payload()
     return {
         "field_context_version": OPTION_FIELD_SCHEMA_VERSION,
         "field_context_as_of": as_of_datetime,
@@ -518,8 +709,21 @@ def option_field_context_from_event(event: object) -> dict[str, object] | None:
         getattr(event, "field_context_version", None) or parsed.get("schema_version") or OPTION_FIELD_SCHEMA_VERSION
     )
     parsed["model_version"] = str(parsed.get("model_version") or OPTION_FIELD_MODEL_VERSION)
+    parsed["semantic_revision"] = str(
+        parsed.get("semantic_revision") or OPTION_FIELD_SEMANTIC_REVISION
+    )
     parsed["mode"] = OPTION_FIELD_MODE
     parsed["shadow_only"] = True
     parsed["rank_influence"] = OPTION_FIELD_RANK_INFLUENCE
     parsed["automated_execution_enabled"] = False
+    parsed["authority"] = _authority_payload()
+    if not isinstance(parsed.get("maturity"), dict):
+        parsed["maturity"] = _maturity_payload(int(parsed.get("completed_bars") or 0))
+    if not isinstance(parsed.get("alignment"), dict):
+        parsed["alignment"] = _alignment_payload(
+            option_type=_normalized_option_type(parsed.get("option_type")),
+            position_action=None,
+            signed_delta=None,
+            strategy_scope="long_single_leg",
+        )
     return parsed

@@ -145,7 +145,7 @@ const PRODUCT_EVOLUTION: EvolutionStep[] = [
   {
     stage: "04",
     title: "Synchronized diagnostic workspace",
-    description: "Price, directional phase, Form identity, structure, carriers, and learned-range evidence were placed under a shared cursor, then condensed into selectable lenses for speed and legibility.",
+    description: "Price, directional phase, Form identity, trend/agreement, carriers, and calibration-distance evidence were placed under a shared cursor, then condensed into selectable lenses for speed and legibility.",
     disposition: "Retained",
   },
   {
@@ -617,15 +617,17 @@ function CurrentRunAudit({ data }: { data: MarketWeatherResponse }) {
   const appliedSettings = settingCandidates.filter(
     (entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]),
   );
+  const calibrationTailRank = current?.calibration_distance_tail_rank ?? current?.distance_tail_score;
+  const calibrationTailSupport = current?.calibration_distance_support ?? current?.distance_tail_support;
 
   const facts = [
     ["Instrument", `${data.symbol} · ${data.timeframe}`, data.bar_size],
     ["Observed bars", `${formatInteger(data.available_bars)} / ${formatInteger(data.requested_bars)}`, `${data.coverage_start} → ${data.coverage_end}`],
     ["Field matrix", `${formatInteger(data.horizons.length)} × ${formatInteger(data.available_bars)}`, `${horizonRange} · ${formatInteger(cells)} cells`],
     ["Provider", data.data_source.toUpperCase(), `quote: ${data.quote.source.toUpperCase()}${data.quote.quote_source ? ` / ${data.quote.quote_source}` : ""}`],
-    ["Causal flag", data.methodology.causal ? "Yes" : "No", "Reported by this response"],
+    ["Initialization", data.history_context ? (data.history_context.warmup_complete ? "Mature" : "Provisional") : "Unknown", data.history_context ? `${formatInteger(data.history_context.analysis_bars)} calculation bars · target ${formatInteger(data.history_context.target_warmup_bars)}` : "Legacy response; maturity metadata unavailable"],
     ["Learned Forms", lexicon ? formatInteger(split?.archetype_count ?? lexicon.archetypes.length) : "Not supplied", split?.fit_mean_silhouette !== undefined ? `fit silhouette ${formatDecimal(split.fit_mean_silhouette, 3)}` : "one-Form fallback remains possible"],
-    ["Current range", current?.distance_tail_score !== null && current?.distance_tail_score !== undefined ? formatDecimal(current.distance_tail_score, 3) : "Unavailable", `support ${formatInteger(current?.distance_tail_support)} · cutoff ${rangeCutoff !== undefined ? formatDecimal(rangeCutoff, 2) : "0.05"}`],
+    ["Distance-tail rank", calibrationTailRank !== null && calibrationTailRank !== undefined ? formatDecimal(calibrationTailRank, 3) : "Unavailable", `same-Form support ${formatInteger(calibrationTailSupport)} · extreme below ${rangeCutoff !== undefined ? formatDecimal(rangeCutoff, 2) : "0.05"}`],
     ["Context influence", fieldInfluence === "none" ? "None" : fieldInfluence, context ? `${context.mode.replace("_", " ")} · ${context.version}` : "context not returned"],
   ];
 
@@ -823,7 +825,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
             >
               <div className="grid gap-3 lg:grid-cols-2">
                 <MethodBlock title="Input and availability">
-                  The endpoint accepts 60–5,000 visible bars, up to 120 horizon rows, and no more than 120,000 returned cells. Supported bar sizes are 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1D, and 1W. The server fetches extra leading history for initialization and model fitting, calculates the field, then trims the response to the requested visible window.
+                  The endpoint accepts 60–5,000 visible bars, up to 120 horizon rows, and no more than 120,000 returned cells. Supported bar sizes are 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1D, and 1W. The server requests a leading buffer of max(72, 2×maximum horizon), calculates on every returned bar, and only then trims the visible response. The returned history contract distinguishes visible bars from calculation bars and states whether that initialization reference was covered.
                 </MethodBlock>
                 <MethodBlock title="Provider and timestamp lineage">
                   The response separately reports bar source, quote source, observed timestamp, coverage, and generation time. Yahoo is the default provider; IBKR can be primary when configured, with method-specific fallback. Yahoo 2h and 4h bars are aggregated from 60-minute bars inside each trading session. Quote failure does not invalidate an otherwise valid historical field.
@@ -842,9 +844,9 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                 </MethodBlock>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <ReportCallout tone="emerald" title="Causal invariant">A field prefix is intended to remain unchanged when future bars are appended. Repository tests check this for field and research channels.</ReportCallout>
+                <ReportCallout tone="emerald" title="Non-anticipative invariant">A field value at t is a deterministic function of bars through t. The frozen audit checked 46 endpoints and 24,472 unrounded values at 1e−12 tolerance with maximum observed difference zero.</ReportCallout>
                 <ReportCallout tone="sky" title="Scale coordinate">Rows are drawn at equal visual height, but scale derivatives use natural log horizon. Visual row spacing and analytical scale spacing are intentionally different.</ReportCallout>
-                <ReportCallout tone="amber" title="Initialization">Early bars can be less stable because long horizons and baseline carriers need history. The response reports requested warm-up and whether it completed.</ReportCallout>
+                <ReportCallout tone="amber" title="Initialization is separate from causality">A calculation can use no future data and still depend on how much earlier history was retained. In the frozen audit, a 60-bar recomputation had median IQR-normalized error 0.501 versus full retained history; the response therefore exposes warm-up coverage rather than equating availability with maturity.</ReportCallout>
               </div>
             </Chapter>
 
@@ -860,23 +862,23 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                 <MethodBlock title="Scale geometry">
                   Signed first and second numerical derivatives are calculated against ln(horizon), plus a time derivative of scale gradient. Absolute scale gradient, temporal gradient, and Laplacian-like energy feed boundary measures. “Coherence” is one minus normalized neighboring-horizon disagreement; it is not spectral or wavelet coherence.
                 </MethodBlock>
-                <MethodBlock title="Core display-organization channels" formula={<>strength=clip(1.8|P|); motion=clip(1.4|v|); confidence=.48·coherence + .32·strength + .20·(1−legacy disorder)</>}>
-                  Structural strength measures pressure magnitude. Motion energy measures normalized change. The channel named confidence in the API is displayed as an uncalibrated organization score and controls renderer intensity; it must not be read as a probability, forecast confidence, or coverage level.
+                <MethodBlock title="Activity, agreement, and the legacy display composite" formula={<>activity=clip(1.8|P|); motion=clip(1.4|v|); display composite=.48·agreement + .32·activity + .20·(1−legacy disorder)</>}>
+                  Activity measures pressure magnitude; horizon agreement measures neighboring-row similarity. The API's legacy confidence channel controls renderer intensity and is not a probability. On a perfectly flat field, activity and disorder are zero while agreement is one, so this formula returns 0.68. The interface exposes those ingredients separately instead of translating 0.68 as evidence of an active organized market.
                 </MethodBlock>
                 <MethodBlock title="Boundary, expansion, and convection" formula={<>boundary=clip(.42·vertical + .33·temporal + .25·laplacian); convection=boundary·(.45+.55·motion)</>}>
                   Pressure-sign-aligned velocity, multiplied by 1.8, is split into expansion and contraction. Persistence is the absolute five-bar rolling mean of pressure sign. Reflectivity combines strength, motion, and boundary activity before logarithmic compression.
                 </MethodBlock>
                 <MethodBlock title="Two different disorder measures">
-                  Legacy field disorder is a causal heuristic: an exponential average of 0.60×(1−coherence) + 0.40×motion energy. Permutation entropy is the actual normalized Bandt–Pompe statistic: order 3, a trailing window of 24 ordinal patterns, and normalization by log(3!). They answer different questions and should not be merged.
+                  Legacy field disorder is a causal heuristic: an exponential average of 0.60×(1−coherence) + 0.40×motion energy. Permutation entropy is the actual normalized Bandt–Pompe statistic: order 3, six possible ordinal patterns, estimated from at most 24 recent observed pattern instances and normalized by log(3!). They answer different questions and should not be merged. Alternative 8, 12, 48, and 96-instance windows were materially different in the frozen sensitivity audit.
                 </MethodBlock>
                 <MethodBlock title="Cascade and propagation" formula={<>gₛ=∂P/∂ln(h);&nbsp;&nbsp; cascade=tanh(−v·gₛ / (gₛ² + .08));&nbsp;&nbsp; propagation=clip(1.8√(|v||gₛ|)(.45+.55·coherence))</>}>
                   Velocity v is the bounded time derivative of pressure and gₛ its bounded log-horizon gradient. Positive cascade values describe a local level-set motion analogue toward longer horizons. This is not Horn–Schunck optical flow, transfer entropy, Granger causality, or evidence that information physically travels between horizons.
                 </MethodBlock>
                 <MethodBlock title="Five strata">
-                  Structure = .58 strength + .42 coherence. Reorganization = .18|velocity| + .24|acceleration| + .27|jerk| + .31|snap|. Geometry = .32|scale gradient| + .28|scale curvature| + .20|mixed derivative| + .20 boundary. Information = .72 permutation entropy + .28 legacy disorder. Propagation is mean propagation strength across horizons. Structure is not the same channel as the display-organization/confidence score; information is not the same channel as the legacy disorder proxy.
+                  The legacy Structure coordinate is .58 activity + .42 horizon agreement. It therefore equals 0.42 on a flat coherent field; v1.1 presents it as a trend-agreement composite and exposes both ingredients without changing the v1 state vector. Reorganization = .18|velocity| + .24|acceleration| + .27|jerk| + .31|snap|. Geometry = .32|scale gradient| + .28|scale curvature| + .20|mixed derivative| + .20 boundary. Information = .72 permutation entropy + .28 legacy disorder. Propagation is mean propagation strength across horizons.
                 </MethodBlock>
                 <MethodBlock title="Volatility scaling" formula={<>RVₕ,ₜ = √Σᵢ₌ₜ₋ₕ₊₁…ₜ (Δlog Cᵢ)²;&nbsp;&nbsp; scaling slope = local Δlog(RV) / Δlog(h)</>}>
-                  Realized volatility is not annualized. The local slope is clipped to −2…2 and summarizes how realized variability changes across the available horizons. It is not reported as Hurst H, long-memory evidence, or a multifractal spectrum.
+                  Realized volatility is not annualized. For stationary finite-variance increments, square-root-of-time scaling provides a 0.5 reference, so the response reports both the exponent and its excess over 0.5. Zero-variation paths are marked degenerate rather than interpreting an epsilon-driven zero as evidence. The clipped slope is not Hurst H, long-memory evidence, or a multifractal spectrum.
                 </MethodBlock>
                 <MethodBlock title="OHLCV carriers" formula={<>cluster carrier = .5 + .5·tanh(2·log(current / EWM baseline));&nbsp;&nbsp; displayed ratio = current / EWM baseline</>}>
                   Carriers are realized volatility, trailing volume participation, and an Amihud-like |log return|/dollar-volume liquidity stress. The baseline span is max(34, 2×maximum horizon). A displayed ratio of 1.00× means baseline. With no positive volume, participation and liquidity evidence remain unavailable even though neutral internal values keep clustering finite.
@@ -909,11 +911,11 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   <MethodBlock title="Identity and naming">
                     F.001, F.002, and similar IDs are canonicalized within the current request window. Their internal pronounceable tokens are hashes of quantized centroids, not semantic discoveries. The interface instead names Forms from measured pressure sign, pressure-change alignment, organization, propagation, disorder, and fit-relative deviations. IDs are not yet stable across symbols, timeframes, or requests.
                   </MethodBlock>
-                  <MethodBlock title="Match and novelty">
-                    Match = exp(−distance / median reference distance), an uncalibrated resonance index rather than a probability. Novelty maps distance between the reference median and 95th percentile. Both are relative to this fitted window and can change when the window or configuration changes.
+                  <MethodBlock title="Distance, resonance, and novelty">
+                    Nearest-Form distance is the primary measurement. The legacy match field is retained as an alias for resonance = exp(−distance / median reference distance), an uncalibrated monotone transform rather than a probability. Novelty maps distance between the reference median and 95th percentile. All three are relative to this fitted window and can change when the window or configuration changes.
                   </MethodBlock>
-                  <MethodBlock title="State-conditional learned-range check" formula={<>tail score = (1 + #{`{`}dcal ≥ dcurrent{`}`}) / (n + 1)</>}>
-                    Current distance is ranked against later calibration distances assigned to the same Form. At least 20 same-Form calibration observations are required; below 0.05 is labeled outside learned range. Because bars overlap, autocorrelate, and drift, this empirical rank is not a formal p-value or conformal coverage guarantee.
+                  <MethodBlock title="State-conditional calibration-distance check" formula={<>upper-tail rank = (1 + #{`{`}dcal ≥ dcurrent{`}`}) / (n + 1)</>}>
+                    Current centroid distance is ranked against later calibration distances assigned to the same Form. At least 20 same-Form calibration observations are required; below 0.05 is called an extreme calibration-distance tail and causes the historical analog to be withheld. This does not mean coordinatewise range violation or density exclusion, and the rank is not a formal p-value or conformal coverage guarantee. Legacy <span className="font-mono">outside_learned_range</span> and <span className="font-mono">distance_tail_score</span> keys remain compatibility aliases.
                   </MethodBlock>
                   <MethodBlock title="Grammar, Phrases, and outcomes">
                     Proper-fit Form runs are collapsed before exit transitions are counted; self-persistence is excluded and off-diagonal counts receive 0.5 smoothing. A likely-next Form needs at least five exits and a unique leader. Motifs are repeated run-collapsed sequences of two to four Forms. Five-bar forward outcomes are measured later, overlap, and are serially dependent; they describe history rather than forecast it.
@@ -959,10 +961,10 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   Cross-market relationships are daily even when the selected field is intraday. Source staleness is labeled but historical estimation can still include older cached observations. Selected lag association is not structural causality, economic transmission, or a guarantee that the relationship will persist.
                 </MethodBlock>
                 <MethodBlock title="Secret Options field challenger">
-                  Scanner hits and position assessments can carry a compact, immutable <span className="font-mono">option_market_field_v1</span> snapshot made only from completed OHLCV bars. It records option-aligned pressure and change, field strata, causal prior-bar boundaries, carrier ratios, hypotheses, quality, and provenance. It deliberately excludes learned Form IDs, forward outcomes, the relationship atlas, and the circular current-options context shown on this page.
+                  Scanner hits and position assessments can carry a compact, immutable <span className="font-mono">option_market_field_v1</span> snapshot made only from completed OHLCV bars. A v1.1 semantic contract adds maturity, alignment assumptions, and explicit authority without rewriting old snapshots or changing the field formula. It deliberately excludes learned Form IDs, forward outcomes, the relationship atlas, and the circular current-options context shown on this page.
                 </MethodBlock>
                 <MethodBlock title="Decision influence and learning">
-                  The option opportunity model remains the champion. Field path is a zero-weight shadow challenger: it may explain a scanner hit, lower assessment confidence, or bring a human review forward, but it cannot change scanner order, hard vetoes, target size, or execution. Entry and review snapshots are retained with later outcomes so supportive, fading, contradictory, mixed, and unavailable cohorts can be compared before any manual promotion.
+                  The option opportunity model remains the champion. The authority object states the boundary directly: no scanner rank, hard-veto, verdict, target-size, or execution authority; advisory influence is permitted for displayed assessment confidence and review priority. That means “shadow” is algorithmic, not behavioral—a human can see and act on the display. Entry and review snapshots are retained with later outcomes so exposure and action can be audited before any manual promotion.
                 </MethodBlock>
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -985,7 +987,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   Regime Health maps pressure sign to directional hue while coherence, legacy disorder, and the uncalibrated display-organization score alter intensity. Convection scales the directional base by reflectivity and mixes in blue from convection and expansion. Topographic quantizes reflectivity into bands and mixes in blue from boundary energy and convection. Swami Classic shows the five-category benchmark. Channel Inspector isolates one returned matrix. Every lens renders shared data; changing a lens does not refit the field.
                 </MethodBlock>
                 <MethodBlock title="Now timeline">
-                  Price, directional phase, Form identity, field structure, carriers, and learned-range evidence share one time axis and one inspected-bar cursor. This is the primary answer to “what changed together?” Selectable lenses reduce render cost and prevent every derived series from competing simultaneously.
+                  Price, directional phase, Form identity, trend/agreement, carriers, and calibration-distance evidence share one time axis and one inspected-bar cursor. This is the primary answer to “what changed together?” Selectable lenses reduce render cost and prevent every derived series from competing simultaneously.
                 </MethodBlock>
                 <MethodBlock title="Dictionary relationship scopes">
                   Directional phase places pressure on x and pressure change on y with independently auto-fit signed axes. Organization / disorder places structure on x and information / ordinal disorder on y, each fixed from 0 to 1. Scale propagation places propagation on x from 0 to 1 and cascade bias on y from −1 to +1. Every panel joins derivative and strata observations by timestamp and projects the same exact learned Form centroids and current observation.
@@ -1037,19 +1039,19 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
             >
               <div className="grid gap-3 lg:grid-cols-2">
                 <MethodBlock title="Implementation invariants already tested">
-                  Repository tests cover finite and bounded matrices, prefix invariance/no future leakage, approximate log-horizon resolution stability, chronological atlas separation, deterministic Forms, fit/calibration separation, family-balanced weights, honest one-Form fallback, all nine timeframes, dense 57×750 responses, prior-bar boundaries, lag selection, holdout behavior, and no source-date forward fill.
+                  Repository tests cover finite and bounded matrices, chronological atlas separation, deterministic Forms, fit/calibration separation, family-balanced weights, one-Form fallback, all nine timeframes, prior-bar boundaries, lag selection, holdout behavior, and no source-date forward fill. The frozen v2 audit additionally compared 24,472 unrounded live values at 46 prefix endpoints with maximum observed deviation zero at 1e−12, and reports calibration support rather than silently dropping unsupported bars.
                 </MethodBlock>
                 <MethodBlock title="What those tests do not prove">
                   Passing tests establishes that code follows its declared mechanics. It does not establish stable economic meaning, superior forecasting, statistical significance, robustness across assets or regimes, tradability after costs, or independence from the researcher's many design choices.
                 </MethodBlock>
                 <MethodBlock title="Dependence and overlapping outcomes">
-                  Five-bar Form outcomes, motif outcomes, and internal relationship-atlas windows overlap and are serially dependent. The learned-range rank also uses dependent observations. Naïve sample sizes therefore overstate effective information, and ordinary iid interpretations are inappropriate.
+                  Five-bar Form outcomes, motif outcomes, and internal relationship-atlas windows overlap and are serially dependent. The calibration-distance rank also uses dependent observations. Naïve sample sizes therefore overstate effective information, and ordinary iid interpretations are inappropriate.
                 </MethodBlock>
                 <MethodBlock title="Multiple research paths">
                   The internal four-hypothesis relationship atlas and motif search currently have no family-wide multiple-test adjustment. The separate cross-market screen does use block permutation and Benjamini–Hochberg correction. That distinction must remain explicit rather than being summarized as one global validation claim.
                 </MethodBlock>
                 <MethodBlock title="Window and configuration dependence">
-                  Forms, centroids, scaling, labels, range scores, and scope geometry can change with symbol, timeframe, history length, horizon set, or analytical smoothing. Directional phase independently auto-fits x and y, so its visual size and shape are not directly comparable across runs. The two bounded scopes use fixed axes, but their learned centroids and fit-relative color thresholds still remain request-specific.
+                  Forms, centroids, scaling, labels, calibration-distance ranks, and scope geometry can change with symbol, timeframe, history length, horizon set, or analytical smoothing. A 60-bar trailing recomputation was materially different from full retained history, and entropy-window alternatives showed low-to-moderate correlation with the v1 setting. Directional phase independently auto-fits x and y, so visual size and shape are not directly comparable across runs. The bounded scopes use fixed axes, but their learned centroids and fit-relative color thresholds remain request-specific.
                 </MethodBlock>
                 <MethodBlock title="Provider and market microstructure risk">
                   IBKR and Yahoo can differ in session rules, adjustments, partial bars, timestamps, and volume. Aggregated 2h/4h Yahoo bars inherit 60m sampling choices. Intraday correlations suffer asynchronous-trading effects; stale cached sources and sparse options history further limit cross-system comparisons.

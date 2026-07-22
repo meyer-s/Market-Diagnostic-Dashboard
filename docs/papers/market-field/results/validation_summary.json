@@ -103,11 +103,11 @@
       "VNQ": "supportive"
     },
     "environment_note": "Single-process local Windows benchmark; excludes data retrieval.",
-    "maximum_ms": 196.80100004188716,
-    "maximum_payload_bytes": 1603,
-    "median_ms": 104.22170005040243,
-    "median_payload_bytes": 1592,
-    "p95_ms": 106.47032995475456,
+    "maximum_ms": 120.51010003779083,
+    "maximum_payload_bytes": 3093,
+    "median_ms": 108.6884499527514,
+    "median_payload_bytes": 3081,
+    "p95_ms": 110.79834997653961,
     "rank_influence": 0.0,
     "runs": 80,
     "symbols": 8
@@ -183,23 +183,30 @@
     "determinism": {
       "exact_lexicon_matches": 8,
       "sha256_by_symbol": {
-        "BTC-USD": "f8bcfe64c15944d6308b35167753c50e54e048bd7258a5b9f5d81f953e61d7c5",
-        "GLD": "f3b8beb8e1b239a5834296e8d9c510a63202abff26e3a2b38f1e63a04bafb1e9",
-        "IWM": "403d9e402f375b2ba132154d4e6f0298ea8fa5983fd46ae808493fea8571e41b",
-        "QQQ": "a61fe6d665a0914a4dd4bd76a8e609628a13c4c3fb30258ec8a8b7cc851b3be6",
-        "SPY": "e8d8d32c3b0d7717f3a99b5bb26faaf26f52d824cefb5572b7b8752480f32687",
-        "TLT": "ee1a1609f7ecd4b2b511713277111489a99f664e13e6a49e09a8bdf28995b9f8",
-        "USO": "a312c391eef4268998e63884a67cac6605d1dc21f506cbce3a1279abe3ee331b",
-        "VNQ": "56da885090ee8c5a08857853a646b8a67139a7d2c61eb7ca0f3d3970046eeed0"
+        "BTC-USD": "9a54220e09ddeaa538896a0230a8dcc88e703bd0cec62a01e84d2d69918db168",
+        "GLD": "b1e71625f4e21d4615b01ca21e590d0d5992de88592be271a368c60cba66a829",
+        "IWM": "398699cdd6961bb54bfd6a9648809d032c67904e0e7a30917f842a24d391fad3",
+        "QQQ": "d5d68ac836cdd7786166983be7e495a50a8e2d217219f1561f75b2a2b16632f3",
+        "SPY": "ae1be1b9cbf3c100dca18c2ad96633bb41563ac30b63bb83d9f83cfcc8122108",
+        "TLT": "50a716265739880e77a21043344f1857ef4ceb93598f07ee01c6868ca8fab1c0",
+        "USO": "3790b56a100bbb25801cb35c06a49b966d68cd70b4ff6b6d906744dd87d4c1d0",
+        "VNQ": "025d96c3c5b413c0b34eec6d97ebc99202ee19340e2b0416d4b1936930d53161"
       },
       "symbols": 8
     },
     "distance_tail": {
+      "asset_rate_max": 0.1058139534883721,
+      "asset_rate_min": 0.015116279069767442,
       "coverage_guarantee": false,
       "cutoff": 0.05,
       "outside_range_bars": 395,
       "pooled_outside_range_rate": 0.05458062733176731,
       "supported_evaluation_bars": 7237
+    },
+    "input_quality": {
+      "price_rows_dropped": 0,
+      "rows_received": 18160,
+      "rows_used": 18160
     },
     "prefix_invariance": {
       "channels": 11,

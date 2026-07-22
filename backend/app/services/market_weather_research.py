@@ -12,6 +12,7 @@ import pandas as pd
 EPSILON = 1e-9
 DISTANCE_TAIL_CUTOFF = 0.05
 DISTANCE_TAIL_MINIMUM_SUPPORT = 20
+SCALING_DIFFUSIVE_REFERENCE = 0.5
 
 
 def _clip(values: np.ndarray, low: float = 0.0, high: float = 1.0) -> np.ndarray:
@@ -102,22 +103,18 @@ def _rolling_realized_volatility(close: pd.Series, horizons: Sequence[int]) -> n
 def _relative_level(values: np.ndarray, span: int) -> np.ndarray:
     baseline = _ewm_rows(values, span)
     ratio = np.divide(values + EPSILON, baseline + EPSILON)
-    return _clip(0.5 + 0.5 * np.tanh(2.0 * np.log(ratio)))
+    level = _clip(0.5 + 0.5 * np.tanh(2.0 * np.log(ratio)))
+    # Missing observations are neutral for the finite internal clustering path;
+    # they are not zero participation or zero liquidity stress.
+    return np.where(np.isfinite(values), level, 0.5)
 
 
 def _relative_ratio(values: np.ndarray, span: int) -> np.ndarray:
     """Return an interpretable current-to-causal-baseline ratio."""
     baseline = _ewm_rows(values, span)
-    return np.clip(
-        np.nan_to_num(
-            np.divide(values + EPSILON, baseline + EPSILON),
-            nan=1.0,
-            posinf=10.0,
-            neginf=0.0,
-        ),
-        0.0,
-        10.0,
-    )
+    ratio = np.divide(values + EPSILON, baseline + EPSILON)
+    ratio = np.where(np.isfinite(values), ratio, np.nan)
+    return np.clip(ratio, 0.0, 10.0)
 
 
 def _carrier_fields(
@@ -128,10 +125,12 @@ def _carrier_fields(
     dict[str, np.ndarray],
     dict[str, np.ndarray],
     np.ndarray,
-    dict[str, bool | int],
+    dict[str, bool | int | float | None],
 ]:
     close = history["close"].astype(float)
-    volume = history["volume"].astype(float).clip(lower=0.0)
+    raw_volume = history["volume"].astype(float)
+    volume = raw_volume.where(np.isfinite(raw_volume) & (raw_volume >= 0.0))
+    available_volume_observations = int(volume.notna().sum())
     positive_volume_observations = int(np.sum(volume.to_numpy(dtype=float) > 0.0))
     volume_available = positive_volume_observations > 0
     realized_volatility = _rolling_realized_volatility(close, horizons)
@@ -139,14 +138,16 @@ def _carrier_fields(
     volume_rows: list[np.ndarray] = []
     impact_rows: list[np.ndarray] = []
     absolute_returns = np.log(close.clip(lower=EPSILON)).diff().abs().fillna(0.0)
-    dollar_volume = (close * volume).replace(0.0, np.nan)
-    impact = (absolute_returns / dollar_volume).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    dollar_volume = (close * volume.where(volume > 0.0)).replace(0.0, np.nan)
+    impact = (absolute_returns / dollar_volume).replace([np.inf, -np.inf], np.nan)
     for horizon in horizons:
         volume_rows.append(volume.rolling(horizon, min_periods=1).mean().to_numpy(dtype=float))
         impact_rows.append(impact.rolling(horizon, min_periods=1).mean().to_numpy(dtype=float))
 
     volume_field = np.vstack(volume_rows)
     impact_field = np.vstack(impact_rows)
+    participation_current = bool(np.any(np.isfinite(volume_field[:, -1])))
+    liquidity_stress_current = bool(np.any(np.isfinite(impact_field[:, -1])))
     baseline_span = max(34, int(max(horizons) * 2))
     unavailable_ratio = np.full_like(realized_volatility, np.nan, dtype=float)
     ratios = {
@@ -168,11 +169,16 @@ def _carrier_fields(
         "participation": _relative_level(volume_field, baseline_span),
         "liquidity_stress": _relative_level(impact_field, baseline_span),
     }
-    availability: dict[str, bool | int] = {
+    availability: dict[str, bool | int | float | None] = {
         "realized_volatility": True,
-        "participation": volume_available,
-        "liquidity_stress": volume_available,
+        "participation": volume_available and participation_current,
+        "liquidity_stress": volume_available and liquidity_stress_current,
+        "available_volume_observations": available_volume_observations,
         "positive_volume_observations": positive_volume_observations,
+        "volume_coverage": _rounded(
+            available_volume_observations / max(1, len(history)),
+            6,
+        ),
     }
     return carriers, ratios, realized_volatility, availability
 
@@ -182,6 +188,18 @@ def _aggregate(values: np.ndarray, weights: np.ndarray | None = None) -> np.ndar
         return np.mean(values, axis=0)
     normalized = weights / max(EPSILON, float(np.sum(weights)))
     return np.sum(values * normalized[:, None], axis=0)
+
+
+def _aggregate_available(values: np.ndarray) -> np.ndarray:
+    """Average available horizons while preserving all-missing dates as missing."""
+    finite = np.isfinite(values)
+    counts = np.sum(finite, axis=0)
+    return np.divide(
+        np.nansum(values, axis=0),
+        counts,
+        out=np.full(values.shape[1], np.nan, dtype=float),
+        where=counts > 0,
+    )
 
 
 def _rounded(value: float | np.floating[object] | None, digits: int = 4) -> float | None:
@@ -201,6 +219,36 @@ def _empirical_distance_tail_score(
     if len(finite) < minimum_support:
         return None
     return float((1 + np.sum(finite >= distance)) / (len(finite) + 1))
+
+
+def _calibration_distance_aliases(
+    *,
+    distance: float,
+    resonance: float,
+    tail_rank: float | None,
+    support: int,
+) -> dict[str, object]:
+    """Return explicit v1.1 terminology without removing legacy fields."""
+    extreme_tail = tail_rank < DISTANCE_TAIL_CUTOFF if tail_rank is not None else None
+    analog_status = (
+        "insufficient_calibration_support"
+        if tail_rank is None
+        else "withheld_extreme_calibration_tail"
+        if extreme_tail
+        else "descriptive_reference_available"
+    )
+    return {
+        "nearest_form_distance": _rounded(distance, 6),
+        "resonance_index": _rounded(resonance),
+        "calibration_distance_tail_rank": _rounded(tail_rank, 6),
+        "calibration_distance_percentile": (
+            _rounded(1.0 - tail_rank, 6) if tail_rank is not None else None
+        ),
+        "calibration_distance_support": support,
+        "calibration_distance_scope": "state_conditional" if tail_rank is not None else "unavailable",
+        "in_extreme_calibration_distance_tail": extreme_tail,
+        "analog_status": analog_status,
+    }
 
 
 def _robust_standardize(
@@ -773,6 +821,12 @@ def _build_market_state_lexicon(
                     if distance_tail_score is not None
                     else None
                 ),
+                **_calibration_distance_aliases(
+                    distance=float(nearest_distance[index]),
+                    resonance=float(matches[index]),
+                    tail_rank=distance_tail_score,
+                    support=distance_tail_support,
+                ),
                 "transition_surprise": _rounded(transition_surprise, 6),
             }
         )
@@ -861,6 +915,8 @@ def _build_market_state_lexicon(
                 "id": name,
                 "family": feature_families[name],
                 "distance_weight": _rounded(feature_weights[index], 8),
+                "fit_median": _rounded(center[index], 6),
+                "fit_robust_scale": _rounded(scale[index], 6),
                 "calibration_median": _rounded(center[index], 6),
                 "calibration_robust_scale": _rounded(scale[index], 6),
             }
@@ -878,6 +934,19 @@ def _build_market_state_lexicon(
             "outside_range_cutoff": DISTANCE_TAIL_CUTOFF,
             "minimum_distance_tail_support": DISTANCE_TAIL_MINIMUM_SUPPORT,
             "distance_tail_interpretation": "A smaller score means the observation is farther from its assigned Form than most same-state bars in the later held-out calibration segment.",
+            "terminology_revision": "calibration_distance_v1.1",
+            "calibration_tail_rule": "State-conditional chronological held-out empirical calibration-distance tail rank below 0.05, available only with at least 20 same-state calibration distances.",
+            "calibration_tail_cutoff": DISTANCE_TAIL_CUTOFF,
+            "resonance_interpretation": "A monotone transform of nearest-Form distance; it is not a probability or calibrated confidence.",
+            "deprecated_aliases": {
+                "match": "resonance_index",
+                "distance_tail_score": "calibration_distance_tail_rank",
+                "distance_tail_support": "calibration_distance_support",
+                "distance_tail_scope": "calibration_distance_scope",
+                "outside_learned_range": "in_extreme_calibration_distance_tail",
+                "calibration_median": "fit_median",
+                "calibration_robust_scale": "fit_robust_scale",
+            },
             "coverage_guarantee": False,
             "dependence_caveat": "Overlapping, autocorrelated, and nonstationary market bars are not exchangeable; this empirical rank has no exact false-alert or coverage guarantee.",
         },
@@ -898,6 +967,12 @@ def _build_market_state_lexicon(
                 current_distance_tail_score < DISTANCE_TAIL_CUTOFF
                 if current_distance_tail_score is not None
                 else None
+            ),
+            **_calibration_distance_aliases(
+                distance=float(nearest_distance[-1]),
+                resonance=float(matches[-1]),
+                tail_rank=current_distance_tail_score,
+                support=current_distance_tail_support,
             ),
             "age_bars": current_age,
             "transition_surprise": _rounded(latest_surprise, 6),
@@ -1178,8 +1253,25 @@ def build_market_weather_research(
         "cascade_bias": cascade_bias,
         "scaling_exponent": np.clip(_aggregate(scaling_exponent), -2.0, 2.0),
     }
+    aggregate_structure_components = {
+        "activity": _aggregate(structural_strength),
+        "horizon_agreement": _aggregate(coherence),
+        "trend_agreement_composite": aggregate_strata["structure"],
+        "display_organization": _aggregate(
+            _clip(0.48 * coherence + 0.32 * structural_strength + 0.20 * (1.0 - field_disorder))
+        ),
+    }
+    scaling_valid = np.max(realized_volatility, axis=0) > EPSILON
+    scaling_excess = np.where(
+        scaling_valid,
+        aggregate_strata["scaling_exponent"] - SCALING_DIFFUSIVE_REFERENCE,
+        np.nan,
+    )
     aggregate_carriers = {name: _aggregate(values) for name, values in carriers.items()}
-    aggregate_carrier_ratios = {name: _aggregate(values) for name, values in carrier_ratios.items()}
+    aggregate_carrier_ratios = {
+        name: _aggregate_available(values)
+        for name, values in carrier_ratios.items()
+    }
 
     derivative_series = [
         {"date": date, **{name: _rounded(values[index]) for name, values in aggregate_derivatives.items()}}
@@ -1187,6 +1279,24 @@ def build_market_weather_research(
     ]
     strata_series = [
         {"date": date, **{name: _rounded(values[index]) for name, values in aggregate_strata.items()}}
+        for index, date in enumerate(dates)
+    ]
+    structure_component_series = [
+        {
+            "date": date,
+            **{name: _rounded(values[index]) for name, values in aggregate_structure_components.items()},
+        }
+        for index, date in enumerate(dates)
+    ]
+    scaling_reference_series = [
+        {
+            "date": date,
+            "exponent": _rounded(aggregate_strata["scaling_exponent"][index]),
+            "reference": SCALING_DIFFUSIVE_REFERENCE,
+            "excess": _rounded(scaling_excess[index]),
+            "valid": bool(scaling_valid[index]),
+            "reason": None if scaling_valid[index] else "zero_realized_variance",
+        }
         for index, date in enumerate(dates)
     ]
     carrier_series = [
@@ -1234,6 +1344,7 @@ def build_market_weather_research(
     }
     research = {
         "model": "Market Field Calculus v1",
+        "semantic_revision": "1.1",
         "coordinate": {
             "time": "causal bar sequence",
             "scale": "natural log of horizon in bars",
@@ -1252,6 +1363,29 @@ def build_market_weather_research(
             "latest": {name: _rounded(values[-1]) for name, values in aggregate_strata.items()},
             "series": strata_series,
         },
+        "structure_components": {
+            "latest": {
+                name: _rounded(values[-1])
+                for name, values in aggregate_structure_components.items()
+            },
+            "series": structure_component_series,
+            "weights": {"activity": 0.58, "horizon_agreement": 0.42},
+            "flat_field_reference": {
+                "trend_agreement_composite": 0.42,
+                "display_organization": 0.68,
+            },
+            "changes_v1_state_vector": False,
+            "note": "Activity and horizon agreement expose the two inputs to the existing v1 composite; no Form identity or v1 feature value is changed.",
+        },
+        "scaling_reference": {
+            "stationary_finite_variance_reference": SCALING_DIFFUSIVE_REFERENCE,
+            "latest_exponent": _rounded(aggregate_strata["scaling_exponent"][-1]),
+            "latest_excess": _rounded(scaling_excess[-1]),
+            "valid": bool(scaling_valid[-1]),
+            "reason": None if scaling_valid[-1] else "zero_realized_variance",
+            "series": scaling_reference_series,
+            "reference_scope": "Square-root-of-time reference for non-degenerate stationary finite-variance increments; not a Hurst estimate or proof of persistence.",
+        },
         "carriers": {
             "latest": {name: _rounded(values[-1]) for name, values in aggregate_carriers.items()},
             "series": carrier_series,
@@ -1261,7 +1395,7 @@ def build_market_weather_research(
                 "series": carrier_ratio_series,
                 "baseline": "Arithmetic mean across configured horizons of current measure divided by its causal EWM baseline, which includes the current bar. 1.0 means equal, 1.2 means 20% above, and values are capped at 10.0.",
             },
-            "note": "Price structure, realized volatility, volume participation, and an Amihud-like OHLCV liquidity-stress proxy are separate carriers. Volume-dependent direct ratios are unavailable when the source contains no positive volume observations; neutral internal values keep the descriptive clustering path finite without implying a measured 1.0x ratio.",
+            "note": "Price structure, realized volatility, volume participation, and an Amihud-like OHLCV liquidity-stress proxy are separate carriers. Missing volume is excluded from rolling participation and impact rather than treated as zero. Direct ratios remain unavailable where no rolling observation exists; neutral internal values keep the descriptive clustering path finite without implying a measured 1.0x ratio.",
         },
         "relationship_atlas": relationship_atlas,
         "lexicon": lexicon,

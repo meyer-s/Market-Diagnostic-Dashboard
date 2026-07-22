@@ -66,6 +66,45 @@ export interface MarketWeatherStrataLatest {
   scaling_exponent: number;
 }
 
+export interface MarketWeatherStructureComponentPoint {
+  date: string;
+  activity: number;
+  horizon_agreement: number;
+  trend_agreement_composite: number;
+  display_organization: number;
+}
+
+export interface MarketWeatherStructureComponents {
+  latest: Omit<MarketWeatherStructureComponentPoint, "date">;
+  series: MarketWeatherStructureComponentPoint[];
+  weights: {
+    activity: number;
+    horizon_agreement: number;
+  };
+  flat_field_reference: {
+    trend_agreement_composite: number;
+    display_organization: number;
+  };
+  changes_v1_state_vector: false;
+}
+
+export interface MarketWeatherScalingReference {
+  stationary_finite_variance_reference: number;
+  latest_exponent: number | null;
+  latest_excess: number | null;
+  valid: boolean;
+  reason: string | null;
+  series?: Array<{
+    date: string;
+    exponent: number | null;
+    reference: number;
+    excess: number | null;
+    valid: boolean;
+    reason: string | null;
+  }>;
+  reference_scope?: string;
+}
+
 export interface MarketWeatherCarrierPoint {
   date: string;
   price_structure: number;
@@ -216,6 +255,11 @@ export interface MarketWeatherLexiconOutcome {
   mean_absolute_return: number | null;
 }
 
+export type MarketWeatherAnalogStatus =
+  | "descriptive_reference_available"
+  | "withheld_extreme_calibration_tail"
+  | "insufficient_calibration_support";
+
 export interface MarketWeatherLexiconArchetype {
   id: string;
   token: string;
@@ -241,6 +285,14 @@ export interface MarketWeatherLexiconSequencePoint {
   distance_tail_support: number;
   distance_tail_scope: "state_conditional" | "unavailable";
   outside_learned_range: boolean | null;
+  nearest_form_distance?: number;
+  resonance_index?: number;
+  calibration_distance_tail_rank?: number | null;
+  calibration_distance_percentile?: number | null;
+  calibration_distance_support?: number;
+  calibration_distance_scope?: "state_conditional" | "unavailable";
+  in_extreme_calibration_distance_tail?: boolean | null;
+  analog_status?: MarketWeatherAnalogStatus;
   transition_surprise: number;
 }
 
@@ -304,6 +356,13 @@ export interface MarketWeatherLexicon {
     outside_range_cutoff?: number;
     minimum_distance_tail_support?: number;
     distance_tail_interpretation?: string;
+    canonical_tail_name?: string;
+    legacy_tail_aliases?: string[];
+    terminology_revision?: string;
+    calibration_tail_rule?: string;
+    calibration_tail_cutoff?: number;
+    resonance_interpretation?: string;
+    deprecated_aliases?: Record<string, string>;
     coverage_guarantee?: boolean;
     dependence_caveat?: string;
   };
@@ -319,6 +378,14 @@ export interface MarketWeatherLexicon {
     distance_tail_support: number;
     distance_tail_scope: "state_conditional" | "unavailable";
     outside_learned_range: boolean | null;
+    nearest_form_distance?: number;
+    resonance_index?: number;
+    calibration_distance_tail_rank?: number | null;
+    calibration_distance_percentile?: number | null;
+    calibration_distance_support?: number;
+    calibration_distance_scope?: "state_conditional" | "unavailable";
+    in_extreme_calibration_distance_tail?: boolean | null;
+    analog_status?: MarketWeatherAnalogStatus;
     age_bars: number;
     age_truncated?: boolean;
     transition_surprise: number;
@@ -347,6 +414,7 @@ export interface MarketWeatherLexicon {
 
 export interface MarketWeatherResearch {
   model?: string;
+  semantic_revision?: string;
   coordinate?: Record<string, string>;
   definitions: Record<string, string>;
   derivative_series: MarketWeatherDerivativePoint[];
@@ -354,6 +422,8 @@ export interface MarketWeatherResearch {
     latest: MarketWeatherStrataLatest;
     series: MarketWeatherStrataPoint[];
   };
+  structure_components?: MarketWeatherStructureComponents;
+  scaling_reference?: MarketWeatherScalingReference;
   carriers?: {
     latest: MarketWeatherCarrierLatest;
     series: MarketWeatherCarrierPoint[];
@@ -387,6 +457,7 @@ export interface MarketWeatherResearch {
 
 export interface MarketWeatherResponse {
   symbol: string;
+  semantic_revision?: string;
   generated_at: string;
   data_source: string;
   quote: {
@@ -399,6 +470,34 @@ export interface MarketWeatherResponse {
   timeframe: MarketWeatherTimeframe;
   requested_bars: number;
   available_bars: number;
+  history_context?: {
+    requested_visible_bars: number;
+    visible_bars: number;
+    analysis_bars: number;
+    warmup_buffer_requested: number;
+    warmup_buffer_received: number;
+    maximum_horizon_bars: number;
+    minimum_observed_window_bars: number;
+    target_warmup_bars: number;
+    warmup_complete: boolean;
+    status: "complete" | "provisional" | "insufficient";
+    bars_needed_to_minimum?: number;
+    bars_needed_to_target?: number;
+    warmup_note?: string;
+  };
+  input_quality?: {
+    status: "valid" | "limited" | "invalid";
+    rows_received: number;
+    rows_used: number;
+    dropped: Record<string, number>;
+    volume: {
+      available: boolean;
+      positive_observations: number;
+      coverage: number;
+      invalid_observations?: number;
+    };
+    warnings: string[];
+  };
   coverage_start: string;
   coverage_end: string;
   orientation: "horizon_by_time";

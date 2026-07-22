@@ -1,0 +1,3 @@
+scenario,bars,pressure,velocity,structural_strength,coherence,legacy_disorder,permutation_entropy,structure,information,propagation,display_confidence,volume_carriers_available,semantic_interpretation
+constant_price_positive_volume,256,0.0,0.0,0.0,1.0,0.0,0.0,0.42,0.0,0.0,0.6799999999999999,True,"Nonzero structure/confidence are formula anchors from coherence, not detected market organization."
+constant_price_zero_volume,256,0.0,0.0,0.0,1.0,0.0,0.0,0.42,0.0,0.0,0.6799999999999999,False,"Nonzero structure/confidence are formula anchors from coherence, not detected market organization."

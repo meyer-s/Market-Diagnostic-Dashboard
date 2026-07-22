@@ -14,6 +14,8 @@ from app.services import market_weather_research
 from app.services.option_field_context import (
     OPTION_FIELD_MODEL_VERSION,
     OPTION_FIELD_SCHEMA_VERSION,
+    OPTION_FIELD_SEMANTIC_REVISION,
+    OPTION_FIELD_TARGET_WARMUP_BARS,
     build_option_field_context,
     option_field_context_from_event,
     option_field_event_fields,
@@ -105,9 +107,24 @@ def test_field_context_is_live_only_shadow_evidence() -> None:
 
     assert payload["schema_version"] == OPTION_FIELD_SCHEMA_VERSION
     assert payload["model_version"] == OPTION_FIELD_MODEL_VERSION
+    assert payload["semantic_revision"] == OPTION_FIELD_SEMANTIC_REVISION
     assert payload["mode"] == "shadow_only"
     assert payload["rank_influence"] == 0.0
     assert payload["automated_execution_enabled"] is False
+    assert payload["authority"] == {
+        "scanner_rank": "none",
+        "hard_veto": "none",
+        "manager_verdict": "none",
+        "target_size": "none",
+        "assessment_confidence": "advisory",
+        "review_priority": "advisory",
+        "human_visible": True,
+        "automated_execution": "none",
+    }
+    assert payload["maturity"]["status"] == "complete"
+    assert payload["maturity"]["target_warmup_bars"] == OPTION_FIELD_TARGET_WARMUP_BARS
+    assert payload["alignment"]["basis"] == "legacy_long_single_leg_option_type"
+    assert payload["alignment"]["scope"] == "long_single_leg"
     assert payload["quality"]["available"] is True
     assert payload["quality"]["completed_bars_only"] is True
     assert payload["quality"]["data_source"] == "yahoo"
@@ -152,6 +169,97 @@ def test_field_context_returns_stable_unavailable_shape_without_enough_bars() ->
     assert set(payload["quality"]["missing_features"]) == {"option_type", "completed_daily_history"}
     assert payload["classification"] == {"path_state": "unavailable", "eventfulness": "unavailable"}
     assert payload["rank_influence"] == 0.0
+    assert payload["maturity"]["status"] == "insufficient"
+    assert payload["maturity"]["bars_needed"] == OPTION_FIELD_TARGET_WARMUP_BARS - 20
+
+
+def test_field_context_requires_full_two_horizon_warmup_at_95_and_96_bars() -> None:
+    observed_at = datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc)
+
+    immature = build_option_field_context(
+        _history(95),
+        option_type="call",
+        observed_at=observed_at,
+    )
+    mature = build_option_field_context(
+        _history(96),
+        option_type="call",
+        observed_at=observed_at,
+    )
+
+    assert immature["quality"]["available"] is False
+    assert immature["maturity"]["status"] == "insufficient"
+    assert immature["maturity"]["warmup_complete"] is False
+    assert immature["maturity"]["bars_needed"] == 1
+    assert "requires_96_completed_bars" in immature["quality"]["warnings"]
+    assert mature["quality"]["available"] is True
+    assert mature["maturity"]["status"] == "complete"
+    assert mature["maturity"]["warmup_complete"] is True
+    assert mature["maturity"]["bars_needed"] == 0
+
+
+@pytest.mark.parametrize(
+    ("option_type", "position_action", "expected_sign", "expected_scope"),
+    [
+        ("call", "buy_to_open", 1, "long_single_leg"),
+        ("put", "buy_to_open", -1, "long_single_leg"),
+        ("call", "sell_to_open", -1, "short_single_leg"),
+        ("put", "sell_to_open", 1, "short_single_leg"),
+    ],
+)
+def test_field_context_alignment_respects_position_action(
+    option_type: str,
+    position_action: str,
+    expected_sign: int,
+    expected_scope: str,
+) -> None:
+    payload = build_option_field_context(
+        _history(),
+        option_type=option_type,
+        position_action=position_action,
+        observed_at=datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["alignment"]["basis"] == "action_and_option_type"
+    assert payload["alignment"]["scope"] == expected_scope
+    assert payload["alignment"]["directional_exposure_sign"] == expected_sign
+    assert payload["direction"]["option_aligned_pressure"] == pytest.approx(
+        expected_sign * payload["direction"]["pressure"]
+    )
+
+
+def test_signed_delta_overrides_legacy_option_type_alignment() -> None:
+    payload = build_option_field_context(
+        _history(),
+        option_type="call",
+        signed_delta=-0.35,
+        strategy_scope="multi_leg",
+        observed_at=datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["alignment"]["basis"] == "signed_delta"
+    assert payload["alignment"]["scope"] == "multi_leg"
+    assert payload["alignment"]["directional_exposure_sign"] == -1
+    assert payload["direction"]["option_aligned_pressure"] == pytest.approx(
+        -payload["direction"]["pressure"]
+    )
+
+
+def test_multi_leg_alignment_abstains_without_signed_delta() -> None:
+    payload = build_option_field_context(
+        _history(),
+        option_type="call",
+        position_action="buy_to_open",
+        strategy_scope="multi_leg",
+        observed_at=datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["alignment"]["supported"] is False
+    assert payload["alignment"]["basis"] == "unsupported"
+    assert payload["direction"]["option_aligned_pressure"] is None
+    assert payload["classification"]["path_state"] == "unavailable"
+    assert payload["quality"]["status"] == "limited"
+    assert "directional_alignment" in payload["quality"]["missing_features"]
 
 
 def test_event_snapshot_round_trip_is_immutable_shadow_context() -> None:
@@ -161,6 +269,7 @@ def test_event_snapshot_round_trip_is_immutable_shadow_context() -> None:
         observed_at=datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc),
     )
     payload["rank_influence"] = 99.0
+    payload["authority"] = {"automated_execution": "full"}
     fields = option_field_event_fields(payload)
     event = OptionAlertEvent(symbol="SPY", **fields)
 
@@ -173,6 +282,8 @@ def test_event_snapshot_round_trip_is_immutable_shadow_context() -> None:
     assert restored["rank_influence"] == 0.0
     assert restored["model_version"] == OPTION_FIELD_MODEL_VERSION
     assert restored["automated_execution_enabled"] is False
+    assert restored["authority"]["automated_execution"] == "none"
+    assert restored["authority"]["manager_verdict"] == "none"
 
 
 def test_scanner_serialization_exposes_field_context_without_changing_rank() -> None:
@@ -308,3 +419,5 @@ def test_sweep_persists_field_snapshot_on_every_emitted_hit(monkeypatch: pytest.
     assert snapshot["quality"]["available"] is True
     assert snapshot["quality"]["data_source"] == "test_history"
     assert snapshot["rank_influence"] == 0.0
+    assert snapshot["alignment"]["basis"] == "action_and_option_type"
+    assert snapshot["alignment"]["scope"] == "single_leg"
