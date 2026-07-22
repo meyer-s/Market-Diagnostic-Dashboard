@@ -1,0 +1,130 @@
+{
+  "endpoint": "https://marketdiagnostictool.com/api/market-weather/analyze",
+  "observed_at_utc": "2026-07-22T15:52:42.340042+00:00",
+  "probe_version": "market_field_live_probe_v1",
+  "rows": [
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-22T11:52:00-04:00",
+      "coverage_start": "2026-07-22T09:53:00-04:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 6866.1,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "1m"
+    },
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-22T11:50:00-04:00",
+      "coverage_start": "2026-07-20T14:55:00-04:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 6338.0,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "5m"
+    },
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-22T11:45:00-04:00",
+      "coverage_start": "2026-07-15T14:30:00-04:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 6520.0,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "15m"
+    },
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-22T11:30:00-04:00",
+      "coverage_start": "2026-07-09T10:30:00-04:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 6018.1,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "30m"
+    },
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-22T11:30:00-04:00",
+      "coverage_start": "2026-06-26T11:30:00-04:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 6336.5,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "1h"
+    },
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-22T11:30:00-04:00",
+      "coverage_start": "2026-06-08T13:30:00-04:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 8616.5,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "2h"
+    },
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-22T09:30:00-04:00",
+      "coverage_start": "2026-04-24T13:30:00-04:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 9578.9,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "4h"
+    },
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-22T00:00:00-04:00",
+      "coverage_start": "2026-01-29T00:00:00-05:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 6409.8,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "1D"
+    },
+    {
+      "available_bars": 120,
+      "causal_declared": true,
+      "coverage_end": "2026-07-20T00:00:00-04:00",
+      "coverage_start": "2024-04-08T00:00:00-04:00",
+      "data_source": "yahoo",
+      "elapsed_ms": 6348.0,
+      "error": null,
+      "http_status": 200,
+      "model": "Market Field Calculus v1",
+      "possibly_incomplete_latest_bar": true,
+      "timeframe": "1W"
+    }
+  ],
+  "summary": {
+    "median_elapsed_ms": 6409.8,
+    "possible_incomplete_latest_bars": 9,
+    "successful_timeframes": 9,
+    "timeframes": 9
+  }
+}

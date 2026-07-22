@@ -1,0 +1,9 @@
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.synctex.gz
+__pycache__/
+.ipynb_checkpoints/
+supplement/data/raw/*.csv

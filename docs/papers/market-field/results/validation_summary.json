@@ -1,0 +1,213 @@
+{
+  "market_data": [
+    {
+      "adjustment": "Yahoo auto_adjust=True",
+      "canonical_ohlcv_sha256": "ea77800c08663cb150f1b04125d897e62061d5d0a5e6e642ccd2e4d7dae95d7c",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "requested_end_exclusive": "2026-07-22",
+      "requested_start": "2018-01-01",
+      "rows": 2148,
+      "source": "local_cache",
+      "symbol": "SPY"
+    },
+    {
+      "adjustment": "Yahoo auto_adjust=True",
+      "canonical_ohlcv_sha256": "00ce949bf1318fadab102ae859cb9ac5f73454ad78f8fba4ec32498da0f127b9",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "requested_end_exclusive": "2026-07-22",
+      "requested_start": "2018-01-01",
+      "rows": 2148,
+      "source": "local_cache",
+      "symbol": "QQQ"
+    },
+    {
+      "adjustment": "Yahoo auto_adjust=True",
+      "canonical_ohlcv_sha256": "60edd0ee5b7d9d9dad098d831128638252f0bdda2665c9b0a1f17d8e8c4f3b1d",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "requested_end_exclusive": "2026-07-22",
+      "requested_start": "2018-01-01",
+      "rows": 2148,
+      "source": "local_cache",
+      "symbol": "IWM"
+    },
+    {
+      "adjustment": "Yahoo auto_adjust=True",
+      "canonical_ohlcv_sha256": "0089ee8a52a195ee1ca36467d31ab495df16ea608b450ea060695f7415438a23",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "requested_end_exclusive": "2026-07-22",
+      "requested_start": "2018-01-01",
+      "rows": 2148,
+      "source": "local_cache",
+      "symbol": "TLT"
+    },
+    {
+      "adjustment": "Yahoo auto_adjust=True",
+      "canonical_ohlcv_sha256": "f004bce65315d319e6724423f4da6356f6dbc8e462fceacc19bccfa005ab0b11",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "requested_end_exclusive": "2026-07-22",
+      "requested_start": "2018-01-01",
+      "rows": 2148,
+      "source": "local_cache",
+      "symbol": "GLD"
+    },
+    {
+      "adjustment": "Yahoo auto_adjust=True",
+      "canonical_ohlcv_sha256": "de1a67bbfedec724465db2c5f927e9342001843a698a0768039a182be782ae8e",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "requested_end_exclusive": "2026-07-22",
+      "requested_start": "2018-01-01",
+      "rows": 2148,
+      "source": "local_cache",
+      "symbol": "USO"
+    },
+    {
+      "adjustment": "Yahoo auto_adjust=True",
+      "canonical_ohlcv_sha256": "519c362eb2510bfd30134a1282e2a1af20bf18a22d688b8b9d6a9556d85ae343",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "requested_end_exclusive": "2026-07-22",
+      "requested_start": "2018-01-01",
+      "rows": 2148,
+      "source": "local_cache",
+      "symbol": "VNQ"
+    },
+    {
+      "adjustment": "Yahoo auto_adjust=True",
+      "canonical_ohlcv_sha256": "07faa51bb53f39f7e8c78064fc0d9ea2200cb8695535776c24eb07dde4a22bd3",
+      "first_observation": "2018-01-01T00:00:00+00:00",
+      "last_observation": "2026-07-21T00:00:00+00:00",
+      "requested_end_exclusive": "2026-07-22",
+      "requested_start": "2018-01-01",
+      "rows": 3124,
+      "source": "local_cache",
+      "symbol": "BTC-USD"
+    }
+  ],
+  "option_snapshot_benchmark": {
+    "automated_execution_enabled": false,
+    "bars_per_snapshot": 365,
+    "call_aligned_state_by_symbol": {
+      "BTC-USD": "mixed",
+      "GLD": "contradictory",
+      "IWM": "fading",
+      "QQQ": "mixed",
+      "SPY": "fading",
+      "TLT": "contradictory",
+      "USO": "contradictory",
+      "VNQ": "supportive"
+    },
+    "environment_note": "Single-process local Windows benchmark; excludes data retrieval.",
+    "maximum_ms": 196.80100004188716,
+    "maximum_payload_bytes": 1603,
+    "median_ms": 104.22170005040243,
+    "median_payload_bytes": 1592,
+    "p95_ms": 106.47032995475456,
+    "rank_influence": 0.0,
+    "runs": 80,
+    "symbols": 8
+  },
+  "paper_as_of": "2026-07-21",
+  "synthetic": {
+    "crossing_delays_bars": [
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28
+    ],
+    "horizon_delay_spearman_rho": 1.0,
+    "horizons": [
+      12,
+      14,
+      16,
+      18,
+      20,
+      22,
+      24,
+      26,
+      28,
+      30,
+      32,
+      34,
+      36,
+      38,
+      40,
+      42,
+      44,
+      46,
+      48
+    ],
+    "pressure_threshold": -0.05,
+    "reversal_index": 400,
+    "segment_metrics": {
+      "Alternating chop": {
+        "information": 0.48195750000000004,
+        "mean_abs_pressure": 0.0013554210526315787,
+        "permutation_entropy": 0.5680306578947368,
+        "structure": 0.41936000000000007
+      },
+      "Organized trend": {
+        "information": 0.3787355,
+        "mean_abs_pressure": 0.5082200263157894,
+        "permutation_entropy": 0.3845920263157894,
+        "structure": 0.8586734999999999
+      }
+    }
+  },
+  "validation": {
+    "codebook_gate": {
+      "nontrivial_codebooks": 2,
+      "single_form_fallbacks": 6,
+      "symbols": 8
+    },
+    "determinism": {
+      "exact_lexicon_matches": 8,
+      "sha256_by_symbol": {
+        "BTC-USD": "f8bcfe64c15944d6308b35167753c50e54e048bd7258a5b9f5d81f953e61d7c5",
+        "GLD": "f3b8beb8e1b239a5834296e8d9c510a63202abff26e3a2b38f1e63a04bafb1e9",
+        "IWM": "403d9e402f375b2ba132154d4e6f0298ea8fa5983fd46ae808493fea8571e41b",
+        "QQQ": "a61fe6d665a0914a4dd4bd76a8e609628a13c4c3fb30258ec8a8b7cc851b3be6",
+        "SPY": "e8d8d32c3b0d7717f3a99b5bb26faaf26f52d824cefb5572b7b8752480f32687",
+        "TLT": "ee1a1609f7ecd4b2b511713277111489a99f664e13e6a49e09a8bdf28995b9f8",
+        "USO": "a312c391eef4268998e63884a67cac6605d1dc21f506cbce3a1279abe3ee331b",
+        "VNQ": "56da885090ee8c5a08857853a646b8a67139a7d2c61eb7ca0f3d3970046eeed0"
+      },
+      "symbols": 8
+    },
+    "distance_tail": {
+      "coverage_guarantee": false,
+      "cutoff": 0.05,
+      "outside_range_bars": 395,
+      "pooled_outside_range_rate": 0.05458062733176731,
+      "supported_evaluation_bars": 7237
+    },
+    "prefix_invariance": {
+      "channels": 11,
+      "maximum_absolute_difference": 0.0,
+      "nonzero_differences": 0,
+      "precision": "API serialization rounded to 1e-4",
+      "serialized_value_comparisons": 6688,
+      "symbols": 8
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "backend_tests": [
+    {
+      "command": "pytest backend/tests/test_market_weather.py backend/tests/test_market_weather_context.py -q",
+      "passed": 32,
+      "failed": 0,
+      "warnings": 1,
+      "elapsed_seconds": 5.79
+    },
+    {
+      "command": "pytest backend/tests/test_option_field_context.py -q",
+      "passed": 9,
+      "failed": 0,
+      "warnings": 2,
+      "elapsed_seconds": 2.13
+    }
+  ],
+  "live_probe": {
+    "endpoint": "https://marketdiagnostictool.com/api/market-weather/analyze",
+    "observed_at_utc": "2026-07-22T15:52:42.340042+00:00",
+    "successful_timeframes": 9,
+    "timeframes": 9,
+    "median_elapsed_ms": 6409.8,
+    "latest_bar_flagged_possible_incomplete": 9,
+    "interpretation": "All supported timeframes returned HTTP 200 and declared causal computation. Under the evaluation's conservative completed-bar policy, every response included a latest bar that was possibly still forming. This is an operational boundary, not a forecast result."
+  }
+}

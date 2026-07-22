@@ -1,0 +1,17 @@
+{
+  "assets": 8,
+  "derived_rows": 7270,
+  "figures": [
+    "calibration_rates.pdf",
+    "spy_field_phase.pdf",
+    "synthetic_diagnostics.pdf",
+    "system_overview.pdf"
+  ],
+  "paper_as_of": "2026-07-21",
+  "prefix_comparisons": 6688,
+  "status": "ok",
+  "tables": [
+    "asset_summary.tex",
+    "validation_summary.tex"
+  ]
+}

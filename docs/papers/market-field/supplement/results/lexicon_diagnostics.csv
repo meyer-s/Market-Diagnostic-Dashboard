@@ -1,0 +1,8 @@
+dataset_id,archetype_count,fit_mean_silhouette,fit_bars,calibration_bars,evaluation_bars,distance_tail_coverage,outside_range_rate_when_scored,evaluation_state_changes,evaluation_median_run_bars,fit_transition_count,reliable_next_state_count,current_state,current_distance_tail_score,current_distance_tail_support
+spy_1d,2,0.278031,236,117,300,1.0,0.36666666666666664,11,11.5,6,0,F.002,0.509434,52
+qqq_1d,2,0.251756,236,117,300,1.0,0.4266666666666667,12,9.0,12,2,F.001,0.512821,77
+iwm_1d,2,0.4268,236,117,300,0.7533333333333333,0.0,10,23.0,4,0,F.001,0.991525,117
+tlt_1d,2,0.258655,236,117,300,1.0,0.013333333333333334,11,2.5,2,0,F.001,0.904762,62
+gld_1d,1,0.0,236,117,300,1.0,0.05333333333333334,0,300.0,0,0,F.001,0.457627,117
+uso_1d,1,0.0,236,117,300,1.0,0.16,0,300.0,0,0,F.001,0.601695,117
+btc_usd_1d,2,0.255779,236,117,300,0.3233333333333333,0.1134020618556701,19,4.0,2,0,F.001,,0

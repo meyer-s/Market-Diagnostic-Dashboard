@@ -1,0 +1,3 @@
+prefix_fraction,prefix_bars,overlap_bars,full_archetypes,prefix_archetypes,adjusted_rand_index,interpretation
+0.7,524,75,2,1,0.0,Window-native dictionary stability diagnostic; not a causal-core failure criterion.
+0.85,637,188,2,2,0.8729665568134752,Window-native dictionary stability diagnostic; not a causal-core failure criterion.

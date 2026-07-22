@@ -1,0 +1,20 @@
+{
+  "alignment_sign_flip_holds": true,
+  "as_of_bar": "2026-07-21",
+  "automated_execution_enabled": false,
+  "call_aligned_pressure": 0.0255,
+  "call_path_state": "fading",
+  "completed_bars": 365,
+  "completed_bars_only": true,
+  "excluded_incomplete_bars": 1,
+  "incomplete_session_has_zero_field_influence": true,
+  "mode": "shadow_only",
+  "model_version": "market_field_calculus_v1",
+  "performance_claim_evaluated": false,
+  "put_aligned_pressure": -0.0255,
+  "put_path_state": "contradictory",
+  "rank_influence": 0.0,
+  "retrospective_sections_excluded": true,
+  "schema_version": "option_market_field_v1",
+  "synthetic_incomplete_session_appended": true
+}
