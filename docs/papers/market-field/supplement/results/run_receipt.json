@@ -1,12 +1,12 @@
 {
   "artifact_count": 22,
-  "completed_at_utc": "2026-07-22T20:10:08.113573Z",
-  "elapsed_seconds": 50.06112,
+  "completed_at_utc": "2026-07-22T23:25:55.179120Z",
+  "elapsed_seconds": 54.830311,
   "environment": {
     "dependencies": {
       "matplotlib": "3.11.1",
       "numpy": "2.4.2",
-      "pandas": "3.0.0",
+      "pandas": "2.2.3",
       "scipy": "1.17.0",
       "yfinance": "1.1.0"
     },
@@ -39,7 +39,7 @@
       "bytes": 1547,
       "kind": "table",
       "path": "results/determinism.csv",
-      "sha256": "f605f7d5fcc5284dd0240ded1753647adea10b74559e46a87ab3f50a26b19766"
+      "sha256": "cb830f5c31fefc3790d32589055e55df5655dc8d8e3b30bb1986a82927f8f821"
     },
     {
       "bytes": 76662,
@@ -66,10 +66,10 @@
       "sha256": "138a09482d43b6f89d828cf54ff266319f96139a2344660f91f6370337b55033"
     },
     {
-      "bytes": 957,
+      "bytes": 1065,
       "kind": "table",
-      "path": "results/maturity_contracts.csv",
-      "sha256": "f63f1598dab3678ee227ed87f8e91f8875900505cc37dd00a963787fb3a4aaf2"
+      "path": "results/initialization_contracts.csv",
+      "sha256": "b3e9feb7b574ae0c8a833ecce610ec2ca59e603547bf4941f847544c581525bd"
     },
     {
       "bytes": 595,
@@ -78,10 +78,10 @@
       "sha256": "ecf953b63357ec287e6eb29237d009de3fc6a78bb323c45ac5714f9711c9addd"
     },
     {
-      "bytes": 4256,
+      "bytes": 4261,
       "kind": "table",
       "path": "results/option_snapshot_latency.csv",
-      "sha256": "ec5e2d848dcac98b5b743cc20a00e4ed1359b6736966b237368a2431f26c53be"
+      "sha256": "721fecb775bb903aa0ab8d03e0af57c22a8376669ea5ac322845069729e5d340"
     },
     {
       "bytes": 2156,
@@ -138,10 +138,10 @@
       "sha256": "670609a8487046a787b6880746c6b7bb001372e7f9d8b648bbf2de10eaccb652"
     },
     {
-      "bytes": 9590,
+      "bytes": 9742,
       "kind": "result",
       "path": "results/summary.json",
-      "sha256": "8299b1de97acdfa3f2670ea06d7d7c915c677fcb695ef1700b7edb7b0d19c190"
+      "sha256": "31a238c9a185416fb46848a64e489ab1d584c1fadf3c10804595e499914bb2dc"
     },
     {
       "bytes": 686,
@@ -161,44 +161,37 @@
   "receipt_self_hash_excluded": true,
   "receipt_version": "market_field_supplement_run_receipt_v1",
   "repository_at_start": {
-    "branch": "reconcile/live-ibkr-main",
-    "dirty": true,
+    "branch": "",
+    "dirty": false,
     "git_errors": [],
-    "head": "f0ef66a4b34f72582b48543e4947104370bdf464",
-    "provenance_note": "The evaluation used working-tree files. HEAD is recorded only as a repository reference and must not be described as the exact evaluated source snapshot.",
-    "status_entries": [
-      "M docs/papers/market-field/supplement/results/option_snapshot_latency.csv",
-      " M docs/papers/market-field/supplement/results/run_receipt.json",
-      " M docs/papers/market-field/supplement/results/summary.json"
-    ],
-    "status_entry_count": 3,
-    "status_summary": {
-      " M": 2,
-      "M ": 1
-    }
+    "head": "f5d3884c9112e9cd5aa9442bc546194db9314697",
+    "provenance_note": "The working tree was clean at capture time; HEAD identifies the evaluated repository state, subject to the per-file hashes in this receipt.",
+    "status_entries": [],
+    "status_entry_count": 0,
+    "status_summary": {}
   },
   "sources": {
     "changed_during_run": [],
     "identity_rule": "Per-file SHA-256 values identify evaluated source. A dirty HEAD is a parent reference only, not an exact source snapshot.",
     "sha256_at_completion": {
-      "backend/app/api/market_weather.py": "a732f62afca4092e404a74ab949e8a53c61310bb2f90b20d6558c0038c7966b2",
-      "backend/app/services/market_data/yahoo_provider.py": "e83e78d71a84eb139ee77459c46d5aa099ceb4274fb0c5d4d07f1df9f178e14c",
-      "backend/app/services/market_weather.py": "5ca49e61592b8543744e3e7acef551bdc08465436c36a131c83ae016e6177a11",
-      "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
-      "backend/app/services/market_weather_research.py": "1855cce8bfee8ae2676b78bc22e08fc635ede1f57d7456c2cc8529c8eec736d9",
-      "backend/app/services/option_field_context.py": "afd2bd78ec818db18d6d748d7695436b47422c91e84c3130925098a24cd716aa",
-      "docs/papers/market-field/supplement/evaluate_market_field.py": "1ca038da088a5d466f2885d433c947a5a4ef855ecd9aee213bd773f087e00520"
+      "backend/app/api/market_weather.py": "470a2ff28bd396cc125bb38a12d52b61e59a527f4f0eeb4cff5b9615d00b567a",
+      "backend/app/services/market_data/yahoo_provider.py": "f2fb623e9a3f79cd062d10e43b370679ab6a60d6961b8042fc950f5a36a201c7",
+      "backend/app/services/market_weather.py": "dde4236e9d9c6b06cd6199168df3738f3af864618ce6f1d1aafeaeaf9432a95f",
+      "backend/app/services/market_weather_context.py": "6c166a3ac51be242fd1b0709e518ee42ff34b46d5de11bf95d6b254cd2868583",
+      "backend/app/services/market_weather_research.py": "ed4dd4cbfe9372702bba3d43094258b3a680a7375be3f00fe95104c2ac5a74e2",
+      "backend/app/services/option_field_context.py": "794c354e450e733ef3120208a2f5a267a2bbd5a1c24d461516abf66aa1188a49",
+      "docs/papers/market-field/supplement/evaluate_market_field.py": "11d9ac61e65f2af0da23192e7a1bd7474b002d28c89b1eec45379953640a5891"
     },
     "sha256_at_start": {
-      "backend/app/api/market_weather.py": "a732f62afca4092e404a74ab949e8a53c61310bb2f90b20d6558c0038c7966b2",
-      "backend/app/services/market_data/yahoo_provider.py": "e83e78d71a84eb139ee77459c46d5aa099ceb4274fb0c5d4d07f1df9f178e14c",
-      "backend/app/services/market_weather.py": "5ca49e61592b8543744e3e7acef551bdc08465436c36a131c83ae016e6177a11",
-      "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
-      "backend/app/services/market_weather_research.py": "1855cce8bfee8ae2676b78bc22e08fc635ede1f57d7456c2cc8529c8eec736d9",
-      "backend/app/services/option_field_context.py": "afd2bd78ec818db18d6d748d7695436b47422c91e84c3130925098a24cd716aa",
-      "docs/papers/market-field/supplement/evaluate_market_field.py": "1ca038da088a5d466f2885d433c947a5a4ef855ecd9aee213bd773f087e00520"
+      "backend/app/api/market_weather.py": "470a2ff28bd396cc125bb38a12d52b61e59a527f4f0eeb4cff5b9615d00b567a",
+      "backend/app/services/market_data/yahoo_provider.py": "f2fb623e9a3f79cd062d10e43b370679ab6a60d6961b8042fc950f5a36a201c7",
+      "backend/app/services/market_weather.py": "dde4236e9d9c6b06cd6199168df3738f3af864618ce6f1d1aafeaeaf9432a95f",
+      "backend/app/services/market_weather_context.py": "6c166a3ac51be242fd1b0709e518ee42ff34b46d5de11bf95d6b254cd2868583",
+      "backend/app/services/market_weather_research.py": "ed4dd4cbfe9372702bba3d43094258b3a680a7375be3f00fe95104c2ac5a74e2",
+      "backend/app/services/option_field_context.py": "794c354e450e733ef3120208a2f5a267a2bbd5a1c24d461516abf66aa1188a49",
+      "docs/papers/market-field/supplement/evaluate_market_field.py": "11d9ac61e65f2af0da23192e7a1bd7474b002d28c89b1eec45379953640a5891"
     },
     "stable_for_run": true
   },
-  "started_at_utc": "2026-07-22T20:09:18.052453Z"
+  "started_at_utc": "2026-07-22T23:25:00.348809Z"
 }

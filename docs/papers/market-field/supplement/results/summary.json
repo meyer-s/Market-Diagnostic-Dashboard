@@ -17,7 +17,7 @@
       "results/resolution_comparison_counts.csv",
       "results/history_truncation_sensitivity.csv",
       "results/entropy_window_sensitivity.csv",
-      "results/maturity_contracts.csv",
+      "results/initialization_contracts.csv",
       "results/null_state_anchor.csv",
       "results/option_snapshot_latency.csv",
       "results/timeframe_behavior.csv",
@@ -104,6 +104,56 @@
       }
     ]
   },
+  "initialization_contracts": [
+    {
+      "aggregate_initialization_contract": "initialization (maturity is a legacy alias)",
+      "aggregate_initialization_metadata_emitted": true,
+      "bars_per_longest_horizon": 2.0,
+      "carrier_reference_span_bars": 96,
+      "computation_bars": 96,
+      "hidden_prefetch_bars": 0,
+      "longest_horizon_bars": 48,
+      "meets_reference_span": true,
+      "note": "Accepted by the option wrapper; minimum-input and initialization-target coverage metadata are emitted, but no per-coordinate initialization mask is available.",
+      "path": "option_snapshot_minimum",
+      "per_coordinate_initialization_mask_emitted": false,
+      "post_longest_horizon_observations": 48,
+      "reference_span_coverage": 1.0,
+      "visible_bars": 96
+    },
+    {
+      "aggregate_initialization_contract": "history_context",
+      "aggregate_initialization_metadata_emitted": true,
+      "bars_per_longest_horizon": 3.25,
+      "carrier_reference_span_bars": 96,
+      "computation_bars": 156,
+      "hidden_prefetch_bars": 96,
+      "longest_horizon_bars": 48,
+      "meets_reference_span": true,
+      "note": "The endpoint computes on the fetched prefix plus visible bars, trims the response, and emits minimum-input and initialization-target coverage metadata.",
+      "path": "public_api_min_visible_60_h48",
+      "per_coordinate_initialization_mask_emitted": false,
+      "post_longest_horizon_observations": 108,
+      "reference_span_coverage": 1.0,
+      "visible_bars": 60
+    },
+    {
+      "aggregate_initialization_contract": "history_context",
+      "aggregate_initialization_metadata_emitted": true,
+      "bars_per_longest_horizon": 7.604166666666667,
+      "carrier_reference_span_bars": 96,
+      "computation_bars": 365,
+      "hidden_prefetch_bars": 0,
+      "longest_horizon_bars": 48,
+      "meets_reference_span": true,
+      "note": "The paper's cached option-snapshot timing window; the core response reports aggregate initialization coverage.",
+      "path": "paper_compute_benchmark_365",
+      "per_coordinate_initialization_mask_emitted": false,
+      "post_longest_horizon_observations": 317,
+      "reference_span_coverage": 1.0,
+      "visible_bars": 365
+    }
+  ],
   "lexicon": {
     "archetype_count_max": 2,
     "archetype_count_min": 1,
@@ -126,56 +176,6 @@
       }
     ]
   },
-  "maturity_contracts": [
-    {
-      "aggregate_maturity_contract": "maturity",
-      "aggregate_maturity_metadata_emitted": true,
-      "bars_per_longest_horizon": 2.0,
-      "carrier_reference_span_bars": 96,
-      "computation_bars": 96,
-      "hidden_prefetch_bars": 0,
-      "longest_horizon_bars": 48,
-      "meets_reference_span": true,
-      "note": "Accepted by the option wrapper; aggregate maturity metadata is emitted, but no per-coordinate maturity mask is available.",
-      "path": "option_snapshot_minimum",
-      "per_coordinate_maturity_mask_emitted": false,
-      "post_longest_horizon_observations": 48,
-      "reference_span_coverage": 1.0,
-      "visible_bars": 96
-    },
-    {
-      "aggregate_maturity_contract": "history_context",
-      "aggregate_maturity_metadata_emitted": true,
-      "bars_per_longest_horizon": 3.25,
-      "carrier_reference_span_bars": 96,
-      "computation_bars": 156,
-      "hidden_prefetch_bars": 96,
-      "longest_horizon_bars": 48,
-      "meets_reference_span": true,
-      "note": "The endpoint computes on the fetched warm-up plus visible bars, trims the response, and emits aggregate history depth and maturity metadata.",
-      "path": "public_api_min_visible_60_h48",
-      "per_coordinate_maturity_mask_emitted": false,
-      "post_longest_horizon_observations": 108,
-      "reference_span_coverage": 1.0,
-      "visible_bars": 60
-    },
-    {
-      "aggregate_maturity_contract": "history_context",
-      "aggregate_maturity_metadata_emitted": true,
-      "bars_per_longest_horizon": 7.604166666666667,
-      "carrier_reference_span_bars": 96,
-      "computation_bars": 365,
-      "hidden_prefetch_bars": 0,
-      "longest_horizon_bars": 48,
-      "meets_reference_span": true,
-      "note": "The paper's cached option-snapshot timing window; the core response reports aggregate history maturity.",
-      "path": "paper_compute_benchmark_365",
-      "per_coordinate_maturity_mask_emitted": false,
-      "post_longest_horizon_observations": 317,
-      "reference_span_coverage": 1.0,
-      "visible_bars": 365
-    }
-  ],
   "null_state_anchor": {
     "display_confidence": 0.6799999999999999,
     "information": 0.0,
@@ -184,7 +184,7 @@
     "structure": 0.42
   },
   "option_snapshot_latency": {
-    "all_max_ms": 112.20159998629242,
+    "all_max_ms": 181.6214999416843,
     "environment": {
       "platform": "Windows-11-10.0.26200-SP0",
       "process_model": "single process, sequential, imports already loaded",
@@ -198,12 +198,12 @@
       "fresh-process import time",
       "network and production queueing"
     ],
-    "first_measured_max_ms": 110.13030004687607,
+    "first_measured_max_ms": 179.27680001594126,
     "runs": 70,
     "symbols": 7,
-    "warm_p50_ms": 107.22360003273934,
-    "warm_p95_ms": 108.91158998711035,
-    "warm_p99_ms": 111.39758399920538,
+    "warm_p50_ms": 111.79360002279282,
+    "warm_p95_ms": 175.64386999001727,
+    "warm_p99_ms": 181.5994899906218,
     "warm_runs": 63
   },
   "prefix_invariance": {
@@ -240,7 +240,7 @@
       "iqr_normalized_mae": 0.7304672559442248
     }
   },
-  "runtime_seconds": 50.02141409995966,
+  "runtime_seconds": 54.809436700074,
   "shadow_boundary": {
     "alignment_sign_flip_holds": true,
     "as_of_bar": "2026-07-21",
