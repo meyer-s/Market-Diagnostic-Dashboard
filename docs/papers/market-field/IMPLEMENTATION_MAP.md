@@ -22,7 +22,8 @@ Version legend: `market_field_calculus_v1` is the formula model;
 | Manager shadow challenger | backend/app/services/option_thesis_engine.py and backend/app/api/secret_options.py | Human-visible confidence and urgency only; urgency may recompute the next-review date, but there is no algorithmic verdict, sizing, target, or execution authority; behavioral exposure remains possible and impression logging is deferred |
 | Replacement display | backend/app/services/option_replacement_classifier.py | Explicit pass/watch/fail context; implementation_ready remains false |
 | Point-in-time outcome cohorts | backend/app/services/option_decision_learning.py | Descriptive cohorts; no dependence, exposure, duration, or cost adjustment yet |
-| Primary paper evidence generation | docs/papers/market-field/scripts/generate_assets.py | Mechanics and controlled behavior; no return or option-performance test |
+| Primary paper evidence generation | docs/papers/market-field/scripts/generate_assets.py | Mechanics, controlled behavior, matched five-coordinate baseline, SPY prefix stability, and downstream entropy-window sensitivity; the negative baseline does not test returns or option performance |
+| Bibliography metadata audit | docs/papers/market-field/scripts/audit_references.py and results/bibliography_audit_notes.md | DOI/ISBN/source-page consistency and recorded discrepancy resolution; substantive citation interpretation remains the author's responsibility |
 | Supplementary v2 evaluation and run receipt | docs/papers/market-field/supplement/evaluate_market_field.py | Per-file source hashes identify dirty-working-tree runs; latency/payload distributions are run-specific, not service contracts |
 
 The public research API supports 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1D, and 1W

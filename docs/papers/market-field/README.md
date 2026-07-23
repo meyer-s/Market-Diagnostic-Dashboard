@@ -6,10 +6,13 @@ for:
 > Non-Anticipative Market Field Calculus: An Auditable Multiscale Representation for
 > Option-Path Decision Support
 
-Status: preliminary systems and methods paper, revised 2026-07-22. The evidence
-exercises selected representation mechanics and software boundaries. It does
-not claim forecast skill, profitable trading, arbitrage, or a physical market
-law. Raw provider snapshots are not redistributed, so the package is not a
+Status: preliminary systems and methods paper, revised 2026-07-23. The evidence
+supports reconstructibility and selected implementation properties, not a
+representation-learning advance. A matched five-coordinate, single-horizon
+baseline produces stronger fit separation under the same codebook gate; the
+paper reports that negative result directly. It does not claim forecast skill,
+profitable trading, arbitrage, natural latent states, or a physical market law.
+Raw provider snapshots are not redistributed, so the package is not a
 self-contained copy of the exact market-data inputs.
 
 ## Shareable artifacts
@@ -21,6 +24,14 @@ self-contained copy of the exact market-data inputs.
 - main.tex and references.bib: paper source and bibliography.
 - market_field_reproducibility.ipynb: executed companion notebook.
 - figures, tables, and results: generated evidence used by the paper.
+- results/representation_baseline.csv: eight-asset Market Field versus cheap
+  24-bar feature comparison under the shared chronology and clustering gate.
+- results/representation_window_stability.csv: SPY prefix/full assignment
+  stability for both representations.
+- results/entropy_dictionary_sensitivity.csv: complete SPY dictionary
+  recomputations at entropy windows 8, 12, 24, 48, and 96.
+- results/bibliography_audit.csv and bibliography_audit_notes.md: recorded
+  38-entry DOI/ISBN/source-page metadata audit and discrepancy resolution.
 - requirements-paper.txt: direct paper dependencies.
 - requirements-paper-lock.txt: full version capture of the repository Python
   environment used for the revision audit; this is an environment record, not
@@ -29,10 +40,11 @@ self-contained copy of the exact market-data inputs.
   boundary audit with an executed notebook.
 
 The official ICLR 2026 style and bibliography files are included unchanged from
-the conference template. In the Tectonic 0.16.9 build, the conclusion occupies
-page 9, references begin on page 9 and continue through page 11, and Appendix A
-begins on page 12. This remains within the conference's nine-page main-text
-limit, which excludes references and appendices.
+the conference template. In the 22-page Tectonic 0.16.9 build, all main text,
+including the conclusion, reproducibility statement, and ethics statement, ends
+on page 9; references begin on page 10, and Appendix A begins on page 12. This
+remains within the conference's nine-page main-text limit, which excludes
+references and appendices.
 
 ## Rebuild
 
@@ -42,6 +54,7 @@ directory is intentionally excluded from Git:
 
 ~~~powershell
 .\.venv\Scripts\python.exe docs\papers\market-field\scripts\generate_assets.py --offline
+.\.venv\Scripts\python.exe docs\papers\market-field\scripts\audit_references.py
 .\.venv\Scripts\python.exe docs\papers\market-field\scripts\build_notebook.py --execute
 ~~~
 
@@ -109,6 +122,12 @@ secrets, or secret-option records are part of this package.
 - Scope loops are trajectories, not detected cycles or attractors.
 - Forms are request-local calibration descriptors, not universal market
   regimes.
+- Under the matched diagnostic, the cheap baseline passes the multi-Form gate
+  for 8/8 assets versus 2/8 for Market Field. The dictionary is a translation
+  mechanism, not evidence of superior unsupervised separation.
+- SPY Form assignments are less entropy-window-sensitive than the underlying
+  Information coordinate, but calibration-distance tails still move
+  materially; interpretation remains tied to the fixed v1 definition.
 - The upper calibration-distance-tail statistic is descriptive, not a formal
   p-value, coordinatewise range test, or coverage guarantee. The payload's
   `outside_learned_range` field name is a legacy label.
@@ -125,6 +144,8 @@ secrets, or secret-option records are part of this package.
 - scripts/generate_assets.py: cache-first empirical audit and figure/table
   generation.
 - scripts/build_notebook.py: notebook construction and top-to-bottom execution.
+- scripts/audit_references.py: Crossref/ISBN/source-page bibliography metadata
+  audit.
 - results/asset_summary.csv: asset-level dictionary and tail diagnostics.
 - results/validation_summary.json: source manifest, diagnostics, synthetic
   controls, and local benchmark.

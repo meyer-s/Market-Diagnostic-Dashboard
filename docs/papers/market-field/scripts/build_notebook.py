@@ -40,9 +40,12 @@ def build_notebook() -> nbformat.NotebookNode:
 
 This notebook rebuilds and inspects the evidence reported in the ICLR-formatted
 working paper. The tests cover causal-prefix invariance, deterministic state
-learning, controlled representation behavior, descriptive calibration
-diagnostics, and local snapshot cost. They do not test return predictability,
-option profitability, or a physical theory of markets.
+learning, controlled representation behavior, a matched five-coordinate
+single-horizon baseline, downstream entropy sensitivity, descriptive
+calibration diagnostics, and local snapshot cost. The cheap baseline is more
+readily partitioned than Market Field under the shared gate, so the notebook
+does not support a superior-unsupervised-representation claim. It does not test
+return predictability, option profitability, or a physical theory of markets.
 """
         ),
         markdown(
@@ -57,6 +60,11 @@ sample dates, and adjustment mode are recorded in validation_summary.json.
 The daily study covers SPY, QQQ, IWM, TLT, GLD, USO, VNQ, and BTC-USD from
 2018-01-01 through the paper as-of date 2026-07-21. Chronological
 fit/calibration/evaluation segmentation is performed by production code.
+
+The baseline changes the representation while retaining the production
+chronology, deterministic clustering, support threshold, silhouette gate, and
+held-out calibration-distance test. A separate SPY ablation recomputes the
+complete dictionary at entropy windows 8, 12, 24, 48, and 96.
 """
         ),
         code(
@@ -96,6 +104,18 @@ summary = json.loads(
     (PAPER_ROOT / "results" / "validation_summary.json").read_text(encoding="utf-8")
 )
 assets = pd.read_csv(PAPER_ROOT / "results" / "asset_summary.csv")
+representations = pd.read_csv(
+    PAPER_ROOT / "results" / "representation_baseline.csv"
+)
+window_stability = pd.read_csv(
+    PAPER_ROOT / "results" / "representation_window_stability.csv"
+)
+entropy_sensitivity = pd.read_csv(
+    PAPER_ROOT / "results" / "entropy_dictionary_sensitivity.csv"
+)
+bibliography_audit = pd.read_csv(
+    PAPER_ROOT / "results" / "bibliography_audit.csv"
+)
 manifest = pd.DataFrame(summary["market_data"])
 manifest[
     ["symbol", "rows", "first_observation", "last_observation",
@@ -116,6 +136,7 @@ short of any predictive or economic-performance assertion.
 validation = summary["validation"]
 synthetic = summary["synthetic"]
 benchmark = summary["option_snapshot_benchmark"]
+representation_summary = summary["representation_comparison"]
 
 assert validation["prefix_invariance"]["nonzero_differences"] == 0
 assert validation["prefix_invariance"]["serialized_value_comparisons"] == 6688
@@ -123,6 +144,17 @@ assert validation["determinism"]["exact_lexicon_matches"] == 8
 assert synthetic["horizon_delay_spearman_rho"] == 1.0
 assert benchmark["rank_influence"] == 0.0
 assert benchmark["automated_execution_enabled"] is False
+assert representation_summary["market_field_nontrivial_codebooks"] == 2
+assert representation_summary["baseline_nontrivial_codebooks"] == 8
+assert representations.groupby("symbol")["requested_warmup_bars"].nunique().eq(1).all()
+assert entropy_sensitivity["forms"].eq(2).all()
+assert entropy_sensitivity.loc[
+    entropy_sensitivity["entropy_window_patterns"] != 24,
+    "assignment_ari_vs_window24",
+].min() > 0.85
+assert bibliography_audit["status"].isin(
+    ["verified", "verified_reachable", "metadata_discrepancy"]
+).all()
 
 pd.DataFrame(
     [
@@ -149,6 +181,23 @@ pd.DataFrame(
             "result": (
                 f'{100 * validation["distance_tail"]["pooled_outside_range_rate"]:.2f}% '
                 "in the upper state-conditional calibration-distance tail"
+            ),
+        },
+        {
+            "diagnostic": "Matched representation baseline",
+            "result": (
+                f'{representation_summary["market_field_nontrivial_codebooks"]}/8 '
+                "Market Field vs "
+                f'{representation_summary["baseline_nontrivial_codebooks"]}/8 '
+                "baseline multi-Form codebooks"
+            ),
+        },
+        {
+            "diagnostic": "SPY entropy assignment sensitivity",
+            "result": (
+                f'ARI {entropy_sensitivity.loc[entropy_sensitivity["entropy_window_patterns"] != 24, "assignment_ari_vs_window24"].min():.3f}'
+                "–"
+                f'{entropy_sensitivity.loc[entropy_sensitivity["entropy_window_patterns"] != 24, "assignment_ari_vs_window24"].max():.3f}'
             ),
         },
         {
@@ -184,6 +233,46 @@ asset_display["transitions_per_100_bars"] = asset_display[
 asset_display
 """
         ),
+        markdown("### Matched baseline and downstream entropy sensitivity"),
+        code(
+            """
+representation_display = representations[
+    [
+        "symbol", "representation", "requested_warmup_bars", "forms", "features",
+        "fit_silhouette", "tail_rate", "transitions_per_100_bars",
+    ]
+].copy()
+representation_display["fit_silhouette"] = representation_display[
+    "fit_silhouette"
+].map("{:.3f}".format)
+representation_display["tail_rate"] = representation_display[
+    "tail_rate"
+].map("{:.2%}".format)
+representation_display
+"""
+        ),
+        code(
+            """
+display(window_stability)
+entropy_display = entropy_sensitivity.copy()
+entropy_display["information_correlation_vs_window24"] = entropy_display[
+    "information_correlation_vs_window24"
+].map("{:.3f}".format)
+entropy_display["assignment_ari_vs_window24"] = entropy_display[
+    "assignment_ari_vs_window24"
+].map("{:.3f}".format)
+entropy_display["tail_rate"] = entropy_display["tail_rate"].map("{:.2%}".format)
+entropy_display
+"""
+        ),
+        markdown(
+            """
+The baseline's stronger fit separation is a negative result for representation
+superiority. Entropy-window changes preserve the coarse two-Form SPY partition
+reasonably well on this long sample, but the calibration-tail rate and
+transition frequency remain parameter-sensitive.
+"""
+        ),
         code(
             """
 for filename in [
@@ -191,6 +280,7 @@ for filename in [
     "synthetic_diagnostics.png",
     "spy_field_phase.png",
     "calibration_rates.png",
+    "representation_sensitivity.png",
 ]:
     display(Image(filename=str(PAPER_ROOT / "figures" / filename), width=1050))
 """
@@ -203,11 +293,14 @@ for filename in [
    cut points.
 2. Fixed inputs produce deterministic request-local dictionaries.
 3. Controlled paths generate the intended directional and scale response.
-4. Six of eight daily assets fall back to one Form, demonstrating restraint
-   and also limiting the current dictionary's descriptive contribution.
-5. Distance-tail rates are heterogeneous and must not be read as calibrated
+4. The cheap baseline yields 8/8 multi-Form codebooks with higher median fit
+   silhouette; Market Field yields 2/8, so superior unsupervised separation is
+   not supported.
+5. Alternative SPY entropy windows retain two Forms and assignment ARI above
+   0.87, but calibration-tail rates still vary materially.
+6. Distance-tail rates are heterogeneous and must not be read as calibrated
    probabilities.
-6. The option snapshot is operationally compact in a local compute-only test,
+7. The option snapshot is operationally compact in a local compute-only test,
    while ranking and execution remain disabled.
 
 Future evidence must be rolling-origin, purged, cost-aware, and prospectively
