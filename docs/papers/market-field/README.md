@@ -97,11 +97,10 @@ lineage:
 | `05e64332414585bd9cc15a28b36c81adf1dd3b71` | Clean primary execution head | `results/primary_run_receipt.json` records a clean tree, pandas 2.2.3, evaluated source hashes, the matched baseline, entropy ablation, and generated artifact hashes. Its evaluated implementation files are byte-identical to `f5d3884`. |
 | `205fda042f5e3a0e6a3598b6aab5b84a1437aa8e` | Clean supplementary execution head | `supplement/results/run_receipt.json` records a clean tree, stable start/completion source hashes, and hashes for the broader derived evidence. Its evaluated implementation files are byte-identical to `f5d3884`. |
 | `42e0a24919504de7fed9f928728bef5157f5ef34` | Executed primary notebook commit | Contains the top-to-bottom notebook execution after the clean primary receipt; all 15 cells are present, eight code cells executed, and no error output is stored. |
+| `d19ededff412d78873cf73724c2d5528961dd811` | Shareable paper build | Contains the 22-page anonymous and named PDFs compiled after the clean primary receipt, executed notebook, and final claim-boundary revision. |
 
 Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
-the clean execution heads bind the same implementation files by SHA-256. The
-shareable PDF build commit is recorded in the release-lineage update immediately
-following that build.
+the clean execution heads bind the same implementation files by SHA-256.
 
 The committed manifest, hashes, derived CSVs, figures, tables, executed
 notebooks, direct requirements, and full environment version capture document
