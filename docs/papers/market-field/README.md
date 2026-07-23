@@ -94,14 +94,14 @@ lineage:
 |---|---|---|
 | `cd67fb48c1ee747fb8b447bc9d59fb8eaf7ec430` | Repository reference recorded for the first paper run and retained raw-input manifest | Historical first-run context only; it is not the source identity for the current derived primary artifacts. |
 | `f5d3884c9112e9cd5aa9442bc546194db9314697` | Reviewed implementation source | Contains the round-two mathematics, semantics, application security boundary, tests, and notebook generators. |
-| `548ec2c804f5406acddf728b07b1ca1ac75dca0a` | Clean primary execution head | `results/primary_run_receipt.json` records a clean tree, pandas 2.2.3, evaluated source hashes, and generated artifact hashes. Its evaluated implementation files are byte-identical to `f5d3884`. |
+| `05e64332414585bd9cc15a28b36c81adf1dd3b71` | Clean primary execution head | `results/primary_run_receipt.json` records a clean tree, pandas 2.2.3, evaluated source hashes, the matched baseline, entropy ablation, and generated artifact hashes. Its evaluated implementation files are byte-identical to `f5d3884`. |
 | `205fda042f5e3a0e6a3598b6aab5b84a1437aa8e` | Clean supplementary execution head | `supplement/results/run_receipt.json` records a clean tree, stable start/completion source hashes, and hashes for the broader derived evidence. Its evaluated implementation files are byte-identical to `f5d3884`. |
-| `6c7a23cece2460c67437c64b3ff5e8719eecd353` | Paper and final derived-artifact commit | Contains the compiled anonymous and named PDFs after both clean execution receipts and the final source revision. |
+| `42e0a24919504de7fed9f928728bef5157f5ef34` | Executed primary notebook commit | Contains the top-to-bottom notebook execution after the clean primary receipt; all 15 cells are present, eight code cells executed, and no error output is stored. |
 
-Paper and derived-artifact commit: `6c7a23cece2460c67437c64b3ff5e8719eecd353`.
 Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
-the two clean execution heads above differ only by already-generated evidence
-artifacts and bind the same implementation files by SHA-256.
+the clean execution heads bind the same implementation files by SHA-256. The
+shareable PDF build commit is recorded in the release-lineage update immediately
+following that build.
 
 The committed manifest, hashes, derived CSVs, figures, tables, executed
 notebooks, direct requirements, and full environment version capture document
