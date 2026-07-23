@@ -28,12 +28,12 @@ from app.services.option_thesis_engine import GRADER_VERSION, json_dumps, json_l
 OUTCOME_MODEL_VERSION = "decision_outcomes_v2_field_shadow"
 RISK_FREE_RATE = 0.0425
 DECISION_SESSION_HORIZONS = (1, 3, 5, 10)
-LEARNING_INFLUENCE_VERSION = "option_learning_influence_canary_v2"
+LEARNING_INFLUENCE_VERSION = "option_learning_influence_canary_v3"
 LEARNING_CANARY_MINIMUM_CYCLES = 40
 LEARNING_PROMOTION_MINIMUM_CYCLES = 100
 LEARNING_MINIMUM_COHORT = 8
 LEARNING_MINIMUM_NON_WEAK_SHARE = 0.10
-LEARNING_MAX_COUNTERFACTUAL_WEIGHT = 0.05
+LEARNING_MAX_COUNTERFACTUAL_WEIGHT = 0.10
 LEARNING_PRIOR_STRENGTH = 20.0
 
 
@@ -1225,6 +1225,7 @@ def build_learning_influence_context(summary: dict[str, object]) -> dict[str, ob
     return {
         "version": LEARNING_INFLUENCE_VERSION,
         "mode": "bounded_live_canary",
+        "nominal_weight_cap": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
         "actual_rank_influence": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
         "maximum_counterfactual_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
         "maximum_applied_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
@@ -1392,7 +1393,7 @@ def evaluate_option_learning_influence(
     position_match: Optional[dict[str, object]] = None,
     contract_context: Optional[dict[str, object]] = None,
 ) -> dict[str, object]:
-    """Evaluate—but never apply—the current outcome-learning challenger."""
+    """Evaluate and, when every gate passes, apply the bounded learning canary."""
     cohorts = _candidate_learning_cohorts(
         field_context=field_context,
         position_match=position_match,
@@ -1468,12 +1469,16 @@ def evaluate_option_learning_influence(
         )
     if canary_eligible:
         reasons.append(
-            "Experimental evidence gates passed; the bounded live canary may apply up to 5%."
+            "Experimental evidence gates passed; the bounded live canary may apply up to "
+            f"{LEARNING_MAX_COUNTERFACTUAL_WEIGHT:.0%}."
         )
     return {
         "version": context.get("version") or LEARNING_INFLUENCE_VERSION,
         "mode": "bounded_live_canary",
         "status": status,
+        "nominal_weight_cap": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+        "maximum_counterfactual_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+        "maximum_applied_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
         "champion_score": round(float(champion_score), 2),
         "learning_score": round(learning_score, 2) if learning_score is not None else None,
         "counterfactual_score": round(counterfactual_score, 2),
@@ -1481,7 +1486,7 @@ def evaluate_option_learning_influence(
         "counterfactual_weight": round(counterfactual_weight, 4),
         "applied_score": round(applied_score, 2),
         "applied_weight": round(applied_weight, 4),
-        "rank_changed": False,
+        "rank_snapshot_persisted": False,
         "candidate_cohorts": cohorts,
         "signals": signals,
         "gates": {
@@ -1506,17 +1511,27 @@ def rebase_option_learning_evaluation(
     """Apply a frozen learning receipt to a currently computed champion score."""
     result = dict(evaluation)
     learning_score = _finite(result.get("learning_score"))
+    stored_cap = _finite(result.get("nominal_weight_cap"))
+    if stored_cap is None:
+        stored_cap = _finite(result.get("maximum_applied_weight"))
+    if stored_cap is None:
+        stored_cap = (
+            0.05
+            if str(result.get("version") or "") == "option_learning_influence_canary_v2"
+            else LEARNING_MAX_COUNTERFACTUAL_WEIGHT
+        )
+    receipt_cap = max(0.0, min(LEARNING_MAX_COUNTERFACTUAL_WEIGHT, stored_cap))
     counterfactual_weight = max(
         0.0,
         min(
-            LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+            receipt_cap,
             _finite(result.get("counterfactual_weight")) or 0.0,
         ),
     )
     applied_weight = max(
         0.0,
         min(
-            LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+            receipt_cap,
             _finite(result.get("applied_weight")) or 0.0,
         ),
     )
@@ -1554,9 +1569,8 @@ def capture_option_learning_influence(
     """Freeze the canary evidence visible when a scanner event is created."""
     existing = json_loads(getattr(event, "learning_influence_json", None), {})
     if (
-        getattr(event, "learning_influence_version", None) == LEARNING_INFLUENCE_VERSION
-        and isinstance(existing, dict)
-        and existing
+        isinstance(existing, dict)
+        and existing.get("point_in_time_receipt") is True
     ):
         return existing
     context = build_learning_influence_context(learning_summary(db))

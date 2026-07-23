@@ -1,5 +1,9 @@
+import json
+from types import SimpleNamespace
+
 from app.services.option_decision_learning import (
     build_learning_influence_context,
+    capture_option_learning_influence,
     evaluate_option_learning_influence,
     rebase_option_learning_evaluation,
 )
@@ -99,10 +103,14 @@ def test_learning_influence_applies_only_a_bounded_gated_canary():
     assert evaluation["status"] == "live_canary_active"
     assert evaluation["candidate_cohorts"]["scanner_recurrence"] == "strengthened_seen"
     assert evaluation["learning_score"] > 65.0
-    assert 0.0 < evaluation["counterfactual_weight"] <= 0.05
+    assert evaluation["maximum_counterfactual_weight"] == 0.10
+    assert evaluation["maximum_applied_weight"] == 0.10
+    assert evaluation["nominal_weight_cap"] == 0.10
+    assert evaluation["rank_snapshot_persisted"] is False
+    assert evaluation["counterfactual_weight"] == 0.10
     assert evaluation["counterfactual_score"] > 65.0
     assert evaluation["applied_score"] > 65.0
-    assert 0.0 < evaluation["applied_weight"] <= 0.05
+    assert evaluation["applied_weight"] == 0.10
     assert evaluation["gates"] == {
         "independent_cycles": True,
         "process_quality": True,
@@ -115,6 +123,59 @@ def test_learning_influence_applies_only_a_bounded_gated_canary():
     assert rebased["champion_score"] == 80.0
     assert rebased["applied_weight"] == evaluation["applied_weight"]
     assert rebased["applied_score"] < 80.0
+
+    oversized = {
+        **evaluation,
+        "counterfactual_weight": 0.50,
+        "applied_weight": 0.50,
+    }
+    clamped = rebase_option_learning_evaluation(oversized, champion_score=80.0)
+    assert clamped["counterfactual_weight"] == 0.10
+    assert clamped["applied_weight"] == 0.10
+
+
+def test_learning_influence_preserves_existing_point_in_time_receipts_across_policy_versions():
+    for version, weight in (
+        ("option_learning_influence_canary_v2", 0.05),
+        ("option_learning_influence_canary_v3", 0.10),
+    ):
+        receipt = {
+            "version": version,
+            "point_in_time_receipt": True,
+            "champion_score": 70.0,
+            "learning_score": 80.0,
+            "counterfactual_weight": weight,
+            "applied_weight": weight,
+        }
+        serialized = json.dumps(receipt, sort_keys=True)
+        event = SimpleNamespace(
+            learning_influence_version=version,
+            learning_influence_json=serialized,
+        )
+
+        captured = capture_option_learning_influence(
+            object(),
+            event=event,
+            position_match=None,
+        )
+
+        assert captured == receipt
+        assert event.learning_influence_version == version
+        assert event.learning_influence_json == serialized
+
+    rebased = rebase_option_learning_evaluation(
+        {
+            "version": "option_learning_influence_canary_v2",
+            "point_in_time_receipt": True,
+            "champion_score": 70.0,
+            "learning_score": 80.0,
+            "counterfactual_weight": 0.08,
+            "applied_weight": 0.08,
+        },
+        champion_score=75.0,
+    )
+    assert rebased["counterfactual_weight"] == 0.05
+    assert rebased["applied_weight"] == 0.05
 
 
 def test_learning_influence_maps_replacement_and_market_field_cohorts():

@@ -674,14 +674,18 @@ interface OptionLearningEvaluation {
   counterfactual_score: number;
   counterfactual_delta: number;
   counterfactual_weight: number;
+  nominal_weight_cap?: number;
+  maximum_counterfactual_weight?: number;
   applied_score: number;
   applied_weight: number;
+  maximum_applied_weight?: number;
   champion_rank?: number;
   counterfactual_rank?: number;
   applied_rank?: number;
   rank_delta?: number;
   applied_rank_delta?: number;
   rank_changed: boolean;
+  rank_snapshot_persisted?: boolean;
   candidate_cohorts: Record<string, string>;
   signals: OptionLearningSignal[];
   gates: Record<string, boolean>;
@@ -696,6 +700,7 @@ interface OptionLearningEvaluation {
 interface OptionLearningPolicy {
   version: string;
   mode: "counterfactual_shadow" | "bounded_live_canary";
+  nominal_weight_cap: number;
   actual_rank_influence: number;
   maximum_counterfactual_weight: number;
   maximum_applied_weight?: number;
@@ -718,6 +723,8 @@ interface OptionLearningPolicy {
   counterfactual_rank_changes: number;
   applied_opportunities?: number;
   applied_rank_changes?: number;
+  observed_max_applied_weight?: number;
+  observed_mean_applied_weight?: number;
   actual_order_unchanged: boolean;
 }
 
@@ -1391,9 +1398,23 @@ const replacementGateClass: Record<string, string> = {
   fail: "border-rose-500/25 bg-rose-500/10 text-rose-200",
 };
 
+export const formatLearningCanaryLabel = (
+  nominalWeightCap?: number | null,
+  version?: string,
+) => {
+  const cap =
+    nominalWeightCap ??
+    (version === "option_learning_influence_canary_v2" ? 0.05 : null);
+  return cap === null ? "Live bounded canary" : `Live ≤${(cap * 100).toFixed(0)}% canary`;
+};
+
 const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportunity }) => {
   const contract = opportunity.selected_contract;
   const learning = opportunity.learning_evaluation;
+  const liveCanaryLabel = formatLearningCanaryLabel(
+    learning?.nominal_weight_cap ?? learning?.maximum_applied_weight,
+    learning?.version,
+  );
   const positionMatch = presentScannerPositionMatch(opportunity.position_match);
   const marketField = presentOptionMarketField(opportunity.field_context);
   const marketFieldHref = marketField ? marketFieldPath(opportunity.symbol, marketField.timeframe) : null;
@@ -1554,7 +1575,7 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
               </span>
               <span className="rounded border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200">
                 {learning.applied_weight > 0
-                  ? "Live ≤5% canary"
+                  ? liveCanaryLabel
                   : learning.point_in_time_receipt === false
                     ? "Legacy shadow"
                     : "Canary waiting"}

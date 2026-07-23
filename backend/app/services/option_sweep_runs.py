@@ -707,6 +707,7 @@ def _attach_learning_evaluations(
     reorder_count = 0
     applied_reorder_count = 0
     applied_count = 0
+    applied_weights: list[float] = []
     for opportunity in opportunities:
         evaluation = opportunity["learning_evaluation"]
         champion_rank = champion_ranks[id(opportunity)]
@@ -721,7 +722,9 @@ def _attach_learning_evaluations(
         evaluation["applied_rank_changed"] = champion_rank != applied_rank
         reorder_count += int(champion_rank != counterfactual_rank)
         applied_reorder_count += int(champion_rank != applied_rank)
-        applied_count += int(float(evaluation.get("applied_weight") or 0.0) > 0)
+        applied_weight = float(evaluation.get("applied_weight") or 0.0)
+        applied_count += int(applied_weight > 0)
+        applied_weights.append(applied_weight)
         opportunity["score"] = float(evaluation.get("applied_score") or 0.0)
         opportunity["grade"] = opportunity_grade(float(opportunity["score"]))
         opportunity["ranking_model_version"] = str(evaluation.get("version") or "")
@@ -735,6 +738,11 @@ def _attach_learning_evaluations(
     policy["counterfactual_rank_changes"] = reorder_count
     policy["applied_opportunities"] = applied_count
     policy["applied_rank_changes"] = applied_reorder_count
+    policy["observed_max_applied_weight"] = round(max(applied_weights, default=0.0), 4)
+    policy["observed_mean_applied_weight"] = round(
+        sum(applied_weights) / len(applied_weights),
+        4,
+    ) if applied_weights else 0.0
     policy["actual_order_unchanged"] = applied_reorder_count == 0
     return policy
 

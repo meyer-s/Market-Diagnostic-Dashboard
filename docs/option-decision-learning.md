@@ -72,7 +72,7 @@ Each recorded review is also evaluated at pre-declared 1, 3, 5, and 10-session h
 
 ### Outcome-learning bounded canary
 
-`option_learning_influence_canary_v2` evaluates every ranked scanner opportunity beside the deterministic champion. When all experimental gates pass, it can apply an evidence-scaled learning weight of no more than 5% to the displayed score and ordering. The API and expanded scanner row expose:
+`option_learning_influence_canary_v3` evaluates every ranked scanner opportunity beside the deterministic champion. When all experimental gates pass, it can apply an evidence-scaled learning weight of no more than 10% to the displayed score and ordering. Version 3 raises the bounded ceiling from 5% to 10%; it does not change the evidence gates, hard vetoes, sizing authority, or full-promotion requirements. Existing version 2 point-in-time receipts remain immutable and capped at their original 5%; only newly captured version 3 receipts can use the 10% ceiling. The API and expanded scanner row expose:
 
 - the champion score and rank;
 - the eligible outcome cohort for scanner recurrence, replacement classification, point-in-time Market Field, contract direction, and entry-DTE bucket;
@@ -81,16 +81,18 @@ Each recorded review is also evaluated at pre-declared 1, 3, 5, and 10-session h
 - the score, weight, and rank actually applied;
 - every failed evidence and promotion gate.
 
+The canonical `nominal_weight_cap` travels with the policy and each immutable event receipt. The older `actual_rank_influence`, `maximum_counterfactual_weight`, and `maximum_applied_weight` fields remain compatibility aliases; they describe the ceiling, not the evidence-scaled weight actually applied to a particular event. `observed_max_applied_weight` and `observed_mean_applied_weight` summarize effective row-level influence in the returned candidate set.
+
 The cohort score combines 70% posterior profitable rate and 30% percent-P/L context. The profitable rate is shrunk toward the eligible family-wide rate with 20 pseudo-observations. Median P/L is used when retained by the cohort builder; legacy families fall back to average P/L. The selected statistic is clipped to -20% through +20% before mapping to a zero-to-100 descriptive scale. This construction is intentionally simple and auditable; it is a challenger diagnostic, not a claim of calibrated expected value.
 
-The applied weight cannot exceed 5%. It is attenuated by the fraction of the 40-cycle canary floor reached, the share of closed trades not labeled `weak_process` relative to a 10% floor, and cohort reliability up to 50 observations. The canary requires all of the following:
+The applied weight cannot exceed 10%. It is attenuated by the fraction of the 40-cycle canary floor reached, the share of closed trades not labeled `weak_process` relative to a 10% floor, and cohort reliability up to 50 observations. The canary requires all of the following:
 
 1. At least 40 independent classified actual-close cycles.
 2. At least 10% of those cycles classified above `weak_process`.
 3. At least one candidate learning family with two cohorts of at least eight actual closes each.
 4. Explicit operator authorization for the bounded canary.
 
-The canary never changes hard vetoes, position sizing, risk policy, review verdicts, or execution authority. It only leans scanner score and ordering. Full challenger promotion still requires the 100-cycle governance floor, chronological evaluation, and a separate manual decision. Every canary disagreement and applied rank change must be retained so its incremental value can be evaluated against later independent closes.
+The canary never changes hard vetoes, position sizing, risk policy, review verdicts, or execution authority. It only leans scanner score and ordering. Full challenger promotion still requires the 100-cycle governance floor, chronological evaluation, and a separate manual decision. Event receipts durably retain the point-in-time evidence, cohort identities, scores, and applied weight. Rank deltas are computed for the candidate set returned by a scanner request and are not yet a durable impression record (`rank_snapshot_persisted=false`); they must not be treated as promotion evidence until an append-only ranking snapshot is implemented.
 
 Each newly created scanner event stores an immutable canary receipt containing the learning version, eligible cohort identities, cohort evidence, applied weight, and capture time. Scanner pages may rebase that frozen learning component onto the current deterministic recurrence score, but they may not recompute historical cohort membership or weight. Events created before the receipt schema remain shadow-only and can never receive retroactive live influence.
 

@@ -8,7 +8,7 @@ import {
   setSecretOptionsScope,
   setSecretOptionsToken,
 } from "../../utils/secretOptionsAuth";
-import SecretOptions from "../SecretOptions";
+import SecretOptions, { formatLearningCanaryLabel } from "../SecretOptions";
 
 const { apiFetchMock } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
@@ -154,5 +154,17 @@ describe("Secret Options authorization gate", () => {
     const add = screen.getByRole("button", { name: "Add" });
     expect(add.hasAttribute("disabled")).toBe(true);
     expect(screen.getByText(/mutations are blocked before an API request is sent/i)).not.toBeNull();
+  });
+});
+
+describe("Secret Options learning canary labels", () => {
+  it("renders the receipt cap instead of a hardcoded policy weight", () => {
+    expect(formatLearningCanaryLabel(0.10, "option_learning_influence_canary_v3")).toBe(
+      "Live ≤10% canary",
+    );
+    expect(formatLearningCanaryLabel(0.075, "future-policy")).toBe("Live ≤8% canary");
+    expect(formatLearningCanaryLabel(undefined, "option_learning_influence_canary_v2")).toBe(
+      "Live ≤5% canary",
+    );
   });
 });

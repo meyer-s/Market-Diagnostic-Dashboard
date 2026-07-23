@@ -1328,7 +1328,11 @@ def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -
     assert body["ranked_opportunities"][0]["grade"] in {"A", "A+"}
     assert set(body["ranked_opportunities"][0]["components"]) >= {"cheapness", "volatility_edge", "contract_quality", "recurrence"}
     assert body["ranked_opportunities"][0]["selected_contract"]["reward_risk"] == 1.9
-    assert body["learning_policy"]["actual_rank_influence"] == 0.05
+    assert body["learning_policy"]["actual_rank_influence"] == 0.10
+    assert body["learning_policy"]["nominal_weight_cap"] == 0.10
+    assert body["learning_policy"]["maximum_applied_weight"] == 0.10
+    assert body["learning_policy"]["observed_max_applied_weight"] == 0.0
+    assert body["learning_policy"]["observed_mean_applied_weight"] == 0.0
     assert body["learning_policy"]["actual_order_unchanged"] is True
     learning = body["ranked_opportunities"][0]["learning_evaluation"]
     assert learning["champion_score"] == body["ranked_opportunities"][0]["score"]
@@ -1638,9 +1642,45 @@ def test_scanner_recurrence_journal_is_db_idempotent_and_counts_distinct_sweeps(
         assert rows[0].quantity_before == rows[0].quantity_after == 3
         captured_event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == current_id).one()
         receipt = json.loads(captured_event.learning_influence_json)
-        assert captured_event.learning_influence_version == "option_learning_influence_canary_v2"
+        assert captured_event.learning_influence_version == "option_learning_influence_canary_v3"
         assert receipt["point_in_time_receipt"] is True
+        assert receipt["nominal_weight_cap"] == 0.10
+        assert receipt["rank_snapshot_persisted"] is False
         assert receipt["applied_weight"] == 0.0
+
+
+def test_scanner_recurrence_replay_does_not_rewrite_a_v2_learning_receipt(
+    secret_options_client,
+) -> None:
+    _client, session_local = secret_options_client
+    v2_receipt = {
+        "version": "option_learning_influence_canary_v2",
+        "point_in_time_receipt": True,
+        "champion_score": 61.0,
+        "learning_score": 71.0,
+        "counterfactual_weight": 0.05,
+        "applied_weight": 0.05,
+    }
+    serialized = json.dumps(v2_receipt, sort_keys=True)
+    with session_local() as db:
+        event = OptionAlertEvent(
+            symbol="ABT",
+            triggered_at=datetime.utcnow(),
+            opportunity_score=61.0,
+            learning_influence_version="option_learning_influence_canary_v2",
+            learning_influence_json=serialized,
+        )
+        db.add(event)
+        db.flush()
+
+        record_scanner_recurrence_events(db, event)
+        db.commit()
+        event_id = event.id
+
+    with session_local() as db:
+        persisted = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == event_id).one()
+        assert persisted.learning_influence_version == "option_learning_influence_canary_v2"
+        assert persisted.learning_influence_json == serialized
 
 
 def test_closed_trade_learning_keeps_scanner_recurrence_as_actual_outcome_cohort(secret_options_client) -> None:
