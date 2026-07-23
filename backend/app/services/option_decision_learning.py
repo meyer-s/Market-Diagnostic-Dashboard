@@ -5,6 +5,7 @@ import math
 from typing import Any, Callable, Iterable, Optional
 
 import pandas as pd
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.closed_positions import ClosedPosition
@@ -27,11 +28,12 @@ from app.services.option_thesis_engine import GRADER_VERSION, json_dumps, json_l
 OUTCOME_MODEL_VERSION = "decision_outcomes_v2_field_shadow"
 RISK_FREE_RATE = 0.0425
 DECISION_SESSION_HORIZONS = (1, 3, 5, 10)
-LEARNING_INFLUENCE_VERSION = "option_learning_influence_shadow_v1"
-LEARNING_MINIMUM_CYCLES = 100
-LEARNING_MINIMUM_COHORT = 20
-LEARNING_MINIMUM_NON_WEAK_SHARE = 0.60
-LEARNING_MAX_COUNTERFACTUAL_WEIGHT = 0.10
+LEARNING_INFLUENCE_VERSION = "option_learning_influence_canary_v2"
+LEARNING_CANARY_MINIMUM_CYCLES = 40
+LEARNING_PROMOTION_MINIMUM_CYCLES = 100
+LEARNING_MINIMUM_COHORT = 8
+LEARNING_MINIMUM_NON_WEAK_SHARE = 0.10
+LEARNING_MAX_COUNTERFACTUAL_WEIGHT = 0.05
 LEARNING_PRIOR_STRENGTH = 20.0
 
 
@@ -835,16 +837,27 @@ def learning_summary(db: Session) -> dict[str, object]:
     reviews = db.query(OptionPositionReview).count()
     assessments = db.query(OptionThesisAssessment).count()
     closed = db.query(ClosedPosition).count()
-    latest_outcomes: list[OptionTradeOutcome] = []
-    for closed_id in [row[0] for row in db.query(OptionTradeOutcome.closed_position_id).distinct().all()]:
-        latest = (
-            db.query(OptionTradeOutcome)
-            .filter(OptionTradeOutcome.closed_position_id == closed_id)
-            .order_by(OptionTradeOutcome.outcome_version.desc(), OptionTradeOutcome.id.desc())
-            .first()
+    ranked_outcomes = db.query(
+        OptionTradeOutcome.id.label("outcome_id"),
+        func.row_number()
+        .over(
+            partition_by=OptionTradeOutcome.closed_position_id,
+            order_by=(
+                OptionTradeOutcome.outcome_version.desc(),
+                OptionTradeOutcome.id.desc(),
+            ),
         )
-        if latest:
-            latest_outcomes.append(latest)
+        .label("outcome_rank"),
+    ).subquery()
+    latest_outcomes = (
+        db.query(OptionTradeOutcome)
+        .join(
+            ranked_outcomes,
+            ranked_outcomes.c.outcome_id == OptionTradeOutcome.id,
+        )
+        .filter(ranked_outcomes.c.outcome_rank == 1)
+        .all()
+    )
     decisions = db.query(OptionDecisionOutcome).filter(OptionDecisionOutcome.status == "matured").all()
 
     def counts(values: Iterable[str]) -> dict[str, int]:
@@ -857,11 +870,48 @@ def learning_summary(db: Session) -> dict[str, object]:
     helpful = sum(1 for value in decision_values if value > 2)
     harmful = sum(1 for value in decision_values if value < -2)
     actual_cycles = len(latest_outcomes)
-    minimum_cycles = LEARNING_MINIMUM_CYCLES
+    minimum_cycles = LEARNING_PROMOTION_MINIMUM_CYCLES
     models = db.query(OptionModelRegistry).order_by(OptionModelRegistry.created_at.asc()).all()
+    closed_by_id = {
+        row.id: row
+        for row in db.query(ClosedPosition)
+        .filter(ClosedPosition.id.in_([outcome.closed_position_id for outcome in latest_outcomes]))
+        .all()
+    }
     recurrence_cohorts: dict[str, dict[str, object]] = {}
     replacement_cohorts: dict[str, dict[str, object]] = {}
     field_cohorts: dict[str, dict[str, object]] = {}
+    direction_cohorts: dict[str, dict[str, object]] = {}
+    duration_cohorts: dict[str, dict[str, object]] = {}
+
+    def add_cohort_observation(
+        target: dict[str, dict[str, object]],
+        cohort: str,
+        *,
+        financial_outcome: str,
+        percent_pnl: Optional[float],
+        process_quality: str,
+    ) -> None:
+        row = target.setdefault(
+            cohort,
+            {
+                "sample_count": 0,
+                "profitable": 0,
+                "unprofitable": 0,
+                "flat": 0,
+                "non_weak_process": 0,
+                "percent_pnl_values": [],
+            },
+        )
+        row["sample_count"] = int(row["sample_count"]) + 1
+        row[financial_outcome] = int(row.get(financial_outcome, 0)) + 1
+        if process_quality != "weak_process":
+            row["non_weak_process"] = int(row.get("non_weak_process", 0)) + 1
+        if percent_pnl is not None:
+            values = row["percent_pnl_values"]
+            if isinstance(values, list):
+                values.append(percent_pnl)
+
     for outcome in latest_outcomes:
         metrics = json_loads(outcome.metrics_json, {})
         attribution = json_loads(outcome.attribution_json, {})
@@ -936,6 +986,33 @@ def learning_summary(db: Session) -> dict[str, object]:
             field_values = field_row["percent_pnl_values"]
             if isinstance(field_values, list):
                 field_values.append(percent_pnl)
+        closed_position = closed_by_id.get(outcome.closed_position_id)
+        if closed_position is not None:
+            option_type = str(closed_position.option_type or "").strip().lower()
+            if option_type in {"call", "put"}:
+                add_cohort_observation(
+                    direction_cohorts,
+                    option_type,
+                    financial_outcome=financial_outcome,
+                    percent_pnl=percent_pnl,
+                    process_quality=str(outcome.process_quality or ""),
+                )
+            if closed_position.expiration and closed_position.trade_date:
+                entry_dte = (closed_position.expiration - closed_position.trade_date).days
+                duration_cohort = (
+                    "under_45_dte"
+                    if entry_dte < 45
+                    else "45_to_90_dte"
+                    if entry_dte <= 90
+                    else "over_90_dte"
+                )
+                add_cohort_observation(
+                    duration_cohorts,
+                    duration_cohort,
+                    financial_outcome=financial_outcome,
+                    percent_pnl=percent_pnl,
+                    process_quality=str(outcome.process_quality or ""),
+                )
     recurrence_outcomes = {}
     for cohort in ("no_repeat", "repeat_seen", "strengthened_seen", "contract_drift_seen"):
         row = recurrence_cohorts.get(
@@ -994,6 +1071,43 @@ def learning_summary(db: Session) -> dict[str, object]:
             **row,
             "average_percent_pnl": round(sum(values) / len(values), 2) if values else None,
         }
+
+    def finalized_cohorts(
+        source: dict[str, dict[str, object]],
+        names: tuple[str, ...],
+    ) -> dict[str, dict[str, object]]:
+        result: dict[str, dict[str, object]] = {}
+        for cohort in names:
+            row = source.get(
+                cohort,
+                {
+                    "sample_count": 0,
+                    "profitable": 0,
+                    "unprofitable": 0,
+                    "flat": 0,
+                    "non_weak_process": 0,
+                    "percent_pnl_values": [],
+                },
+            )
+            values = list(row.get("percent_pnl_values") or [])
+            result[cohort] = {
+                key: value
+                for key, value in row.items()
+                if key != "percent_pnl_values"
+            }
+            result[cohort]["average_percent_pnl"] = (
+                round(sum(values) / len(values), 2) if values else None
+            )
+            result[cohort]["median_percent_pnl"] = (
+                round(float(pd.Series(values).median()), 2) if values else None
+            )
+        return result
+
+    direction_outcomes = finalized_cohorts(direction_cohorts, ("call", "put"))
+    duration_outcomes = finalized_cohorts(
+        duration_cohorts,
+        ("under_45_dte", "45_to_90_dte", "over_90_dte"),
+    )
     return {
         "sample": {
             "open_review_records": reviews,
@@ -1022,13 +1136,13 @@ def learning_summary(db: Session) -> dict[str, object]:
         "scanner_recurrence_outcomes": {
             "cohorts": recurrence_outcomes,
             "actual_closed_trades_only": True,
-            "minimum_sample_before_comparison": 20,
+            "minimum_sample_before_comparison": LEARNING_MINIMUM_COHORT,
             "automatic_weight_changes": False,
         },
         "scanner_replacement_outcomes": {
             "cohorts": replacement_outcomes,
             "actual_closed_trades_only": True,
-            "minimum_sample_before_comparison": 20,
+            "minimum_sample_before_comparison": LEARNING_MINIMUM_COHORT,
             "automatic_weight_changes": False,
         },
         "market_field_outcomes": {
@@ -1042,8 +1156,27 @@ def learning_summary(db: Session) -> dict[str, object]:
                 "directional_alignment_required": True,
                 "legacy_or_incomplete_initialization_bucket": "unavailable",
             },
-            "minimum_sample_before_comparison": 20,
+            "minimum_sample_before_comparison": LEARNING_MINIMUM_COHORT,
             "rank_influence": 0.0,
+            "automatic_weight_changes": False,
+        },
+        "contract_direction_outcomes": {
+            "cohorts": direction_outcomes,
+            "actual_closed_trades_only": True,
+            "point_in_time_contract_feature": "option_type",
+            "minimum_sample_before_comparison": LEARNING_MINIMUM_COHORT,
+            "automatic_weight_changes": False,
+        },
+        "contract_duration_outcomes": {
+            "cohorts": duration_outcomes,
+            "actual_closed_trades_only": True,
+            "point_in_time_contract_feature": "entry_dte",
+            "buckets": {
+                "under_45_dte": "<45",
+                "45_to_90_dte": "45-90",
+                "over_90_dte": ">90",
+            },
+            "minimum_sample_before_comparison": LEARNING_MINIMUM_COHORT,
             "automatic_weight_changes": False,
         },
         "promotion_readiness": {
@@ -1087,18 +1220,21 @@ def build_learning_influence_context(summary: dict[str, object]) -> dict[str, ob
     weak_process = int(process_quality.get("weak_process") or 0) if isinstance(process_quality, dict) else 0
     non_weak_cycles = max(0, cycles - weak_process)
     non_weak_share = non_weak_cycles / cycles if cycles else 0.0
-    cycle_gate = cycles >= LEARNING_MINIMUM_CYCLES
+    cycle_gate = cycles >= LEARNING_CANARY_MINIMUM_CYCLES
     process_gate = non_weak_share >= LEARNING_MINIMUM_NON_WEAK_SHARE
     return {
         "version": LEARNING_INFLUENCE_VERSION,
-        "mode": "counterfactual_shadow",
-        "actual_rank_influence": 0.0,
+        "mode": "bounded_live_canary",
+        "actual_rank_influence": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
         "maximum_counterfactual_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+        "maximum_applied_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+        "live_canary_enabled": True,
         "automatic_weight_changes": False,
         "manual_promotion_required": True,
         "evidence": {
             "independent_trade_cycles": cycles,
-            "minimum_independent_trade_cycles": LEARNING_MINIMUM_CYCLES,
+            "minimum_independent_trade_cycles": LEARNING_CANARY_MINIMUM_CYCLES,
+            "full_promotion_minimum_trade_cycles": LEARNING_PROMOTION_MINIMUM_CYCLES,
             "non_weak_process_cycles": non_weak_cycles,
             "non_weak_process_share": round(non_weak_share, 4),
             "minimum_non_weak_process_share": LEARNING_MINIMUM_NON_WEAK_SHARE,
@@ -1111,6 +1247,8 @@ def build_learning_influence_context(summary: dict[str, object]) -> dict[str, ob
             "scanner_recurrence": summary.get("scanner_recurrence_outcomes", {}),
             "replacement_signal": summary.get("scanner_replacement_outcomes", {}),
             "market_field": summary.get("market_field_outcomes", {}),
+            "contract_direction": summary.get("contract_direction_outcomes", {}),
+            "contract_duration": summary.get("contract_duration_outcomes", {}),
         },
     }
 
@@ -1119,6 +1257,7 @@ def _candidate_learning_cohorts(
     *,
     field_context: Optional[dict[str, object]],
     position_match: Optional[dict[str, object]],
+    contract_context: Optional[dict[str, object]],
 ) -> dict[str, str]:
     classification = str((position_match or {}).get("classification") or "")
     if classification == "contract_drift":
@@ -1141,10 +1280,24 @@ def _candidate_learning_cohorts(
     if replacement_cohort is None:
         replacement_cohort = "other_replacement_signal" if recommendation else "no_replacement_signal"
 
+    option_type = str((contract_context or {}).get("option_type") or "").strip().lower()
+    direction_cohort = option_type if option_type in {"call", "put"} else "unavailable"
+    dte = _finite((contract_context or {}).get("dte"))
+    duration_cohort = (
+        "unavailable"
+        if dte is None
+        else "under_45_dte"
+        if dte < 45
+        else "45_to_90_dte"
+        if dte <= 90
+        else "over_90_dte"
+    )
     return {
         "scanner_recurrence": recurrence,
         "replacement_signal": replacement_cohort,
         "market_field": _market_field_cohort(field_context),
+        "contract_direction": direction_cohort,
+        "contract_duration": duration_cohort,
     }
 
 
@@ -1186,8 +1339,26 @@ def _cohort_learning_signal(
         profitable + (prior_rate * LEARNING_PRIOR_STRENGTH)
     ) / (sample_count + LEARNING_PRIOR_STRENGTH)
     average_pnl = _finite(row.get("average_percent_pnl"))
-    pnl_score = 50.0 if average_pnl is None else ((max(-20.0, min(20.0, average_pnl)) + 20.0) / 40.0) * 100.0
+    median_pnl = _finite(row.get("median_percent_pnl"))
+    robust_pnl = median_pnl if median_pnl is not None else average_pnl
+    pnl_score = 50.0 if robust_pnl is None else ((max(-20.0, min(20.0, robust_pnl)) + 20.0) / 40.0) * 100.0
     score = (posterior_rate * 100.0 * 0.70) + (pnl_score * 0.30)
+    non_weak_process = (
+        int(row.get("non_weak_process") or 0)
+        if "non_weak_process" in row
+        else None
+    )
+    cohort_process_share = (
+        non_weak_process / sample_count
+        if non_weak_process is not None and sample_count
+        else None
+    )
+    process_reliability = (
+        0.25 + (0.75 * cohort_process_share)
+        if cohort_process_share is not None
+        else 1.0
+    )
+    reliability = min(1.0, sample_count / 50.0) * process_reliability
     result.update(
         {
             "available": True,
@@ -1196,9 +1367,17 @@ def _cohort_learning_signal(
             "unprofitable": int(row.get("unprofitable") or 0),
             "flat": int(row.get("flat") or 0),
             "average_percent_pnl": average_pnl,
+            "median_percent_pnl": median_pnl,
+            "pnl_statistic_used": "median" if median_pnl is not None else "average",
+            "non_weak_process": non_weak_process,
+            "non_weak_process_share": (
+                round(cohort_process_share, 4)
+                if cohort_process_share is not None
+                else None
+            ),
             "posterior_profitable_rate": round(posterior_rate, 4),
             "score": round(score, 2),
-            "reliability": round(min(1.0, sample_count / 50.0), 4),
+            "reliability": round(reliability, 4),
             "reason": "Shrunk actual-close cohort evidence; descriptive until manual promotion.",
         }
     )
@@ -1211,11 +1390,13 @@ def evaluate_option_learning_influence(
     champion_score: float,
     field_context: Optional[dict[str, object]] = None,
     position_match: Optional[dict[str, object]] = None,
+    contract_context: Optional[dict[str, object]] = None,
 ) -> dict[str, object]:
     """Evaluate—but never apply—the current outcome-learning challenger."""
     cohorts = _candidate_learning_cohorts(
         field_context=field_context,
         position_match=position_match,
+        contract_context=contract_context,
     )
     families = context.get("families")
     families = families if isinstance(families, dict) else {}
@@ -1243,7 +1424,7 @@ def evaluate_option_learning_influence(
     base_gates = base_gates if isinstance(base_gates, dict) else {}
     cycles = int(evidence.get("independent_trade_cycles") or 0)
     non_weak_share = float(evidence.get("non_weak_process_share") or 0.0)
-    cycle_factor = min(1.0, cycles / LEARNING_MINIMUM_CYCLES)
+    cycle_factor = min(1.0, cycles / LEARNING_CANARY_MINIMUM_CYCLES)
     process_factor = min(1.0, non_weak_share / LEARNING_MINIMUM_NON_WEAK_SHARE)
     counterfactual_weight = (
         LEARNING_MAX_COUNTERFACTUAL_WEIGHT * cycle_factor * process_factor * reliability
@@ -1256,20 +1437,27 @@ def evaluate_option_learning_influence(
         if learning_score is not None
         else float(champion_score)
     )
-    promotion_ready = bool(
+    canary_eligible = bool(
         base_gates.get("independent_cycles")
         and base_gates.get("process_quality")
         and comparable_gate
     )
+    applied_weight = counterfactual_weight if canary_eligible else 0.0
+    applied_score = (
+        (float(champion_score) * (1.0 - applied_weight))
+        + (learning_score * applied_weight)
+        if learning_score is not None
+        else float(champion_score)
+    )
     if learning_score is None:
         status = "collecting_comparable_cohorts"
-    elif promotion_ready:
-        status = "manual_promotion_eligible"
+    elif canary_eligible:
+        status = "live_canary_active"
     else:
         status = "counterfactual_only"
     reasons = []
     if not base_gates.get("independent_cycles"):
-        reasons.append(f"{cycles}/{LEARNING_MINIMUM_CYCLES} independent actual-close cycles.")
+        reasons.append(f"{cycles}/{LEARNING_CANARY_MINIMUM_CYCLES} independent actual-close cycles.")
     if not base_gates.get("process_quality"):
         reasons.append(
             f"{non_weak_share:.0%}/{LEARNING_MINIMUM_NON_WEAK_SHARE:.0%} non-weak process evidence."
@@ -1278,19 +1466,21 @@ def evaluate_option_learning_influence(
         reasons.append(
             f"No candidate cohort has a second comparison cohort with at least {LEARNING_MINIMUM_COHORT} closes."
         )
-    if promotion_ready:
-        reasons.append("Evidence gates passed; a separate manual promotion decision is still required.")
+    if canary_eligible:
+        reasons.append(
+            "Experimental evidence gates passed; the bounded live canary may apply up to 5%."
+        )
     return {
         "version": context.get("version") or LEARNING_INFLUENCE_VERSION,
-        "mode": "counterfactual_shadow",
+        "mode": "bounded_live_canary",
         "status": status,
         "champion_score": round(float(champion_score), 2),
         "learning_score": round(learning_score, 2) if learning_score is not None else None,
         "counterfactual_score": round(counterfactual_score, 2),
         "counterfactual_delta": round(counterfactual_score - float(champion_score), 2),
         "counterfactual_weight": round(counterfactual_weight, 4),
-        "applied_score": round(float(champion_score), 2),
-        "applied_weight": 0.0,
+        "applied_score": round(applied_score, 2),
+        "applied_weight": round(applied_weight, 4),
         "rank_changed": False,
         "candidate_cohorts": cohorts,
         "signals": signals,
@@ -1298,10 +1488,96 @@ def evaluate_option_learning_influence(
             "independent_cycles": bool(base_gates.get("independent_cycles")),
             "process_quality": bool(base_gates.get("process_quality")),
             "comparable_cohorts": comparable_gate,
-            "manual_promotion": False,
+            "live_canary_authorized": True,
         },
-        "promotion_ready_for_review": promotion_ready,
+        "promotion_ready_for_review": canary_eligible,
+        "live_canary_active": canary_eligible,
         "manual_promotion_required": True,
         "automatic_weight_changes": False,
         "reasons": reasons,
     }
+
+
+def rebase_option_learning_evaluation(
+    evaluation: dict[str, object],
+    *,
+    champion_score: float,
+) -> dict[str, object]:
+    """Apply a frozen learning receipt to a currently computed champion score."""
+    result = dict(evaluation)
+    learning_score = _finite(result.get("learning_score"))
+    counterfactual_weight = max(
+        0.0,
+        min(
+            LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+            _finite(result.get("counterfactual_weight")) or 0.0,
+        ),
+    )
+    applied_weight = max(
+        0.0,
+        min(
+            LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+            _finite(result.get("applied_weight")) or 0.0,
+        ),
+    )
+    counterfactual_score = (
+        (champion_score * (1.0 - counterfactual_weight))
+        + (learning_score * counterfactual_weight)
+        if learning_score is not None
+        else champion_score
+    )
+    applied_score = (
+        (champion_score * (1.0 - applied_weight))
+        + (learning_score * applied_weight)
+        if learning_score is not None
+        else champion_score
+    )
+    result.update(
+        {
+            "champion_score": round(champion_score, 2),
+            "counterfactual_score": round(counterfactual_score, 2),
+            "counterfactual_delta": round(counterfactual_score - champion_score, 2),
+            "counterfactual_weight": round(counterfactual_weight, 4),
+            "applied_score": round(applied_score, 2),
+            "applied_weight": round(applied_weight, 4),
+        }
+    )
+    return result
+
+
+def capture_option_learning_influence(
+    db: Session,
+    *,
+    event: OptionAlertEvent,
+    position_match: Optional[dict[str, object]],
+) -> dict[str, object]:
+    """Freeze the canary evidence visible when a scanner event is created."""
+    existing = json_loads(getattr(event, "learning_influence_json", None), {})
+    if (
+        getattr(event, "learning_influence_version", None) == LEARNING_INFLUENCE_VERSION
+        and isinstance(existing, dict)
+        and existing
+    ):
+        return existing
+    context = build_learning_influence_context(learning_summary(db))
+    champion_score = _finite(event.opportunity_score) or 0.0
+    evaluation = evaluate_option_learning_influence(
+        context,
+        champion_score=champion_score,
+        field_context=_compact_market_field(
+            json_loads(getattr(event, "field_context_json", None), {})
+        ),
+        position_match=position_match,
+        contract_context={
+            "option_type": event.selected_option_type,
+            "dte": event.selected_dte,
+        },
+    )
+    evaluation["captured_at"] = (
+        event.triggered_at.isoformat() if event.triggered_at else datetime.utcnow().isoformat()
+    )
+    evaluation["point_in_time_receipt"] = True
+    event.learning_influence_version = LEARNING_INFLUENCE_VERSION
+    event.learning_influence_json = json_dumps(evaluation)
+    db.add(event)
+    return evaluation

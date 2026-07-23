@@ -55,6 +55,8 @@ class OptionAlertEvent(Base):
     field_context_version = Column(String, nullable=True)
     field_context_as_of = Column(DateTime, nullable=True)
     field_context_json = Column(Text, nullable=True)
+    learning_influence_version = Column(String, nullable=True)
+    learning_influence_json = Column(Text, nullable=True)
     review_min_hold_days = Column(Integer, nullable=True)
     review_max_hold_days = Column(Integer, nullable=True)
     review_window_basis = Column(String, nullable=True)

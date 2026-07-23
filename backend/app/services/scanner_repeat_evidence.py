@@ -685,6 +685,14 @@ def record_scanner_recurrence_events(db: Session, event: OptionAlertEvent) -> li
     if event.id is None:
         return []
     context = load_scanner_repeat_evidence_context(db, events=[event])
+    position_match = position_match_for_event(event, context)
+    from app.services.option_decision_learning import capture_option_learning_influence
+
+    capture_option_learning_influence(
+        db,
+        event=event,
+        position_match=position_match,
+    )
     existing_keys = {
         (int(position_id), int(alert_event_id))
         for position_id, alert_event_id in (

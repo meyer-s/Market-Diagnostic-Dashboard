@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -21,6 +22,7 @@ from app.services.option_decision_learning import (
     build_learning_influence_context,
     evaluate_option_learning_influence,
     learning_summary,
+    rebase_option_learning_evaluation,
 )
 from app.services.option_field_context import option_field_context_from_event
 from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_opportunity_score, opportunity_grade
@@ -98,6 +100,17 @@ def _review_window_payload(event: OptionAlertEvent) -> dict[str, object]:
         "max_hold_days": max_hold,
         "basis": basis,
     }
+
+
+def _stored_learning_evaluation(event: OptionAlertEvent) -> Optional[dict[str, object]]:
+    raw = getattr(event, "learning_influence_json", None)
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) and payload.get("point_in_time_receipt") is True else None
 
 
 def _run_last_seen(run: OptionSweepRun) -> Optional[datetime]:
@@ -591,6 +604,7 @@ def _ranked_opportunity_from_event(
         "iv_hv_spread": spread,
         "avg_edr": event.avg_edr,
         "field_context": option_field_context_from_event(event),
+        "learning_evaluation": _stored_learning_evaluation(event),
         "review_window": _review_window_payload(event),
         "selected_contract": {
             "expiry": event.selected_expiry,
@@ -622,25 +636,48 @@ def _attach_learning_evaluations(
     context: dict[str, object],
 ) -> dict[str, object]:
     for opportunity in opportunities:
-        opportunity["learning_evaluation"] = evaluate_option_learning_influence(
-            context,
-            champion_score=float(opportunity.get("score") or 0.0),
-            field_context=(
-                opportunity.get("field_context")
-                if isinstance(opportunity.get("field_context"), dict)
-                else None
-            ),
-            position_match=(
-                opportunity.get("position_match")
-                if isinstance(opportunity.get("position_match"), dict)
-                else None
-            ),
-        )
+        stored_evaluation = opportunity.get("learning_evaluation")
+        if isinstance(stored_evaluation, dict) and stored_evaluation.get("point_in_time_receipt") is True:
+            opportunity["learning_evaluation"] = rebase_option_learning_evaluation(
+                stored_evaluation,
+                champion_score=float(opportunity.get("score") or 0.0),
+            )
+        else:
+            evaluation = evaluate_option_learning_influence(
+                context,
+                champion_score=float(opportunity.get("score") or 0.0),
+                field_context=(
+                    opportunity.get("field_context")
+                    if isinstance(opportunity.get("field_context"), dict)
+                    else None
+                ),
+                position_match=(
+                    opportunity.get("position_match")
+                    if isinstance(opportunity.get("position_match"), dict)
+                    else None
+                ),
+                contract_context=(
+                    opportunity.get("selected_contract")
+                    if isinstance(opportunity.get("selected_contract"), dict)
+                    else None
+                ),
+            )
+            evaluation["status"] = "legacy_shadow_only"
+            evaluation["applied_score"] = evaluation["champion_score"]
+            evaluation["applied_weight"] = 0.0
+            evaluation["live_canary_active"] = False
+            evaluation["point_in_time_receipt"] = False
+            reasons = list(evaluation.get("reasons") or [])
+            reasons.append(
+                "Legacy event: no point-in-time learning receipt was captured, so live weight is disabled."
+            )
+            evaluation["reasons"] = reasons
+            opportunity["learning_evaluation"] = evaluation
 
     champion_order = sorted(
         opportunities,
         key=lambda row: (
-            float(row.get("score") or 0.0),
+            float((row.get("learning_evaluation") or {}).get("champion_score") or 0.0),
             row.get("triggered_at") or "",
             int(row.get("event_id") or 0),
         ),
@@ -655,18 +692,39 @@ def _attach_learning_evaluations(
         ),
         reverse=True,
     )
+    applied_order = sorted(
+        opportunities,
+        key=lambda row: (
+            float((row.get("learning_evaluation") or {}).get("applied_score") or 0.0),
+            row.get("triggered_at") or "",
+            int(row.get("event_id") or 0),
+        ),
+        reverse=True,
+    )
     champion_ranks = {id(row): index for index, row in enumerate(champion_order, start=1)}
     counterfactual_ranks = {id(row): index for index, row in enumerate(counterfactual_order, start=1)}
+    applied_ranks = {id(row): index for index, row in enumerate(applied_order, start=1)}
     reorder_count = 0
+    applied_reorder_count = 0
+    applied_count = 0
     for opportunity in opportunities:
         evaluation = opportunity["learning_evaluation"]
         champion_rank = champion_ranks[id(opportunity)]
         counterfactual_rank = counterfactual_ranks[id(opportunity)]
+        applied_rank = applied_ranks[id(opportunity)]
         evaluation["champion_rank"] = champion_rank
         evaluation["counterfactual_rank"] = counterfactual_rank
         evaluation["rank_delta"] = champion_rank - counterfactual_rank
         evaluation["rank_changed"] = champion_rank != counterfactual_rank
+        evaluation["applied_rank"] = applied_rank
+        evaluation["applied_rank_delta"] = champion_rank - applied_rank
+        evaluation["applied_rank_changed"] = champion_rank != applied_rank
         reorder_count += int(champion_rank != counterfactual_rank)
+        applied_reorder_count += int(champion_rank != applied_rank)
+        applied_count += int(float(evaluation.get("applied_weight") or 0.0) > 0)
+        opportunity["score"] = float(evaluation.get("applied_score") or 0.0)
+        opportunity["grade"] = opportunity_grade(float(opportunity["score"]))
+        opportunity["ranking_model_version"] = str(evaluation.get("version") or "")
 
     policy = {
         key: value
@@ -675,7 +733,9 @@ def _attach_learning_evaluations(
     }
     policy["evaluated_opportunities"] = len(opportunities)
     policy["counterfactual_rank_changes"] = reorder_count
-    policy["actual_order_unchanged"] = True
+    policy["applied_opportunities"] = applied_count
+    policy["applied_rank_changes"] = applied_reorder_count
+    policy["actual_order_unchanged"] = applied_reorder_count == 0
     return policy
 
 
@@ -923,6 +983,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             "iv_hv_spread": record["iv_hv_spread"],
             "avg_edr": event.avg_edr,
             "field_context": option_field_context_from_event(event),
+            "learning_evaluation": _stored_learning_evaluation(event),
             "review_window": _review_window_payload(event),
             "selected_contract": {
                 "expiry": event.selected_expiry,
@@ -958,6 +1019,10 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
         reverse=True,
     )
     learning_policy = _attach_learning_evaluations(ranked_opportunities, learning_context)
+    ranked_opportunities.sort(
+        key=lambda row: (float(row["score"]), row.get("triggered_at") or ""),
+        reverse=True,
+    )
 
     run_rows = [_serialize_run(run) for run in runs]
     completed_runs = [run for run in runs if run.completed_at is not None]

@@ -66,31 +66,33 @@ Actual trade outcomes are classified separately from profit and loss:
 - catalyst/event result;
 - sound process with an unfavorable financial outcome.
 
-Scanner recurrence events also preserve the replacement recommendation that was visible at the time. Closed-trade summaries compare `no_replacement_signal`, `replacement_watch_seen`, `rescue_roll_rejected_seen`, `roll_candidate_seen`, and `convexity_harvest_seen` cohorts. These cohorts require at least 20 actual closed trades before comparison and never change classifier weights automatically.
+Scanner recurrence events also preserve the replacement recommendation that was visible at the time. Closed-trade summaries compare `no_replacement_signal`, `replacement_watch_seen`, `rescue_roll_rejected_seen`, `roll_candidate_seen`, and `convexity_harvest_seen` cohorts. The bounded canary can inspect a cohort after eight actual closes, but only when another cohort in the same family independently clears the same floor.
 
 Each recorded review is also evaluated at pre-declared 1, 3, 5, and 10-session horizons, the decision deadline, and expiration. These counterfactual decision outcomes remain explicitly separate from actual fills and actual trade labels.
 
-### Outcome-learning shadow challenger
+### Outcome-learning bounded canary
 
-`option_learning_influence_shadow_v1` now evaluates every ranked scanner opportunity beside the deterministic champion. It does not change the production score or ordering. The API and expanded scanner row expose:
+`option_learning_influence_canary_v2` evaluates every ranked scanner opportunity beside the deterministic champion. When all experimental gates pass, it can apply an evidence-scaled learning weight of no more than 5% to the displayed score and ordering. The API and expanded scanner row expose:
 
 - the champion score and rank;
-- the eligible outcome cohort for scanner recurrence, replacement classification, and the point-in-time Market Field snapshot;
-- a shrunk descriptive score when the candidate cohort and at least one comparison cohort each contain 20 actual closes;
+- the eligible outcome cohort for scanner recurrence, replacement classification, point-in-time Market Field, contract direction, and entry-DTE bucket;
+- a shrunk descriptive score when the candidate cohort and at least one comparison cohort each contain eight actual closes;
 - the counterfactual score, weight, and rank that would result from a bounded blend;
-- the score and weight actually applied, which remain the champion score and zero;
+- the score, weight, and rank actually applied;
 - every failed evidence and promotion gate.
 
-The cohort score combines 70% posterior profitable rate and 30% average-percent-P/L context. The profitable rate is shrunk toward the eligible family-wide rate with 20 pseudo-observations. Average P/L is clipped to -20% through +20% before mapping to a zero-to-100 descriptive scale. This construction is intentionally simple and auditable; it is a challenger diagnostic, not a claim of calibrated expected value.
+The cohort score combines 70% posterior profitable rate and 30% percent-P/L context. The profitable rate is shrunk toward the eligible family-wide rate with 20 pseudo-observations. Median P/L is used when retained by the cohort builder; legacy families fall back to average P/L. The selected statistic is clipped to -20% through +20% before mapping to a zero-to-100 descriptive scale. This construction is intentionally simple and auditable; it is a challenger diagnostic, not a claim of calibrated expected value.
 
-The hypothetical weight cannot exceed 10%. Before manual promotion review, it is attenuated by the fraction of the 100-cycle evidence floor reached, the share of closed trades not labeled `weak_process` relative to a 60% floor, and cohort reliability up to 50 observations. Promotion review requires all of the following:
+The applied weight cannot exceed 5%. It is attenuated by the fraction of the 40-cycle canary floor reached, the share of closed trades not labeled `weak_process` relative to a 10% floor, and cohort reliability up to 50 observations. The canary requires all of the following:
 
-1. At least 100 independent classified actual-close cycles.
-2. At least 60% of those cycles classified above `weak_process`.
-3. At least one candidate learning family with two cohorts of at least 20 actual closes each.
-4. A separate manual promotion decision.
+1. At least 40 independent classified actual-close cycles.
+2. At least 10% of those cycles classified above `weak_process`.
+3. At least one candidate learning family with two cohorts of at least eight actual closes each.
+4. Explicit operator authorization for the bounded canary.
 
-Passing these gates still does not apply the challenger. Shadow disagreements and rank changes must first be recorded against later independent closes so that incremental value can be evaluated chronologically.
+The canary never changes hard vetoes, position sizing, risk policy, review verdicts, or execution authority. It only leans scanner score and ordering. Full challenger promotion still requires the 100-cycle governance floor, chronological evaluation, and a separate manual decision. Every canary disagreement and applied rank change must be retained so its incremental value can be evaluated against later independent closes.
+
+Each newly created scanner event stores an immutable canary receipt containing the learning version, eligible cohort identities, cohort evidence, applied weight, and capture time. Scanner pages may rebase that frozen learning component onto the current deterministic recurrence score, but they may not recompute historical cohort membership or weight. Events created before the receipt schema remain shadow-only and can never receive retroactive live influence.
 
 ## Automation schedule
 

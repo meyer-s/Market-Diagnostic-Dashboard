@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+import json
 import sys
 import types
 
@@ -1327,7 +1328,7 @@ def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -
     assert body["ranked_opportunities"][0]["grade"] in {"A", "A+"}
     assert set(body["ranked_opportunities"][0]["components"]) >= {"cheapness", "volatility_edge", "contract_quality", "recurrence"}
     assert body["ranked_opportunities"][0]["selected_contract"]["reward_risk"] == 1.9
-    assert body["learning_policy"]["actual_rank_influence"] == 0.0
+    assert body["learning_policy"]["actual_rank_influence"] == 0.05
     assert body["learning_policy"]["actual_order_unchanged"] is True
     learning = body["ranked_opportunities"][0]["learning_evaluation"]
     assert learning["champion_score"] == body["ranked_opportunities"][0]["score"]
@@ -1635,6 +1636,11 @@ def test_scanner_recurrence_journal_is_db_idempotent_and_counts_distinct_sweeps(
         )
         assert len(rows) == 1
         assert rows[0].quantity_before == rows[0].quantity_after == 3
+        captured_event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == current_id).one()
+        receipt = json.loads(captured_event.learning_influence_json)
+        assert captured_event.learning_influence_version == "option_learning_influence_canary_v2"
+        assert receipt["point_in_time_receipt"] is True
+        assert receipt["applied_weight"] == 0.0
 
 
 def test_closed_trade_learning_keeps_scanner_recurrence_as_actual_outcome_cohort(secret_options_client) -> None:

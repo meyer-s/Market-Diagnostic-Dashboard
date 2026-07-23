@@ -667,8 +667,8 @@ interface OptionLearningSignal {
 
 interface OptionLearningEvaluation {
   version: string;
-  mode: "counterfactual_shadow";
-  status: "collecting_comparable_cohorts" | "counterfactual_only" | "manual_promotion_eligible";
+  mode: "counterfactual_shadow" | "bounded_live_canary";
+  status: "collecting_comparable_cohorts" | "counterfactual_only" | "manual_promotion_eligible" | "live_canary_active" | "legacy_shadow_only";
   champion_score: number;
   learning_score: number | null;
   counterfactual_score: number;
@@ -678,17 +678,16 @@ interface OptionLearningEvaluation {
   applied_weight: number;
   champion_rank?: number;
   counterfactual_rank?: number;
+  applied_rank?: number;
   rank_delta?: number;
+  applied_rank_delta?: number;
   rank_changed: boolean;
   candidate_cohorts: Record<string, string>;
   signals: OptionLearningSignal[];
-  gates: {
-    independent_cycles: boolean;
-    process_quality: boolean;
-    comparable_cohorts: boolean;
-    manual_promotion: boolean;
-  };
+  gates: Record<string, boolean>;
   promotion_ready_for_review: boolean;
+  live_canary_active?: boolean;
+  point_in_time_receipt?: boolean;
   manual_promotion_required: boolean;
   automatic_weight_changes: boolean;
   reasons: string[];
@@ -696,14 +695,17 @@ interface OptionLearningEvaluation {
 
 interface OptionLearningPolicy {
   version: string;
-  mode: "counterfactual_shadow";
+  mode: "counterfactual_shadow" | "bounded_live_canary";
   actual_rank_influence: number;
   maximum_counterfactual_weight: number;
+  maximum_applied_weight?: number;
+  live_canary_enabled?: boolean;
   automatic_weight_changes: boolean;
   manual_promotion_required: boolean;
   evidence: {
     independent_trade_cycles: number;
     minimum_independent_trade_cycles: number;
+    full_promotion_minimum_trade_cycles?: number;
     non_weak_process_cycles: number;
     non_weak_process_share: number;
     minimum_non_weak_process_share: number;
@@ -714,6 +716,8 @@ interface OptionLearningPolicy {
   };
   evaluated_opportunities: number;
   counterfactual_rank_changes: number;
+  applied_opportunities?: number;
+  applied_rank_changes?: number;
   actual_order_unchanged: boolean;
 }
 
@@ -1549,14 +1553,18 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
                 Outcome-learning challenger
               </span>
               <span className="rounded border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200">
-                Shadow only
+                {learning.applied_weight > 0
+                  ? "Live ≤5% canary"
+                  : learning.point_in_time_receipt === false
+                    ? "Legacy shadow"
+                    : "Canary waiting"}
               </span>
               <span className="text-[9px] text-stealth-500">
                 Champion {formatNumber(learning.champion_score, 1)}
                 {" · "}
                 learned {learning.learning_score === null ? "waiting" : formatNumber(learning.learning_score, 1)}
                 {" · "}
-                applied weight 0%
+                applied weight {(learning.applied_weight * 100).toFixed(1)}%
               </span>
               <span className="ml-auto text-[9px] text-stealth-500">Evidence &amp; gates</span>
             </div>
@@ -1567,7 +1575,9 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
               <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-stealth-100">
                 {formatNumber(learning.applied_score, 2)}
               </div>
-              <div className="text-[9px] text-stealth-500">Champion remains authoritative</div>
+              <div className="text-[9px] text-stealth-500">
+                {learning.applied_weight > 0 ? "Bounded outcome-learning lean" : "Champion remains authoritative"}
+              </div>
             </div>
             <div className="bg-stealth-950/70 p-2">
               <div className="text-[8px] uppercase tracking-wide text-stealth-500">Counterfactual</div>
@@ -1585,10 +1595,12 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
             <div className="bg-stealth-950/70 p-2">
               <div className="text-[8px] uppercase tracking-wide text-stealth-500">Rank test</div>
               <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-stealth-100">
-                #{learning.champion_rank ?? "—"} → #{learning.counterfactual_rank ?? "—"}
+                #{learning.champion_rank ?? "—"} → #{learning.applied_rank ?? "—"}
               </div>
               <div className="text-[9px] text-stealth-500">
-                {learning.rank_changed ? `Shadow move ${formatSigned(learning.rank_delta, 0)}` : "No shadow reorder"}
+                {learning.applied_rank_delta
+                  ? `Applied move ${formatSigned(learning.applied_rank_delta, 0)}`
+                  : "No applied reorder"}
               </div>
             </div>
           </div>
