@@ -1327,6 +1327,12 @@ def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -
     assert body["ranked_opportunities"][0]["grade"] in {"A", "A+"}
     assert set(body["ranked_opportunities"][0]["components"]) >= {"cheapness", "volatility_edge", "contract_quality", "recurrence"}
     assert body["ranked_opportunities"][0]["selected_contract"]["reward_risk"] == 1.9
+    assert body["learning_policy"]["actual_rank_influence"] == 0.0
+    assert body["learning_policy"]["actual_order_unchanged"] is True
+    learning = body["ranked_opportunities"][0]["learning_evaluation"]
+    assert learning["champion_score"] == body["ranked_opportunities"][0]["score"]
+    assert learning["applied_score"] == body["ranked_opportunities"][0]["score"]
+    assert learning["applied_weight"] == 0.0
     assert body["runs"][0]["universe_key"] == "SP500"
     assert body["runs"][0]["hit_symbols"] == ["MGM", "HLT"]
 
@@ -1418,6 +1424,8 @@ def test_scanner_run_detail_returns_hits_for_selected_run(secret_options_client)
     assert [hit["symbol"] for hit in body["hits"]] == ["MGM", "HLT"]
     assert body["hits"][0]["selected_contract"]["reward_risk"] == 1.9
     assert body["hits"][0]["score"] >= body["hits"][1]["score"]
+    assert body["learning_policy"]["actual_order_unchanged"] is True
+    assert all(hit["learning_evaluation"]["applied_weight"] == 0.0 for hit in body["hits"])
 
 
 def test_scanner_summary_adds_exact_held_contract_repeat_evidence_without_writing(secret_options_client) -> None:

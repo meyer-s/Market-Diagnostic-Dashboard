@@ -653,6 +653,70 @@ interface ScannerTopSymbol {
   avg_opportunity_score: number | null;
 }
 
+interface OptionLearningSignal {
+  family: string;
+  cohort: string;
+  available: boolean;
+  minimum_sample: number;
+  eligible_comparison_cohorts: string[];
+  reason?: string;
+  sample_count?: number;
+  score?: number;
+  reliability?: number;
+}
+
+interface OptionLearningEvaluation {
+  version: string;
+  mode: "counterfactual_shadow";
+  status: "collecting_comparable_cohorts" | "counterfactual_only" | "manual_promotion_eligible";
+  champion_score: number;
+  learning_score: number | null;
+  counterfactual_score: number;
+  counterfactual_delta: number;
+  counterfactual_weight: number;
+  applied_score: number;
+  applied_weight: number;
+  champion_rank?: number;
+  counterfactual_rank?: number;
+  rank_delta?: number;
+  rank_changed: boolean;
+  candidate_cohorts: Record<string, string>;
+  signals: OptionLearningSignal[];
+  gates: {
+    independent_cycles: boolean;
+    process_quality: boolean;
+    comparable_cohorts: boolean;
+    manual_promotion: boolean;
+  };
+  promotion_ready_for_review: boolean;
+  manual_promotion_required: boolean;
+  automatic_weight_changes: boolean;
+  reasons: string[];
+}
+
+interface OptionLearningPolicy {
+  version: string;
+  mode: "counterfactual_shadow";
+  actual_rank_influence: number;
+  maximum_counterfactual_weight: number;
+  automatic_weight_changes: boolean;
+  manual_promotion_required: boolean;
+  evidence: {
+    independent_trade_cycles: number;
+    minimum_independent_trade_cycles: number;
+    non_weak_process_cycles: number;
+    non_weak_process_share: number;
+    minimum_non_weak_process_share: number;
+  };
+  base_gates: {
+    independent_cycles: boolean;
+    process_quality: boolean;
+  };
+  evaluated_opportunities: number;
+  counterfactual_rank_changes: number;
+  actual_order_unchanged: boolean;
+}
+
 interface ScannerRankedOpportunity {
   event_id: number;
   symbol: string;
@@ -678,6 +742,7 @@ interface ScannerRankedOpportunity {
   } | null;
   position_match?: ScannerPositionMatch | null;
   field_context?: OptionMarketFieldContext | null;
+  learning_evaluation?: OptionLearningEvaluation | null;
   selected_contract: {
     expiry: string | null;
     dte: number | null;
@@ -747,6 +812,7 @@ interface ScannerSummaryResponse {
   summary: ScannerSummary;
   top_symbols: ScannerTopSymbol[];
   ranked_opportunities: ScannerRankedOpportunity[];
+  learning_policy?: OptionLearningPolicy;
   runs: ScannerRun[];
   supported_universes: ScannerUniverse[];
 }
@@ -761,6 +827,7 @@ interface ScannerRunDetailResponse {
   hit_count: number;
   matched_event_count: number;
   hits: ScannerRankedOpportunity[];
+  learning_policy?: OptionLearningPolicy;
 }
 
 interface EvaluationInsight {
@@ -1322,6 +1389,7 @@ const replacementGateClass: Record<string, string> = {
 
 const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportunity }) => {
   const contract = opportunity.selected_contract;
+  const learning = opportunity.learning_evaluation;
   const positionMatch = presentScannerPositionMatch(opportunity.position_match);
   const marketField = presentOptionMarketField(opportunity.field_context);
   const marketFieldHref = marketField ? marketFieldPath(opportunity.symbol, marketField.timeframe) : null;
@@ -1472,6 +1540,89 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
             Evidence only · no add signal
           </span>
         </div>
+      ) : null}
+      {learning ? (
+        <details className="mb-3 rounded-lg border border-violet-500/20 bg-violet-500/[0.04] px-2.5 py-2">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-violet-300">
+                Outcome-learning challenger
+              </span>
+              <span className="rounded border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200">
+                Shadow only
+              </span>
+              <span className="text-[9px] text-stealth-500">
+                Champion {formatNumber(learning.champion_score, 1)}
+                {" · "}
+                learned {learning.learning_score === null ? "waiting" : formatNumber(learning.learning_score, 1)}
+                {" · "}
+                applied weight 0%
+              </span>
+              <span className="ml-auto text-[9px] text-stealth-500">Evidence &amp; gates</span>
+            </div>
+          </summary>
+          <div className="mt-2 grid gap-px overflow-hidden rounded-md border border-stealth-800 bg-stealth-800 sm:grid-cols-3">
+            <div className="bg-stealth-950/70 p-2">
+              <div className="text-[8px] uppercase tracking-wide text-stealth-500">Production</div>
+              <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-stealth-100">
+                {formatNumber(learning.applied_score, 2)}
+              </div>
+              <div className="text-[9px] text-stealth-500">Champion remains authoritative</div>
+            </div>
+            <div className="bg-stealth-950/70 p-2">
+              <div className="text-[8px] uppercase tracking-wide text-stealth-500">Counterfactual</div>
+              <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-violet-200">
+                {formatNumber(learning.counterfactual_score, 2)}
+                {" "}
+                <span className="text-[9px] font-normal text-stealth-500">
+                  ({formatSigned(learning.counterfactual_delta, 2)})
+                </span>
+              </div>
+              <div className="text-[9px] text-stealth-500">
+                {(learning.counterfactual_weight * 100).toFixed(1)}% hypothetical blend
+              </div>
+            </div>
+            <div className="bg-stealth-950/70 p-2">
+              <div className="text-[8px] uppercase tracking-wide text-stealth-500">Rank test</div>
+              <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-stealth-100">
+                #{learning.champion_rank ?? "—"} → #{learning.counterfactual_rank ?? "—"}
+              </div>
+              <div className="text-[9px] text-stealth-500">
+                {learning.rank_changed ? `Shadow move ${formatSigned(learning.rank_delta, 0)}` : "No shadow reorder"}
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {Object.entries(learning.gates).map(([gate, passed]) => (
+              <span
+                key={gate}
+                className={`rounded border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide ${
+                  passed
+                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
+                    : "border-stealth-700 bg-stealth-900/70 text-stealth-500"
+                }`}
+              >
+                {gate.replace(/_/g, " ")}
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-[9px] leading-relaxed text-stealth-400">
+            {learning.reasons.join(" ")}
+          </p>
+          <div className="mt-2 grid gap-1 sm:grid-cols-3">
+            {learning.signals.map((signal) => (
+              <div key={signal.family} className="rounded border border-stealth-800 bg-stealth-950/50 p-2">
+                <div className="text-[8px] uppercase tracking-wide text-stealth-500">
+                  {signal.family.replace(/_/g, " ")}
+                </div>
+                <div className="mt-0.5 text-[10px] font-semibold text-stealth-200">
+                  {signal.cohort.replace(/_/g, " ")}
+                </div>
+                <div className="mt-0.5 text-[9px] leading-snug text-stealth-500">{signal.reason}</div>
+              </div>
+            ))}
+          </div>
+        </details>
       ) : null}
       {marketField && marketFieldHref ? (
         <section className="mb-3 rounded-lg border border-stealth-700/80 bg-stealth-950/45 px-2.5 py-2">

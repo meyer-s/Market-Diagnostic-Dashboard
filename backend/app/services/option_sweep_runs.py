@@ -17,6 +17,11 @@ from app.services.discord_sweep_universe import (
     resolve_sweep_universe,
 )
 from app.services.optionality_clusters import classify_optionality_symbol
+from app.services.option_decision_learning import (
+    build_learning_influence_context,
+    evaluate_option_learning_influence,
+    learning_summary,
+)
 from app.services.option_field_context import option_field_context_from_event
 from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_opportunity_score, opportunity_grade
 from app.services.options_review_window import parse_review_window
@@ -612,6 +617,68 @@ def _ranked_opportunity_from_event(
     }
 
 
+def _attach_learning_evaluations(
+    opportunities: list[dict[str, Any]],
+    context: dict[str, object],
+) -> dict[str, object]:
+    for opportunity in opportunities:
+        opportunity["learning_evaluation"] = evaluate_option_learning_influence(
+            context,
+            champion_score=float(opportunity.get("score") or 0.0),
+            field_context=(
+                opportunity.get("field_context")
+                if isinstance(opportunity.get("field_context"), dict)
+                else None
+            ),
+            position_match=(
+                opportunity.get("position_match")
+                if isinstance(opportunity.get("position_match"), dict)
+                else None
+            ),
+        )
+
+    champion_order = sorted(
+        opportunities,
+        key=lambda row: (
+            float(row.get("score") or 0.0),
+            row.get("triggered_at") or "",
+            int(row.get("event_id") or 0),
+        ),
+        reverse=True,
+    )
+    counterfactual_order = sorted(
+        opportunities,
+        key=lambda row: (
+            float((row.get("learning_evaluation") or {}).get("counterfactual_score") or 0.0),
+            row.get("triggered_at") or "",
+            int(row.get("event_id") or 0),
+        ),
+        reverse=True,
+    )
+    champion_ranks = {id(row): index for index, row in enumerate(champion_order, start=1)}
+    counterfactual_ranks = {id(row): index for index, row in enumerate(counterfactual_order, start=1)}
+    reorder_count = 0
+    for opportunity in opportunities:
+        evaluation = opportunity["learning_evaluation"]
+        champion_rank = champion_ranks[id(opportunity)]
+        counterfactual_rank = counterfactual_ranks[id(opportunity)]
+        evaluation["champion_rank"] = champion_rank
+        evaluation["counterfactual_rank"] = counterfactual_rank
+        evaluation["rank_delta"] = champion_rank - counterfactual_rank
+        evaluation["rank_changed"] = champion_rank != counterfactual_rank
+        reorder_count += int(champion_rank != counterfactual_rank)
+
+    policy = {
+        key: value
+        for key, value in context.items()
+        if key != "families"
+    }
+    policy["evaluated_opportunities"] = len(opportunities)
+    policy["counterfactual_rank_changes"] = reorder_count
+    policy["actual_order_unchanged"] = True
+    return policy
+
+
 def build_scanner_run_detail(run_id: int) -> dict[str, object]:
     expire_stale_sweep_runs()
     with get_db_session() as db:
@@ -656,6 +723,7 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
                 .all()
             )
         repeat_context = load_scanner_repeat_evidence_context(db, events=events)
+        learning_context = build_learning_influence_context(learning_summary(db))
         serialized_run = _serialize_run(run)
 
     if not symbols:
@@ -687,6 +755,7 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
         )
         opportunity["position_match"] = position_match_for_event(event, repeat_context)
         opportunities.append(opportunity)
+    learning_policy = _attach_learning_evaluations(opportunities, learning_context)
     opportunities.sort(
         key=lambda row: (
             symbol_order.get(str(row["symbol"]), len(symbol_order)),
@@ -699,6 +768,7 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
         "hit_count": max(int(serialized_run.get("hits") or 0), len(symbols), len(opportunities)),
         "matched_event_count": len(opportunities),
         "hits": opportunities,
+        "learning_policy": learning_policy,
     }
 
 
@@ -725,6 +795,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             .all()
         )
         repeat_context = load_scanner_repeat_evidence_context(db, events=events)
+        learning_context = build_learning_influence_context(learning_summary(db))
 
     by_symbol: dict[str, dict[str, Any]] = {}
     event_records: list[dict[str, Any]] = []
@@ -886,6 +957,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
         key=lambda row: (float(row["score"]), row.get("triggered_at") or ""),
         reverse=True,
     )
+    learning_policy = _attach_learning_evaluations(ranked_opportunities, learning_context)
 
     run_rows = [_serialize_run(run) for run in runs]
     completed_runs = [run for run in runs if run.completed_at is not None]
@@ -911,6 +983,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
         },
         "top_symbols": top_symbols[:12],
         "ranked_opportunities": ranked_opportunities[:12],
+        "learning_policy": learning_policy,
         "runs": run_rows,
         "supported_universes": [
             {"key": key, "label": label}

@@ -27,6 +27,12 @@ from app.services.option_thesis_engine import GRADER_VERSION, json_dumps, json_l
 OUTCOME_MODEL_VERSION = "decision_outcomes_v2_field_shadow"
 RISK_FREE_RATE = 0.0425
 DECISION_SESSION_HORIZONS = (1, 3, 5, 10)
+LEARNING_INFLUENCE_VERSION = "option_learning_influence_shadow_v1"
+LEARNING_MINIMUM_CYCLES = 100
+LEARNING_MINIMUM_COHORT = 20
+LEARNING_MINIMUM_NON_WEAK_SHARE = 0.60
+LEARNING_MAX_COUNTERFACTUAL_WEIGHT = 0.10
+LEARNING_PRIOR_STRENGTH = 20.0
 
 
 def _scanner_recurrence_attribution(db: Session, position_id: Optional[int]) -> dict[str, object]:
@@ -851,7 +857,7 @@ def learning_summary(db: Session) -> dict[str, object]:
     helpful = sum(1 for value in decision_values if value > 2)
     harmful = sum(1 for value in decision_values if value < -2)
     actual_cycles = len(latest_outcomes)
-    minimum_cycles = 100
+    minimum_cycles = LEARNING_MINIMUM_CYCLES
     models = db.query(OptionModelRegistry).order_by(OptionModelRegistry.created_at.asc()).all()
     recurrence_cohorts: dict[str, dict[str, object]] = {}
     replacement_cohorts: dict[str, dict[str, object]] = {}
@@ -1069,4 +1075,233 @@ def learning_summary(db: Session) -> dict[str, object]:
         },
         "grader_version": GRADER_VERSION,
         "outcome_model_version": OUTCOME_MODEL_VERSION,
+    }
+
+
+def build_learning_influence_context(summary: dict[str, object]) -> dict[str, object]:
+    """Build the immutable evidence snapshot used by the scanner challenger."""
+    sample = summary.get("sample") if isinstance(summary, dict) else None
+    trade_outcomes = summary.get("trade_outcomes") if isinstance(summary, dict) else None
+    process_quality = trade_outcomes.get("process_quality") if isinstance(trade_outcomes, dict) else None
+    cycles = int(sample.get("classified_trade_cycles") or 0) if isinstance(sample, dict) else 0
+    weak_process = int(process_quality.get("weak_process") or 0) if isinstance(process_quality, dict) else 0
+    non_weak_cycles = max(0, cycles - weak_process)
+    non_weak_share = non_weak_cycles / cycles if cycles else 0.0
+    cycle_gate = cycles >= LEARNING_MINIMUM_CYCLES
+    process_gate = non_weak_share >= LEARNING_MINIMUM_NON_WEAK_SHARE
+    return {
+        "version": LEARNING_INFLUENCE_VERSION,
+        "mode": "counterfactual_shadow",
+        "actual_rank_influence": 0.0,
+        "maximum_counterfactual_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+        "automatic_weight_changes": False,
+        "manual_promotion_required": True,
+        "evidence": {
+            "independent_trade_cycles": cycles,
+            "minimum_independent_trade_cycles": LEARNING_MINIMUM_CYCLES,
+            "non_weak_process_cycles": non_weak_cycles,
+            "non_weak_process_share": round(non_weak_share, 4),
+            "minimum_non_weak_process_share": LEARNING_MINIMUM_NON_WEAK_SHARE,
+        },
+        "base_gates": {
+            "independent_cycles": cycle_gate,
+            "process_quality": process_gate,
+        },
+        "families": {
+            "scanner_recurrence": summary.get("scanner_recurrence_outcomes", {}),
+            "replacement_signal": summary.get("scanner_replacement_outcomes", {}),
+            "market_field": summary.get("market_field_outcomes", {}),
+        },
+    }
+
+
+def _candidate_learning_cohorts(
+    *,
+    field_context: Optional[dict[str, object]],
+    position_match: Optional[dict[str, object]],
+) -> dict[str, str]:
+    classification = str((position_match or {}).get("classification") or "")
+    if classification == "contract_drift":
+        recurrence = "contract_drift_seen"
+    elif classification == "strengthened":
+        recurrence = "strengthened_seen"
+    elif position_match:
+        recurrence = "repeat_seen"
+    else:
+        recurrence = "no_repeat"
+
+    replacement = (position_match or {}).get("replacement_decision")
+    recommendation = str(replacement.get("recommendation") or "") if isinstance(replacement, dict) else ""
+    replacement_cohort = {
+        "convexity_harvest_candidate": "convexity_harvest_seen",
+        "roll_out_candidate": "roll_candidate_seen",
+        "rescue_roll_rejected": "rescue_roll_rejected_seen",
+        "watch_replacement": "replacement_watch_seen",
+    }.get(recommendation)
+    if replacement_cohort is None:
+        replacement_cohort = "other_replacement_signal" if recommendation else "no_replacement_signal"
+
+    return {
+        "scanner_recurrence": recurrence,
+        "replacement_signal": replacement_cohort,
+        "market_field": _market_field_cohort(field_context),
+    }
+
+
+def _cohort_learning_signal(
+    family: str,
+    payload: object,
+    cohort: str,
+) -> dict[str, object]:
+    family_payload = payload if isinstance(payload, dict) else {}
+    cohorts = family_payload.get("cohorts")
+    cohorts = cohorts if isinstance(cohorts, dict) else {}
+    minimum = int(family_payload.get("minimum_sample_before_comparison") or LEARNING_MINIMUM_COHORT)
+    eligible = {
+        name: row
+        for name, row in cohorts.items()
+        if isinstance(row, dict) and int(row.get("sample_count") or 0) >= minimum
+    }
+    result: dict[str, object] = {
+        "family": family,
+        "cohort": cohort,
+        "available": False,
+        "minimum_sample": minimum,
+        "eligible_comparison_cohorts": sorted(eligible),
+    }
+    if len(eligible) < 2:
+        result["reason"] = "At least two independently populated cohorts are required."
+        return result
+    row = eligible.get(cohort)
+    if not isinstance(row, dict):
+        result["reason"] = f"The candidate cohort has fewer than {minimum} actual closes."
+        return result
+
+    total_sample = sum(int(item.get("sample_count") or 0) for item in eligible.values())
+    total_profitable = sum(int(item.get("profitable") or 0) for item in eligible.values())
+    prior_rate = total_profitable / total_sample if total_sample else 0.5
+    sample_count = int(row.get("sample_count") or 0)
+    profitable = int(row.get("profitable") or 0)
+    posterior_rate = (
+        profitable + (prior_rate * LEARNING_PRIOR_STRENGTH)
+    ) / (sample_count + LEARNING_PRIOR_STRENGTH)
+    average_pnl = _finite(row.get("average_percent_pnl"))
+    pnl_score = 50.0 if average_pnl is None else ((max(-20.0, min(20.0, average_pnl)) + 20.0) / 40.0) * 100.0
+    score = (posterior_rate * 100.0 * 0.70) + (pnl_score * 0.30)
+    result.update(
+        {
+            "available": True,
+            "sample_count": sample_count,
+            "profitable": profitable,
+            "unprofitable": int(row.get("unprofitable") or 0),
+            "flat": int(row.get("flat") or 0),
+            "average_percent_pnl": average_pnl,
+            "posterior_profitable_rate": round(posterior_rate, 4),
+            "score": round(score, 2),
+            "reliability": round(min(1.0, sample_count / 50.0), 4),
+            "reason": "Shrunk actual-close cohort evidence; descriptive until manual promotion.",
+        }
+    )
+    return result
+
+
+def evaluate_option_learning_influence(
+    context: dict[str, object],
+    *,
+    champion_score: float,
+    field_context: Optional[dict[str, object]] = None,
+    position_match: Optional[dict[str, object]] = None,
+) -> dict[str, object]:
+    """Evaluate—but never apply—the current outcome-learning challenger."""
+    cohorts = _candidate_learning_cohorts(
+        field_context=field_context,
+        position_match=position_match,
+    )
+    families = context.get("families")
+    families = families if isinstance(families, dict) else {}
+    signals = [
+        _cohort_learning_signal(family, families.get(family), cohort)
+        for family, cohort in cohorts.items()
+    ]
+    available = [signal for signal in signals if signal.get("available") is True]
+    comparable_gate = bool(available)
+    learning_score: Optional[float] = None
+    reliability = 0.0
+    if available:
+        weights = [float(signal.get("reliability") or 0.0) for signal in available]
+        weight_total = sum(weights)
+        if weight_total > 0:
+            learning_score = sum(
+                float(signal.get("score") or 0.0) * weight
+                for signal, weight in zip(available, weights)
+            ) / weight_total
+            reliability = weight_total / len(weights)
+
+    evidence = context.get("evidence")
+    evidence = evidence if isinstance(evidence, dict) else {}
+    base_gates = context.get("base_gates")
+    base_gates = base_gates if isinstance(base_gates, dict) else {}
+    cycles = int(evidence.get("independent_trade_cycles") or 0)
+    non_weak_share = float(evidence.get("non_weak_process_share") or 0.0)
+    cycle_factor = min(1.0, cycles / LEARNING_MINIMUM_CYCLES)
+    process_factor = min(1.0, non_weak_share / LEARNING_MINIMUM_NON_WEAK_SHARE)
+    counterfactual_weight = (
+        LEARNING_MAX_COUNTERFACTUAL_WEIGHT * cycle_factor * process_factor * reliability
+        if learning_score is not None
+        else 0.0
+    )
+    counterfactual_score = (
+        (float(champion_score) * (1.0 - counterfactual_weight))
+        + (learning_score * counterfactual_weight)
+        if learning_score is not None
+        else float(champion_score)
+    )
+    promotion_ready = bool(
+        base_gates.get("independent_cycles")
+        and base_gates.get("process_quality")
+        and comparable_gate
+    )
+    if learning_score is None:
+        status = "collecting_comparable_cohorts"
+    elif promotion_ready:
+        status = "manual_promotion_eligible"
+    else:
+        status = "counterfactual_only"
+    reasons = []
+    if not base_gates.get("independent_cycles"):
+        reasons.append(f"{cycles}/{LEARNING_MINIMUM_CYCLES} independent actual-close cycles.")
+    if not base_gates.get("process_quality"):
+        reasons.append(
+            f"{non_weak_share:.0%}/{LEARNING_MINIMUM_NON_WEAK_SHARE:.0%} non-weak process evidence."
+        )
+    if not comparable_gate:
+        reasons.append(
+            f"No candidate cohort has a second comparison cohort with at least {LEARNING_MINIMUM_COHORT} closes."
+        )
+    if promotion_ready:
+        reasons.append("Evidence gates passed; a separate manual promotion decision is still required.")
+    return {
+        "version": context.get("version") or LEARNING_INFLUENCE_VERSION,
+        "mode": "counterfactual_shadow",
+        "status": status,
+        "champion_score": round(float(champion_score), 2),
+        "learning_score": round(learning_score, 2) if learning_score is not None else None,
+        "counterfactual_score": round(counterfactual_score, 2),
+        "counterfactual_delta": round(counterfactual_score - float(champion_score), 2),
+        "counterfactual_weight": round(counterfactual_weight, 4),
+        "applied_score": round(float(champion_score), 2),
+        "applied_weight": 0.0,
+        "rank_changed": False,
+        "candidate_cohorts": cohorts,
+        "signals": signals,
+        "gates": {
+            "independent_cycles": bool(base_gates.get("independent_cycles")),
+            "process_quality": bool(base_gates.get("process_quality")),
+            "comparable_cohorts": comparable_gate,
+            "manual_promotion": False,
+        },
+        "promotion_ready_for_review": promotion_ready,
+        "manual_promotion_required": True,
+        "automatic_weight_changes": False,
+        "reasons": reasons,
     }
