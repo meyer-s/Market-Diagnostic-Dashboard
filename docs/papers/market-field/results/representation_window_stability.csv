@@ -1,0 +1,5 @@
+representation,prefix_fraction,prefix_bars,prefix_forms,full_forms,overlap_bars,adjusted_rand_index
+market_field_v1,0.7,1504,2,2,216,0.8419726295894439
+single_horizon_baseline,0.7,1504,2,2,216,0.8034698478559784
+market_field_v1,0.85,1826,2,2,538,0.7505739526572871
+single_horizon_baseline,0.85,1826,2,2,538,0.92491052963169

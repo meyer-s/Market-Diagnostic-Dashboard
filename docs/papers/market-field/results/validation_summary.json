@@ -103,16 +103,134 @@
       "VNQ": "supportive"
     },
     "environment_note": "Single-process local Windows benchmark; excludes data retrieval.",
-    "maximum_ms": 147.57360005751252,
+    "maximum_ms": 125.79449999611825,
     "maximum_payload_bytes": 4407,
-    "median_ms": 110.78869993798435,
+    "median_ms": 107.67065006075427,
     "median_payload_bytes": 4395,
-    "p95_ms": 132.78759499662556,
+    "p95_ms": 110.90397498919629,
     "rank_influence": 0.0,
     "runs": 80,
     "symbols": 8
   },
   "paper_as_of": "2026-07-21",
+  "representation_comparison": {
+    "baseline_definition": {
+      "features": [
+        "EMA12-minus-EMA24 normalized by ATR24",
+        "EMA24 bounded causal slope",
+        "signed 24-bar path efficiency",
+        "24-bar realized-variation ratio to causal EWM48",
+        "24-bar mean-volume ratio to causal EWM48"
+      ],
+      "horizon_bars": 24,
+      "shared_with_market_field": "Chronological split, proper-fit robust scaling, equal total metric weight, deterministic farthest-first k-means, 5%/20-bar support gate, 0.25 silhouette gate, held-out state-conditional calibration distance, and evaluation chronology."
+    },
+    "baseline_median_fit_silhouette": 0.44780013172630084,
+    "baseline_nontrivial_codebooks": 8,
+    "claim_scope": "Unsupervised representation diagnostics only; no predictive, economic, or natural-state claim.",
+    "market_field_median_fit_silhouette": 0.0,
+    "market_field_nontrivial_codebooks": 2,
+    "spy_entropy_dictionary_sensitivity": [
+      {
+        "assignment_ari_vs_window24": 0.903016130939074,
+        "assignment_overlap_bars": 860,
+        "entropy_window_patterns": 8,
+        "fit_silhouette": 0.327455,
+        "forms": 2,
+        "information_correlation_vs_window24": 0.49242191716968786,
+        "symbol": "SPY",
+        "tail_rate": 0.14069767441860465,
+        "tail_supported_bars": 860,
+        "transitions_per_100_bars": 3.026775320139697
+      },
+      {
+        "assignment_ari_vs_window24": 0.9078119803023131,
+        "assignment_overlap_bars": 860,
+        "entropy_window_patterns": 12,
+        "fit_silhouette": 0.328615,
+        "forms": 2,
+        "information_correlation_vs_window24": 0.6609295799149025,
+        "symbol": "SPY",
+        "tail_rate": 0.12325581395348838,
+        "tail_supported_bars": 860,
+        "transitions_per_100_bars": 3.2596041909196742
+      },
+      {
+        "assignment_ari_vs_window24": 1.0,
+        "assignment_overlap_bars": 860,
+        "entropy_window_patterns": 24,
+        "fit_silhouette": 0.320191,
+        "forms": 2,
+        "information_correlation_vs_window24": 1.0,
+        "symbol": "SPY",
+        "tail_rate": 0.1058139534883721,
+        "tail_supported_bars": 860,
+        "transitions_per_100_bars": 2.561117578579744
+      },
+      {
+        "assignment_ari_vs_window24": 0.8778443700456825,
+        "assignment_overlap_bars": 860,
+        "entropy_window_patterns": 48,
+        "fit_silhouette": 0.321715,
+        "forms": 2,
+        "information_correlation_vs_window24": 0.7174984243213346,
+        "symbol": "SPY",
+        "tail_rate": 0.16744186046511628,
+        "tail_supported_bars": 860,
+        "transitions_per_100_bars": 2.7939464493597206
+      },
+      {
+        "assignment_ari_vs_window24": 0.8826698888897229,
+        "assignment_overlap_bars": 860,
+        "entropy_window_patterns": 96,
+        "fit_silhouette": 0.328019,
+        "forms": 2,
+        "information_correlation_vs_window24": 0.5113483669321192,
+        "symbol": "SPY",
+        "tail_rate": 0.12093023255813953,
+        "tail_supported_bars": 860,
+        "transitions_per_100_bars": 2.7939464493597206
+      }
+    ],
+    "spy_window_stability": [
+      {
+        "adjusted_rand_index": 0.8419726295894439,
+        "full_forms": 2,
+        "overlap_bars": 216,
+        "prefix_bars": 1504,
+        "prefix_forms": 2,
+        "prefix_fraction": 0.7,
+        "representation": "market_field_v1"
+      },
+      {
+        "adjusted_rand_index": 0.8034698478559784,
+        "full_forms": 2,
+        "overlap_bars": 216,
+        "prefix_bars": 1504,
+        "prefix_forms": 2,
+        "prefix_fraction": 0.7,
+        "representation": "single_horizon_baseline"
+      },
+      {
+        "adjusted_rand_index": 0.7505739526572871,
+        "full_forms": 2,
+        "overlap_bars": 538,
+        "prefix_bars": 1826,
+        "prefix_forms": 2,
+        "prefix_fraction": 0.85,
+        "representation": "market_field_v1"
+      },
+      {
+        "adjusted_rand_index": 0.92491052963169,
+        "full_forms": 2,
+        "overlap_bars": 538,
+        "prefix_bars": 1826,
+        "prefix_forms": 2,
+        "prefix_fraction": 0.85,
+        "representation": "single_horizon_baseline"
+      }
+    ]
+  },
   "synthetic": {
     "crossing_delays_bars": [
       10,
