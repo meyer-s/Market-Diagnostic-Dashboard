@@ -14,6 +14,11 @@ from app.services.market_weather import (
     _ewm_rows as field_ewm_rows,
     build_market_weather,
 )
+from app.services.market_weather_analysis_cache import reset_market_weather_analysis_cache
+from app.services.market_weather_history_cache import (
+    MarketWeatherHistoryCacheMetadata,
+    MarketWeatherHistoryResult,
+)
 from app.services.market_weather_research import (
     SCALING_NEGATIVE_TOLERANCE,
     _build_lexicon_motifs,
@@ -39,6 +44,63 @@ def _history(count: int = 420) -> pd.DataFrame:
         },
         index=index,
     )
+
+
+def _direct_test_history(
+    provider: object,
+    symbol: str,
+    timeframe: str,
+    bars: int = 500,
+    *,
+    minimum_rows: int = 60,
+    **_kwargs: object,
+) -> MarketWeatherHistoryResult:
+    if timeframe == "1D" and callable(getattr(provider, "daily_bars", None)):
+        method = "daily_bars"
+        frame = provider.daily_bars(symbol, days=bars)
+    else:
+        method = "historical_bars"
+        history_fetcher = getattr(provider, method)
+        frame = history_fetcher(symbol, timeframe, bars=bars)
+    source_resolver = getattr(provider, "source_for", None)
+    source = (
+        str(source_resolver(method))
+        if callable(source_resolver)
+        else str(getattr(provider, "name", "test"))
+    )
+    metadata = MarketWeatherHistoryCacheMetadata(
+        status="refreshed",
+        symbol=symbol,
+        timeframe=timeframe,
+        storage_interval=timeframe.lower(),
+        requested_rows=bars,
+        minimum_rows=min(bars, minimum_rows),
+        returned_rows=len(frame),
+        cached_rows_before=0,
+        fetched_rows=len(frame),
+        inserted_rows=len(frame),
+        provider_called=True,
+        stale=False,
+        refresh_reason="test_direct",
+        ttl_seconds=0,
+        age_seconds=0.0,
+        last_updated_at=None,
+        data_source=source,
+    )
+    return MarketWeatherHistoryResult(frame=frame, metadata=metadata)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_market_weather_api_caches(monkeypatch: pytest.MonkeyPatch):
+    reset_market_weather_analysis_cache()
+    monkeypatch.setenv("MARKET_WEATHER_ANALYSIS_CACHE_MAX_ENTRIES", "0")
+    monkeypatch.setattr(
+        market_weather_api,
+        "get_or_refresh_market_weather_history",
+        _direct_test_history,
+    )
+    yield
+    reset_market_weather_analysis_cache()
 
 
 def test_ewm_missing_row_contract_is_explicit_and_shared() -> None:
@@ -680,6 +742,15 @@ def test_market_weather_api_keeps_valid_field_when_live_quote_fails(monkeypatch)
     assert all(point["date"] in payload["dates"] for point in sequence)
     assert all(0 <= point["index"] < payload["available_bars"] for point in sequence)
     assert payload["research"]["lexicon"]["training_split"]["sequence_scope"] == "visible_response_window"
+    assert payload["cache"]["analysis"]["status"] == "miss"
+    assert payload["cache"]["history"]["status"] == "refreshed"
+    assert payload["cache"]["request"] == {
+        "history_access": "refreshed",
+        "provider_called": True,
+    }
+    assert response.headers["x-market-weather-analysis-cache"] == "miss"
+    assert response.headers["x-market-weather-history-cache"] == "refreshed"
+    assert response.headers["x-market-weather-history-origin"] == "refreshed"
 
 
 def test_market_weather_api_supports_high_resolution_fields(monkeypatch) -> None:
@@ -808,4 +879,128 @@ def test_market_weather_api_accepts_every_supported_timeframe(monkeypatch, timef
     assert response.status_code == 200
     assert response.json()["timeframe"] == timeframe
     assert response.json()["available_bars"] == 120
-    assert calls == [(timeframe, 216)]
+    assert calls == [(timeframe, 216), ("1D", 1095)]
+
+
+def test_market_weather_api_reuses_complete_analysis(monkeypatch) -> None:
+    daily_calls: list[int] = []
+    quote_calls = 0
+
+    class CountingProvider:
+        name = "counting"
+
+        def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
+            daily_calls.append(days)
+            return _history(days)
+
+        def quote(self, symbol: str) -> UnderlyingQuote:
+            nonlocal quote_calls
+            quote_calls += 1
+            return UnderlyingQuote(symbol=symbol, last=125.0, source=self.name)
+
+    provider = CountingProvider()
+    monkeypatch.setattr(market_weather_api, "get_market_data_provider", lambda: provider)
+    monkeypatch.setenv("MARKET_WEATHER_ANALYSIS_CACHE_MAX_ENTRIES", "2")
+    monkeypatch.setenv("MARKET_WEATHER_ANALYSIS_CACHE_TTL_SECONDS", "120")
+    reset_market_weather_analysis_cache()
+
+    app = FastAPI()
+    app.include_router(market_weather_api.router)
+    client = TestClient(app)
+    endpoint = (
+        "/market-weather/analyze?symbol=SPY&timeframe=1D&bars=60"
+        "&horizon_min=4&horizon_max=8&horizon_step=2"
+    )
+    first = client.get(endpoint)
+    second = client.get(endpoint)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.headers["x-market-weather-analysis-cache"] == "miss"
+    assert second.headers["x-market-weather-analysis-cache"] == "hit"
+    assert first.headers["x-market-weather-history-cache"] == "refreshed"
+    assert second.headers["x-market-weather-history-cache"] == "not_checked"
+    assert second.headers["x-market-weather-history-origin"] == "refreshed"
+    assert second.json()["cache"]["analysis"]["status"] == "hit"
+    assert second.json()["cache"]["analysis"]["retained"] is True
+    assert second.json()["cache"]["analysis"]["ttl_seconds"] == 120
+    assert second.json()["cache"]["request"] == {
+        "history_access": "not_checked",
+        "provider_called": False,
+    }
+    assert second.json()["cache"]["history"]["provider_called"] is True
+    assert daily_calls == [132, 1095]
+    assert quote_calls == 1
+
+
+def test_market_weather_api_bounds_analysis_ttl_to_history_freshness(monkeypatch) -> None:
+    class IntradayProvider:
+        name = "intraday"
+
+        def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+            return _history(bars)
+
+        def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
+            return _history(days)
+
+        def quote(self, symbol: str) -> UnderlyingQuote:
+            return UnderlyingQuote(symbol=symbol, last=125.0, source=self.name)
+
+    monkeypatch.setattr(market_weather_api, "get_market_data_provider", lambda: IntradayProvider())
+    monkeypatch.setenv("MARKET_WEATHER_ANALYSIS_CACHE_MAX_ENTRIES", "1")
+    monkeypatch.setenv("MARKET_WEATHER_ANALYSIS_CACHE_TTL_SECONDS", "120")
+    monkeypatch.setenv("MARKET_WEATHER_HISTORY_TTL_1M_SECONDS", "17")
+    reset_market_weather_analysis_cache()
+
+    app = FastAPI()
+    app.include_router(market_weather_api.router)
+    response = TestClient(app).get(
+        "/market-weather/analyze?symbol=SPY&timeframe=1m&bars=60"
+        "&horizon_min=4&horizon_max=8&horizon_step=2"
+    )
+
+    assert response.status_code == 200
+    analysis_cache = response.json()["cache"]["analysis"]
+    assert analysis_cache["ttl_seconds"] == 17
+    assert analysis_cache["configured_ttl_seconds"] == 120
+    assert analysis_cache["retained"] is True
+    assert response.headers["cache-control"] == "private, max-age=17, must-revalidate"
+
+
+def test_market_weather_api_does_not_retain_oversized_fields(monkeypatch) -> None:
+    daily_calls: list[int] = []
+
+    class CountingProvider:
+        name = "counting"
+
+        def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
+            daily_calls.append(days)
+            return _history(days)
+
+        def quote(self, symbol: str) -> UnderlyingQuote:
+            return UnderlyingQuote(symbol=symbol, last=125.0, source=self.name)
+
+    provider = CountingProvider()
+    monkeypatch.setattr(market_weather_api, "get_market_data_provider", lambda: provider)
+    monkeypatch.setenv("MARKET_WEATHER_ANALYSIS_CACHE_MAX_ENTRIES", "1")
+    monkeypatch.setenv("MARKET_WEATHER_ANALYSIS_CACHE_MAX_CELLS", "100")
+    reset_market_weather_analysis_cache()
+
+    app = FastAPI()
+    app.include_router(market_weather_api.router)
+    client = TestClient(app)
+    endpoint = (
+        "/market-weather/analyze?symbol=SPY&timeframe=1D&bars=60"
+        "&horizon_min=4&horizon_max=8&horizon_step=2"
+    )
+    first = client.get(endpoint)
+    second = client.get(endpoint)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.headers["x-market-weather-analysis-cache"] == "miss"
+    assert second.headers["x-market-weather-analysis-cache"] == "miss"
+    assert first.json()["cache"]["analysis"]["retained"] is False
+    assert first.json()["cache"]["analysis"]["field_cells"] == 180
+    assert first.json()["cache"]["analysis"]["max_cacheable_cells"] == 100
+    assert daily_calls == [132, 1095, 132, 1095]

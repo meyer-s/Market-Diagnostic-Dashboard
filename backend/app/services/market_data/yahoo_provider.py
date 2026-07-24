@@ -24,11 +24,24 @@ class YahooProvider:
         previous = float(close.iloc[-2]) if len(close) >= 2 else last
         return UnderlyingQuote(symbol=symbol.upper(), last=last, close=previous, source=self.name)
 
-    def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
+    def daily_bars(
+        self,
+        symbol: str,
+        days: int = 365,
+        *,
+        force_refresh: bool = False,
+    ) -> pd.DataFrame:
         period = "1y" if days <= 365 else "2y" if days <= 730 else "5y"
         return yf.Ticker(symbol).history(period=period).tail(days)
 
-    def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+    def historical_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: int = 500,
+        *,
+        force_refresh: bool = False,
+    ) -> pd.DataFrame:
         canonical = _canonical_timeframe(timeframe)
         requested_bars = max(1, int(bars))
         interval, period = _yahoo_history_request(canonical, requested_bars)

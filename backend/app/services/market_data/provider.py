@@ -50,10 +50,23 @@ class MarketDataProvider(Protocol):
     def quote(self, symbol: str) -> UnderlyingQuote:
         ...
 
-    def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
+    def daily_bars(
+        self,
+        symbol: str,
+        days: int = 365,
+        *,
+        force_refresh: bool = False,
+    ) -> pd.DataFrame:
         ...
 
-    def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+    def historical_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: int = 500,
+        *,
+        force_refresh: bool = False,
+    ) -> pd.DataFrame:
         """Return OHLCV history at a canonical market-weather timeframe."""
         ...
 

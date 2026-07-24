@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+import logging
+import os
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_weather import MarketWeatherSettings, build_market_weather
+from app.services.market_weather_analysis_cache import (
+    get_market_weather_analysis_cache,
+    get_or_compute_market_weather_analysis,
+)
 from app.services.market_weather_context import build_market_weather_context
+from app.services.market_weather_history_cache import (
+    MarketWeatherHistoryCacheMetadata,
+    get_or_refresh_market_weather_history,
+    market_weather_history_ttl_seconds,
+)
 from app.services.market_weather_research import scope_market_state_lexicon
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.^=/\-]{1,20}$")
 TIMEFRAME_ALIASES = {
     "1m": "1m",
@@ -39,6 +51,23 @@ TIMEFRAME_LABELS = {
 }
 MAX_HORIZON_ROWS = 120
 MAX_FIELD_CELLS = 120_000
+DEFAULT_ANALYSIS_CACHE_MAX_CELLS = 60_000
+
+
+def _analysis_cache_max_cells() -> int:
+    raw_value = os.getenv(
+        "MARKET_WEATHER_ANALYSIS_CACHE_MAX_CELLS",
+        str(DEFAULT_ANALYSIS_CACHE_MAX_CELLS),
+    )
+    try:
+        return max(0, int(raw_value))
+    except (TypeError, ValueError):
+        logger.warning(
+            "invalid MARKET_WEATHER_ANALYSIS_CACHE_MAX_CELLS=%r; using %s",
+            raw_value,
+            DEFAULT_ANALYSIS_CACHE_MAX_CELLS,
+        )
+        return DEFAULT_ANALYSIS_CACHE_MAX_CELLS
 
 
 def _source_for(provider: object, method: str) -> str:
@@ -50,6 +79,7 @@ def _source_for(provider: object, method: str) -> str:
 
 @router.get("/market-weather/analyze")
 def analyze_market_weather(
+    response: Response,
     symbol: str = Query("SPY", min_length=1, max_length=20),
     timeframe: str = Query("1D", min_length=2, max_length=4),
     bars: int = Query(504, ge=60, le=5000),
@@ -93,21 +123,109 @@ def analyze_market_weather(
     )
     provider = get_market_data_provider()
     requested_bars = bars + max(72, horizon_max * 2)
+    field_cells = len(horizons) * bars
+    max_cacheable_cells = _analysis_cache_max_cells()
+    history_ttl_seconds = market_weather_history_ttl_seconds(normalized_timeframe)
+    retain_analysis = (
+        max_cacheable_cells > 0
+        and field_cells <= max_cacheable_cells
+    )
+    cache_key = (
+        "market-weather-analysis-v1",
+        id(provider),
+        normalized_symbol,
+        normalized_timeframe,
+        bars,
+        tuple(horizons),
+        settings,
+    )
     try:
-        history_fetcher = getattr(provider, "historical_bars", None)
-        if callable(history_fetcher):
-            history = history_fetcher(normalized_symbol, normalized_timeframe, bars=requested_bars)
-            bars_source = _source_for(provider, "historical_bars")
-        elif normalized_timeframe == "1D":
-            history = provider.daily_bars(normalized_symbol, days=requested_bars)
-            bars_source = _source_for(provider, "daily_bars")
-        else:
-            raise ValueError(f"The configured provider does not support {normalized_timeframe} bars.")
-        result = build_market_weather(history, horizons=horizons, settings=settings)
+        cached_analysis = get_or_compute_market_weather_analysis(
+            cache_key,
+            lambda: _compute_market_weather_analysis(
+                provider=provider,
+                normalized_symbol=normalized_symbol,
+                normalized_timeframe=normalized_timeframe,
+                bars=bars,
+                requested_bars=requested_bars,
+                horizons=horizons,
+                settings=settings,
+            ),
+            retain=retain_analysis,
+            ttl_seconds=history_ttl_seconds,
+        )
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Market data could not be loaded: {exc}") from exc
+
+    result = cached_analysis.value
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=500, detail="Market analysis cache returned an invalid payload.")
+
+    cache_payload = dict(result.get("cache") or {})
+    analysis_cache = get_market_weather_analysis_cache()
+    cache_payload["analysis"] = {
+        "status": cached_analysis.status,
+        "retained": cached_analysis.retained,
+        "scope": "per_worker",
+        "ttl_seconds": min(analysis_cache.ttl_seconds, history_ttl_seconds),
+        "configured_ttl_seconds": analysis_cache.ttl_seconds,
+        "max_entries": analysis_cache.max_entries,
+        "field_cells": field_cells,
+        "max_cacheable_cells": max_cacheable_cells,
+    }
+    result["cache"] = cache_payload
+
+    history_payload = cache_payload.get("history") or {}
+    history_origin_status = str(history_payload.get("status") or "unknown")
+    if cached_analysis.status == "miss":
+        history_access = history_origin_status
+        provider_called_this_request = bool(history_payload.get("provider_called"))
+    elif cached_analysis.status == "wait":
+        history_access = "coalesced"
+        provider_called_this_request = False
+    else:
+        history_access = "not_checked"
+        provider_called_this_request = False
+    cache_payload["request"] = {
+        "history_access": history_access,
+        "provider_called": provider_called_this_request,
+    }
+    result["cache"] = cache_payload
+
+    response.headers["X-Market-Weather-Analysis-Cache"] = cached_analysis.status
+    response.headers["X-Market-Weather-History-Cache"] = history_access
+    response.headers["X-Market-Weather-History-Origin"] = history_origin_status
+    browser_max_age = min(30, max(0, history_ttl_seconds))
+    response.headers["Cache-Control"] = (
+        f"private, max-age={browser_max_age}, must-revalidate"
+    )
+    return result
+
+
+def _compute_market_weather_analysis(
+    *,
+    provider: object,
+    normalized_symbol: str,
+    normalized_timeframe: str,
+    bars: int,
+    requested_bars: int,
+    horizons: list[int],
+    settings: MarketWeatherSettings,
+) -> dict[str, object]:
+    history_result = get_or_refresh_market_weather_history(
+        provider,
+        normalized_symbol,
+        normalized_timeframe,
+        bars=requested_bars,
+        minimum_rows=60,
+    )
+    history = history_result.frame
+    bars_source = history_result.metadata.data_source
+    result = build_market_weather(history, horizons=horizons, settings=settings)
 
     analysis_bars = len(result["dates"])
     latest_close = float(result["price"][-1]["close"])
@@ -167,11 +285,22 @@ def analyze_market_weather(
                 )
 
     research = result.get("research")
+    daily_cache_metadata: MarketWeatherHistoryCacheMetadata | None = None
     if isinstance(research, dict):
         daily_history = history if normalized_timeframe == "1D" and len(history) >= 500 else None
+        if daily_history is not None:
+            daily_cache_metadata = history_result.metadata
         if daily_history is None:
             try:
-                daily_history = provider.daily_bars(normalized_symbol, days=1095)
+                daily_result = get_or_refresh_market_weather_history(
+                    provider,
+                    normalized_symbol,
+                    "1D",
+                    bars=1095,
+                    minimum_rows=500,
+                )
+                daily_history = daily_result.frame
+                daily_cache_metadata = daily_result.metadata
             except Exception:
                 daily_history = None
         try:
@@ -220,6 +349,14 @@ def analyze_market_weather(
                 "causal": True,
                 "description": f"Each live field cell uses only current and prior {TIMEFRAME_LABELS[normalized_timeframe]} bars on a log-horizon coordinate; no centered windows or future values.",
                 "research_status": "Experimental diagnostic. Field outcomes and shadow context relationships use chronological holdouts; neither is a forecast or trading signal.",
+            },
+            "cache": {
+                "history": history_result.metadata.to_dict(),
+                "daily_context": (
+                    daily_cache_metadata.to_dict()
+                    if daily_cache_metadata is not None
+                    else None
+                ),
             },
         }
     )

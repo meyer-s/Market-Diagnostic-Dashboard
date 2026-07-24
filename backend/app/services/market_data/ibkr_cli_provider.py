@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 import logging
 import math
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Optional, Sequence
@@ -62,6 +64,8 @@ HISTORICAL_BAR_SPECS: dict[str, tuple[str, str, int]] = {
     "1W": ("1 week", "5 Y", 260),
 }
 
+_DEFAULT_PROVIDER_CACHE_MAX_ENTRIES = 256
+
 
 @dataclass
 class _CacheEntry:
@@ -70,20 +74,66 @@ class _CacheEntry:
 
 
 class TtlCache:
-    def __init__(self) -> None:
-        self._items: dict[tuple[Any, ...], _CacheEntry] = {}
+    def __init__(self, max_entries: int | None = None) -> None:
+        self.max_entries = (
+            _provider_cache_max_entries()
+            if max_entries is None
+            else max(0, int(max_entries))
+        )
+        self._items: OrderedDict[tuple[Any, ...], _CacheEntry] = OrderedDict()
+        self._lock = threading.RLock()
 
     def get(self, key: tuple[Any, ...]) -> Any | None:
-        item = self._items.get(key)
-        if item is None:
-            return None
-        if item.expires_at < time.time():
-            self._items.pop(key, None)
-            return None
-        return item.value
+        with self._lock:
+            now = time.time()
+            self._discard_expired(now)
+            item = self._items.get(key)
+            if item is None:
+                return None
+            self._items.move_to_end(key)
+            return item.value
 
     def set(self, key: tuple[Any, ...], value: Any, ttl_seconds: float) -> None:
-        self._items[key] = _CacheEntry(value=value, expires_at=time.time() + ttl_seconds)
+        with self._lock:
+            now = time.time()
+            self._discard_expired(now)
+            if self.max_entries <= 0 or ttl_seconds <= 0:
+                self._items.pop(key, None)
+                return
+            self._items[key] = _CacheEntry(value=value, expires_at=now + ttl_seconds)
+            self._items.move_to_end(key)
+            while len(self._items) > self.max_entries:
+                self._items.popitem(last=False)
+
+    def __len__(self) -> int:
+        with self._lock:
+            self._discard_expired(time.time())
+            return len(self._items)
+
+    def _discard_expired(self, now: float) -> None:
+        expired = [
+            key
+            for key, item in self._items.items()
+            if item.expires_at <= now
+        ]
+        for key in expired:
+            self._items.pop(key, None)
+
+
+def _provider_cache_max_entries() -> int:
+    raw_value = os.getenv(
+        "IBKR_PROVIDER_CACHE_MAX_ENTRIES",
+        str(_DEFAULT_PROVIDER_CACHE_MAX_ENTRIES),
+    )
+    try:
+        return max(0, int(raw_value))
+    except (TypeError, ValueError):
+        logger.warning(
+            "invalid IBKR_PROVIDER_CACHE_MAX_ENTRIES=%r; using %s",
+            raw_value,
+            _DEFAULT_PROVIDER_CACHE_MAX_ENTRIES,
+        )
+        return _DEFAULT_PROVIDER_CACHE_MAX_ENTRIES
 
 
 def _require_ibkr_cli() -> None:
@@ -147,14 +197,21 @@ class IbkrCliProvider:
         self._cache.set(key, quote, self.quote_ttl)
         return quote
 
-    def daily_bars(self, symbol: str, days: int = 365) -> pd.DataFrame:
+    def daily_bars(
+        self,
+        symbol: str,
+        days: int = 365,
+        *,
+        force_refresh: bool = False,
+    ) -> pd.DataFrame:
         from ibkr_cli.ib_service import get_historical_bars
 
         normalized = symbol.upper()
         key = ("bars", normalized, int(days))
-        cached = self._cache.get(key)
-        if cached is not None:
-            return cached.copy()
+        if not force_refresh:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached.copy()
 
         def fetch(api_symbol: str) -> dict[str, Any]:
             return get_historical_bars(
@@ -178,7 +235,14 @@ class IbkrCliProvider:
         self._cache.set(key, frame.copy(), self.bars_ttl)
         return frame
 
-    def historical_bars(self, symbol: str, timeframe: str, bars: int = 500) -> pd.DataFrame:
+    def historical_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: int = 500,
+        *,
+        force_refresh: bool = False,
+    ) -> pd.DataFrame:
         """Fetch causal OHLCV history, paging backward within IBKR step-size limits."""
         from ibkr_cli.ib_service import get_historical_bars
 
@@ -187,9 +251,10 @@ class IbkrCliProvider:
         requested_bars = max(1, int(bars))
         bar_size, duration, estimated_chunk_bars = HISTORICAL_BAR_SPECS[canonical]
         key = ("historical_bars", normalized, canonical, requested_bars)
-        cached = self._cache.get(key)
-        if cached is not None:
-            return cached.copy()
+        if not force_refresh:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached.copy()
 
         max_chunks = max(1, int(os.getenv("IBKR_HISTORICAL_MAX_CHUNKS", "4")))
         chunk_count = min(max_chunks, max(1, math.ceil(requested_bars / estimated_chunk_bars)))

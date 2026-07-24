@@ -1,45 +1,74 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../utils/apiUtils";
 import { loadingStore } from "../utils/loadingStore";
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : typeof error === "object"
+      && error !== null
+      && "name" in error
+      && error.name === "AbortError";
+}
 
 export function useApi<T>(endpoint: string) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
-
-  const fetchData = () => {
-    setLoading(true);
-    setError(null);
-    loadingStore.start();
-    apiFetch<T>(endpoint)
-      .then((result) => {
-        setData(result);
-      })
-      .catch((err) => {
-        console.error('Fetch error for', endpoint, ':', err.message);
-        setError(err.message);
-      })
-      .finally(() => {
-        setLoading(false);
-        loadingStore.stop();
-      });
-  };
+  const requestGeneration = useRef(0);
 
   useEffect(() => {
-    if (endpoint) {
-      fetchData();
+    const generation = ++requestGeneration.current;
+    if (!endpoint) {
+      setData(null);
+      setLoading(false);
+      setError(null);
       return;
     }
 
-    setData(null);
-    setLoading(false);
+    const controller = new AbortController();
+    let active = true;
+    let loadingAccounted = true;
+    const finishLoading = () => {
+      if (!loadingAccounted) return;
+      loadingAccounted = false;
+      loadingStore.stop();
+    };
+
+    setLoading(true);
     setError(null);
+    loadingStore.start();
+    void apiFetch<T>(endpoint, { signal: controller.signal })
+      .then((result) => {
+        if (!active || generation !== requestGeneration.current) return;
+        setData(result);
+      })
+      .catch((err: unknown) => {
+        if (!active || generation !== requestGeneration.current || controller.signal.aborted || isAbortError(err)) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('Fetch error for', endpoint, ':', message);
+        setError(message);
+      })
+      .finally(() => {
+        finishLoading();
+        if (active && generation === requestGeneration.current) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+      finishLoading();
+    };
   }, [endpoint, refetchTrigger]);
 
-  const refetch = () => {
+  const refetch = useCallback(() => {
     setRefetchTrigger(prev => prev + 1);
-  };
+  }, []);
 
   return { data, loading, error, refetch };
 }

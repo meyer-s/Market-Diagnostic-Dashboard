@@ -118,6 +118,25 @@ function directionTone(value: number): string {
   return "text-amber-300";
 }
 
+function cacheLabel(data: MarketWeatherResponse): string | null {
+  const analysisStatus = data.cache?.analysis?.status;
+  const historyStatus = data.cache?.history?.status;
+  if (analysisStatus === "hit") return "Analysis cache hit";
+  if (analysisStatus === "wait") return "Shared calculation";
+  if (historyStatus === "hit") return "Stored history";
+  if (historyStatus === "refreshed") return "History refreshed";
+  if (historyStatus === "stale_fallback") return "Stale history fallback";
+  if (historyStatus === "cache_bypass") return "History cache bypass";
+  return null;
+}
+
+function formatCacheAge(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "unknown age";
+  if (value < 60) return `${Math.round(value)}s old`;
+  if (value < 3600) return `${Math.round(value / 60)}m old`;
+  return `${(value / 3600).toFixed(value < 36_000 ? 1 : 0)}h old`;
+}
+
 function buildEndpoint(config: MarketWeatherRecipeConfig): string {
   return `/market-weather/analyze?${marketWeatherAnalysisParams(config).toString()}`;
 }
@@ -460,6 +479,14 @@ export default function MarketWeatherRadar() {
           {data ? (
             <div className="flex flex-wrap gap-2 text-xs text-slate-300">
               <span className="page-badge"><Activity className="h-3.5 w-3.5 text-emerald-300" /> {data.data_source.toUpperCase()} · {data.bar_size} bars</span>
+              {cacheLabel(data) ? (
+                <span
+                  className="page-badge"
+                  title="Identical calculations are briefly reused per server worker; OHLCV history is shared persistently across workers."
+                >
+                  {cacheLabel(data)}
+                </span>
+              ) : null}
               <span className="page-badge">{data.horizons.length} × {data.available_bars}</span>
               <span className="page-badge">{formatTimestamp(data.generated_at)}</span>
             </div>
@@ -557,6 +584,14 @@ export default function MarketWeatherRadar() {
                   title={`Initialization coverage only: ${data.history_context.analysis_bars} calculation bars; ${data.history_context.warmup_buffer_received} hidden leading bars received; ${initializationTargetBars}-bar target. Target coverage is not a convergence guarantee. Requested visible-history coverage is reported separately.`}
                 >
                   {initializationTargetCovered ? "Initialization target covered" : minimumInputSatisfied ? "Minimum input met · target not covered" : "Minimum input not met"}
+                </span>
+              ) : null}
+              {data.cache?.history?.stale ? (
+                <span
+                  className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs text-amber-100"
+                  title={data.cache.history.provider_error ?? "The live refresh failed, so the last sufficient stored history was used."}
+                >
+                  Stored fallback · {formatCacheAge(data.cache.history.age_seconds)}
                 </span>
               ) : null}
               <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1 text-xs text-slate-300">{activeMode.label}</span>
@@ -699,6 +734,29 @@ export default function MarketWeatherRadar() {
                         <p>Quote: <span className="text-slate-200">{formatPrice(data.quote.price)} · {data.quote.source.toUpperCase()}{data.quote.quote_source ? ` (${data.quote.quote_source})` : ""}</span></p>
                         <p>Observed: <span className="text-slate-200">{formatTimestamp(data.quote.observed_at)}</span></p>
                         <p>Generated: <span className="text-slate-200">{formatTimestamp(data.generated_at)}</span></p>
+                        {data.cache?.history ? (
+                          <p>
+                            History origin: <span className="text-slate-200">
+                              {data.cache.history.status.replace(/_/g, " ")} · {data.cache.history.returned_rows.toLocaleString()} rows · {formatCacheAge(data.cache.history.age_seconds)}
+                              {data.cache.history.provider_called ? " · provider checked when computed" : " · read from storage"}
+                            </span>
+                          </p>
+                        ) : null}
+                        {data.cache?.request ? (
+                          <p>
+                            This request: <span className="text-slate-200">
+                              history {data.cache.request.history_access.replace(/_/g, " ")}
+                              {data.cache.request.provider_called ? " · provider called" : " · no provider call"}
+                            </span>
+                          </p>
+                        ) : null}
+                        {data.cache?.analysis ? (
+                          <p>
+                            Analysis cache: <span className="text-slate-200">
+                              {data.cache.analysis.status} · {data.cache.analysis.scope.replace(/_/g, " ")} · {data.cache.analysis.ttl_seconds}s TTL · {data.cache.analysis.retained ? "retained" : "not retained"}
+                            </span>
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </div>

@@ -44,6 +44,45 @@ const DATA = {
   settings: {},
   research: {},
   methodology: { causal: true, description: "Causal", research_status: "Research" },
+  cache: {
+    analysis: {
+      status: "hit",
+      retained: true,
+      scope: "per_worker",
+      ttl_seconds: 120,
+      configured_ttl_seconds: 120,
+      max_entries: 1,
+      field_cells: 2,
+      max_cacheable_cells: 60_000,
+    },
+    request: { history_access: "not_checked", provider_called: false },
+    history: {
+      status: "hit",
+      symbol: "SPY",
+      timeframe: "1D",
+      storage_interval: "1d",
+      requested_rows: 878,
+      minimum_rows: 60,
+      returned_rows: 878,
+      cached_rows_before: 878,
+      fetched_rows: 0,
+      inserted_rows: 0,
+      provider_called: false,
+      stale: false,
+      depth_complete: true,
+      write_race_recovered: false,
+      refresh_reason: null,
+      ttl_seconds: 21600,
+      age_seconds: 42,
+      last_updated_at: "2026-07-22T14:29:18Z",
+      data_source: "yahoo",
+      provider_error: null,
+      cache_error: null,
+      source_counts: { yahoo: 878 },
+      max_stale_seconds: 604800,
+    },
+    daily_context: null,
+  },
 } as unknown as MarketWeatherResponse;
 
 function LocationProbe() {
@@ -120,6 +159,19 @@ describe("MarketWeatherRadar report state", () => {
     details.open = true;
     fireEvent(details, new Event("toggle", { bubbles: true }));
     await waitFor(() => expect(screen.getByText("Price versus aggregate pressure")).not.toBeNull());
+  });
+
+  it("shows response and persistent-history cache lineage", async () => {
+    renderPage();
+    expect(screen.getByText("Analysis cache hit")).not.toBeNull();
+
+    const details = screen.getByText("Horizon field, outcomes, and provenance").closest("details") as HTMLDetailsElement;
+    details.open = true;
+    fireEvent(details, new Event("toggle", { bubbles: true }));
+
+    await waitFor(() => expect(screen.getByText(/hit · 878 rows · 42s old · read from storage/i)).not.toBeNull());
+    expect(screen.getByText(/history not checked · no provider call/i)).not.toBeNull();
+    expect(screen.getByText(/hit · per worker · 120s TTL/i)).not.toBeNull();
   });
 
   it("reports requested-history shortfall separately from initialization-target coverage", () => {

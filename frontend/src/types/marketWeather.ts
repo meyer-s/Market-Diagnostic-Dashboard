@@ -530,6 +530,50 @@ export interface MarketWeatherResponse {
     description: string;
     research_status: string;
   };
+  cache?: {
+    analysis?: {
+      status: "hit" | "miss" | "wait";
+      retained: boolean;
+      scope: "per_worker" | string;
+      ttl_seconds: number;
+      configured_ttl_seconds: number;
+      max_entries: number;
+      field_cells: number;
+      max_cacheable_cells: number;
+    };
+    request?: {
+      history_access: "hit" | "refreshed" | "stale_fallback" | "cache_bypass" | "not_checked" | "coalesced" | string;
+      provider_called: boolean;
+    };
+    history?: MarketWeatherHistoryCacheMetadata;
+    daily_context?: MarketWeatherHistoryCacheMetadata | null;
+  };
+}
+
+export interface MarketWeatherHistoryCacheMetadata {
+  status: "hit" | "refreshed" | "stale_fallback" | "cache_bypass";
+  symbol: string;
+  timeframe: string;
+  storage_interval: string;
+  requested_rows: number;
+  minimum_rows: number;
+  returned_rows: number;
+  cached_rows_before: number;
+  fetched_rows: number;
+  inserted_rows: number;
+  provider_called: boolean;
+  stale: boolean;
+  depth_complete: boolean;
+  write_race_recovered: boolean;
+  refresh_reason: string | null;
+  ttl_seconds: number;
+  age_seconds: number | null;
+  last_updated_at: string | null;
+  data_source: string;
+  provider_error: string | null;
+  cache_error?: string | null;
+  source_counts?: Record<string, number>;
+  max_stale_seconds?: number | null;
 }
 
 export interface MarketWeatherCell {
