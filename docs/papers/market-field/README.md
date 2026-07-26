@@ -106,9 +106,15 @@ lineage:
 | `205fda042f5e3a0e6a3598b6aab5b84a1437aa8e` | Clean supplementary execution head | `supplement/results/run_receipt.json` records a clean tree, stable start/completion source hashes, and hashes for the broader derived evidence. Its evaluated implementation files are byte-identical to `f5d3884`. |
 | `42e0a24919504de7fed9f928728bef5157f5ef34` | Executed primary notebook commit | Contains the top-to-bottom notebook execution after the clean primary receipt; all 15 cells are present, eight code cells executed, and no error output is stored. |
 | `d19ededff412d78873cf73724c2d5528961dd811` | Shareable paper build | Contains the 22-page anonymous and named PDFs compiled after the clean primary receipt, executed notebook, and final claim-boundary revision. |
+| `b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b` | Semantic 1.3 implementation and clean development-evaluation head | Contains coordinate-support evidence, analysis identities, the governed option-learning canary, rank/exposure logging, conventional and state-model comparators, and the rebuilt 22-page papers. `evaluation/results/run_receipt.json` binds the clean-tree development run to this exact head and stable start/completion source hashes. |
 
 Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
-the clean execution heads bind the same implementation files by SHA-256.
+the historical primary and supplementary clean execution heads bind the same
+implementation files by SHA-256. The current prequential development receipt
+records a separate clean-tree run at
+`b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b`. That receipt exercises the
+evaluation machinery on already-inspected retained data; it does not alter the
+historical primary receipts or establish predictive or economic efficacy.
 
 The committed manifest, hashes, derived CSVs, figures, tables, executed
 notebooks, direct requirements, and full environment version capture document

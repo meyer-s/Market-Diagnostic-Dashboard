@@ -5,9 +5,9 @@
     "performance_claim_permitted": false,
     "preregistration_claim_permitted": false
   },
-  "completed_at_utc": "2026-07-26T14:48:33.632135Z",
+  "completed_at_utc": "2026-07-26T15:14:24.554171Z",
   "deterministic_core_sha256": "4023c4bd3cbd5dab4fc27a63bbb94544bd9ddd7aa2bf303c9c2bd72fd8a934ca",
-  "elapsed_seconds": 917.5387581000105,
+  "elapsed_seconds": 904.9392133998917,
   "environment": {
     "dependencies": {
       "numpy": "2.4.2",
@@ -62,65 +62,11 @@
   ],
   "git": {
     "branch": "reconcile/live-ibkr-main",
-    "dirty": true,
+    "dirty": false,
     "errors": [],
-    "head": "96be0d8f497a5d3e309216aa099fdcab9e97ce84",
+    "head": "b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b",
     "identity_rule": "Per-file hashes, the protocol hash, and canonical input hashes identify this development run. Git HEAD alone is not an evaluated-source identity when the tree is dirty.",
-    "status_entries": [
-      "M backend/app/api/market_weather.py",
-      " M backend/app/api/secret_options.py",
-      " M backend/app/api/secret_options_security.py",
-      " M backend/app/core/config.py",
-      " M backend/app/models/__init__.py",
-      " M backend/app/services/market_weather.py",
-      " M backend/app/services/market_weather_research.py",
-      " M backend/app/services/option_decision_learning.py",
-      " M backend/app/services/option_field_context.py",
-      " M backend/app/services/option_sweep_runs.py",
-      " M backend/tests/test_market_weather.py",
-      " M backend/tests/test_option_field_context.py",
-      " M backend/tests/test_option_field_outcome_learning.py",
-      " M backend/tests/test_option_learning_influence.py",
-      " M backend/tests/test_option_thesis_engine.py",
-      " M backend/tests/test_secret_options_positions.py",
-      " M devops/env/backend.env.example",
-      " M docs/market-field-language.md",
-      " M docs/option-decision-learning.md",
-      " M docs/papers/market-field/IMPLEMENTATION_MAP.md",
-      " M docs/papers/market-field/README.md",
-      " M docs/papers/market-field/REVISION_RESPONSE.md",
-      " M docs/papers/market-field/main.pdf",
-      " M docs/papers/market-field/main.tex",
-      " M docs/papers/market-field/supplement/PRELIMINARY_EVALUATION.md",
-      " M docs/papers/market-field/supplement/README.md",
-      " M frontend/src/components/marketWeather/MarketWeatherMethodologyReport.tsx",
-      " M frontend/src/pages/MarketWeatherRadar.tsx",
-      " M frontend/src/pages/SecretOptions.tsx",
-      " M frontend/src/pages/__tests__/SecretOptions.auth.test.tsx",
-      " M frontend/src/types/marketWeather.ts",
-      " M frontend/src/utils/apiUtils.ts",
-      " M frontend/src/utils/scannerPositionMatch.ts",
-      " M frontend/src/utils/secretOptionsAuth.ts",
-      "?? backend/alembic/versions/20260726_0019_option_scanner_exposure.py",
-      "?? backend/app/models/option_scanner_exposure.py",
-      "?? backend/app/services/option_scanner_exposure.py",
-      "?? backend/tests/test_market_field_prequential_evaluation.py",
-      "?? backend/tests/test_option_scanner_exposure.py",
-      "?? docs/papers/market-field/FUTURE_WORK_TRIAGE.md",
-      "?? docs/papers/market-field/evaluation/README.md",
-      "?? docs/papers/market-field/evaluation/evaluate_prequential.py",
-      "?? docs/papers/market-field/evaluation/evaluation_core.py",
-      "?? docs/papers/market-field/evaluation/protocol_v0.json",
-      "?? docs/papers/market-field/evaluation/results/development_metric_summary.csv",
-      "?? docs/papers/market-field/evaluation/results/development_predictions.csv.gz",
-      "?? docs/papers/market-field/evaluation/results/input_manifest.csv",
-      "?? docs/papers/market-field/evaluation/results/paired_bootstrap_and_multiplicity.csv",
-      "?? docs/papers/market-field/evaluation/results/run_receipt.json",
-      "?? docs/papers/market-field/evaluation/results/split_audit.csv",
-      "?? docs/papers/market-field/evaluation/results/summary.json",
-      "?? docs/papers/market-field/evaluation/results/synthetic_reference_checks.csv",
-      "?? docs/papers/market-field/evaluation/results/unsupported_case_accounting.csv"
-    ]
+    "status_entries": []
   },
   "inputs": [
     {
@@ -247,5 +193,5 @@
     },
     "stable_for_run": true
   },
-  "started_at_utc": "2026-07-26T14:33:15.508880Z"
+  "started_at_utc": "2026-07-26T14:59:19.023456Z"
 }
