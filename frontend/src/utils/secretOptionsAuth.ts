@@ -21,6 +21,23 @@ export function isSecretOptionsEndpoint(endpoint: string): boolean {
   return path === "/secret/options" || path.startsWith("/secret/options/");
 }
 
+export function isSecretOptionsReadScopeAppend(
+  endpoint: string,
+  method: string,
+): boolean {
+  if (method.toUpperCase() !== "POST") return false;
+  const path = endpoint.startsWith("http")
+    ? (() => {
+        try {
+          return new URL(endpoint).pathname;
+        } catch {
+          return endpoint;
+        }
+      })()
+    : endpoint.split("?", 1)[0];
+  return path === "/secret/options/scanner-impressions";
+}
+
 export function getSecretOptionsToken(): string {
   return memoryToken;
 }

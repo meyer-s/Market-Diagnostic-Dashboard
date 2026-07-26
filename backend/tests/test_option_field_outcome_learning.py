@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.models.option_decision_learning import OptionThesisAssessment
 from app.services.option_decision_learning import (
     _assessment_market_field,
@@ -17,6 +19,14 @@ def _field_context(path_state: str = "supportive") -> dict[str, object]:
         "computed_at": "2026-07-22T15:00:00+00:00",
         "as_of_bar": "2026-07-21T00:00:00+00:00",
         "timeframe": "1D",
+        "analysis_identity": {
+            "schema_version": "market_field_analysis_identity_v1",
+            "scope": "recipe_and_normalized_input_identity",
+            "provider_truth_verified": False,
+            "recipe_hash": "1" * 64,
+            "input_hash": "2" * 64,
+            "analysis_hash": "3" * 64,
+        },
         "quality": {"available": True, "completed_bars_only": True, "observations": 250},
         "input_quality": {"rows_received": 250, "rows_used": 250},
         "maturity": {"status": "complete", "warmup_complete": True, "completed_bars": 250},
@@ -42,6 +52,14 @@ def test_field_outcome_snapshot_is_compact_and_excludes_retrospective_research()
     assert compact["schema_version"] == "option_market_field_v1"
     assert compact["classification"]["field_rank_eligible"] is False
     assert compact["semantic_revision"] == "1.1"
+    assert compact["analysis_identity"] == {
+        "schema_version": "market_field_analysis_identity_v1",
+        "scope": "recipe_and_normalized_input_identity",
+        "provider_truth_verified": False,
+        "recipe_hash": "1" * 64,
+        "input_hash": "2" * 64,
+        "analysis_hash": "3" * 64,
+    }
     assert compact["maturity"]["status"] == "complete"
     assert "relationship_atlas" not in compact
     assert "lexicon" not in compact
@@ -59,25 +77,42 @@ def test_assessment_field_snapshot_supports_the_versioned_top_level_contract() -
     assert _market_field_cohort(snapshot) == "contradictory"
 
 
-def test_v12_cohort_uses_canonical_initialization_without_relabelling_v11() -> None:
+@pytest.mark.parametrize("semantic_revision", ["1.2", "1.3"])
+def test_current_cohort_revisions_use_canonical_initialization_without_relabelling_v11(
+    semantic_revision: str,
+) -> None:
     current = _field_context("supportive")
-    current["semantic_revision"] = "1.2"
+    current["semantic_revision"] = semantic_revision
     current["initialization"] = {
         "minimum_input_satisfied": True,
         "initialization_target_covered": True,
         "initialization_status": "target_covered",
         "completed_bars": 250,
     }
+    if semantic_revision == "1.3":
+        current["initialization"]["state_vector_coverage"] = {
+            "schema_version": "market_field_coordinate_coverage_v1",
+            "coordinate_count": 15,
+            "initialization_target_covered": True,
+            "coverage_is_convergence": False,
+        }
 
     compact = _compact_market_field(current)
 
     assert compact is not None
-    assert compact["semantic_revision"] == "1.2"
+    assert compact["semantic_revision"] == semantic_revision
     assert compact["initialization"]["initialization_target_covered"] is True
+    if semantic_revision == "1.3":
+        assert compact["initialization"]["state_vector_coverage"] == {
+            "schema_version": "market_field_coordinate_coverage_v1",
+            "coordinate_count": 15,
+            "initialization_target_covered": True,
+            "coverage_is_convergence": False,
+        }
     assert _market_field_cohort(compact) == "supportive"
 
     missing_initialization = _field_context("supportive")
-    missing_initialization["semantic_revision"] = "1.2"
+    missing_initialization["semantic_revision"] = semantic_revision
     assert _market_field_cohort(_compact_market_field(missing_initialization)) == "unavailable"
 
 

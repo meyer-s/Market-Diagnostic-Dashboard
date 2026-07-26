@@ -1,0 +1,9 @@
+dataset_id,symbol,timeframe,rows,first_observation,last_observation,canonical_ohlcv_sha256,source_path,fresh_fetch_used,prospective_holdout_excluded
+btc_usd_1d,BTC-USD,1D,3124,2018-01-01T00:00:00+00:00,2026-07-21T00:00:00+00:00,07faa51bb53f39f7e8c78064fc0d9ea2200cb8695535776c24eb07dde4a22bd3,docs/papers/market-field/cache/BTC_USD.csv,False,True
+gld_1d,GLD,1D,2148,2018-01-02T05:00:00+00:00,2026-07-21T04:00:00+00:00,f004bce65315d319e6724423f4da6356f6dbc8e462fceacc19bccfa005ab0b11,docs/papers/market-field/cache/GLD.csv,False,True
+iwm_1d,IWM,1D,2148,2018-01-02T05:00:00+00:00,2026-07-21T04:00:00+00:00,60edd0ee5b7d9d9dad098d831128638252f0bdda2665c9b0a1f17d8e8c4f3b1d,docs/papers/market-field/cache/IWM.csv,False,True
+qqq_1d,QQQ,1D,2148,2018-01-02T05:00:00+00:00,2026-07-21T04:00:00+00:00,00ce949bf1318fadab102ae859cb9ac5f73454ad78f8fba4ec32498da0f127b9,docs/papers/market-field/cache/QQQ.csv,False,True
+spy_1d,SPY,1D,2148,2018-01-02T05:00:00+00:00,2026-07-21T04:00:00+00:00,ea77800c08663cb150f1b04125d897e62061d5d0a5e6e642ccd2e4d7dae95d7c,docs/papers/market-field/cache/SPY.csv,False,True
+tlt_1d,TLT,1D,2148,2018-01-02T05:00:00+00:00,2026-07-21T04:00:00+00:00,0089ee8a52a195ee1ca36467d31ab495df16ea608b450ea060695f7415438a23,docs/papers/market-field/cache/TLT.csv,False,True
+uso_1d,USO,1D,2148,2018-01-02T05:00:00+00:00,2026-07-21T04:00:00+00:00,de1a67bbfedec724465db2c5f927e9342001843a698a0768039a182be782ae8e,docs/papers/market-field/cache/USO.csv,False,True
+vnq_1d,VNQ,1D,2148,2018-01-02T05:00:00+00:00,2026-07-21T04:00:00+00:00,519c362eb2510bfd30134a1282e2a1af20bf18a22d688b8b9d6a9556d85ae343,docs/papers/market-field/cache/VNQ.csv,False,True

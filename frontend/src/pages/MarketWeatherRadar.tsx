@@ -734,6 +734,34 @@ export default function MarketWeatherRadar() {
                         <p>Quote: <span className="text-slate-200">{formatPrice(data.quote.price)} · {data.quote.source.toUpperCase()}{data.quote.quote_source ? ` (${data.quote.quote_source})` : ""}</span></p>
                         <p>Observed: <span className="text-slate-200">{formatTimestamp(data.quote.observed_at)}</span></p>
                         <p>Generated: <span className="text-slate-200">{formatTimestamp(data.generated_at)}</span></p>
+                        {data.provenance ? (
+                          <>
+                            <p>
+                              Analysis identity:{" "}
+                              <code className="text-sky-200" title={data.provenance.analysis_hash}>
+                                {data.provenance.analysis_hash.slice(0, 12)}
+                              </code>
+                              <span className="text-slate-500"> · recipe </span>
+                              <code className="text-slate-200" title={data.provenance.recipe_hash}>
+                                {data.provenance.recipe_hash.slice(0, 10)}
+                              </code>
+                              <span className="text-slate-500"> · input </span>
+                              <code className="text-slate-200" title={data.provenance.input_hash}>
+                                {data.provenance.input_hash.slice(0, 10)}
+                              </code>
+                            </p>
+                            <p className="text-slate-500">{data.provenance.note}</p>
+                          </>
+                        ) : null}
+                        {data.history_context?.state_vector_coverage ? (
+                          <p>
+                            Form dependency support: <span className="text-slate-200">
+                              {data.history_context.state_vector_coverage.features.filter((feature) => feature.latest_measured).length}
+                              /{data.history_context.state_vector_coverage.coordinate_count} coordinates fully supported and measured now
+                              {data.history_context.state_vector_coverage.all_latest_measured ? "" : " · finite startup or neutral values remain explicitly unmeasured"}
+                            </span>
+                          </p>
+                        ) : null}
                         {data.cache?.history ? (
                           <p>
                             History origin: <span className="text-slate-200">
@@ -769,6 +797,9 @@ export default function MarketWeatherRadar() {
                       <div className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
                         <p>{data.methodology.research_status}</p>
                         <p>Forms and Motions are learned without evaluation outcomes. Treat attached returns as hypotheses until they repeat out of sample.</p>
+                        {data.provenance?.bar_completion_rule ? (
+                          <p>{data.provenance.bar_completion_rule}</p>
+                        ) : null}
                       </div>
                     </div>
                   </div>

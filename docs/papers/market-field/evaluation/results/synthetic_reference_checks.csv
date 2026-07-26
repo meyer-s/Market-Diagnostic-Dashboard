@@ -1,0 +1,6 @@
+scenario,construction,bars,seed,finite_field_share,finite_pressure_state_share,finite_carrier_share,prefix_endpoint_max_abs_error,material_negative_scaling_exponent_count,mean_absolute_pressure,median_structure,median_realized_volatility_carrier,construction_check_only,performance_claim_evaluated
+alternating_returns,deterministic alternating +/-0.006 log returns,800,20260726,1,1,1,0,0,3.542843719e-05,0.42,0.5002973118,True,False
+ar1_returns,AR(1) log returns with phi=0.75,800,20260726,1,1,1,0,0,0.2271529292,0.5303139848,0.5270193211,True,False
+iid_gaussian_random_walk,seeded iid Gaussian log increments,800,20260726,1,1,1,0,0,0.07727884121,0.4398305517,0.5301367672,True,False
+missing_volume_path,volume missing every fourth bar and zero every ninth bar,800,20260726,1,1,1,0,0,0.1031579998,0.4574313083,0.5163772422,True,False
+volatility_shift,log-return sigma changes from 0.002 to 0.018 at bar 400,800,20260726,1,1,1,0,0,0.07184463598,0.4431951937,0.5603535907,True,False

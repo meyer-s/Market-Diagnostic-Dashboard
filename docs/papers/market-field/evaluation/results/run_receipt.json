@@ -1,0 +1,251 @@
+{
+  "claim_boundary": {
+    "decision_eligible": false,
+    "options_economics_evaluated": false,
+    "performance_claim_permitted": false,
+    "preregistration_claim_permitted": false
+  },
+  "completed_at_utc": "2026-07-26T14:48:33.632135Z",
+  "deterministic_core_sha256": "4023c4bd3cbd5dab4fc27a63bbb94544bd9ddd7aa2bf303c9c2bd72fd8a934ca",
+  "elapsed_seconds": 917.5387581000105,
+  "environment": {
+    "dependencies": {
+      "numpy": "2.4.2",
+      "pandas": "2.2.3",
+      "scipy": "1.17.0"
+    },
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.14",
+    "python_implementation": "CPython"
+  },
+  "generated_artifacts": [
+    {
+      "bytes": 1649,
+      "path": "results/input_manifest.csv",
+      "sha256": "8b717a98266a986d85ee7f4cd172ab3a08b91ddb24dcdd734da64e1da2ece5e0"
+    },
+    {
+      "bytes": 111012,
+      "path": "results/split_audit.csv",
+      "sha256": "d788d1676dfd43eabd2360e317e1b851b4ac2331924906f0de66ed5de43c328a"
+    },
+    {
+      "bytes": 1284555,
+      "path": "results/development_predictions.csv.gz",
+      "sha256": "a882fd21c418a4f901d9cc5388c7acf5d89c1bcbf8e6eeb899d15531d7358867"
+    },
+    {
+      "bytes": 173140,
+      "path": "results/development_metric_summary.csv",
+      "sha256": "ba36321edb7a06cca78b850e9427f85abceeae79c4a7918e415b28d7bfb35ff2"
+    },
+    {
+      "bytes": 135102,
+      "path": "results/unsupported_case_accounting.csv",
+      "sha256": "f509e27f227a74adce558d700cea891d7ff0c72c3860a27f11c741c17e099adb"
+    },
+    {
+      "bytes": 271251,
+      "path": "results/paired_bootstrap_and_multiplicity.csv",
+      "sha256": "c2427d1238059e5f34a352b28191573ff87c26cfc49fe70998d50da58251cc8c"
+    },
+    {
+      "bytes": 981,
+      "path": "results/synthetic_reference_checks.csv",
+      "sha256": "68a4567f0670e1c4658c10cad5a68f8c2d7e3dce23b6aa7ee08b681a5593ff0a"
+    },
+    {
+      "bytes": 1823,
+      "path": "results/summary.json",
+      "sha256": "a3aeaade7b45b76fb67bdbd15bc39eb1a4ce324a581fd5f8be21b786e7da6448"
+    }
+  ],
+  "git": {
+    "branch": "reconcile/live-ibkr-main",
+    "dirty": true,
+    "errors": [],
+    "head": "96be0d8f497a5d3e309216aa099fdcab9e97ce84",
+    "identity_rule": "Per-file hashes, the protocol hash, and canonical input hashes identify this development run. Git HEAD alone is not an evaluated-source identity when the tree is dirty.",
+    "status_entries": [
+      "M backend/app/api/market_weather.py",
+      " M backend/app/api/secret_options.py",
+      " M backend/app/api/secret_options_security.py",
+      " M backend/app/core/config.py",
+      " M backend/app/models/__init__.py",
+      " M backend/app/services/market_weather.py",
+      " M backend/app/services/market_weather_research.py",
+      " M backend/app/services/option_decision_learning.py",
+      " M backend/app/services/option_field_context.py",
+      " M backend/app/services/option_sweep_runs.py",
+      " M backend/tests/test_market_weather.py",
+      " M backend/tests/test_option_field_context.py",
+      " M backend/tests/test_option_field_outcome_learning.py",
+      " M backend/tests/test_option_learning_influence.py",
+      " M backend/tests/test_option_thesis_engine.py",
+      " M backend/tests/test_secret_options_positions.py",
+      " M devops/env/backend.env.example",
+      " M docs/market-field-language.md",
+      " M docs/option-decision-learning.md",
+      " M docs/papers/market-field/IMPLEMENTATION_MAP.md",
+      " M docs/papers/market-field/README.md",
+      " M docs/papers/market-field/REVISION_RESPONSE.md",
+      " M docs/papers/market-field/main.pdf",
+      " M docs/papers/market-field/main.tex",
+      " M docs/papers/market-field/supplement/PRELIMINARY_EVALUATION.md",
+      " M docs/papers/market-field/supplement/README.md",
+      " M frontend/src/components/marketWeather/MarketWeatherMethodologyReport.tsx",
+      " M frontend/src/pages/MarketWeatherRadar.tsx",
+      " M frontend/src/pages/SecretOptions.tsx",
+      " M frontend/src/pages/__tests__/SecretOptions.auth.test.tsx",
+      " M frontend/src/types/marketWeather.ts",
+      " M frontend/src/utils/apiUtils.ts",
+      " M frontend/src/utils/scannerPositionMatch.ts",
+      " M frontend/src/utils/secretOptionsAuth.ts",
+      "?? backend/alembic/versions/20260726_0019_option_scanner_exposure.py",
+      "?? backend/app/models/option_scanner_exposure.py",
+      "?? backend/app/services/option_scanner_exposure.py",
+      "?? backend/tests/test_market_field_prequential_evaluation.py",
+      "?? backend/tests/test_option_scanner_exposure.py",
+      "?? docs/papers/market-field/FUTURE_WORK_TRIAGE.md",
+      "?? docs/papers/market-field/evaluation/README.md",
+      "?? docs/papers/market-field/evaluation/evaluate_prequential.py",
+      "?? docs/papers/market-field/evaluation/evaluation_core.py",
+      "?? docs/papers/market-field/evaluation/protocol_v0.json",
+      "?? docs/papers/market-field/evaluation/results/development_metric_summary.csv",
+      "?? docs/papers/market-field/evaluation/results/development_predictions.csv.gz",
+      "?? docs/papers/market-field/evaluation/results/input_manifest.csv",
+      "?? docs/papers/market-field/evaluation/results/paired_bootstrap_and_multiplicity.csv",
+      "?? docs/papers/market-field/evaluation/results/run_receipt.json",
+      "?? docs/papers/market-field/evaluation/results/split_audit.csv",
+      "?? docs/papers/market-field/evaluation/results/summary.json",
+      "?? docs/papers/market-field/evaluation/results/synthetic_reference_checks.csv",
+      "?? docs/papers/market-field/evaluation/results/unsupported_case_accounting.csv"
+    ]
+  },
+  "inputs": [
+    {
+      "canonical_ohlcv_sha256": "07faa51bb53f39f7e8c78064fc0d9ea2200cb8695535776c24eb07dde4a22bd3",
+      "dataset_id": "btc_usd_1d",
+      "first_observation": "2018-01-01T00:00:00+00:00",
+      "fresh_fetch_used": false,
+      "last_observation": "2026-07-21T00:00:00+00:00",
+      "prospective_holdout_excluded": true,
+      "rows": 3124,
+      "source_path": "docs/papers/market-field/cache/BTC_USD.csv",
+      "symbol": "BTC-USD",
+      "timeframe": "1D"
+    },
+    {
+      "canonical_ohlcv_sha256": "f004bce65315d319e6724423f4da6356f6dbc8e462fceacc19bccfa005ab0b11",
+      "dataset_id": "gld_1d",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "fresh_fetch_used": false,
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "prospective_holdout_excluded": true,
+      "rows": 2148,
+      "source_path": "docs/papers/market-field/cache/GLD.csv",
+      "symbol": "GLD",
+      "timeframe": "1D"
+    },
+    {
+      "canonical_ohlcv_sha256": "60edd0ee5b7d9d9dad098d831128638252f0bdda2665c9b0a1f17d8e8c4f3b1d",
+      "dataset_id": "iwm_1d",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "fresh_fetch_used": false,
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "prospective_holdout_excluded": true,
+      "rows": 2148,
+      "source_path": "docs/papers/market-field/cache/IWM.csv",
+      "symbol": "IWM",
+      "timeframe": "1D"
+    },
+    {
+      "canonical_ohlcv_sha256": "00ce949bf1318fadab102ae859cb9ac5f73454ad78f8fba4ec32498da0f127b9",
+      "dataset_id": "qqq_1d",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "fresh_fetch_used": false,
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "prospective_holdout_excluded": true,
+      "rows": 2148,
+      "source_path": "docs/papers/market-field/cache/QQQ.csv",
+      "symbol": "QQQ",
+      "timeframe": "1D"
+    },
+    {
+      "canonical_ohlcv_sha256": "ea77800c08663cb150f1b04125d897e62061d5d0a5e6e642ccd2e4d7dae95d7c",
+      "dataset_id": "spy_1d",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "fresh_fetch_used": false,
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "prospective_holdout_excluded": true,
+      "rows": 2148,
+      "source_path": "docs/papers/market-field/cache/SPY.csv",
+      "symbol": "SPY",
+      "timeframe": "1D"
+    },
+    {
+      "canonical_ohlcv_sha256": "0089ee8a52a195ee1ca36467d31ab495df16ea608b450ea060695f7415438a23",
+      "dataset_id": "tlt_1d",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "fresh_fetch_used": false,
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "prospective_holdout_excluded": true,
+      "rows": 2148,
+      "source_path": "docs/papers/market-field/cache/TLT.csv",
+      "symbol": "TLT",
+      "timeframe": "1D"
+    },
+    {
+      "canonical_ohlcv_sha256": "de1a67bbfedec724465db2c5f927e9342001843a698a0768039a182be782ae8e",
+      "dataset_id": "uso_1d",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "fresh_fetch_used": false,
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "prospective_holdout_excluded": true,
+      "rows": 2148,
+      "source_path": "docs/papers/market-field/cache/USO.csv",
+      "symbol": "USO",
+      "timeframe": "1D"
+    },
+    {
+      "canonical_ohlcv_sha256": "519c362eb2510bfd30134a1282e2a1af20bf18a22d688b8b9d6a9556d85ae343",
+      "dataset_id": "vnq_1d",
+      "first_observation": "2018-01-02T05:00:00+00:00",
+      "fresh_fetch_used": false,
+      "last_observation": "2026-07-21T04:00:00+00:00",
+      "prospective_holdout_excluded": true,
+      "rows": 2148,
+      "source_path": "docs/papers/market-field/cache/VNQ.csv",
+      "symbol": "VNQ",
+      "timeframe": "1D"
+    }
+  ],
+  "protocol": {
+    "path": "docs/papers/market-field/evaluation/protocol_v0.json",
+    "sha256": "9e8a06579079ac2d1750ea9c1c008f7edc6f1c47f004053bfca82b927ca58e4a",
+    "status": "retrospective_development_dry_run"
+  },
+  "receipt_self_hash_excluded": true,
+  "schema_version": "market_field_prequential_development_receipt_v0",
+  "sources": {
+    "changed_during_run": [],
+    "sha256_at_completion": {
+      "backend/app/services/market_weather.py": "3bf35ad7ec84da4aca81c5bf8fec25e6d6eb448fd50d0366c30b528c9013cf6b",
+      "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
+      "backend/app/services/market_weather_research.py": "4cd26abcd4232cc4b4407856f6a62dbb359a58f18146d107a2709446754c1f57",
+      "docs/papers/market-field/evaluation/evaluate_prequential.py": "7646ff72c34e41b717a885e73a2ab6b81f5f65b9111f77af0350fafb845ecb5b",
+      "docs/papers/market-field/evaluation/evaluation_core.py": "142708bdd560a84edd95d6062228a1083e73764e72e36b9a3526290661698886",
+      "docs/papers/market-field/evaluation/protocol_v0.json": "9e8a06579079ac2d1750ea9c1c008f7edc6f1c47f004053bfca82b927ca58e4a"
+    },
+    "sha256_at_start": {
+      "backend/app/services/market_weather.py": "3bf35ad7ec84da4aca81c5bf8fec25e6d6eb448fd50d0366c30b528c9013cf6b",
+      "backend/app/services/market_weather_context.py": "9afb43548b82ac0a38acde50ca83eee114d235407b207b8f7e84bd2090bbc63a",
+      "backend/app/services/market_weather_research.py": "4cd26abcd4232cc4b4407856f6a62dbb359a58f18146d107a2709446754c1f57",
+      "docs/papers/market-field/evaluation/evaluate_prequential.py": "7646ff72c34e41b717a885e73a2ab6b81f5f65b9111f77af0350fafb845ecb5b",
+      "docs/papers/market-field/evaluation/evaluation_core.py": "142708bdd560a84edd95d6062228a1083e73764e72e36b9a3526290661698886",
+      "docs/papers/market-field/evaluation/protocol_v0.json": "9e8a06579079ac2d1750ea9c1c008f7edc6f1c47f004053bfca82b927ca58e4a"
+    },
+    "stable_for_run": true
+  },
+  "started_at_utc": "2026-07-26T14:33:15.508880Z"
+}

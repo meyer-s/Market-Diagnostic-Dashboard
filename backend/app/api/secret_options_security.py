@@ -21,6 +21,9 @@ from app.core.config import settings
 logger = logging.getLogger("secret_options.audit")
 
 _READ_METHODS = {"GET", "HEAD", "OPTIONS"}
+_READ_SCOPE_APPEND_ROUTES = {
+    ("POST", "/secret/options/scanner-impressions"),
+}
 _PRODUCTION_ENVIRONMENTS = {"prod", "production"}
 _MINIMUM_PRODUCTION_KEY_LENGTH = 32
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
@@ -39,6 +42,7 @@ _SAFE_AUDIT_VALUE_KEYS = {
     "event_type",
     "force",
     "id",
+    "inserted",
     "limit",
     "linked_only",
     "lookback_days",
@@ -54,8 +58,11 @@ _SAFE_AUDIT_VALUE_KEYS = {
     "reminders_updated",
     "review_sequence",
     "run_id",
+    "received",
     "skipped_no_recipe",
     "status",
+    "skipped_duplicates",
+    "snapshot_id",
     "supersedes_review_id",
     "training_rows_checked",
     "training_rows_failed",
@@ -143,6 +150,13 @@ def _matches(provided: str, expected: str) -> bool:
     return bool(expected) and hmac.compare_digest(provided, expected)
 
 
+def _read_scope_append_allowed(request: Request) -> bool:
+    return (
+        request.method.upper(),
+        request.url.path.rstrip("/") or "/",
+    ) in _READ_SCOPE_APPEND_ROUTES
+
+
 def _deny(
     request: Request,
     *,
@@ -195,7 +209,10 @@ def require_secret_options_access(
             result="denied_misconfigured",
         )
 
-    is_write = request.method.upper() not in _READ_METHODS
+    is_write = (
+        request.method.upper() not in _READ_METHODS
+        and not _read_scope_append_allowed(request)
+    )
     if is_write and not write_key:
         _deny(
             request,

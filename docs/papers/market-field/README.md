@@ -6,7 +6,7 @@ for:
 > Non-Anticipative Market Field Calculus: An Auditable Multiscale Representation for
 > Option-Path Decision Support
 
-Status: preliminary systems and methods paper, revised 2026-07-23. The evidence
+Status: preliminary systems and methods paper, revised 2026-07-26. The evidence
 supports reconstructibility and selected implementation properties, not a
 representation-learning advance. A matched five-coordinate, single-horizon
 baseline produces stronger fit separation under the same codebook gate; the
@@ -38,6 +38,13 @@ self-contained copy of the exact market-data inputs.
   a claim of cross-platform solver reproducibility.
 - supplement: broader nine-timeframe, resolution, window-stability, and live
   boundary audit with an executed notebook.
+- evaluation: frozen development-only prequential protocol, runner, tests, and
+  machine-readable receipts. The current dry run contains 53,856 unique cases
+  across 11 model variants and 544 purged origins; retained-cache results are
+  not an untouched holdout.
+- FUTURE_WORK_TRIAGE.md: item-by-item separation of current engineering,
+  prospective data collection, blocked retrospective evidence, and genuinely
+  longer-horizon research.
 
 The official ICLR 2026 style and bibliography files are included unchanged from
 the conference template. In the 22-page Tectonic 0.16.9 build, all main text,
@@ -56,6 +63,7 @@ directory is intentionally excluded from Git:
 .\.venv\Scripts\python.exe docs\papers\market-field\scripts\generate_assets.py --offline
 .\.venv\Scripts\python.exe docs\papers\market-field\scripts\audit_references.py
 .\.venv\Scripts\python.exe docs\papers\market-field\scripts\build_notebook.py --execute
+.\.venv\Scripts\python.exe docs\papers\market-field\evaluation\evaluate_prequential.py --protocol docs\papers\market-field\evaluation\protocol_v0.json
 ~~~
 
 Use --refresh instead of --offline on a fresh clone to retrieve a new adjusted
@@ -130,9 +138,26 @@ secrets, or secret-option records are part of this package.
 - The upper calibration-distance-tail statistic is descriptive, not a formal
   p-value, coordinatewise range test, or coverage guarantee. The payload's
   `outside_learned_range` field name is a legacy label.
-- The option integration has algorithmic ranking weight zero and cannot execute
-  trades. Human-visible confidence or urgency can still influence a decision,
-  so `shadow_only` does not mean zero behavioral exposure.
+- A current Market Field snapshot has zero direct scanner weight and cannot
+  create eligibility, impose a veto, size, issue a manager verdict, or execute
+  a trade. Historical point-in-time field cohorts may participate indirectly
+  inside the separately governed outcome-learning canary whose total applied
+  weight is capped at 10%, only when the default-off
+  `OPTION_LEARNING_CANARY_ENABLED` operator gate and every evidence gate pass.
+  The cap is fixed by policy while each event weight is evidence-scaled and
+  receipted. Human-visible context can also influence a decision, so
+  `shadow_only` does not mean zero downstream or behavioral exposure.
+- Semantic revision 1.3 separates finite startup computations from
+  coordinate-level full-dependency-support masks and adds deterministic
+  recipe/input/analysis hashes without changing formula v1. Dependency support
+  is not convergence, and identity hashes do not certify provider truth or
+  exchange-session completion.
+- Successful finalization of completed, stopped, or errored scanner runs now
+  freezes applied and counterfactual rank receipts; stale, pre-schema, or
+  failed-finalization runs remain unsnapshotted. Authenticated
+  ranking-rendered, candidate-visible, and detail-open impressions are
+  append-only. Historical exposure before this collection boundary cannot be
+  reconstructed.
 - Production Secret Options requests use distinct memory-only, non-cookie bearer
   credentials for read and mutation scopes. The application boundary fails
   closed and emits redacted structured audit events, but the shared configured
@@ -152,3 +177,6 @@ secrets, or secret-option records are part of this package.
   methodology.
 - IMPLEMENTATION_MAP.md: paper claims mapped to production modules.
 - supplement/PRELIMINARY_EVALUATION.md: independent broader audit narrative.
+- evaluation/README.md: frozen rolling-origin development protocol and receipt
+  interpretation.
+- FUTURE_WORK_TRIAGE.md: implementation-versus-evidence decision record.

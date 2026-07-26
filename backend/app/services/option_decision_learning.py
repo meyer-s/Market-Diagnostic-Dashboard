@@ -8,6 +8,7 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.closed_positions import ClosedPosition
 from app.models.options_alerts import OptionAlertEvent
 from app.models.option_decision_learning import (
@@ -142,6 +143,7 @@ def _compact_market_field(value: object) -> Optional[dict[str, object]]:
             "timeframe",
             "option_type",
             "data_source",
+            "analysis_identity",
             "completed_bars",
             "excluded_incomplete_bars",
             "quality",
@@ -220,10 +222,11 @@ def _market_field_cohort(value: Optional[dict[str, object]]) -> str:
     if not isinstance(value, dict):
         return "unavailable"
     # Cohort comparisons deliberately exclude legacy initialization contracts.
-    # v1.2 adds quality/terminology metadata without changing the field vector,
-    # so complete v1.1 snapshots remain comparable without being relabeled.
+    # v1.2 and v1.3 add quality/terminology and coordinate-coverage metadata
+    # without changing the field vector, so complete v1.1 snapshots remain
+    # comparable without being relabeled.
     semantic_revision = str(value.get("semantic_revision") or "")
-    if semantic_revision not in {"1.1", "1.2"}:
+    if semantic_revision not in {"1.1", "1.2", "1.3"}:
         return "unavailable"
     quality = value.get("quality")
     maturity = value.get("maturity")
@@ -231,7 +234,7 @@ def _market_field_cohort(value: Optional[dict[str, object]]) -> str:
     alignment = value.get("alignment")
     if not isinstance(quality, dict) or not quality.get("available"):
         return "unavailable"
-    if semantic_revision == "1.2":
+    if semantic_revision in {"1.2", "1.3"}:
         initialization_covered = (
             isinstance(initialization, dict)
             and initialization.get("minimum_input_satisfied") is True
@@ -1150,13 +1153,23 @@ def learning_summary(db: Session) -> dict[str, object]:
             "actual_closed_trades_only": True,
             "point_in_time_snapshot_required": True,
             "eligibility_contract": {
-                "semantic_revisions": ["1.1", "1.2"],
+                "semantic_revisions": ["1.1", "1.2", "1.3"],
                 "initialization_target_covered": True,
                 "v11_compatibility_maturity_status": "complete",
                 "directional_alignment_required": True,
                 "legacy_or_incomplete_initialization_bucket": "unavailable",
             },
             "minimum_sample_before_comparison": LEARNING_MINIMUM_COHORT,
+            "direct_rank_influence": 0.0,
+            "eligible_for_outcome_learning_canary": True,
+            "maximum_total_canary_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+            "rank_influence_note": (
+                "The raw field snapshot has zero direct rank weight. Its point-in-time "
+                "cohort can contribute indirectly inside the separately versioned, "
+                "evidence-gated outcome-learning canary."
+            ),
+            # Compatibility alias for clients that historically interpreted this
+            # field as the direct Market Field overlay weight.
             "rank_influence": 0.0,
             "automatic_weight_changes": False,
         },
@@ -1180,6 +1193,10 @@ def learning_summary(db: Session) -> dict[str, object]:
             "automatic_weight_changes": False,
         },
         "promotion_readiness": {
+            "minimum_classified_actual_close_cycles": minimum_cycles,
+            "current_classified_actual_close_cycles": actual_cycles,
+            # Compatibility aliases. These counts are trade-cycle groupings,
+            # not a statistical test that observations are independent.
             "minimum_independent_trade_cycles": minimum_cycles,
             "current_independent_trade_cycles": actual_cycles,
             "remaining_cycles": max(0, minimum_cycles - actual_cycles),
@@ -1222,17 +1239,40 @@ def build_learning_influence_context(summary: dict[str, object]) -> dict[str, ob
     non_weak_share = non_weak_cycles / cycles if cycles else 0.0
     cycle_gate = cycles >= LEARNING_CANARY_MINIMUM_CYCLES
     process_gate = non_weak_share >= LEARNING_MINIMUM_NON_WEAK_SHARE
+    operator_authorized = bool(settings.OPTION_LEARNING_CANARY_ENABLED)
     return {
         "version": LEARNING_INFLUENCE_VERSION,
         "mode": "bounded_live_canary",
         "nominal_weight_cap": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
-        "actual_rank_influence": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+        # No candidate has been evaluated at context-capture time. Keep
+        # "actual" at zero and report the authorized ceiling separately.
+        "actual_rank_influence": 0.0,
+        "configured_maximum_rank_influence": (
+            LEARNING_MAX_COUNTERFACTUAL_WEIGHT if operator_authorized else 0.0
+        ),
         "maximum_counterfactual_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
         "maximum_applied_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
-        "live_canary_enabled": True,
+        "live_canary_enabled": operator_authorized,
+        "configured_operator_authorization": operator_authorized,
+        "operator_authorization": {
+            "configured": operator_authorized,
+            "setting": "OPTION_LEARNING_CANARY_ENABLED",
+            "default": False,
+            "frozen_in_context": True,
+        },
+        "weight_policy": {
+            "configured_cap": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+            "event_weight_is_evidence_scaled": True,
+            "automatic_policy_or_cap_changes": False,
+        },
         "automatic_weight_changes": False,
+        "automatic_policy_or_cap_changes": False,
         "manual_promotion_required": True,
         "evidence": {
+            "classified_actual_close_cycles": cycles,
+            "minimum_classified_actual_close_cycles": LEARNING_CANARY_MINIMUM_CYCLES,
+            # Compatibility aliases retained for v1/v2 receipts. The grouping
+            # reduces repeated-horizon leakage but does not prove independence.
             "independent_trade_cycles": cycles,
             "minimum_independent_trade_cycles": LEARNING_CANARY_MINIMUM_CYCLES,
             "full_promotion_minimum_trade_cycles": LEARNING_PROMOTION_MINIMUM_CYCLES,
@@ -1385,6 +1425,79 @@ def _cohort_learning_signal(
     return result
 
 
+def _learning_family_attribution(
+    signals: list[dict[str, object]],
+    *,
+    champion_score: float,
+    counterfactual_weight: float,
+    applied_weight: float,
+) -> dict[str, dict[str, object]]:
+    """Decompose the bounded blend into auditable per-family score deltas.
+
+    The current Market Field snapshot still has zero direct scanner weight.
+    When its point-in-time cohort has enough closed-trade support, however, the
+    separately versioned outcome-learning canary may use that cohort alongside
+    the other learning families.  These additive deltas make that indirect path
+    explicit and sum to the total canary-vs-champion score change.
+    """
+
+    available = [
+        signal
+        for signal in signals
+        if signal.get("available") is True
+        and _finite(signal.get("score")) is not None
+        and (_finite(signal.get("reliability")) or 0.0) > 0.0
+    ]
+    reliability_total = sum(
+        _finite(signal.get("reliability")) or 0.0
+        for signal in available
+    )
+    attribution: dict[str, dict[str, object]] = {}
+    for signal in signals:
+        family = str(signal.get("family") or "unknown")
+        score = _finite(signal.get("score"))
+        reliability = _finite(signal.get("reliability")) or 0.0
+        normalized_weight = (
+            reliability / reliability_total
+            if signal in available and reliability_total > 0.0
+            else 0.0
+        )
+        score_delta = (
+            score - float(champion_score)
+            if score is not None and normalized_weight > 0.0
+            else 0.0
+        )
+        attribution[family] = {
+            "available": signal.get("available") is True,
+            "cohort": signal.get("cohort"),
+            "signal_score": round(score, 2) if score is not None else None,
+            "reliability": round(reliability, 4),
+            "normalized_learning_weight": round(normalized_weight, 6),
+            "learning_score_component": (
+                round(normalized_weight * score, 6)
+                if score is not None and normalized_weight > 0.0
+                else 0.0
+            ),
+            "counterfactual_score_delta": round(
+                counterfactual_weight * normalized_weight * score_delta,
+                6,
+            ),
+            "applied_score_delta": round(
+                applied_weight * normalized_weight * score_delta,
+                6,
+            ),
+            "direct_scanner_weight": 0.0 if family == "market_field" else None,
+            "influence_path": (
+                "indirect_outcome_learning_canary"
+                if family == "market_field" and normalized_weight > 0.0
+                else "outcome_learning_canary"
+                if normalized_weight > 0.0
+                else "not_applied"
+            ),
+        }
+    return attribution
+
+
 def evaluate_option_learning_influence(
     context: dict[str, object],
     *,
@@ -1423,7 +1536,23 @@ def evaluate_option_learning_influence(
     evidence = evidence if isinstance(evidence, dict) else {}
     base_gates = context.get("base_gates")
     base_gates = base_gates if isinstance(base_gates, dict) else {}
-    cycles = int(evidence.get("independent_trade_cycles") or 0)
+    operator_authorization = context.get("operator_authorization")
+    operator_authorization = (
+        operator_authorization
+        if isinstance(operator_authorization, dict)
+        else {}
+    )
+    operator_authorized = bool(
+        operator_authorization.get(
+            "configured",
+            context.get("configured_operator_authorization", False),
+        )
+    )
+    cycles = int(
+        evidence.get("classified_actual_close_cycles")
+        or evidence.get("independent_trade_cycles")
+        or 0
+    )
     non_weak_share = float(evidence.get("non_weak_process_share") or 0.0)
     cycle_factor = min(1.0, cycles / LEARNING_CANARY_MINIMUM_CYCLES)
     process_factor = min(1.0, non_weak_share / LEARNING_MINIMUM_NON_WEAK_SHARE)
@@ -1438,11 +1567,12 @@ def evaluate_option_learning_influence(
         if learning_score is not None
         else float(champion_score)
     )
-    canary_eligible = bool(
+    evidence_gates_passed = bool(
         base_gates.get("independent_cycles")
         and base_gates.get("process_quality")
         and comparable_gate
     )
+    canary_eligible = evidence_gates_passed and operator_authorized
     applied_weight = counterfactual_weight if canary_eligible else 0.0
     applied_score = (
         (float(champion_score) * (1.0 - applied_weight))
@@ -1454,11 +1584,16 @@ def evaluate_option_learning_influence(
         status = "collecting_comparable_cohorts"
     elif canary_eligible:
         status = "live_canary_active"
+    elif evidence_gates_passed:
+        status = "counterfactual_operator_disabled"
     else:
         status = "counterfactual_only"
     reasons = []
     if not base_gates.get("independent_cycles"):
-        reasons.append(f"{cycles}/{LEARNING_CANARY_MINIMUM_CYCLES} independent actual-close cycles.")
+        reasons.append(
+            f"{cycles}/{LEARNING_CANARY_MINIMUM_CYCLES} classified actual-close cycles; "
+            "the count is not an independence test."
+        )
     if not base_gates.get("process_quality"):
         reasons.append(
             f"{non_weak_share:.0%}/{LEARNING_MINIMUM_NON_WEAK_SHARE:.0%} non-weak process evidence."
@@ -1467,11 +1602,23 @@ def evaluate_option_learning_influence(
         reasons.append(
             f"No candidate cohort has a second comparison cohort with at least {LEARNING_MINIMUM_COHORT} closes."
         )
+    if evidence_gates_passed and not operator_authorized:
+        reasons.append(
+            "Evidence gates passed, but OPTION_LEARNING_CANARY_ENABLED is false; "
+            "the event remains counterfactual-only."
+        )
     if canary_eligible:
         reasons.append(
             "Experimental evidence gates passed; the bounded live canary may apply up to "
             f"{LEARNING_MAX_COUNTERFACTUAL_WEIGHT:.0%}."
         )
+    family_attribution = _learning_family_attribution(
+        signals,
+        champion_score=float(champion_score),
+        counterfactual_weight=counterfactual_weight,
+        applied_weight=applied_weight,
+    )
+    market_field_attribution = family_attribution.get("market_field", {})
     return {
         "version": context.get("version") or LEARNING_INFLUENCE_VERSION,
         "mode": "bounded_live_canary",
@@ -1484,21 +1631,71 @@ def evaluate_option_learning_influence(
         "counterfactual_score": round(counterfactual_score, 2),
         "counterfactual_delta": round(counterfactual_score - float(champion_score), 2),
         "counterfactual_weight": round(counterfactual_weight, 4),
+        "evidence_scaled_event_weight": round(counterfactual_weight, 4),
         "applied_score": round(applied_score, 2),
         "applied_weight": round(applied_weight, 4),
+        "applied_event_weight": round(applied_weight, 4),
+        "actual_rank_influence": round(applied_weight, 4),
+        "weight_control": {
+            "configured_policy_cap": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+            "evidence_scaled_event_weight": round(counterfactual_weight, 4),
+            "applied_event_weight": round(applied_weight, 4),
+            "operator_authorized": operator_authorized,
+            "evidence_scaling_is_policy_or_cap_change": False,
+            "automatic_policy_or_cap_changes": False,
+        },
+        # Compatibility field captured before the scanner run can become
+        # terminal. The separate immutable run receipt, if any, is created by
+        # terminal finalization and is never retroactively written into this
+        # event-level learning receipt.
         "rank_snapshot_persisted": False,
+        "rank_snapshot_state_at_event_capture": "not_yet_terminal",
         "candidate_cohorts": cohorts,
         "signals": signals,
+        "family_attribution": family_attribution,
+        "authority": {
+            "candidate_eligibility": "champion_only",
+            "hard_veto": "champion_only",
+            "position_sizing": "none",
+            "review_verdict": "none",
+            "automated_execution": "none",
+            "direct_market_field_scanner_weight": 0.0,
+            "outcome_learning_canary_maximum_weight": LEARNING_MAX_COUNTERFACTUAL_WEIGHT,
+            "market_field_indirect_applied_score_delta": market_field_attribution.get(
+                "applied_score_delta",
+                0.0,
+            ),
+            "note": (
+                "The current field snapshot has zero direct scanner weight. "
+                "A separately governed outcome-learning canary may indirectly use its "
+                "point-in-time cohort only when every evidence gate and the frozen "
+                "operator-authorization gate pass."
+            ),
+        },
         "gates": {
             "independent_cycles": bool(base_gates.get("independent_cycles")),
             "process_quality": bool(base_gates.get("process_quality")),
             "comparable_cohorts": comparable_gate,
-            "live_canary_authorized": True,
+            "live_canary_authorized": operator_authorized,
         },
-        "promotion_ready_for_review": canary_eligible,
+        "operator_authorization": {
+            "configured": operator_authorized,
+            "setting": str(
+                operator_authorization.get(
+                    "setting",
+                    "OPTION_LEARNING_CANARY_ENABLED",
+                )
+            ),
+            "default": False,
+            "frozen_in_receipt": True,
+        },
+        "evidence_gates_passed": evidence_gates_passed,
+        "application_gates_passed": canary_eligible,
+        "promotion_ready_for_review": evidence_gates_passed,
         "live_canary_active": canary_eligible,
         "manual_promotion_required": True,
         "automatic_weight_changes": False,
+        "automatic_policy_or_cap_changes": False,
         "reasons": reasons,
     }
 
@@ -1535,6 +1732,33 @@ def rebase_option_learning_evaluation(
             _finite(result.get("applied_weight")) or 0.0,
         ),
     )
+    receipt_authorization = result.get("operator_authorization")
+    receipt_authorization = (
+        receipt_authorization
+        if isinstance(receipt_authorization, dict)
+        else {}
+    )
+    receipt_gates = result.get("gates")
+    receipt_gates = receipt_gates if isinstance(receipt_gates, dict) else {}
+    receipt_version = str(result.get("version") or "")
+    if receipt_authorization:
+        frozen_operator_authorized = bool(
+            receipt_authorization.get("configured", False)
+        )
+    elif "live_canary_authorized" in receipt_gates:
+        frozen_operator_authorized = bool(
+            receipt_gates.get("live_canary_authorized")
+        )
+    else:
+        # v1/v2 receipts predate the explicit authorization field and remain
+        # immutable for compatibility. Current v3 receipts must carry the
+        # frozen authorization decision.
+        frozen_operator_authorized = receipt_version in {
+            "option_learning_influence_shadow_v1",
+            "option_learning_influence_canary_v2",
+        }
+    if not frozen_operator_authorized:
+        applied_weight = 0.0
     counterfactual_score = (
         (champion_score * (1.0 - counterfactual_weight))
         + (learning_score * counterfactual_weight)
@@ -1553,10 +1777,54 @@ def rebase_option_learning_evaluation(
             "counterfactual_score": round(counterfactual_score, 2),
             "counterfactual_delta": round(counterfactual_score - champion_score, 2),
             "counterfactual_weight": round(counterfactual_weight, 4),
+            "evidence_scaled_event_weight": round(counterfactual_weight, 4),
             "applied_score": round(applied_score, 2),
             "applied_weight": round(applied_weight, 4),
+            "applied_event_weight": round(applied_weight, 4),
+            "actual_rank_influence": round(applied_weight, 4),
         }
     )
+    weight_control = result.get("weight_control")
+    weight_control = dict(weight_control) if isinstance(weight_control, dict) else {}
+    weight_control.update(
+        {
+            "configured_policy_cap": receipt_cap,
+            "evidence_scaled_event_weight": round(counterfactual_weight, 4),
+            "applied_event_weight": round(applied_weight, 4),
+            "operator_authorized": frozen_operator_authorized,
+            "evidence_scaling_is_policy_or_cap_change": False,
+            "automatic_policy_or_cap_changes": False,
+        }
+    )
+    result["weight_control"] = weight_control
+    raw_signals = result.get("signals")
+    if isinstance(raw_signals, list):
+        signals = [signal for signal in raw_signals if isinstance(signal, dict)]
+        family_attribution = _learning_family_attribution(
+            signals,
+            champion_score=float(champion_score),
+            counterfactual_weight=counterfactual_weight,
+            applied_weight=applied_weight,
+        )
+        result["family_attribution"] = family_attribution
+        authority = result.get("authority")
+        authority = dict(authority) if isinstance(authority, dict) else {}
+        authority.update(
+            {
+                "candidate_eligibility": "champion_only",
+                "hard_veto": "champion_only",
+                "position_sizing": "none",
+                "review_verdict": "none",
+                "automated_execution": "none",
+                "direct_market_field_scanner_weight": 0.0,
+                "outcome_learning_canary_maximum_weight": receipt_cap,
+                "market_field_indirect_applied_score_delta": family_attribution.get(
+                    "market_field",
+                    {},
+                ).get("applied_score_delta", 0.0),
+            }
+        )
+        result["authority"] = authority
     return result
 
 

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearSecretOptionsToken,
+  isSecretOptionsReadScopeAppend,
   setSecretOptionsScope,
   setSecretOptionsToken,
 } from "../../utils/secretOptionsAuth";
@@ -76,6 +77,11 @@ describe("Secret Options authorization gate", () => {
     cleanup();
     clearSecretOptionsToken();
     window.sessionStorage.clear();
+    Object.defineProperty(globalThis, "IntersectionObserver", {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
     vi.restoreAllMocks();
   });
 
@@ -154,6 +160,270 @@ describe("Secret Options authorization gate", () => {
     const add = screen.getByRole("button", { name: "Add" });
     expect(add.hasAttribute("disabled")).toBe(true);
     expect(screen.getByText(/mutations are blocked before an API request is sent/i)).not.toBeNull();
+  });
+
+  it("records authenticated rank, visibility, and detail impressions for a frozen scanner ranking", async () => {
+    setSecretOptionsToken("read-token");
+    setSecretOptionsScope("read");
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    class VisibleIntersectionObserver {
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0.5];
+
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+
+      observe(target: Element) {
+        this.callback(
+          [
+            {
+              target,
+              isIntersecting: true,
+              intersectionRatio: 1,
+            } as IntersectionObserverEntry,
+          ],
+          this as unknown as IntersectionObserver,
+        );
+      }
+
+      disconnect() {}
+      unobserve() {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+    }
+    Object.defineProperty(globalThis, "IntersectionObserver", {
+      configurable: true,
+      writable: true,
+      value: VisibleIntersectionObserver,
+    });
+    const run = {
+      id: 91,
+      universe_key: "SP500",
+      universe_label: "S&P 500",
+      threshold: 30,
+      trigger_source: "dashboard",
+      status: "completed",
+      total_symbols: 500,
+      scanned_symbols: 500,
+      hits: 1,
+      errors: 0,
+      rate_limit_errors: 0,
+      hit_symbols: ["TEST"],
+      notes: null,
+      last_event: "completed",
+      last_symbol: null,
+      last_error: null,
+      started_at: "2026-07-26T12:00:00",
+      completed_at: "2026-07-26T12:10:00",
+      updated_at: "2026-07-26T12:10:00",
+    };
+    const hit = {
+      event_id: 501,
+      scan_ordinal: 1,
+      display_ordinal: 1,
+      champion_rank: 1,
+      counterfactual_rank: 1,
+      applied_rank: 1,
+      champion_score: 81,
+      counterfactual_score: 82,
+      applied_score: 82,
+      applied_weight: 0.1,
+      symbol: "TEST",
+      triggered_at: "2026-07-26T12:08:00",
+      group: "Research",
+      sector: "Technology",
+      score: 82,
+      base_score: 81,
+      grade: "A",
+      model_version: "opportunity-v1",
+      components: {},
+      reasons: [],
+      message: null,
+      iv_percentile: null,
+      iv30: null,
+      hv30: null,
+      iv_hv_spread: null,
+      avg_edr: null,
+      selected_contract: {
+        expiry: null,
+        dte: null,
+        strike: null,
+        option_type: null,
+        premium: null,
+        spread_pct: null,
+        open_interest: null,
+        volume: null,
+        implied_volatility: null,
+        contract_score: null,
+        reward_risk: null,
+        convexity_profit_pct: null,
+        convexity_probability_itm: null,
+      },
+    };
+    apiFetchMock.mockImplementation((endpoint: string) => {
+      if (endpoint === "/secret/options/access") {
+        return Promise.resolve({ actor: "reader", scope: "read", auth_mode: "bearer", request_id: "req-telemetry" });
+      }
+      if (endpoint.startsWith("/secret/options/positions")) {
+        return Promise.resolve({ positions: [], metrics_cache: null });
+      }
+      if (endpoint === "/secret/options/position-row-context") {
+        return Promise.resolve({ contexts_by_position: {} });
+      }
+      if (endpoint === "/secret/options/decision-review-windows") {
+        return Promise.resolve({ windows_by_position: {} });
+      }
+      if (endpoint.startsWith("/secret/options/optionality-clusters")) {
+        return Promise.resolve({ clusters: [] });
+      }
+      if (endpoint.startsWith("/secret/options/scanner-summary")) {
+        return Promise.resolve({
+          lookback_days: 45,
+          generated_at: "2026-07-26T12:11:00",
+          summary: {
+            event_count: 0,
+            symbol_count: 0,
+            delivered: 0,
+            failed: 0,
+            latest_event_at: null,
+            runs_returned: 1,
+            active_runs: 0,
+            avg_hit_rate: 0,
+          },
+          top_symbols: [],
+          ranked_opportunities: [],
+          runs: [run],
+          supported_universes: [{ key: "SP500", label: "S&P 500" }],
+        });
+      }
+      if (endpoint === "/secret/options/scanner-run/91") {
+        return Promise.resolve({
+          run,
+          hit_count: 1,
+          matched_event_count: 1,
+          hits: [hit],
+          ranking_snapshot: {
+            id: 7,
+            snapshot_uuid: "snapshot-uuid-0000000000000001",
+            schema_version: "option_scanner_rank_snapshot_v1",
+            surface: "scanner_run_detail",
+            scope_key: "run:91",
+            sweep_run_id: 91,
+            learning_policy_version: "test-v1",
+            opportunity_model_versions: [],
+            ranking_model_versions: [],
+            candidate_count: 1,
+            payload_sha256: "a".repeat(64),
+            integrity_verified: true,
+            source_generated_at: "2026-07-26T12:10:00",
+            created_at: "2026-07-26T12:10:01",
+            candidates: [
+              {
+                event_id: 501,
+                symbol: "TEST",
+                scan_ordinal: 1,
+                display_ordinal: 1,
+                champion_rank: 1,
+                counterfactual_rank: 1,
+                applied_rank: 1,
+                champion_score: 81,
+                counterfactual_score: 82,
+                applied_score: 82,
+                applied_weight: 0.1,
+                opportunity_model_version: "opportunity-v1",
+                ranking_model_version: "learning-v1",
+              },
+            ],
+          },
+        });
+      }
+      if (endpoint === "/secret/options/scanner-impressions") {
+        return Promise.resolve({
+          snapshot_id: 7,
+          inserted: 1,
+          skipped_duplicates: 0,
+          received: 1,
+        });
+      }
+      return Promise.reject(new Error(`Unexpected Secret Options telemetry test endpoint: ${endpoint}`));
+    });
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      const types = apiFetchMock.mock.calls
+        .filter(([endpoint]) => endpoint === "/secret/options/scanner-impressions")
+        .flatMap(([, options]) => JSON.parse(String(options?.body)).exposures)
+        .map((exposure) => exposure.exposure_type);
+      expect(types).toContain("ranking_rendered");
+      expect(types).toContain("candidate_visible");
+    });
+    const impressionCall = apiFetchMock.mock.calls.find(
+      ([endpoint]) => endpoint === "/secret/options/scanner-impressions",
+    );
+    expect(impressionCall?.[1]).toMatchObject({
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+    });
+    const payload = JSON.parse(String(impressionCall?.[1]?.body));
+    expect(payload.snapshot_id).toBe(7);
+    expect(payload.page_session_id.length).toBeGreaterThanOrEqual(16);
+    expect(payload.exposures[0]).toMatchObject({
+      exposure_type: "ranking_rendered",
+      metadata: { candidate_count: 1, run_id: 91 },
+    });
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Open scanner hit details for TEST",
+      }),
+    );
+    await waitFor(() => {
+      const types = apiFetchMock.mock.calls
+        .filter(([endpoint]) => endpoint === "/secret/options/scanner-impressions")
+        .flatMap(([, options]) => JSON.parse(String(options?.body)).exposures)
+        .map((exposure) => exposure.exposure_type);
+      expect(types).toContain("candidate_detail_opened");
+    });
+  });
+
+  it("allows read scope append only for the exact scanner telemetry endpoint", () => {
+    expect(
+      isSecretOptionsReadScopeAppend(
+        "/secret/options/scanner-impressions",
+        "POST",
+      ),
+    ).toBe(true);
+    expect(
+      isSecretOptionsReadScopeAppend("/secret/options/scanner-run", "POST"),
+    ).toBe(false);
+    expect(
+      isSecretOptionsReadScopeAppend(
+        "/secret/options/scanner-impressions/extra",
+        "POST",
+      ),
+    ).toBe(false);
+    expect(
+      isSecretOptionsReadScopeAppend(
+        "/secret/options/scanner-impressions",
+        "DELETE",
+      ),
+    ).toBe(false);
   });
 });
 

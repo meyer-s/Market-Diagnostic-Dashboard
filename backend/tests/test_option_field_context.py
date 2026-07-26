@@ -11,7 +11,9 @@ import pytest
 
 from app.models.options_alerts import OptionAlertEvent
 from app.services import market_weather_research
+from app.services.market_weather import MarketWeatherSettings, build_market_weather
 from app.services.option_field_context import (
+    OPTION_FIELD_HORIZONS,
     OPTION_FIELD_MODEL_VERSION,
     OPTION_FIELD_SCHEMA_VERSION,
     OPTION_FIELD_SEMANTIC_REVISION,
@@ -98,11 +100,19 @@ def test_incomplete_bar_values_cannot_change_causal_snapshot() -> None:
 
 
 def test_field_context_is_live_only_shadow_evidence() -> None:
+    history = _history()
     payload = build_option_field_context(
-        _history(),
+        history,
         option_type="put",
         observed_at=datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc),
         data_source="yahoo",
+    )
+    direct_field = build_market_weather(
+        history,
+        horizons=OPTION_FIELD_HORIZONS,
+        settings=MarketWeatherSettings(),
+        include_retrospective_research=False,
+        include_history_payload=False,
     )
 
     assert payload["schema_version"] == OPTION_FIELD_SCHEMA_VERSION
@@ -112,6 +122,7 @@ def test_field_context_is_live_only_shadow_evidence() -> None:
     assert payload["rank_influence"] == 0.0
     assert payload["automated_execution_enabled"] is False
     assert payload["authority"] == {
+        "scope": "direct_market_field_snapshot",
         "scanner_rank": "none",
         "hard_veto": "none",
         "manager_verdict": "none",
@@ -120,6 +131,11 @@ def test_field_context_is_live_only_shadow_evidence() -> None:
         "review_priority": "advisory",
         "human_visible": True,
         "automated_execution": "none",
+        "downstream_outcome_learning": {
+            "cohort_input_allowed": True,
+            "authority_contract": "separately_versioned_bounded_canary",
+            "note": payload["authority"]["downstream_outcome_learning"]["note"],
+        },
     }
     assert payload["maturity"]["status"] == "complete"
     assert payload["maturity"]["target_warmup_bars"] == OPTION_FIELD_TARGET_WARMUP_BARS
@@ -128,12 +144,29 @@ def test_field_context_is_live_only_shadow_evidence() -> None:
     assert payload["initialization"]["initialization_target_bars"] == OPTION_FIELD_TARGET_WARMUP_BARS
     assert payload["initialization"]["initialization_target_covered"] is True
     assert payload["initialization"]["initialization_status"] == "target_covered"
+    coordinate_coverage = payload["initialization"]["state_vector_coverage"]
+    assert coordinate_coverage["schema_version"] == "market_field_coordinate_coverage_v1"
+    assert coordinate_coverage["coordinate_count"] == 15
+    assert coordinate_coverage["analysis_bars"] == 100
+    assert coordinate_coverage["initialization_target_covered"] is True
+    assert coordinate_coverage["coverage_is_convergence"] is False
+    assert all(
+        row["initialization_target_covered"] is True
+        for row in coordinate_coverage["features"]
+    )
     assert payload["alignment"]["basis"] == "legacy_long_single_leg_option_type"
     assert payload["alignment"]["scope"] == "long_single_leg"
     assert payload["quality"]["available"] is True
     assert payload["quality"]["completed_bars_only"] is True
     assert payload["quality"]["data_source"] == "yahoo"
     assert payload["quality"]["as_of_bar"] == "2026-07-22"
+    assert payload["analysis_identity"] is not None
+    assert payload["analysis_identity"]["scope"] == (
+        "recipe_and_normalized_input_identity"
+    )
+    assert payload["analysis_identity"]["provider_truth_verified"] is False
+    for key in ("recipe_hash", "input_hash", "analysis_hash"):
+        assert payload["analysis_identity"][key] == direct_field["provenance"][key]
     assert payload["direction"]["option_aligned_pressure"] == -payload["direction"]["pressure"]
     assert payload["direction"]["option_aligned_velocity"] == -payload["direction"]["velocity"]
     assert payload["scaling_reference"]["exact_arithmetic_contract"]["nonnegative"] is True
@@ -218,6 +251,7 @@ def test_field_context_returns_stable_unavailable_shape_without_enough_bars() ->
     assert payload["initialization"]["minimum_input_satisfied"] is False
     assert payload["initialization"]["initialization_target_covered"] is False
     assert payload["initialization"]["initialization_status"] == "minimum_not_satisfied"
+    assert payload["analysis_identity"] is None
 
 
 def test_field_context_requires_full_two_horizon_warmup_at_95_and_96_bars() -> None:

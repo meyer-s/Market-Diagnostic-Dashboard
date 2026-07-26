@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import date, datetime
 from types import SimpleNamespace
 
@@ -289,6 +290,21 @@ def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> Non
         metrics=metrics,
         **assessment_kwargs,
     )
+    supportive_context = copy.deepcopy(field_context)
+    supportive_context["direction"] = {
+        "option_aligned_pressure": 0.42,
+        "option_aligned_velocity": 0.27,
+    }
+    supportive_context["price_action"] = {
+        "state": "breakout",
+        "support_distance_atr": 1.4,
+        "resistance_distance_atr": 0.2,
+    }
+    supportive_context["classification"]["path_state"] = "supportive"
+    supportive = build_assessment_payload(
+        metrics={**metrics, "field_context": supportive_context},
+        **assessment_kwargs,
+    )
 
     for immutable_field in (
         "company_thesis_status",
@@ -296,9 +312,13 @@ def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> Non
         "portfolio_fit_status",
         "proposed_verdict",
         "proposed_target_contracts",
+        "target_contracts_min",
+        "target_contracts_max",
     ):
         assert result[immutable_field] == baseline[immutable_field]
+        assert supportive[immutable_field] == baseline[immutable_field]
     assert result["vetoes"] == baseline["vetoes"]
+    assert supportive["vetoes"] == baseline["vetoes"]
     assert result["proposed_verdict"] == "hold"
     assert result["proposed_target_contracts"] == position.contracts
     assert not any(item["code"].startswith("market_field") for item in result["vetoes"])
@@ -321,6 +341,12 @@ def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> Non
         "target_size_changed": False,
         "execution_authority": "none",
     }
+    assert supportive["axis_results"]["market_structure"]["status"] == "supportive"
+    assert supportive["market_field_effects"]["rank_changed"] is False
+    assert supportive["market_field_effects"]["veto_changed"] is False
+    assert supportive["market_field_effects"]["verdict_changed"] is False
+    assert supportive["market_field_effects"]["target_size_changed"] is False
+    assert supportive["market_field_effects"]["execution_authority"] == "none"
     field_evidence = next(item for item in result["evidence"] if item["evidence_id"] == "market_field_path")
     assert field_evidence["advisory"] is True
     assert field_evidence["rank_influence"] == 0.0

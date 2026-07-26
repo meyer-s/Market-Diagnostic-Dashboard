@@ -333,6 +333,24 @@ def _compute_market_weather_analysis(
             }
         )
 
+    provenance = result.get("provenance")
+    if isinstance(provenance, dict):
+        provenance.update(
+            {
+                "symbol": normalized_symbol,
+                "timeframe": normalized_timeframe,
+                "history_data_source": bars_source,
+                "history_cache_status": history_result.metadata.status,
+                "history_storage_interval": history_result.metadata.storage_interval,
+                "visible_start": result["dates"][0],
+                "visible_end": result["dates"][-1],
+                "bar_completion_rule": (
+                    "Provider and persistent-cache history rows are used as returned. "
+                    "The endpoint does not independently certify exchange-session completion."
+                ),
+            }
+        )
+
     result.update(
         {
             "symbol": normalized_symbol,

@@ -495,10 +495,16 @@ interface OptionLearningSummary {
     actual_closed_trades_only: boolean;
     point_in_time_snapshot_required: boolean;
     minimum_sample_before_comparison: number;
+    direct_rank_influence?: 0;
+    eligible_for_outcome_learning_canary?: boolean;
+    maximum_total_canary_weight?: number;
+    rank_influence_note?: string;
     rank_influence: 0;
     automatic_weight_changes: false;
   };
   promotion_readiness: {
+    minimum_classified_actual_close_cycles?: number;
+    current_classified_actual_close_cycles?: number;
     minimum_independent_trade_cycles: number;
     current_independent_trade_cycles: number;
     remaining_cycles: number;
@@ -665,19 +671,38 @@ interface OptionLearningSignal {
   reliability?: number;
 }
 
+interface OptionLearningFamilyAttribution {
+  available: boolean;
+  cohort?: string | null;
+  signal_score?: number | null;
+  reliability: number;
+  normalized_learning_weight: number;
+  learning_score_component: number;
+  counterfactual_score_delta: number;
+  applied_score_delta: number;
+  direct_scanner_weight?: number | null;
+  influence_path: "indirect_outcome_learning_canary" | "outcome_learning_canary" | "not_applied";
+  rank_without_family?: number;
+  applied_rank?: number;
+  applied_rank_delta?: number;
+  applied_rank_changed?: boolean;
+}
+
 interface OptionLearningEvaluation {
   version: string;
   mode: "counterfactual_shadow" | "bounded_live_canary";
-  status: "collecting_comparable_cohorts" | "counterfactual_only" | "manual_promotion_eligible" | "live_canary_active" | "legacy_shadow_only";
+  status: "collecting_comparable_cohorts" | "counterfactual_only" | "counterfactual_operator_disabled" | "manual_promotion_eligible" | "live_canary_active" | "legacy_shadow_only";
   champion_score: number;
   learning_score: number | null;
   counterfactual_score: number;
   counterfactual_delta: number;
   counterfactual_weight: number;
+  evidence_scaled_event_weight?: number;
   nominal_weight_cap?: number;
   maximum_counterfactual_weight?: number;
   applied_score: number;
   applied_weight: number;
+  applied_event_weight?: number;
   maximum_applied_weight?: number;
   champion_rank?: number;
   counterfactual_rank?: number;
@@ -685,15 +710,46 @@ interface OptionLearningEvaluation {
   rank_delta?: number;
   applied_rank_delta?: number;
   rank_changed: boolean;
+  /** Legacy event-capture field; the separate terminal-run receipt is created later. */
   rank_snapshot_persisted?: boolean;
+  rank_snapshot_state_at_event_capture?: string;
   candidate_cohorts: Record<string, string>;
   signals: OptionLearningSignal[];
+  family_attribution?: Record<string, OptionLearningFamilyAttribution>;
+  authority?: {
+    candidate_eligibility?: string;
+    hard_veto?: string;
+    position_sizing?: string;
+    review_verdict?: string;
+    automated_execution?: string;
+    direct_market_field_scanner_weight?: number;
+    outcome_learning_canary_maximum_weight?: number;
+    market_field_indirect_applied_score_delta?: number;
+    note?: string;
+  };
   gates: Record<string, boolean>;
+  operator_authorization?: {
+    configured: boolean;
+    setting: string;
+    default: boolean;
+    frozen_in_receipt: boolean;
+  };
+  weight_control?: {
+    configured_policy_cap: number;
+    evidence_scaled_event_weight: number;
+    applied_event_weight: number;
+    operator_authorized: boolean;
+    evidence_scaling_is_policy_or_cap_change: boolean;
+    automatic_policy_or_cap_changes: boolean;
+  };
+  evidence_gates_passed?: boolean;
+  application_gates_passed?: boolean;
   promotion_ready_for_review: boolean;
   live_canary_active?: boolean;
   point_in_time_receipt?: boolean;
   manual_promotion_required: boolean;
   automatic_weight_changes: boolean;
+  automatic_policy_or_cap_changes?: boolean;
   reasons: string[];
 }
 
@@ -705,9 +761,24 @@ interface OptionLearningPolicy {
   maximum_counterfactual_weight: number;
   maximum_applied_weight?: number;
   live_canary_enabled?: boolean;
+  configured_operator_authorization?: boolean;
+  operator_authorization?: {
+    configured: boolean;
+    setting: string;
+    default: boolean;
+    frozen_in_context: boolean;
+  };
+  weight_policy?: {
+    configured_cap: number;
+    event_weight_is_evidence_scaled: boolean;
+    automatic_policy_or_cap_changes: boolean;
+  };
   automatic_weight_changes: boolean;
+  automatic_policy_or_cap_changes?: boolean;
   manual_promotion_required: boolean;
   evidence: {
+    classified_actual_close_cycles?: number;
+    minimum_classified_actual_close_cycles?: number;
     independent_trade_cycles: number;
     minimum_independent_trade_cycles: number;
     full_promotion_minimum_trade_cycles?: number;
@@ -730,6 +801,15 @@ interface OptionLearningPolicy {
 
 interface ScannerRankedOpportunity {
   event_id: number;
+  scan_ordinal?: number | null;
+  display_ordinal?: number | null;
+  champion_rank?: number | null;
+  counterfactual_rank?: number | null;
+  applied_rank?: number | null;
+  champion_score?: number | null;
+  counterfactual_score?: number | null;
+  applied_score?: number | null;
+  applied_weight?: number | null;
   symbol: string;
   triggered_at: string | null;
   group: string;
@@ -833,13 +913,79 @@ interface ScannerRunResponse {
   run: ScannerRun;
 }
 
+interface ScannerRankSnapshotCandidate {
+  event_id: number;
+  symbol: string;
+  scan_ordinal: number;
+  display_ordinal: number;
+  champion_rank: number | null;
+  counterfactual_rank: number | null;
+  applied_rank: number;
+  champion_score: number | null;
+  counterfactual_score: number | null;
+  applied_score: number | null;
+  applied_weight: number | null;
+  opportunity_model_version: string;
+  ranking_model_version: string;
+}
+
+interface ScannerRankSnapshot {
+  id: number;
+  snapshot_uuid: string;
+  schema_version: string;
+  surface: "scanner_run_detail";
+  scope_key: string;
+  sweep_run_id: number;
+  learning_policy_version: string | null;
+  opportunity_model_versions: string[];
+  ranking_model_versions: string[];
+  candidate_count: number;
+  payload_sha256: string;
+  integrity_verified: boolean;
+  source_generated_at: string | null;
+  created_at: string | null;
+  candidates: ScannerRankSnapshotCandidate[];
+}
+
+interface ScannerImpressionDraft {
+  dedupeKey: string;
+  exposure_type:
+    | "ranking_rendered"
+    | "candidate_visible"
+    | "candidate_detail_opened"
+    | "market_field_link_clicked"
+    | "trade_prefill_opened";
+  event_id?: number;
+  visibility_ratio?: number;
+  visible_ms?: number;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+interface ScannerImpressionWire {
+  client_impression_id: string;
+  exposure_type: ScannerImpressionDraft["exposure_type"];
+  event_id?: number;
+  client_occurred_at: string;
+  visibility_ratio?: number;
+  visible_ms?: number;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
 interface ScannerRunDetailResponse {
   run: ScannerRun;
   hit_count: number;
   matched_event_count: number;
   hits: ScannerRankedOpportunity[];
   learning_policy?: OptionLearningPolicy;
+  ranking_snapshot?: ScannerRankSnapshot | null;
 }
+
+const createScannerTelemetryId = (): string => {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `scanner-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+};
 
 interface EvaluationInsight {
   minHoldDays: number;
@@ -1651,10 +1797,25 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
                 <div className="mt-0.5 text-[10px] font-semibold text-stealth-200">
                   {signal.cohort.replace(/_/g, " ")}
                 </div>
+                {learning.family_attribution?.[signal.family] ? (
+                  <div className="mt-0.5 text-[9px] tabular-nums text-violet-300">
+                    {learning.family_attribution[signal.family].applied_score_delta === 0
+                      ? "No applied score effect"
+                      : `${formatSigned(learning.family_attribution[signal.family].applied_score_delta, 3)} applied`}
+                    {learning.family_attribution[signal.family].applied_rank_changed
+                      ? ` · rank ${formatSigned(learning.family_attribution[signal.family].applied_rank_delta ?? 0, 0)}`
+                      : ""}
+                  </div>
+                ) : null}
                 <div className="mt-0.5 text-[9px] leading-snug text-stealth-500">{signal.reason}</div>
               </div>
             ))}
           </div>
+          {learning.authority?.note ? (
+            <p className="mt-2 border-t border-stealth-800 pt-2 text-[9px] leading-relaxed text-stealth-500">
+              {learning.authority.note}
+            </p>
+          ) : null}
         </details>
       ) : null}
       {marketField && marketFieldHref ? (
@@ -1699,6 +1860,11 @@ const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportuni
             <span>{marketField.pathStateLabel}</span>
             <span>IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}</span>
             <span>{marketField.timeframe} · as of {opportunity.field_context?.as_of_bar || "recorded bar"}</span>
+            {opportunity.field_context?.analysis_identity?.analysis_hash ? (
+              <span title={opportunity.field_context.analysis_identity.analysis_hash}>
+                analysis {opportunity.field_context.analysis_identity.analysis_hash.slice(0, 10)}
+              </span>
+            ) : null}
             <span>{marketField.authorityLabel}</span>
             <span>{marketField.advisoryEffectsLabel}</span>
           </div>
@@ -3112,6 +3278,9 @@ export default function SecretOptions() {
   const [scannerRunDetail, setScannerRunDetail] = useState<ScannerRunDetailResponse | null>(null);
   const selectedScannerRunIdRef = useRef<number | null>(null);
   const scannerRunDetailRef = useRef<ScannerRunDetailResponse | null>(null);
+  const [scannerImpressionSessionId] = useState(createScannerTelemetryId);
+  const sentScannerImpressionsRef = useRef<Set<string>>(new Set());
+  const scannerImpressionPayloadsRef = useRef<Map<string, ScannerImpressionWire>>(new Map());
   const [expandedScannerHitId, setExpandedScannerHitId] = useState<number | null>(null);
   const [loadingScannerRunDetail, setLoadingScannerRunDetail] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
@@ -4697,6 +4866,176 @@ export default function SecretOptions() {
     }
   }, [expandedScannerHitId, selectedScannerHits]);
 
+  const recordScannerImpressions = useCallback(
+    (snapshot: ScannerRankSnapshot, drafts: ScannerImpressionDraft[]) => {
+      const pending = drafts.filter(
+        (draft) => !sentScannerImpressionsRef.current.has(draft.dedupeKey),
+      );
+      if (pending.length === 0) return;
+      for (let offset = 0; offset < pending.length; offset += 50) {
+        const chunk = pending.slice(offset, offset + 50);
+        const exposures = chunk.map((draft) => {
+          const existing = scannerImpressionPayloadsRef.current.get(draft.dedupeKey);
+          if (existing) return existing;
+          const wire: ScannerImpressionWire = {
+            client_impression_id: createScannerTelemetryId(),
+            exposure_type: draft.exposure_type,
+            client_occurred_at: new Date().toISOString(),
+            ...(draft.event_id === undefined ? {} : { event_id: draft.event_id }),
+            ...(draft.visibility_ratio === undefined
+              ? {}
+              : { visibility_ratio: draft.visibility_ratio }),
+            ...(draft.visible_ms === undefined ? {} : { visible_ms: draft.visible_ms }),
+            ...(draft.metadata === undefined ? {} : { metadata: draft.metadata }),
+          };
+          scannerImpressionPayloadsRef.current.set(draft.dedupeKey, wire);
+          return wire;
+        });
+        chunk.forEach((draft) => sentScannerImpressionsRef.current.add(draft.dedupeKey));
+        void apiFetch<{
+          snapshot_id: number;
+          inserted: number;
+          skipped_duplicates: number;
+          received: number;
+        }>("/secret/options/scanner-impressions", {
+          method: "POST",
+          keepalive: true,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            snapshot_id: snapshot.id,
+            page_session_id: scannerImpressionSessionId,
+            exposures,
+          }),
+        }).catch((err: unknown) => {
+          chunk.forEach((draft) => {
+            sentScannerImpressionsRef.current.delete(draft.dedupeKey);
+          });
+          console.error("Failed to record scanner impression:", err);
+        });
+      }
+    },
+    [scannerImpressionSessionId],
+  );
+
+  useEffect(() => {
+    const snapshot = scannerRunDetail?.ranking_snapshot;
+    if (secretAuthRequired || !snapshot?.integrity_verified) return;
+    recordScannerImpressions(snapshot, [
+      {
+        dedupeKey: `${snapshot.snapshot_uuid}:ranking_rendered`,
+        exposure_type: "ranking_rendered",
+        metadata: {
+          candidate_count: snapshot.candidate_count,
+          run_id: snapshot.sweep_run_id,
+        },
+      },
+    ]);
+  }, [recordScannerImpressions, scannerRunDetail, secretAuthRequired]);
+
+  useEffect(() => {
+    const snapshot = scannerRunDetail?.ranking_snapshot;
+    if (
+      secretAuthRequired
+      || !snapshot?.integrity_verified
+      || expandedScannerHitId === null
+      || !snapshot.candidates.some(
+        (candidate) => candidate.event_id === expandedScannerHitId,
+      )
+    ) {
+      return;
+    }
+    recordScannerImpressions(snapshot, [
+      {
+        dedupeKey: `${snapshot.snapshot_uuid}:candidate_detail_opened:${expandedScannerHitId}`,
+        exposure_type: "candidate_detail_opened",
+        event_id: expandedScannerHitId,
+      },
+    ]);
+  }, [
+    expandedScannerHitId,
+    recordScannerImpressions,
+    scannerRunDetail,
+    secretAuthRequired,
+  ]);
+
+  useEffect(() => {
+    const snapshot = scannerRunDetail?.ranking_snapshot;
+    if (
+      secretAuthRequired
+      || !snapshot?.integrity_verified
+      || snapshot.candidate_count === 0
+      || typeof IntersectionObserver === "undefined"
+    ) {
+      return;
+    }
+    const timers = new Map<Element, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const element = entry.target as HTMLElement;
+          const eventId = Number(element.dataset.scannerEventId);
+          if (
+            !Number.isInteger(eventId)
+            || element.dataset.scannerSnapshot !== snapshot.snapshot_uuid
+          ) {
+            continue;
+          }
+          const existingTimer = timers.get(element);
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.5) {
+            if (existingTimer !== undefined) {
+              window.clearTimeout(existingTimer);
+              timers.delete(element);
+            }
+            continue;
+          }
+          if (existingTimer !== undefined) continue;
+          const ratio = Math.round(entry.intersectionRatio * 1000) / 1000;
+          const timer = window.setTimeout(() => {
+            timers.delete(element);
+            if (!element.isConnected) return;
+            const candidate = snapshot.candidates.find(
+              (row) => row.event_id === eventId,
+            );
+            if (!candidate) return;
+            recordScannerImpressions(snapshot, [
+              {
+                dedupeKey: `${snapshot.snapshot_uuid}:candidate_visible:${eventId}`,
+                exposure_type: "candidate_visible",
+                event_id: eventId,
+                visibility_ratio: ratio,
+                visible_ms: 500,
+                metadata: {
+                  display_ordinal: candidate.display_ordinal,
+                  scan_ordinal: candidate.scan_ordinal,
+                },
+              },
+            ]);
+          }, 500);
+          timers.set(element, timer);
+        }
+      },
+      { threshold: [0.5] },
+    );
+    const elements = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-scanner-event-id]"),
+    ).filter(
+      (element) => element.dataset.scannerSnapshot === snapshot.snapshot_uuid,
+    );
+    elements.forEach((element) => observer.observe(element));
+    return () => {
+      observer.disconnect();
+      timers.forEach((timer) => window.clearTimeout(timer));
+      timers.clear();
+    };
+  }, [
+    isMobileWorkflow,
+    mobileScannerView,
+    mobileWorkspace,
+    recordScannerImpressions,
+    scannerRunDetail,
+    secretAuthRequired,
+  ]);
+
   useEffect(() => {
     if (expandedScannerHitId === null) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -5047,10 +5386,11 @@ export default function SecretOptions() {
       .map((key) => [key, cohorts[key].sample_count] as const)
       .filter(([, count]) => count > 0);
     const observed = named.reduce((sum, [, count]) => sum + count, 0);
+    const canaryCap = learningSummary?.market_field_outcomes?.maximum_total_canary_weight ?? 0.1;
     if (observed === 0) {
-      return "Field challenger: collecting point-in-time closed outcomes; rank weight remains zero.";
+      return `Field learning: direct field weight 0%; collecting point-in-time outcomes for the separately gated ≤${(canaryCap * 100).toFixed(0)}% total canary.`;
     }
-    return `Field challenger: ${named.map(([key, count]) => `${count} ${key}`).join(" · ")} closed ${observed === 1 ? "cycle" : "cycles"}; rank weight zero.`;
+    return `Field learning: ${named.map(([key, count]) => `${count} ${key}`).join(" · ")} closed ${observed === 1 ? "cycle" : "cycles"}; direct field weight 0%, with indirect cohort influence only inside the gated ≤${(canaryCap * 100).toFixed(0)}% total canary.`;
   }, [learningSummary]);
 
   const openAttribution = useMemo(() => {
@@ -5663,6 +6003,8 @@ export default function SecretOptions() {
                       <button
                         key={hit.event_id}
                         type="button"
+                        data-scanner-event-id={hit.event_id}
+                        data-scanner-snapshot={scannerRunDetail?.ranking_snapshot?.snapshot_uuid}
                         onClick={() => setExpandedScannerHitId(hit.event_id)}
                         className="w-full rounded-lg border border-stealth-800 bg-stealth-950/30 p-3 text-left"
                       >
@@ -5683,8 +6025,8 @@ export default function SecretOptions() {
                               {contract.option_type?.toUpperCase() ?? "Option"} {contract.strike !== null ? formatNumber(contract.strike, 2) : "pending"} · {hit.group}
                             </p>
                           </div>
-                          <span className={`rounded border px-2 py-1 text-xs font-semibold ${opportunityScoreClass(hit.score)}`}>
-                            {hit.grade ?? hit.score.toFixed(0)}
+                          <span className={`rounded border px-2 py-1 text-xs font-semibold tabular-nums ${opportunityScoreClass(hit.score)}`}>
+                            #{hit.display_ordinal ?? hit.applied_rank ?? "—"} · {hit.grade ?? hit.score.toFixed(0)}
                           </span>
                         </div>
                         {match ? (
@@ -6348,6 +6690,8 @@ export default function SecretOptions() {
                         <div
                           role="button"
                           tabIndex={0}
+                          data-scanner-event-id={opportunity.event_id}
+                          data-scanner-snapshot={scannerRunDetail?.ranking_snapshot?.snapshot_uuid}
                           aria-haspopup="dialog"
                           aria-label={`Open scanner hit details for ${opportunity.symbol}`}
                           onClick={() => setExpandedScannerHitId(opportunity.event_id)}
@@ -6410,8 +6754,11 @@ export default function SecretOptions() {
                           ) : null}
                         </div>
                         <div className="flex items-start justify-end gap-1">
-                          <div className={`rounded-md border px-1.5 py-1 text-center text-xs font-semibold ${opportunityScoreClass(opportunity.score)}`}>
-                            {compactOpportunityGrade(opportunity.score, opportunity.grade)}
+                          <div className={`rounded-md border px-1.5 py-1 text-center text-[10px] font-semibold tabular-nums ${opportunityScoreClass(opportunity.score)}`}>
+                            <span className="block">#{opportunity.display_ordinal ?? opportunity.applied_rank ?? "—"}</span>
+                            <span className="block text-[9px] opacity-80">
+                              {compactOpportunityGrade(opportunity.score, opportunity.grade)}
+                            </span>
                           </div>
                           <ChevronDown
                             className={`mt-1 h-3 w-3 -rotate-90 text-stealth-500 transition-colors ${isSelected ? "text-sky-300" : ""}`}

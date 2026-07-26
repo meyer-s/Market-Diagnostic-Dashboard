@@ -1,10 +1,11 @@
 # Major-revision response map
 
 This file maps the 13 major peer-review points to the research revision and the
-backward-compatible semantic closeout through v1.2. The manuscript specifies
-the current formula model `market_field_calculus_v1`; `semantic_revision=1.2`
-adds contracts and aliases without changing that vector, while legacy 1.0/1.1
-payloads remain immutable and readable and the expanded
+backward-compatible semantic closeout through v1.3. The manuscript specifies
+the current formula model `market_field_calculus_v1`; `semantic_revision=1.3`
+adds coordinate coverage, computation identities, and authority/evidence
+receipts without changing that vector, while legacy 1.0--1.2 payloads remain
+immutable and readable and the expanded
 `market_field_preliminary_v2` evaluation harness is not a v2 field formula.
 Disposition labels are **MC** (manuscript correction), **NE** (new evidence),
 **PF** (production follow-up), and **DE** (deferred efficacy work).
@@ -25,14 +26,30 @@ evidence instead of implying that the gap is already solved.
 | Hand-set constants | Added a compact appendix inventory with rationale and chronology. | Constants predate the new comparison but were not preregistered and are not claimed optimal. |
 | ICLR LLM policy | Updated the statement to disclose significant ideation, writing, code, and analysis assistance; it states that disclosure must also appear in the submission form and that the human author is fully responsible. | Wording follows the ICLR 2026 Author Guide and LLM FAQ checked on 2026-07-23. |
 | Bibliography | Added a reproducible 38-entry DOI/ISBN/source-page audit and discrepancy notes; protected the Wilder suffix as a literal personal name. | 30 records match directly, five source pages were inspected, and three registry-format discrepancies are reconciled in `results/bibliography_audit_notes.md`. |
-| Version terminology | Added a compact formula-v1 / semantic-1.2 / preliminary-v2 table. | Formula, compatibility, and evaluation-harness boundaries are visible without rereading the appendix. |
+| Version terminology | Added a compact formula-v1 / semantic-1.3 / preliminary-v2 table. | Formula, compatibility, and evaluation-harness boundaries are visible without rereading the appendix. |
 
-| # | Review point | Research correction | Disposition after v1.2 |
+## 2026-07-26 future-work closeout
+
+The later implementation audit treated the paper's future-work list as a
+backlog and separated code that could be completed now from evidence that
+requires future observations.
+
+| Former open item | Current disposition | Remaining boundary |
+|---|---|---|
+| Per-coordinate initialization coverage | Semantic 1.3 emits all 15 coordinates with required inputs, a per-time full-dependency-support mask separate from finite startup computation, retained-prefix depth, and neutral-placeholder status. | Dependency support is not convergence; the 96-bar target remains history-sensitive. |
+| Frozen computation identity | Responses emit canonical recipe, normalized-input, and combined analysis SHA-256 identities. | Identity does not certify provider accuracy, revision stability, or exchange-session completeness. |
+| Direct Market Field authority ambiguity | The payload, UI, and manuscript now distinguish 0% direct snapshot weight from possible historical-field-cohort contribution inside the separately governed total canary capped at 10%. A default-off operator gate is frozen into the receipt, and per-family score/rank attribution is explicit. | No result establishes that the lean improves decisions. Eligibility, vetoes, sizing, verdicts, and execution remain outside its authority. |
+| Rank and exposure evidence | Successful finalization of completed, stopped, or errored scanner runs freezes append-only candidate/rank receipts; authenticated ranking-rendered, candidate-visible, and detail-open impressions are idempotent and reference the frozen snapshot. | Stale, pre-schema, and failed-finalization runs remain unsnapshotted; historical exposure before deployment cannot be reconstructed. |
+| Tested authority metamorphism | Separate focused tests compare supportive and contradictory contexts at the scanner/selection boundary and across stored-position, manager, human-review, manual lifecycle-recording, close, P/L, and outcome-attribution boundaries. | The lifecycle test seeds the persisted scanner event and contract, so this is not one continuous eligibility-through-broker proof; the application also owns no broker order path. |
+| Rolling-origin infrastructure | A frozen development protocol and deterministic runner now provide purging, naive/EMA/technical, fixed two-window break, and cap-truncated fit-only two-state HMM comparators, raw-vector and family ablations, stationary bootstrap intervals, BH/Holm corrections, and receipts. | Retained-cache output is development evidence, not a no-touch prospective holdout or option-P/L study; the HMM did not satisfy its source-fixed stopping tolerance within eight iterations, and wavelet/topology/IV/connectedness variants still require defensible conventions or unavailable point-in-time inputs. |
+| Future-work classification | `FUTURE_WORK_TRIAGE.md` records implementable instrumentation, prospective data collection, irrecoverable historical evidence, and longer-horizon research separately. | Universal states, causal fusion, economic value, and autonomous execution remain unclaimed. |
+
+| # | Review point | Research correction | Disposition at the v1.2 review |
 |---|---|---|---|
 | 1 | The field calculus did not reconstruct the 15-dimensional vector | Appendix A now gives the exact EWM recursion, numerical clip, nonuniform log-horizon stencils, temporal/scale normalization, reductions, carrier transforms, state vector, robust scaling, distance weights, and deterministic clustering rules. | **MC/PF complete; DE:** Production exposes semantic revision and applied settings. Exact raw-input reproduction still depends on locally retained data. |
 | 2 | `h +/- 1` was invalid for the actual grid | The paper now indexes an ordered grid by row `j`, gives interior/edge kernels, and declares equal row adjacency to be a v1 model choice rather than a log-distance-invariant smoother. | **MC/DE:** A log-distance kernel is a versioned v2 ablation, not a manuscript-only change. |
 | 3 | Zero denominators and domains were undefined | The paper now defines epsilon, first-bar true range, zero TR/path/difference/propagation/match cases, positive-close flooring, tight OHLC boundary tolerance, and masked volume formulas. Invalid volume is unavailable, rolling means use admissible observations, and zero volume makes its impact observation unavailable rather than zero. | **MC/PF complete:** Production validates finite positive and internally consistent OHLC, reports rejected rows and volume coverage, and distinguishes unavailable direct ratios from the internal neutral clustering fill. |
-| 4 | Minimum history conflicted with long horizons | The paper documents hidden prefetch, startup, carrier span, and missing per-coordinate initialization-coverage masks. A new truncation audit shows median/p90 IQR-normalized error falling from 0.501/2.009 at 60 bars to approximately 0/0.003 at 365. | **MC/NE/PF complete; DE:** Minimum-input/initialization-coverage metadata is returned and option availability now requires 96 completed bars. Per-coordinate masks and convergence studies remain future work; `maturity` is only a legacy serialized alias. |
+| 4 | Minimum history conflicted with long horizons | The paper documents hidden prefetch, startup, carrier span, and the earlier absence of per-coordinate initialization coverage. A new truncation audit shows median/p90 IQR-normalized error falling from 0.501/2.009 at 60 bars to approximately 0/0.003 at 365. | **MC/NE/PF complete; DE additive closeout:** Minimum-input metadata and per-coordinate finite-computation/full-dependency-support coverage are returned, and option availability requires 96 completed bars. Convergence studies remain future work; `maturity` is only a legacy serialized alias. |
 | 5 | Flat fields had counterintuitive Structure/organization baselines | The exact synthetic null anchor (Structure 0.42, legacy display organization 0.68) is now reported, and the structure-information scope is distinguished from `O`. | **MC/NE/PF complete; DE:** Activity, agreement, composite, and flat anchors are now separate response/UI concepts. Gated Structure is a versioned ablation. |
 | 6 | Scaling exponent lacked a reference baseline | The paper now specifies epsilon, stencil, reduction, the ordinary 0.5 reference, interpretations near 0 and 1, and the exact nonnegativity invariant; a materially negative value is a quality failure, not a state. | **MC/NE/PF complete; DE:** Response/UI expose reference, excess, and degenerate validity. More synthetic reference-process tests remain deferred. |
 | 7 | Permutation-entropy wording and startup were wrong | The revision states six possible patterns and all startup/tie/reduction conventions. A new 8/12/48/96-versus-24 sensitivity audit finds material window dependence. | **MC/NE/PF complete:** Initialization coverage is exposed and the fixed 24-instance v1 window is explicitly versioned and documented. |
@@ -40,7 +57,7 @@ evidence instead of implying that the gap is already solved.
 | 9 | “Causal” lacked a formal definition and tests were overstated | The title now uses “Non-Anticipative”; Remark 1 states prefix-only live computation and the elementary argument is in the appendix. A new audit passes 46/46 prefixes and 24,472 full-precision live values at tolerance `1e-12`; the original 32/6,688 serialized audit is still described accurately. | **MC/NE/PF:** Extend coverage to minimum-input/initialization-coverage metadata, hypotheses, lexicon fields, and complete option snapshots; this is not causal inference. |
 | 10 | Figure reference and 540-count statements were wrong | The asset sentence now references the tail-rate figure. Step 4 is reported as 180 pairs; 540 is reserved for all three nonreference grids. | **MC/NE:** The comparison-count artifact independently records 180 pairs per step. |
 | 11 | Codebook rhetoric and attribution were too strong | The revision gives metric/family/support/silhouette-conditioned wording, enumerates candidate selection and tie handling, separately cites k-means and farthest-point initialization, and now includes a matched cheap baseline. | **MC/NE/DE:** The negative unsupervised comparison is complete; predictive and economic comparisons remain deferred. |
-| 12 | Option and latency safeguards were overstated | The paper separates algorithmic authority from human influence, narrows side alignment, specifies recurrence and pressure-aligned exhaustion velocity, and points to run-receipted latency/payload artifacts instead of treating volatile point estimates as a contract. It also states that advisory urgency can recompute the next-review date. | **MC/NE/PF partial; DE:** Authority, action/delta alignment, applied-effect metadata, scanner-score checks, and manager verdict/target-size comparisons shipped. A complete eligibility-through-execution metamorphic proof, impression-level exposure logging, and cold/concurrent/SLA testing remain deferred. |
+| 12 | Option and latency safeguards were overstated | The paper separates algorithmic authority from human influence, narrows side alignment, specifies recurrence and pressure-aligned exhaustion velocity, and points to run-receipted latency/payload artifacts instead of treating volatile point estimates as a contract. It also states that advisory urgency can recompute the next-review date. | **MC/NE/PF partial; DE additive closeout:** Authority, action/delta alignment, applied-effect metadata, separate scanner and lifecycle metamorphic checks, frozen rank receipts, and candidate-level impression logging shipped. One continuous eligibility-through-broker proof remains unavailable because the application owns no automated order path; cold/concurrent/SLA testing remains deferred. |
 | 13 | Attribution and multiplicity language needed audit | Kaufman, Wilder, Gonzalez, Hubert--Arabie, and purge/embargo references were added. Benjamini--Hochberg is identified as FDR rather than family-wise control. A recorded 38-entry DOI/ISBN/source-page metadata audit and discrepancy review is included. | **MC complete:** The human submitter remains responsible for the final reference list. |
 
 ## Evidence boundary
@@ -53,17 +70,20 @@ profitability, predictive/economic comparative advantage, and
 production service levels remain deferred until the corresponding preregistered,
 cost-aware, dependence-aware experiments exist.
 
-The v1.2 program revision is additive: existing schema/model IDs and legacy
-1.0/1.1 fields remain readable without mutation, while `semantic_revision`, history/input quality,
-calibration-distance aliases, option authority, alignment, initialization coverage, and
-applied-effect metadata make the reviewed boundaries machine-readable. The
+The v1.3 program revision is additive: existing schema/model IDs and legacy
+1.0--1.2 fields remain readable without mutation, while `semantic_revision`,
+history/input quality, coordinate coverage, computation identities,
+calibration-distance aliases, direct-versus-indirect option authority,
+alignment, rank/exposure receipts, and applied-effect metadata make the reviewed boundaries machine-readable. The
 supplementary v2 harness expands audits and receipts; it does not change the v1
 field formula.
 
 ## Second-round precision corrections
 
 The mathematical items are paper/reproducibility corrections to the already
-evaluated v1 formula and are labeled by the additive 1.2 semantic closeout.
+evaluated v1 formula and were originally labeled by the additive 1.2 semantic closeout.
+Semantic 1.3 adds audit metadata and prospective evidence collection without
+changing those formulas.
 They do not silently change the field vector or create new efficacy evidence.
 The security row is an application-boundary change, independently tested and
 kept outside the representation formula.

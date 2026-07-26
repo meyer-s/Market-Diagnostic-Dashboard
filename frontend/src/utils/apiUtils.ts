@@ -1,6 +1,7 @@
 import {
   getSecretOptionsScope,
   isSecretOptionsEndpoint,
+  isSecretOptionsReadScopeAppend,
   notifySecretOptionsAuthRequired,
   withSecretOptionsAuthorization,
 } from "./secretOptionsAuth";
@@ -64,6 +65,7 @@ export async function apiFetch<T>(endpoint: string, options?: RequestInit): Prom
     isSecretOptionsEndpoint(endpoint)
     && getSecretOptionsScope() === "read"
     && !["GET", "HEAD", "OPTIONS"].includes(method)
+    && !isSecretOptionsReadScopeAppend(endpoint, method)
   ) {
     notifySecretOptionsAuthRequired(403);
     throw new ApiError(

@@ -211,6 +211,7 @@ export interface OptionMarketFieldHypotheses {
 export type OptionMarketFieldAuthorityValue = boolean | number | string | null;
 
 export interface OptionMarketFieldAuthority {
+  scope?: string | null;
   scanner_rank?: OptionMarketFieldAuthorityValue;
   hard_veto?: OptionMarketFieldAuthorityValue;
   manager_verdict?: OptionMarketFieldAuthorityValue;
@@ -219,6 +220,7 @@ export interface OptionMarketFieldAuthority {
   review_priority?: OptionMarketFieldAuthorityValue;
   human_visible?: OptionMarketFieldAuthorityValue;
   automated_execution?: OptionMarketFieldAuthorityValue;
+  downstream_outcome_learning?: Record<string, unknown> | null;
 }
 
 export interface OptionMarketFieldAlignment {
@@ -274,7 +276,7 @@ export interface OptionMarketFieldEffectsApplied {
   [key: string]: unknown;
 }
 
-/** Point-in-time, causal field snapshot. It must remain advisory while rank_influence is zero. */
+/** Point-in-time field snapshot with zero direct rank authority. */
 export interface OptionMarketFieldContext {
   schema_version?: string | null;
   mode?: string | null;
@@ -287,6 +289,14 @@ export interface OptionMarketFieldContext {
   timeframe?: string | null;
   option_type?: string | null;
   data_source?: string | null;
+  analysis_identity?: {
+    schema_version?: string | null;
+    recipe_hash?: string | null;
+    input_hash?: string | null;
+    analysis_hash?: string | null;
+    provider_truth_verified?: boolean | null;
+    [key: string]: unknown;
+  } | null;
   completed_bars?: number | null;
   excluded_incomplete_bars?: number | null;
   quality?: ({ available?: boolean | null } & Record<string, unknown>) | string | null;

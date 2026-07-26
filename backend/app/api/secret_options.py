@@ -9,13 +9,13 @@ import re
 from threading import Lock
 import time as time_lib
 from types import SimpleNamespace
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import pandas as pd
 import yfinance as yf
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 import traceback
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from app.api.secret_options_security import (
@@ -62,6 +62,10 @@ from app.services.option_sweep_runs import (
     build_scanner_summary,
     request_stop_dashboard_sweep,
     start_dashboard_sweep,
+)
+from app.services.option_scanner_exposure import (
+    ScannerImpressionReplayConflict,
+    record_scanner_impressions,
 )
 from app.services.discord_sweep_universe import resolve_sweep_universe
 from app.services.stock_price_cache import get_or_refresh_daily_frame
@@ -214,6 +218,39 @@ class ClosedPositionUpdate(BaseModel):
 class ScannerRunRequest(BaseModel):
     universe_key: str = "SP500"
     threshold: float = 30.0
+
+
+class ScannerImpressionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_impression_id: str = Field(
+        min_length=16,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
+    exposure_type: Literal[
+        "ranking_rendered",
+        "candidate_visible",
+        "candidate_detail_opened",
+        "market_field_link_clicked",
+        "trade_prefill_opened",
+    ]
+    event_id: Optional[int] = Field(default=None, gt=0)
+    client_occurred_at: Optional[datetime] = None
+    visibility_ratio: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    visible_ms: Optional[int] = Field(default=None, ge=0, le=3_600_000)
+    metadata: Dict[str, str | int | float | bool | None] = Field(
+        default_factory=dict,
+        max_length=12,
+    )
+
+
+class ScannerImpressionBatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: int = Field(gt=0)
+    page_session_id: str = Field(min_length=16, max_length=128)
+    exposures: list[ScannerImpressionCreate] = Field(min_length=1, max_length=50)
 
 
 class OptionPositionReviewCreate(BaseModel):
@@ -2838,6 +2875,45 @@ def get_scanner_run(run_id: int):
         return _json_safe(build_scanner_run_detail(run_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/scanner-impressions")
+def create_scanner_impressions(
+    payload: ScannerImpressionBatch,
+    http_request: Request,
+):
+    actor = str(
+        getattr(http_request.state, "secret_options_actor", "anonymous")
+    )
+    request_id = str(
+        getattr(http_request.state, "secret_options_request_id", "")
+    )
+    try:
+        with get_db_session() as db:
+            result = record_scanner_impressions(
+                db,
+                snapshot_id=payload.snapshot_id,
+                page_session_id=payload.page_session_id,
+                actor=actor,
+                request_id=request_id,
+                exposures=[
+                    exposure.model_dump()
+                    for exposure in payload.exposures
+                ],
+            )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ScannerImpressionReplayConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    set_secret_options_audit_change(
+        http_request,
+        object_type="scanner_impression_batch",
+        object_id=payload.snapshot_id,
+        after=result,
+    )
+    return result
 
 
 @router.post("/scanner-run/{run_id}/stop")

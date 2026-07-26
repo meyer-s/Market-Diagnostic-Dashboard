@@ -244,6 +244,305 @@ def _aggregate_available(values: np.ndarray) -> np.ndarray:
     )
 
 
+def _state_vector_initialization_coverage(
+    *,
+    dates: Sequence[str],
+    horizons: Sequence[int],
+    derivatives: Mapping[str, np.ndarray],
+    strata: Mapping[str, np.ndarray],
+    carriers: Mapping[str, np.ndarray],
+    carrier_ratios: Mapping[str, np.ndarray],
+    carrier_availability: Mapping[str, bool | int | float | None],
+    scaling_valid: np.ndarray,
+) -> dict[str, object]:
+    """Expose coordinate-level availability without implying convergence.
+
+    Every Form coordinate has a finite internal value so the deterministic
+    metric remains defined. Missing volume carrier cells are intentionally
+    represented by a neutral placeholder, however, and an invalid scaling
+    estimate is withheld from interpretation. This block distinguishes those
+    cases from an actually observed coordinate and separately reports the
+    two-times-maximum-horizon initialization reference.
+    """
+
+    analysis_bars = len(dates)
+    maximum_horizon = max(int(value) for value in horizons)
+    target_bars = max(60, 2 * maximum_horizon)
+    pressure_support = maximum_horizon + 1
+    support_by_derivative = {
+        "pressure": pressure_support,
+        "velocity": pressure_support + 1,
+        "acceleration": pressure_support + 2,
+        "jerk": pressure_support + 3,
+        "snap": pressure_support + 4,
+    }
+    support_by_stratum = {
+        "structure": pressure_support,
+        "kinematics": pressure_support + 4,
+        "geometry": pressure_support + 2,
+        "information": max(pressure_support, 3 + 24 - 1),
+        "propagation": pressure_support + 1,
+        "cascade_bias": pressure_support + 1,
+        "scaling_exponent": maximum_horizon + 1,
+    }
+    support_by_carrier = {
+        "realized_volatility": maximum_horizon + 1,
+        "participation": maximum_horizon,
+        "liquidity_stress": maximum_horizon + 1,
+    }
+    feature_specs: list[
+        tuple[str, str, np.ndarray, np.ndarray, bool, int, list[str]]
+    ] = []
+    for name in ("pressure", "velocity", "acceleration", "jerk", "snap"):
+        values = np.asarray(derivatives[name], dtype=float)
+        feature_specs.append(
+            (
+                name,
+                "pressure_state",
+                values,
+                np.isfinite(values),
+                False,
+                support_by_derivative[name],
+                ["open", "high", "low", "close"],
+            )
+        )
+    for name in (
+        "structure",
+        "kinematics",
+        "geometry",
+        "information",
+        "propagation",
+        "cascade_bias",
+        "scaling_exponent",
+    ):
+        values = np.asarray(strata[name], dtype=float)
+        measured = np.isfinite(values)
+        if name == "scaling_exponent":
+            measured &= np.asarray(scaling_valid, dtype=bool)
+        feature_specs.append(
+            (
+                name,
+                "field_transform",
+                values,
+                measured,
+                False,
+                support_by_stratum[name],
+                ["open", "high", "low", "close"],
+            )
+        )
+    for name in ("realized_volatility", "participation", "liquidity_stress"):
+        values = np.asarray(carriers[name], dtype=float)
+        measured = np.isfinite(np.asarray(carrier_ratios[name], dtype=float))
+        if name in {"participation", "liquidity_stress"} and not bool(
+            carrier_availability.get(name)
+        ):
+            measured[-1] = False
+        feature_specs.append(
+            (
+                f"{name}_carrier",
+                "ohlcv_carrier",
+                values,
+                measured,
+                True,
+                support_by_carrier[name],
+                (
+                    ["open", "high", "low", "close"]
+                    if name == "realized_volatility"
+                    else ["open", "high", "low", "close", "volume"]
+                ),
+            )
+        )
+
+    features: list[dict[str, object]] = []
+    for (
+        name,
+        family,
+        values,
+        measured,
+        placeholder_capable,
+        minimum_rolling_support,
+        required_inputs,
+    ) in feature_specs:
+        finite_internal = np.isfinite(values)
+        source_observed = np.asarray(measured, dtype=bool)
+        # The implementation deliberately computes finite startup values
+        # (rolling min_periods=1, EWM seeding, and neutral carrier
+        # placeholders) so the Form remains defined. Those values are
+        # computable, but they do not yet have every dependency window
+        # declared by the coordinate's support contract.
+        rolling_depth_support = (
+            np.arange(analysis_bars, dtype=int) >= minimum_rolling_support - 1
+        )
+        full_dependency_support = rolling_depth_support & source_observed
+        measured = finite_internal & full_dependency_support
+        computable_indexes = np.flatnonzero(finite_internal)
+        source_observed_indexes = np.flatnonzero(source_observed)
+        rolling_depth_indexes = np.flatnonzero(rolling_depth_support)
+        support_indexes = np.flatnonzero(full_dependency_support)
+        measured_indexes = np.flatnonzero(measured)
+        latest_full_dependency_support = (
+            bool(full_dependency_support[-1])
+            if len(full_dependency_support)
+            else False
+        )
+        latest_rolling_depth_support = (
+            bool(rolling_depth_support[-1])
+            if len(rolling_depth_support)
+            else False
+        )
+        latest_measured = bool(measured[-1]) if len(measured) else False
+        latest_source_observed = (
+            bool(source_observed[-1]) if len(source_observed) else False
+        )
+        latest_internal = bool(finite_internal[-1]) if len(finite_internal) else False
+        if not latest_measured:
+            status = (
+                "invalid"
+                if (
+                    name == "scaling_exponent"
+                    and latest_internal
+                    and latest_rolling_depth_support
+                )
+                else "unavailable"
+            )
+        elif analysis_bars < target_bars:
+            status = "provisional"
+        else:
+            status = "target_covered"
+        features.append(
+            {
+                "id": name,
+                "family": family,
+                "latest_computable": latest_internal,
+                "latest_source_observed": latest_source_observed,
+                "latest_measured": latest_measured,
+                "latest_internal_finite": latest_internal,
+                "latest_rolling_depth_support": latest_rolling_depth_support,
+                "latest_full_dependency_support": latest_full_dependency_support,
+                "latest_uses_neutral_placeholder": bool(
+                    placeholder_capable
+                    and latest_internal
+                    and not latest_source_observed
+                ),
+                "computable_observations": int(np.sum(finite_internal)),
+                "computable_fraction": _rounded(
+                    float(np.mean(finite_internal))
+                    if len(finite_internal)
+                    else 0.0,
+                    6,
+                ),
+                "first_computable_index": (
+                    int(computable_indexes[0]) if len(computable_indexes) else None
+                ),
+                "first_computable_at": (
+                    dates[int(computable_indexes[0])]
+                    if len(computable_indexes)
+                    else None
+                ),
+                "source_observed_observations": int(np.sum(source_observed)),
+                "source_observed_fraction": _rounded(
+                    float(np.mean(source_observed))
+                    if len(source_observed)
+                    else 0.0,
+                    6,
+                ),
+                "first_source_observed_index": (
+                    int(source_observed_indexes[0])
+                    if len(source_observed_indexes)
+                    else None
+                ),
+                "first_source_observed_at": (
+                    dates[int(source_observed_indexes[0])]
+                    if len(source_observed_indexes)
+                    else None
+                ),
+                "rolling_depth_support_observations": int(
+                    np.sum(rolling_depth_support)
+                ),
+                "rolling_depth_support_fraction": _rounded(
+                    float(np.mean(rolling_depth_support))
+                    if len(rolling_depth_support)
+                    else 0.0,
+                    6,
+                ),
+                "first_rolling_depth_support_index": (
+                    int(rolling_depth_indexes[0])
+                    if len(rolling_depth_indexes)
+                    else None
+                ),
+                "first_rolling_depth_support_at": (
+                    dates[int(rolling_depth_indexes[0])]
+                    if len(rolling_depth_indexes)
+                    else None
+                ),
+                "full_dependency_support_observations": int(
+                    np.sum(full_dependency_support)
+                ),
+                "full_dependency_support_fraction": _rounded(
+                    float(np.mean(full_dependency_support))
+                    if len(full_dependency_support)
+                    else 0.0,
+                    6,
+                ),
+                "first_full_dependency_support_index": (
+                    int(support_indexes[0]) if len(support_indexes) else None
+                ),
+                "first_full_dependency_support_at": (
+                    dates[int(support_indexes[0])] if len(support_indexes) else None
+                ),
+                "measured_observations": int(np.sum(measured)),
+                "measured_fraction": _rounded(
+                    float(np.mean(measured)) if len(measured) else 0.0,
+                    6,
+                ),
+                "first_measured_index": (
+                    int(measured_indexes[0]) if len(measured_indexes) else None
+                ),
+                "first_measured_at": (
+                    dates[int(measured_indexes[0])] if len(measured_indexes) else None
+                ),
+                "retained_prefix_bars": analysis_bars,
+                "required_inputs": required_inputs,
+                "minimum_rolling_support_bars": minimum_rolling_support,
+                "minimum_rolling_support_satisfied": latest_rolling_depth_support,
+                "bars_needed_to_minimum_rolling_support": max(
+                    0,
+                    minimum_rolling_support - analysis_bars,
+                ),
+                "initialization_target_bars": target_bars,
+                "initialization_target_covered": analysis_bars >= target_bars,
+                "status": status,
+            }
+        )
+
+    return {
+        "schema_version": "market_field_coordinate_coverage_v1",
+        "coordinate_count": len(features),
+        "analysis_bars": analysis_bars,
+        "maximum_horizon_bars": maximum_horizon,
+        "initialization_target_bars": target_bars,
+        "initialization_target_covered": analysis_bars >= target_bars,
+        "all_latest_measured": all(bool(row["latest_measured"]) for row in features),
+        "all_latest_rolling_depth_support": all(
+            bool(row["latest_rolling_depth_support"]) for row in features
+        ),
+        "all_latest_full_dependency_support": all(
+            bool(row["latest_full_dependency_support"]) for row in features
+        ),
+        "features": features,
+        "coverage_is_convergence": False,
+        "note": (
+            "Coverage reports retained-prefix depth, the declared rolling/dependency "
+            "support lower bound, finite computability, full dependency support, and "
+            "whether each coordinate is actually measured at the latest bar. Startup "
+            "values can be finite before support is complete. It is not a "
+            "numerical-convergence certificate; EWM "
+            "initialization can remain history-sensitive after the reference target "
+            "is covered."
+        ),
+    }
+
+
 def _rounded(value: float | np.floating[object] | None, digits: int = 4) -> float | None:
     if value is None or not np.isfinite(float(value)):
         return None
@@ -1344,6 +1643,16 @@ def build_market_weather_research(
         name: _aggregate_available(values)
         for name, values in carrier_ratios.items()
     }
+    initialization_coverage = _state_vector_initialization_coverage(
+        dates=dates,
+        horizons=horizons,
+        derivatives=aggregate_derivatives,
+        strata=aggregate_strata,
+        carriers=aggregate_carriers,
+        carrier_ratios=aggregate_carrier_ratios,
+        carrier_availability=carrier_availability,
+        scaling_valid=scaling_valid,
+    )
 
     derivative_series = [
         {"date": date, **{name: _rounded(values[index]) for name, values in aggregate_derivatives.items()}}
@@ -1436,7 +1745,7 @@ def build_market_weather_research(
     }
     research = {
         "model": "Market Field Calculus v1",
-        "semantic_revision": "1.2",
+        "semantic_revision": "1.3",
         "coordinate": {
             "time": "causal bar sequence",
             "scale": "natural log of horizon in bars",
@@ -1469,6 +1778,7 @@ def build_market_weather_research(
             "changes_v1_state_vector": False,
             "note": "Activity and horizon agreement expose the two inputs to the existing v1 composite; no Form identity or v1 feature value is changed. Under bounded pressure, horizon agreement lies in (7/27, 1], so its 0.42 weight contributes more than 49/450 to Structure.",
         },
+        "initialization_coverage": initialization_coverage,
         "scaling_reference": {
             "stationary_finite_variance_reference": SCALING_DIFFUSIVE_REFERENCE,
             "latest_exponent": _rounded(reported_scaling_exponent[-1]),

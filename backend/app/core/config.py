@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     SECRET_OPTIONS_WRITE_API_KEY: Optional[str] = None
     SECRET_OPTIONS_READ_ACTOR: Optional[str] = None
     SECRET_OPTIONS_WRITE_ACTOR: Optional[str] = None
+    # Explicit operator kill-switch for the bounded outcome-learning scanner
+    # canary. Evidence is still evaluated when disabled, but it cannot affect
+    # the applied candidate order unless an operator deliberately opts in.
+    OPTION_LEARNING_CANARY_ENABLED: bool = False
     FRED_API_KEY: Optional[str] = None
     EIA_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None

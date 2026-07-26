@@ -176,7 +176,7 @@ def test_empty_position_metrics_preserves_current_field_contract() -> None:
     payload = secret_options._empty_position_metrics("fixture failure")
     field = payload["field_context"]
 
-    assert field["semantic_revision"] == "1.2"
+    assert field["semantic_revision"] == "1.3"
     assert field["authority"]["manager_verdict"] == "none"
     assert field["authority"]["automated_execution"] == "none"
     assert field["maturity"]["status"] == "insufficient"
@@ -810,6 +810,363 @@ def test_automatic_assessment_prefills_review_and_close_learning(
         assert db.query(OptionPositionEvent).count() >= 4
 
 
+def test_market_field_metamorphism_preserves_manual_lifecycle_execution_and_pnl_authority(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_local = secret_options_client
+    expiration = date.today() + timedelta(days=60)
+
+    def field_context(path_state: str) -> dict[str, object]:
+        aligned_sign = 1.0 if path_state == "supportive" else -1.0
+        return {
+            "schema_version": "option_market_field_v1",
+            "model_version": "market_field_calculus_v1",
+            "semantic_revision": "1.3",
+            "mode": "shadow_only",
+            "shadow_only": True,
+            "rank_influence": 0.0,
+            "automated_execution_enabled": False,
+            "available": True,
+            "computed_at": "2026-07-25T20:05:00Z",
+            "as_of_bar": "2026-07-24",
+            "timeframe": "1D",
+            "quality": {
+                "available": True,
+                "status": "complete",
+                "completed_bars_only": True,
+                "warnings": [],
+            },
+            "initialization": {
+                "minimum_input_satisfied": True,
+                "initialization_target_covered": True,
+                "initialization_status": "target_covered",
+                "state_vector_coverage": {
+                    "schema_version": "market_field_coordinate_coverage_v1",
+                    "coordinate_count": 15,
+                    "initialization_target_covered": True,
+                    "coverage_is_convergence": False,
+                },
+            },
+            "maturity": {
+                "status": "complete",
+                "warmup_complete": True,
+                "completed_bars": 250,
+            },
+            "alignment": {
+                "supported": True,
+                "basis": "action_and_option_type",
+                "scope": "long_single_leg",
+            },
+            "authority": {
+                "scanner_rank": "none",
+                "hard_veto": "none",
+                "manager_verdict": "none",
+                "target_size": "none",
+                "automated_execution": "none",
+            },
+            "direction": {
+                "option_aligned_pressure": 0.42 * aligned_sign,
+                "option_aligned_velocity": 0.27 * aligned_sign,
+            },
+            "strata": {
+                "structure": 0.61,
+                "kinematics": 0.48,
+                "geometry": 0.55,
+                "information": 0.72,
+                "propagation": 0.31,
+                "cascade_bias": 0.18 * aligned_sign,
+            },
+            "price_action": {
+                "state": "breakout" if path_state == "supportive" else "breakdown",
+                "support_distance_atr": 1.4 if path_state == "supportive" else -0.35,
+                "resistance_distance_atr": 0.2 if path_state == "supportive" else 2.8,
+            },
+            "classification": {
+                "path_state": path_state,
+                "eventfulness": "ordinary",
+                "field_rank_eligible": False,
+            },
+            "hypotheses": {
+                "organized_expansion": path_state == "supportive",
+                "longward_cascade": path_state == "supportive",
+                "geometry_disorder_shock": False,
+                "kinematic_exhaustion": path_state == "contradictory",
+            },
+        }
+
+    contexts = {
+        "SUP": field_context("supportive"),
+        "CON": field_context("contradictory"),
+    }
+    position_ids: dict[str, int] = {}
+    source_event_ids: dict[str, int] = {}
+    with session_local() as db:
+        for symbol, context in contexts.items():
+            source_event = OptionAlertEvent(
+                symbol=symbol,
+                triggered_at=datetime.utcnow(),
+                opportunity_score=60.0,
+                opportunity_grade="B",
+                opportunity_model_version="opportunity_v1",
+                selected_expiry=expiration.isoformat(),
+                selected_dte=60,
+                selected_strike=105.0,
+                selected_option_type="call",
+                selected_premium=1.35,
+                selected_bid=1.30,
+                selected_ask=1.40,
+                field_context_version="option_market_field_v1",
+                field_context_json=json.dumps(context, sort_keys=True),
+            )
+            db.add(source_event)
+            db.flush()
+            position = OptionPosition(
+                trade_date=date.today() - timedelta(days=5),
+                account="Metamorphic authority fixture",
+                action="Buy to Open",
+                contracts=2,
+                symbol=symbol,
+                expiration=expiration,
+                strike=105.0,
+                option_type="call",
+                fill_price=1.35,
+                total_cost=270.0,
+                underlying_at_entry=100.0,
+                source_event_id=source_event.id,
+                source_triggered_at=source_event.triggered_at,
+                source_match_method="exact_contract",
+                source_match_confidence=1.0,
+            )
+            db.add(position)
+            db.flush()
+            position_ids[symbol] = int(position.id)
+            source_event_ids[symbol] = int(source_event.id)
+        db.commit()
+
+    def position_metrics(position, *_args, **_kwargs):
+        return {
+            "market": {
+                "current_price": 102.0,
+                "last_updated": "2026-07-25T20:00:00Z",
+                "data_source": "test",
+            },
+            "option_price": 1.10,
+            "quote": {
+                "bid": 1.0,
+                "ask": 1.2,
+                "spread_pct": 18.18,
+                "implied_volatility": 0.31,
+                "quality": "live",
+            },
+            "volatility": 0.30,
+            "dte": 60,
+            "greeks": {"delta": 0.45, "theta": -0.08},
+            "pnl": {"dollar": -50.0, "percent": -18.52},
+            "technical_snapshot": {
+                "price": 102.0,
+                "sma20": 101.0,
+                "sma50": 99.0,
+                "sma20_slope_pct": 1.2,
+                "rsi14": 56.0,
+                "macd_hist": 0.3,
+            },
+            "field_context": contexts[position.symbol],
+        }
+
+    monkeypatch.setattr(secret_options, "_compute_position_metrics", position_metrics)
+
+    assessments: dict[str, dict[str, object]] = {}
+    for symbol, position_id in position_ids.items():
+        response = client.post(
+            f"/secret/options/positions/{position_id}/thesis-assessment"
+        )
+        assert response.status_code == 200, response.json()
+        assessments[symbol] = response.json()
+
+    supportive_assessment = assessments["SUP"]["assessment"]
+    contradictory_assessment = assessments["CON"]["assessment"]
+    for field in (
+        "company_thesis_status",
+        "contract_status",
+        "portfolio_fit_status",
+        "proposed_verdict",
+        "proposed_target_contracts",
+        "target_contracts_min",
+        "target_contracts_max",
+        "vetoes",
+    ):
+        assert supportive_assessment[field] == contradictory_assessment[field]
+    for assessment in (supportive_assessment, contradictory_assessment):
+        assert assessment["market_field_effects"]["rank_changed"] is False
+        assert assessment["market_field_effects"]["veto_changed"] is False
+        assert assessment["market_field_effects"]["verdict_changed"] is False
+        assert assessment["market_field_effects"]["target_size_changed"] is False
+        assert assessment["market_field_effects"]["execution_authority"] == "none"
+    assert (
+        supportive_assessment["axis_results"]["market_structure"]["status"]
+        == "supportive"
+    )
+    assert (
+        contradictory_assessment["axis_results"]["market_structure"]["status"]
+        == "contradictory"
+    )
+
+    reviews: dict[str, dict[str, object]] = {}
+    for symbol, position_id in position_ids.items():
+        response = client.post(
+            f"/secret/options/positions/{position_id}/decision-reviews",
+            json={
+                **_decision_review_payload(),
+                "selected_assessment_id": assessments[symbol]["assessment"]["id"],
+                "threshold_approval_status": "approved",
+                "override_reason": "Metamorphic authority boundary fixture.",
+            },
+        )
+        assert response.status_code == 200, response.json()
+        reviews[symbol] = response.json()
+
+    for field in (
+        "contracts_snapshot",
+        "verdict",
+        "target_contracts",
+        "risk_budget",
+    ):
+        assert reviews["SUP"]["review"][field] == reviews["CON"]["review"][field]
+    for field in ("option_price", "pnl_dollar", "pnl_percent"):
+        assert (
+            reviews["SUP"]["review"]["snapshot"][field]
+            == reviews["CON"]["review"]["snapshot"][field]
+        )
+    assert reviews["SUP"]["automated_execution_enabled"] is False
+    assert reviews["CON"]["automated_execution_enabled"] is False
+
+    manual_events: dict[str, dict[str, object]] = {}
+    for symbol, position_id in position_ids.items():
+        response = client.post(
+            f"/secret/options/positions/{position_id}/lifecycle-events",
+            json={
+                "event_type": "partial_close",
+                "quantity_after": 1,
+                "execution_price": 1.10,
+                "notes": "Manual log; intentionally does not mutate the position.",
+            },
+        )
+        assert response.status_code == 200, response.json()
+        manual_events[symbol] = response.json()
+
+    for field in (
+        "event_type",
+        "quantity_before",
+        "quantity_after",
+        "execution_price",
+        "total_cost_before",
+        "total_cost_after",
+    ):
+        assert manual_events["SUP"]["event"][field] == manual_events["CON"]["event"][field]
+    assert manual_events["SUP"]["position_mutated"] is False
+    assert manual_events["CON"]["position_mutated"] is False
+    assert manual_events["SUP"]["automated_execution_enabled"] is False
+    assert manual_events["CON"]["automated_execution_enabled"] is False
+
+    with session_local() as db:
+        for symbol, position_id in position_ids.items():
+            position = (
+                db.query(OptionPosition)
+                .filter(OptionPosition.id == position_id)
+                .one()
+            )
+            assert (position.contracts, position.fill_price, position.total_cost) == (
+                2,
+                1.35,
+                270.0,
+            )
+            source_event = (
+                db.query(OptionAlertEvent)
+                .filter(OptionAlertEvent.id == source_event_ids[symbol])
+                .one()
+            )
+            assert (
+                source_event.selected_expiry,
+                source_event.selected_strike,
+                source_event.selected_option_type,
+                source_event.selected_premium,
+                source_event.selected_bid,
+                source_event.selected_ask,
+            ) == (
+                expiration.isoformat(),
+                105.0,
+                "call",
+                1.35,
+                1.30,
+                1.40,
+            )
+
+    close_results: dict[str, dict[str, object]] = {}
+    for symbol, position_id in position_ids.items():
+        response = client.request(
+            "DELETE",
+            f"/secret/options/positions/{position_id}",
+            json={
+                "exit_price": 1.25,
+                "close_date": date.today().isoformat(),
+                "notes": "Identical manual close fixture.",
+            },
+        )
+        assert response.status_code == 200, response.json()
+        close_results[symbol] = response.json()
+
+    assert close_results["SUP"]["pnl"] == close_results["CON"]["pnl"] == {
+        "dollar": -20.0,
+        "percent": pytest.approx(-20.0 / 270.0 * 100.0),
+        "total_proceeds": 250.0,
+    }
+    with session_local() as db:
+        closed_by_symbol = {
+            row.symbol: row
+            for row in db.query(ClosedPosition)
+            .filter(ClosedPosition.symbol.in_(contexts))
+            .all()
+        }
+        assert set(closed_by_symbol) == {"SUP", "CON"}
+        for closed in closed_by_symbol.values():
+            assert (
+                closed.contracts,
+                closed.fill_price,
+                closed.total_cost,
+                closed.exit_price,
+                closed.total_proceeds,
+                closed.dollar_pnl,
+            ) == (2, 1.35, 270.0, 1.25, 250.0, -20.0)
+        for symbol, position_id in position_ids.items():
+            events = (
+                db.query(OptionPositionEvent)
+                .filter(OptionPositionEvent.position_id == position_id)
+                .all()
+            )
+            manual = next(row for row in events if row.source == "manual_execution_log")
+            closed_event = next(row for row in events if row.event_type == "closed")
+            assert (
+                manual.quantity_before,
+                manual.quantity_after,
+                manual.execution_price,
+            ) == (2, 1, 1.10)
+            assert (
+                closed_event.quantity_before,
+                closed_event.quantity_after,
+                closed_event.execution_price,
+            ) == (2, 0, 1.25)
+            outcome = (
+                db.query(OptionTradeOutcome)
+                .filter(OptionTradeOutcome.source_position_id == position_id)
+                .one()
+            )
+            outcome_metrics = json.loads(outcome.metrics_json)
+            assert outcome_metrics["market_field_entry_cohort"] == (
+                "supportive" if symbol == "SUP" else "contradictory"
+            )
+
+
 def test_decision_review_status_keeps_review_date_and_deadline_separate(secret_options_client) -> None:
     _client, session_local = secret_options_client
     position = OptionPosition(
@@ -1328,9 +1685,11 @@ def test_scanner_summary_tracks_runs_and_repeated_names(secret_options_client) -
     assert body["ranked_opportunities"][0]["grade"] in {"A", "A+"}
     assert set(body["ranked_opportunities"][0]["components"]) >= {"cheapness", "volatility_edge", "contract_quality", "recurrence"}
     assert body["ranked_opportunities"][0]["selected_contract"]["reward_risk"] == 1.9
-    assert body["learning_policy"]["actual_rank_influence"] == 0.10
+    assert body["learning_policy"]["actual_rank_influence"] == 0.0
     assert body["learning_policy"]["nominal_weight_cap"] == 0.10
     assert body["learning_policy"]["maximum_applied_weight"] == 0.10
+    assert body["learning_policy"]["configured_operator_authorization"] is False
+    assert body["learning_policy"]["live_canary_enabled"] is False
     assert body["learning_policy"]["observed_max_applied_weight"] == 0.0
     assert body["learning_policy"]["observed_mean_applied_weight"] == 0.0
     assert body["learning_policy"]["actual_order_unchanged"] is True
@@ -1646,6 +2005,13 @@ def test_scanner_recurrence_journal_is_db_idempotent_and_counts_distinct_sweeps(
         assert receipt["point_in_time_receipt"] is True
         assert receipt["nominal_weight_cap"] == 0.10
         assert receipt["rank_snapshot_persisted"] is False
+        assert receipt["operator_authorization"] == {
+            "configured": False,
+            "setting": "OPTION_LEARNING_CANARY_ENABLED",
+            "default": False,
+            "frozen_in_receipt": True,
+        }
+        assert receipt["gates"]["live_canary_authorized"] is False
         assert receipt["applied_weight"] == 0.0
 
 
@@ -1883,7 +2249,11 @@ def test_scanner_run_detail_uses_direct_sweep_run_id(secret_options_client) -> N
     body = response.json()
     assert body["hit_count"] == 2
     assert body["matched_event_count"] == 2
-    assert [hit["symbol"] for hit in body["hits"]] == ["A", "SJM"]
+    assert {hit["symbol"] for hit in body["hits"]} == {"A", "SJM"}
+    assert [hit["score"] for hit in body["hits"]] == sorted(
+        (hit["score"] for hit in body["hits"]),
+        reverse=True,
+    )
 
 
 def test_scanner_run_detail_recovers_legacy_window_hits(secret_options_client) -> None:

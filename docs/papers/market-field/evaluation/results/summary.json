@@ -1,0 +1,43 @@
+{
+  "accounting_partitions_all_prediction_rows": true,
+  "all_split_chronologies_valid": true,
+  "claim_boundary": {
+    "decision_eligible": false,
+    "options_economics_evaluated": false,
+    "performance_claim_permitted": false,
+    "preregistration_claim_permitted": false,
+    "purpose": "Exercise and audit a proposed economic-evaluation pipeline using already-inspected retained OHLCV. Results are development diagnostics, not evidence of forecast skill, economic value, or trading utility."
+  },
+  "completed_input_bars": 18160,
+  "datasets": 8,
+  "horizons": 3,
+  "metric_rows": 792,
+  "models": 11,
+  "origins": 544,
+  "outcomes": 3,
+  "paired_bootstrap_rows": 720,
+  "prediction_case_rows": 53856,
+  "primary_family_rows": 8,
+  "prospective_holdout": {
+    "activation_rule": "Only completed observations strictly after the committed protocol may enter a separately receipted prospective run.",
+    "development_run_must_exclude": true,
+    "minimum_observations_before_review": 252,
+    "not_before_market_date": "2026-07-27",
+    "status": "reserved_not_evaluated"
+  },
+  "protocol_status": "retrospective_development_dry_run",
+  "result_interpretation": "The generated numeric outputs are a retrospective dry run of the evaluation machinery. They are not a preregistered result, performance claim, trading signal, or option-economics study.",
+  "runtime_location": "results/run_receipt.json",
+  "schema_version": "market_field_prequential_development_summary_v0",
+  "split_rows": 544,
+  "status_counts": {
+    "outcome_not_yet_observable": 495,
+    "scored": 53361
+  },
+  "synthetic_reference_checks": {
+    "all_prefix_invariant_at_1e_12": true,
+    "material_negative_scaling_exponent_count": 0,
+    "performance_claim_evaluated": false,
+    "scenarios": 5
+  }
+}

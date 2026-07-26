@@ -1,0 +1,72 @@
+# Market Field Calculus future-work triage
+
+Status date: 2026-07-26
+
+This document separates missing engineering from unresolved empirical research.
+“Implemented” means the repository now contains a testable mechanism; it does
+not mean that the mechanism has demonstrated predictive or economic value.
+
+## Implemented in the current revision
+
+| Item | What is now available | Boundary |
+|---|---|---|
+| Coordinate-level initialization evidence | Every coordinate in the 15-dimensional Form vector separately reports finite computed availability and full declared dependency-support coverage through time, plus retained-prefix depth, neutral-placeholder use, and the disclosed initialization target. | Dependency support is a conservative availability lower bound, not convergence. A finite startup value or internal placeholder is distinguished from a fully supported observed coordinate. |
+| Frozen analysis identity | Every field calculation emits a canonical recipe hash, normalized OHLCV input hash, and combined analysis hash. The recipe fixes horizons, settings, normalization, EWM conventions, formula model, and semantic revision. | A hash proves identity of the supplied rows and recipe; it does not prove that a provider’s data are correct or unrevised. |
+| Direct versus indirect authority accounting | The payload and UI distinguish the current Market Field snapshot’s 0% direct scanner weight from historical field-cohort evidence that may participate inside the separately governed, evidence-gated option-learning canary. A default-off operator configuration gate and per-family score/rank attribution expose the authorization and marginal path. | The entire canary remains capped at 10%; event weight is evidence-scaled only after explicit authorization. The field cannot create eligibility, impose a hard veto, size a position, issue a manager verdict, or execute a trade. |
+| Durable rank and exposure evidence | Successful finalization of completed, stopped, or errored scanner runs freezes their candidate set, display order, champion/counterfactual/applied scores and ranks, weights, versions, and a canonical receipt hash. Authenticated ranking-rendered, candidate-visible, and detail-open impressions are append-only and idempotent. | Stale, pre-schema, or failed-finalization runs remain unsnapshotted. Historical impressions cannot be reconstructed; collection begins only after this schema is deployed. |
+| Prequential evaluation infrastructure | A frozen protocol, deterministic runner, naive/EMA/technical comparators, a fixed causal two-window break ridge, a cap-truncated fit-only two-state diagonal-Gaussian HMM, field dictionary/raw-vector variants, family ablations, purged chronological origins, stationary-bootstrap uncertainty, multiplicity correction, and machine-readable receipts can be run against retained data. | The retained-cache run is development evidence. It is not the preregistered untouched holdout, the HMM did not satisfy the source-fixed stopping tolerance within eight iterations, and the implemented comparators are not evidence that any model is useful. |
+| Authority metamorphic checks | Supportive and contradictory field contexts are compared through the available scanner/manager/manual-recording boundary, with explicit invariants for eligibility, contract choice, vetoes, sizing, quantities, prices, P&L, and execution authority. | Secret Options does not own a broker order-execution path, so this cannot certify broker-side invariance. |
+
+## Infrastructure that can be built now, but evidence must accumulate later
+
+| Item | Work possible today | Evidence still needed |
+|---|---|---|
+| Prospective option-learning evaluation | Freeze model versions, log candidate-set exposures and actions, capture quote provenance, and evaluate predeclared cohorts without changing the champion. | New, genuinely prospective impressions, decisions, fills, and outcomes after the protocol freeze. |
+| Point-in-time option valuation | Store exact contract quote observations, spread/staleness policy, source IDs, commissions, exercise/assignment events, and fallback labels. | Complete surfaces and executable quotes cannot be reconstructed for historical periods that were never collected. |
+| Cross-market and cross-timeframe panel | Build a cache-only panel with per-cell timestamps, missingness, initialization evidence, and no fused authority. | Point-in-time vintage alignment, session rules, and repeated out-of-sample validation before a fused score is defensible. |
+| Persistent Form lineage | Freeze dictionary snapshots and compare compatible centroids with explicit unmatched, split, merge, and ambiguity labels. | Walk-forward evidence that the mappings are stable enough to deserve semantic names. Request-local IDs must not be treated as universal regimes. |
+| Exchange-session completion | Add a calendar service and explicit included/excluded-bar receipts for every supported market and timeframe. | Reliable exchange calendars and instrument/session metadata. The current general endpoint explicitly does not certify provider rows as complete sessions. |
+| Outcome-aware replacement promotion | Improve point-in-time receipts, trade-level grouping, exposure-normalized outcomes, and cluster-aware intervals. | Sufficient independent, high-quality closed-trade cycles plus execution-quality evidence and an approved risk policy. |
+
+## Blocked by unavailable historical or future evidence
+
+- An untouched prospective holdout. Retrospective cache data are already exposed
+  to development and cannot be made untouched by relabeling them.
+- Credible historical option P&L where full point-in-time surfaces, bid/ask
+  quality, fills, slippage, commissions, assignments, and missing quotes were
+  not retained.
+- Historical proof that a person saw a particular field or rank. Server
+  responses and page views are not equivalent to candidate-level impressions.
+- Exchange-grade truth or byte-for-byte public replay of provider-restricted,
+  revisable market data.
+- Independent per-person production identity without an external identity
+  provider or gateway.
+
+## Genuinely longer-horizon research
+
+- Determine whether raw continuous Form vectors, learned Forms, or neither add
+  stable information beyond naive, EMA, and conventional technical baselines.
+- Test any Voss-wave, delay-embedding, optical-flow, transfer-entropy, Granger,
+  Hurst, multifractal, wavelet/scattering, topology, or connectedness extension
+  as a separately preregistered hypothesis with appropriate surrogate nulls and
+  multiplicity control.
+- Establish persistent state identity across symbols, timeframes, and changing
+  market structure. Similar centroids alone do not establish a universal state.
+- Establish predictive, decision-support, or economic value after transaction
+  costs and dependence-aware uncertainty.
+- Develop an execution model only after data quality, risk governance,
+  capacity, and prospective validation are adequate. Autonomous execution is
+  not an implied destination of the current representation system.
+
+## Decision rule
+
+A future-work item moves into production only when all three questions have a
+defensible answer:
+
+1. Can its input be reconstructed at the decision timestamp?
+2. Can its authority and failure modes be bounded and tested end to end?
+3. Is the supporting result evaluated on data that were not used to invent,
+   tune, or select it?
+
+Passing the first two questions makes a feature auditable. It does not, by
+itself, answer the third or establish usefulness.

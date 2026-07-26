@@ -116,7 +116,7 @@ def test_ewm_missing_row_contract_is_explicit_and_shared() -> None:
 def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
     result = build_market_weather(_history(), horizons=range(12, 50, 2))
 
-    assert result["semantic_revision"] == "1.2"
+    assert result["semantic_revision"] == "1.3"
     assert result["orientation"] == "horizon_by_time"
     assert len(result["horizons"]) == 19
     assert len(result["dates"]) == 420
@@ -155,6 +155,87 @@ def test_market_weather_returns_dense_finite_horizon_by_time_channels() -> None:
         "violation_status": "invalid",
         "note": result["research"]["scaling_reference"]["exact_arithmetic_contract"]["note"],
     }
+    coverage = result["research"]["initialization_coverage"]
+    assert coverage == result["history_context"]["state_vector_coverage"]
+    assert coverage["schema_version"] == "market_field_coordinate_coverage_v1"
+    assert coverage["coordinate_count"] == 15
+    assert coverage["analysis_bars"] == 420
+    assert coverage["maximum_horizon_bars"] == 48
+    assert coverage["initialization_target_bars"] == 96
+    assert coverage["initialization_target_covered"] is True
+    assert coverage["all_latest_measured"] is True
+    assert coverage["all_latest_rolling_depth_support"] is True
+    assert coverage["all_latest_full_dependency_support"] is True
+    assert coverage["coverage_is_convergence"] is False
+    assert [row["id"] for row in coverage["features"]] == [
+        "pressure",
+        "velocity",
+        "acceleration",
+        "jerk",
+        "snap",
+        "structure",
+        "kinematics",
+        "geometry",
+        "information",
+        "propagation",
+        "cascade_bias",
+        "scaling_exponent",
+        "realized_volatility_carrier",
+        "participation_carrier",
+        "liquidity_stress_carrier",
+    ]
+    assert all(row["latest_measured"] is True for row in coverage["features"])
+    assert all(row["latest_computable"] is True for row in coverage["features"])
+    assert all(row["latest_internal_finite"] is True for row in coverage["features"])
+    assert all(
+        row["latest_full_dependency_support"] is True
+        for row in coverage["features"]
+    )
+    assert all(row["initialization_target_covered"] is True for row in coverage["features"])
+    assert all(row["status"] == "target_covered" for row in coverage["features"])
+    assert all(row["retained_prefix_bars"] == 420 for row in coverage["features"])
+    assert all(
+        row["minimum_rolling_support_satisfied"] is True
+        and row["bars_needed_to_minimum_rolling_support"] == 0
+        for row in coverage["features"]
+    )
+    features_by_id = {row["id"]: row for row in coverage["features"]}
+    for row in coverage["features"]:
+        assert row["first_computable_index"] == 0
+        assert row["first_rolling_depth_support_index"] == (
+            row["minimum_rolling_support_bars"] - 1
+        )
+        assert row["first_full_dependency_support_index"] == (
+            row["minimum_rolling_support_bars"] - 1
+        )
+        assert row["first_measured_index"] == (
+            row["minimum_rolling_support_bars"] - 1
+        )
+    assert (
+        features_by_id["snap"]["minimum_rolling_support_bars"]
+        > features_by_id["pressure"]["minimum_rolling_support_bars"]
+    )
+    assert features_by_id["pressure"]["required_inputs"] == [
+        "open",
+        "high",
+        "low",
+        "close",
+    ]
+    assert features_by_id["participation_carrier"]["required_inputs"] == [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+    ]
+    assert features_by_id["liquidity_stress_carrier"]["required_inputs"] == [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+    ]
+    assert "not a numerical-convergence certificate" in coverage["note"]
 
     for matrix in result["channels"].values():
         values = np.asarray(matrix)
@@ -271,6 +352,90 @@ def test_initialization_target_never_falls_below_minimum_input() -> None:
     assert context["initialization_status"] == "target_covered"
 
 
+def test_sixty_bar_coverage_separates_finite_startup_from_full_support() -> None:
+    result = build_market_weather(_history(60), horizons=range(12, 50, 2))
+    coverage = result["research"]["initialization_coverage"]
+    features = {row["id"]: row for row in coverage["features"]}
+
+    assert coverage["analysis_bars"] == 60
+    assert coverage["initialization_target_bars"] == 96
+    assert coverage["initialization_target_covered"] is False
+    assert coverage["all_latest_rolling_depth_support"] is True
+    assert coverage["all_latest_full_dependency_support"] is True
+    assert coverage["all_latest_measured"] is True
+
+    for coordinate, minimum_support in (
+        ("pressure", 49),
+        ("snap", 53),
+        ("scaling_exponent", 49),
+        ("realized_volatility_carrier", 49),
+        ("participation_carrier", 48),
+        ("liquidity_stress_carrier", 49),
+    ):
+        row = features[coordinate]
+        assert row["minimum_rolling_support_bars"] == minimum_support
+        assert row["first_computable_index"] == 0
+        assert row["first_rolling_depth_support_index"] == minimum_support - 1
+        assert row["first_full_dependency_support_index"] == minimum_support - 1
+        assert row["first_measured_index"] == minimum_support - 1
+        assert row["rolling_depth_support_observations"] == 60 - minimum_support + 1
+        assert row["full_dependency_support_observations"] == 60 - minimum_support + 1
+        assert row["measured_observations"] == 60 - minimum_support + 1
+        assert row["latest_full_dependency_support"] is True
+        assert row["latest_measured"] is True
+        assert row["status"] == "provisional"
+
+
+def test_analysis_identity_hashes_separate_recipe_from_normalized_input() -> None:
+    history = _history(120)
+    same = history.rename(columns=str.lower).sort_index(ascending=False)
+    first = build_market_weather(
+        history,
+        horizons=[8, 12],
+        include_retrospective_research=False,
+    )["provenance"]
+    repeated = build_market_weather(
+        same,
+        horizons=[8, 12],
+        include_retrospective_research=False,
+    )["provenance"]
+
+    assert first["schema_version"] == "market_field_analysis_identity_v1"
+    assert first["scope"] == "recipe_and_normalized_input_identity"
+    assert first["provider_truth_verified"] is False
+    assert "not correctness" in first["note"]
+    assert "provider immutability" in first["note"]
+    assert first["input_schema"] == "normalized_ohlcv_float_hex_v1"
+    assert first["recipe_hash"] == repeated["recipe_hash"]
+    assert first["input_hash"] == repeated["input_hash"]
+    assert first["analysis_hash"] == repeated["analysis_hash"]
+    assert all(
+        len(first[key]) == 64 and set(first[key]) <= set("0123456789abcdef")
+        for key in ("recipe_hash", "input_hash", "analysis_hash")
+    )
+
+    changed_input = history.copy()
+    changed_input.iloc[-1, changed_input.columns.get_loc("Close")] += 0.01
+    input_variant = build_market_weather(
+        changed_input,
+        horizons=[8, 12],
+        include_retrospective_research=False,
+    )["provenance"]
+    assert input_variant["recipe_hash"] == first["recipe_hash"]
+    assert input_variant["input_hash"] != first["input_hash"]
+    assert input_variant["analysis_hash"] != first["analysis_hash"]
+
+    recipe_variant = build_market_weather(
+        history,
+        horizons=[8, 12, 16],
+        include_retrospective_research=False,
+    )["provenance"]
+    assert recipe_variant["input_hash"] == first["input_hash"]
+    assert recipe_variant["recipe_hash"] != first["recipe_hash"]
+    assert recipe_variant["analysis_hash"] != first["analysis_hash"]
+    assert "data_source" not in first
+
+
 def test_volume_dependent_ratios_are_unavailable_without_positive_volume() -> None:
     history = _history().drop(columns=["Volume"])
 
@@ -295,6 +460,29 @@ def test_volume_dependent_ratios_are_unavailable_without_positive_volume() -> No
     assert result["input_quality"]["volume"]["available"] is False
     assert result["input_quality"]["volume"]["coverage"] == 0.0
     assert all(point["volume"] is None for point in result["price"])
+    coverage = {
+        row["id"]: row
+        for row in result["research"]["initialization_coverage"]["features"]
+    }
+    assert coverage["realized_volatility_carrier"]["latest_measured"] is True
+    for coordinate in ("participation_carrier", "liquidity_stress_carrier"):
+        assert coverage[coordinate]["latest_measured"] is False
+        assert coverage[coordinate]["latest_rolling_depth_support"] is True
+        assert coverage[coordinate]["latest_full_dependency_support"] is False
+        assert coverage[coordinate]["latest_source_observed"] is False
+        assert coverage[coordinate]["latest_internal_finite"] is True
+        assert coverage[coordinate]["first_computable_index"] == 0
+        assert coverage[coordinate]["first_rolling_depth_support_index"] == (
+            coverage[coordinate]["minimum_rolling_support_bars"] - 1
+        )
+        assert coverage[coordinate]["first_full_dependency_support_index"] is None
+        assert coverage[coordinate]["full_dependency_support_observations"] == 0
+        assert coverage[coordinate]["first_measured_index"] is None
+        assert coverage[coordinate]["first_source_observed_index"] is None
+        assert coverage[coordinate]["source_observed_observations"] == 0
+        assert coverage[coordinate]["measured_observations"] == 0
+        assert coverage[coordinate]["latest_uses_neutral_placeholder"] is True
+        assert coverage[coordinate]["status"] == "unavailable"
 
 
 def test_mixed_invalid_volume_is_excluded_without_losing_participation_signal() -> None:
@@ -776,7 +964,7 @@ def test_market_weather_api_supports_high_resolution_fields(monkeypatch) -> None
     assert payload["available_bars"] == 750
     assert len(payload["channels"]["pressure"]) == 57
     assert len(payload["channels"]["pressure"][0]) == 750
-    assert payload["semantic_revision"] == "1.2"
+    assert payload["semantic_revision"] == "1.3"
     assert payload["history_context"]["requested_visible_bars"] == 750
     assert payload["history_context"]["visible_bars"] == 750
     assert payload["history_context"]["analysis_bars"] == 878

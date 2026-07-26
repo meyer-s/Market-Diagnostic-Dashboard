@@ -79,6 +79,9 @@ Each recorded review is also evaluated at pre-declared 1, 3, 5, and 10-session h
 - a shrunk descriptive score when the candidate cohort and at least one comparison cohort each contain eight actual closes;
 - the counterfactual score, weight, and rank that would result from a bounded blend;
 - the score, weight, and rank actually applied;
+- each family's additive score contribution and marginal applied-rank effect;
+- the current Market Field snapshot's 0% direct weight separately from historical
+  Market Field cohort evidence inside the total canary;
 - every failed evidence and promotion gate.
 
 The canonical `nominal_weight_cap` travels with the policy and each immutable event receipt. The older `actual_rank_influence`, `maximum_counterfactual_weight`, and `maximum_applied_weight` fields remain compatibility aliases; they describe the ceiling, not the evidence-scaled weight actually applied to a particular event. `observed_max_applied_weight` and `observed_mean_applied_weight` summarize effective row-level influence in the returned candidate set.
@@ -87,14 +90,41 @@ The cohort score combines 70% posterior profitable rate and 30% percent-P/L cont
 
 The applied weight cannot exceed 10%. It is attenuated by the fraction of the 40-cycle canary floor reached, the share of closed trades not labeled `weak_process` relative to a 10% floor, and cohort reliability up to 50 observations. The canary requires all of the following:
 
-1. At least 40 independent classified actual-close cycles.
+1. At least 40 classified actual-close cycles. The grouping reduces repeated
+   horizon leakage but is not a statistical independence test.
 2. At least 10% of those cycles classified above `weak_process`.
 3. At least one candidate learning family with two cohorts of at least eight actual closes each.
-4. Explicit operator authorization for the bounded canary.
+4. Explicit operator authorization through
+   `OPTION_LEARNING_CANARY_ENABLED=true`. The setting defaults to false and its
+   value is frozen into each point-in-time receipt.
 
-The canary never changes hard vetoes, position sizing, risk policy, review verdicts, or execution authority. It only leans scanner score and ordering. Full challenger promotion still requires the 100-cycle governance floor, chronological evaluation, and a separate manual decision. Event receipts durably retain the point-in-time evidence, cohort identities, scores, and applied weight. Rank deltas are computed for the candidate set returned by a scanner request and are not yet a durable impression record (`rank_snapshot_persisted=false`); they must not be treated as promotion evidence until an append-only ranking snapshot is implemented.
+The 10% policy cap cannot change automatically. Once authorized, each event's
+actual weight still scales deterministically from zero to that cap as its
+frozen cycle, process-quality, cohort, and reliability evidence permits. The
+legacy `automatic_weight_changes=false` field refers to policy/cap changes,
+not to this disclosed evidence scaling; current receipts expose both concepts
+separately.
+
+The canary never changes hard vetoes, position sizing, risk policy, review verdicts, or execution authority. It only leans scanner score and ordering. Full challenger promotion still requires the 100-cycle governance floor, chronological evaluation, and a separate manual decision. Event receipts durably retain the point-in-time evidence, cohort identities, scores, operator-authorization state, and applied weight.
+
+When normal finalization succeeds for a completed, stopped, or errored scanner
+run, an append-only rank snapshot freezes the exact candidate set, display
+ordinal, champion/counterfactual/applied scores and ranks, applied weight,
+versions, and canonical payload hash. A GET request never manufactures a
+historical snapshot; stale runs, terminal runs that predate the schema, and
+failed finalizations remain explicitly unsnapshotted. Authenticated
+ranking-rendered, candidate-visible, and detail-open browser impressions
+reference the frozen snapshot and use idempotent client event IDs plus a
+server-hashed page-session identifier. These records establish prospective
+exposure evidence from the deployment boundary forward; they cannot prove who
+saw older rankings.
 
 Each newly created scanner event stores an immutable canary receipt containing the learning version, eligible cohort identities, cohort evidence, applied weight, and capture time. Scanner pages may rebase that frozen learning component onto the current deterministic recurrence score, but they may not recompute historical cohort membership or weight. Events created before the receipt schema remain shadow-only and can never receive retroactive live influence.
+
+The legacy event-receipt field `rank_snapshot_persisted=false` describes only
+the event-capture moment, before its run can be terminal. Current receipts add
+`rank_snapshot_state_at_event_capture=not_yet_terminal`; the later run-level
+rank snapshot is a separate immutable record and does not rewrite the event.
 
 ## Automation schedule
 
@@ -104,7 +134,7 @@ Each newly created scanner event stores an immutable canary receipt containing t
 
 ## Learning roadmap and anti-overfit gates
 
-The deterministic rules remain the champion while the system collects independent trade cycles. A learned model is a challenger only after at least 100 classified actual closes. That threshold is a governance floor, not evidence that a model is automatically good.
+The deterministic rules remain the champion while the system collects classified actual-close trade cycles. A learned model is a challenger only after at least 100 classified actual closes. That threshold is a governance floor, not evidence that a model is automatically good or that the observations are statistically independent.
 
 Challenger development must use:
 
@@ -114,7 +144,7 @@ Challenger development must use:
 - actual trade outcomes for actual-trade labels, never synthetic option marks mixed into them;
 - simple baselines before flexible models;
 - calibration, stability by market regime, turnover, and decision-value metrics in addition to accuracy;
-- a minimum of 25 new independent trade cycles before another retraining attempt;
+- a minimum of 25 new classified actual-close trade cycles before another retraining attempt;
 - frozen feature schema, code commit, training range, and evaluation report per challenger;
 - manual champion promotion and an immediate rollback path.
 

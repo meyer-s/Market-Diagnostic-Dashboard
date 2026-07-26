@@ -27,6 +27,11 @@ from .option_decision_learning import (
     OptionTradeOutcome,
 )
 from .option_trade_reminders import OptionTradeReminder
+from .options_alerts import OptionAlertEvent, OptionAlertWatch
 from .option_sweep_runs import OptionSweepRun
+from .option_scanner_exposure import (
+    OptionScannerImpression,
+    OptionScannerRankSnapshot,
+)
 from .stock_price_bar import StockPriceBar
 from .stock_projection_snapshot import StockProjectionSnapshot

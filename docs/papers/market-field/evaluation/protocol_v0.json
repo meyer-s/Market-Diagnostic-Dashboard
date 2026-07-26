@@ -1,0 +1,156 @@
+{
+  "schema_version": "market_field_prequential_protocol_v0",
+  "protocol_status": "retrospective_development_dry_run",
+  "frozen_on_date": "2026-07-26",
+  "claim_boundary": {
+    "decision_eligible": false,
+    "performance_claim_permitted": false,
+    "preregistration_claim_permitted": false,
+    "options_economics_evaluated": false,
+    "purpose": "Exercise and audit a proposed economic-evaluation pipeline using already-inspected retained OHLCV. Results are development diagnostics, not evidence of forecast skill, economic value, or trading utility."
+  },
+  "input_snapshot": {
+    "provider": "Yahoo Finance via the paper's retained local daily caches",
+    "adjustment": "Yahoo auto_adjust=True",
+    "timeframe": "1D",
+    "fresh_fetch_allowed": false,
+    "expected_last_observation": "2026-07-21",
+    "datasets": [
+      {
+        "symbol": "SPY",
+        "cache_file": "SPY.csv",
+        "rows": 2148,
+        "canonical_ohlcv_sha256": "ea77800c08663cb150f1b04125d897e62061d5d0a5e6e642ccd2e4d7dae95d7c"
+      },
+      {
+        "symbol": "QQQ",
+        "cache_file": "QQQ.csv",
+        "rows": 2148,
+        "canonical_ohlcv_sha256": "00ce949bf1318fadab102ae859cb9ac5f73454ad78f8fba4ec32498da0f127b9"
+      },
+      {
+        "symbol": "IWM",
+        "cache_file": "IWM.csv",
+        "rows": 2148,
+        "canonical_ohlcv_sha256": "60edd0ee5b7d9d9dad098d831128638252f0bdda2665c9b0a1f17d8e8c4f3b1d"
+      },
+      {
+        "symbol": "TLT",
+        "cache_file": "TLT.csv",
+        "rows": 2148,
+        "canonical_ohlcv_sha256": "0089ee8a52a195ee1ca36467d31ab495df16ea608b450ea060695f7415438a23"
+      },
+      {
+        "symbol": "GLD",
+        "cache_file": "GLD.csv",
+        "rows": 2148,
+        "canonical_ohlcv_sha256": "f004bce65315d319e6724423f4da6356f6dbc8e462fceacc19bccfa005ab0b11"
+      },
+      {
+        "symbol": "USO",
+        "cache_file": "USO.csv",
+        "rows": 2148,
+        "canonical_ohlcv_sha256": "de1a67bbfedec724465db2c5f927e9342001843a698a0768039a182be782ae8e"
+      },
+      {
+        "symbol": "VNQ",
+        "cache_file": "VNQ.csv",
+        "rows": 2148,
+        "canonical_ohlcv_sha256": "519c362eb2510bfd30134a1282e2a1af20bf18a22d688b8b9d6a9556d85ae343"
+      },
+      {
+        "symbol": "BTC-USD",
+        "cache_file": "BTC_USD.csv",
+        "rows": 3124,
+        "canonical_ohlcv_sha256": "07faa51bb53f39f7e8c78064fc0d9ea2200cb8695535776c24eb07dde4a22bd3"
+      }
+    ]
+  },
+  "prospective_holdout": {
+    "status": "reserved_not_evaluated",
+    "not_before_market_date": "2026-07-27",
+    "activation_rule": "Only completed observations strictly after the committed protocol may enter a separately receipted prospective run.",
+    "development_run_must_exclude": true,
+    "minimum_observations_before_review": 252
+  },
+  "chronology": {
+    "feature_warmup_bars": 128,
+    "minimum_proper_fit_bars": 504,
+    "fit_calibration_purge_bars": 20,
+    "calibration_bars": 252,
+    "calibration_test_embargo_bars": 20,
+    "origin_step_bars": 20,
+    "score_at_origin_only": true,
+    "expanding_proper_fit": true
+  },
+  "outcomes": {
+    "horizons_bars": [
+      1,
+      5,
+      20
+    ],
+    "definitions": [
+      "forward_return",
+      "forward_realized_variation",
+      "pressure_aligned_maximum_adverse_excursion"
+    ],
+    "annualized": false,
+    "pool_across_datasets": false
+  },
+  "models": {
+    "ridge_alpha": 1.0,
+    "gaussian_hmm": {
+      "states": 2,
+      "covariance": "diagonal",
+      "maximum_em_iterations": 8,
+      "variance_floor": 0.0001,
+      "transition_prior": "0.5 all cells plus 1.0 diagonal",
+      "state_outcome_prediction": "causal filtered-state probability weighted fit-only state means"
+    },
+    "minimum_model_fit_rows": 40,
+    "minimum_dictionary_state_outcomes": 20,
+    "interval_calibration_quantile": 0.9,
+    "ids": [
+      "naive_zero",
+      "naive_fit_mean",
+      "ema_12_24_ridge",
+      "technical_24_ridge",
+      "causal_change_point_ridge",
+      "gaussian_hmm_2state",
+      "market_field_dictionary",
+      "market_field_raw_ridge",
+      "market_field_minus_pressure_state",
+      "market_field_minus_field_transform",
+      "market_field_minus_ohlcv_carrier"
+    ]
+  },
+  "dependence": {
+    "bootstrap": "circular_stationary",
+    "replications": 499,
+    "mean_block_origins": 5,
+    "confidence": 0.95,
+    "seed": 20260726,
+    "resampling_unit": "within_dataset_paired_loss_difference",
+    "cross_dataset_pooling": false
+  },
+  "multiplicity": {
+    "primary_development_family": {
+      "model": "market_field_raw_ridge",
+      "comparator": "technical_24_ridge",
+      "outcome": "forward_return",
+      "horizon_bars": 5,
+      "metric": "mean_absolute_error_difference",
+      "planned_hypotheses": 8
+    },
+    "secondary_development_family_planned_hypotheses": 712,
+    "exploratory_fdr_method": "benjamini_hochberg",
+    "confirmatory_fwer_method_available_but_inactive": "holm",
+    "decision_threshold": null,
+    "decision_eligible": false
+  },
+  "artifact_bounds": {
+    "prediction_rows_maximum": 60000,
+    "bootstrap_rows_maximum": 1000,
+    "case_accounting_rows_maximum": 5000
+  }
+}

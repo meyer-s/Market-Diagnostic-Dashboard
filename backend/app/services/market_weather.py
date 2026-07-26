@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import hashlib
+import json
 from typing import Iterable
 
 import numpy as np
@@ -10,10 +12,11 @@ from app.services.market_weather_research import build_market_weather_research
 
 
 EPSILON = 1e-9
-MARKET_WEATHER_SEMANTIC_REVISION = "1.2"
+MARKET_WEATHER_SEMANTIC_REVISION = "1.3"
 MARKET_WEATHER_MINIMUM_BARS = 60
 OHLC_BOUNDARY_RTOL = 1e-12
 OHLC_BOUNDARY_ATOL = 1e-12
+MARKET_WEATHER_RECIPE_VERSION = "market_field_recipe_v1"
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,36 @@ class MarketWeatherSettings:
     edge_gain: float = 1.35
     entropy_smoothing: int = 4
     confidence_gamma: float = 0.86
+
+
+def _canonical_sha256(payload: object) -> str:
+    encoded = json.dumps(
+        payload,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _history_input_fingerprint(history: pd.DataFrame) -> str:
+    """Hash the normalized analysis input without rounding its numeric values."""
+
+    rows: list[list[str | None]] = []
+    for timestamp, row in history.iterrows():
+        values: list[str | None] = [pd.Timestamp(timestamp).isoformat()]
+        for column in ("open", "high", "low", "close", "volume"):
+            value = float(row[column])
+            values.append(value.hex() if np.isfinite(value) else None)
+        rows.append(values)
+    return _canonical_sha256(
+        {
+            "schema": "normalized_ohlcv_float_hex_v1",
+            "columns": ["timestamp", "open", "high", "low", "close", "volume"],
+            "rows": rows,
+        }
+    )
 
 
 def _clip(values: np.ndarray, low: float = 0.0, high: float = 1.0) -> np.ndarray:
@@ -354,6 +387,28 @@ def build_market_weather(
         raise ValueError("Horizons must contain values of at least 4 bars.")
     if horizon_values != sorted(set(horizon_values)):
         raise ValueError("Horizons must be unique and sorted in ascending order.")
+    recipe_payload = {
+        "recipe_version": MARKET_WEATHER_RECIPE_VERSION,
+        "formula_model": "market_field_calculus_v1",
+        "semantic_revision": MARKET_WEATHER_SEMANTIC_REVISION,
+        "horizons": horizon_values,
+        "settings": asdict(settings),
+        "normalization_contract": "strict_positive_consistent_ohlc_volume_mask_v1",
+        "ewm_contract": {
+            "adjust": False,
+            "ignore_na": False,
+            "min_periods": 0,
+        },
+        "retrospective_research_included": include_retrospective_research,
+    }
+    recipe_hash = _canonical_sha256(recipe_payload)
+    input_hash = _history_input_fingerprint(history)
+    analysis_hash = _canonical_sha256(
+        {
+            "recipe_hash": recipe_hash,
+            "input_hash": input_hash,
+        }
+    )
     maximum_horizon = max(horizon_values)
     minimum_observed_window = maximum_horizon + 1
     minimum_required_bars = max(MARKET_WEATHER_MINIMUM_BARS, minimum_observed_window)
@@ -561,6 +616,24 @@ def build_market_weather(
         "latest_profile": latest_profile if include_history_payload else [],
         "research": research,
         "settings": asdict(settings),
+        "provenance": {
+            "schema_version": "market_field_analysis_identity_v1",
+            "scope": "recipe_and_normalized_input_identity",
+            "provider_truth_verified": False,
+            "recipe_version": MARKET_WEATHER_RECIPE_VERSION,
+            "recipe_hash": recipe_hash,
+            "input_schema": "normalized_ohlcv_float_hex_v1",
+            "input_hash": input_hash,
+            "analysis_hash": analysis_hash,
+            "normalized_input_rows": len(history),
+            "normalized_input_start": dates[0],
+            "normalized_input_end": dates[-1],
+            "recipe": recipe_payload,
+            "note": (
+                "These hashes prove identity of the normalized rows and declared "
+                "recipe, not correctness, exchange completeness, or provider immutability."
+            ),
+        },
         "history_context": {
             "analysis_bars": len(history),
             "maximum_horizon_bars": maximum_horizon,
@@ -581,6 +654,24 @@ def build_market_weather(
             "bars_needed_to_minimum_input": max(0, minimum_required_bars - len(history)),
             "bars_needed_to_initialization_target": max(0, target_warmup - len(history)),
             "initialization_note": "The two-times-maximum-horizon target is a disclosed initialization-coverage reference, not an EWM convergence guarantee.",
+            "horizon_coverage": [
+                {
+                    "horizon": horizon,
+                    "initialization_target_bars": max(
+                        MARKET_WEATHER_MINIMUM_BARS,
+                        2 * horizon,
+                    ),
+                    "initialization_target_covered": len(history)
+                    >= max(MARKET_WEATHER_MINIMUM_BARS, 2 * horizon),
+                    "bars_needed_to_initialization_target": max(
+                        0,
+                        max(MARKET_WEATHER_MINIMUM_BARS, 2 * horizon)
+                        - len(history),
+                    ),
+                }
+                for horizon in horizon_values
+            ],
+            "state_vector_coverage": research.get("initialization_coverage"),
             # Compatibility aliases retained for v1.1 clients. New consumers
             # should prefer the explicit minimum-input and initialization keys.
             "target_warmup_bars": target_warmup,

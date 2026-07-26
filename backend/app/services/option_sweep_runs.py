@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -25,6 +26,12 @@ from app.services.option_decision_learning import (
     rebase_option_learning_evaluation,
 )
 from app.services.option_field_context import option_field_context_from_event
+from app.services.option_scanner_exposure import (
+    build_rank_snapshot_payload,
+    persist_rank_snapshot,
+    serialize_rank_snapshot,
+    snapshot_for_run,
+)
 from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_opportunity_score, opportunity_grade
 from app.services.options_review_window import parse_review_window
 from app.services.options_alerts import _send_webhook
@@ -42,6 +49,7 @@ ACTIVE_STATUSES = {"queued", "running"}
 STALE_SWEEP_PROGRESS_MINUTES = float(os.getenv("OPTION_SWEEP_STALE_MINUTES", "30"))
 _DASHBOARD_SWEEP_CONTROLS: dict[int, threading.Event] = {}
 _DASHBOARD_SWEEP_CONTROLS_LOCK = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 def _csv_symbols(value: Optional[str]) -> list[str]:
@@ -322,6 +330,7 @@ def finish_sweep_run(
     with get_db_session() as db:
         record_scanner_recurrence_events_for_run(db, int(run_id))
         db.commit()
+    _finalize_rank_snapshot_safely(int(run_id))
 
 
 def fail_sweep_run(run_id: Optional[int], error: str) -> None:
@@ -334,6 +343,7 @@ def fail_sweep_run(run_id: Optional[int], error: str) -> None:
         last_error=error,
         completed=True,
     )
+    _finalize_rank_snapshot_safely(int(run_id))
 
 
 def _dashboard_pause_seconds(total_tickers: int, provider_key: str) -> float:
@@ -543,6 +553,7 @@ def request_stop_dashboard_sweep(run_id: int) -> dict[str, object]:
             last_error="Stop requested, but no local scanner thread was registered.",
             completed=True,
         )
+        _finalize_rank_snapshot_safely(int(run_id))
         message = f"Scanner run #{run_id} was marked stopped."
 
     with get_db_session() as db:
@@ -729,6 +740,59 @@ def _attach_learning_evaluations(
         opportunity["grade"] = opportunity_grade(float(opportunity["score"]))
         opportunity["ranking_model_version"] = str(evaluation.get("version") or "")
 
+    family_names = sorted(
+        {
+            str(family)
+            for opportunity in opportunities
+            for family in (
+                (opportunity.get("learning_evaluation") or {}).get("family_attribution") or {}
+            )
+        }
+    )
+    family_rank_changes: dict[str, int] = {}
+    for family in family_names:
+        without_family_order = sorted(
+            opportunities,
+            key=lambda row: (
+                float((row.get("learning_evaluation") or {}).get("applied_score") or 0.0)
+                - float(
+                    (
+                        (
+                            (row.get("learning_evaluation") or {}).get("family_attribution")
+                            or {}
+                        ).get(family)
+                        or {}
+                    ).get("applied_score_delta")
+                    or 0.0
+                ),
+                row.get("triggered_at") or "",
+                int(row.get("event_id") or 0),
+            ),
+            reverse=True,
+        )
+        ranks_without_family = {
+            id(row): index
+            for index, row in enumerate(without_family_order, start=1)
+        }
+        changed = 0
+        for opportunity in opportunities:
+            evaluation = opportunity["learning_evaluation"]
+            attribution = evaluation.get("family_attribution")
+            if not isinstance(attribution, dict):
+                continue
+            family_row = attribution.get(family)
+            if not isinstance(family_row, dict):
+                continue
+            rank_without_family = ranks_without_family[id(opportunity)]
+            applied_rank = int(evaluation.get("applied_rank") or rank_without_family)
+            rank_delta = rank_without_family - applied_rank
+            family_row["rank_without_family"] = rank_without_family
+            family_row["applied_rank"] = applied_rank
+            family_row["applied_rank_delta"] = rank_delta
+            family_row["applied_rank_changed"] = rank_delta != 0
+            changed += int(rank_delta != 0)
+        family_rank_changes[family] = changed
+
     policy = {
         key: value
         for key, value in context.items()
@@ -743,11 +807,96 @@ def _attach_learning_evaluations(
         sum(applied_weights) / len(applied_weights),
         4,
     ) if applied_weights else 0.0
+    policy["family_applied_rank_changes"] = family_rank_changes
+    policy["direct_market_field_rank_weight"] = 0.0
+    policy["market_field_influence_path"] = "indirect_outcome_learning_canary"
     policy["actual_order_unchanged"] = applied_reorder_count == 0
     return policy
 
 
-def build_scanner_run_detail(run_id: int) -> dict[str, object]:
+def _apply_rank_display_order(
+    opportunities: list[dict[str, Any]],
+) -> None:
+    opportunities.sort(
+        key=lambda row: (
+            int(
+                (row.get("learning_evaluation") or {}).get("applied_rank")
+                or 10**9
+            ),
+            row.get("triggered_at") or "",
+            int(row.get("event_id") or 0),
+        )
+    )
+    for display_ordinal, opportunity in enumerate(opportunities, start=1):
+        evaluation = opportunity.get("learning_evaluation") or {}
+        opportunity["display_ordinal"] = display_ordinal
+        for field in (
+            "champion_rank",
+            "counterfactual_rank",
+            "applied_rank",
+            "champion_score",
+            "counterfactual_score",
+            "applied_score",
+            "applied_weight",
+        ):
+            opportunity[field] = evaluation.get(field)
+
+
+def _apply_frozen_rank_snapshot(
+    opportunities: list[dict[str, Any]],
+    snapshot: dict[str, object],
+) -> list[dict[str, Any]]:
+    candidates = snapshot.get("candidates")
+    if not isinstance(candidates, list):
+        return opportunities
+    by_event_id = {
+        int(opportunity["event_id"]): opportunity
+        for opportunity in opportunities
+        if opportunity.get("event_id") is not None
+    }
+    frozen: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        try:
+            event_id = int(candidate["event_id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        opportunity = by_event_id.get(event_id)
+        if opportunity is None:
+            continue
+        evaluation = opportunity.get("learning_evaluation")
+        if not isinstance(evaluation, dict):
+            evaluation = {}
+            opportunity["learning_evaluation"] = evaluation
+        for field in (
+            "champion_rank",
+            "counterfactual_rank",
+            "applied_rank",
+            "champion_score",
+            "counterfactual_score",
+            "applied_score",
+            "applied_weight",
+        ):
+            if field in candidate:
+                evaluation[field] = candidate.get(field)
+                opportunity[field] = candidate.get(field)
+        opportunity["scan_ordinal"] = candidate.get("scan_ordinal")
+        opportunity["display_ordinal"] = candidate.get("display_ordinal")
+        if candidate.get("ranking_model_version"):
+            opportunity["ranking_model_version"] = candidate["ranking_model_version"]
+        if candidate.get("applied_score") is not None:
+            opportunity["score"] = float(candidate["applied_score"])
+            opportunity["grade"] = opportunity_grade(float(opportunity["score"]))
+        frozen.append(opportunity)
+    return frozen
+
+
+def build_scanner_run_detail(
+    run_id: int,
+    *,
+    include_ranking_snapshot: bool = True,
+) -> dict[str, object]:
     expire_stale_sweep_runs()
     with get_db_session() as db:
         run = db.query(OptionSweepRun).filter(OptionSweepRun.id == run_id).first()
@@ -793,6 +942,11 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
         repeat_context = load_scanner_repeat_evidence_context(db, events=events)
         learning_context = build_learning_influence_context(learning_summary(db))
         serialized_run = _serialize_run(run)
+        serialized_snapshot = (
+            serialize_rank_snapshot(snapshot_for_run(db, run_id))
+            if include_ranking_snapshot
+            else None
+        )
 
     if not symbols:
         symbols = []
@@ -823,7 +977,6 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
         )
         opportunity["position_match"] = position_match_for_event(event, repeat_context)
         opportunities.append(opportunity)
-    learning_policy = _attach_learning_evaluations(opportunities, learning_context)
     opportunities.sort(
         key=lambda row: (
             symbol_order.get(str(row["symbol"]), len(symbol_order)),
@@ -831,13 +984,56 @@ def build_scanner_run_detail(run_id: int) -> dict[str, object]:
             int(row["event_id"]),
         )
     )
+    for scan_ordinal, opportunity in enumerate(opportunities, start=1):
+        opportunity["scan_ordinal"] = scan_ordinal
+    learning_policy = _attach_learning_evaluations(opportunities, learning_context)
+    _apply_rank_display_order(opportunities)
+    if serialized_snapshot is not None:
+        opportunities = _apply_frozen_rank_snapshot(
+            opportunities,
+            serialized_snapshot,
+        )
+        frozen_policy = serialized_snapshot.get("learning_policy")
+        if isinstance(frozen_policy, dict):
+            learning_policy = frozen_policy
     return {
         "run": serialized_run,
         "hit_count": max(int(serialized_run.get("hits") or 0), len(symbols), len(opportunities)),
         "matched_event_count": len(opportunities),
         "hits": opportunities,
         "learning_policy": learning_policy,
+        "ranking_snapshot": serialized_snapshot,
     }
+
+
+def finalize_terminal_rank_snapshot(run_id: int) -> dict[str, object]:
+    """Freeze one terminal run's displayed candidate order without a GET write."""
+
+    detail = build_scanner_run_detail(
+        int(run_id),
+        include_ranking_snapshot=False,
+    )
+    payload = build_rank_snapshot_payload(
+        detail["run"],
+        detail["hits"],
+        detail.get("learning_policy") or {},
+    )
+    with get_db_session() as db:
+        run = db.query(OptionSweepRun).filter(OptionSweepRun.id == int(run_id)).first()
+        if run is None:
+            raise LookupError(f"Scanner run #{run_id} was not found.")
+        snapshot, _created = persist_rank_snapshot(db, run, payload)
+        return serialize_rank_snapshot(snapshot) or {}
+
+
+def _finalize_rank_snapshot_safely(run_id: int) -> None:
+    try:
+        finalize_terminal_rank_snapshot(int(run_id))
+    except Exception:
+        logger.exception(
+            "Failed to persist terminal scanner rank snapshot for run %s.",
+            run_id,
+        )
 
 
 def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_limit: int = 2000) -> dict[str, object]:

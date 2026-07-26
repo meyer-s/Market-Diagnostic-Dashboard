@@ -20,7 +20,7 @@ from app.services.market_weather_context import build_technical_context
 
 OPTION_FIELD_SCHEMA_VERSION = "option_market_field_v1"
 OPTION_FIELD_MODEL_VERSION = "market_field_calculus_v1"
-OPTION_FIELD_SEMANTIC_REVISION = "1.2"
+OPTION_FIELD_SEMANTIC_REVISION = "1.3"
 OPTION_FIELD_LEGACY_SEMANTIC_REVISION = "1.0"
 OPTION_FIELD_MODE = "shadow_only"
 OPTION_FIELD_RANK_INFLUENCE = 0.0
@@ -107,6 +107,7 @@ def _normalized_option_type(value: str | None) -> str | None:
 
 def _authority_payload() -> dict[str, object]:
     return {
+        "scope": "direct_market_field_snapshot",
         "scanner_rank": "none",
         "hard_veto": "none",
         "manager_verdict": "none",
@@ -115,6 +116,14 @@ def _authority_payload() -> dict[str, object]:
         "review_priority": "advisory",
         "human_visible": True,
         "automated_execution": "none",
+        "downstream_outcome_learning": {
+            "cohort_input_allowed": True,
+            "authority_contract": "separately_versioned_bounded_canary",
+            "note": (
+                "This snapshot has zero direct rank weight. A downstream outcome-learning "
+                "canary may use its point-in-time cohort under separate evidence gates."
+            ),
+        },
     }
 
 
@@ -290,6 +299,7 @@ def _empty_payload(
         "timeframe": timeframe,
         "option_type": option_type,
         "data_source": source,
+        "analysis_identity": None,
         "completed_bars": completed_bars,
         "excluded_incomplete_bars": excluded_incomplete_bars,
         "initialization": _initialization_payload(completed_bars),
@@ -577,6 +587,16 @@ def build_option_field_context(
             if isinstance(research.get("scaling_reference"), dict)
             else {}
         )
+        initialization_coverage = (
+            research.get("initialization_coverage")
+            if isinstance(research.get("initialization_coverage"), dict)
+            else None
+        )
+        analysis_identity = (
+            field.get("provenance")
+            if isinstance(field.get("provenance"), dict)
+            else None
+        )
         derivative_latest = derivative_rows[-1] if derivative_rows else {}
         technical = build_technical_context(completed)
         price_action_latest = technical.get("latest") if isinstance(technical.get("latest"), dict) else {}
@@ -642,9 +662,13 @@ def build_option_field_context(
             "timeframe": normalized_timeframe,
             "option_type": normalized_option_type,
             "data_source": source,
+            "analysis_identity": analysis_identity,
             "completed_bars": len(completed),
             "excluded_incomplete_bars": excluded,
-            "initialization": _initialization_payload(len(completed)),
+            "initialization": {
+                **_initialization_payload(len(completed)),
+                "state_vector_coverage": initialization_coverage,
+            },
             "maturity": _maturity_payload(len(completed)),
             "input_quality": input_quality,
             "alignment": alignment,

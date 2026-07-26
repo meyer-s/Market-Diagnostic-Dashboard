@@ -2,6 +2,11 @@
 
 This directory is a versioned engineering and descriptive-empirical audit of the repository's Market Field implementation. It is suitable as preliminary evidence for a paper appendix, but it does **not** evaluate forecast skill, trading performance, statistical discovery, or economic value.
 
+The executed supplement evaluated semantic revision 1.2. Formula v1 is
+unchanged; additive semantic 1.3 coverage, identity, authority, rank-snapshot,
+and impression mechanisms are documented and tested in the current repository
+but are not retroactively part of this numerical receipt.
+
 ## Reproduce
 
 From the repository root, using the repository virtual environment:
@@ -39,4 +44,4 @@ The recorded environment versions live in `results/run_receipt.json`, alongside 
 
 ## Interpretation guardrail
 
-The evaluation supports statements about tested prefix behavior, repeatability, initialization and parameter sensitivity, descriptive cross-timeframe behavior, formula anchors, lexicon calibration diagnostics, and the option integration's zero algorithmic authority. It cannot support a claim that any state forecasts returns or that the system improves an options strategy.
+The evaluation supports statements about tested prefix behavior, repeatability, initialization and parameter sensitivity, descriptive cross-timeframe behavior, formula anchors, lexicon calibration diagnostics, and the audited direct option wrapper's zero rank/execution authority. It does not evaluate the later bounded outcome-learning canary and cannot support a claim that any state forecasts returns or that the system improves an options strategy.

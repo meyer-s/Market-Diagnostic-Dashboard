@@ -462,6 +462,46 @@ export interface MarketWeatherResearch {
   notes: string[];
 }
 
+export interface MarketWeatherCoordinateCoverage {
+  id: string;
+  family: "pressure_state" | "field_transform" | "ohlcv_carrier" | string;
+  latest_computable: boolean;
+  latest_source_observed: boolean;
+  latest_measured: boolean;
+  latest_internal_finite: boolean;
+  latest_rolling_depth_support: boolean;
+  latest_full_dependency_support: boolean;
+  latest_uses_neutral_placeholder: boolean;
+  computable_observations: number;
+  computable_fraction: number;
+  first_computable_index: number | null;
+  first_computable_at: string | null;
+  source_observed_observations: number;
+  source_observed_fraction: number;
+  first_source_observed_index: number | null;
+  first_source_observed_at: string | null;
+  rolling_depth_support_observations: number;
+  rolling_depth_support_fraction: number;
+  first_rolling_depth_support_index: number | null;
+  first_rolling_depth_support_at: string | null;
+  full_dependency_support_observations: number;
+  full_dependency_support_fraction: number;
+  first_full_dependency_support_index: number | null;
+  first_full_dependency_support_at: string | null;
+  measured_observations: number;
+  measured_fraction: number;
+  first_measured_index: number | null;
+  first_measured_at: string | null;
+  retained_prefix_bars: number;
+  required_inputs: string[];
+  minimum_rolling_support_bars: number;
+  minimum_rolling_support_satisfied: boolean;
+  bars_needed_to_minimum_rolling_support: number;
+  initialization_target_bars: number;
+  initialization_target_covered: boolean;
+  status: "invalid" | "unavailable" | "provisional" | "target_covered" | string;
+}
+
 export interface MarketWeatherResponse {
   symbol: string;
   semantic_revision?: string;
@@ -493,6 +533,19 @@ export interface MarketWeatherResponse {
     bars_needed_to_minimum_input?: number;
     bars_needed_to_initialization_target?: number;
     initialization_note?: string;
+    state_vector_coverage?: {
+      schema_version: string;
+      coordinate_count: number;
+      analysis_bars: number;
+      maximum_horizon_bars: number;
+      initialization_target_bars: number;
+      initialization_target_covered: boolean;
+      all_latest_measured: boolean;
+      all_latest_full_dependency_support: boolean;
+      features: MarketWeatherCoordinateCoverage[];
+      coverage_is_convergence: false;
+      note: string;
+    };
     /** Compatibility aliases for pre-v1.2 responses. */
     target_warmup_bars: number;
     warmup_complete: boolean;
@@ -524,6 +577,29 @@ export interface MarketWeatherResponse {
   summary: MarketWeatherSummary;
   latest_profile: MarketWeatherProfileRow[];
   settings: Record<string, number>;
+  provenance?: {
+    schema_version: string;
+    scope: "recipe_and_normalized_input_identity" | string;
+    provider_truth_verified: false;
+    recipe_version: string;
+    recipe_hash: string;
+    input_schema: string;
+    input_hash: string;
+    analysis_hash: string;
+    normalized_input_rows: number;
+    normalized_input_start: string;
+    normalized_input_end: string;
+    recipe: Record<string, unknown>;
+    note: string;
+    symbol?: string;
+    timeframe?: string;
+    history_data_source?: string;
+    history_cache_status?: string;
+    history_storage_interval?: string;
+    visible_start?: string;
+    visible_end?: string;
+    bar_completion_rule?: string;
+  };
   research?: MarketWeatherResearch;
   methodology: {
     causal: boolean;

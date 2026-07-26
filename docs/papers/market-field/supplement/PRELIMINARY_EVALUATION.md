@@ -1,5 +1,13 @@
 # Preliminary empirical and engineering evaluation of Market Field Calculus v1
 
+> Version note (2026-07-26): the executed supplement below evaluated semantic
+> revision 1.2. Formula v1 is unchanged, but semantic 1.3 now adds
+> coordinate-level coverage, deterministic recipe/input identities, explicit
+> direct-versus-indirect option authority, terminal rank snapshots, and
+> prospective impression logging. Those additive mechanisms have focused
+> production tests; the numerical supplement has not been relabeled or
+> retroactively rerun as 1.3 evidence.
+
 ## Result in one paragraph
 
 On a locally retained snapshot containing 9,235 completed OHLCV bars across 15 symbol-timeframe datasets, the live Market Field transform was exactly prefix-invariant in 46/46 audits both at API precision and after response-only rounding was bypassed: 24,472 unrounded numeric comparisons had maximum deviation 0 at a `1e-12` tolerance. That supports the narrow engineering claim that the evaluated live computation is nonanticipative for the tested prefixes; it does not establish predictive or trading value. The initialization-sensitivity audits also show why prefix-only computation is not the same as numerical stability. Recomputing the last 32 measurements from only 60 trailing bars produced median IQR-normalized error 0.501 and 90th-percentile error 2.009 relative to full-history computation, while 96 bars reduced the median to 0.035 but left the 90th percentile at 0.931. Semantic revision 1.2 requires 96 completed bars for option context and exposes canonical minimum-input and initialization-target coverage; this is a disclosed heuristic, not a convergence guarantee. The serialized `maturity` object remains a compatibility alias. The public API separately requests up to 96 hidden prefix bars. The production order-3 permutation entropy has six possible ordinal patterns and is sensitive to its trailing-pattern window: median correlations with the 24-pattern setting ranged from 0.342 to 0.630 across alternatives. A constant-price path correctly produced pressure 0, yet formula anchors left Structure at 0.42 and display confidence at 0.68. These are material specification and interpretation findings, not performance evidence.
@@ -46,7 +54,7 @@ There are 180 dataset-feature rows for each grid step: 180 reference rows for st
 
 For each of the 15 datasets, the full retained history was the endpoint reference. The field was recomputed from trailing windows of 60, 96, 128, 192, 256, and 365 bars, and the final 32 aggregate derivative, stratum, carrier, and carrier-ratio observations were compared with the same timestamps from the full-history computation. Errors were divided by each feature's full-history IQR. This measures initialization and retained-history sensitivity; it does not designate the full-history result as economic truth.
 
-The static initialization contract separately records the option wrapper's minimum, the public endpoint's hidden prefix request, the longest horizon, and the 96-bar carrier reference span. The current payload emits no feature-level initialization-coverage mask.
+The static initialization contract separately records the option wrapper's minimum, the public endpoint's hidden prefix request, the longest horizon, and the 96-bar carrier reference span. The audited semantic-1.2 payload emitted no feature-level initialization-coverage mask; semantic 1.3 adds that mask without changing the audited formulas.
 
 ### Entropy-window and null-anchor audit
 
@@ -95,7 +103,7 @@ This is strong implementation evidence for the evaluated input families. It shou
 
 The audited baseline accepted 60 completed bars. At that point it had only 12 observations after the 48-bar shift boundary and covered 62.5% of the 96-bar carrier reference span. The computation returned finite values because rolling operations permit partial windows and EWMs initialize at their first observation; finiteness must not be translated as convergence. Semantic revision 1.2 requires 96 completed bars for option context and emits minimum-input and initialization-target coverage metadata. The public endpoint still permits a 60-visible-bar request, but requests 96 additional hidden prefix bars and can compute on up to 156 bars before trimming the visible response.
 
-The practical research conclusion is not that 365 is universally sufficient or that 96 has converged. Revision 1.2 closes the clearest availability gap, labels minimum-input and initialization-target coverage separately, and reports retained-history depth, but it still lacks per-coordinate initialization-coverage masks. A 96-bar option snapshot must not be interpreted as equivalent to a 365-bar snapshot.
+The practical research conclusion is not that 365 is universally sufficient or that 96 has converged. Revision 1.2 closed the clearest aggregate availability gap. Follow-on semantic 1.3 now separates finite internal computability, source observability, declared rolling-depth support, and full dependency support for all 15 coordinates, alongside required inputs, retained-prefix depth, and neutral-placeholder flags. These fields expose startup and missingness; they do not turn the 96-bar target into convergence or make a 96-bar option snapshot equivalent to a 365-bar snapshot.
 
 ### 3. The entropy window is a material model parameter
 
@@ -139,9 +147,9 @@ Only one or two archetypes survived the current support/silhouette gates despite
 
 SPY dictionary agreement with the full-window fit was ARI 0.000 for a 70% history prefix, where the prefix selected one archetype versus two, and ARI 0.873 for an 85% prefix, where both selected two. The dictionary is therefore window-native. State IDs should always be versioned with the symbol, timeframe, training interval, feature set, and clustering settings.
 
-### 8. The options integration preserved zero algorithmic authority
+### 8. The audited direct option wrapper preserved zero algorithmic authority
 
-The synthetic incomplete daily session was excluded, had zero influence on stable field context, and left 365 completed bars through 2026-07-21. Call and put aligned pressure were exact sign opposites (+0.0255 and -0.0255). The payload remained `shadow_only`, `rank_influence=0.0`, `automated_execution_enabled=false`, and excluded retrospective lexicon sections. This validates the tested wiring and zero algorithmic execution/ranking authority only. Displayed context can still influence human judgment, so it is not behaviorally inert and says nothing about option-selection performance.
+The synthetic incomplete daily session was excluded, had zero influence on stable field context, and left 365 completed bars through 2026-07-21. Call and put aligned pressure were exact sign opposites (+0.0255 and -0.0255). The payload remained `shadow_only`, `rank_influence=0.0`, `automated_execution_enabled=false`, and excluded retrospective lexicon sections. This validates the tested direct-wrapper wiring only. A later, separately versioned outcome-learning canary can use historical point-in-time field cohorts inside a total score weight capped at 10%; that canary was not part of this executed supplement and is not evidence of option-selection performance.
 
 ### 9. Compute-only latency is plausible but is not a production SLA
 
@@ -198,12 +206,12 @@ For the main paper, the unrounded prefix row, initialization contract, per-step 
 ## Required next evaluation before a performance claim
 
 1. Freeze the feature code, horizon grid, completion policy, and state-training protocol before seeing the test period.
-2. Run a walk-forward or prequential evaluation with training, calibration, and test windows separated chronologically; never rebuild a dictionary using future test bars.
+2. Promote the new development-only prequential harness to a preregistered no-touch study with training, calibration, and test windows separated chronologically; never rebuild a dictionary using future test bars.
 3. Report naive baselines, simple technical baselines, and ablations for each feature family. Evaluate both incremental calibration and incremental decision utility.
 4. Use block bootstrap, stationary bootstrap, or a dependence-aware model for uncertainty; treat overlapping forward-return windows as serially dependent.
 5. Predefine outcomes such as forward return, realized volatility, maximum adverse excursion, and option-specific outcomes. Correct for the multiplicity of symbols, timeframes, horizons, states, and thresholds.
 6. For options, replay only quotes available at the decision timestamp; include bid/ask spread, liquidity filters, slippage, commissions, assignment/exercise rules, and delisting/missing-quote handling.
-7. Keep the first options experiment shadow-only. Compare the scanner's frozen baseline rank with a separately logged field overlay; do not let the overlay change capital until a preregistered sample is complete.
+7. Keep the first options experiment non-executing. Compare frozen champion and applied ranks using the append-only terminal snapshot and impression ledger; do not let the bounded canary change capital, vetoes, sizing, or execution until a preregistered sample is complete.
 8. Publish every failed, unsupported, and unscored case. State support and coverage are part of the result, not rows to discard.
 
 ## Reproducibility note
