@@ -62,9 +62,9 @@ _COORDINATES: tuple[dict[str, str], ...] = (
     {"id": "propagation", "label": "Propagation", "family": "field_transform", "unit": "0–1 score", "polarity": "descriptive"},
     {"id": "cascade_bias", "label": "Cascade bias", "family": "field_transform", "unit": "bounded signed", "polarity": "signed"},
     {"id": "scaling_exponent", "label": "Scaling exponent", "family": "field_transform", "unit": "log-horizon slope", "polarity": "descriptive"},
-    {"id": "volatility_carrier", "label": "Volatility relative level", "family": "ohlcv_carrier", "unit": "0–1 causal-baseline level", "polarity": "unsigned"},
-    {"id": "participation_carrier", "label": "Participation relative level", "family": "ohlcv_carrier", "unit": "0–1 causal-baseline level", "polarity": "unsigned"},
-    {"id": "liquidity_stress_carrier", "label": "Liquidity-stress relative level", "family": "ohlcv_carrier", "unit": "0–1 causal-baseline level", "polarity": "lower_is_less_stressed"},
+    {"id": "volatility_carrier", "label": "Volatility vs baseline", "family": "ohlcv_carrier", "unit": "0–1 causal-baseline level", "polarity": "unsigned"},
+    {"id": "participation_carrier", "label": "Participation vs baseline", "family": "ohlcv_carrier", "unit": "0–1 causal-baseline level", "polarity": "unsigned"},
+    {"id": "liquidity_stress_carrier", "label": "Liquidity stress vs baseline", "family": "ohlcv_carrier", "unit": "0–1 causal-baseline level", "polarity": "lower_is_less_stressed"},
 )
 
 _DERIVATIVE_IDS = {"pressure", "velocity", "acceleration", "jerk", "snap"}

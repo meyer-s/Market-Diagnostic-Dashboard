@@ -638,10 +638,10 @@ export default function MarketWeatherComparisonLab({
                     type="button"
                     onClick={() => onDimensionChange(coordinate.id)}
                     aria-pressed={active}
-                    className={`grid min-h-9 w-full grid-cols-[96px_minmax(80px,1fr)_58px] items-center gap-2 rounded-lg border px-2 text-left transition sm:grid-cols-[128px_minmax(100px,1fr)_66px] ${active ? "border-sky-400/50 bg-sky-400/[0.08]" : "border-transparent hover:border-stealth-600 hover:bg-white/[0.025]"}`}
+                    className={`grid min-h-10 w-full grid-cols-[96px_minmax(80px,1fr)_58px] items-center gap-2 rounded-lg border px-2 text-left transition sm:grid-cols-[128px_minmax(100px,1fr)_66px] ${active ? "border-sky-400/50 bg-sky-400/[0.08]" : "border-transparent hover:border-stealth-600 hover:bg-white/[0.025]"}`}
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-[11px] font-medium text-slate-200">{coordinate.label}</span>
+                      <span className="block text-[11px] font-medium leading-3.5 text-slate-200">{coordinate.label}</span>
                       <span className="block truncate text-[9px] uppercase tracking-[0.1em] text-slate-600">{FAMILY_LABELS[coordinate.family] ?? coordinate.family}</span>
                     </span>
                     <span
