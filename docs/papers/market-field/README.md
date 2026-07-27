@@ -55,8 +55,9 @@ self-contained copy of the exact market-data inputs.
 - The production research page also contains Relative Field Pair v1: a
   two-instrument, same-recipe descriptive comparison with explicit alignment,
   exact window/support/compatibility disclosures, component and ordered
-  comparison identities, a deterministic `pair_summary_v1`, and a compact
-  self-verifying `market_field_pair_receipt_v1`. It is implementation scope,
+  comparison identities, a deterministic `pair_summary_v1`, and a
+  self-checking compact `market_field_pair_receipt_v1`. Its unkeyed checksum is
+  not a signature or proof of origin. It is implementation scope,
   not an additional empirical result in this package.
 
 The official ICLR 2026 style and bibliography files are included unchanged from
@@ -124,6 +125,7 @@ lineage:
 | `b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b` | Semantic 1.3 implementation and clean development-evaluation head | Contains coordinate-support evidence, analysis identities, the governed option-learning canary, rank/exposure logging, conventional and state-model comparators, and the rebuilt 22-page papers. `evaluation/results/run_receipt.json` binds the clean-tree development run to this exact head and stable start/completion source hashes. |
 | `4c848dafecd41a64bd52844c9a12140e6534a784` | Relative Field Pair v1 implementation source audited by the addendum | Contains the ordered same-recipe pair service and research UI through the final mobile-label correction. The standalone addendum reconstructs this numerical backend; the addendum PR adds terminology, schema-contract, and regression-test corrections without changing its numerical formulas. |
 | `71e30b6b9168735816b02af93a82374c97a99ca3` | Relative Field Pair hierarchy and evidence-contract source | Adds the deterministic descriptive summary, exact window/support/compatibility and beta-chain disclosures, compact frozen receipt, three-layer responsive UI, linkable presentation controls, browser coverage, and synchronized research text. The additive revision changes no coordinate, relative-index, beta, or field-separation formula. |
+| `0b8e8aa72be43cfd1038b983494f4693b50b4115` | Relative Field Pair trust and validation source | Adds auditable-recipe and self-checking-receipt semantics, split support and comparator-role presentation, redundant non-color encodings, explicit base/restart evidence, request-local runtime boundaries, bounded product telemetry, a machine-readable probe, and the 11-check browser release gate. It changes no Pair coordinate, relative-index, beta, field-separation, receipt, hash, or authority formula. |
 
 Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
 the historical primary and supplementary clean execution heads bind the same
@@ -132,9 +134,10 @@ records a separate clean-tree run at
 `b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b`. That receipt exercises the
 evaluation machinery on already-inspected retained data; it does not alter the
 historical primary receipts or establish predictive or economic efficacy.
-The current Relative Field Pair product and additive evidence-contract source is
-`71e30b6b9168735816b02af93a82374c97a99ca3`; the paper-artifact commit that
-follows it changes only provenance text and rebuilt addendum PDFs.
+The current Relative Field Pair product, evidence-contract, and validation
+source is `0b8e8aa72be43cfd1038b983494f4693b50b4115`; the paper-artifact commit
+that follows it changes only research documentation, provenance text, and
+rebuilt PDFs.
 
 The committed manifest, hashes, derived CSVs, figures, tables, executed
 notebooks, direct requirements, and full environment version capture document
@@ -205,7 +208,9 @@ secrets, or secret-option records are part of this package.
   unmatched tails, latest-returned timestamps, and all-window bilateral
   coordinate-cell support with `missing_values_carried=false`. Daily/weekly
   session-date alignment reports timezone metadata as not applicable rather
-  than inferred available.
+  than inferred available. The Overview displays all-window coordinate cells
+  separately from current-coordinate support and keeps current session status
+  separate from independent certification.
 - The optional prior-only beta-adjusted path needs at least 20 prior aligned
   log-return pairs and uses at most 60. Its centered covariance/variance slope
   is equivalent to the slope from an intercept-inclusive fit, but the displayed
@@ -234,8 +239,27 @@ secrets, or secret-option records are part of this package.
   header. It excludes summary wording, cache/generation metadata, caveats, and
   full chart histories, so it is not a signed attestation or complete replay
   archive. Live URLs preserve selectors and rerun with current data; JSON
-  export preserves this compact receipt. Request-local Form IDs are never
-  matched across instruments.
+  export is explicitly labeled `Export compact receipt · JSON` and preserves
+  this compact receipt. Its pre-export tooltip names the included evidence,
+  excluded full histories, and absent digital signature. Request-local Form
+  IDs are never matched across instruments.
+- The user-selected comparator is labeled with a visible reference category
+  (broad-cap, growth/technology-heavy, equal-weight, small-cap, dollar-index,
+  sector, or custom) and `suitability not evaluated`; Pair v1 does not select
+  or score peers. The relative-index chart names the exact date on which both
+  instruments equal 100.
+- Target, benchmark, and difference use redundant stroke and marker shapes in
+  addition to hue. Coordinate history uses signed microbars around a centerline
+  with magnitude in height/intensity, an end arrow, and unsupported hatching.
+  Beta-chain starts and restarts are visible rather than silently bridged.
+- Request-local `market_field_pair_runtime_v1` metadata and `Server-Timing`
+  distinguish cache, miss-build, leg preparation, pair assembly, and backend
+  response-ready work. They exclude JSON serialization, compression, network,
+  browser rendering, and chart interaction and do not enter comparison or
+  frozen-receipt identities. The browser's neutral mount-to-second-frame event
+  is not called paint, first useful summary, or interactivity. Browser events
+  are bounded product telemetry, not a durable or authenticated human-exposure
+  ledger.
 - Pair v1 has zero scanner, canary, veto, verdict, sizing, and execution
   authority. It does not establish relative leadership, connectedness,
   prediction, or economic value. Basket fields, cross-sectional peer ranks, and

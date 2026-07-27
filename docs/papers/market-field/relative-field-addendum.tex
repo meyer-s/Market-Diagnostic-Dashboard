@@ -493,11 +493,57 @@ the current evidence boundary. Version 1 of $R$ does not bind the summary
 wording, generation/cache metadata, caveat prose, full price path, or full
 coordinate histories and is therefore not a complete chart-replay archive.
 
+\subsection{Reader-facing evidence contract}
+
+The interface labels the construction an \emph{Auditable field recipe}, not an
+independently audited one. Its Overview reports the all-window ratio in
+Equation~\ref{eq:support-fraction} as supported coordinate cells over total
+coordinate cells and reports current bilateral coordinate support separately.
+It also separates observed session status from independent session
+certification. The normalized price panel names the exact common base date on
+which both price indexes equal 100.
+
+Comparator selectors show a descriptive reference category---broad-cap,
+growth/technology-heavy, equal-weight, small-cap, dollar-index, sector, or
+custom---together with ``User selected; suitability not evaluated.'' They do
+not recommend or score a peer. The export control is labeled
+\texttt{Export compact receipt} $\cdot$ \texttt{JSON}; its pre-export
+description states that it preserves aligned keys, current measurements,
+support, identities, disclosures, and authority, excludes full chart
+histories, and is not digitally signed.
+
+Visual identity is redundant rather than color-only: target, benchmark, and
+difference use solid/circle, dashed/diamond, and dotted/square encodings,
+respectively. Current scope points also differ in outline and size. Unsupported
+intervals use a gap or hatch. Coordinate strips place signed microbars above or
+below a centerline, encode magnitude through height and intensity, and retain a
+latest-direction arrow. Beta-chain starts and restarts remain visible as
+discontinuities and labeled markers. These are translation conventions and do
+not change any Pair coordinate, support mask, or identity.
+
 \subsection{Operational caching}
 
 Raw histories use the persistent market-history cache. Pair calculations use a per-worker TTL/LRU analysis cache with single-flight coalescing and isolated response copies. The ordered symbols, provider object identities, timeframe, visible length, horizons, and settings participate in that operational key. Cache metadata reports whether the pair computation was a hit, miss, or coalesced wait and whether either leg called a provider on that request.
 
 Cache status is not scientific evidence. A hit does not certify data freshness, session comparability, provider truth, or bar completion. The response \texttt{generated\_at} records calculation time and may predate a cache-hit request.
+
+The request-local \texttt{market\_field\_pair\_runtime\_v1} object and
+\texttt{Server-Timing} header separate cache lookup/wait/copy work from a
+miss-owner build. On a build, measured stages distinguish each leg's history
+access, field construction, price-row preparation, and pair assembly. Identity
+controls disclose benchmark-leg reuse rather than inventing a second-leg
+duration. The endpoint returns one JSON response, so the measured
+handler-to-response-ready boundary excludes FastAPI JSON serialization,
+middleware compression, network transfer, frontend rendering, and chart
+interaction. Those values remain explicitly unavailable rather than being
+filled with synthetic progressive stages. Runtime metadata is operational and
+request-specific; it is excluded from both the ordered comparison hash and
+Equation~\ref{eq:frozen-receipt}.
+
+The browser separately emits a neutral \texttt{pair\_surface\_second\_frame}
+diagnostic from component mount through two animation-frame callbacks. That
+quantity is not labeled as paint, first useful summary, or chart
+interactivity. It does not enter either analytical identity.
 
 \subsection{Zero authority}
 
@@ -520,7 +566,11 @@ Pair data are consumed by the Market Field research API and page. Pair v1 does n
 
 \section{Verification Evidence}
 
-The focused backend suite uses deterministic synthetic OHLCV fixtures and endpoint doubles. At the addendum audit boundary, all 23 Pair-v1 tests passed. The suite establishes implementation properties, not market efficacy:
+The focused backend suite uses deterministic synthetic OHLCV fixtures and
+endpoint doubles. At the current validation boundary, 37 focused
+Pair/cache/probe tests passed; the complete backend suite passed 396 tests with
+two skips. The suite establishes implementation properties, not market
+efficacy:
 
 \begin{table}[h]
 \centering
@@ -554,7 +604,30 @@ Canonical serialization & Signed zero normalizes before summary formatting and S
 \label{tab:tests}
 \end{table}
 
-The frontend comparison, summary, methodology, page, and query-state tests cover deterministic translation, Overview/Field/Audit hierarchy, selectors, URL round trips, DXY guards, loading/error behavior, and clearing stale results. Browser checks exercise the desktop and narrow-screen hierarchy, one-scope/one-price-chart mobile behavior, coordinate-detail sheet, and horizontal-overflow boundary. They are not a complete accessibility, pixel-level visual-regression, device, or performance audit. No machine-readable production live-probe receipt is committed with this addendum, so operational deployment observations are deliberately excluded from its evidence.
+The complete frontend suite passed 135 tests. Its comparison, summary,
+methodology, page, query-state, and product-telemetry cases cover deterministic
+translation, Overview/Field/Audit hierarchy, selectors, URL round trips, DXY
+guards, loading/error behavior, clearing stale results, and bounded event
+payloads. The committed browser release gate passed 11 of 11 checks. It retains
+review screenshots at 1440,
+1024, 768, and 390 pixels; checks horizontal overflow and escaped controls;
+exercises tab-key navigation, the mobile-dialog focus trap, Escape and focus
+restoration; runs axe scans configured to fail serious or critical WCAG A/AA
+findings over all three tabs and the mobile dialog; tests reduced-motion
+behavior; and exercises a deterministic 720-pixel reflow proxy for 200\% zoom.
+A committed machine-readable probe validates cross-section schema invariants,
+15 coordinates, alignment/support denominators, zero authority, and receipt
+header/body identity. Its opt-in production mode emits a JSON result that
+should be retained after deployment; the committed release gate does not
+mislabel a local or predeployment probe as postdeployment evidence.
+
+These checks have narrower meanings than their shorthand names. Retained
+screenshots are review evidence, not pixel-diff baselines. Viewport emulation is
+not a real-device audit, the reflow proxy is not literal browser zoom, and axe
+does not replace a manual screen-reader or color-vision review. The live probe
+does not certify provider truth or a stable latency distribution. Backend
+response-ready timing is not time to first useful summary or chart
+interactivity.
 
 \section{Failure Semantics}
 
@@ -589,6 +662,13 @@ The service does not independently certify exchange calendars, currency equivale
     \item \textbf{Not multivariate.} Pair v1 has no basket, cross-sectional rank, factor decomposition, covariance shrinkage, or connectedness network.
     \item \textbf{Visual semantics.} Oscilloscope-like scope paths are two-dimensional projections. Loops are not detected cycles, attractors, lead--lag relations, or causal mechanisms.
     \item \textbf{Operational scale.} Large visible windows serialize 15 complete coordinate paths plus price context. Cache policy and response compression affect latency but do not change the mathematics.
+    \item \textbf{Human-exposure evidence.} Bounded browser events distinguish a
+    rendered result, a substantially visible Overview, opened Field/Audit
+    panels, changed basis/coordinate, copied summary/live recipe, exported
+    receipt, and same-session navigation to Secret Options. They are ordinary
+    product telemetry, not an authenticated durable exposure ledger, and
+    historical exposure cannot be reconstructed. The separate second-frame
+    diagnostic is not evidence that the Overview was seen or useful.
 \end{enumerate}
 
 \section{Predeclared Validation and Extension Plan}
@@ -601,11 +681,21 @@ The present implementation is suitable for prospective instrumentation, not prom
     \item representation endpoints (support, stability, sensitivity), predictive endpoints, and separately cost-aware economic endpoints;
     \item robust, exponentially weighted, and shrinkage beta comparators selected before holdout;
     \item dependence-aware uncertainty and multiplicity correction across coordinates, pairs, and windows;
-    \item an untouched prospective holdout and machine-readable exposure/probe receipts; and
+    \item an untouched prospective holdout, a durable authenticated exposure
+    ledger distinct from product analytics, and retained probe receipts; and
     \item explicit promotion gates preserving current zero scanner and option-learning authority until incremental value and authority-boundary invariance are shown.
 \end{enumerate}
 
-Property-based randomized identity/swap tests, suffix-mutation tests for pair context under a frozen split, runtime response-schema validation, expanded hash-tamper tests, and missing-provenance tests are near-term software work. Basket fields, point-in-time peer selection, cross-sectional ranking, and multivariate connectedness would be new model families rather than silent Pair-v1 extensions and should receive new version identifiers.
+Property-based randomized identity/swap tests, suffix-mutation tests for pair
+context under a frozen split, expanded hash-tamper tests, and
+missing-provenance tests remain near-term software work. Runtime response-schema
+validation and a route probe are now implemented, but cold/concurrent
+distributions, browser time-to-first-useful-summary, interaction latency,
+pixel-diff baselines, manual screen-reader/color-vision review, and real-device
+checks remain open. Basket fields, point-in-time peer selection,
+cross-sectional ranking, and multivariate connectedness would be new model
+families rather than silent Pair-v1 extensions and should receive new version
+identifiers.
 
 \section{Reproducibility and Implementation Map}
 
@@ -613,9 +703,13 @@ The numerical Pair-v1 operators were audited against implementation source
 \path{4c848dafecd41a64bd52844c9a12140e6534a784}. The additive hierarchy,
 deterministic summary, exact window/support/compatibility disclosures,
 beta-chain metadata, and frozen-receipt contract were verified at
-\path{71e30b6b9168735816b02af93a82374c97a99ca3}. No coordinate,
-relative-index, beta, or field-separation formula changed. The revision also
-avoids calling Equation~\ref{eq:beta-adjusted} an OLS residual.
+\path{71e30b6b9168735816b02af93a82374c97a99ca3}. The trust-language,
+reader-facing evidence, runtime, product-telemetry, probe, and browser-gate
+revision is bound to
+\path{0b8e8aa72be43cfd1038b983494f4693b50b4115}. No coordinate,
+relative-index, beta, field-separation, receipt, hash, or authority formula
+changed. The revision also avoids calling Equation~\ref{eq:beta-adjusted} an
+OLS residual.
 
 \begin{table}[h]
 \centering
@@ -640,7 +734,7 @@ The focused backend tests generate their own synthetic inputs and do not require
 
 \section{Conclusion}
 
-\Pair{} is best understood as a typed, ordered comparison operator. Its strongest properties are explicitness: same-recipe legs, exact key intersection, bilateral support, two separate coordinate bases, full-precision price context, strictly prior beta estimation, fixed failure semantics, cryptographic receipts, and zero authority. Those properties make it suitable for inspection and prospective research. They do not make the chosen benchmark correct, the pair stationary, the gap predictive, or the output economically useful. Those questions remain empirical and must be answered under a frozen, dependence-aware, cost-aware protocol before any promotion.
+\Pair{} is best understood as a typed, ordered comparison operator. Its strongest properties are explicitness: same-recipe legs, exact key intersection, bilateral support, two separate coordinate bases, full-precision price context, strictly prior beta estimation, fixed failure semantics, a self-checking unkeyed compact receipt, and zero authority. Those properties make it suitable for inspection and prospective research. They do not make the chosen benchmark correct, the pair stationary, the gap predictive, or the output economically useful. Those questions remain empirical and must be answered under a frozen, dependence-aware, cost-aware protocol before any promotion.
 
 \bibliography{references,relative-field-addendum-references}
 \bibliographystyle{iclr2026_conference}
@@ -689,10 +783,11 @@ Response area & Interpretation \\
 \texttt{price\_series} & Full-precision-derived closes, relative index, active progress, prior beta, and cumulative beta-adjusted return \\
 \texttt{relative\_progress} & Latest aligned price, beta-chain metadata, and exact field-separation values/classification \\
 \texttt{summary} & Deterministic non-predictive translation of authoritative result and support fields \\
-\texttt{frozen\_receipt} & Exact shared keys, latest evidence, identities, disclosures, zero authority, and self-verifying receipt hash \\
+\texttt{frozen\_receipt} & Exact shared keys, latest evidence, identities, disclosures, zero authority, and self-checking unkeyed receipt hash \\
 \texttt{X-Market-Weather-Receipt-Hash} & Response-header copy of the unkeyed frozen-receipt identity checksum \\
 \texttt{provenance} & Component identities, ordered comparison hash, canonical/provider aliases, and contract versions \\
 \texttt{cache} & Per-leg history lineage and per-request analysis-cache behavior \\
+\texttt{runtime} & Request-local cache/build/response-ready timing and explicit post-return measurement exclusions; not part of either receipt identity \\
 \texttt{authority} & Research-only mode and zero decision/execution authority \\
 \texttt{caveats} & Reader-facing interpretation boundaries \\
 \bottomrule

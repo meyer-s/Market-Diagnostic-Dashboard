@@ -153,7 +153,8 @@ paired: a request-local `F.001` for one instrument has no identity relationship
 to `F.001` for another.
 
 The comparison response also carries a deterministic, non-predictive
-`pair_summary_v1` and a self-verifying `market_field_pair_receipt_v1`. The
+`pair_summary_v1` and a self-checking compact
+`market_field_pair_receipt_v1`. The
 summary translates only authoritative price, beta-chain, coordinate,
 separation, support, and session fields. Its three notable coordinates are the
 supported latest context gaps with largest absolute magnitude, using recipe
@@ -171,10 +172,40 @@ The page separates this material into **Overview**, **Field detail**, and
 **Audit receipt**. Field controls live beside the field visualizations and are
 URL-addressable: comparison basis, displayed series, selected coordinate,
 scope trail (`12`, `24`, `72`, or full), explicit shared versus inspection
-scale, and recipe versus largest-own-history-gap ordering. Scope subject colors
-remain fixed; the third coordinate changes only the current-point halo.
-Visible field charts share one inspected-date cursor. These are translation
-and inspection conventions, not additional model features.
+scale, and recipe versus largest-own-history-gap ordering. Target, benchmark,
+and difference remain redundant across hue, solid/dashed/dotted strokes, and
+circle/diamond/square markers. Unsupported history is a gap or hatch rather
+than a carried value. Coordinate-strip history uses signed microbars above or
+below a visible centerline, with height and intensity encoding magnitude, a
+latest-direction arrow, and hatching for unsupported cells. Scope current
+points use outline and size in addition to hue, and beta-chain starts or
+restarts remain visible as discontinuities and labeled markers. Visible field
+charts share one inspected-date cursor. These are translation and inspection
+conventions, not additional model features.
+
+The Overview names the relative-index base date, reports all-window
+coordinate-cell support separately from current-coordinate support, and keeps
+session status separate from independent certification. Comparator presets
+carry visible roles such as broad-cap, growth/technology-heavy, equal-weight,
+small-cap, dollar-index, and sector reference. Every comparator remains user
+selected, and suitability is not evaluated.
+
+The receipt control is labeled **Export compact receipt · JSON**. Its tooltip
+states before export that the file preserves aligned keys, current
+measurements, support, identities, disclosures, and authority; excludes full
+chart histories; and is not digitally signed.
+
+Request-local `market_field_pair_runtime_v1` metadata and `Server-Timing`
+headers measure cache, build, pair-assembly, and handler-to-response-ready
+work. They do not measure framework JSON serialization, compression, network
+transfer, first useful paint, or chart interaction. These operational timings
+are excluded from the comparison and compact-receipt identities. The browser
+also emits bounded Pair product-telemetry events for rendered/visible
+surfaces, controls, copies, exports, and same-session navigation to Secret
+Options. A neutral `pair_surface_second_frame` diagnostic measures only mount
+to a second animation frame; it is not labeled as paint, first useful summary,
+or chart interactivity. Those events are ordinary product analytics, not an
+authenticated, durable, or scientifically complete human-exposure ledger.
 
 Pair v1 is display and research instrumentation only. It has zero direct
 scanner weight, is excluded from the outcome-learning canary, and cannot
