@@ -690,7 +690,7 @@ export interface MarketWeatherComparisonCoordinate {
 }
 
 export interface MarketWeatherComparisonResponse {
-  schema_version: string;
+  schema_version: "market_field_pair_v1";
   semantic_revision?: string;
   generated_at?: string;
   target: {

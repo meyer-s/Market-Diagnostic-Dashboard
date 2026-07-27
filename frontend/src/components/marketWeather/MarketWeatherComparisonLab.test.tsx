@@ -23,7 +23,7 @@ const IDS = [
 ];
 
 const DATA: MarketWeatherComparisonResponse = {
-  schema_version: "market_field_comparison_v1",
+  schema_version: "market_field_pair_v1",
   semantic_revision: "1.3",
   target: { symbol: "NVDA", analysis_hash: "a".repeat(64), latest_close: 184.25 },
   benchmark: { symbol: "QQQ", analysis_hash: "b".repeat(64), latest_close: 611.4 },
@@ -117,8 +117,8 @@ describe("MarketWeatherComparisonLab", () => {
       />,
     );
 
-    expect(screen.getByText("Relative price and prior-only beta residual")).not.toBeNull();
-    expect(screen.getByText(/current contiguous prior-only beta-residual chain/i)).not.toBeNull();
+    expect(screen.getByText("Relative price and prior-only beta adjustment")).not.toBeNull();
+    expect(screen.getByText(/current contiguous prior-only beta-adjusted chain/i)).not.toBeNull();
     expect(screen.getByText("Directional phase")).not.toBeNull();
     expect(screen.getByText("Higher motion")).not.toBeNull();
     expect(screen.getByText("Organization")).not.toBeNull();

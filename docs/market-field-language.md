@@ -84,19 +84,20 @@ fixed proper-fit sample; changing the requested history can change it.
 
 Relative price progress is a separate economic description, normalized to 100
 at the first aligned full-precision normalized close; it does not reuse the
-four-decimal display serialization. Log-return residuals begin only after
-20 prior aligned returns are available; each benchmark beta is an
-intercept-inclusive covariance/variance slope estimated from at most the 60
-strictly prior returns. The estimate is unavailable when the benchmark's
-population return standard deviation is below `1e-7`, is nonfinite, or has
-absolute value above 25. Rejected estimates are not clipped or carried
-forward: that row's residual is unavailable, the cumulative residual chain
-resets, and a later valid estimate begins a new chain. The current beta/residual
-summary reports only the latest aligned row and therefore remains unavailable
-whenever that row's beta is unavailable. Neither price progress nor a
-field-coordinate difference changes a Form, declares one instrument “better,”
-or makes higher disorder, propagation, volatility, participation, or
-liquidity stress desirable.
+four-decimal display serialization. Beta-adjusted log-return differentials
+begin only after 20 prior aligned returns are available; each benchmark beta is
+an intercept-inclusive covariance/variance slope estimated from at most the 60
+strictly prior returns. The displayed differential does not subtract the fitted
+intercept and is not an OLS residual or alpha. The estimate is unavailable when
+the benchmark's population return standard deviation is below `1e-7`, is
+nonfinite, or has absolute value above 25. Rejected estimates are not clipped
+or carried forward: that row's differential is unavailable, the cumulative
+beta-adjusted chain resets, and a later valid estimate begins a new chain. The
+current beta/return summary reports only the latest aligned row and therefore
+remains unavailable whenever that row's beta is unavailable. Neither price
+progress nor a field-coordinate difference changes a Form, declares one
+instrument “better,” or makes higher disorder, propagation, volatility,
+participation, or liquidity stress desirable.
 
 The pair service aligns daily and weekly observations by the serialized market
 session date; it does not independently certify exchange calendars or

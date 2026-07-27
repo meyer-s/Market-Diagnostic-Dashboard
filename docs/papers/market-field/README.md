@@ -21,6 +21,13 @@ self-contained copy of the exact market-data inputs.
   sharing.
 - share.pdf: named-author build target for the same working paper.
 - main.pdf: anonymous conference-review version.
+- relative-field-pair-technical-addendum.pdf: descriptively named, named-author
+  copy of the standalone Pair-v1 methods and reconstructibility addendum.
+- relative-field-addendum-share.pdf: named-author addendum build.
+- relative-field-addendum.pdf: anonymous-review addendum build.
+- relative-field-addendum.tex, relative-field-addendum-share.tex, and
+  relative-field-addendum-references.bib: addendum source, named wrapper, and
+  addendum-only bibliography entries.
 - main.tex and references.bib: paper source and bibliography.
 - market_field_reproducibility.ipynb: executed companion notebook.
 - figures, tables, and results: generated evidence used by the paper.
@@ -82,6 +89,8 @@ distribution:
 cd docs\papers\market-field
 tectonic -X compile main.tex
 tectonic -X compile share.tex
+tectonic -X compile relative-field-addendum.tex
+tectonic -X compile relative-field-addendum-share.tex
 ~~~
 
 For a conventional TeX installation, BibTeX and repeated LaTeX passes may be
@@ -111,6 +120,7 @@ lineage:
 | `42e0a24919504de7fed9f928728bef5157f5ef34` | Executed primary notebook commit | Contains the top-to-bottom notebook execution after the clean primary receipt; all 15 cells are present, eight code cells executed, and no error output is stored. |
 | `d19ededff412d78873cf73724c2d5528961dd811` | Shareable paper build | Contains the 22-page anonymous and named PDFs compiled after the clean primary receipt, executed notebook, and final claim-boundary revision. |
 | `b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b` | Semantic 1.3 implementation and clean development-evaluation head | Contains coordinate-support evidence, analysis identities, the governed option-learning canary, rank/exposure logging, conventional and state-model comparators, and the rebuilt 22-page papers. `evaluation/results/run_receipt.json` binds the clean-tree development run to this exact head and stable start/completion source hashes. |
+| `4c848dafecd41a64bd52844c9a12140e6534a784` | Relative Field Pair v1 implementation source audited by the addendum | Contains the ordered same-recipe pair service and research UI through the final mobile-label correction. The standalone addendum reconstructs this numerical backend; the addendum PR adds terminology, schema-contract, and regression-test corrections without changing its numerical formulas. |
 
 Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
 the historical primary and supplementary clean execution heads bind the same
@@ -184,15 +194,21 @@ secrets, or secret-option records are part of this package.
   preserves Yahoo `DX-Y.NYB` as an explicit provider alias rather than silently
   substituting `UUP`. Provider, session, adjustment, and currency differences
   remain visible limitations.
-- The optional prior-only beta residual needs at least 20 prior aligned
-  log-return pairs and uses at most 60. The beta is unavailable when the
+- The optional prior-only beta-adjusted path needs at least 20 prior aligned
+  log-return pairs and uses at most 60. Its centered covariance/variance slope
+  is equivalent to the slope from an intercept-inclusive fit, but the displayed
+  increment does not subtract the fitted intercept and is therefore not an OLS
+  residual, abnormal return, or alpha. The beta is unavailable when the
   benchmark population return standard deviation is below `1e-7`, the estimate
   is nonfinite, or its absolute value exceeds 25. Rejected values are never
-  clipped or carried forward: the row is unavailable, the cumulative residual
-  chain resets, and the current beta/residual summary remains unavailable when
-  the current beta is unavailable.
+  clipped or carried forward: the row is unavailable, the cumulative
+  beta-adjusted chain resets, and the current beta/return summary remains
+  unavailable when the current beta is unavailable.
 - Relative price uses the full-precision normalized aligned closes rather than
-  the four-decimal display serialization. The fit-relative stretch label
+  the four-decimal display serialization. Coordinate gaps separately consume
+  the public component receipt: four-decimal coordinate series and six-decimal
+  fit references, with six-decimal standardized values and gaps. The
+  fit-relative stretch label
   family-balances mean absolute context gaps over the same supported coordinate
   intersection and compares the latest value with five bars earlier.
 - Pair receipts include both component analysis hashes and an ordered

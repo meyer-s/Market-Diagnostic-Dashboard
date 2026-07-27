@@ -1,0 +1,627 @@
+\documentclass{article}
+
+\usepackage{iclr2026_conference,times}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{microtype}
+\usepackage{url}
+\usepackage[colorlinks=true,allcolors=blue]{hyperref}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\NA}{\mathrm{NA}}
+\newcommand{\clip}{\operatorname{clip}}
+\newcommand{\med}{\operatorname{median}}
+\newcommand{\tail}{\operatorname{tail}}
+\newcommand{\sha}{\operatorname{SHA256}}
+\newcommand{\Pair}{Relative Field Pair v1}
+
+\hypersetup{
+  pdftitle={Technical Addendum: Ordered Relative Field Receipts for Pairwise Multiscale Market Comparison},
+  pdfsubject={Implementation and reconstructibility addendum},
+  pdfkeywords={financial time series, relative comparison, multiscale representation, alignment, provenance}
+}
+\ifdefined\relativefieldsharecopy
+\hypersetup{pdfauthor={Steven J. Meyer}}
+\else
+\hypersetup{pdfauthor={Anonymous}}
+\fi
+
+\title{Technical Addendum:\\ Ordered Relative Field Receipts for\\ Pairwise Multiscale Market Comparison}
+
+\author{
+Steven J. Meyer\\
+Independent Researcher\\
+\url{https://marketdiagnostictool.com}\\
+}
+
+\ifdefined\relativefieldfinalcopy
+\iclrfinalcopy
+\fi
+
+\begin{document}
+\maketitle
+\ifdefined\relativefieldsharecopy
+\lhead{Market Field Calculus technical addendum}
+\fi
+
+\begin{abstract}
+This addendum specifies \Pair{}, a versioned comparison receipt over two independently constructed 15-coordinate Market Field instances. The operator enforces a common component recipe, exact timestamp intersection, bilateral coordinate support, independent proper-fit normalization, full-precision relative-price context, a strictly prior rolling beta adjustment, ordered provenance, and zero decision authority. We give the alignment key, availability masks, native and fit-relative differences, relative-index and beta-adjusted-return equations, family-balanced relationship-stretch rule, precision boundaries, receipt hash, algebraic invariants, failure modes, and test map needed to reconstruct the implementation. The method does not select peers, estimate cointegration, infer connectedness, identify a winner, or establish predictive or economic value. Its contribution is an auditable comparison and translation layer, not a relative-value trading model.
+\end{abstract}
+
+\section{Technical Summary}
+
+\Pair{} answers a deliberately narrow question: given two instruments analyzed by the same Market Field recipe, what can be compared without hiding timestamp mismatch, unsupported coordinates, self-history normalization, or downstream authority? It produces three parallel descriptive channels:
+\begin{enumerate}
+    \item a normalized relative-price path;
+    \item a prior-only beta-adjusted log-return path; and
+    \item native-scale and own-history-relative gaps for each of the 15 field coordinates.
+\end{enumerate}
+The price channels do not transform the field coordinates. The coordinate channels do not alter either component dictionary, match cross-symbol Form identifiers, or supply a trade score.
+
+\begin{center}
+\fbox{\begin{minipage}{0.94\linewidth}
+\small
+\textbf{Supported claim.} Pair v1 integrates exact alignment, bilateral support, independent fixed-reference normalization, ordered identity, and explicit zero authority in one reconstructible receipt. \textbf{Unsupported claims.} It is not evidence of alpha, mean reversion, market neutrality, factor neutrality, leadership, spillovers, causal propagation, prediction, option efficacy, or profitability.
+\end{minipage}}
+\end{center}
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.20\linewidth}p{0.35\linewidth}p{0.35\linewidth}}
+\toprule
+Displayed object & Exact role & Not implied \\
+\midrule
+Relative index & Ratio of two normalized full-precision close paths & Cointegration, fair value, or convergence \\
+Beta-adjusted path & Target log return less a prior-window slope times benchmark log return & OLS alpha, market neutrality, or abnormal-return inference \\
+Native gap & Target minus benchmark on one implemented coordinate scale & Raw market-unit difference or utility ordering \\
+Context gap & Difference between two own-fit standardized coordinates & Cross-sectional z-score or persistent common state \\
+Relationship stretch & Family-balanced absolute context-gap change over five aligned observations & Leadership, lead--lag, cycle, or connectedness \\
+\bottomrule
+\end{tabular}
+\caption{The three comparison channels are intentionally distinct.}
+\label{tab:channels}
+\end{table}
+
+\section{Relationship to Established Methods}
+
+Benchmark-relative returns and market-model slopes are established tools. Brown and Warner study event-window abnormal-return methods using estimated return models \citep{brownwarner1985daily}. Pair v1 borrows only the familiar covariance/variance slope form. It defines no event, estimates no event-window effect, performs no cross-sectional inference, and does not subtract a fitted intercept from its displayed beta-adjusted return.
+
+Likewise, normalized price distance and convergence rules are central to classical pairs-trading research \citep{gatevetal2006pairs}. Pair v1 has no pair-formation optimization, trading band, entry or exit rule, convergence assumption, transaction-cost model, or return claim. It also performs no unit-root, residual-stationarity, cointegrating-vector, or error-correction test of the type associated with cointegration analysis \citep{englegranger1987cointegration}. Finally, the coordinate gaps are not a variance-decomposition network: no VAR or forecast-error variance decomposition is estimated, so the output is not Diebold--Yilmaz connectedness \citep{dieboldyilmaz2012spillovers}.
+
+The implementation contribution is therefore narrower: co-register two independently calculated multiscale fields, expose where both are actually supported, compare each instrument both natively and relative to its own fixed fit history, keep price context separate, and bind the result to an ordered receipt.
+
+\section{Inputs, Coordinate Space, and Component Chronology}
+
+\subsection{Independent component fields}
+
+Let $q\in\{A,B\}$ denote the target and benchmark. Each leg begins with a normalized OHLCV history and is independently mapped by a component recipe $\mathcal R$ to
+\begin{equation}
+    \left\{X^q_{j,t},M^q_{j,t}\right\}_{j=1}^{15},
+    \quad
+    m^q_j,\ s^q_j,\ e_q,\ H_q ,
+\end{equation}
+where $X^q_{j,t}$ is coordinate $j$, $M^q_{j,t}$ is its full-dependency-support indicator, $m^q_j$ and $s^q_j$ are the stored proper-fit location and scale, $e_q$ is the evaluation start, and $H_q$ is the component analysis hash. The service requires equal recipe hashes. That equality binds the formula version, semantic revision, ordered horizon grid, settings, normalization contract, EWM convention, and retrospective-research inclusion flag. It does not assert equal histories or equal providers.
+
+For requested visible length $V$ and largest horizon $h_{\max}$, each component asks the history layer for
+\begin{equation}
+    V_{\mathrm{fetch}}=V+\max(72,2h_{\max})
+\end{equation}
+rows and requires at least
+\begin{equation}
+    n_{\min}=\max(60,h_{\max}+1)
+\end{equation}
+returned rows. The field and its proper-fit/calibration/evaluation split are calculated on that retained component history. Pair output is subsequently restricted to the final $V$ common aligned observations. Consequently, earlier component rows may initialize the field and its dictionary but are not used by the visible-window relative-price base or beta estimator.
+
+\subsection{The ordered 15-coordinate space}
+
+The comparison preserves the component coordinate order and family labels in Table~\ref{tab:coordinates}. ``Native'' always means the coordinate's implemented model scale, not raw market units.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{rlll}
+\toprule
+$j$ & Coordinate & Family & Implemented unit / polarity \\
+\midrule
+1 & Pressure & pressure state & bounded signed \\
+2 & Pressure change & pressure state & bounded signed \\
+3 & Acceleration & pressure state & bounded signed \\
+4 & Jerk & pressure state & bounded signed \\
+5 & Snap & pressure state & bounded signed \\
+6 & Structure & field transform & $[0,1]$ descriptive score \\
+7 & Kinematics & field transform & $[0,1]$ descriptive score \\
+8 & Geometry & field transform & $[0,1]$ descriptive score \\
+9 & Information & field transform & $[0,1]$ descriptive score \\
+10 & Propagation & field transform & $[0,1]$ descriptive score \\
+11 & Cascade bias & field transform & bounded signed \\
+12 & Scaling exponent & field transform & log-horizon slope, descriptive \\
+13 & Volatility vs baseline & OHLCV carrier & $[0,1]$ causal-baseline level \\
+14 & Participation vs baseline & OHLCV carrier & $[0,1]$ causal-baseline level \\
+15 & Liquidity stress vs baseline & OHLCV carrier & $[0,1]$ level; lower is less stressed \\
+\bottomrule
+\end{tabular}
+\caption{Exact Pair-v1 coordinate order. Higher is not inherently better.}
+\label{tab:coordinates}
+\end{table}
+
+The three carrier values are bounded transformations relative to causal baselines; they are not raw realized variation, volume, or price-impact units. Likewise, larger disorder, propagation, participation, or liquidity stress is not a favorable ranking.
+
+\section{Exact Alignment and Availability Contract}
+
+\subsection{Alignment keys}
+
+Let $s$ be a serialized component timestamp and $\tau$ the requested timeframe. Pair v1 constructs
+\begin{equation}
+\kappa_\tau(s)=
+\begin{cases}
+\operatorname{date}(s), & \tau\in\{\texttt{1D},\texttt{1W}\},\\
+\operatorname{ISO}(\operatorname{UTC}(s)), &
+    \tau\notin\{\texttt{1D},\texttt{1W}\},\ s\text{ timezone-aware},\\
+\operatorname{ISO}(s), &
+    \tau\notin\{\texttt{1D},\texttt{1W}\},\ s\text{ timezone-naive}.
+\end{cases}
+\label{eq:key}
+\end{equation}
+If $K_q$ is leg $q$'s valid key set, define
+\begin{align}
+K^{\mathrm{all}}_{AB} &=
+    \operatorname{sort}(K_A\cap K_B),\\
+K_{AB} &= \tail_V(K^{\mathrm{all}}_{AB}).
+\label{eq:intersection}
+\end{align}
+At least 20 exact shared observations must exist before the visible tail is selected. No nearest-neighbor match, interpolation, forward fill, or carry-forward is permitted.
+
+Daily and weekly dates are provider-serialized date labels, not an independent exchange-calendar certification. Aware intraday times are normalized to UTC before exact equality; naive intraday times remain naive and require exact serialized equality. A matching key does not prove the two observations describe the same economic session. Session compatibility is reported as \texttt{compatible} only for the same canonical symbol and otherwise remains \texttt{unknown}.
+
+\subsection{Visible-window dropout accounting}
+
+Let $k_0=\min K_{AB}$ and $k_T=\max K_{AB}$. For leg $q$, the displayed dropped count is
+\begin{equation}
+D_q=\#\left\{k\in K_q:k\ge k_0,\ k\notin K_{AB}\right\},
+\label{eq:dropped}
+\end{equation}
+and the unmatched tail count is
+\begin{equation}
+U_q=\#\left\{k\in K_q:k>k_T\right\}.
+\label{eq:tail}
+\end{equation}
+Thus $U_q$ is a subset of $D_q$ and must not be added to it. These quantities do not count pre-window truncation or rows rejected before the pair layer during OHLCV normalization. The receipt reports counts, not the complete list of dropped timestamps.
+
+\subsection{Coordinate support}
+
+For each leg, $M^q_{j,t}=1$ only when the coordinate has reached its declared first full-dependency-support timestamp and the serialized value is finite. Scaling exponent additionally requires its validity flag. Each carrier additionally requires a finite corresponding causal-ratio observation. Define bilateral support
+\begin{equation}
+S_{j,t}=
+M^A_{j,t}M^B_{j,t}
+\mathbf 1\!\left[X^A_{j,t},X^B_{j,t}\ \text{finite}\right].
+\label{eq:support}
+\end{equation}
+The support fraction in the response is
+\begin{equation}
+\operatorname{SupportFraction}
+=\frac{\sum_{t\in K_{AB}}\sum_{j=1}^{15}S_{j,t}}
+       {15|K_{AB}|}.
+\label{eq:support-fraction}
+\end{equation}
+This is visible-window native-coordinate support. It is neither context support nor a price-overlap fraction.
+
+\subsection{DXY routing boundary}
+
+Requested symbols \texttt{DXY}, \texttt{\^{}DXY}, and \texttt{DX-Y.NYB} canonicalize to \texttt{DXY} and retain Yahoo's provider symbol \texttt{DX-Y.NYB}; the system does not silently substitute the tradable ETF \texttt{UUP}. Because the current provider bar anchors are not demonstrated compatible, nonidentity DXY comparisons at \texttt{1h}, \texttt{2h}, and \texttt{4h} are rejected before provider access. DXY/DXY remains available as an identity control. Permitting another timeframe is not a claim that its sessions are economically synchronized.
+
+\section{Coordinate Comparison Operators}
+
+\subsection{Native difference}
+
+The native operator is
+\begin{equation}
+\Delta^{N}_{j,t}=
+\begin{cases}
+X^A_{j,t}-X^B_{j,t}, & S_{j,t}=1,\\
+\NA, & \text{otherwise}.
+\end{cases}
+\label{eq:native}
+\end{equation}
+An unavailable cell remains unavailable; it is never interpreted as a zero difference.
+
+\subsection{Own-history fit-relative difference}
+
+For completeness, the component dictionary obtains $m^q_j$ from the coordinate median on its proper-fit segment. Its robust scale is selected deterministically:
+\begin{equation}
+s^q_j=
+\begin{cases}
+Q_{0.75}-Q_{0.25}, & Q_{0.75}-Q_{0.25}>10^{-9},\\
+1.4826\,\med|X-m^q_j|, & \text{if that value}>10^{-9},\\
+\operatorname{Std}_{\mathrm{pop}}(X), & \text{if that value}>10^{-9},\\
+1, & \text{otherwise}.
+\end{cases}
+\label{eq:robust-scale}
+\end{equation}
+All quantities in Equation~\ref{eq:robust-scale} use that leg's proper-fit rows. $Q_{0.25}$ and $Q_{0.75}$ use NumPy \texttt{method=linear} interpolation. Pair v1 consumes the stored fit references rather than recomputing them. A stored scale must be finite and greater than $10^{-12}$.
+
+Define
+\begin{equation}
+Z^q_{j,t}=\frac{X^q_{j,t}-m^q_j}{s^q_j}.
+\label{eq:z}
+\end{equation}
+The context difference is
+\begin{equation}
+\Delta^{C}_{j,t}=
+\begin{cases}
+Z^A_{j,t}-Z^B_{j,t},
+& S_{j,t}=1,\ t\ge\max(e_A,e_B),\\
+\NA,&\text{otherwise}.
+\end{cases}
+\label{eq:context}
+\end{equation}
+It compares how unusual the two coordinates are relative to their \emph{separate} proper-fit histories. It is not a cross-sectional economic z-score. Fit and held-out calibration rows are not backfilled with later reference statistics, and request-local Form identifiers or centroids are never matched between symbols.
+
+\subsection{Precision boundary}
+
+Pair-v1 field gaps operate on the public component receipt. Coordinate series values enter from the component's four-decimal serialization; fit medians and robust scales enter from its six-decimal lexicon serialization. Each $Z^q_{j,t}$ is serialized to six decimals before $\Delta^C_{j,t}$ is formed, and returned gaps are serialized to six decimals. These conventions make the receipt reconstructible from the component payloads but mean that the coordinate calculus is not a full-precision recomputation.
+
+Price comparison follows a separate path. The service retains full-precision normalized closes privately beside each component analysis, computes relative price and beta adjustment from those closes, and only then serializes returned closes to eight decimals and return quantities to six decimals.
+
+\subsection{Chronology and request-window dependence}
+
+For a fixed request, native values are prefix-derived and context begins only after both legs' fixed proper-fit and calibration segments. Yet the context trace is not invariant to changing the request history: a different retained window can move split locations and change $m^q_j$ or $s^q_j$. Likewise, changing $V$ changes the first visible common close and therefore rebases the relative index. These are request-relative diagnostics, not persistent cross-symbol coordinates.
+
+\section{Relative Price and Prior-Only Beta Adjustment}
+
+\subsection{Normalized relative price}
+
+Index the visible common keys as $t_0<\cdots<t_{n-1}$ and let $p^q_i>0$ be the full-precision close of leg $q$ at $t_i$. The relative index and active progress are
+\begin{align}
+RI_i&=100
+\frac{p^A_i/p^A_0}{p^B_i/p^B_0},
+\label{eq:ri}\\
+AP_i&=RI_i-100.
+\label{eq:active}
+\end{align}
+The index is a rebased price ratio. It does not control currency, dividends, corporate actions, or provider adjustment policy beyond what is present in the returned component histories.
+
+\subsection{Strictly prior slope}
+
+Define aligned log returns
+\begin{equation}
+r^q_i=\log\frac{p^q_i}{p^q_{i-1}},
+\qquad i=1,\ldots,n-1 .
+\end{equation}
+For current return $i$, the strictly prior estimation set is
+\begin{equation}
+\mathcal W_i=
+\left\{\max(1,i-60),\ldots,i-1\right\},
+\qquad N_i=|\mathcal W_i|.
+\label{eq:beta-window}
+\end{equation}
+No estimate is available unless $N_i\ge20$. With
+\begin{equation}
+\bar r^q_i=\frac{1}{N_i}\sum_{u\in\mathcal W_i}r^q_u,
+\end{equation}
+define
+\begin{align}
+V^B_i&=\sum_{u\in\mathcal W_i}(r^B_u-\bar r^B_i)^2,\\
+\sigma^B_i&=\sqrt{\frac{V^B_i}{N_i}},\\
+\widehat\beta^-_i&=
+\frac{\sum_{u\in\mathcal W_i}
+(r^A_u-\bar r^A_i)(r^B_u-\bar r^B_i)}
+{V^B_i}.
+\label{eq:beta}
+\end{align}
+This is the centered covariance/variance slope, equivalent to the slope from an intercept-inclusive OLS fit. The fitted intercept is neither returned nor subtracted below.
+
+The estimate is unavailable if $N_i<20$, the two prior arrays differ in length, $\sigma^B_i<10^{-7}$, $\widehat\beta^-_i$ is nonfinite, or $|\widehat\beta^-_i|>25$. Equality at the two numerical thresholds is accepted. Estimates outside the gate are rejected, not clipped.
+
+\subsection{Beta-adjusted chain}
+
+The current increment is
+\begin{equation}
+e_i=r^A_i-\widehat\beta^-_i r^B_i.
+\label{eq:beta-adjusted}
+\end{equation}
+Because Equation~\ref{eq:beta-adjusted} omits a fitted intercept, $e_i$ is a \emph{beta-adjusted log-return differential}, not an OLS residual, abnormal return, or alpha. Let $C_i$ be the cumulative log differential:
+\begin{equation}
+C_i=
+\begin{cases}
+\NA, & \widehat\beta^-_i\text{ unavailable},\\
+e_i, & \widehat\beta^-_i\text{ available and }C_{i-1}\text{ unavailable},\\
+C_{i-1}+e_i, & \text{otherwise}.
+\end{cases}
+\label{eq:chain}
+\end{equation}
+The displayed cumulative value is
+\begin{equation}
+BA_i=100\{\exp(C_i)-1\}.
+\label{eq:ba}
+\end{equation}
+An unavailable beta resets the chain. A later valid beta starts a new contiguous chain, and the latest summary never carries a stale estimate. Because the estimator is built only from visible common returns, its first possible value requires 20 prior returns plus the current return---22 aligned prices including the base row. If common keys contain time gaps, the corresponding log returns span those gaps; no elapsed-time normalization is applied.
+
+\section{Family-Balanced Relationship Stretch}
+
+Let $t$ be the latest common key and $t^{-5}$ the key five common observations earlier. For family $f\in\{\text{pressure state},\text{field transform},\text{OHLCV carrier}\}$, define the common endpoint support
+\begin{equation}
+J_f=\left\{j:F(j)=f,\
+\Delta^C_{j,t}\text{ and }\Delta^C_{j,t^{-5}}\text{ finite}\right\}.
+\label{eq:stretch-support}
+\end{equation}
+Using the \emph{same} $J_f$ at both endpoints prevents support appearing or disappearing from masquerading as relationship movement. For $u\in\{t,t^{-5}\}$,
+\begin{align}
+G_{f,u}&=\frac{1}{|J_f|}
+\sum_{j\in J_f}|\Delta^C_{j,u}|,\\
+S_u&=\frac{1}{3}\sum_fG_{f,u}.
+\label{eq:stretch}
+\end{align}
+The summary is unavailable if any $J_f$ is empty. With
+\begin{equation}
+\eta=\max(0.05,0.05S_{t^{-5}}),
+\end{equation}
+the label is
+\begin{equation}
+\operatorname{StretchLabel}=
+\begin{cases}
+\text{widening}, & S_t>S_{t^{-5}}+\eta,\\
+\text{converging}, & S_t<S_{t^{-5}}-\eta,\\
+\text{mixed}, & \text{otherwise}.
+\end{cases}
+\label{eq:stretch-label}
+\end{equation}
+The three families receive equal total weight despite containing 5, 7, and 3 coordinates. Only the categorical label is currently returned. ``Mixed'' includes changes within tolerance; it is not evidence of a statistical mixture. Stretch measures standardized separation magnitude, not direction or leadership.
+
+\section{Algebraic and Software Invariants}
+
+\paragraph{Identity control.}
+If the canonical symbol and component analysis are identical, then every supported native and context gap is zero and $RI_i=100$. Where the beta gate is admissible and benchmark variance is positive, $\widehat\beta^-_i=1$ and the beta-adjusted increment is zero; a locally constant return window remains unavailable rather than being forced to zero. The receipt labels the pair as an identity control.
+
+\paragraph{Swap behavior.}
+For a fixed common key set and fixed component references,
+\begin{equation}
+\Delta^N_{AB,j,t}=-\Delta^N_{BA,j,t},
+\qquad
+\Delta^C_{AB,j,t}=-\Delta^C_{BA,j,t}.
+\label{eq:antisymmetry}
+\end{equation}
+Before response rounding,
+\begin{equation}
+RI_{BA,i}=\frac{10000}{RI_{AB,i}}.
+\label{eq:reciprocity}
+\end{equation}
+Thus active progress does not simply change sign. The rolling beta-adjusted paths are directional estimators and need not be antisymmetric. Absolute relationship stretch and bilateral support are swap-invariant.
+
+\paragraph{Missingness preservation.}
+Equations~\ref{eq:native} and \ref{eq:context} never zero-fill an unsupported coordinate. The context gap is unavailable before the shared evaluation boundary, and Equation~\ref{eq:chain} never carries a beta-adjusted chain across an invalid estimate.
+
+\paragraph{Prior-only beta property.}
+At row $i$, Equation~\ref{eq:beta} uses returns only through $i-1$. Mutating prices after any earlier row cannot change that row's beta or cumulative beta-adjusted path. This is a computational prefix property, not causal inference.
+
+\paragraph{Ordered identity.}
+Swapping target and benchmark changes the ordered receipt preimage unless the two leg identities coincide. A cryptographic digest is used as an identity receipt, not as proof that the provider supplied correct, immutable, or exchange-complete bars.
+
+\section{Receipt, Cache, and Authority Contracts}
+
+\subsection{Component and ordered comparison hashes}
+
+Each component analysis hash has the form
+\begin{align}
+H^{\mathrm{recipe}}_q
+&=\sha(\text{canonical recipe payload}),\\
+H^{\mathrm{input}}_q
+&=\sha(\text{normalized OHLCV rows}),\\
+H_q&=\sha\!\left(
+\{H^{\mathrm{recipe}}_q,H^{\mathrm{input}}_q\}
+\right).
+\end{align}
+The ordered comparison preimage contains:
+\begin{itemize}
+    \item Pair schema \texttt{market\_field\_pair\_v1};
+    \item ordered target canonical symbol, provider symbol, and $H_A$;
+    \item ordered benchmark canonical symbol, provider symbol, and $H_B$;
+    \item timeframe;
+    \item alignment contract \texttt{pair\_alignment\_v1};
+    \item normalization contract \texttt{native\_and\_fixed\_proper\_fit\_relative\_v1}; and
+    \item $\sha(K_{AB})$ for the ordered visible common keys.
+\end{itemize}
+Canonical JSON uses sorted keys, compact separators, finite JSON numbers, and SHA-256. Requested aliases such as \texttt{DXY} versus \texttt{\^{}DXY} remain visible provenance but are not distinct comparison-hash fields after they resolve to the same canonical and provider symbols. Provider name and data-source labels are also not committed separately. The API cache key includes the requested aliases so an alias-specific provenance receipt is not served from a differently requested alias.
+
+\subsection{Operational caching}
+
+Raw histories use the persistent market-history cache. Pair calculations use a per-worker TTL/LRU analysis cache with single-flight coalescing and isolated response copies. The ordered symbols, provider object identities, timeframe, visible length, horizons, and settings participate in that operational key. Cache metadata reports whether the pair computation was a hit, miss, or coalesced wait and whether either leg called a provider on that request.
+
+Cache status is not scientific evidence. A hit does not certify data freshness, session comparability, provider truth, or bar completion. The response \texttt{generated\_at} records calculation time and may predate a cache-hit request.
+
+\subsection{Zero authority}
+
+The response declares:
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Field & Pair-v1 value \\
+\midrule
+\texttt{mode} & \texttt{research\_display\_only} \\
+\texttt{scanner\_weight} & 0.0 \\
+\texttt{option\_learning\_weight} & 0.0 \\
+\texttt{veto} & false \\
+\texttt{sizing} & false \\
+\texttt{execution} & false \\
+\bottomrule
+\end{tabular}
+\end{center}
+Pair data are consumed by the Market Field research API and page. Pair v1 does not enter option eligibility, scanner ranking, the separately governed outcome-learning canary, manager verdicts, targets, quantities, or execution. Human readers may still be behaviorally influenced by a displayed comparison; ``zero authority'' describes the application control path, not zero human exposure.
+
+\section{Verification Evidence}
+
+The focused backend suite uses deterministic synthetic OHLCV fixtures and endpoint doubles. At the addendum audit boundary, all 20 Pair-v1 tests passed. The suite establishes implementation properties, not market efficacy:
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.28\linewidth}p{0.62\linewidth}}
+\toprule
+Test area & Property exercised \\
+\midrule
+Identity and schema & 15 coordinates; literal Pair-v1 schema; zero supported gaps; $RI=100$; identity receipt \\
+Ordered swap & Signed native/context reversal and distinct ordered comparison identity \\
+Relative-price reciprocity & $RI_{AB}RI_{BA}=10{,}000$ within serialization tolerance; active progress is not treated as additive antisymmetry \\
+Recipe guard & Unequal component recipe hashes are rejected \\
+Chronology and support & Context withheld before both evaluation starts; unsupported cells remain unavailable \\
+Alignment modes & Daily date alignment, exact aware-UTC intraday equality, and exact naive timestamp equality \\
+Unmatched tails & Latest aligned and latest returned observations remain distinct; tail counts are exposed \\
+DXY contract & Canonical alias, Yahoo provider symbol, hourly rejection, and identity exception \\
+Prior-only beta & Future price mutation leaves earlier beta and cumulative values unchanged \\
+Known-vector beta & Centered slope, sample/gate boundaries, and deliberate retention of the fitted intercept in the displayed differential \\
+Invalid current beta & No stale beta or cumulative value is carried into the current summary \\
+Input depth & Largest horizon increases the required leg depth \\
+Price precision & Positive micro-price relative progress survives four-decimal component display rounding \\
+Endpoint/cache & Identity uses one fetch and subsequent pair computation reuses the analysis cache \\
+Drop/hash boundaries & Pre-window rows are excluded from dropout; tails are subsets; committed and uncommitted receipt fields are distinguished \\
+\bottomrule
+\end{tabular}
+\caption{Pair-specific verification scope. Several rows summarize multiple tests.}
+\label{tab:tests}
+\end{table}
+
+The frontend comparison component and query-state tests cover rendering, selectors, DXY guards, loading/error behavior, and clearing stale results. They are DOM and interaction tests, not a complete accessibility, pixel-level visual-regression, or browser/performance audit. No machine-readable production live-probe receipt is committed with this addendum, so operational deployment observations are deliberately excluded from its evidence.
+
+\section{Failure Semantics}
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lp{0.74\linewidth}}
+\toprule
+HTTP class & Pair endpoint behavior \\
+\midrule
+400 & Invalid ticker characters, timeframe, horizon order/count, or request-size bounds \\
+422 & Unsupported DXY alignment, recipe mismatch, fewer than 20 exact shared observations, or invalid aligned positive-price requirements \\
+502 & Provider or history-acquisition failure not resolved by the cache layer \\
+\bottomrule
+\end{tabular}
+\caption{Public failure boundary. Unavailable coordinates and beta rows remain successful responses with explicit nulls.}
+\end{table}
+
+The service does not independently certify exchange calendars, currency equivalence, adjustment-policy equivalence, corporate-action treatment, or completion of the latest bar. Exact timestamps may still represent asynchronous or stale markets. Missing common timestamps produce irregular elapsed intervals in the relative-price and beta paths.
+
+\section{Limitations and Robustness Risks}
+
+\begin{enumerate}
+    \item \textbf{No efficacy result.} There is no prospective predictive, decision-support, or cost-aware economic evaluation for Pair v1.
+    \item \textbf{User-selected comparators.} Competitor, sector, SPY, QQQ, IWM, RSP, and DXY presets are convenience references. They are not learned, point-in-time validated, or guaranteed economically appropriate benchmarks.
+    \item \textbf{Window dependence.} Relative-index basing, component fit/calibration splits, and own-fit context can change with requested history.
+    \item \textbf{Market harmonization.} Currency, dividends, corporate actions, calendars, timezones, market hours, and stale-price risk are not jointly normalized.
+    \item \textbf{Beta fragility.} A 20--60 observation slope can be outlier-sensitive and nonstationary. The standard-deviation and absolute-beta gates are engineering safeguards, not statistically selected thresholds. There are no uncertainty intervals.
+    \item \textbf{Multiple views.} Fifteen coordinates, many possible pairs, two gap bases, many windows, and several scope projections create substantial multiple-comparison and researcher-degree-of-freedom risk.
+    \item \textbf{No persistent shared Forms.} Each component dictionary is request-local. Cross-symbol Form identity, centroid matching, or transition comparison is intentionally absent.
+    \item \textbf{Not multivariate.} Pair v1 has no basket, cross-sectional rank, factor decomposition, covariance shrinkage, or connectedness network.
+    \item \textbf{Visual semantics.} Oscilloscope-like scope paths are two-dimensional projections. Loops are not detected cycles, attractors, lead--lag relations, or causal mechanisms.
+    \item \textbf{Operational scale.} Large visible windows serialize 15 complete coordinate paths plus price context. Cache policy and response compression affect latency but do not change the mathematics.
+\end{enumerate}
+
+\section{Predeclared Validation and Extension Plan}
+
+The present implementation is suitable for prospective instrumentation, not promotion into option ranking. A defensible next study should freeze the following before reading outcomes:
+\begin{enumerate}
+    \item a point-in-time comparator universe and mapping policy separating direct competitors, sector proxies, broad-cap-weighted and equal-weighted indexes, small-cap proxies, and macro references;
+    \item provider, adjustment, currency, session, timezone, and completed-bar rules;
+    \item pair start dates, visible windows, horizon grids, fit/calibration/evaluation fractions, and missingness thresholds;
+    \item representation endpoints (support, stability, sensitivity), predictive endpoints, and separately cost-aware economic endpoints;
+    \item robust, exponentially weighted, and shrinkage beta comparators selected before holdout;
+    \item dependence-aware uncertainty and multiplicity correction across coordinates, pairs, and windows;
+    \item an untouched prospective holdout and machine-readable exposure/probe receipts; and
+    \item explicit promotion gates preserving current zero scanner and option-learning authority until incremental value and authority-boundary invariance are shown.
+\end{enumerate}
+
+Property-based randomized identity/swap tests, suffix-mutation tests for pair context under a frozen split, runtime response-schema validation, expanded hash-tamper tests, and missing-provenance tests are near-term software work. Basket fields, point-in-time peer selection, cross-sectional ranking, and multivariate connectedness would be new model families rather than silent Pair-v1 extensions and should receive new version identifiers.
+
+\section{Reproducibility and Implementation Map}
+
+The equations were audited against implementation source
+\path{4c848dafecd41a64bd52844c9a12140e6534a784}. This addendum changes no Pair-v1 numerical production formula. Its schema-literal and display-terminology corrections make the frontend contract agree with the existing backend version and avoid calling Equation~\ref{eq:beta-adjusted} an OLS residual.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.33\linewidth}p{0.57\linewidth}}
+\toprule
+Artifact & Role \\
+\midrule
+\path{backend/app/services/market_weather_comparison.py} & Pair construction, equations, masks, alignment, hashes, and authority receipt \\
+\path{backend/app/api/market_weather.py} & Parameter validation, provider routing, cache key, and HTTP semantics \\
+\path{backend/tests/test_market_weather_comparison.py} & Deterministic algebraic, chronology, precision, alignment, and cache tests \\
+\path{frontend/src/types/marketWeather.ts} & Literal Pair-v1 response contract \\
+\path{frontend/src/components/marketWeather/MarketWeatherComparisonLab.tsx} & Research visualization and translation layer \\
+\path{docs/papers/market-field/relative-field-addendum.tex} & This source \\
+\bottomrule
+\end{tabular}
+\caption{Source-level implementation map.}
+\end{table}
+
+The focused backend tests generate their own synthetic inputs and do not require redistributable provider data. Exact live pair responses still depend on provider/cache history and cannot be reconstructed from this addendum alone. The component and pair hashes help compare identities when those inputs are available; they do not recover excluded data.
+
+\section{Conclusion}
+
+\Pair{} is best understood as a typed, ordered comparison operator. Its strongest properties are explicitness: same-recipe legs, exact key intersection, bilateral support, two separate coordinate bases, full-precision price context, strictly prior beta estimation, fixed failure semantics, cryptographic receipts, and zero authority. Those properties make it suitable for inspection and prospective research. They do not make the chosen benchmark correct, the pair stationary, the gap predictive, or the output economically useful. Those questions remain empirical and must be answered under a frozen, dependence-aware, cost-aware protocol before any promotion.
+
+\bibliography{references,relative-field-addendum-references}
+\bibliographystyle{iclr2026_conference}
+
+\appendix
+
+\section{Exact Pair-v1 Constants}
+
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+Constant & Value \\
+\midrule
+Schema & \texttt{market\_field\_pair\_v1} \\
+Alignment contract & \texttt{pair\_alignment\_v1} \\
+Normalization contract & \texttt{native\_and\_fixed\_proper\_fit\_relative\_v1} \\
+Minimum exact shared observations & 20 \\
+Maximum prior beta returns & 60 \\
+Minimum prior beta returns & 20 \\
+Minimum benchmark population return std. & $10^{-7}$ \\
+Maximum accepted absolute beta & 25 \\
+Stored fit-scale validity floor & $10^{-12}$ \\
+Relationship comparison offset & 5 common observations \\
+Relationship absolute tolerance floor & 0.05 \\
+Relationship relative tolerance & 5\% of prior stretch \\
+Scanner and option-learning weights & 0.0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Response Field Interpretation}
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.31\linewidth}p{0.59\linewidth}}
+\toprule
+Response area & Interpretation \\
+\midrule
+\texttt{target}, \texttt{benchmark} & Requested/canonical/provider identities, analysis hash, data source, latest aligned close, and latest returned close \\
+\texttt{overlap} & Visible common range, exact alignment rule, support fraction, dropout counts, unmatched tails, and session-compatibility status \\
+\texttt{coordinates} & Metadata, latest values/support, and complete visible series for target, benchmark, native gap, and context gap \\
+\texttt{price\_series} & Full-precision-derived closes, relative index, active progress, prior beta, and cumulative beta-adjusted return \\
+\texttt{relative\_progress} & Latest aligned price and beta summaries plus relationship-stretch label \\
+\texttt{provenance} & Component identities, ordered comparison hash, canonical/provider aliases, and contract versions \\
+\texttt{cache} & Per-leg history lineage and per-request analysis-cache behavior \\
+\texttt{authority} & Research-only mode and zero decision/execution authority \\
+\texttt{caveats} & Reader-facing interpretation boundaries \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{AI-Assistance Disclosure}
+
+OpenAI Codex materially assisted repository and formula inspection, claim-boundary review, test planning, LaTeX drafting, compilation checks, and consistency review. The human author remains responsible for the mathematics, citations, code, artifacts, and all empirical or operational claims. No language-model output is treated as empirical evidence or authorship.
+
+\end{document}

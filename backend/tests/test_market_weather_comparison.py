@@ -125,6 +125,7 @@ def test_identity_pair_is_explicit_zero_control() -> None:
     )
 
     assert len(result["coordinates"]) == 15
+    assert result["schema_version"] == "market_field_pair_v1"
     assert result["provenance"]["identity_control"] is True
     assert result["overlap"]["alignment_status"] == "identity_control"
     assert result["overlap"]["target_dropped"] == 0
@@ -180,6 +181,37 @@ def test_swapping_pair_reverses_supported_field_differences_and_receipt() -> Non
                     -point["context_difference"],
                     abs=1e-6,
                 )
+
+
+def test_swapping_pair_makes_relative_price_reciprocal_not_additively_opposite() -> None:
+    target = _leg("NVDA", _history(drift=0.18))
+    benchmark = _leg("QQQ", _history(drift=0.08, phase_shift=0.6))
+    forward = build_market_weather_comparison(
+        target=target,
+        benchmark=benchmark,
+        timeframe="1D",
+        visible_bars=120,
+    )
+    reverse = build_market_weather_comparison(
+        target=benchmark,
+        benchmark=target,
+        timeframe="1D",
+        visible_bars=120,
+    )
+
+    for point, reverse_point in zip(
+        forward["price_series"],
+        reverse["price_series"],
+        strict=True,
+    ):
+        assert point["relative_index"] * reverse_point["relative_index"] == pytest.approx(
+            10_000.0,
+            abs=1e-4,
+        )
+    assert reverse["price_series"][-1]["active_return"] != pytest.approx(
+        -forward["price_series"][-1]["active_return"],
+        abs=1e-6,
+    )
 
 
 def test_pair_requires_the_same_field_recipe() -> None:
@@ -408,6 +440,60 @@ def test_current_beta_summary_never_carries_a_stale_estimate() -> None:
     assert summary["status"] == "unavailable"
 
 
+def test_beta_uses_centered_slope_gates_invalid_windows_and_does_not_subtract_alpha() -> None:
+    benchmark_prior = np.linspace(-0.02, 0.02, 20)
+    alpha = 0.003
+    beta = 1.75
+    target_prior = alpha + beta * benchmark_prior
+
+    assert comparison_service._beta(target_prior, benchmark_prior) == pytest.approx(beta)
+    assert comparison_service._beta(target_prior[:-1], benchmark_prior[:-1]) is None
+    assert comparison_service._beta(
+        np.asarray([0.004] * 20),
+        np.asarray([0.001] * 20),
+    ) is None
+    assert comparison_service._beta(
+        26.0 * benchmark_prior,
+        benchmark_prior,
+    ) is None
+
+    benchmark_returns = np.append(benchmark_prior, 0.007)
+    target_returns = np.append(target_prior, alpha + beta * 0.007)
+    benchmark_close = 100.0 * np.exp(
+        np.concatenate(([0.0], np.cumsum(benchmark_returns)))
+    )
+    target_close = 100.0 * np.exp(
+        np.concatenate(([0.0], np.cumsum(target_returns)))
+    )
+    keys = [
+        (pd.Timestamp("2025-01-02", tz="UTC") + pd.Timedelta(days=index)).isoformat()
+        for index in range(len(target_close))
+    ]
+
+    def rows(values: np.ndarray) -> dict[str, dict[str, object]]:
+        return {
+            key: {"date": key, "close": float(value)}
+            for key, value in zip(keys, values, strict=True)
+        }
+
+    series, summary = _relative_price_series(
+        common_keys=keys,
+        target_rows=rows(target_close),
+        benchmark_rows=rows(benchmark_close),
+        timeframe="15m",
+    )
+
+    assert series[-1]["prior_return_beta"] == pytest.approx(beta)
+    # The centered fit supplies beta, but the displayed differential is
+    # r_target - beta*r_benchmark; the fitted alpha is intentionally retained.
+    expected = 100.0 * (np.exp(alpha) - 1.0)
+    assert series[-1]["beta_adjusted_cumulative_return"] == pytest.approx(
+        expected,
+        abs=1e-6,
+    )
+    assert summary["cumulative_residual_pct"] == pytest.approx(expected, abs=1e-6)
+
+
 def test_pair_leg_requests_enough_rows_for_the_largest_horizon(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -497,6 +583,87 @@ def test_pair_leg_preserves_full_precision_for_low_priced_instruments(
     assert result["target"]["latest_aligned_close"] > 0
     assert result["benchmark"]["latest_aligned_close"] > 0
     assert result["price_series"][-1]["relative_index"] > 100
+
+
+def test_dropped_counts_exclude_pre_window_rows_and_tail_is_a_subset() -> None:
+    target = _leg("SPY", _history())
+    benchmark = _leg("QQQ", _history(phase_shift=0.4))
+    target_rows = comparison_service._analysis_rows(target.analysis, "1D")
+    benchmark_rows = comparison_service._analysis_rows(benchmark.analysis, "1D")
+    common_keys = sorted(set(target_rows) & set(benchmark_rows))
+    visible_start = common_keys[-60]
+    latest_common = common_keys[-1]
+
+    pre_window = (pd.Timestamp(visible_start) - pd.Timedelta(days=365)).date().isoformat()
+    within_window_timestamp = pd.Timestamp(visible_start) + pd.Timedelta(days=1)
+    while within_window_timestamp.date().isoformat() in target_rows:
+        within_window_timestamp += pd.Timedelta(days=1)
+    within_window = within_window_timestamp.date().isoformat()
+    assert visible_start < within_window < latest_common
+    tail = (pd.Timestamp(latest_common) + pd.Timedelta(days=1)).date().isoformat()
+    target_rows.update(
+        {
+            pre_window: {"date": pre_window, "close": 99.0},
+            within_window: {"date": within_window, "close": 101.0},
+            tail: {"date": tail, "close": 102.0},
+        }
+    )
+
+    result = build_market_weather_comparison(
+        target=replace(target, full_precision_price_rows=target_rows),
+        benchmark=replace(benchmark, full_precision_price_rows=benchmark_rows),
+        timeframe="1D",
+        visible_bars=60,
+    )
+
+    assert result["overlap"]["target_dropped"] == 2
+    assert result["overlap"]["target_unmatched_after_latest_aligned"] == 1
+    assert result["overlap"]["benchmark_dropped"] == 0
+    assert result["overlap"]["benchmark_unmatched_after_latest_aligned"] == 0
+
+
+def test_comparison_hash_commits_calculation_identity_but_not_cache_provenance() -> None:
+    target = _leg("SPY", _history())
+    benchmark = _leg("QQQ", _history(phase_shift=0.4))
+    common_keys = sorted(
+        set(comparison_service._analysis_rows(target.analysis, "1D"))
+        & set(comparison_service._analysis_rows(benchmark.analysis, "1D"))
+    )[-60:]
+
+    def receipt(
+        target_leg: PairLeg = target,
+        benchmark_leg: PairLeg = benchmark,
+        keys: list[str] = common_keys,
+    ) -> str:
+        return comparison_service._comparison_hash(
+            target=target_leg,
+            benchmark=benchmark_leg,
+            timeframe="1D",
+            common_keys=keys,
+        )
+
+    baseline = receipt()
+    excluded_provenance = replace(
+        target,
+        symbol=replace(target.symbol, requested_symbol="SPY-ALIAS"),
+        data_source="different-provider-label",
+        history_cache={"status": "stale_fallback"},
+    )
+    assert receipt(target_leg=excluded_provenance) == baseline
+
+    changed_analysis = dict(target.analysis)
+    changed_analysis["provenance"] = {
+        **target.analysis["provenance"],
+        "analysis_hash": "f" * 64,
+    }
+    assert receipt(target_leg=replace(target, analysis=changed_analysis)) != baseline
+    assert receipt(
+        target_leg=replace(
+            target,
+            symbol=replace(target.symbol, provider_symbol="SPY.DIFFERENT"),
+        )
+    ) != baseline
+    assert receipt(keys=common_keys[1:]) != baseline
 
 
 def test_pair_endpoint_uses_one_fetch_for_identity_and_reuses_analysis_cache(

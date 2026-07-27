@@ -401,31 +401,31 @@ function RelativeProgressTrace({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <span className="page-kicker">Observed progress</span>
-          <h3 className="mt-1 text-sm font-semibold text-white">Relative price and prior-only beta residual</h3>
+          <h3 className="mt-1 text-sm font-semibold text-white">Relative price and prior-only beta adjustment</h3>
         </div>
         <span className="rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-slate-400">
           {data.overlap.common_observations.toLocaleString()} exact shared bars
         </span>
       </div>
-      <svg viewBox="0 0 700 190" className="mt-1 h-[176px] w-full" role="img" aria-label={`${data.target.symbol} relative price and prior-only beta residual versus ${data.benchmark.symbol}`}>
+      <svg viewBox="0 0 700 190" className="mt-1 h-[176px] w-full" role="img" aria-label={`${data.target.symbol} relative price and prior-only beta adjustment versus ${data.benchmark.symbol}`}>
         <line x1="50" x2="682" y1="96" y2="96" stroke="rgba(71,85,105,.45)" />
         <line x1="50" x2="682" y1="143" y2="143" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
         <path d={scaledLanePath(relative, 632, 18, 62)} fill="none" stroke="#2dd4bf" strokeWidth="2.1" vectorEffect="non-scaling-stroke" />
         <path d={scaledLanePath(betaResidual, 632, 111, 64, true)} fill="none" stroke="#fbbf24" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
         <text x="5" y="32" fill="#94a3b8" fontSize="10">relative</text>
         <text x="5" y="45" fill="#64748b" fontSize="9">index</text>
-        <text x="5" y="133" fill="#94a3b8" fontSize="10">β residual</text>
+        <text x="5" y="133" fill="#94a3b8" fontSize="10">β-adjusted</text>
         <text x="5" y="146" fill="#64748b" fontSize="9">cumulative</text>
         <text x="50" y="187" fill="#64748b" fontSize="10">{rows[0]?.date ?? ""}</text>
         <text x="682" y="187" fill="#64748b" fontSize="10" textAnchor="end">{rows[rows.length - 1]?.date ?? ""}</text>
       </svg>
       <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] leading-4 text-slate-500">
         <span><i className="mr-1 inline-block h-0.5 w-4 bg-teal-400 align-middle" />target / benchmark, rebased at shared-window start</span>
-        <span><i className="mr-1 inline-block h-0.5 w-4 bg-amber-300 align-middle" />current contiguous prior-only beta-residual chain</span>
+        <span><i className="mr-1 inline-block h-0.5 w-4 bg-amber-300 align-middle" />current contiguous prior-only beta-adjusted chain</span>
       </div>
       <p className="sr-only">
         Latest relative index {finite(latestRelative) ? latestRelative.toFixed(2) : "unavailable"}.
-        Latest cumulative beta residual {finite(latestResidual) ? `${latestResidual.toFixed(2)} percent` : "unavailable"}.
+        Latest cumulative beta-adjusted return {finite(latestResidual) ? `${latestResidual.toFixed(2)} percent` : "unavailable"}.
       </p>
     </section>
   );
@@ -751,7 +751,7 @@ export default function MarketWeatherComparisonLab({
               ["Relative index", "The target level divided by the benchmark level is rebased to 100 at the first shared returned bar. It measures observed relative progress, not field quality."],
               ["Native gap", "For coordinate k, the direct gap is x(target,k) − x(benchmark,k) on the coordinate's own 15D scale—not raw market units. A positive result means more of that measured quantity in the target."],
               ["Context gap", "The displayed context gap is target_context − benchmark_context. Each side uses median and IQR fixed on its proper fit segment; values appear only on shared evaluation timestamps, and evaluation values never refit the scale."],
-              ["Active progress & beta", "Active progress is the target/benchmark relative index minus 100. A residual chain begins only after 20 prior aligned log returns and uses up to 60 strictly prior observations. It resets when benchmark variation is too small or beta fails its quality gate; stale beta is never carried forward. Field coordinates are never multiplied by price beta."],
+              ["Active progress & beta", "Active progress is the target/benchmark relative index minus 100. A beta-adjusted chain begins only after 20 prior aligned log returns and uses up to 60 strictly prior observations. It does not subtract a fitted intercept. The chain resets when benchmark variation is too small or beta fails its quality gate; stale beta is never carried forward. Field coordinates are never multiplied by price beta."],
               ["Fit-relative stretch", "This label family-balances the mean absolute context gaps over the same supported coordinate intersection and compares the latest value with five bars earlier. Changes smaller than max(0.05, 5% of the earlier value) are labeled mixed."],
               ["Alignment & support", "Only timestamp intersections of provider/cache rows are used. No prices or coordinates are forward-filled. The endpoint does not independently certify the latest row as exchange-complete. A pair value is supported only when both component coordinates are measured and dependency-supported."],
               ["Identity & authority", "The ordered comparison hash binds the two component analysis hashes, recipe, and alignment. Pair output is descriptive research with zero scanner, sizing, execution, or manager-decision authority."],

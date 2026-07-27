@@ -470,7 +470,7 @@ def build_market_weather_comparison(
             "A higher field coordinate is not inherently better and does not identify a winner.",
             "Native differences require source-observed, full-dependency support on both legs.",
             "Context differences use each leg's fixed proper-fit median and robust scale and appear only on common evaluation timestamps.",
-            "Relative price and the prior-return beta residual are separate economic context; neither changes a field coordinate or Form.",
+            "Relative price and the prior-only beta-adjusted return are separate economic context; the displayed adjustment does not subtract a fitted intercept, and neither path changes a field coordinate or Form.",
             "Provider adjustment, currency, timezone, and trading-session conventions can limit comparability.",
             "The endpoint uses provider/cache rows as returned and does not independently certify that the latest bar is exchange-complete.",
             "Pair v1 has no scanner, learning-canary, veto, verdict, sizing, or execution authority.",
