@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import market_weather as market_weather_api
+from app.scripts.probe_market_weather_pair import validate_pair_response
 from app.services import market_weather_comparison as comparison_service
 from app.services.market_weather import build_market_weather
 from app.services.market_weather_analysis_cache import reset_market_weather_analysis_cache
@@ -879,6 +880,40 @@ def test_pair_endpoint_uses_one_fetch_for_identity_and_reuses_analysis_cache(
     ]["receipt_hash"]
     assert first.headers["x-market-weather-comparison-cache"] == "miss"
     assert second.headers["x-market-weather-comparison-cache"] == "hit"
+    assert first.headers["x-market-weather-runtime-schema"] == (
+        "market_field_pair_runtime_v1"
+    )
+    assert "pair-cache-lookup;dur=" in first.headers["server-timing"]
+    assert "pair-build;dur=" in first.headers["server-timing"]
+    assert "pair-history;dur=" in first.headers["server-timing"]
+    assert "pair-fields;dur=" in first.headers["server-timing"]
+    assert "pair-assembly;dur=" in first.headers["server-timing"]
+    assert "pair-ready;dur=" in first.headers["server-timing"]
+    assert "pair-build;dur=" not in second.headers["server-timing"]
+    first_runtime = first.json()["runtime"]
+    second_runtime = second.json()["runtime"]
+    assert first_runtime["architecture"] == "single_response"
+    assert first_runtime["cache"]["status"] == "miss"
+    assert first_runtime["build"]["executed_this_request"] is True
+    assert first_runtime["build"]["total_ms"] >= 0.0
+    assert first_runtime["build"]["benchmark_leg_reused"] is True
+    assert {
+        "target_history",
+        "target_field",
+        "target_prepare",
+        "pair_assembly",
+    } <= set(first_runtime["build"]["stages_ms"])
+    assert "benchmark_history" not in first_runtime["build"]["stages_ms"]
+    assert second_runtime["cache"]["status"] == "hit"
+    assert second_runtime["build"]["executed_this_request"] is False
+    assert second_runtime["build"]["total_ms"] is None
+    assert second_runtime["build"]["stages_ms"] == {}
+    assert second_runtime["response"]["framework_json_serialization_ms"] is None
+    assert second_runtime["response"]["compression_and_transfer_ms"] is None
+    assert all(
+        check["ok"]
+        for check in validate_pair_response(first.json(), first.headers)
+    )
     assert calls == [("PAIRIDENTITY", "1D", 192)]
 
 
@@ -943,6 +978,14 @@ def test_pair_endpoint_routes_dxy_through_yahoo_and_preserves_alias_provenance(
     assert payload["benchmark"]["requested_symbol"] == "DXY"
     assert alias_payload["benchmark"]["requested_symbol"] == "^DXY"
     assert alias_response.headers["x-market-weather-comparison-cache"] == "miss"
+    assert payload["runtime"]["build"]["benchmark_leg_reused"] is False
+    assert {
+        "target_history",
+        "target_field",
+        "benchmark_history",
+        "benchmark_field",
+        "pair_assembly",
+    } <= set(payload["runtime"]["build"]["stages_ms"])
 
 
 def test_pair_endpoint_rejects_unsupported_dxy_hourly_alignment_without_fetch(

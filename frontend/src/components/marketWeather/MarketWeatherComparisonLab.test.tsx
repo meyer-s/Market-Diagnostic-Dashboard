@@ -40,6 +40,14 @@ const DATA: MarketWeatherComparisonResponse = {
     session_compatible: true,
     note: "Exact shared timestamps.",
   },
+  support: {
+    supported_coordinate_cells: 1764,
+    total_coordinate_cells: 1800,
+    support_fraction: 0.98,
+    all_returned_coordinate_cells_supported: false,
+    support_rule: "bilateral_full_dependency_support",
+    missing_values_carried: false,
+  },
   relative_progress: {
     latest_target_close: 184.25,
     latest_benchmark_close: 611.4,
@@ -131,8 +139,12 @@ describe("MarketWeatherComparisonLab", () => {
     expect(screen.getByText("Relative price progress")).not.toBeNull();
     expect(screen.getByText("Field separation")).not.toBeNull();
     expect(screen.getByText("Data support")).not.toBeNull();
+    expect(screen.getByText("1,764 / 1,800")).not.toBeNull();
+    expect(screen.getByText("14 / 15")).not.toBeNull();
+    expect(screen.getByText("No")).not.toBeNull();
+    expect(screen.getByText(/100 on Jul 23, 2026/i)).not.toBeNull();
     expect(screen.getByText("Relative price and prior-only beta-adjusted path")).not.toBeNull();
-    expect(screen.getByRole("button", { name: /Frozen calculation receipt available/i })).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Self-checking compact receipt/i })).not.toBeNull();
     expect(screen.getByText(/beta-adjusted return chain/i)).not.toBeNull();
     expect(screen.queryByText("Relationship scopes")).toBeNull();
     expect(screen.queryByText("Identity & authority boundary")).toBeNull();
@@ -198,8 +210,9 @@ describe("MarketWeatherComparisonLab", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Audit receipt" }));
+    expect(screen.getByRole("button", { name: "Export compact receipt · JSON" }).getAttribute("title")).toContain("not digitally signed");
     expect(screen.getByText("Identity & authority boundary")).not.toBeNull();
-    expect(screen.getByText("Cache/debug")).not.toBeNull();
+    expect(screen.getByText("Cache / runtime")).not.toBeNull();
     expect(screen.getByText("NVDA aligned close")).not.toBeNull();
     fireEvent.click(screen.getByText("Definitions, chronology, and limits"));
     expect(screen.getByText("Relative index")).not.toBeNull();
@@ -340,7 +353,7 @@ describe("MarketWeatherComparisonLab", () => {
       />,
     );
 
-    const chart = screen.getByRole("img", { name: "Relative price index" }) as unknown as SVGSVGElement;
+    const chart = screen.getByRole("img", { name: /Relative price index based at 100/i }) as unknown as SVGSVGElement;
     Object.defineProperty(chart, "getBoundingClientRect", {
       configurable: true,
       value: () => ({

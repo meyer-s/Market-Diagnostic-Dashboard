@@ -46,6 +46,35 @@ def test_cache_returns_isolated_values_and_expires() -> None:
     assert calls == 2
 
 
+def test_cache_timings_are_request_local_and_preserve_hit_miss_behavior() -> None:
+    cache: MarketWeatherAnalysisCache[dict[str, list[int]]] = MarketWeatherAnalysisCache(
+        max_entries=1,
+        ttl_seconds=60,
+    )
+    miss_timings: dict[str, float] = {}
+    hit_timings: dict[str, float] = {}
+    calls = 0
+
+    def compute() -> dict[str, list[int]]:
+        nonlocal calls
+        calls += 1
+        return {"values": [calls]}
+
+    miss = cache.get_or_compute("timed", compute, timings_ms=miss_timings)
+    hit = cache.get_or_compute("timed", compute, timings_ms=hit_timings)
+
+    assert miss.status == "miss"
+    assert hit.status == "hit"
+    assert miss.value == hit.value == {"values": [1]}
+    assert calls == 1
+    assert {"lookup", "compute", "copy", "retention_policy", "publish"} <= set(
+        miss_timings
+    )
+    assert {"lookup", "copy"} <= set(hit_timings)
+    assert "compute" not in hit_timings
+    assert all(value >= 0.0 for value in (*miss_timings.values(), *hit_timings.values()))
+
+
 def test_cache_evicts_the_least_recently_used_entry() -> None:
     cache: MarketWeatherAnalysisCache[str] = MarketWeatherAnalysisCache(
         max_entries=2,

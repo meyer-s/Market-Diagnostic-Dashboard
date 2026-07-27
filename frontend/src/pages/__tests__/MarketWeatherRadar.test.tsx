@@ -168,8 +168,22 @@ describe("MarketWeatherRadar report state", () => {
     expect(endpoints[0]).toContain("target_symbol=NVDA");
     expect(endpoints[0]).toContain("benchmark_symbol=QQQ");
     expect(await screen.findByText("Pair lab NVDA versus QQQ")).not.toBeNull();
+    expect(screen.getByText((_content, element) => (
+      element?.tagName === "SPAN"
+      && element.textContent?.includes("QQQ · Growth/technology-heavy reference · User selected · suitability not evaluated") === true
+    ))).not.toBeNull();
+    expect(screen.getByText("Auditable field recipe")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "SPY" }));
+    expect(screen.getByText((_content, element) => (
+      element?.tagName === "SPAN"
+      && element.textContent?.includes("Next analysis comparator: SPY · Broad-cap market reference · User selected · suitability not evaluated") === true
+    ))).not.toBeNull();
+    expect(screen.getByText((_content, element) => (
+      element?.tagName === "SPAN"
+      && element.textContent?.includes("Current result NVDA vs QQQ") === true
+      && element.textContent?.includes("Draft changes are not applied; select Analyze.") === true
+    ))).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
     await waitFor(() => expect(screen.getByTestId("location-search").textContent).toContain("comparison=pair"));
     expect(screen.getByTestId("location-search").textContent).toContain("compare=SPY");
@@ -193,6 +207,23 @@ describe("MarketWeatherRadar report state", () => {
     renderPage("/market-weather?symbol=SPY&comparison=pair&compare=DXY&timeframe=2h");
     expect(screen.getByText(/DXY cannot be aligned safely at 1h, 2h, or 4h/i)).not.toBeNull();
     expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("classifies every supported DXY alias as a dollar-index macro reference", () => {
+    renderPage("/market-weather?symbol=SPY&comparison=pair&compare=QQQ&timeframe=1D");
+    const comparatorInput = screen.getByLabelText("Benchmark or comparison symbol");
+
+    fireEvent.change(comparatorInput, { target: { value: "^DXY" } });
+    expect(screen.getByText((_content, element) => (
+      element?.tagName === "SPAN"
+      && element.textContent?.includes("^DXY · Dollar-index macro reference · User selected · suitability not evaluated") === true
+    ))).not.toBeNull();
+
+    fireEvent.change(comparatorInput, { target: { value: "DX-Y.NYB" } });
+    expect(screen.getByText((_content, element) => (
+      element?.tagName === "SPAN"
+      && element.textContent?.includes("DX-Y.NYB · Dollar-index macro reference · User selected · suitability not evaluated") === true
+    ))).not.toBeNull();
   });
 
   it("also guards a DXY target but preserves a DXY identity control", () => {

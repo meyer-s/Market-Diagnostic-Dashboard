@@ -72,6 +72,8 @@ dist/
 dist-ssr/
 *.local
 *.tsbuildinfo
+/frontend/playwright-report/
+/frontend/test-results/
 
 # Backup files
 *.backup

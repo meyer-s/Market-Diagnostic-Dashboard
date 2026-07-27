@@ -7,7 +7,7 @@ import logging
 import os
 import threading
 import time
-from typing import Callable, Generic, Hashable, Literal, TypeVar
+from typing import Callable, Generic, Hashable, Literal, MutableMapping, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +88,17 @@ class MarketWeatherAnalysisCache:
         *,
         retain: bool = True,
         ttl_seconds: float | None = None,
+        timings_ms: MutableMapping[str, float] | None = None,
     ) -> AnalysisCacheResult[T]:
-        """Return a cached value or run exactly one computation for ``key``."""
+        """Return a cached value or run exactly one computation for ``key``.
+
+        ``timings_ms`` is optional request-local operational telemetry. It is
+        never retained with the cached value and does not affect cache policy.
+        The keys describe actual cache boundaries rather than progressive
+        response stages: lookup, wait, compute, and copy/store work.
+        """
         effective_ttl = self._effective_ttl(ttl_seconds)
+        lookup_started = time.perf_counter()
         with self._lock:
             now = self._clock()
             self._discard_expired(now)
@@ -119,34 +127,47 @@ class MarketWeatherAnalysisCache:
                         flight.ttl_seconds = min(flight.ttl_seconds, effective_ttl)
                     self._waits += 1
                     owns_flight = False
+        _record_timing(timings_ms, "lookup", lookup_started)
 
         if hit_value is not _MISSING:
             # The retained value is never exposed directly, so it remains safe
             # to clone after releasing the global lock even if it is evicted.
+            copy_started = time.perf_counter()
+            cloned_value = copy.deepcopy(hit_value)
+            _record_timing(timings_ms, "copy", copy_started)
             return AnalysisCacheResult(
-                value=copy.deepcopy(hit_value),
+                value=cloned_value,
                 status="hit",
                 retained=True,
             )
 
         if not owns_flight:
+            wait_started = time.perf_counter()
             flight.completed.wait()
+            _record_timing(timings_ms, "wait", wait_started)
             if flight.error is not None:
                 raise flight.error
             if flight.value is _MISSING:
                 raise RuntimeError("Market Weather analysis flight completed without a value")
+            copy_started = time.perf_counter()
+            cloned_value = copy.deepcopy(flight.value)
+            _record_timing(timings_ms, "copy", copy_started)
             return AnalysisCacheResult(
-                value=copy.deepcopy(flight.value),
+                value=cloned_value,
                 status="wait",
                 retained=flight.retained,
             )
 
+        compute_started = time.perf_counter()
         try:
             value = compute()
         except BaseException as exc:
             self._fail_flight(key, flight, exc)
             raise
+        finally:
+            _record_timing(timings_ms, "compute", compute_started)
 
+        policy_started = time.perf_counter()
         with self._lock:
             should_retain = (
                 flight.retain_requested
@@ -157,14 +178,20 @@ class MarketWeatherAnalysisCache:
             if not needs_isolated_value:
                 self._flights.pop(key, None)
                 flight.completed.set()
+                _record_timing(timings_ms, "publish", policy_started)
                 return AnalysisCacheResult(value=value, status="miss", retained=False)
+        _record_timing(timings_ms, "retention_policy", policy_started)
 
+        copy_started = time.perf_counter()
         try:
             isolated_value = copy.deepcopy(value)
         except BaseException as exc:
             self._fail_flight(key, flight, exc)
             raise
+        finally:
+            _record_timing(timings_ms, "copy", copy_started)
 
+        publish_started = time.perf_counter()
         with self._lock:
             # A waiter can join while the copy is being made and request
             # retention or a shorter TTL. Re-evaluate using the final policy.
@@ -185,6 +212,7 @@ class MarketWeatherAnalysisCache:
                     self._entries.popitem(last=False)
             self._flights.pop(key, None)
             flight.completed.set()
+        _record_timing(timings_ms, "publish", publish_started)
         return AnalysisCacheResult(value=value, status="miss", retained=should_retain)
 
     def clear(self) -> None:
@@ -255,6 +283,7 @@ def get_or_compute_market_weather_analysis(
     *,
     retain: bool = True,
     ttl_seconds: float | None = None,
+    timings_ms: MutableMapping[str, float] | None = None,
 ) -> AnalysisCacheResult[T]:
     cache = get_market_weather_analysis_cache()
     result = cache.get_or_compute(
@@ -262,12 +291,22 @@ def get_or_compute_market_weather_analysis(
         compute,
         retain=retain,
         ttl_seconds=ttl_seconds,
+        timings_ms=timings_ms,
     )
     return AnalysisCacheResult(
         value=result.value,
         status=result.status,
         retained=result.retained,
     )
+
+
+def _record_timing(
+    timings_ms: MutableMapping[str, float] | None,
+    key: str,
+    started_at: float,
+) -> None:
+    if timings_ms is not None:
+        timings_ms[key] = max(0.0, (time.perf_counter() - started_at) * 1000.0)
 
 
 def reset_market_weather_analysis_cache() -> None:

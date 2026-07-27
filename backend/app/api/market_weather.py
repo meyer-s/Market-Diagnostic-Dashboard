@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
+import time
 from datetime import datetime, timezone
+from typing import Mapping
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
@@ -60,6 +63,7 @@ TIMEFRAME_LABELS = {
 MAX_HORIZON_ROWS = 120
 MAX_FIELD_CELLS = 120_000
 DEFAULT_ANALYSIS_CACHE_MAX_CELLS = 60_000
+PAIR_RUNTIME_SCHEMA_VERSION = "market_field_pair_runtime_v1"
 
 
 def _analysis_cache_max_cells() -> int:
@@ -232,6 +236,7 @@ def compare_market_weather(
     reflectivity_compression: float = Query(4.0, ge=0.25, le=12.0),
     contour_bands: int = Query(7, ge=3, le=16),
 ) -> dict[str, object]:
+    request_started = time.perf_counter()
     normalized_target = target_symbol.strip().upper()
     normalized_benchmark = benchmark_symbol.strip().upper()
     for label, symbol in (
@@ -332,10 +337,17 @@ def compare_market_weather(
         tuple(horizons),
         settings,
     )
-    try:
-        cached_comparison = get_or_compute_market_weather_analysis(
-            cache_key,
-            lambda: _compute_market_weather_comparison(
+    setup_ms = _elapsed_ms(request_started)
+    cache_timings_ms: dict[str, float] = {}
+    build_stages_ms: dict[str, float] = {}
+    build_flags: dict[str, object] = {}
+    build_ms: float | None = None
+
+    def compute_comparison() -> dict[str, object]:
+        nonlocal build_ms
+        build_started = time.perf_counter()
+        try:
+            return _compute_market_weather_comparison(
                 target_provider=target_provider,
                 benchmark_provider=benchmark_provider,
                 target=target,
@@ -345,9 +357,19 @@ def compare_market_weather(
                 requested_bars=requested_bars,
                 horizons=horizons,
                 settings=settings,
-            ),
+                runtime_stages_ms=build_stages_ms,
+                runtime_flags=build_flags,
+            )
+        finally:
+            build_ms = _elapsed_ms(build_started)
+
+    try:
+        cached_comparison = get_or_compute_market_weather_analysis(
+            cache_key,
+            compute_comparison,
             retain=retain_analysis,
             ttl_seconds=history_ttl_seconds,
+            timings_ms=cache_timings_ms,
         )
     except HTTPException:
         raise
@@ -365,6 +387,7 @@ def compare_market_weather(
             status_code=500,
             detail="Relative market analysis cache returned an invalid payload.",
         )
+    prepare_started = time.perf_counter()
     cache_payload = dict(result.get("cache") or {})
     target_history = cache_payload.get("target_history") or {}
     benchmark_history = cache_payload.get("benchmark_history") or {}
@@ -422,7 +445,194 @@ def compare_market_weather(
     response.headers["Cache-Control"] = (
         f"private, max-age={browser_max_age}, must-revalidate"
     )
+    response_prepare_ms = _elapsed_ms(prepare_started)
+    response_ready_ms = _elapsed_ms(request_started)
+    runtime_payload = _pair_runtime_payload(
+        cache_status=cached_comparison.status,
+        retained=cached_comparison.retained,
+        setup_ms=setup_ms,
+        cache_timings_ms=cache_timings_ms,
+        build_ms=build_ms,
+        build_stages_ms=build_stages_ms,
+        build_flags=build_flags,
+        response_prepare_ms=response_prepare_ms,
+        response_ready_ms=response_ready_ms,
+    )
+    result["runtime"] = runtime_payload
+    runtime_response = runtime_payload.get("response")
+    if isinstance(runtime_response, dict):
+        runtime_response["handler_to_response_ready_ms"] = _timing_value(
+            _elapsed_ms(request_started)
+        )
+    response.headers["X-Market-Weather-Runtime-Schema"] = (
+        PAIR_RUNTIME_SCHEMA_VERSION
+    )
+    response.headers["Server-Timing"] = _pair_server_timing(runtime_payload)
     return result
+
+
+def _elapsed_ms(started_at: float) -> float:
+    return max(0.0, (time.perf_counter() - started_at) * 1000.0)
+
+
+def _timing_value(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0 or not math.isfinite(number):
+        return None
+    return round(number, 3)
+
+
+def _timing_map(values: Mapping[str, object]) -> dict[str, float]:
+    return {
+        str(key): timing
+        for key, value in values.items()
+        if (timing := _timing_value(value)) is not None
+    }
+
+
+def _pair_runtime_payload(
+    *,
+    cache_status: str,
+    retained: bool,
+    setup_ms: float,
+    cache_timings_ms: Mapping[str, object],
+    build_ms: float | None,
+    build_stages_ms: Mapping[str, object],
+    build_flags: Mapping[str, object],
+    response_prepare_ms: float,
+    response_ready_ms: float,
+) -> dict[str, object]:
+    """Describe measured backend work for this response.
+
+    The handler returns one JSON document, so framework JSON encoding, gzip,
+    transfer, and browser chart readiness occur after this measurement
+    boundary. They are deliberately reported as unavailable rather than
+    represented by synthetic progressive stages.
+    """
+    normalized_build_ms = _timing_value(build_ms)
+    return {
+        "schema_version": PAIR_RUNTIME_SCHEMA_VERSION,
+        "architecture": "single_response",
+        "cache": {
+            "status": cache_status,
+            "retained": retained,
+            "stages_ms": _timing_map(cache_timings_ms),
+        },
+        "build": {
+            "executed_this_request": normalized_build_ms is not None,
+            "total_ms": normalized_build_ms,
+            "stages_ms": _timing_map(build_stages_ms),
+            "benchmark_leg_reused": (
+                bool(build_flags.get("benchmark_leg_reused"))
+                if "benchmark_leg_reused" in build_flags
+                else None
+            ),
+        },
+        "response": {
+            "request_setup_ms": _timing_value(setup_ms),
+            "metadata_and_headers_ms": _timing_value(response_prepare_ms),
+            "handler_to_response_ready_ms": _timing_value(response_ready_ms),
+            "framework_json_serialization_ms": None,
+            "compression_and_transfer_ms": None,
+        },
+        "boundaries": {
+            "cache_lookup": (
+                "Per-worker analysis-cache lock, expiry, LRU lookup, and "
+                "single-flight ownership decision."
+            ),
+            "build": (
+                "Executed only by the miss owner. Leg history stages cover "
+                "provider/persistent-history access; leg field stages cover "
+                "normalization and field construction; pair assembly covers "
+                "alignment, relative paths, coordinate comparison, summary, "
+                "and compact receipt construction."
+            ),
+            "response_ready": (
+                "Measured immediately before endpoint return. FastAPI JSON "
+                "serialization, middleware compression, network transfer, "
+                "and frontend rendering are outside this boundary."
+            ),
+        },
+    }
+
+
+def _pair_server_timing(runtime: Mapping[str, object]) -> str:
+    cache = runtime.get("cache")
+    build = runtime.get("build")
+    response = runtime.get("response")
+    cache_payload = cache if isinstance(cache, Mapping) else {}
+    build_payload = build if isinstance(build, Mapping) else {}
+    response_payload = response if isinstance(response, Mapping) else {}
+    cache_stages = cache_payload.get("stages_ms")
+    cache_stage_payload = cache_stages if isinstance(cache_stages, Mapping) else {}
+    build_stages = build_payload.get("stages_ms")
+    build_stage_payload = build_stages if isinstance(build_stages, Mapping) else {}
+
+    metrics: list[str] = []
+
+    def append_metric(name: str, value: object, description: str) -> None:
+        duration = _timing_value(value)
+        if duration is not None:
+            metrics.append(f'{name};dur={duration:.3f};desc="{description}"')
+
+    append_metric(
+        "pair-setup",
+        response_payload.get("request_setup_ms"),
+        "request validation and setup",
+    )
+    append_metric(
+        "pair-cache-lookup",
+        cache_stage_payload.get("lookup"),
+        f'analysis cache {str(cache_payload.get("status") or "unknown")}',
+    )
+    append_metric(
+        "pair-cache-wait",
+        cache_stage_payload.get("wait"),
+        "single-flight wait",
+    )
+    append_metric(
+        "pair-cache-copy",
+        cache_stage_payload.get("copy"),
+        "cache value isolation",
+    )
+    append_metric(
+        "pair-build",
+        build_payload.get("total_ms"),
+        "pair construction on this request",
+    )
+    history_ms = sum(
+        timing
+        for key in ("target_history", "benchmark_history")
+        if (timing := _timing_value(build_stage_payload.get(key))) is not None
+    )
+    field_ms = sum(
+        timing
+        for key in ("target_field", "benchmark_field")
+        if (timing := _timing_value(build_stage_payload.get(key))) is not None
+    )
+    if any(key.endswith("_history") for key in build_stage_payload):
+        append_metric("pair-history", history_ms, "history access on build path")
+    if any(key.endswith("_field") for key in build_stage_payload):
+        append_metric("pair-fields", field_ms, "field construction on build path")
+    append_metric(
+        "pair-assembly",
+        build_stage_payload.get("pair_assembly"),
+        "alignment summary and receipt assembly",
+    )
+    append_metric(
+        "pair-prepare",
+        response_payload.get("metadata_and_headers_ms"),
+        "response metadata and headers",
+    )
+    append_metric(
+        "pair-ready",
+        response_payload.get("handler_to_response_ready_ms"),
+        "handler start to response-ready boundary",
+    )
+    return ", ".join(metrics)
 
 
 def _compute_market_weather_comparison(
@@ -436,6 +646,8 @@ def _compute_market_weather_comparison(
     requested_bars: int,
     horizons: list[int],
     settings: MarketWeatherSettings,
+    runtime_stages_ms: dict[str, float] | None = None,
+    runtime_flags: dict[str, object] | None = None,
 ) -> dict[str, object]:
     target_leg = build_pair_leg(
         provider=target_provider,
@@ -444,12 +656,16 @@ def _compute_market_weather_comparison(
         requested_bars=requested_bars,
         horizons=horizons,
         settings=settings,
+        runtime_stages_ms=runtime_stages_ms,
+        runtime_prefix="target",
     )
     if (
         target_provider is benchmark_provider
         and getattr(target, "provider_symbol", None)
         == getattr(benchmark, "provider_symbol", None)
     ):
+        if runtime_flags is not None:
+            runtime_flags["benchmark_leg_reused"] = True
         benchmark_leg = PairLeg(
             symbol=benchmark,
             analysis=target_leg.analysis,
@@ -465,13 +681,21 @@ def _compute_market_weather_comparison(
             requested_bars=requested_bars,
             horizons=horizons,
             settings=settings,
+            runtime_stages_ms=runtime_stages_ms,
+            runtime_prefix="benchmark",
         )
-    return build_market_weather_comparison(
+        if runtime_flags is not None:
+            runtime_flags["benchmark_leg_reused"] = False
+    assembly_started = time.perf_counter()
+    comparison = build_market_weather_comparison(
         target=target_leg,
         benchmark=benchmark_leg,
         timeframe=normalized_timeframe,
         visible_bars=visible_bars,
     )
+    if runtime_stages_ms is not None:
+        runtime_stages_ms["pair_assembly"] = _elapsed_ms(assembly_started)
+    return comparison
 
 
 def _compute_market_weather_analysis(

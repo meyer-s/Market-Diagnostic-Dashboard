@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import Topbar from "./components/layout/Topbar";
 import Footer from "./components/layout/Footer";
 import { trackPageView } from "./utils/analytics";
+import { trackSubsequentOptionsOpen } from "./utils/marketWeatherPairTelemetry";
 import { AppRoutes, getAnalyticsNameForPath } from "./routes/registry";
 
 function AppWithAnalytics() {
@@ -14,6 +15,9 @@ function AppWithAnalytics() {
       `${location.pathname}${location.search}${location.hash}`,
       getAnalyticsNameForPath(location.pathname)
     );
+    if (location.pathname === "/secret/options") {
+      trackSubsequentOptionsOpen();
+    }
   }, [location.pathname, location.search, location.hash]);
 
   return (

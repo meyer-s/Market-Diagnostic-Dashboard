@@ -10,7 +10,9 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "check:tailwind-tokens": "node ./scripts/check-tailwind-tokens.mjs",
-    "playwright": "playwright test"
+    "playwright": "playwright test",
+    "test:release-gate": "playwright test --grep @release",
+    "test:production-probe": "playwright test --grep @production-probe"
   },
   "dependencies": {
     "lucide-react": "^1.23.0",
@@ -22,6 +24,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.0",
     "@playwright/test": "^1.54.1",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.2",

@@ -1,4 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
+
+import { assertPairV1Contract, attachProbeEvidence } from "./support/pairContract";
 
 const COORDINATES = [
   ["pressure", "Pressure", "pressure_state"],
@@ -210,6 +213,7 @@ function pairFixture() {
     price_series: priceSeries,
     frozen_receipt: {
       schema_version: "market_field_pair_receipt_v1",
+      pair_schema_version: "market_field_pair_v1",
       receipt_hash: "d".repeat(64),
       overlap,
       support,
@@ -245,6 +249,7 @@ async function openPair(page: Page, width: number, height: number) {
   await page.route("**/api/market-weather/compare?**", async (route) => {
     await route.fulfill({
       contentType: "application/json",
+      headers: { "X-Market-Weather-Receipt-Hash": "d".repeat(64) },
       body: JSON.stringify(pairFixture()),
     });
   });
@@ -260,30 +265,128 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(overflow).toBeLessThanOrEqual(1);
 }
 
-test("Relative Field Pair keeps the desktop hierarchy inspectable", async ({ page }) => {
+async function expectPairControlsInsideViewport(page: Page) {
+  const escapedControls = await page
+    .locator('section[aria-labelledby="pair-field-title"]')
+    .locator("button:visible, input:visible, select:visible, summary:visible")
+    .evaluateAll((elements) => elements.flatMap((element) => {
+      const rect = element.getBoundingClientRect();
+      const escaped = rect.left < -1 || rect.right > window.innerWidth + 1 || rect.width < 1 || rect.height < 1;
+      return escaped
+        ? [{
+            label: element.getAttribute("aria-label") || element.textContent?.trim().slice(0, 80) || element.tagName,
+            left: rect.left,
+            right: rect.right,
+            width: rect.width,
+            viewport: window.innerWidth,
+          }]
+        : [];
+    }));
+  expect(escapedControls, "every visible Pair control must remain inside the CSS viewport").toEqual([]);
+}
+
+async function attachPairScreenshot(page: Page, testInfo: TestInfo, name: string) {
+  const screenshot = await page
+    .locator('section[aria-labelledby="pair-field-title"]')
+    .screenshot({ animations: "disabled", caret: "hide" });
+  await testInfo.attach(`${name}.png`, { body: screenshot, contentType: "image/png" });
+}
+
+function cssTimesInMilliseconds(value: string): number[] {
+  return value.split(",").map((part) => {
+    const time = part.trim();
+    const amount = Number.parseFloat(time);
+    if (!Number.isFinite(amount)) return Number.POSITIVE_INFINITY;
+    return time.endsWith("ms") ? amount : amount * 1_000;
+  });
+}
+
+async function expectNoSeriousAxeViolations(
+  page: Page,
+  include: string,
+  name: string,
+  testInfo: TestInfo,
+) {
+  const results = await new AxeBuilder({ page })
+    .include(include)
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  await testInfo.attach(`axe-${name}.json`, {
+    body: Buffer.from(`${JSON.stringify(results, null, 2)}\n`, "utf8"),
+    contentType: "application/json",
+  });
+  const blocking = results.violations.filter(
+    (violation) => violation.impact === "critical" || violation.impact === "serious",
+  );
+  return blocking.map((violation) => ({
+    surface: name,
+    id: violation.id,
+    impact: violation.impact,
+    targets: violation.nodes.flatMap((node) => node.target.map(String)),
+  }));
+}
+
+test("@release Relative Field Pair keeps the desktop hierarchy inspectable", async ({ page }) => {
   await openPair(page, 1440, 1100);
 
+  await expect(page.getByText("Auditable field recipe", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/RSP · Equal-weight market reference · User selected · suitability not evaluated/i),
+  ).toBeVisible();
   await expect(page.getByText("Descriptive read")).toBeVisible();
   await expect(page.getByText("Relative price progress", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Frozen calculation receipt available/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Self-checking compact receipt/i })).toBeVisible();
+  await expect(
+    page.getByRole("group", {
+      name: /Data support: 540 of 540 window coordinate cells; 15 of 15 current coordinates; missing values carried no;.*not independently certified/i,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("img", {
+      name: /ABT relative price versus RSP, based at 100 on .*; latest .*Prior-only beta-adjusted current chain .* with 0 restarts/i,
+    }),
+  ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole("tab", { name: "Field detail" }).click();
   await expect(page.locator('svg[aria-label*="trajectory"]:visible')).toHaveCount(4);
+  await expect(
+    page.getByRole("img", {
+      name: /Directional phase trajectory for ABT − RSP, relative to each instrument's own history.*displayed observations supported.*third coordinate/i,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("img", {
+      name: /Pressure comparison history on the relative-to-own-history basis.*current selected-basis value available.*Solid circle is target, dashed diamond is benchmark, dotted square is difference/i,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: /Pressure; relative-to-own-history target-minus-benchmark gap .*current direction .*selected-basis value available/i,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/above\/below center = sign · height\/intensity = magnitude · end arrow = current sign · hatch = unsupported/i),
+  ).toBeVisible();
   await page.locator('svg[aria-label*="Directional phase trajectory"]:visible').hover({ position: { x: 20, y: 80 } });
   await expect(page.getByText(/same shared date across visible field charts \(/i)).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole("tab", { name: "Audit receipt" }).click();
-  await expect(page.getByRole("button", { name: "Export current receipt" })).toBeEnabled();
-  await expect(page.getByText("Cache/debug")).toBeVisible();
+  const exportReceipt = page.getByRole("button", { name: "Export compact receipt · JSON" });
+  await expect(exportReceipt).toBeEnabled();
+  await expect(exportReceipt).toHaveAttribute(
+    "title",
+    /Does not preserve full chart histories and is not digitally signed/i,
+  );
+  await expect(page.getByText("Cache / runtime")).toBeVisible();
 });
 
-test("Relative Field Pair uses compact mobile chart, scope, and detail controls", async ({ page }) => {
+test("@release Relative Field Pair uses compact mobile chart, scope, and detail controls", async ({ page }) => {
   await openPair(page, 390, 844);
 
   await expect(page.getByText(/ABT vs RSP · 1D · 36 shared/i)).toBeVisible();
-  await expect(page.locator('svg[aria-label="Relative price index"]:visible')).toHaveCount(1);
+  await expect(page.locator('svg[aria-label^="Relative price index based at 100 on"]:visible')).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Beta adjusted" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
@@ -298,4 +401,225 @@ test("Relative Field Pair uses compact mobile chart, scope, and detail controls"
   await expect(page.getByRole("dialog", { name: "Pressure" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Inspect Pressure/i })).toBeFocused();
   await expectNoHorizontalOverflow(page);
+});
+
+const RESPONSIVE_VIEWPORTS = [
+  { label: "desktop-1440", width: 1440, height: 1000, visibleScopes: 4 },
+  { label: "desktop-1024", width: 1024, height: 900, visibleScopes: 4 },
+  { label: "tablet-768", width: 768, height: 900, visibleScopes: 1 },
+  { label: "mobile-390", width: 390, height: 844, visibleScopes: 1 },
+] as const;
+
+for (const viewport of RESPONSIVE_VIEWPORTS) {
+  test(`@release responsive evidence ${viewport.label}`, async ({ page }, testInfo) => {
+    await openPair(page, viewport.width, viewport.height);
+
+    await expect(page.getByRole("tablist", { name: "Relative Field sections" })).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveCount(3);
+    await expect(page.locator('svg[aria-label^="Relative price index based at 100 on"]:visible')).toHaveCount(
+      viewport.width < 640 ? 1 : 0,
+    );
+    await expect(
+      page.locator('svg[aria-label*="relative price versus"]:visible'),
+    ).toHaveCount(viewport.width >= 640 ? 1 : 0);
+    await expectNoHorizontalOverflow(page);
+    await expectPairControlsInsideViewport(page);
+    await attachPairScreenshot(page, testInfo, `pair-overview-${viewport.label}`);
+
+    await page.getByRole("tab", { name: "Field detail" }).click();
+    await expect(page.locator('svg[aria-label*="trajectory"]:visible')).toHaveCount(
+      viewport.visibleScopes,
+    );
+    await expectNoHorizontalOverflow(page);
+    await expectPairControlsInsideViewport(page);
+
+    await page.getByRole("tab", { name: "Audit receipt" }).click();
+    await expect(page.getByRole("button", { name: /Export .*receipt/i })).toBeEnabled();
+    await expectNoHorizontalOverflow(page);
+    await expectPairControlsInsideViewport(page);
+  });
+}
+
+test("@release keyboard tabs and mobile dialog preserve focus ownership", async ({ page }) => {
+  await openPair(page, 390, 844);
+
+  const overviewTab = page.getByRole("tab", { name: "Overview" });
+  const fieldTab = page.getByRole("tab", { name: "Field detail" });
+  const auditTab = page.getByRole("tab", { name: "Audit receipt" });
+
+  await overviewTab.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(fieldTab).toBeFocused();
+  await expect(fieldTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel", { name: "Field detail" })).toBeVisible();
+
+  await page.keyboard.press("End");
+  await expect(auditTab).toBeFocused();
+  await expect(auditTab).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Home");
+  await expect(overviewTab).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(auditTab).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(overviewTab).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(fieldTab).toBeFocused();
+
+  const trigger = page.getByRole("button", { name: /Inspect Pressure/i });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+
+  const dialog = page.getByRole("dialog", { name: "Pressure" });
+  const close = page.getByRole("button", { name: "Close coordinate detail" });
+  await expect(dialog).toBeVisible();
+  await expect(close).toBeFocused();
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+  await expect(
+    page.locator('section[aria-labelledby="pair-field-title"]').locator("xpath=.."),
+  ).toHaveAttribute("inert", "");
+
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Escape");
+
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+});
+
+test("@release Pair surfaces pass serious and critical automated accessibility checks", async ({
+  page,
+}, testInfo) => {
+  await openPair(page, 1440, 1000);
+
+  const blocking = await expectNoSeriousAxeViolations(
+    page,
+    'section[aria-labelledby="pair-field-title"]',
+    "overview",
+    testInfo,
+  );
+  await page.getByRole("tab", { name: "Field detail" }).click();
+  blocking.push(...await expectNoSeriousAxeViolations(
+    page,
+    'section[aria-labelledby="pair-field-title"]',
+    "field-detail",
+    testInfo,
+  ));
+  await page.getByRole("tab", { name: "Audit receipt" }).click();
+  blocking.push(...await expectNoSeriousAxeViolations(
+    page,
+    'section[aria-labelledby="pair-field-title"]',
+    "audit-receipt",
+    testInfo,
+  ));
+
+  await openPair(page, 390, 844);
+  await page.getByRole("tab", { name: "Field detail" }).click();
+  await page.getByRole("button", { name: /Inspect Pressure/i }).click();
+  blocking.push(...await expectNoSeriousAxeViolations(
+    page,
+    '[role="dialog"]',
+    "mobile-coordinate-dialog",
+    testInfo,
+  ));
+
+  expect(
+    blocking,
+    "Pair surfaces contain serious or critical automated accessibility violations",
+  ).toEqual([]);
+});
+
+test("@release 200 percent zoom-equivalent reflow retains every Pair control", async ({
+  page,
+}, testInfo) => {
+  // Browser zoom halves the available CSS-pixel viewport. A 720px CSS viewport
+  // is the deterministic reflow equivalent of a 1440px browser at 200% zoom.
+  await openPair(page, 720, 500);
+
+  await expect(page.getByRole("tab", { name: "Overview" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectPairControlsInsideViewport(page);
+
+  await page.getByRole("tab", { name: "Field detail" }).click();
+  await expect(page.locator('svg[aria-label*="trajectory"]:visible')).toHaveCount(1);
+  await expect(page.getByRole("group", { name: "Comparison basis" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Displayed series" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectPairControlsInsideViewport(page);
+
+  await page.getByRole("tab", { name: "Audit receipt" }).click();
+  await expect(page.getByRole("button", { name: /Export .*receipt/i })).toBeEnabled();
+  await expectNoHorizontalOverflow(page);
+  await expectPairControlsInsideViewport(page);
+  await attachPairScreenshot(page, testInfo, "pair-audit-200-percent-zoom-equivalent");
+});
+
+test("@release prefers-reduced-motion suppresses Pair transitions and animations", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openPair(page, 1024, 900);
+
+  expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+  const motion = await page
+    .locator('section[aria-labelledby="pair-field-title"]')
+    .evaluate((section) => {
+      const values = Array.from(section.querySelectorAll<HTMLElement>("*")).flatMap((element) => {
+        const style = window.getComputedStyle(element);
+        return [style.animationDuration, style.transitionDuration];
+      });
+      return {
+        values,
+        runningAnimations: document.getAnimations().filter((animation) => animation.playState === "running").length,
+        scrollBehavior: window.getComputedStyle(document.documentElement).scrollBehavior,
+      };
+    });
+  const longestDuration = Math.max(...motion.values.flatMap(cssTimesInMilliseconds));
+  expect(longestDuration).toBeLessThanOrEqual(0.011);
+  expect(motion.runningAnimations).toBe(0);
+  expect(motion.scrollBehavior).toBe("auto");
+
+  await page.getByRole("tab", { name: "Field detail" }).click();
+  await expect(page.getByRole("tabpanel", { name: "Field detail" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("@release Pair fixture satisfies the public evidence contract", () => {
+  assertPairV1Contract(pairFixture(), "d".repeat(64));
+});
+
+test("@production-probe deployed Pair route satisfies schema and receipt-header invariants", async ({
+  request,
+}, testInfo) => {
+  const probeBaseUrl = process.env.PAIR_PROBE_BASE_URL;
+  test.skip(
+    !probeBaseUrl,
+    "Set PAIR_PROBE_BASE_URL (for example https://marketdiagnostictool.com) to run the live probe.",
+  );
+  expect(probeBaseUrl).toBeTruthy();
+
+  const url = new URL("/api/market-weather/compare", probeBaseUrl);
+  url.search = new URLSearchParams({
+    target_symbol: process.env.PAIR_PROBE_TARGET || "SPY",
+    benchmark_symbol: process.env.PAIR_PROBE_BENCHMARK || "RSP",
+    timeframe: "1D",
+    bars: "120",
+    horizon_min: "8",
+    horizon_max: "16",
+    horizon_step: "2",
+  }).toString();
+
+  const startedAt = Date.now();
+  const response = await request.get(url.toString(), {
+    failOnStatusCode: false,
+    timeout: 120_000,
+  });
+  const durationMs = Date.now() - startedAt;
+  expect(response.status(), await response.text()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("application/json");
+  const payload = assertPairV1Contract(
+    await response.json(),
+    response.headers()["x-market-weather-receipt-hash"] ?? null,
+  );
+  await attachProbeEvidence(response, payload, durationMs, testInfo);
 });

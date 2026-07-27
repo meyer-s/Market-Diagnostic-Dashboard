@@ -51,7 +51,6 @@ jobs:
         run: pnpm lint
 
   visual:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -72,9 +71,15 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Build frontend
         run: pnpm build
-      - name: Start preview server
-        run: pnpm preview --host 127.0.0.1 --port 4173 &
-      - name: Run visual regression suite
-        env:
-          PLAYWRIGHT_BASE_URL: http://127.0.0.1:4173
-        run: pnpm playwright test
+      - name: Run browser release gate
+        run: pnpm test:release-gate
+      - name: Upload browser release-gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relative-field-pair-release-gate
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: warn
+          retention-days: 14

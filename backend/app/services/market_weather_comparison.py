@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
-from typing import Mapping, Sequence
+import time
+from typing import Mapping, MutableMapping, Sequence
 
 import pandas as pd
 
@@ -138,7 +139,10 @@ def build_pair_leg(
     requested_bars: int,
     horizons: Sequence[int],
     settings: MarketWeatherSettings,
+    runtime_stages_ms: MutableMapping[str, float] | None = None,
+    runtime_prefix: str = "leg",
 ) -> PairLeg:
+    history_started = time.perf_counter()
     history_result = get_or_refresh_market_weather_history(
         provider,
         symbol.provider_symbol,
@@ -146,6 +150,12 @@ def build_pair_leg(
         bars=requested_bars,
         minimum_rows=max(60, max(int(value) for value in horizons) + 1),
     )
+    _record_runtime_stage(
+        runtime_stages_ms,
+        f"{runtime_prefix}_history",
+        history_started,
+    )
+    field_started = time.perf_counter()
     normalized_history, _input_quality = normalize_market_history(
         history_result.frame,
         minimum_bars=1,
@@ -155,16 +165,38 @@ def build_pair_leg(
         horizons=horizons,
         settings=settings,
     )
+    _record_runtime_stage(
+        runtime_stages_ms,
+        f"{runtime_prefix}_field",
+        field_started,
+    )
+    prepare_started = time.perf_counter()
+    full_precision_price_rows = _frame_price_rows(
+        normalized_history,
+        timeframe,
+    )
+    _record_runtime_stage(
+        runtime_stages_ms,
+        f"{runtime_prefix}_prepare",
+        prepare_started,
+    )
     return PairLeg(
         symbol=symbol,
         analysis=analysis,
         data_source=history_result.metadata.data_source,
         history_cache=history_result.metadata.to_dict(),
-        full_precision_price_rows=_frame_price_rows(
-            normalized_history,
-            timeframe,
-        ),
+        full_precision_price_rows=full_precision_price_rows,
     )
+
+
+def _record_runtime_stage(
+    stages_ms: MutableMapping[str, float] | None,
+    key: str,
+    started_at: float,
+) -> None:
+    """Record request-local elapsed time without entering analytical payloads."""
+    if stages_ms is not None:
+        stages_ms[key] = max(0.0, (time.perf_counter() - started_at) * 1000.0)
 
 
 def build_market_weather_comparison(

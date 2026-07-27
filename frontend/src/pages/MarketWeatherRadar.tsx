@@ -43,6 +43,7 @@ import type {
   MarketWeatherTimelineLens,
 } from "../types/marketWeather";
 import { channelLabel, formatSigned, INSPECTOR_CHANNELS } from "../utils/marketWeather";
+import { trackPairEvent } from "../utils/marketWeatherPairTelemetry";
 import {
   DEFAULT_MARKET_WEATHER_CONFIG,
   marketWeatherAnalysisParams,
@@ -84,25 +85,25 @@ const MODES: Array<{ value: MarketWeatherMode; label: string; description: strin
 ];
 
 const CORE_BENCHMARKS = [
-  { symbol: "SPY", label: "S&P 500 proxy", category: "Broad index reference" },
-  { symbol: "QQQ", label: "Nasdaq-100 proxy", category: "Broad index reference" },
+  { symbol: "SPY", label: "S&P 500 proxy", category: "Broad-cap market reference" },
+  { symbol: "QQQ", label: "Nasdaq-100 proxy", category: "Growth/technology-heavy reference" },
   { symbol: "IWM", label: "Russell 2000 proxy", category: "Small-cap reference" },
-  { symbol: "RSP", label: "equal-weight S&P 500", category: "Equal-weight index reference" },
-  { symbol: "DXY", label: "U.S. Dollar Index", category: "Macro reference" },
+  { symbol: "RSP", label: "equal-weight S&P 500", category: "Equal-weight market reference" },
+  { symbol: "DXY", label: "U.S. Dollar Index", category: "Dollar-index macro reference" },
 ] as const;
 
 const SECTOR_BENCHMARKS = [
-  { symbol: "XLB", label: "Materials", category: "Sector proxy" },
-  { symbol: "XLC", label: "Communication", category: "Sector proxy" },
-  { symbol: "XLE", label: "Energy", category: "Sector proxy" },
-  { symbol: "XLF", label: "Financials", category: "Sector proxy" },
-  { symbol: "XLI", label: "Industrials", category: "Sector proxy" },
-  { symbol: "XLK", label: "Technology", category: "Sector proxy" },
-  { symbol: "XLP", label: "Staples", category: "Sector proxy" },
-  { symbol: "XLRE", label: "Real estate", category: "Sector proxy" },
-  { symbol: "XLU", label: "Utilities", category: "Sector proxy" },
-  { symbol: "XLV", label: "Health care", category: "Sector proxy" },
-  { symbol: "XLY", label: "Discretionary", category: "Sector proxy" },
+  { symbol: "XLB", label: "Materials", category: "Sector reference" },
+  { symbol: "XLC", label: "Communication", category: "Sector reference" },
+  { symbol: "XLE", label: "Energy", category: "Sector reference" },
+  { symbol: "XLF", label: "Financials", category: "Sector reference" },
+  { symbol: "XLI", label: "Industrials", category: "Sector reference" },
+  { symbol: "XLK", label: "Technology", category: "Sector reference" },
+  { symbol: "XLP", label: "Staples", category: "Sector reference" },
+  { symbol: "XLRE", label: "Real estate", category: "Sector reference" },
+  { symbol: "XLU", label: "Utilities", category: "Sector reference" },
+  { symbol: "XLV", label: "Health care", category: "Sector reference" },
+  { symbol: "XLY", label: "Discretionary", category: "Sector reference" },
 ] as const;
 
 const inputClass = "min-h-11 rounded-xl border border-stealth-600 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/70 focus:ring-2 focus:ring-sky-400/10 sm:min-h-10";
@@ -179,6 +180,11 @@ function buildComparisonEndpoint(config: MarketWeatherRecipeConfig, benchmarkSym
 
 function isDxySymbol(value: string): boolean {
   return new Set(["DXY", "^DXY", "DX-Y.NYB"]).has(value.trim().toUpperCase());
+}
+
+function normalizePairSymbol(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  return isDxySymbol(normalized) ? "DXY" : normalized;
 }
 
 export default function MarketWeatherRadar() {
@@ -419,6 +425,13 @@ export default function MarketWeatherRadar() {
     try {
       await navigator.clipboard.writeText(url.toString());
       setShareStatus("copied");
+      if (comparisonMode === "pair" && comparisonData) {
+        trackPairEvent(
+          "pair_live_recipe_copied",
+          comparisonData.comparison_hash,
+          { timeframe: comparisonData.timeframe },
+        );
+      }
     } catch {
       setShareStatus("error");
     }
@@ -429,9 +442,32 @@ export default function MarketWeatherRadar() {
   const activeMode = MODES.find((item) => item.value === mode) ?? MODES[0];
   const activeTimeframe = TIMEFRAMES.find((item) => item.value === draft.timeframe) ?? TIMEFRAMES[7];
   const historyOptions = Array.from(new Set([...activeTimeframe.barOptions, draft.bars])).sort((left, right) => left - right);
+  const normalizedDraftCompareSymbol = normalizePairSymbol(draftCompareSymbol);
   const comparatorMeta = [...CORE_BENCHMARKS, ...SECTOR_BENCHMARKS].find(
-    (item) => item.symbol === draftCompareSymbol,
+    (item) => item.symbol === normalizedDraftCompareSymbol,
   );
+  const draftPairDiffersFromApplied = draftComparisonMode !== comparisonMode
+    || marketWeatherAnalysisParams({
+      ...draft,
+      symbol: normalizePairSymbol(draft.symbol),
+    }).toString() !== marketWeatherAnalysisParams({
+      ...applied,
+      symbol: normalizePairSymbol(applied.symbol),
+    }).toString()
+    || normalizedDraftCompareSymbol !== normalizePairSymbol(compareSymbol);
+  const pairResultTargetSymbol = comparisonData?.target?.symbol ?? "";
+  const pairResultBenchmarkSymbol = comparisonData?.benchmark?.symbol ?? "";
+  const hasCurrentPairResult = Boolean(pairResultTargetSymbol && pairResultBenchmarkSymbol);
+  const currentPairResultMatchesApplied = hasCurrentPairResult && (
+    normalizePairSymbol(pairResultTargetSymbol) === normalizePairSymbol(applied.symbol)
+    && normalizePairSymbol(pairResultBenchmarkSymbol) === normalizePairSymbol(compareSymbol)
+    && comparisonData?.timeframe === applied.timeframe
+  );
+  const comparisonSessionStatus = comparisonData?.compatibility?.session?.status
+    ?? comparisonData?.overlap?.session_compatibility
+    ?? (comparisonData?.overlap?.session_compatible === true
+      ? "compatible"
+      : comparisonData?.overlap?.session_compatible === false ? "incompatible" : "unknown");
   const requestedHistoryShortfall = data?.history_context
     ? Math.max(0, data.history_context.requested_visible_bars - data.history_context.visible_bars)
     : 0;
@@ -585,7 +621,7 @@ export default function MarketWeatherRadar() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="page-kicker">Multi-horizon market structure</span>
-              <span className="page-badge border-sky-400/20 text-sky-200"><FlaskConical className="h-3.5 w-3.5" /> Audited field recipe</span>
+              <span className="page-badge border-sky-400/20 text-sky-200"><FlaskConical className="h-3.5 w-3.5" /> Auditable field recipe</span>
             </div>
             <h1 className="page-title">Market Field Language</h1>
             <p className="page-subtitle max-w-3xl">Direction, activity, horizon agreement, disorder, and cross-horizon movement are shown as separate measurements. Request-local Forms summarize calibration-relative profiles.</p>
@@ -746,7 +782,7 @@ export default function MarketWeatherRadar() {
               >
                 <option value="">Sector SPDR…</option>
                 {SECTOR_BENCHMARKS.map((benchmark) => (
-                  <option key={benchmark.symbol} value={benchmark.symbol}>{benchmark.symbol} — {benchmark.label} sector proxy</option>
+                  <option key={benchmark.symbol} value={benchmark.symbol}>{benchmark.symbol} — {benchmark.label} sector reference</option>
                 ))}
               </select>
               <span className="inline-flex min-h-8 shrink-0 items-center rounded-full border border-dashed border-stealth-600 px-3 text-[10px] text-slate-500">
@@ -764,11 +800,15 @@ export default function MarketWeatherRadar() {
         {draftComparisonMode === "pair" ? (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-4 text-slate-500">
             <span>
-              <strong className="text-slate-300">{draftCompareSymbol}</strong> · {comparatorMeta?.category ?? "Custom comparison"} · user selected; economic appropriateness not evaluated
+              <span className="font-semibold text-slate-400">Next analysis comparator:</span>{" "}
+              <strong className="text-slate-300">{draftCompareSymbol}</strong> · {comparatorMeta?.category ?? "Custom comparison"} · User selected · suitability not evaluated
             </span>
-            {comparisonMode === "pair" && comparisonData ? (
-              <span className={comparisonData.compatibility?.session.status === "compatible" ? "text-emerald-300" : "text-amber-300"}>
-                Data compatibility: currency {comparisonData.compatibility?.currency.status ?? "unknown"} · exact {comparisonData.overlap.alignment_rule?.replace(/_/g, " ") ?? "shared-key"} overlap · sessions {comparisonData.compatibility?.session.independently_certified ? "certified" : "not independently certified"}
+            {comparisonMode === "pair" && comparisonData && hasCurrentPairResult ? (
+              <span className={comparisonSessionStatus === "compatible" ? "text-emerald-300" : "text-amber-300"}>
+                Current result {pairResultTargetSymbol} vs {pairResultBenchmarkSymbol}: currency {comparisonData.compatibility?.currency.status ?? "unknown"} · exact {comparisonData.overlap.alignment_rule?.replace(/_/g, " ") ?? "shared-key"} overlap · sessions {comparisonSessionStatus} · {comparisonData.compatibility?.session.independently_certified ? "independently certified" : "not independently certified"}
+                {draftPairDiffersFromApplied
+                  ? " · Draft changes are not applied; select Analyze."
+                  : !currentPairResultMatchesApplied ? " · Waiting for the requested comparison response." : ""}
               </span>
             ) : null}
           </div>

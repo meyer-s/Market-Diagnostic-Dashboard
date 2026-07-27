@@ -838,6 +838,30 @@ export interface MarketWeatherPairAuthority {
   execution: boolean;
 }
 
+export interface MarketWeatherPairRuntime {
+  schema_version: "market_field_pair_runtime_v1" | string;
+  architecture: "single_response" | string;
+  cache: {
+    status: "hit" | "miss" | "wait" | string;
+    retained: boolean;
+    stages_ms: Record<string, number>;
+  };
+  build: {
+    executed_this_request: boolean;
+    total_ms: number | null;
+    stages_ms: Record<string, number>;
+    benchmark_leg_reused: boolean | null;
+  };
+  response: {
+    request_setup_ms: number | null;
+    metadata_and_headers_ms: number | null;
+    handler_to_response_ready_ms: number | null;
+    framework_json_serialization_ms: number | null;
+    compression_and_transfer_ms: number | null;
+  };
+  boundaries: Record<string, string>;
+}
+
 export interface MarketWeatherPairReceiptLeg {
   symbol: string;
   requested_symbol?: string;
@@ -936,6 +960,7 @@ export interface MarketWeatherComparisonResponse {
     beta_adjusted_chain_reset?: boolean;
     beta_adjusted_cumulative_return?: number | null;
   }>;
+  runtime?: MarketWeatherPairRuntime;
   frozen_receipt?: MarketWeatherPairFrozenReceipt;
   provenance: {
     target_analysis_hash: string;
