@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_MARKET_WEATHER_CONFIG,
   DEFAULT_MARKET_WEATHER_QUERY_STATE,
   marketWeatherAnalysisParams,
+  marketWeatherComparisonParams,
   parseMarketWeatherQuery,
   serializeMarketWeatherQuery,
 } from "../marketWeatherQuery";
@@ -21,6 +23,33 @@ describe("market weather report query", () => {
     expect(state.config.symbol).toBe("IWM");
     expect(state.config.bars).toBe(913);
     expect(state.view).toBe("dictionary");
+  });
+
+  it("round-trips a pair comparison without confusing the field renderer mode", () => {
+    const state = parseMarketWeatherQuery(
+      "?symbol=nvda&comparison=pair&compare=smh&basis=native&comparison_view=benchmark&comparison_dimension=propagation",
+    );
+
+    expect(state.comparisonMode).toBe("pair");
+    expect(state.compareSymbol).toBe("SMH");
+    expect(state.comparisonBasis).toBe("native");
+    expect(state.comparisonView).toBe("benchmark");
+    expect(state.comparisonDimension).toBe("propagation");
+    expect(parseMarketWeatherQuery(serializeMarketWeatherQuery(state))).toEqual(state);
+  });
+
+  it("keeps DXY canonical in shareable comparison state", () => {
+    const state = parseMarketWeatherQuery("?comparison=pair&compare=DX-Y.NYB");
+    expect(state.compareSymbol).toBe("DXY");
+    expect(serializeMarketWeatherQuery(state).get("compare")).toBe("DXY");
+  });
+
+  it("repairs an unknown comparison coordinate instead of silently rendering another one", () => {
+    const state = parseMarketWeatherQuery(
+      "?comparison=pair&comparison_dimension=plausible_but_unknown",
+    );
+    expect(state.comparisonDimension).toBe("pressure");
+    expect(serializeMarketWeatherQuery(state).get("comparison_dimension")).toBe("pressure");
   });
 
   it("accepts documented timeframe aliases and repairs unsupported selectors", () => {
@@ -56,5 +85,13 @@ describe("market weather report query", () => {
     const analysis = marketWeatherAnalysisParams(DEFAULT_MARKET_WEATHER_QUERY_STATE.config);
     analysis.forEach((value, key) => expect(recipe.get(key)).toBe(value));
     expect([...recipe.keys()][0]).toBe("v");
+  });
+
+  it("maps a pair recipe to the comparison API parameter contract", () => {
+    const params = marketWeatherComparisonParams(DEFAULT_MARKET_WEATHER_CONFIG, "QQQ");
+    expect(params.get("symbol")).toBeNull();
+    expect(params.get("target_symbol")).toBe("SPY");
+    expect(params.get("benchmark_symbol")).toBe("QQQ");
+    expect(params.get("timeframe")).toBe("1D");
   });
 });

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import {
   Activity,
+  ArrowRightLeft,
   Check,
   ChevronDown,
   FlaskConical,
@@ -31,6 +32,10 @@ import MarketWeatherResearchLab from "../components/marketWeather/MarketWeatherR
 import MarketLoading from "../components/ui/MarketLoading";
 import { useApi } from "../hooks/useApi";
 import type {
+  MarketWeatherComparisonBasis,
+  MarketWeatherComparisonMode,
+  MarketWeatherComparisonResponse,
+  MarketWeatherComparisonView,
   MarketWeatherLanguageView,
   MarketWeatherMode,
   MarketWeatherResponse,
@@ -41,12 +46,17 @@ import { channelLabel, formatSigned, INSPECTOR_CHANNELS } from "../utils/marketW
 import {
   DEFAULT_MARKET_WEATHER_CONFIG,
   marketWeatherAnalysisParams,
+  marketWeatherComparisonParams,
   parseMarketWeatherQuery,
   serializeMarketWeatherQuery,
   type MarketWeatherQueryState,
   type MarketWeatherRecipeConfig,
 } from "../utils/marketWeatherQuery";
 import type { MarketTimelineWindow } from "../utils/marketWeatherTimeline";
+
+const MarketWeatherComparisonLab = lazy(
+  () => import("../components/marketWeather/MarketWeatherComparisonLab"),
+);
 
 const TIMEFRAMES: Array<{
   value: MarketWeatherTimeframe;
@@ -72,6 +82,28 @@ const MODES: Array<{ value: MarketWeatherMode; label: string; description: strin
   { value: "swami", label: "Swami Classic", description: "The categorical benchmark from the original SwamiCharts concept." },
   { value: "inspector", label: "Channel Inspector", description: "Isolates one latent field so the composite can be audited." },
 ];
+
+const CORE_BENCHMARKS = [
+  { symbol: "SPY", label: "S&P 500 proxy" },
+  { symbol: "QQQ", label: "Nasdaq-100 proxy" },
+  { symbol: "IWM", label: "Russell 2000 proxy" },
+  { symbol: "RSP", label: "equal-weight S&P 500" },
+  { symbol: "DXY", label: "U.S. Dollar Index" },
+] as const;
+
+const SECTOR_BENCHMARKS = [
+  { symbol: "XLB", label: "Materials" },
+  { symbol: "XLC", label: "Communication" },
+  { symbol: "XLE", label: "Energy" },
+  { symbol: "XLF", label: "Financials" },
+  { symbol: "XLI", label: "Industrials" },
+  { symbol: "XLK", label: "Technology" },
+  { symbol: "XLP", label: "Staples" },
+  { symbol: "XLRE", label: "Real estate" },
+  { symbol: "XLU", label: "Utilities" },
+  { symbol: "XLV", label: "Health care" },
+  { symbol: "XLY", label: "Discretionary" },
+] as const;
 
 const inputClass = "min-h-11 rounded-xl border border-stealth-600 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/70 focus:ring-2 focus:ring-sky-400/10 sm:min-h-10";
 
@@ -141,6 +173,14 @@ function buildEndpoint(config: MarketWeatherRecipeConfig): string {
   return `/market-weather/analyze?${marketWeatherAnalysisParams(config).toString()}`;
 }
 
+function buildComparisonEndpoint(config: MarketWeatherRecipeConfig, benchmarkSymbol: string): string {
+  return `/market-weather/compare?${marketWeatherComparisonParams(config, benchmarkSymbol).toString()}`;
+}
+
+function isDxySymbol(value: string): boolean {
+  return new Set(["DXY", "^DXY", "DX-Y.NYB"]).has(value.trim().toUpperCase());
+}
+
 export default function MarketWeatherRadar() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQueryRef = useRef<MarketWeatherQueryState | null>(null);
@@ -148,6 +188,13 @@ export default function MarketWeatherRadar() {
   const initialQuery = initialQueryRef.current;
   const [draft, setDraft] = useState<MarketWeatherRecipeConfig>(initialQuery.config);
   const [applied, setApplied] = useState<MarketWeatherRecipeConfig>(initialQuery.config);
+  const [comparisonMode, setComparisonMode] = useState<MarketWeatherComparisonMode>(initialQuery.comparisonMode);
+  const [draftComparisonMode, setDraftComparisonMode] = useState<MarketWeatherComparisonMode>(initialQuery.comparisonMode);
+  const [compareSymbol, setCompareSymbol] = useState(initialQuery.compareSymbol);
+  const [draftCompareSymbol, setDraftCompareSymbol] = useState(initialQuery.compareSymbol);
+  const [comparisonBasis, setComparisonBasis] = useState<MarketWeatherComparisonBasis>(initialQuery.comparisonBasis);
+  const [comparisonView, setComparisonView] = useState<MarketWeatherComparisonView>(initialQuery.comparisonView);
+  const [comparisonDimension, setComparisonDimension] = useState(initialQuery.comparisonDimension);
   const [mode, setMode] = useState<MarketWeatherMode>(initialQuery.mode);
   const [draftMode, setDraftMode] = useState<MarketWeatherMode>(initialQuery.mode);
   const [inspectorChannel, setInspectorChannel] = useState(initialQuery.channel);
@@ -164,8 +211,28 @@ export default function MarketWeatherRadar() {
   const queryStateRef = useRef<MarketWeatherQueryState>(initialQuery);
   const appliedKeyRef = useRef(marketWeatherAnalysisParams(initialQuery.config).toString());
   const shareTimerRef = useRef<number | null>(null);
-  const endpoint = useMemo(() => buildEndpoint(applied), [applied]);
-  const { data, loading, error, refetch } = useApi<MarketWeatherResponse>(endpoint);
+  const endpoint = useMemo(
+    () => comparisonMode === "single" ? buildEndpoint(applied) : "",
+    [applied, comparisonMode],
+  );
+  const comparisonEndpoint = useMemo(
+    () => comparisonMode === "pair" ? buildComparisonEndpoint(applied, compareSymbol) : "",
+    [applied, compareSymbol, comparisonMode],
+  );
+  const singleApi = useApi<MarketWeatherResponse>(endpoint);
+  const comparisonApi = useApi<MarketWeatherComparisonResponse>(
+    comparisonEndpoint,
+    { retainPreviousData: false },
+  );
+  const data = singleApi.data;
+  const comparisonData = comparisonApi.data;
+  const loading = comparisonMode === "pair" ? comparisonApi.loading : singleApi.loading;
+  const error = comparisonMode === "pair" ? comparisonApi.error : singleApi.error;
+  const refetch = comparisonMode === "pair" ? comparisonApi.refetch : singleApi.refetch;
+  const pairAlignmentUnsupported = draftComparisonMode === "pair"
+    && (isDxySymbol(draft.symbol) || isDxySymbol(draftCompareSymbol))
+    && !(isDxySymbol(draft.symbol) && isDxySymbol(draftCompareSymbol))
+    && ["1h", "2h", "4h"].includes(draft.timeframe);
   const queryString = searchParams.toString();
 
   useEffect(() => {
@@ -177,6 +244,13 @@ export default function MarketWeatherRadar() {
       setApplied(next.config);
       setDraft(next.config);
     }
+    setComparisonMode(next.comparisonMode);
+    setDraftComparisonMode(next.comparisonMode);
+    setCompareSymbol(next.compareSymbol);
+    setDraftCompareSymbol(next.compareSymbol);
+    setComparisonBasis(next.comparisonBasis);
+    setComparisonView(next.comparisonView);
+    setComparisonDimension(next.comparisonDimension);
     setMode(next.mode);
     setDraftMode(next.mode);
     setInspectorChannel(next.channel);
@@ -260,10 +334,20 @@ export default function MarketWeatherRadar() {
     ...overrides,
   });
 
-  const commitAnalysis = (config: MarketWeatherRecipeConfig, nextMode = mode, nextChannel = inspectorChannel) => {
+  const commitAnalysis = (
+    config: MarketWeatherRecipeConfig,
+    nextMode = mode,
+    nextChannel = inspectorChannel,
+    nextComparisonMode = draftComparisonMode,
+    nextCompareSymbol = draftCompareSymbol,
+  ) => {
+    const normalizedTarget = config.symbol.trim().toUpperCase() || "SPY";
+    const requestedBenchmark = nextCompareSymbol.trim().toUpperCase() || (normalizedTarget === "QQQ" ? "SPY" : "QQQ");
     const normalized = parseMarketWeatherQuery(serializeMarketWeatherQuery({
       ...currentQueryState(),
-      config: { ...config, symbol: config.symbol.trim().toUpperCase() || "SPY" },
+      config: { ...config, symbol: normalizedTarget },
+      comparisonMode: nextComparisonMode,
+      compareSymbol: requestedBenchmark,
       mode: nextMode,
       channel: nextChannel,
     }));
@@ -271,6 +355,10 @@ export default function MarketWeatherRadar() {
     appliedKeyRef.current = marketWeatherAnalysisParams(normalized.config).toString();
     setApplied(normalized.config);
     setDraft(normalized.config);
+    setComparisonMode(normalized.comparisonMode);
+    setDraftComparisonMode(normalized.comparisonMode);
+    setCompareSymbol(normalized.compareSymbol);
+    setDraftCompareSymbol(normalized.compareSymbol);
     setMode(normalized.mode);
     setDraftMode(normalized.mode);
     setInspectorChannel(normalized.channel);
@@ -280,11 +368,12 @@ export default function MarketWeatherRadar() {
 
   const runAnalysis = (event: React.FormEvent) => {
     event.preventDefault();
+    if (pairAlignmentUnsupported) return;
     commitAnalysis(draft);
   };
 
   const applySettings = () => {
-    commitAnalysis(draft, draftMode, draftInspectorChannel);
+    commitAnalysis(draft, draftMode, draftInspectorChannel, draftComparisonMode, draftCompareSymbol);
     setSettingsOpen(false);
     window.requestAnimationFrame(() => settingsButtonRef.current?.focus());
   };
@@ -293,6 +382,17 @@ export default function MarketWeatherRadar() {
     const next = currentQueryState(overrides);
     queryStateRef.current = next;
     if (overrides.mode) setMode(overrides.mode);
+    if (overrides.comparisonMode) {
+      setComparisonMode(overrides.comparisonMode);
+      setDraftComparisonMode(overrides.comparisonMode);
+    }
+    if (overrides.compareSymbol) {
+      setCompareSymbol(overrides.compareSymbol);
+      setDraftCompareSymbol(overrides.compareSymbol);
+    }
+    if (overrides.comparisonBasis) setComparisonBasis(overrides.comparisonBasis);
+    if (overrides.comparisonView) setComparisonView(overrides.comparisonView);
+    if (overrides.comparisonDimension) setComparisonDimension(overrides.comparisonDimension);
     if (overrides.channel) setInspectorChannel(overrides.channel);
     if (overrides.view) setLanguageView(overrides.view);
     if (overrides.timelineLens) setTimelineLens(overrides.timelineLens);
@@ -332,7 +432,6 @@ export default function MarketWeatherRadar() {
     ? data.history_context.initialization_target_bars
       ?? data.history_context.target_warmup_bars
     : 0;
-
   const settingsDialog = settingsOpen ? createPortal(
     <div
       className="fixed inset-0 z-[320] flex items-end justify-center bg-slate-950/78 p-0 backdrop-blur-sm sm:items-center sm:p-6"
@@ -476,10 +575,11 @@ export default function MarketWeatherRadar() {
             <h1 className="page-title">Market Field Language</h1>
             <p className="page-subtitle max-w-3xl">Direction, activity, horizon agreement, disorder, and cross-horizon movement are shown as separate measurements. Learned states are named from calibration-relative profiles.</p>
           </div>
-          {data ? (
+          {data || (comparisonMode === "pair" && comparisonData) ? (
             <div className="flex flex-wrap gap-2 text-xs text-slate-300">
-              <span className="page-badge"><Activity className="h-3.5 w-3.5 text-emerald-300" /> {data.data_source.toUpperCase()} · {data.bar_size} bars</span>
-              {cacheLabel(data) ? (
+              {data ? <span className="page-badge"><Activity className="h-3.5 w-3.5 text-emerald-300" /> {data.data_source.toUpperCase()} · {data.bar_size} bars</span> : null}
+              {comparisonMode === "pair" && comparisonData ? <span className="page-badge"><ArrowRightLeft className="h-3.5 w-3.5 text-teal-300" /> {comparisonData.target.symbol} / {comparisonData.benchmark.symbol} · {comparisonData.timeframe}</span> : null}
+              {data && cacheLabel(data) ? (
                 <span
                   className="page-badge"
                   title="Identical calculations are briefly reused per server worker; OHLCV history is shared persistently across workers."
@@ -487,8 +587,9 @@ export default function MarketWeatherRadar() {
                   {cacheLabel(data)}
                 </span>
               ) : null}
-              <span className="page-badge">{data.horizons.length} × {data.available_bars}</span>
-              <span className="page-badge">{formatTimestamp(data.generated_at)}</span>
+              {data ? <span className="page-badge">{data.horizons.length} × {data.available_bars}</span> : null}
+              {comparisonMode === "pair" && comparisonData ? <span className="page-badge">{comparisonData.overlap.common_observations.toLocaleString()} shared bars</span> : null}
+              {data ? <span className="page-badge">{formatTimestamp(data.generated_at)}</span> : null}
             </div>
           ) : null}
         </div>
@@ -496,9 +597,25 @@ export default function MarketWeatherRadar() {
 
       <section className="surface-card-strong p-3 sm:p-4">
         <form onSubmit={runAnalysis} className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Analysis</span>
+              <div className="inline-flex min-h-11 rounded-xl border border-stealth-600 bg-slate-950/60 p-1">
+                {(["single", "pair"] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setDraftComparisonMode(option)}
+                    aria-pressed={draftComparisonMode === option}
+                    className={`rounded-lg px-3 text-xs font-semibold capitalize transition ${draftComparisonMode === option ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-[260px]">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Ticker</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{draftComparisonMode === "pair" ? "Target" : "Ticker"}</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 <input
@@ -510,6 +627,36 @@ export default function MarketWeatherRadar() {
                 />
               </div>
             </label>
+            {draftComparisonMode === "pair" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentTarget = draft.symbol;
+                    setDraft((current) => ({ ...current, symbol: draftCompareSymbol }));
+                    setDraftCompareSymbol(currentTarget);
+                  }}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-stealth-600 px-3 text-slate-300 transition hover:border-teal-400/50 hover:text-white"
+                  aria-label="Swap target and benchmark"
+                  title="Swap target and benchmark; the sign of every difference will reverse."
+                >
+                  <ArrowRightLeft className="h-4 w-4" />
+                </button>
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-[260px]">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Benchmark or competitor</span>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                    <input
+                      value={draftCompareSymbol}
+                      onChange={(event) => setDraftCompareSymbol(event.target.value.toUpperCase())}
+                      className={`${inputClass} w-full pl-9 font-semibold tracking-wide`}
+                      maxLength={20}
+                      aria-label="Benchmark or competitor symbol"
+                    />
+                  </div>
+                </label>
+              </>
+            ) : null}
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Timeframe</span>
               <select
@@ -524,7 +671,9 @@ export default function MarketWeatherRadar() {
                 {TIMEFRAMES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
-            <span className="mb-0.5 hidden rounded-xl border border-stealth-700 bg-slate-950/35 px-3 py-2 text-xs text-slate-400 sm:inline-flex">{draft.bars.toLocaleString()} bars · {activeMode.label}</span>
+            <span className="mb-0.5 hidden rounded-xl border border-stealth-700 bg-slate-950/35 px-3 py-2 text-xs text-slate-400 sm:inline-flex">
+              {draft.bars.toLocaleString()} bars · {draftComparisonMode === "pair" ? "Relative Field" : activeMode.label}
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -548,16 +697,79 @@ export default function MarketWeatherRadar() {
               {shareStatus === "copied" ? <Check className="h-4 w-4 text-emerald-300" /> : <Link2 className="h-4 w-4" />}
               <span>{shareStatus === "copied" ? "Copied" : "Copy link"}</span>
             </button>
-            <button type="submit" disabled={loading} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-60 sm:flex-none">
+            <button type="submit" disabled={loading || pairAlignmentUnsupported} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-60 sm:flex-none">
               <Activity className="h-4 w-4" /> Analyze
             </button>
           </div>
         </form>
+        {draftComparisonMode === "pair" ? (
+          <div className="mt-3 flex flex-col gap-2 border-t border-stealth-700 pt-3 sm:flex-row sm:items-center">
+            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Compare with</span>
+            <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+              {CORE_BENCHMARKS.map((benchmark) => (
+                <button
+                  key={benchmark.symbol}
+                  type="button"
+                  onClick={() => setDraftCompareSymbol(benchmark.symbol)}
+                  aria-pressed={draftCompareSymbol === benchmark.symbol}
+                  title={`${benchmark.symbol} — ${benchmark.label}`}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs transition ${draftCompareSymbol === benchmark.symbol ? "border-teal-400/45 bg-teal-400/10 text-teal-200" : "border-stealth-600 text-slate-400 hover:border-slate-400 hover:text-white"}`}
+                >
+                  {benchmark.symbol}
+                </button>
+              ))}
+              <select
+                value={SECTOR_BENCHMARKS.some((benchmark) => benchmark.symbol === draftCompareSymbol) ? draftCompareSymbol : ""}
+                onChange={(event) => {
+                  if (event.target.value) setDraftCompareSymbol(event.target.value);
+                }}
+                aria-label="Select Sector SPDR benchmark"
+                className="min-h-8 shrink-0 rounded-full border border-stealth-600 bg-slate-950/70 px-3 text-xs text-slate-300 outline-none transition hover:border-slate-400 focus:border-teal-400"
+              >
+                <option value="">Sector SPDR…</option>
+                {SECTOR_BENCHMARKS.map((benchmark) => (
+                  <option key={benchmark.symbol} value={benchmark.symbol}>{benchmark.symbol} — {benchmark.label} sector proxy</option>
+                ))}
+              </select>
+              <span className="inline-flex min-h-8 shrink-0 items-center rounded-full border border-dashed border-stealth-600 px-3 text-[10px] text-slate-500">
+                Or enter any competitor
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-500 sm:hidden" aria-hidden="true">Swipe →</span>
+            {pairAlignmentUnsupported ? (
+              <span className="text-[10px] leading-4 text-amber-300">
+                DXY cannot be aligned safely at 1h, 2h, or 4h. Use 30m or shorter, daily, or weekly.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <p className="mt-2 text-xs leading-5 text-slate-400">
-          {shareStatus === "error" ? <span className="text-rose-300">Clipboard access failed. Allow clipboard access and try again.</span> : "Report links preserve the analysis recipe and visible lenses; current provider data is loaded when opened."}
+          {shareStatus === "error"
+              ? <span className="text-rose-300">Clipboard access failed. Allow clipboard access and try again.</span>
+              : "Report links preserve the analysis recipe and visible lenses; current provider data is loaded when opened."}
           <span className="sr-only" aria-live="polite">{shareStatus === "copied" ? "Report link copied." : shareStatus === "error" ? "The report link could not be copied." : ""}</span>
         </p>
       </section>
+
+      {comparisonMode === "pair" && comparisonData ? (
+        <Suspense
+          fallback={(
+            <section className="surface-card-strong flex min-h-[360px] items-center justify-center p-8">
+              <MarketLoading size={90} variant="scan" label="Opening the relative field workspace..." />
+            </section>
+          )}
+        >
+          <MarketWeatherComparisonLab
+            data={comparisonData}
+            basis={comparisonBasis}
+            view={comparisonView}
+            selectedDimension={comparisonDimension}
+            onBasisChange={(nextBasis) => updatePresentation({ comparisonBasis: nextBasis })}
+            onViewChange={(nextView) => updatePresentation({ comparisonView: nextView })}
+            onDimensionChange={(nextDimension) => updatePresentation({ comparisonDimension: nextDimension })}
+          />
+        </Suspense>
+      ) : null}
 
       {data ? (
         <section className="primary-card overflow-hidden p-2.5 sm:p-3" data-testid="field-surface" data-lens={mode}>
@@ -620,17 +832,21 @@ export default function MarketWeatherRadar() {
         </section>
       ) : null}
 
-      {loading && !data ? (
+      {loading && !(comparisonMode === "pair" ? comparisonData : data) ? (
         <section className="surface-card-strong flex min-h-[430px] items-center justify-center p-8">
-          <MarketLoading size={110} variant="scan" label="Building the multi-horizon weather field..." />
+          <MarketLoading
+            size={110}
+            variant="scan"
+            label={comparisonMode === "pair" ? "Aligning two multi-horizon fields..." : "Building the multi-horizon weather field..."}
+          />
         </section>
       ) : null}
 
-      {loading && data ? <p className="sr-only" role="status" aria-live="polite">Updating the applied market field.</p> : null}
+      {loading && (comparisonMode === "pair" ? comparisonData : data) ? <p className="sr-only" role="status" aria-live="polite">Updating the applied market field.</p> : null}
 
       {error ? (
         <section role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-950/25 p-5 text-sm text-rose-200">
-          <div className="font-semibold">The field could not be built.</div>
+          <div className="font-semibold">{comparisonMode === "pair" ? "The relative field could not be built." : "The field could not be built."}</div>
           <div className="mt-1 text-rose-200/80">{error}</div>
         </section>
       ) : null}

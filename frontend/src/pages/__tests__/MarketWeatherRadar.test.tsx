@@ -19,6 +19,11 @@ vi.mock("../../components/marketWeather/MarketWeatherResearchLab", () => ({
     <button type="button" onClick={() => onViewChange?.("dictionary")}>Open dictionary</button>
   ),
 }));
+vi.mock("../../components/marketWeather/MarketWeatherComparisonLab", () => ({
+  default: ({ data }: { data: { target: { symbol: string }; benchmark: { symbol: string } } }) => (
+    <div>Pair lab {data.target.symbol} versus {data.benchmark.symbol}</div>
+  ),
+}));
 
 const DATA = {
   symbol: "SPY",
@@ -85,6 +90,13 @@ const DATA = {
   },
 } as unknown as MarketWeatherResponse;
 
+const COMPARISON_DATA = {
+  target: { symbol: "NVDA" },
+  benchmark: { symbol: "QQQ" },
+  overlap: { common_observations: 120 },
+  timeframe: "1D",
+};
+
 function LocationProbe() {
   const location = useLocation();
   return <output data-testid="location-search">{location.search}</output>;
@@ -108,7 +120,12 @@ function renderPage(entry = "/market-weather") {
 describe("MarketWeatherRadar report state", () => {
   beforeEach(() => {
     useApiMock.mockReset();
-    useApiMock.mockReturnValue({ data: DATA, loading: false, error: null, refetch: vi.fn() });
+    useApiMock.mockImplementation((endpoint: string) => ({
+      data: endpoint.includes("/market-weather/compare") ? COMPARISON_DATA : endpoint ? DATA : null,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
   });
 
   afterEach(() => {
@@ -140,6 +157,53 @@ describe("MarketWeatherRadar report state", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back one report" }));
     await waitFor(() => expect((screen.getByLabelText("Ticker symbol") as HTMLInputElement).value).toBe("SPY"));
+  });
+
+  it("runs pair mode as one comparison request and keeps its selectors linkable", async () => {
+    renderPage("/market-weather?symbol=NVDA&comparison=pair&compare=QQQ&basis=context&comparison_view=difference");
+
+    const endpoints = useApiMock.mock.calls.map((call) => String(call[0])).filter(Boolean);
+    expect(endpoints.filter((endpoint) => endpoint.includes("/market-weather/compare"))).toHaveLength(1);
+    expect(endpoints.some((endpoint) => endpoint.includes("/market-weather/analyze"))).toBe(false);
+    expect(endpoints[0]).toContain("target_symbol=NVDA");
+    expect(endpoints[0]).toContain("benchmark_symbol=QQQ");
+    expect(await screen.findByText("Pair lab NVDA versus QQQ")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "SPY" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+    await waitFor(() => expect(screen.getByTestId("location-search").textContent).toContain("comparison=pair"));
+    expect(screen.getByTestId("location-search").textContent).toContain("compare=SPY");
+    expect(screen.getByTestId("location-search").textContent).toContain("v=2");
+  });
+
+  it("exposes index, currency, sector, and custom competitor controls without silently replacing identity pairs", () => {
+    renderPage("/market-weather?symbol=SPY&comparison=pair&compare=SPY");
+
+    expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(false);
+    expect((screen.getByLabelText("Benchmark or competitor symbol") as HTMLInputElement).value).toBe("SPY");
+    expect(screen.getByRole("button", { name: "DXY" })).not.toBeNull();
+    const sectors = screen.getByLabelText("Select Sector SPDR benchmark") as HTMLSelectElement;
+    expect(Array.from(sectors.options).map((option) => option.value).filter(Boolean)).toEqual([
+      "XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY",
+    ]);
+    expect(screen.getByLabelText("Benchmark or competitor symbol")).not.toBeNull();
+  });
+
+  it("warns before requesting a DXY timeframe with unsupported bar anchors", () => {
+    renderPage("/market-weather?symbol=SPY&comparison=pair&compare=DXY&timeframe=2h");
+    expect(screen.getByText(/DXY cannot be aligned safely at 1h, 2h, or 4h/i)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("also guards a DXY target but preserves a DXY identity control", () => {
+    const { unmount } = renderPage("/market-weather?symbol=DXY&comparison=pair&compare=SPY&timeframe=4h");
+    expect(screen.getByText(/DXY cannot be aligned safely at 1h, 2h, or 4h/i)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(true);
+    unmount();
+
+    renderPage("/market-weather?symbol=DXY&comparison=pair&compare=DXY&timeframe=4h");
+    expect(screen.queryByText(/DXY cannot be aligned safely at 1h, 2h, or 4h/i)).toBeNull();
+    expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("resynchronizes a draft when normalization produces the already-applied recipe", async () => {

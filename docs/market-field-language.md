@@ -1,6 +1,6 @@
 # Market Field Language
 
-Status: experimental language version `0.1.1` over unchanged v1 field formulas
+Status: experimental language version `0.1.2` over unchanged v1 field formulas
 
 The Market Field Language is a machine-native description of recurring market-field geometry. It is deliberately learned without forward returns. Price outcomes are attached only after a form or phrase has been discovered, so the language describes what the field is doing before anyone decides what it might mean.
 
@@ -13,6 +13,17 @@ The interface is a translation layer. Numeric forms, motions, and phrases are ca
 - **Fieldmark**: an experimental glyph generated from a form's prototype. It is no longer the primary explanation because its visual thresholds are not empirical units.
 - **Motion**: a directed transition from one form to another.
 - **Phrase**: a recurring run-collapsed sequence of two to four forms.
+- **Relative Field**: a two-instrument, same-recipe comparison that keeps
+  relative price progress separate from differences between the 15 measured
+  field coordinates.
+- **Native difference**: target minus benchmark in a coordinate's implemented
+  scale, emitted only where both observations are measured and fully supported.
+- **Context difference**: the target's proper-fit-relative coordinate minus the
+  benchmark's independently proper-fit-relative coordinate on the shared
+  evaluation interval. It is request-window-relative, not a universal score.
+- **Shared support**: timestamps where both independently constructed fields
+  have admissible, source-observed, full-dependency-supported evidence under the
+  declared alignment rule.
 - **Extreme calibration-distance tail**: an observation whose nearest-Form distance has an upper-tail rank below the documented cutoff on an independent same-Form chronological calibration slice. This does not mean coordinatewise or density-support exclusion.
 - **Climate**: a future persistent distribution of phrases across symbols and windows. It is not implemented in version 0.1.
 
@@ -40,6 +51,90 @@ Each analysis also emits a canonical formula/settings recipe hash, a full-precis
 normalized OHLCV input hash, and a combined analysis hash. These identities let
 two reports prove whether they used the same declared computation and rows. They
 do not certify provider truth, immutability, or exchange-session completion.
+
+## Relative Field Pair v1
+
+Relative Field Pair v1 is a deterministic descriptive comparison of two
+independently constructed Market Fields under one declared recipe. For target
+`A`, benchmark `B`, and coordinate `j`, its native difference is
+
+```text
+native_difference_j(t) = X_Aj(t) - X_Bj(t)
+```
+
+when both coordinate observations are finite, source-observed, and fully
+dependency-supported. “Native” means the coordinate's implemented 15D scale,
+not raw market units. In particular, the three carrier coordinates are bounded
+causal-baseline relative levels rather than raw realized variation, volume, or
+impact. Proper-fit-relative comparison uses each instrument's
+own frozen fit reference:
+
+```text
+Z_Aj(t) = (X_Aj(t) - median_fit,A,j) / robust_scale_fit,A,j
+Z_Bj(t) = (X_Bj(t) - median_fit,B,j) / robust_scale_fit,B,j
+context_difference_j(t) = Z_Aj(t) - Z_Bj(t)
+```
+
+The context trace is emitted only on the intersection of the two evaluation
+segments. Fit and held-out calibration observations are not backfilled with
+later reference statistics and a zero or unavailable robust scale remains
+unavailable. Consequently, the context trace is non-anticipative with respect
+to the displayed evaluation interval but still conditional on each request's
+fixed proper-fit sample; changing the requested history can change it.
+
+Relative price progress is a separate economic description, normalized to 100
+at the first aligned full-precision normalized close; it does not reuse the
+four-decimal display serialization. Log-return residuals begin only after
+20 prior aligned returns are available; each benchmark beta is an
+intercept-inclusive covariance/variance slope estimated from at most the 60
+strictly prior returns. The estimate is unavailable when the benchmark's
+population return standard deviation is below `1e-7`, is nonfinite, or has
+absolute value above 25. Rejected estimates are not clipped or carried
+forward: that row's residual is unavailable, the cumulative residual chain
+resets, and a later valid estimate begins a new chain. The current beta/residual
+summary reports only the latest aligned row and therefore remains unavailable
+whenever that row's beta is unavailable. Neither price progress nor a
+field-coordinate difference changes a Form, declares one instrument “better,”
+or makes higher disorder, propagation, volatility, participation, or
+liquidity stress desirable.
+
+The pair service aligns daily and weekly observations by the serialized market
+session date; it does not independently certify exchange calendars or
+timezones. For intraday source timestamps that retain timezone information,
+the service normalizes both sides to UTC and requires exact equality. When a
+provider/cache timestamp is timezone-naive, the service instead requires an
+exact match of the serialized naive timestamp and does not relabel it as UTC.
+There is no nearest-neighbor match or forward fill, and nonidentity pairs keep
+session compatibility `unknown` even when timestamps match. The live endpoint
+uses provider/cache rows as returned and does not independently certify its
+latest bar as exchange-complete. Incompatible
+bar anchors remain unavailable and the response reports common observations,
+dropped observations, latest shared timestamp, and the alignment rule. The
+canonical `DXY` selector resolves to Yahoo's `DX-Y.NYB` index symbol and that
+provider alias remains explicit in provenance; `UUP` is not silently
+substituted. Provider, currency, adjustment, session, and forming-bar
+differences can still limit comparability.
+
+The compact fit-relative stretch label uses the same supported coordinate
+intersection at the latest bar and five bars earlier. It first averages
+absolute context gaps within each of the three coordinate families, then
+averages those three family values. A change within
+`max(0.05, 5% × earlier_stretch)` is labeled `mixed`; missing family coverage
+makes the label unavailable.
+
+Every pair receipt contains the two component analysis hashes and an ordered
+comparison hash over target, benchmark, alignment, and normalization
+contracts. Swapping target and benchmark therefore changes the hash and
+reverses signed differences. Form IDs and centroids are never paired: a
+request-local `F.001` for one instrument has no identity relationship to
+`F.001` for another.
+
+Pair v1 is display and research instrumentation only. It has zero direct
+scanner weight, is excluded from the outcome-learning canary, and cannot
+create eligibility, impose a veto, change a manager verdict or target size, or
+execute a trade. Basket fields, cross-sectional peer ranks, persistent
+cross-symbol Forms, cross-timeframe fusion, connectedness, and economic value
+remain future research.
 
 Field EWMs use the production-pinned pandas 2.2.3 convention `adjust=False`, `ignore_na=False`, and `min_periods=0`. Fully observed rows follow the standard recursive form. Masked carrier gaps retain absolute-position decay; missing observations are neither zeros nor removed from the time axis.
 
@@ -147,6 +242,11 @@ The implementation preserves a strict chronology:
 2. robust scaling, prototypes, and exit probabilities use the proper-fit bars only; the later calibration slice is reserved for the distance-tail reference;
 3. evaluation bars are assigned against the frozen codebook, and API syntax is cropped and rebased to the visible response window;
 4. forward five-bar returns are calculated only after assignment or Phrase detection;
-5. outcomes never change Form identity or Motion probability.
+5. outcomes never change Form identity or Motion probability;
+6. pair-native differences require shared supported observations under one
+   recipe, while pair-context differences begin only after both frozen
+   proper-fit and calibration partitions;
+7. pair residual returns use only prior aligned returns to estimate beta, and
+   neither pair output refits either component field.
 
 This makes the language inspectable, but not validated as a trading system. The next major version should persist append-only forms across analyses, reconcile similar prototypes without renaming prior forms, and test a global Climate layer on untouched symbols and later dates.

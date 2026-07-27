@@ -1,4 +1,7 @@
 import type {
+  MarketWeatherComparisonBasis,
+  MarketWeatherComparisonMode,
+  MarketWeatherComparisonView,
   MarketWeatherLanguageView,
   MarketWeatherMode,
   MarketWeatherTimeframe,
@@ -25,6 +28,11 @@ export interface MarketWeatherRecipeConfig {
 
 export interface MarketWeatherQueryState {
   config: MarketWeatherRecipeConfig;
+  comparisonMode: MarketWeatherComparisonMode;
+  compareSymbol: string;
+  comparisonBasis: MarketWeatherComparisonBasis;
+  comparisonView: MarketWeatherComparisonView;
+  comparisonDimension: string;
   mode: MarketWeatherMode;
   channel: string;
   view: MarketWeatherLanguageView;
@@ -50,6 +58,11 @@ export const DEFAULT_MARKET_WEATHER_CONFIG: MarketWeatherRecipeConfig = {
 
 export const DEFAULT_MARKET_WEATHER_QUERY_STATE: MarketWeatherQueryState = {
   config: DEFAULT_MARKET_WEATHER_CONFIG,
+  comparisonMode: "single",
+  compareSymbol: "QQQ",
+  comparisonBasis: "context",
+  comparisonView: "difference",
+  comparisonDimension: "pressure",
   mode: "regime",
   channel: "pressure",
   view: "now",
@@ -72,6 +85,26 @@ const TIMEFRAME_ALIASES: Record<string, MarketWeatherTimeframe> = {
   "1wk": "1W",
 };
 const MODES = new Set<MarketWeatherMode>(["regime", "convection", "topographic", "swami", "inspector"]);
+const COMPARISON_MODES = new Set<MarketWeatherComparisonMode>(["single", "pair"]);
+const COMPARISON_BASES = new Set<MarketWeatherComparisonBasis>(["native", "context"]);
+const COMPARISON_VIEWS = new Set<MarketWeatherComparisonView>(["target", "benchmark", "difference"]);
+const COMPARISON_DIMENSIONS = new Set([
+  "pressure",
+  "velocity",
+  "acceleration",
+  "jerk",
+  "snap",
+  "structure",
+  "kinematics",
+  "geometry",
+  "information",
+  "propagation",
+  "cascade_bias",
+  "scaling_exponent",
+  "volatility_carrier",
+  "participation_carrier",
+  "liquidity_stress_carrier",
+]);
 const VIEWS = new Set<MarketWeatherLanguageView>(["now", "dictionary", "methods"]);
 const TIMELINE_LENSES = new Set<MarketWeatherTimelineLens>(["direction", "structure", "carriers", "range", "context"]);
 const TIMELINE_WINDOWS = new Set(["60", "120", "250", "all"]);
@@ -110,6 +143,11 @@ function normalizeHorizonGrid(config: MarketWeatherRecipeConfig): MarketWeatherR
   return { ...config, horizonMin, horizonMax, horizonStep };
 }
 
+function normalizeComparisonSymbol(value: string, fallback: string): string {
+  if (["DXY", "^DXY", "DX-Y.NYB"].includes(value)) return "DXY";
+  return SYMBOL_PATTERN.test(value) ? value : fallback;
+}
+
 export function parseMarketWeatherQuery(source: URLSearchParams | string): MarketWeatherQueryState {
   const params = asParams(source);
   const defaults = DEFAULT_MARKET_WEATHER_QUERY_STATE;
@@ -121,6 +159,11 @@ export function parseMarketWeatherQuery(source: URLSearchParams | string): Marke
   const lensCandidate = (params.get("timeline_lens") ?? defaults.timelineLens) as MarketWeatherTimelineLens;
   const windowCandidate = params.get("timeline_window") ?? String(defaults.timelineWindow);
   const channelCandidate = params.get("channel") ?? defaults.channel;
+  const comparisonModeCandidate = (params.get("comparison") ?? defaults.comparisonMode) as MarketWeatherComparisonMode;
+  const rawCompareSymbol = (params.get("compare") ?? defaults.compareSymbol).trim().toUpperCase();
+  const comparisonBasisCandidate = (params.get("basis") ?? defaults.comparisonBasis) as MarketWeatherComparisonBasis;
+  const comparisonViewCandidate = (params.get("comparison_view") ?? defaults.comparisonView) as MarketWeatherComparisonView;
+  const rawComparisonDimension = (params.get("comparison_dimension") ?? defaults.comparisonDimension).trim().toLowerCase();
 
   const config = normalizeHorizonGrid({
     symbol: SYMBOL_PATTERN.test(rawSymbol) ? rawSymbol : defaults.config.symbol,
@@ -144,12 +187,30 @@ export function parseMarketWeatherQuery(source: URLSearchParams | string): Marke
 
   return {
     config,
+    comparisonMode: COMPARISON_MODES.has(comparisonModeCandidate) ? comparisonModeCandidate : defaults.comparisonMode,
+    compareSymbol: normalizeComparisonSymbol(rawCompareSymbol, defaults.compareSymbol),
+    comparisonBasis: COMPARISON_BASES.has(comparisonBasisCandidate) ? comparisonBasisCandidate : defaults.comparisonBasis,
+    comparisonView: COMPARISON_VIEWS.has(comparisonViewCandidate) ? comparisonViewCandidate : defaults.comparisonView,
+    comparisonDimension: COMPARISON_DIMENSIONS.has(rawComparisonDimension)
+      ? rawComparisonDimension
+      : defaults.comparisonDimension,
     mode: MODES.has(modeCandidate) ? modeCandidate : defaults.mode,
     channel: CHANNELS.has(channelCandidate) ? channelCandidate : defaults.channel,
     view: VIEWS.has(viewCandidate) ? viewCandidate : defaults.view,
     timelineLens: TIMELINE_LENSES.has(lensCandidate) ? lensCandidate : defaults.timelineLens,
     timelineWindow,
   };
+}
+
+export function marketWeatherComparisonParams(
+  config: MarketWeatherRecipeConfig,
+  benchmarkSymbol: string,
+): URLSearchParams {
+  const params = marketWeatherAnalysisParams(config);
+  params.delete("symbol");
+  params.set("target_symbol", config.symbol);
+  params.set("benchmark_symbol", benchmarkSymbol);
+  return params;
 }
 
 export function marketWeatherAnalysisParams(config: MarketWeatherRecipeConfig): URLSearchParams {
@@ -172,8 +233,15 @@ export function marketWeatherAnalysisParams(config: MarketWeatherRecipeConfig): 
 
 export function serializeMarketWeatherQuery(state: MarketWeatherQueryState): URLSearchParams {
   const params = new URLSearchParams();
-  params.set("v", "1");
+  params.set("v", state.comparisonMode === "pair" ? "2" : "1");
   marketWeatherAnalysisParams(state.config).forEach((value, key) => params.set(key, value));
+  params.set("comparison", state.comparisonMode);
+  if (state.comparisonMode === "pair") {
+    params.set("compare", state.compareSymbol);
+    params.set("basis", state.comparisonBasis);
+    params.set("comparison_view", state.comparisonView);
+    params.set("comparison_dimension", state.comparisonDimension);
+  }
   params.set("mode", state.mode);
   params.set("channel", state.channel);
   params.set("view", state.view);

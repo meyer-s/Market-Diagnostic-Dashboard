@@ -6,7 +6,7 @@ for:
 > Non-Anticipative Market Field Calculus: An Auditable Multiscale Representation for
 > Option-Path Decision Support
 
-Status: preliminary systems and methods paper, revised 2026-07-26. The evidence
+Status: preliminary systems and methods paper, revised 2026-07-27. The evidence
 supports reconstructibility and selected implementation properties, not a
 representation-learning advance. A matched five-coordinate, single-horizon
 baseline produces stronger fit separation under the same codebook gate; the
@@ -45,11 +45,15 @@ self-contained copy of the exact market-data inputs.
 - FUTURE_WORK_TRIAGE.md: item-by-item separation of current engineering,
   prospective data collection, blocked retrospective evidence, and genuinely
   longer-horizon research.
+- The production research page also contains Relative Field Pair v1: a
+  two-instrument, same-recipe descriptive comparison with explicit alignment,
+  support, component-hash, and zero-authority receipts. It is implementation
+  scope, not an additional empirical result in this package.
 
 The official ICLR 2026 style and bibliography files are included unchanged from
-the conference template. In the 22-page Tectonic 0.16.9 build, all main text,
+the conference template. In the 24-page Tectonic 0.16.9 build, all main text,
 including the conclusion, reproducibility statement, and ethics statement, ends
-on page 9; references begin on page 10, and Appendix A begins on page 12. This
+on page 9; references begin on page 10, and Appendix A begins on page 13. This
 remains within the conference's nine-page main-text limit, which excludes
 references and appendices.
 
@@ -158,6 +162,47 @@ secrets, or secret-option records are part of this package.
   recipe/input/analysis hashes without changing formula v1. Dependency support
   is not convergence, and identity hashes do not certify provider truth or
   exchange-session completion.
+- Relative Field Pair v1 compares two independently computed same-recipe fields
+  only where both coordinates are measured and fully supported. Native
+  target-minus-benchmark differences remain separate from each instrument's
+  fixed proper-fit-relative difference and from normalized relative price
+  progress. Pair context begins only on the shared evaluation interval; it is
+  request-window-relative, not a universal or cross-sectional score. “Native”
+  denotes the implemented 15D coordinate scale, not raw market units; carrier
+  coordinates are bounded causal-baseline relative levels.
+- Daily and weekly pairs align by serialized market-session date; the service
+  does not independently certify exchange calendars or timezones. Intraday
+  timestamps are normalized to UTC and matched exactly only when the source
+  timestamps are timezone-aware. Timezone-naive rows instead require an exact
+  serialized naive-timestamp match and are not relabeled as UTC. Neither branch
+  uses nearest-neighbor matching or forward fill, and session compatibility
+  remains unknown for nonidentity pairs. Nonidentity DXY comparisons at 1h,
+  2h, and 4h are explicitly unavailable under the current provider anchors;
+  DXY/DXY remains an explicit identity control. The live endpoint
+  uses provider/cache rows as returned and does not independently certify its
+  latest bar as exchange-complete. The canonical DXY selector
+  preserves Yahoo `DX-Y.NYB` as an explicit provider alias rather than silently
+  substituting `UUP`. Provider, session, adjustment, and currency differences
+  remain visible limitations.
+- The optional prior-only beta residual needs at least 20 prior aligned
+  log-return pairs and uses at most 60. The beta is unavailable when the
+  benchmark population return standard deviation is below `1e-7`, the estimate
+  is nonfinite, or its absolute value exceeds 25. Rejected values are never
+  clipped or carried forward: the row is unavailable, the cumulative residual
+  chain resets, and the current beta/residual summary remains unavailable when
+  the current beta is unavailable.
+- Relative price uses the full-precision normalized aligned closes rather than
+  the four-decimal display serialization. The fit-relative stretch label
+  family-balances mean absolute context gaps over the same supported coordinate
+  intersection and compares the latest value with five bars earlier.
+- Pair receipts include both component analysis hashes and an ordered
+  comparison hash. Swapping the instruments reverses signed differences and
+  changes the comparison identity. Request-local Form IDs are never matched
+  across instruments.
+- Pair v1 has zero scanner, canary, veto, verdict, sizing, and execution
+  authority. It does not establish relative leadership, connectedness,
+  prediction, or economic value. Basket fields, cross-sectional peer ranks, and
+  cross-timeframe fusion remain future work.
 - Successful finalization of completed, stopped, or errored scanner runs now
   freezes applied and counterfactual rank receipts; stale, pre-schema, or
   failed-finalization runs remain unsnapshotted. Authenticated

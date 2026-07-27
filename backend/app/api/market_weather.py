@@ -14,6 +14,14 @@ from app.services.market_weather_analysis_cache import (
     get_or_compute_market_weather_analysis,
 )
 from app.services.market_weather_context import build_market_weather_context
+from app.services.market_weather_comparison import (
+    PairLeg,
+    PairSymbol,
+    build_market_weather_comparison,
+    build_pair_leg,
+    canonical_pair_symbol,
+    validate_pair_alignment,
+)
 from app.services.market_weather_history_cache import (
     MarketWeatherHistoryCacheMetadata,
     get_or_refresh_market_weather_history,
@@ -204,6 +212,261 @@ def analyze_market_weather(
         f"private, max-age={browser_max_age}, must-revalidate"
     )
     return result
+
+
+@router.get("/market-weather/compare")
+def compare_market_weather(
+    response: Response,
+    target_symbol: str = Query("SPY", min_length=1, max_length=20),
+    benchmark_symbol: str = Query("QQQ", min_length=1, max_length=20),
+    timeframe: str = Query("1D", min_length=2, max_length=4),
+    bars: int = Query(504, ge=60, le=5000),
+    horizon_min: int = Query(12, ge=4, le=100),
+    horizon_max: int = Query(48, ge=8, le=160),
+    horizon_step: int = Query(2, ge=1, le=12),
+    state_smoothing: int = Query(5, ge=1, le=20),
+    cross_horizon_blend: float = Query(0.32, ge=0.0, le=1.0),
+    renderer_time_blur: int = Query(3, ge=1, le=20),
+    renderer_spatial_blend: float = Query(0.42, ge=0.0, le=1.0),
+    edge_gain: float = Query(1.35, ge=0.25, le=4.0),
+    reflectivity_compression: float = Query(4.0, ge=0.25, le=12.0),
+    contour_bands: int = Query(7, ge=3, le=16),
+) -> dict[str, object]:
+    normalized_target = target_symbol.strip().upper()
+    normalized_benchmark = benchmark_symbol.strip().upper()
+    for label, symbol in (
+        ("Target", normalized_target),
+        ("Benchmark", normalized_benchmark),
+    ):
+        if not SYMBOL_PATTERN.fullmatch(symbol):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{label} ticker contains unsupported characters.",
+            )
+    normalized_timeframe = TIMEFRAME_ALIASES.get(timeframe.strip().lower())
+    if normalized_timeframe is None:
+        supported = ", ".join(TIMEFRAME_LABELS)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported timeframe. Choose one of: {supported}.",
+        )
+    if horizon_max <= horizon_min:
+        raise HTTPException(
+            status_code=400,
+            detail="horizon_max must be greater than horizon_min.",
+        )
+    horizons = list(range(horizon_min, horizon_max + 1, horizon_step))
+    if len(horizons) > MAX_HORIZON_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Choose at most {MAX_HORIZON_ROWS} horizon rows.",
+        )
+    pair_field_cells = 2 * len(horizons) * bars
+    if pair_field_cells > 2 * MAX_FIELD_CELLS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Requested pair is too large. Choose at most "
+                f"{2 * MAX_FIELD_CELLS:,} total horizon-by-time cells."
+            ),
+        )
+
+    target = canonical_pair_symbol(normalized_target)
+    benchmark = canonical_pair_symbol(normalized_benchmark)
+    try:
+        validate_pair_alignment(target, benchmark, normalized_timeframe)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    settings = MarketWeatherSettings(
+        state_smoothing=state_smoothing,
+        cross_horizon_blend=cross_horizon_blend,
+        renderer_time_blur=renderer_time_blur,
+        renderer_spatial_blend=renderer_spatial_blend,
+        edge_gain=edge_gain,
+        reflectivity_compression=reflectivity_compression,
+        contour_bands=contour_bands,
+    )
+    default_provider = (
+        get_market_data_provider()
+        if target.provider_override is None or benchmark.provider_override is None
+        else None
+    )
+    yahoo_provider = (
+        get_market_data_provider("yahoo")
+        if target.provider_override == "yahoo" or benchmark.provider_override == "yahoo"
+        else None
+    )
+
+    def provider_for(symbol: object) -> object:
+        provider_override = getattr(symbol, "provider_override", None)
+        if provider_override == "yahoo":
+            if yahoo_provider is None:
+                raise RuntimeError("Yahoo provider was not initialized.")
+            return yahoo_provider
+        if default_provider is None:
+            raise RuntimeError("Default market-data provider was not initialized.")
+        return default_provider
+
+    target_provider = provider_for(target)
+    benchmark_provider = provider_for(benchmark)
+    requested_bars = bars + max(72, horizon_max * 2)
+    history_ttl_seconds = market_weather_history_ttl_seconds(normalized_timeframe)
+    max_cacheable_cells = _analysis_cache_max_cells()
+    retain_analysis = (
+        max_cacheable_cells > 0
+        and pair_field_cells <= 2 * max_cacheable_cells
+    )
+    cache_key = (
+        "market-weather-comparison-v1",
+        id(target_provider),
+        id(benchmark_provider),
+        target.requested_symbol,
+        target.canonical_symbol,
+        target.provider_symbol,
+        benchmark.requested_symbol,
+        benchmark.canonical_symbol,
+        benchmark.provider_symbol,
+        normalized_timeframe,
+        bars,
+        tuple(horizons),
+        settings,
+    )
+    try:
+        cached_comparison = get_or_compute_market_weather_analysis(
+            cache_key,
+            lambda: _compute_market_weather_comparison(
+                target_provider=target_provider,
+                benchmark_provider=benchmark_provider,
+                target=target,
+                benchmark=benchmark,
+                normalized_timeframe=normalized_timeframe,
+                visible_bars=bars,
+                requested_bars=requested_bars,
+                horizons=horizons,
+                settings=settings,
+            ),
+            retain=retain_analysis,
+            ttl_seconds=history_ttl_seconds,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Relative market data could not be loaded: {exc}",
+        ) from exc
+
+    result = cached_comparison.value
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="Relative market analysis cache returned an invalid payload.",
+        )
+    cache_payload = dict(result.get("cache") or {})
+    target_history = cache_payload.get("target_history") or {}
+    benchmark_history = cache_payload.get("benchmark_history") or {}
+    history_statuses = [
+        str(payload.get("status") or "unknown")
+        for payload in (target_history, benchmark_history)
+        if isinstance(payload, dict)
+    ]
+    history_origin = ",".join(history_statuses) if history_statuses else "unknown"
+    provider_called = (
+        cached_comparison.status == "miss"
+        and any(
+            bool(payload.get("provider_called"))
+            for payload in (target_history, benchmark_history)
+            if isinstance(payload, dict)
+        )
+    )
+    analysis_cache = get_market_weather_analysis_cache()
+    cache_payload["analysis"] = {
+        "status": cached_comparison.status,
+        "retained": cached_comparison.retained,
+        "scope": "per_worker",
+        "ttl_seconds": min(analysis_cache.ttl_seconds, history_ttl_seconds),
+        "configured_ttl_seconds": analysis_cache.ttl_seconds,
+        "max_entries": analysis_cache.max_entries,
+        "field_cells": pair_field_cells,
+        "max_cacheable_cells": 2 * max_cacheable_cells,
+    }
+    cache_payload["request"] = {
+        "history_access": (
+            history_origin
+            if cached_comparison.status == "miss"
+            else "coalesced"
+            if cached_comparison.status == "wait"
+            else "not_checked"
+        ),
+        "provider_called": provider_called,
+    }
+    result["cache"] = cache_payload
+
+    response.headers["X-Market-Weather-Comparison-Cache"] = cached_comparison.status
+    response.headers["X-Market-Weather-History-Cache"] = (
+        history_origin
+        if cached_comparison.status == "miss"
+        else "coalesced"
+        if cached_comparison.status == "wait"
+        else "not_checked"
+    )
+    browser_max_age = min(30, max(0, history_ttl_seconds))
+    response.headers["Cache-Control"] = (
+        f"private, max-age={browser_max_age}, must-revalidate"
+    )
+    return result
+
+
+def _compute_market_weather_comparison(
+    *,
+    target_provider: object,
+    benchmark_provider: object,
+    target: PairSymbol,
+    benchmark: PairSymbol,
+    normalized_timeframe: str,
+    visible_bars: int,
+    requested_bars: int,
+    horizons: list[int],
+    settings: MarketWeatherSettings,
+) -> dict[str, object]:
+    target_leg = build_pair_leg(
+        provider=target_provider,
+        symbol=target,
+        timeframe=normalized_timeframe,
+        requested_bars=requested_bars,
+        horizons=horizons,
+        settings=settings,
+    )
+    if (
+        target_provider is benchmark_provider
+        and getattr(target, "provider_symbol", None)
+        == getattr(benchmark, "provider_symbol", None)
+    ):
+        benchmark_leg = PairLeg(
+            symbol=benchmark,
+            analysis=target_leg.analysis,
+            data_source=target_leg.data_source,
+            history_cache=dict(target_leg.history_cache),
+            full_precision_price_rows=target_leg.full_precision_price_rows,
+        )
+    else:
+        benchmark_leg = build_pair_leg(
+            provider=benchmark_provider,
+            symbol=benchmark,
+            timeframe=normalized_timeframe,
+            requested_bars=requested_bars,
+            horizons=horizons,
+            settings=settings,
+        )
+    return build_market_weather_comparison(
+        target=target_leg,
+        benchmark=benchmark_leg,
+        timeframe=normalized_timeframe,
+        visible_bars=visible_bars,
+    )
 
 
 def _compute_market_weather_analysis(

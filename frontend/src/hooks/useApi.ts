@@ -11,7 +11,14 @@ function isAbortError(error: unknown): boolean {
       && error.name === "AbortError";
 }
 
-export function useApi<T>(endpoint: string) {
+interface UseApiOptions {
+  retainPreviousData?: boolean;
+}
+
+export function useApi<T>(
+  endpoint: string,
+  { retainPreviousData = true }: UseApiOptions = {},
+) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +45,7 @@ export function useApi<T>(endpoint: string) {
 
     setLoading(true);
     setError(null);
+    if (!retainPreviousData) setData(null);
     loadingStore.start();
     void apiFetch<T>(endpoint, { signal: controller.signal })
       .then((result) => {
@@ -64,7 +72,7 @@ export function useApi<T>(endpoint: string) {
       controller.abort();
       finishLoading();
     };
-  }, [endpoint, refetchTrigger]);
+  }, [endpoint, refetchTrigger, retainPreviousData]);
 
   const refetch = useCallback(() => {
     setRefetchTrigger(prev => prev + 1);

@@ -15,6 +15,8 @@ immutable/readable); and
 | Derivative hierarchy, log-horizon geometry, permutation entropy, strata, carriers, semantic anchors, and coordinate coverage | backend/app/services/market_weather_research.py | Finite differences and operational analogues; finite-computation and full-dependency-support masks are reported separately and are not convergence certificates |
 | Form dictionary, chronology, distance tails | backend/app/services/market_weather_research.py | Request-local empirical codebook; upper calibration-distance tail, not a coordinatewise range test, universal latent regime, or formal p-value |
 | Scope projections and display smoothing | frontend/src/components/marketWeather/MarketWeatherResearchLab.tsx | Visualization only; loops are not detected cycles or attractors |
+| Pairwise Relative Field construction and API | backend/app/services/market_weather_comparison.py and backend/app/api/market_weather.py | Ordered, same-recipe comparison of two independently computed fields; supported coordinate-scale differences, evaluation-only proper-fit-relative differences, full-precision normalized relative price context, same-intersection family-balanced stretch, exact timezone-aware-UTC or serialized-naive intraday alignment, and alignment/provenance receipts. The optional prior-only beta uses 20--60 prior aligned returns, is unavailable below benchmark return standard deviation `1e-7` or for nonfinite/absolute estimates above 25, and never clips or carries unavailable values. This is not a basket, cross-symbol Form identity, connectedness estimate, or efficacy result. |
+| Pairwise scopes and comparison controls | frontend/src/components/marketWeather/MarketWeatherComparisonLab.tsx and frontend/src/pages/MarketWeatherRadar.tsx | Common-axis target/benchmark/difference views and linkable selectors; visual relationship traces do not establish leadership, cycles, causation, or forecast skill |
 | Human labels | frontend/src/utils/marketWeatherLexicon.ts | Translation of measured profiles; not independently learned semantics |
 | Prior-bar support, resistance, optionality and cross-market context | backend/app/services/market_weather_context.py | Context and association screening; not order-book structure or causation |
 | Completed-bar option snapshot | backend/app/services/option_field_context.py | Prefix-only daily evidence with signed-delta/action alignment and explicit zero direct rank/veto/verdict/size/execution authority; downstream historical-cohort canary use is declared separately |
@@ -31,6 +33,11 @@ immutable/readable); and
 | Future-work evidence triage | docs/papers/market-field/FUTURE_WORK_TRIAGE.md | Separates implementable instrumentation from unavailable retrospective evidence and longer-horizon research claims |
 
 The public research API supports 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1D, and 1W
-requests, but each request is one symbol and one timeframe. Horizon rows are bar
-counts inside that timeframe; the present implementation is not a fused
-nine-timeframe model.
+single-symbol requests plus a bounded two-symbol Pair v1 comparison under one
+timeframe and recipe. Horizon rows remain bar counts inside that timeframe.
+Daily/weekly pairs align by declared session date. Intraday pairs match exact
+UTC timestamps when the source is timezone-aware; timezone-naive rows instead
+match exact serialized timestamps without a UTC claim. Neither path carries
+values, and session compatibility remains unknown for nonidentity pairs. The
+implementation is not a constituent-weighted basket, cross-sectional peer
+model, connectedness model, or fused nine-timeframe system.

@@ -652,6 +652,153 @@ export interface MarketWeatherHistoryCacheMetadata {
   max_stale_seconds?: number | null;
 }
 
+export type MarketWeatherComparisonMode = "single" | "pair";
+export type MarketWeatherComparisonBasis = "native" | "context";
+export type MarketWeatherComparisonView = "target" | "benchmark" | "difference";
+
+export interface MarketWeatherComparisonSeriesPoint {
+  date: string;
+  target: number | null;
+  benchmark: number | null;
+  target_context?: number | null;
+  benchmark_context?: number | null;
+  native_difference: number | null;
+  context_difference: number | null;
+  target_supported?: boolean;
+  benchmark_supported?: boolean;
+  pair_supported?: boolean;
+}
+
+export interface MarketWeatherComparisonCoordinate {
+  id: string;
+  label: string;
+  family: string;
+  unit?: string;
+  polarity?: "signed" | "unsigned" | "lower_is_less_stressed" | "descriptive" | string;
+  latest: {
+    target: number | null;
+    benchmark: number | null;
+    target_context?: number | null;
+    benchmark_context?: number | null;
+    native_difference: number | null;
+    context_difference: number | null;
+    target_supported: boolean;
+    benchmark_supported: boolean;
+    pair_supported?: boolean;
+  };
+  series: MarketWeatherComparisonSeriesPoint[];
+}
+
+export interface MarketWeatherComparisonResponse {
+  schema_version: string;
+  semantic_revision?: string;
+  generated_at?: string;
+  target: {
+    symbol: string;
+    requested_symbol?: string;
+    canonical_symbol?: string;
+    provider_symbol?: string;
+    analysis_hash: string;
+    data_source?: string;
+    latest_close?: number | null;
+    latest_aligned_close?: number | null;
+    latest_returned_close?: number | null;
+  };
+  benchmark: {
+    symbol: string;
+    requested_symbol?: string;
+    canonical_symbol?: string;
+    provider_symbol?: string;
+    analysis_hash: string;
+    data_source?: string;
+    latest_close?: number | null;
+    latest_aligned_close?: number | null;
+    latest_returned_close?: number | null;
+  };
+  comparison_hash: string;
+  timeframe: MarketWeatherTimeframe;
+  overlap: {
+    common_observations: number;
+    start: string | null;
+    end: string | null;
+    target_dropped: number;
+    benchmark_dropped: number;
+    target_unmatched_after_latest_aligned?: number;
+    benchmark_unmatched_after_latest_aligned?: number;
+    target_latest_returned_at?: string | null;
+    benchmark_latest_returned_at?: string | null;
+    latest_aligned_at: string | null;
+    support_fraction: number;
+    session_compatibility?: "compatible" | "incompatible" | "unknown";
+    /** Compatibility alias for early Pair v1 payloads. */
+    session_compatible?: boolean | null;
+    alignment_supported?: boolean;
+    alignment_status?: "supported" | "unsupported" | string;
+    alignment_rule?: "serialized_session_date" | "exact_utc_timestamp" | "exact_serialized_timestamp_timezone_unavailable" | string;
+    note: string;
+  };
+  relative_progress: {
+    latest_target_close: number | null;
+    latest_benchmark_close: number | null;
+    active_return_pct: number | null;
+    beta_adjusted_return_pct: number | null;
+    beta: number | null;
+    beta_status?: "available" | "unavailable";
+    lookback_bars: number;
+    gap_direction: "widening" | "converging" | "mixed" | "unavailable" | string;
+  };
+  coordinates: MarketWeatherComparisonCoordinate[];
+  price_series: Array<{
+    date: string;
+    target_close: number | null;
+    benchmark_close: number | null;
+    relative_index: number | null;
+    active_return: number | null;
+    prior_return_beta?: number | null;
+    beta_adjusted_cumulative_return?: number | null;
+  }>;
+  provenance: {
+    target_analysis_hash: string;
+    benchmark_analysis_hash: string;
+    comparison_hash: string;
+    target_requested_symbol?: string;
+    target_canonical_symbol?: string;
+    target_provider_symbol?: string;
+    benchmark_requested_symbol?: string;
+    benchmark_canonical_symbol?: string;
+    benchmark_provider_symbol?: string;
+    alignment_contract?: string;
+    normalization_contract?: string;
+    component_recipe_hash?: string;
+    ordered_pair?: boolean;
+    identity_control?: boolean;
+    note: string;
+  };
+  authority?: {
+    mode: "research_display_only" | string;
+    scanner_weight: number;
+    option_learning_weight: number;
+    veto: boolean;
+    sizing: boolean;
+    execution: boolean;
+  };
+  cache?: {
+    target_history?: MarketWeatherHistoryCacheMetadata | Record<string, unknown>;
+    benchmark_history?: MarketWeatherHistoryCacheMetadata | Record<string, unknown>;
+    analysis?: {
+      status?: "hit" | "miss" | "wait" | string;
+      retained?: boolean;
+      scope?: string;
+      ttl_seconds?: number;
+    };
+    request?: {
+      history_access?: string;
+      provider_called?: boolean;
+    };
+  };
+  caveats: string[];
+}
+
 export interface MarketWeatherCell {
   pressure: number;
   direction: number;

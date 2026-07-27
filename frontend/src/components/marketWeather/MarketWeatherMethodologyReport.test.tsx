@@ -85,12 +85,12 @@ describe("MarketWeatherMethodologyReport", () => {
 
     const toggle = screen.getByRole("button", { name: /From Swami heatmaps to a Market Field Language/i });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("One field branch, one shadow-context branch")).toBeNull();
+    expect(screen.queryByText("Independent field branch(es), one shadow-context branch")).toBeNull();
 
     fireEvent.click(toggle);
 
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("One field branch, one shadow-context branch")).not.toBeNull();
+    expect(screen.getByText("Independent field branch(es), one shadow-context branch")).not.toBeNull();
     expect(screen.getByText("What this exact response contains")).not.toBeNull();
     expect(screen.getAllByText("None").length).toBeGreaterThan(0);
     expect(screen.getByRole("img", { name: /Proper fit 266 bars, Calibration 132 bars, Evaluation 352 bars/i })).not.toBeNull();
@@ -112,6 +112,9 @@ describe("MarketWeatherMethodologyReport", () => {
 
     expect(chapter.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("Midprice and true range")).not.toBeNull();
+    expect(screen.getByText("Pair symbol and session alignment")).not.toBeNull();
+    expect(screen.getByText(/canonical DXY selector resolves to Yahoo's DX-Y.NYB/i)).not.toBeNull();
+    expect(screen.getByText(/no nearest-neighbor match or forward fill/i)).not.toBeNull();
   });
 
   it("documents the relationship scopes, display-only smoothing, and live-link boundary", () => {
@@ -123,7 +126,22 @@ describe("MarketWeatherMethodologyReport", () => {
     expect(screen.getByText(/Organization \/ disorder places structure on x/i)).not.toBeNull();
     expect(screen.getByText(/causal exponential display average with α=0.5/i)).not.toBeNull();
     expect(screen.getByText(/does not feed the field, Form learning, state assignment/i)).not.toBeNull();
+    expect(screen.getByText("Relative Field coordinate lenses")).not.toBeNull();
+    expect(screen.getByText(/begins only on the intersection of their evaluation segments/i)).not.toBeNull();
+    expect(screen.getByText(/Relative price is indexed to 100/i)).not.toBeNull();
+    expect(screen.getByText(/zero scanner, outcome-learning-canary, veto, verdict, sizing, and execution authority/i)).not.toBeNull();
     expect(screen.getByText(/recreates a selector recipe, not a frozen market-data snapshot/i)).not.toBeNull();
+  });
+
+  it("separates implemented Pair instrumentation from future basket and efficacy work", () => {
+    render(<MarketWeatherMethodologyReport data={DATA} />);
+    fireEvent.click(screen.getByRole("button", { name: /From Swami heatmaps to a Market Field Language/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Future work and a promotion protocol/i }));
+
+    expect(screen.getByText("What moved out of future work")).not.toBeNull();
+    expect(screen.getByText(/Pairwise Relative Field instrumentation is now implemented/i)).not.toBeNull();
+    expect(screen.getByText(/Baskets, connectedness, cross-sectional ranks/i)).not.toBeNull();
+    expect(screen.getByText(/Pair v1 is excluded from the outcome-learning canary/i)).not.toBeNull();
   });
 
   it("discloses bounded agreement, entropy sensitivity, and scaling quality contracts", () => {

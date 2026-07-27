@@ -166,6 +166,12 @@ const PRODUCT_EVOLUTION: EvolutionStep[] = [
     description: "The single phase portrait became three linked projections with exact raw traces, a display-only causal EWM, fit-relative color, fixed bounded axes, keyboard inspection, and versioned URLs for reproducible selector recipes.",
     disposition: "Added on the web",
   },
+  {
+    stage: "08",
+    title: "Relative Field Pair",
+    description: "Two independently computed same-recipe fields can now be aligned through supported coordinate differences, relative price context, common-axis scopes, and ordered provenance without matching request-local Forms or changing either field.",
+    disposition: "Added on the web",
+  },
 ];
 
 const REFERENCE_GROUPS: ReferenceGroup[] = [
@@ -736,7 +742,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
               </div>
               <h2 className="mt-2 text-xl font-semibold tracking-tight text-white sm:text-2xl">A translation layer for how market structure changes across time and horizon</h2>
               <p className="mt-2 text-sm leading-6 text-slate-300">
-                This page begins with one instrument's timestamped OHLCV bars, constructs a causal horizon-by-time pressure field, derives kinematic, geometric, informational, and carrier measurements, and learns a small request-specific dictionary of recurring aggregate states. It then translates those measurements into a compact cloud, synchronized timelines, three relationship scopes, plain-language definitions, and separately labeled context. Its purpose is to make multiscale structure inspectable and to generate testable hypotheses—not to hide a trading rule behind a visual metaphor.
+                This page begins with one instrument's timestamped OHLCV bars, or two independently constructed same-recipe fields in Pair mode. Each field derives kinematic, geometric, informational, and carrier measurements and learns its own request-specific dictionary. The interface translates those measurements into a compact cloud, synchronized timelines, relationship scopes, plain-language definitions, and separately labeled context. Pair mode adds shared-support coordinate differences and relative price context without merging the fields or matching their Forms. Its purpose is to make multiscale structure inspectable and to generate testable hypotheses—not to hide a trading rule behind a visual metaphor.
               </p>
             </div>
           </header>
@@ -758,7 +764,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
               <Workflow className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" aria-hidden="true" />
               <div>
                 <span className="page-kicker">System map</span>
-                <h3 id={`${reportId}-pipeline-title`} className="mt-1 text-base font-semibold text-white">One field branch, one shadow-context branch</h3>
+                <h3 id={`${reportId}-pipeline-title`} className="mt-1 text-base font-semibold text-white">Independent field branch(es), one shadow-context branch</h3>
                 <p className="mt-1 text-xs leading-5 text-slate-400">The numbered stages are ordered transformations. Labels describe evidence status; color is only a secondary cue.</p>
               </div>
             </div>
@@ -811,7 +817,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   Can a causal representation of direction, organization, disorder, boundary activity, and cross-horizon motion expose structural changes that a single fixed-lookback indicator compresses away? The system treats that as an empirical visualization question first. It asks whether repeated field states can be named, inspected, and later tested without letting outcomes leak into state construction.
                 </MethodBlock>
                 <MethodBlock title="Unit of analysis">
-                  One request analyzes one symbol at one selected bar size. Every horizon is a count of those bars, not a second market timeframe. A 32-bar horizon therefore means 32 minutes on 1m data, 32 days on 1D data, and 32 weeks on 1W data. The page is multihorizon within a timeframe; it does not currently fuse all nine timeframes into one model.
+                  Single mode analyzes one symbol at one selected bar size. Pair mode analyzes target and benchmark independently under that same bar size, horizon grid, settings, and semantic revision, then compares only their shared admissible observations. Every horizon is a count of the selected bars, not a second market timeframe. The page is multihorizon within a timeframe; Pair mode is not a constituent-weighted basket, cross-sectional peer model, or fused nine-timeframe model.
                 </MethodBlock>
                 <MethodBlock title="Descriptive, diagnostic, predictive">
                   Observed bars and causal transformations are descriptive. Range checks and field states can be diagnostic because they compare current structure with earlier learned examples. Forward outcomes, relationship cards, and motifs remain hypothesis-generating. No component currently earns a calibrated predictive or prescriptive label.
@@ -838,6 +844,9 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                 </MethodBlock>
                 <MethodBlock title="Provider and timestamp lineage">
                   The response separately reports bar source, quote source, observed timestamp, coverage, generation time, and cache lineage. History-origin metadata describes the bars used when that analysis was computed; request metadata separately states whether this HTTP request touched history or called a provider. Normalized OHLCV is stored by symbol, timeframe, and timestamp in a persistent read-through cache shared across server workers. Freshness uses the last successful cache update—not the last exchange bar—so weekends do not manufacture staleness. A short-lived, one-entry derived-response cache and identical-request single-flight are local to each worker; retention is skipped above the disclosed cell budget, and its TTL cannot exceed the selected history TTL. Yahoo is the default provider; IBKR can be primary when configured, with method-specific fallback. Yahoo 2h and 4h bars are aggregated from 60-minute bars inside each trading session. Quote failure or cache-database failure does not invalidate otherwise usable provider history; a failed live refresh can use sufficient stored history only when the response marks it as a bounded-age stale fallback.
+                </MethodBlock>
+                <MethodBlock title="Pair symbol and session alignment">
+                  Pair receipts preserve requested, canonical, and provider symbols. The canonical DXY selector resolves to Yahoo&apos;s DX-Y.NYB index identifier; UUP is not silently substituted. Daily and weekly rows align by their serialized market-session date; the service does not independently certify exchange calendars or timezones. Timezone-aware intraday timestamps normalize to UTC before exact matching. If a provider/cache row is timezone-naive, its exact serialized timestamp is matched without relabeling it as UTC and session compatibility remains unknown. No nearest-neighbor match or forward fill is allowed; nonidentity DXY comparisons at 1h, 2h, and 4h are explicitly unavailable under the current provider anchors. The live endpoint uses provider/cache rows as returned and does not independently certify its latest bar as exchange-complete. Common observations, both dropped-row counts, each latest returned timestamp, the latest shared timestamp, and the alignment rule are part of the result. Provider, currency, adjustment, timezone, and session differences remain limitations rather than being normalized away.
                 </MethodBlock>
                 <MethodBlock title="Midprice and true range" formula={<>Mₜ = (Hₜ + Lₜ) / 2;&nbsp;&nbsp; TRₜ = max(Hₜ−Lₜ, |Hₜ−Cₜ₋₁|, |Lₜ−Cₜ₋₁|)</>}>
                   Midprice reduces a bar to its high–low center. True range introduces local scale while respecting overnight or inter-bar gaps. All rolling and exponential operations are trailing; no centered window is used.
@@ -1004,6 +1013,15 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                 <MethodBlock title="Scope trace, smoothing, and color">
                   A faint dashed line preserves the exact raw path. The brighter trace applies a causal exponential display average with α=0.5 (the standard span parameter is 3) and round line caps only to reduce visual aliasing; it does not feed the field, Form learning, state assignment, outcomes, or any other analysis. The diamond and centroids remain exact. Trace color and redundant width classify the display-smoothed third measure below −1, within ±1, or above +1 model-fit robust-scale units as low, typical, or elevated: structure for direction, reorganization for organization / disorder, and boundary activity for propagation.
                 </MethodBlock>
+                <MethodBlock title="Relative Field coordinate lenses" formula={<>Δnativeⱼ = Xtarget,ⱼ − Xbenchmark,ⱼ;&nbsp;&nbsp; Δcontextⱼ = Ztarget,ⱼ − Zbenchmark,ⱼ</>}>
+                  Native difference uses each coordinate&apos;s implemented 15D scale—not raw market units—and exists only when both observations are finite, source-observed, and fully dependency-supported. The three carrier coordinates are bounded causal-baseline relative levels rather than raw realized variation, volume, or impact. Context difference standardizes each instrument against its own frozen proper-fit median and robust scale, then begins only on the intersection of their evaluation segments. Fit and calibration bars are not backfilled with later reference statistics. Context is therefore fixed-fit-relative and request-window-dependent—not a universal score or a cross-sectional rank.
+                </MethodBlock>
+                <MethodBlock title="Relative price and Pair scopes">
+                  Relative price is indexed to 100 at the first common aligned full-precision close and is kept separate from field-coordinate differences. The log-return residual starts after 20 prior aligned pairs and uses an intercept-inclusive beta estimated from at most 60 strictly prior pairs. A benchmark return standard deviation below 1e−7, a nonfinite estimate, or absolute beta above 25 makes the row unavailable; beta is rejected rather than clipped or carried, and the current contiguous residual chain resets. It never rescales the 15 field coordinates. The family-balanced fit-relative stretch compares mean absolute context separation with five bars earlier over the same supported coordinate intersection. Each scope selector displays target, benchmark, or difference on one shared axis domain, while differential coordinates remain centered at zero and use color as a redundant third measure. These trajectories do not identify a winner, cycle, attractor, lead–lag mechanism, or causal transmission.
+                </MethodBlock>
+                <MethodBlock title="Pair identity and authority">
+                  The ordered comparison hash binds target and benchmark analysis hashes plus alignment and normalization rules. Swapping the instruments reverses signed differences and changes the receipt. Request-local Form IDs and centroids are never matched across instruments. Pair v1 has zero scanner, outcome-learning-canary, veto, verdict, sizing, and execution authority; basket fields, connectedness, cross-sectional peer ranks, and cross-timeframe fusion remain future work.
+                </MethodBlock>
                 <MethodBlock title="Methods derivative stack">
                   The Methods view unfolds pressure through velocity, acceleration, jerk, and snap so a definition becomes a changing trajectory rather than a paragraph. The stack is an audit surface for sign, timing, and smoothing sensitivity; it is not a claim that higher derivatives are inherently more predictive.
                 </MethodBlock>
@@ -1028,7 +1046,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
             >
               <div className="space-y-5">
                 <ReportCallout tone="violet" title="Design archive">
-                  The A–F track below is reconstructed from the original internal report, “SwamiCharts to Steve's Convection: Complete Research and Code Report.” The web track follows the implemented product history from the first Canvas field through the current grounded dictionary, context lens, compact cloud, and restored state scope.
+                  The A–F track below is reconstructed from the original internal report, “SwamiCharts to Steve's Convection: Complete Research and Code Report.” The web track follows the implemented product history from the first Canvas field through the current grounded dictionary, context lens, compact cloud, restored state scopes, and Relative Field Pair receipt.
                 </ReportCallout>
                 <EvolutionTrack title="Research lineage: the original A–F experiments" steps={RESEARCH_EVOLUTION} />
                 <EvolutionTrack title="Web evolution: measurement, language, grounding, and context" steps={PRODUCT_EVOLUTION} />
@@ -1036,7 +1054,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   Time × horizon structure, continuous direction, separately inspectable channels, causal computation, a Swami benchmark, and the idea that organization and transition deserve their own visual vocabulary. What changed was the burden of proof: machine-native names and rich glyphs moved behind measured descriptions, chronological splits, support thresholds, and explicit uncertainty.
                 </ReportCallout>
                 <ReportCallout tone="amber" title="What is still absent">
-                  The earlier Voss tactical-wave concept is not implemented. Nor are Takens embeddings, full optical flow, transfer entropy, Hurst or multifractal estimation, WebGL isolines, persistent cross-window Forms, multi-symbol field fusion, historical option surfaces, or a validated execution model. They belong in future work, not current capability claims.
+                  The earlier Voss tactical-wave concept is not implemented. Nor are Takens embeddings, full optical flow, transfer entropy, Hurst or multifractal estimation, WebGL isolines, persistent cross-window or cross-symbol Forms, constituent-weighted basket fields, cross-sectional peer ranks, nine-timeframe fusion, historical option surfaces, or a validated execution model. Pair v1 compares exactly two independent fields and does not imply any of those broader capabilities.
                 </ReportCallout>
               </div>
             </Chapter>
@@ -1048,7 +1066,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
             >
               <div className="grid gap-3 lg:grid-cols-2">
                 <MethodBlock title="Implementation invariants already tested">
-                  Repository tests cover finite and bounded matrices, chronological atlas separation, deterministic Forms, fit/calibration separation, family-balanced weights, one-Form fallback, all nine timeframes, prior-bar boundaries, lag selection, holdout behavior, and no source-date forward fill. The frozen v2 audit additionally compared 24,472 unrounded live values at 46 prefix endpoints with maximum observed deviation zero at 1e−12, and reports calibration support rather than silently dropping unsupported bars.
+                  Repository tests cover finite and bounded matrices, chronological atlas separation, deterministic Forms, fit/calibration separation, family-balanced weights, one-Form fallback, all nine timeframes, prior-bar boundaries, lag selection, holdout behavior, and no source-date forward fill. Pair tests additionally cover ordered deterministic identity, same-recipe enforcement, shared-support masking, evaluation-only context, swap-sign symmetry, session/date alignment, DXY alias provenance, and no pair authority. The frozen v2 audit compared 24,472 unrounded live values at 46 prefix endpoints with maximum observed deviation zero at 1e−12, and reports calibration support rather than silently dropping unsupported bars.
                 </MethodBlock>
                 <MethodBlock title="What those tests do not prove">
                   Passing tests establishes that code follows its declared mechanics. It does not establish stable economic meaning, superior forecasting, statistical significance, robustness across assets or regimes, tradability after costs, or independence from the researcher's many design choices.
@@ -1060,16 +1078,16 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   The internal four-hypothesis relationship atlas and motif search currently have no family-wide multiple-test adjustment. The separate cross-market screen does use block permutation and Benjamini–Hochberg correction. That distinction must remain explicit rather than being summarized as one global validation claim.
                 </MethodBlock>
                 <MethodBlock title="Window and configuration dependence">
-                  Forms, centroids, scaling, labels, calibration-distance ranks, and scope geometry can change with symbol, timeframe, history length, horizon set, or analytical smoothing. A 60-bar trailing recomputation was materially different from full retained history, and entropy-window alternatives correlated only 0.34–0.63 with the displayed 24-instance setting. Directional phase independently auto-fits x and y, so visual size and shape are not directly comparable across runs. The bounded scopes use fixed axes, but their learned centroids and fit-relative color thresholds remain request-specific.
+                  Forms, centroids, scaling, labels, calibration-distance ranks, and scope geometry can change with symbol, timeframe, history length, horizon set, or analytical smoothing. Pair context inherits two such proper-fit references and can change when either request window changes. A 60-bar trailing recomputation was materially different from full retained history, and entropy-window alternatives correlated only 0.34–0.63 with the displayed 24-instance setting. Single-symbol directional phase independently auto-fits x and y, so visual size and shape are not directly comparable across runs. Pair subjects instead reuse one axis domain per scope and differential coordinates center on zero, but their reference-relative traces are still request-specific.
                 </MethodBlock>
                 <MethodBlock title="Provider and market microstructure risk">
-                  IBKR and Yahoo can differ in session rules, adjustments, partial bars, timestamps, and volume. Aggregated 2h/4h Yahoo bars inherit 60m sampling choices. A cache hit reduces upstream requests but does not improve the source observation; TTL choice trades freshness for provider pressure, and stale fallback is explicitly labeled. Intraday correlations suffer asynchronous-trading effects; stale cached context sources and sparse options history further limit cross-system comparisons.
+                  IBKR and Yahoo can differ in session rules, adjustments, partial bars, timestamps, volume, currency, and contract identity. Aggregated 2h/4h Yahoo bars inherit 60m sampling choices. Pair mode exposes the canonical DXY-to-DX-Y.NYB alias and does not substitute UUP. Daily date alignment does not prove identical sessions, while strict intraday timestamp alignment can leave hourly cross-session pairs unavailable. A cache hit reduces upstream requests but does not improve the source observation; TTL choice trades freshness for provider pressure, and stale fallback is explicitly labeled. Asynchronous trading, stale cached sources, and sparse options history limit cross-system comparisons.
                 </MethodBlock>
                 <MethodBlock title="Derivative and smoothing risk">
                   Normalized derivatives can amplify microstructure noise and change sign near small denominators. Analytical causal smoothing reduces noise but adds lag and changes the field being learned. Separately, the scope deck uses a disclosed display-only EWM and curve interpolation that changes only the rendered trace. Sensitivity analysis must vary analytical smoothing, horizons, baseline span, and data source rather than treating defaults as natural constants.
                 </MethodBlock>
                 <MethodBlock title="Human interpretation risk">
-                  Dense color fields invite pareidolia, especially diagonal bands and loops. A loop in any scope is only a path through two displayed coordinates; no correlation coefficient, recurrence test, cycle detector, attractor reconstruction, or causal-flow estimate is calculated. Direct values, raw traces, provenance, support counts, holdout boundaries, and falsifiable promotion rules are safeguards against narrative overreach.
+                  Dense color fields invite pareidolia, especially diagonal bands and loops. A loop in any scope is only a path through two displayed coordinates; no correlation coefficient, recurrence test, cycle detector, attractor reconstruction, or causal-flow estimate is calculated. A positive Pair difference says target minus benchmark on one coordinate—not “target is better”—and only the separate relative-price series describes economic progress. Direct values, raw traces, provenance, support counts, holdout boundaries, and falsifiable promotion rules are safeguards against narrative overreach.
                 </MethodBlock>
               </div>
               <div className="mt-3 flex items-start gap-3 rounded-xl border border-rose-400/25 bg-rose-400/[0.05] p-3">
@@ -1096,9 +1114,14 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
               title="Future work and a promotion protocol"
               synopsis="A staged plan for turning visual hypotheses into stable measurements without letting discovery outrun evidence."
             >
+              <div className="mb-3">
+                <ReportCallout tone="emerald" title="What moved out of future work">
+                  Pairwise Relative Field instrumentation is now implemented: two independently computed same-recipe fields, supported native and evaluation-only proper-fit-relative differences, separate relative price context, explicit session alignment, ordered hashes, common-axis scopes, and zero decision authority. This closes an engineering gap, not the evidence gap. Baskets, connectedness, cross-sectional ranks, persistent cross-symbol Forms, and economic validation remain future work.
+                </ReportCallout>
+              </div>
               <div className="grid gap-3 lg:grid-cols-2">
                 <MethodBlock title="1. Freeze the measurement registry">
-                  Version every formula, feature family, horizon set, smoothing choice, provider rule, and visual mapping. Separate exploratory features from predeclared confirmatory features. The current URL freezes selector state only; durable replication also requires the exact input-data fingerprint or immutable response snapshot.
+                  Version every formula, feature family, horizon set, smoothing choice, provider rule, Pair alias/alignment/normalization rule, and visual mapping. Separate exploratory features from predeclared confirmatory features. The current URL freezes selector state only; durable replication also requires both exact input-data fingerprints and the ordered comparison receipt or immutable response snapshot.
                 </MethodBlock>
                 <MethodBlock title="2. Expand persistent historical inputs">
                   Symbol/timeframe OHLCV now uses a persistent read-through store, and scanner hits retain a compact point-in-time field snapshot. The broader options source still needs timestamped surfaces containing maturity, moneyness, bid/ask, volume, open interest, skew, term structure, and realized-volatility alignment. Preserve cached macro/sector source vintages and revisions. Store Forms and immutable input fingerprints so cross-window identity can be studied rather than assumed.
@@ -1110,13 +1133,13 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                   Adopt purged or embargoed rolling-origin evaluation, stationary/block bootstrap intervals, surrogate-data nulls, and an untouched final holdout. Correct the entire research family—not only one screen—for multiplicity and researcher degrees of freedom. Report effective sample size and sensitivity, not only point estimates.
                 </MethodBlock>
                 <MethodBlock title="5. Define context promotion gates">
-                  A support, options, cross-market, or option-path feature may influence ranking or state assignment only after its definition is frozen, timestamp lineage is complete, direction repeats across rolling folds and an external universe, false-discovery control passes, and incremental out-of-sample value survives costs and simpler baselines. The option field challenger also requires at least 100 independent trade cycles and explicit manual promotion.
+                  A support, options, cross-market, Pair, or option-path feature may influence ranking or state assignment only after its definition is frozen, timestamp lineage is complete, direction repeats across rolling folds and an external universe, false-discovery control passes, and incremental out-of-sample value survives costs and simpler baselines. Pair v1 is excluded from the outcome-learning canary. The option field challenger also requires at least 100 independent trade cycles and explicit manual promotion.
                 </MethodBlock>
                 <MethodBlock title="6. Separate association, prediction, and value">
                   First test whether a relationship is contemporaneously stable. Then test whether lagged information improves a predeclared forecast beyond autoregressive and volatility baselines. Finally test whether the improvement is economically usable after spreads, impact, capacity, and option-specific execution costs.
                 </MethodBlock>
                 <MethodBlock title="7. Expand the field carefully">
-                  Research orthogonal frequency bands, causal wavelet or scale-space baselines, fixed-axis phase comparisons, multivariate field alignment, and explicit information-flow tests. Add them as separate inspectable channels before considering any composite score. Avoid giving a physics-derived name to a statistic unless its assumptions are met.
+                  Research orthogonal frequency bands, causal wavelet or scale-space baselines, constituent- and vintage-aware baskets, persistent cross-symbol identity, cross-timeframe alignment, connectedness, and explicit information-flow tests. Add them as separate inspectable channels before considering any composite score. Two-symbol Pair alignment is not evidence that a fused or causal model exists. Avoid giving a physics-derived name to a statistic unless its assumptions are met.
                 </MethodBlock>
                 <MethodBlock title="8. Validate the translation layer">
                   Test color perception, keyboard and screen-reader use, density, mobile behavior, and whether readers can correctly infer sign, transition, uncertainty, and evidence strength. A successful interface should improve calibrated understanding, not merely make the field feel convincing.

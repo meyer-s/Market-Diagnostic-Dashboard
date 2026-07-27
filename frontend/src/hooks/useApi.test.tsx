@@ -163,4 +163,43 @@ describe("useApi", () => {
       "provider unavailable",
     );
   });
+
+  it("can clear prior data while a replacement request is pending or fails", async () => {
+    const first = deferred<{ value: string }>();
+    const second = deferred<{ value: string }>();
+    mocks.apiFetch.mockImplementation((endpoint: string) => (
+      endpoint === "/first" ? first.promise : second.promise
+    ));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const { result, rerender } = renderHook(
+      ({ endpoint }) => useApi<{ value: string }>(
+        endpoint,
+        { retainPreviousData: false },
+      ),
+      { initialProps: { endpoint: "/first" } },
+    );
+    await act(async () => {
+      first.resolve({ value: "first" });
+      await first.promise;
+    });
+    await waitFor(() => expect(result.current.data).toEqual({ value: "first" }));
+
+    rerender({ endpoint: "/second" });
+    expect(result.current.loading).toBe(true);
+    expect(result.current.data).toBeNull();
+
+    await act(async () => {
+      second.reject(new Error("replacement failed"));
+      try {
+        await second.promise;
+      } catch {
+        // The hook converts this rejection into its public error state.
+      }
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toBe("replacement failed");
+    expect(consoleError).toHaveBeenCalled();
+  });
 });
