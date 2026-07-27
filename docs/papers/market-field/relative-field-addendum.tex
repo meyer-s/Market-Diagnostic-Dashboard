@@ -609,8 +609,13 @@ Property-based randomized identity/swap tests, suffix-mutation tests for pair co
 
 \section{Reproducibility and Implementation Map}
 
-The equations were audited against implementation source
-\path{4c848dafecd41a64bd52844c9a12140e6534a784}. This addendum changes no Pair-v1 numerical production formula. Its schema-literal and display-terminology corrections make the frontend contract agree with the existing backend version and avoid calling Equation~\ref{eq:beta-adjusted} an OLS residual.
+The numerical Pair-v1 operators were audited against implementation source
+\path{4c848dafecd41a64bd52844c9a12140e6534a784}. The additive hierarchy,
+deterministic summary, exact window/support/compatibility disclosures,
+beta-chain metadata, and frozen-receipt contract were verified at
+\path{71e30b6b9168735816b02af93a82374c97a99ca3}. No coordinate,
+relative-index, beta, or field-separation formula changed. The revision also
+avoids calling Equation~\ref{eq:beta-adjusted} an OLS residual.
 
 \begin{table}[h]
 \centering

@@ -123,6 +123,7 @@ lineage:
 | `d19ededff412d78873cf73724c2d5528961dd811` | Shareable paper build | Contains the 22-page anonymous and named PDFs compiled after the clean primary receipt, executed notebook, and final claim-boundary revision. |
 | `b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b` | Semantic 1.3 implementation and clean development-evaluation head | Contains coordinate-support evidence, analysis identities, the governed option-learning canary, rank/exposure logging, conventional and state-model comparators, and the rebuilt 22-page papers. `evaluation/results/run_receipt.json` binds the clean-tree development run to this exact head and stable start/completion source hashes. |
 | `4c848dafecd41a64bd52844c9a12140e6534a784` | Relative Field Pair v1 implementation source audited by the addendum | Contains the ordered same-recipe pair service and research UI through the final mobile-label correction. The standalone addendum reconstructs this numerical backend; the addendum PR adds terminology, schema-contract, and regression-test corrections without changing its numerical formulas. |
+| `71e30b6b9168735816b02af93a82374c97a99ca3` | Relative Field Pair hierarchy and evidence-contract source | Adds the deterministic descriptive summary, exact window/support/compatibility and beta-chain disclosures, compact frozen receipt, three-layer responsive UI, linkable presentation controls, browser coverage, and synchronized research text. The additive revision changes no coordinate, relative-index, beta, or field-separation formula. |
 
 Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
 the historical primary and supplementary clean execution heads bind the same
@@ -131,6 +132,9 @@ records a separate clean-tree run at
 `b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b`. That receipt exercises the
 evaluation machinery on already-inspected retained data; it does not alter the
 historical primary receipts or establish predictive or economic efficacy.
+The current Relative Field Pair product and additive evidence-contract source is
+`71e30b6b9168735816b02af93a82374c97a99ca3`; the paper-artifact commit that
+follows it changes only provenance text and rebuilt addendum PDFs.
 
 The committed manifest, hashes, derived CSVs, figures, tables, executed
 notebooks, direct requirements, and full environment version capture document
