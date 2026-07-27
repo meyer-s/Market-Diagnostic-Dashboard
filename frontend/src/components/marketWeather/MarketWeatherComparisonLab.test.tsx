@@ -178,7 +178,7 @@ describe("MarketWeatherComparisonLab", () => {
     expect(higherMotion.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(higherMotion);
     expect(higherMotion.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getAllByText(/Acceleration × jerk/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Is pressure change accelerating/i).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Direct model-scale gap" }));
     const displayedSeries = screen.getByRole("group", { name: "Displayed series" });
@@ -301,6 +301,106 @@ describe("MarketWeatherComparisonLab", () => {
     expect(String(writeText.mock.calls[0][0])).toContain("not a forecast, ranking, or trade signal");
   });
 
+  it("fades scope trails by chronology, preserves support gaps, and uses unique SVG definitions", () => {
+    const dates = Array.from({ length: 10 }, (_value, index) => `2026-07-${String(index + 1).padStart(2, "0")}`);
+    const loopingValues = [-0.72, 0.66, -0.48, 0.58, -0.32, 0.44, 0.22, -0.18, 0.31, 0.12];
+    const coordinates = DATA.coordinates.map((coordinate) => {
+      const series = dates.map((date, index) => {
+        const value = loopingValues[index];
+        const supported = index !== 4;
+        return {
+          date,
+          target: value,
+          benchmark: 0,
+          target_context: value,
+          benchmark_context: 0,
+          native_difference: value,
+          context_difference: value,
+          target_supported: supported,
+          benchmark_supported: supported,
+          pair_supported: supported,
+        };
+      });
+      return {
+        ...coordinate,
+        latest: {
+          ...series[series.length - 1],
+          target_supported: true,
+          benchmark_supported: true,
+          pair_supported: true,
+        },
+        series,
+      };
+    });
+
+    render(
+      <MarketWeatherComparisonLab
+        data={{ ...DATA, coordinates }}
+        basis="context"
+        view="difference"
+        selectedDimension="pressure"
+        scopeTrail="full"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
+    const scope = screen.getAllByRole("img", { name: /Directional phase trajectory/i })[0] as unknown as SVGSVGElement;
+    expect(scope.querySelector("linearGradient")).toBeNull();
+    const segments = [...scope.querySelectorAll<SVGPathElement>('[data-scope-trail-segment="true"]')];
+    expect(segments.length).toBeGreaterThan(4);
+    const opacities = segments.map((segment) => Number(segment.dataset.ageOpacity));
+    const sourceEnds = segments.map((segment) => Number(segment.dataset.sourceEnd));
+    for (let index = 1; index < opacities.length; index += 1) {
+      expect(opacities[index]).toBeGreaterThan(opacities[index - 1]);
+      expect(sourceEnds[index]).toBeGreaterThan(sourceEnds[index - 1]);
+    }
+    expect(sourceEnds.some((value, index) => index > 0 && value - sourceEnds[index - 1] > 1)).toBe(true);
+
+    const definitionIds = [...document.querySelectorAll<SVGElement>('svg[aria-label*="trajectory"] [id]')]
+      .map((element) => element.id);
+    expect(new Set(definitionIds).size).toBe(definitionIds.length);
+
+    const directionArticle = scope.closest("article");
+    expect(directionArticle?.textContent).toContain("fit-spread units more elevated");
+    expect(directionArticle?.textContent).not.toMatch(/\bbullish\b|\bbearish\b|\boutperform\b|\btrade signal\b/i);
+  });
+
+  it("classifies only direct single-subject motion and keeps missing marker evidence unavailable", () => {
+    const dataWithMissingMarker: MarketWeatherComparisonResponse = {
+      ...DATA,
+      coordinates: DATA.coordinates.map((coordinate) => {
+        if (coordinate.id !== "liquidity_stress_carrier") return coordinate;
+        return {
+          ...coordinate,
+          latest: { ...coordinate.latest, target_supported: false },
+          series: coordinate.series.map((point, index) => (
+            index === coordinate.series.length - 1 ? { ...point, target_supported: false } : point
+          )),
+        };
+      }),
+    };
+    render(
+      <MarketWeatherComparisonLab
+        data={dataWithMissingMarker}
+        basis="native"
+        view="target"
+        selectedDimension="pressure"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
+    expect(screen.getAllByText(/positive pressure that is strengthening/i).length).toBeGreaterThan(0);
+    const propagation = screen.getByRole("img", { name: /Propagation & carriers trajectory/i });
+    expect(propagation.closest("article")?.textContent).toContain("(unavailable)");
+    expect(propagation.getAttribute("aria-label")).toContain("third coordinate used for marker size —");
+  });
+
   it("synchronizes the inspected date across visible field charts", () => {
     render(
       <MarketWeatherComparisonLab
@@ -330,10 +430,15 @@ describe("MarketWeatherComparisonLab", () => {
         toJSON: () => ({}),
       }),
     });
-    fireEvent(scope, new MouseEvent("pointermove", { bubbles: true, clientX: 24 }));
+    fireEvent(scope, new MouseEvent("pointermove", { bubbles: true, clientX: 210, clientY: 66 }));
 
-    expect(screen.getByText(/Hover or touch a chart/i).textContent).toContain("(2026-07-23)");
-    expect(screen.getAllByText(/2026-07-23 · x/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Hover, touch, or use arrow keys/i).textContent).toContain("(2026-07-23)");
+    expect(screen.getAllByText("Inspected 2026-07-23").length).toBeGreaterThan(0);
+
+    fireEvent.keyDown(scope, { key: "End" });
+    expect(screen.getByText(/Hover, touch, or use arrow keys/i).textContent).toContain("(2026-07-24)");
+    fireEvent.keyDown(scope, { key: "ArrowLeft" });
+    expect(screen.getByText(/Hover, touch, or use arrow keys/i).textContent).toContain("(2026-07-23)");
   });
 
   it("maps the compact price-chart pointer through its mobile viewBox", () => {

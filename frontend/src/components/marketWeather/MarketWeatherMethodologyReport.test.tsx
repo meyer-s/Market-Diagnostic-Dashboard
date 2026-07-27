@@ -129,6 +129,8 @@ describe("MarketWeatherMethodologyReport", () => {
     expect(screen.getByText("Relative Field coordinate lenses")).not.toBeNull();
     expect(screen.getByText(/begins only on the intersection of their evaluation segments/i)).not.toBeNull();
     expect(screen.getByText(/Relative price is indexed to 100/i)).not.toBeNull();
+    expect(screen.getByText(/strokes are split into chronological age bands/i)).not.toBeNull();
+    expect(screen.getByText(/fit-relative coordinates are described as deviations/i)).not.toBeNull();
     expect(screen.getByText(/zero scanner, outcome-learning-canary, veto, verdict, sizing, and execution authority/i)).not.toBeNull();
     expect(screen.getByText(/recreates a live selector recipe, not a frozen market-data snapshot/i)).not.toBeNull();
     expect(screen.getByText("Pair reading hierarchy")).not.toBeNull();

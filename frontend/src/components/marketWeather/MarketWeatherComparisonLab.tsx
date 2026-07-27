@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   ArrowRightLeft,
@@ -50,44 +50,64 @@ interface MarketWeatherComparisonLabProps {
 interface ScopeDefinition {
   id: string;
   title: string;
-  description: string;
+  question: string;
   x: string;
   y: string;
-  color: string;
+  marker: string;
+  xMeaning: string;
+  yMeaning: string;
+  markerMeaning: string;
+  caution: string;
 }
 
 const SCOPE_DEFINITIONS: ScopeDefinition[] = [
   {
     id: "direction",
     title: "Directional phase",
-    description: "Pressure × velocity; the current-point halo reflects Structure.",
+    question: "Which way does the multihorizon trend state lean, and is that lean building or easing?",
     x: "pressure",
     y: "velocity",
-    color: "structure",
+    marker: "structure",
+    xMeaning: "directional lean",
+    yMeaning: "pressure-change reading",
+    markerMeaning: "directional activity plus neighboring-horizon agreement",
+    caution: "Pressure describes the measured trend state, not expected return.",
   },
   {
     id: "higher_motion",
     title: "Higher motion",
-    description: "Acceleration × jerk; the current-point halo reflects Snap.",
+    question: "Is pressure change accelerating, and is that acceleration still building or starting to turn?",
     x: "acceleration",
     y: "jerk",
-    color: "snap",
+    marker: "snap",
+    xMeaning: "acceleration",
+    yMeaning: "jerk",
+    markerMeaning: "the change in jerk, the most noise-sensitive derivative here",
+    caution: "Higher-order differences amplify noise and are not signals by themselves.",
   },
   {
     id: "organization",
     title: "Structure & information",
-    description: "Structure × information; the current-point halo reflects Kinematics.",
+    question: "Are horizons active and aligned, and is the recent ordering relatively simple or complex?",
     x: "structure",
     y: "information",
-    color: "kinematics",
+    marker: "kinematics",
+    xMeaning: "activity-and-agreement composite",
+    yMeaning: "ordinal disorder",
+    markerMeaning: "total reorganization across the pressure derivatives",
+    caution: "Structure is a composite, not pure organization; Information means measured disorder, not useful information or confidence.",
   },
   {
     id: "propagation",
     title: "Propagation & carriers",
-    description: "Propagation × cascade bias; the current-point halo reflects Liquidity Stress.",
+    question: "Is a change appearing across horizons, which way is it oriented, and is price impact elevated?",
     x: "propagation",
     y: "cascade_bias",
-    color: "liquidity_stress_carrier",
+    marker: "liquidity_stress_carrier",
+    xMeaning: "cross-horizon spread",
+    yMeaning: "cascade orientation",
+    markerMeaning: "OHLCV price impact relative to its causal baseline",
+    caution: "This is not causal transmission, lead-lag evidence, or order-book liquidity.",
   },
 ];
 
@@ -428,31 +448,172 @@ function SeriesPointMarker({
   );
 }
 
-function smoothPath(points: Array<{ x: number; y: number }>): string {
-  if (!points.length) return "";
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-  let path = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-  for (let index = 0; index < points.length - 1; index += 1) {
+function boundedControl(value: number, left: number, right: number): number {
+  return Math.max(Math.min(left, right), Math.min(Math.max(left, right), value));
+}
+
+function smoothPath(
+  points: Array<{ x: number; y: number }>,
+  startIndex = 0,
+  endIndex = points.length - 1,
+): string {
+  if (!points.length || endIndex < startIndex) return "";
+  if (endIndex === startIndex) return `M ${points[startIndex].x} ${points[startIndex].y}`;
+  let path = `M ${points[startIndex].x.toFixed(2)} ${points[startIndex].y.toFixed(2)}`;
+  for (let index = startIndex; index < endIndex; index += 1) {
     const p0 = points[Math.max(0, index - 1)];
     const p1 = points[index];
     const p2 = points[index + 1];
     const p3 = points[Math.min(points.length - 1, index + 2)];
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = p2.y - (p3.y - p1.y) / 6;
+    // A restrained Catmull-Rom conversion keeps the trail smooth without
+    // allowing control points to invent excursions beyond each observed edge.
+    const c1x = boundedControl(p1.x + (p2.x - p0.x) / 8, p1.x, p2.x);
+    const c1y = boundedControl(p1.y + (p2.y - p0.y) / 8, p1.y, p2.y);
+    const c2x = boundedControl(p2.x - (p3.x - p1.x) / 8, p1.x, p2.x);
+    const c2y = boundedControl(p2.y - (p3.y - p1.y) / 8, p1.y, p2.y);
     path += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
   }
   return path;
 }
 
-function downsample<T>(values: T[], maximum = 120): T[] {
-  if (values.length <= maximum) return values;
-  const result: T[] = [];
-  for (let index = 0; index < maximum; index += 1) {
-    result.push(values[Math.round(index * (values.length - 1) / (maximum - 1))]);
+interface ScopePlotPoint {
+  date: string;
+  sourceIndex: number;
+  x: number;
+  y: number;
+  rawX: number;
+  rawY: number;
+  marker: number | null;
+}
+
+interface ScopeStrokeChunk {
+  id: string;
+  points: ScopePlotPoint[];
+  startIndex: number;
+  endIndex: number;
+  opacity: number;
+  sourceEnd: number;
+  dashOffset: number;
+}
+
+function pointLineDistance(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (Math.abs(dx) + Math.abs(dy) < 1e-9) {
+    return Math.hypot(point.x - start.x, point.y - start.y);
   }
-  return result;
+  return Math.abs(dy * point.x - dx * point.y + end.x * start.y - end.y * start.x)
+    / Math.hypot(dx, dy);
+}
+
+function strongestInteriorPoint(
+  points: ScopePlotPoint[],
+  startIndex: number,
+  endIndex: number,
+): { index: number; distance: number } | null {
+  if (endIndex - startIndex <= 1) return null;
+  let strongestIndex = -1;
+  let strongestDistance = -1;
+  for (let index = startIndex + 1; index < endIndex; index += 1) {
+    const distance = pointLineDistance(points[index], points[startIndex], points[endIndex]);
+    if (distance > strongestDistance) {
+      strongestIndex = index;
+      strongestDistance = distance;
+    }
+  }
+  return strongestIndex >= 0 ? { index: strongestIndex, distance: strongestDistance } : null;
+}
+
+/**
+ * Budgeted Ramer-Douglas-Peucker-style simplification. Unlike uniform
+ * decimation, this keeps endpoints and repeatedly preserves the strongest
+ * turn, so a full-history path retains materially more of its visible shape.
+ */
+function simplifyScopePoints(points: ScopePlotPoint[], maximum = 240): ScopePlotPoint[] {
+  if (points.length <= maximum) return points;
+  const kept = new Set<number>([0, points.length - 1]);
+  const spans: Array<{ start: number; end: number; candidate: { index: number; distance: number } }> = [];
+  const firstCandidate = strongestInteriorPoint(points, 0, points.length - 1);
+  if (firstCandidate) spans.push({ start: 0, end: points.length - 1, candidate: firstCandidate });
+
+  while (kept.size < maximum && spans.length) {
+    spans.sort((left, right) => right.candidate.distance - left.candidate.distance);
+    const span = spans.shift();
+    if (!span) break;
+    const split = span.candidate.index;
+    kept.add(split);
+    const leftCandidate = strongestInteriorPoint(points, span.start, split);
+    const rightCandidate = strongestInteriorPoint(points, split, span.end);
+    if (leftCandidate) spans.push({ start: span.start, end: split, candidate: leftCandidate });
+    if (rightCandidate) spans.push({ start: split, end: span.end, candidate: rightCandidate });
+  }
+
+  return [...kept].sort((left, right) => left - right).map((index) => points[index]);
+}
+
+function scopePathLength(points: ScopePlotPoint[], startIndex: number, endIndex: number): number {
+  let length = 0;
+  for (let index = startIndex; index < endIndex; index += 1) {
+    length += Math.hypot(points[index + 1].x - points[index].x, points[index + 1].y - points[index].y);
+  }
+  return length;
+}
+
+function temporalStrokeChunks(
+  runs: ScopePlotPoint[][],
+  visibleCount: number,
+  view: MarketWeatherComparisonView,
+  maximumChunks = 28,
+): ScopeStrokeChunk[] {
+  const totalEdges = runs.reduce((sum, run) => sum + Math.max(0, run.length - 1), 0);
+  const edgesPerChunk = Math.max(1, Math.ceil(totalEdges / maximumChunks));
+  const dashPeriod = view === "benchmark" ? 12 : view === "difference" ? 6 : 0;
+  const denominator = Math.max(1, visibleCount - 1);
+  const chunks: ScopeStrokeChunk[] = [];
+
+  runs.forEach((points, runIndex) => {
+    let startIndex = 0;
+    let distanceBefore = 0;
+    while (startIndex < points.length - 1) {
+      const endIndex = Math.min(points.length - 1, startIndex + edgesPerChunk);
+      const sourceEnd = points[endIndex].sourceIndex;
+      const age = Math.max(0, Math.min(1, sourceEnd / denominator));
+      chunks.push({
+        id: `${runIndex}-${startIndex}-${endIndex}`,
+        points,
+        startIndex,
+        endIndex,
+        opacity: 0.08 + 0.92 * age * age,
+        sourceEnd,
+        dashOffset: dashPeriod ? -(distanceBefore % dashPeriod) : 0,
+      });
+      distanceBefore += scopePathLength(points, startIndex, endIndex);
+      startIndex = endIndex;
+    }
+  });
+
+  return chunks;
+}
+
+function nearestScopePoint(
+  points: ScopePlotPoint[],
+  x: number,
+  y: number,
+): ScopePlotPoint | null {
+  let closest: ScopePlotPoint | null = null;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  points.forEach((point) => {
+    const distance = (point.x - x) ** 2 + (point.y - y) ** 2;
+    if (distance < closestDistance || (distance === closestDistance && point.sourceIndex > (closest?.sourceIndex ?? -1))) {
+      closest = point;
+      closestDistance = distance;
+    }
+  });
+  return closest;
 }
 
 function downsampleNullable(values: Array<number | null>, maximum = 180): Array<number | null> {
@@ -486,6 +647,127 @@ function pointerSeriesIndex(
   return Math.round(fraction * (count - 1));
 }
 
+function formatMagnitude(value: number): string {
+  return Math.abs(value).toFixed(2);
+}
+
+function nearDisplayedZero(value: number): boolean {
+  return Math.abs(value) < 0.005;
+}
+
+function coordinateComparisonClause({
+  label,
+  value,
+  basis,
+  view,
+  subject,
+  targetSymbol,
+  benchmarkSymbol,
+}: {
+  label: string;
+  value: number;
+  basis: MarketWeatherComparisonBasis;
+  view: MarketWeatherComparisonView;
+  subject: string;
+  targetSymbol: string;
+  benchmarkSymbol: string;
+}): string {
+  const lowerLabel = label.toLowerCase();
+  if (view === "difference") {
+    if (nearDisplayedZero(value)) {
+      return basis === "context"
+        ? `${lowerLabel} is aligned on the two separate fit-relative scales`
+        : `${lowerLabel} is equal on the direct model scale`;
+    }
+    if (basis === "context") {
+      return `${targetSymbol}'s ${lowerLabel} is ${formatMagnitude(value)} fit-spread units ${value > 0 ? "more" : "less"} elevated versus its own fit history than ${benchmarkSymbol}'s`;
+    }
+    return `${targetSymbol}'s ${lowerLabel} is ${formatMagnitude(value)} ${value > 0 ? "higher" : "lower"} than ${benchmarkSymbol}'s on the direct model scale`;
+  }
+
+  if (basis === "context") {
+    if (nearDisplayedZero(value)) return `${subject}'s ${lowerLabel} is at its frozen fit median`;
+    return `${subject}'s ${lowerLabel} is ${formatMagnitude(value)} fit-spread units ${value > 0 ? "above" : "below"} its frozen fit median`;
+  }
+  return `${subject}'s ${lowerLabel} reads ${formatNumber(value)} on the direct model scale`;
+}
+
+function directDirectionalReading(subject: string, x: number, y: number): string {
+  if (nearDisplayedZero(x)) {
+    if (nearDisplayedZero(y)) return `${subject}'s pressure and pressure change are both visually near zero.`;
+    return `${subject}'s pressure is visually near zero while pressure change is moving ${y > 0 ? "more positive" : "more negative"}.`;
+  }
+  if (nearDisplayedZero(y)) return `${subject} has ${x > 0 ? "positive" : "negative"} pressure with little current pressure change.`;
+  const phase = x > 0
+    ? y > 0 ? "positive pressure that is strengthening" : "positive pressure that is fading"
+    : y < 0 ? "negative pressure that is strengthening" : "negative pressure that is fading";
+  return `${subject} has ${phase}. This describes the measured trend state, not expected return.`;
+}
+
+function directHigherMotionReading(subject: string, x: number, y: number): string {
+  if (nearDisplayedZero(x)) {
+    return `${subject}'s acceleration is visually near zero; jerk is ${nearDisplayedZero(y) ? "also near zero" : `moving ${y > 0 ? "more positive" : "more negative"}`}.`;
+  }
+  if (nearDisplayedZero(y)) return `${subject} has ${x > 0 ? "positive" : "negative"} acceleration with little current change in that acceleration.`;
+  const phase = x > 0
+    ? y > 0 ? "positive acceleration that is intensifying" : "positive acceleration that is easing"
+    : y > 0 ? "negative acceleration that is recovering" : "negative acceleration that is intensifying";
+  return `${subject} has ${phase}. Higher-order differences are especially sensitive to noise.`;
+}
+
+function scopeReading({
+  definition,
+  row,
+  basis,
+  view,
+  subject,
+  targetSymbol,
+  benchmarkSymbol,
+}: {
+  definition: ScopeDefinition;
+  row: { x: number; y: number } | undefined;
+  basis: MarketWeatherComparisonBasis;
+  view: MarketWeatherComparisonView;
+  subject: string;
+  targetSymbol: string;
+  benchmarkSymbol: string;
+}): string {
+  if (!row) return "There is not enough supported shared history to interpret this scope.";
+  if (basis === "native" && view !== "difference") {
+    if (definition.id === "direction") return directDirectionalReading(subject, row.x, row.y);
+    if (definition.id === "higher_motion") return directHigherMotionReading(subject, row.x, row.y);
+    if (definition.id === "organization") {
+      return `${subject}'s activity-and-agreement composite reads ${formatNumber(row.x)}, while ordinal disorder reads ${formatNumber(row.y)}. Neither is a quality or confidence score.`;
+    }
+    if (definition.id === "propagation") {
+      if (row.x < 0.08) {
+        return `${subject}'s cross-horizon spread reads ${formatNumber(row.x)}. With propagation near zero, the cascade orientation is not meaningful.`;
+      }
+      return `${subject}'s cross-horizon spread reads ${formatNumber(row.x)} and is oriented toward ${row.y >= 0 ? "larger, slower" : "smaller, faster"} horizons. This is a propagation analogue, not causal transmission.`;
+    }
+  }
+
+  const xClause = coordinateComparisonClause({
+    label: definition.xMeaning,
+    value: row.x,
+    basis,
+    view,
+    subject,
+    targetSymbol,
+    benchmarkSymbol,
+  });
+  const yClause = coordinateComparisonClause({
+    label: definition.yMeaning,
+    value: row.y,
+    basis,
+    view,
+    subject,
+    targetSymbol,
+    benchmarkSymbol,
+  });
+  return `${xClause}; ${yClause}.`;
+}
+
 function ScopeChart({
   definition,
   coordinates,
@@ -495,6 +777,7 @@ function ScopeChart({
   scale,
   selectedDate,
   onSelectedDateChange,
+  onScaleChange,
   targetSymbol,
   benchmarkSymbol,
 }: {
@@ -506,20 +789,27 @@ function ScopeChart({
   scale: ScopeScale;
   selectedDate: string | null;
   onSelectedDateChange: (date: string | null) => void;
+  onScaleChange: (scale: ScopeScale) => void;
   targetSymbol: string;
   benchmarkSymbol: string;
 }) {
+  const reactId = useId();
+  const instanceId = `scope-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const arrowId = `${instanceId}-arrow`;
+  const clipId = `${instanceId}-clip`;
+  const meaningId = `${instanceId}-meaning`;
+  const coordinateKeyId = `${instanceId}-coordinate-key`;
   const xCoordinate = coordinates.get(definition.x);
   const yCoordinate = coordinates.get(definition.y);
-  const colorCoordinate = coordinates.get(definition.color);
+  const markerCoordinate = coordinates.get(definition.marker);
   const visibleXSeries = useMemo(
     () => trail === "full" ? xCoordinate?.series ?? [] : xCoordinate?.series.slice(-trail) ?? [],
     [trail, xCoordinate],
   );
-  const rows = useMemo<Array<{ date: string; x: number; y: number; color: number | null } | null>>(() => {
+  const rows = useMemo<Array<{ date: string; x: number; y: number; marker: number | null } | null>>(() => {
     if (!xCoordinate || !yCoordinate) return [];
     const yByDate = new Map(yCoordinate.series.map((point) => [point.date, point]));
-    const colorByDate = new Map(colorCoordinate?.series.map((point) => [point.date, point]) ?? []);
+    const markerByDate = new Map(markerCoordinate?.series.map((point) => [point.date, point]) ?? []);
     return visibleXSeries.map((xPoint) => {
       const yPoint = yByDate.get(xPoint.date);
       if (!yPoint) return null;
@@ -537,134 +827,209 @@ function ScopeChart({
       const x = supportedValueForPoint(xPoint, basis, view);
       const y = supportedValueForPoint(yPoint, basis, view);
       if (!finite(x) || !finite(y)) return null;
-      const colorPoint = colorByDate.get(xPoint.date);
-      return { date: xPoint.date, x, y, color: colorPoint ? supportedValueForPoint(colorPoint, basis, view) : null };
+      const markerPoint = markerByDate.get(xPoint.date);
+      return {
+        date: xPoint.date,
+        x,
+        y,
+        marker: markerPoint ? supportedValueForPoint(markerPoint, basis, view) : null,
+      };
     });
-  }, [basis, colorCoordinate, view, visibleXSeries, xCoordinate, yCoordinate]);
+  }, [basis, markerCoordinate, view, visibleXSeries, xCoordinate, yCoordinate]);
 
-  const finiteRows = rows.filter((point): point is { date: string; x: number; y: number; color: number | null } => point !== null);
-  const allSubjects: MarketWeatherComparisonView[] = ["target", "benchmark", "difference"];
-  const sharedExtent = (
-    coordinate: MarketWeatherComparisonCoordinate | undefined,
-  ) => Math.max(
-    ...(coordinate?.series
-      .slice(trail === "full" ? 0 : -trail)
-      .flatMap((point) => allSubjects
-        .map((subject) => supportedValueForPoint(point, basis, subject))
-        .filter(finite)
-        .map(Math.abs)) ?? []),
-    1e-6,
-  );
-  const extentX = scale === "inspect"
-    ? Math.max(...finiteRows.map((row) => Math.abs(row.x)), 1e-6)
-    : sharedExtent(xCoordinate);
-  const extentY = scale === "inspect"
-    ? Math.max(...finiteRows.map((row) => Math.abs(row.y)), 1e-6)
-    : sharedExtent(yCoordinate);
-  const chartSegments: Array<Array<{ x: number; y: number }>> = [];
-  let segment: Array<{ x: number; y: number }> = [];
-  rows.forEach((point) => {
-    if (!point) {
-      if (segment.length) chartSegments.push(downsample(segment));
-      segment = [];
-      return;
-    }
-    segment.push({
-      x: 160 + (point.x / extentX) * 136,
-      y: 90 - (point.y / extentY) * 66,
+  const geometry = useMemo(() => {
+    const finiteRows = rows.filter(
+      (point): point is { date: string; x: number; y: number; marker: number | null } => point !== null,
+    );
+    const allSubjects: MarketWeatherComparisonView[] = ["target", "benchmark", "difference"];
+    const sharedExtent = (
+      coordinate: MarketWeatherComparisonCoordinate | undefined,
+    ) => Math.max(
+      ...(coordinate?.series
+        .slice(trail === "full" ? 0 : -trail)
+        .flatMap((point) => allSubjects
+          .map((subject) => supportedValueForPoint(point, basis, subject))
+          .filter(finite)
+          .map(Math.abs)) ?? []),
+      1e-6,
+    );
+    const selectedExtentX = Math.max(...finiteRows.map((row) => Math.abs(row.x)), 1e-6);
+    const selectedExtentY = Math.max(...finiteRows.map((row) => Math.abs(row.y)), 1e-6);
+    const sharedExtentX = sharedExtent(xCoordinate);
+    const sharedExtentY = sharedExtent(yCoordinate);
+    const extentX = (scale === "inspect" ? selectedExtentX : sharedExtentX) * 1.08;
+    const extentY = (scale === "inspect" ? selectedExtentY : sharedExtentY) * 1.08;
+    const rawRuns: ScopePlotPoint[][] = [];
+    let run: ScopePlotPoint[] = [];
+    rows.forEach((point, sourceIndex) => {
+      if (!point) {
+        if (run.length) rawRuns.push(run);
+        run = [];
+        return;
+      }
+      run.push({
+        date: point.date,
+        sourceIndex,
+        x: 160 + (point.x / extentX) * 136,
+        y: 90 - (point.y / extentY) * 66,
+        rawX: point.x,
+        rawY: point.y,
+        marker: point.marker,
+      });
     });
-  });
-  if (segment.length) chartSegments.push(downsample(segment));
-  const firstPoint = chartSegments[0]?.[0];
-  const latestPoint = chartSegments[chartSegments.length - 1]?.[chartSegments[chartSegments.length - 1].length - 1];
-  const latestColor = finiteRows[finiteRows.length - 1]?.color ?? 0;
+    if (run.length) rawRuns.push(run);
+    const rawPlotPoints = rawRuns.flat();
+    const totalPlotPoints = rawPlotPoints.length;
+    const chartRuns = rawRuns.map((points) => {
+      if (totalPlotPoints <= 240 || points.length <= 2) return points;
+      const allocated = Math.max(2, Math.floor(240 * points.length / totalPlotPoints));
+      return simplifyScopePoints(points, allocated);
+    });
+    return {
+      finiteRows,
+      firstPoint: rawPlotPoints[0],
+      latestPoint: rawPlotPoints[rawPlotPoints.length - 1],
+      rawPlotPoints,
+      selectedExtentX,
+      selectedExtentY,
+      sharedExtentX,
+      sharedExtentY,
+      strokeChunks: temporalStrokeChunks(chartRuns, rows.length, view),
+    };
+  }, [basis, rows, scale, trail, view, xCoordinate, yCoordinate]);
+  const {
+    finiteRows,
+    firstPoint,
+    latestPoint,
+    rawPlotPoints,
+    selectedExtentX,
+    selectedExtentY,
+    sharedExtentX,
+    sharedExtentY,
+    strokeChunks,
+  } = geometry;
+  const latestRow = finiteRows[finiteRows.length - 1];
+  const latestMarker = finite(latestRow?.marker) ? latestRow.marker : null;
   const stroke = view === "target" ? "#38bdf8" : view === "benchmark" ? "#a78bfa" : "#fbbf24";
   const strokeDasharray = seriesDash(view);
-  const thirdMagnitude = Math.min(1, Math.abs(latestColor) / Math.max(
-    ...finiteRows.map((row) => Math.abs(row.color ?? 0)),
-    1e-6,
-  ));
-  const thirdTone = latestColor > 0 ? "positive" : latestColor < 0 ? "negative" : "near zero";
+  const finiteMarkerValues = finiteRows.map((row) => row.marker).filter(finite);
+  const markerMagnitude = finite(latestMarker)
+    ? Math.min(1, Math.abs(latestMarker) / Math.max(...finiteMarkerValues.map(Math.abs), 1e-6))
+    : 0;
   const subject = view === "difference"
     ? `${targetSymbol} − ${benchmarkSymbol}`
     : view === "target" ? targetSymbol : benchmarkSymbol;
-  const latestRow = finiteRows[finiteRows.length - 1];
   const inspectedRow = selectedDate ? finiteRows.find((row) => row.date === selectedDate) : null;
   const displayedRow = inspectedRow ?? latestRow;
-  const inspectedPoint = inspectedRow
-    ? {
-      x: 160 + (inspectedRow.x / extentX) * 136,
-      y: 90 - (inspectedRow.y / extentY) * 66,
-    }
-    : null;
+  const inspectedPoint = selectedDate ? rawPlotPoints.find((point) => point.date === selectedDate) : null;
   const basisLabel = basis === "context" ? "relative to each instrument's own history" : "direct model scale";
+  const currentVisibleDate = visibleXSeries[visibleXSeries.length - 1]?.date ?? null;
+  const latestSupportedIsCurrent = Boolean(latestRow?.date && latestRow.date === currentVisibleDate);
+  const reading = scopeReading({
+    definition,
+    row: displayedRow,
+    basis,
+    view,
+    subject,
+    targetSymbol,
+    benchmarkSymbol,
+  });
+  const smallestSharedAxisUse = Math.min(
+    selectedExtentX / Math.max(sharedExtentX, 1e-6),
+    selectedExtentY / Math.max(sharedExtentY, 1e-6),
+  );
+  const sharedScaleCompressed = scale === "shared" && finiteRows.length > 1 && smallestSharedAxisUse < 0.18;
+  const inspectedLabel = inspectedRow
+    ? `Inspected ${inspectedRow.date}`
+    : latestRow?.date
+      ? `${latestSupportedIsCurrent ? "Latest" : "Latest supported"} ${latestRow.date}`
+      : "Unavailable";
+
+  const selectKeyboardPoint = (event: React.KeyboardEvent<SVGSVGElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !rawPlotPoints.length) return;
+    event.preventDefault();
+    const selectedIndex = selectedDate
+      ? rawPlotPoints.findIndex((point) => point.date === selectedDate)
+      : rawPlotPoints.length - 1;
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? rawPlotPoints.length - 1
+        : event.key === "ArrowLeft"
+          ? Math.max(0, (selectedIndex >= 0 ? selectedIndex : rawPlotPoints.length - 1) - 1)
+          : Math.min(rawPlotPoints.length - 1, (selectedIndex >= 0 ? selectedIndex : rawPlotPoints.length - 1) + 1);
+    onSelectedDateChange(rawPlotPoints[nextIndex]?.date ?? null);
+  };
 
   return (
     <article className="snap-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold text-white">{definition.title}</h3>
-          <p className="mt-0.5 text-[11px] leading-4 text-slate-400">{definition.description}</p>
+          <p className="mt-0.5 text-[11px] leading-4 text-slate-300">{definition.question}</p>
         </div>
-        <div className="text-right">
+        <div className="max-w-full text-right">
           <span className="shrink-0 rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-slate-300">{subject}</span>
-          <p className="mt-1 font-mono text-[9px] text-slate-400">
-            {inspectedRow?.date ? `${inspectedRow.date} · ` : ""}x {formatNumber(displayedRow?.x)} · y {formatNumber(displayedRow?.y)} · third {formatNumber(displayedRow?.color)}
+          <p className="mt-1 font-mono text-[9px] leading-4 text-slate-400">
+            {xCoordinate?.label ?? definition.x} {formatNumber(displayedRow?.x)} · {yCoordinate?.label ?? definition.y} {formatNumber(displayedRow?.y)} · {markerCoordinate?.label ?? definition.marker} {formatNumber(displayedRow?.marker)}
           </p>
         </div>
       </div>
+      <p id={meaningId} className="mt-2 rounded-lg border border-stealth-800 bg-slate-950/45 px-2.5 py-2 text-[10px] leading-4 text-slate-300">
+        <span className="mr-1.5 font-semibold uppercase tracking-[0.12em] text-sky-300">{inspectedLabel}</span>
+        {reading}
+        {!latestSupportedIsCurrent && !inspectedRow && latestRow ? " The current visible bar is unsupported for this scope." : ""}
+      </p>
       <svg
         viewBox="0 0 320 180"
-        className="mt-2 h-[154px] w-full touch-none"
+        className="mt-1 h-[154px] w-full touch-none rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40"
         role="img"
-        aria-label={`${definition.title} trajectory for ${subject}, ${basisLabel}. ${finiteRows.length} of ${rows.length} displayed observations supported. Latest supported x ${formatNumber(latestRow?.x)}, y ${formatNumber(latestRow?.y)}, third coordinate ${formatNumber(latestRow?.color)}.`}
+        tabIndex={0}
+        aria-describedby={`${meaningId} ${coordinateKeyId}`}
+        aria-label={`${definition.title} trajectory for ${subject}, ${basisLabel}; chronological trail. ${finiteRows.length} of ${rows.length} displayed observations supported. Oldest segments are faintest and newest segments are most opaque. Latest supported date ${latestRow?.date ?? "unavailable"}, x ${formatNumber(latestRow?.x)}, y ${formatNumber(latestRow?.y)}, third coordinate used for marker size ${formatNumber(latestMarker)}. Use Left and Right arrows to inspect supported dates.`}
         onPointerMove={(event) => {
-          const index = pointerSeriesIndex(event, visibleXSeries.length, 320, 24, 306);
-          onSelectedDateChange(visibleXSeries[index]?.date ?? null);
+          const rect = event.currentTarget.getBoundingClientRect();
+          const pointerX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 320;
+          const pointerY = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * 180;
+          onSelectedDateChange(nearestScopePoint(rawPlotPoints, pointerX, pointerY)?.date ?? null);
         }}
         onPointerLeave={() => onSelectedDateChange(null)}
+        onKeyDown={selectKeyboardPoint}
       >
         <defs>
-          <linearGradient id={`scope-${definition.id}-${view}`} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={stroke} stopOpacity=".12" />
-            <stop offset="66%" stopColor={stroke} stopOpacity=".55" />
-            <stop offset="100%" stopColor={stroke} stopOpacity="1" />
-          </linearGradient>
-          <marker id={`scope-arrow-${definition.id}-${view}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <clipPath id={clipId}>
+            <rect x="20" y="16" width="288" height="144" rx="4" />
+          </clipPath>
+          <marker id={arrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill={stroke} />
           </marker>
         </defs>
-        <line x1="24" x2="306" y1="90" y2="90" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
+        <rect x="24" y="19" width="272" height="139" rx="4" fill="rgba(2,6,23,.18)" stroke="rgba(51,65,85,.22)" />
+        <line x1="24" x2="296" y1="90" y2="90" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
         <line x1="160" x2="160" y1="19" y2="158" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
         {finiteRows.length ? (
-          <>
-            {chartSegments.map((points, index) => (
+          <g clipPath={`url(#${clipId})`}>
+            {strokeChunks.map((chunk, index) => (
               <path
-                key={`${definition.id}-${index}`}
-                d={smoothPath(points)}
+                key={`${definition.id}-${chunk.id}`}
+                d={smoothPath(chunk.points, chunk.startIndex, chunk.endIndex)}
                 fill="none"
-                stroke={`url(#scope-${definition.id}-${view})`}
+                stroke={stroke}
+                strokeOpacity={chunk.opacity}
                 strokeWidth="2.1"
                 strokeDasharray={strokeDasharray}
+                strokeDashoffset={chunk.dashOffset}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
+                markerEnd={index === strokeChunks.length - 1 ? `url(#${arrowId})` : undefined}
+                data-scope-trail-segment="true"
+                data-source-end={chunk.sourceEnd}
+                data-age-opacity={chunk.opacity.toFixed(4)}
               />
             ))}
             {firstPoint ? (
               <SeriesPointMarker view={view} x={firstPoint.x} y={firstPoint.y} stroke={stroke} size={2.7} />
-            ) : null}
-            {latestPoint && chartSegments[chartSegments.length - 1]?.length > 1 ? (
-              <line
-                x1={chartSegments[chartSegments.length - 1][chartSegments[chartSegments.length - 1].length - 2].x}
-                y1={chartSegments[chartSegments.length - 1][chartSegments[chartSegments.length - 1].length - 2].y}
-                x2={latestPoint.x}
-                y2={latestPoint.y}
-                stroke={stroke}
-                strokeWidth="2.1"
-                strokeDasharray={strokeDasharray}
-                markerEnd={`url(#scope-arrow-${definition.id}-${view})`}
-              />
             ) : null}
             {latestPoint ? (
               <SeriesPointMarker
@@ -672,21 +1037,35 @@ function ScopeChart({
                 x={latestPoint.x}
                 y={latestPoint.y}
                 stroke={stroke}
-                size={4.2 + thirdMagnitude * 2.2}
+                size={4.2 + markerMagnitude * 2.2}
                 emphasized
               />
             ) : null}
             {inspectedPoint ? <circle cx={inspectedPoint.x} cy={inspectedPoint.y} r="6.5" fill="none" stroke="#f8fafc" strokeWidth="1.2" strokeDasharray="2 2" /> : null}
-          </>
+          </g>
         ) : (
           <text x="160" y="94" textAnchor="middle" fill="#64748b" fontSize="11">Not enough shared support</text>
         )}
         <text x="160" y="176" textAnchor="middle" fill="#64748b" fontSize="9">{xCoordinate?.label ?? definition.x} →</text>
         <text x="7" y="90" textAnchor="middle" fill="#64748b" fontSize="9" transform="rotate(-90 7 90)">{yCoordinate?.label ?? definition.y} →</text>
       </svg>
-      <p className="text-[10px] leading-4 text-slate-400">
-        {scale === "shared" ? "Shared subject scale" : "Zoomed to the selected trajectory"} · {view === "target" ? "solid/circle target" : view === "benchmark" ? "dashed/diamond benchmark" : "dotted/square difference"} · older observations fade · third measure is {thirdTone} and changes current-marker size
+      <p id={coordinateKeyId} className="text-[10px] leading-4 text-slate-400">
+        <span className="text-slate-300">Horizontal</span> {definition.xMeaning} · <span className="text-slate-300">Vertical</span> {definition.yMeaning} · <span className="text-slate-300">Marker size</span> magnitude of {definition.markerMeaning}, scaled only within this visible trail{finite(latestMarker) ? ` (latest ${formatNumber(latestMarker)})` : " (unavailable)"}. {definition.caution}
       </p>
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[9px] leading-4 text-slate-500">
+        <span>
+          {scale === "shared" ? "Compare-subject scale" : "Fit-selected-trail scale"} · {view === "target" ? "solid/circle target" : view === "benchmark" ? "dashed/diamond benchmark" : "dotted/square difference"} · opacity follows age, not screen position
+        </span>
+        {sharedScaleCompressed ? (
+          <button
+            type="button"
+            onClick={() => onScaleChange("inspect")}
+            className="min-h-8 rounded-md border border-amber-400/30 bg-amber-400/[0.08] px-2 text-[9px] font-medium text-amber-200 transition hover:bg-amber-400/[0.14]"
+          >
+            Fit trail for detail
+          </button>
+        ) : null}
+      </div>
     </article>
   );
 }
@@ -1560,7 +1939,7 @@ export default function MarketWeatherComparisonLab({
                   <h3 className="mt-1 text-sm font-semibold text-white">How field coordinates are displayed</h3>
                   <p className="mt-1 text-[11px] leading-5 text-slate-400">
                     {basis === "context"
-                      ? "Own-history-relative gap: the difference after each instrument is standardized against its separate frozen proper-fit history."
+                      ? "Own-history-relative gap: each instrument is measured against its separate frozen proper-fit history. One fit-spread unit is one stored robust fit scale—not a z-score, probability, or raw market unit."
                       : "Direct model-scale gap: target coordinate minus benchmark coordinate under the shared field recipe."}
                   </p>
                 </div>
@@ -1608,22 +1987,22 @@ export default function MarketWeatherComparisonLab({
                 <div className="flex flex-wrap gap-2">
                   <div className="inline-flex rounded-lg border border-stealth-700 bg-slate-950/50 p-0.5" role="group" aria-label="Scope trail length">
                     {([12, 24, 72, "full"] as const).map((option) => (
-                      <button key={option} type="button" onClick={() => setActiveTrail(option)} aria-pressed={activeTrail === option} className={`min-h-10 rounded-md px-2.5 text-[10px] sm:min-h-8 ${activeTrail === option ? "bg-sky-400/15 text-sky-200" : "text-slate-400"}`}>
+                      <button key={option} type="button" onClick={() => setActiveTrail(option)} aria-pressed={activeTrail === option} className={`min-h-10 rounded-md px-2.5 text-[10px] ${activeTrail === option ? "bg-sky-400/15 text-sky-200" : "text-slate-400"}`}>
                         {option === "full" ? "Full" : option}
                       </button>
                     ))}
                   </div>
                   <div className="inline-flex rounded-lg border border-stealth-700 bg-slate-950/50 p-0.5" role="group" aria-label="Scope scale">
                     {(["shared", "inspect"] as const).map((option) => (
-                      <button key={option} type="button" onClick={() => setActiveScale(option)} aria-pressed={activeScale === option} className={`min-h-10 rounded-md px-2.5 text-[10px] sm:min-h-8 ${activeScale === option ? "bg-amber-400/15 text-amber-200" : "text-slate-400"}`}>
-                        {option === "shared" ? "Shared scale" : "Inspect selected"}
+                      <button key={option} type="button" onClick={() => setActiveScale(option)} aria-pressed={activeScale === option} className={`min-h-10 rounded-md px-2.5 text-[10px] ${activeScale === option ? "bg-amber-400/15 text-amber-200" : "text-slate-400"}`}>
+                        {option === "shared" ? "Compare subjects" : "Fit selected trail"}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
               <p className="mb-2 text-[10px] leading-4 text-slate-400">
-                Redundant encodings identify {data.target.symbol} (cyan, solid, circle), {data.benchmark.symbol} (purple, dashed, diamond), and their difference (amber, dotted, square). Hover or touch a chart to inspect the same shared date across visible field charts{inspectedDate ? ` (${inspectedDate})` : ""}. Older observations fade; unsupported paths remain broken; trajectories are not inferred cycles.
+                Each scope asks a market-state question, then connects the two measurements through shared time—there is no time axis inside the plot. Newer path segments are more opaque regardless of screen position. Hover, touch, or use arrow keys on a chart to inspect the same shared date across visible field charts{inspectedDate ? ` (${inspectedDate})` : ""}. Loops mean the coordinates revisited similar combinations; they are not detected cycles, lead-lag evidence, or forecasts.
               </p>
               <div className="lg:hidden">
                 <div className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-4" role="group" aria-label="Relationship scope">
@@ -1650,6 +2029,7 @@ export default function MarketWeatherComparisonLab({
                     scale={activeScale}
                     selectedDate={inspectedDate}
                     onSelectedDateChange={setInspectedDate}
+                    onScaleChange={setActiveScale}
                     targetSymbol={data.target.symbol}
                     benchmarkSymbol={data.benchmark.symbol}
                   />
@@ -1667,6 +2047,7 @@ export default function MarketWeatherComparisonLab({
                     scale={activeScale}
                     selectedDate={inspectedDate}
                     onSelectedDateChange={setInspectedDate}
+                    onScaleChange={setActiveScale}
                     targetSymbol={data.target.symbol}
                     benchmarkSymbol={data.benchmark.symbol}
                   />
