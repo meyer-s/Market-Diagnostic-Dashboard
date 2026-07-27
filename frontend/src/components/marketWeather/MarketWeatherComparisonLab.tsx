@@ -1,5 +1,15 @@
-import { useMemo } from "react";
-import { ArrowRightLeft, CheckCircle2, Info, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowRight,
+  ArrowRightLeft,
+  CheckCircle2,
+  ClipboardCopy,
+  Download,
+  FileCheck2,
+  Info,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 
 import type {
   MarketWeatherComparisonBasis,
@@ -7,17 +17,30 @@ import type {
   MarketWeatherComparisonResponse,
   MarketWeatherComparisonSeriesPoint,
   MarketWeatherComparisonView,
+  MarketWeatherPairCoordinateOrder,
+  MarketWeatherPairScopeScale,
+  MarketWeatherPairScopeTrail,
+  MarketWeatherPairTab,
   MarketWeatherTimeframe,
 } from "../../types/marketWeather";
+import { buildMarketWeatherPairSummary } from "../../utils/marketWeatherPairSummary";
 
 interface MarketWeatherComparisonLabProps {
   data: MarketWeatherComparisonResponse;
   basis: MarketWeatherComparisonBasis;
   view: MarketWeatherComparisonView;
   selectedDimension: string;
+  tab?: PairTab;
+  scopeTrail?: ScopeTrail;
+  scopeScale?: ScopeScale;
+  coordinateOrder?: CoordinateOrder;
   onBasisChange: (basis: MarketWeatherComparisonBasis) => void;
   onViewChange: (view: MarketWeatherComparisonView) => void;
   onDimensionChange: (dimension: string) => void;
+  onTabChange?: (tab: PairTab) => void;
+  onScopeTrailChange?: (trail: ScopeTrail) => void;
+  onScopeScaleChange?: (scale: ScopeScale) => void;
+  onCoordinateOrderChange?: (order: CoordinateOrder) => void;
 }
 
 interface ScopeDefinition {
@@ -33,7 +56,7 @@ const SCOPE_DEFINITIONS: ScopeDefinition[] = [
   {
     id: "direction",
     title: "Directional phase",
-    description: "Pressure × velocity; latest supported hue reflects organization.",
+    description: "Pressure × velocity; the current-point halo reflects Structure.",
     x: "pressure",
     y: "velocity",
     color: "structure",
@@ -41,15 +64,15 @@ const SCOPE_DEFINITIONS: ScopeDefinition[] = [
   {
     id: "higher_motion",
     title: "Higher motion",
-    description: "Acceleration × jerk; latest supported hue reflects snap.",
+    description: "Acceleration × jerk; the current-point halo reflects Snap.",
     x: "acceleration",
     y: "jerk",
     color: "snap",
   },
   {
     id: "organization",
-    title: "Organization",
-    description: "Structure × information; latest supported hue reflects kinematics.",
+    title: "Structure & information",
+    description: "Structure × information; the current-point halo reflects Kinematics.",
     x: "structure",
     y: "information",
     color: "kinematics",
@@ -57,7 +80,7 @@ const SCOPE_DEFINITIONS: ScopeDefinition[] = [
   {
     id: "propagation",
     title: "Propagation & carriers",
-    description: "Propagation × cascade bias; latest supported hue reflects liquidity stress.",
+    description: "Propagation × cascade bias; the current-point halo reflects Liquidity Stress.",
     x: "propagation",
     y: "cascade_bias",
     color: "liquidity_stress_carrier",
@@ -69,6 +92,82 @@ const FAMILY_LABELS: Record<string, string> = {
   field_transform: "Field",
   ohlcv_carrier: "Carrier",
 };
+
+const FAMILY_ORDER = ["pressure_state", "field_transform", "ohlcv_carrier"] as const;
+
+const COORDINATE_GUIDANCE: Record<string, { definition: string; higher: string }> = {
+  pressure: {
+    definition: "Bounded signed multihorizon directional pressure.",
+    higher: "Higher means more positive measured pressure, not better expected performance.",
+  },
+  velocity: {
+    definition: "First causal time difference of directional pressure.",
+    higher: "Higher means pressure is changing in a more positive direction.",
+  },
+  acceleration: {
+    definition: "Second causal time difference of directional pressure.",
+    higher: "Higher means the pressure-change rate is becoming more positive.",
+  },
+  jerk: {
+    definition: "Third causal time difference of directional pressure.",
+    higher: "Higher means acceleration is changing in a more positive direction.",
+  },
+  snap: {
+    definition: "Fourth causal time difference of directional pressure.",
+    higher: "Higher is a signed higher-order motion measurement, not a quality score.",
+  },
+  structure: {
+    definition: "Implemented blend of directional activity and cross-horizon agreement.",
+    higher: "Higher means more of the recipe's activity/agreement composite; its flat-field anchor is nonzero.",
+  },
+  kinematics: {
+    definition: "Magnitude-weighted summary of pressure derivatives.",
+    higher: "Higher means more measured reorganization across derivative orders.",
+  },
+  geometry: {
+    definition: "Boundary and scale-derivative magnitude across the horizon field.",
+    higher: "Higher means more measured horizon-shape activity.",
+  },
+  information: {
+    definition: "Permutation-entropy and disorder blend under the fixed recipe.",
+    higher: "Higher means greater measured ordinal disorder; it is parameter-sensitive.",
+  },
+  propagation: {
+    definition: "Mean cross-horizon propagation strength.",
+    higher: "Higher means stronger measured transmission across configured horizons.",
+  },
+  cascade_bias: {
+    definition: "Signed direction of cross-horizon propagation.",
+    higher: "Higher means the measured cascade is oriented toward longer horizons.",
+  },
+  scaling_exponent: {
+    definition: "Log-horizon slope of realized variation.",
+    higher: "Higher means realized variation grows faster across the configured horizon grid.",
+  },
+  volatility_carrier: {
+    definition: "Realized-volatility level relative to its causal baseline.",
+    higher: "Higher means more realized variation relative to that instrument's baseline.",
+  },
+  participation_carrier: {
+    definition: "Volume participation relative to its causal baseline.",
+    higher: "Higher means more volume participation relative to that instrument's baseline.",
+  },
+  liquidity_stress_carrier: {
+    definition: "Price-impact proxy relative to its causal baseline.",
+    higher: "Higher means more measured liquidity stress relative to that instrument's baseline.",
+  },
+};
+
+type PairTab = MarketWeatherPairTab;
+type ScopeTrail = MarketWeatherPairScopeTrail;
+type ScopeScale = MarketWeatherPairScopeScale;
+type CoordinateOrder = MarketWeatherPairCoordinateOrder;
+
+const PAIR_TAB_OPTIONS: Array<{ id: PairTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "field", label: "Field detail" },
+  { id: "audit", label: "Audit receipt" },
+];
 
 function finite(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value);
@@ -96,6 +195,83 @@ function formatDate(value: string | null | undefined, timeframe: MarketWeatherTi
   return ["1D", "1W"].includes(timeframe)
     ? date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
     : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function separationLabel(value: string): string {
+  if (value === "widening") return "Field separation widening";
+  if (value === "converging") return "Field separation narrowing";
+  if (value === "mixed") return "No clear net change";
+  return "Insufficient shared support";
+}
+
+function betaChainStart(data: MarketWeatherComparisonResponse): string | null {
+  let start: string | null = null;
+  for (let index = 0; index < data.price_series.length; index += 1) {
+    const value = data.price_series[index]?.beta_adjusted_cumulative_return;
+    if (!finite(value)) {
+      start = null;
+    } else if (start === null) {
+      start = data.price_series[index]?.date ?? null;
+    }
+  }
+  return start;
+}
+
+function latestRelativeIndex(data: MarketWeatherComparisonResponse): number | null {
+  for (let index = data.price_series.length - 1; index >= 0; index -= 1) {
+    const value = data.price_series[index]?.relative_index;
+    if (finite(value)) return value;
+  }
+  return null;
+}
+
+function relationshipStretchValues(data: MarketWeatherComparisonResponse): {
+  latest: number | null;
+  previous: number | null;
+} {
+  const familyPairs = new Map<string, Array<[number, number]>>();
+  const observedFamilies = new Set(data.coordinates.map((coordinate) => coordinate.family));
+  data.coordinates.forEach((coordinate) => {
+    if (coordinate.series.length < 6) return;
+    const latest = coordinate.series[coordinate.series.length - 1]?.context_difference;
+    const previous = coordinate.series[coordinate.series.length - 6]?.context_difference;
+    const latestRow = coordinate.series[coordinate.series.length - 1];
+    const previousRow = coordinate.series[coordinate.series.length - 6];
+    if (
+      latestRow?.target_supported === false
+      || latestRow?.benchmark_supported === false
+      || latestRow?.pair_supported === false
+      || previousRow?.target_supported === false
+      || previousRow?.benchmark_supported === false
+      || previousRow?.pair_supported === false
+    ) return;
+    if (!finite(latest) || !finite(previous)) return;
+    const pairs = familyPairs.get(coordinate.family) ?? [];
+    pairs.push([latest, previous]);
+    familyPairs.set(coordinate.family, pairs);
+  });
+  if (!observedFamilies.size || [...observedFamilies].some((family) => !familyPairs.has(family))) {
+    return { latest: null, previous: null };
+  }
+  const means = (position: 0 | 1) => {
+    const familyMeans = [...familyPairs.values()].map(
+      (pairs) => pairs.reduce((sum, pair) => sum + Math.abs(pair[position]), 0) / pairs.length,
+    );
+    return familyMeans.reduce((sum, value) => sum + value, 0) / familyMeans.length;
+  };
+  return { latest: means(0), previous: means(1) };
+}
+
+function fiveBarChange(
+  coordinate: MarketWeatherComparisonCoordinate,
+  basis: MarketWeatherComparisonBasis,
+): number | null {
+  if (coordinate.series.length < 6) return null;
+  const current = coordinate.series[coordinate.series.length - 1];
+  const previous = coordinate.series[coordinate.series.length - 6];
+  const currentValue = basis === "context" ? current?.context_difference : current?.native_difference;
+  const previousValue = basis === "context" ? previous?.context_difference : previous?.native_difference;
+  return finite(currentValue) && finite(previousValue) ? currentValue - previousValue : null;
 }
 
 function valueForPoint(
@@ -209,11 +385,29 @@ function downsampleNullable(values: Array<number | null>, maximum = 180): Array<
   return result;
 }
 
+function pointerSeriesIndex(
+  event: React.PointerEvent<SVGSVGElement>,
+  count: number,
+  viewBoxWidth: number,
+  left: number,
+  right: number,
+): number {
+  if (count <= 1) return 0;
+  const rect = event.currentTarget.getBoundingClientRect();
+  const viewX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * viewBoxWidth;
+  const fraction = Math.max(0, Math.min(1, (viewX - left) / Math.max(1, right - left)));
+  return Math.round(fraction * (count - 1));
+}
+
 function ScopeChart({
   definition,
   coordinates,
   basis,
   view,
+  trail,
+  scale,
+  selectedDate,
+  onSelectedDateChange,
   targetSymbol,
   benchmarkSymbol,
 }: {
@@ -221,17 +415,25 @@ function ScopeChart({
   coordinates: Map<string, MarketWeatherComparisonCoordinate>;
   basis: MarketWeatherComparisonBasis;
   view: MarketWeatherComparisonView;
+  trail: ScopeTrail;
+  scale: ScopeScale;
+  selectedDate: string | null;
+  onSelectedDateChange: (date: string | null) => void;
   targetSymbol: string;
   benchmarkSymbol: string;
 }) {
   const xCoordinate = coordinates.get(definition.x);
   const yCoordinate = coordinates.get(definition.y);
   const colorCoordinate = coordinates.get(definition.color);
-  const rows = useMemo<Array<{ x: number; y: number; color: number | null } | null>>(() => {
+  const visibleXSeries = useMemo(
+    () => trail === "full" ? xCoordinate?.series ?? [] : xCoordinate?.series.slice(-trail) ?? [],
+    [trail, xCoordinate],
+  );
+  const rows = useMemo<Array<{ date: string; x: number; y: number; color: number | null } | null>>(() => {
     if (!xCoordinate || !yCoordinate) return [];
     const yByDate = new Map(yCoordinate.series.map((point) => [point.date, point]));
     const colorByDate = new Map(colorCoordinate?.series.map((point) => [point.date, point]) ?? []);
-    return xCoordinate.series.map((xPoint) => {
+    return visibleXSeries.map((xPoint) => {
       const yPoint = yByDate.get(xPoint.date);
       if (!yPoint) return null;
       const supported = view === "target"
@@ -249,20 +451,29 @@ function ScopeChart({
       const y = supportedValueForPoint(yPoint, basis, view);
       if (!finite(x) || !finite(y)) return null;
       const colorPoint = colorByDate.get(xPoint.date);
-      return { x, y, color: colorPoint ? supportedValueForPoint(colorPoint, basis, view) : null };
+      return { date: xPoint.date, x, y, color: colorPoint ? supportedValueForPoint(colorPoint, basis, view) : null };
     });
-  }, [basis, colorCoordinate, view, xCoordinate, yCoordinate]);
+  }, [basis, colorCoordinate, view, visibleXSeries, xCoordinate, yCoordinate]);
 
-  const finiteRows = rows.filter((point): point is { x: number; y: number; color: number | null } => point !== null);
+  const finiteRows = rows.filter((point): point is { date: string; x: number; y: number; color: number | null } => point !== null);
   const allSubjects: MarketWeatherComparisonView[] = ["target", "benchmark", "difference"];
-  const extentX = Math.max(
-    ...(xCoordinate?.series.flatMap((point) => allSubjects.map((subject) => supportedValueForPoint(point, basis, subject)).filter(finite).map(Math.abs)) ?? []),
+  const sharedExtent = (
+    coordinate: MarketWeatherComparisonCoordinate | undefined,
+  ) => Math.max(
+    ...(coordinate?.series
+      .slice(trail === "full" ? 0 : -trail)
+      .flatMap((point) => allSubjects
+        .map((subject) => supportedValueForPoint(point, basis, subject))
+        .filter(finite)
+        .map(Math.abs)) ?? []),
     1e-6,
   );
-  const extentY = Math.max(
-    ...(yCoordinate?.series.flatMap((point) => allSubjects.map((subject) => supportedValueForPoint(point, basis, subject)).filter(finite).map(Math.abs)) ?? []),
-    1e-6,
-  );
+  const extentX = scale === "inspect"
+    ? Math.max(...finiteRows.map((row) => Math.abs(row.x)), 1e-6)
+    : sharedExtent(xCoordinate);
+  const extentY = scale === "inspect"
+    ? Math.max(...finiteRows.map((row) => Math.abs(row.y)), 1e-6)
+    : sharedExtent(yCoordinate);
   const chartSegments: Array<Array<{ x: number; y: number }>> = [];
   let segment: Array<{ x: number; y: number }> = [];
   rows.forEach((point) => {
@@ -277,12 +488,27 @@ function ScopeChart({
     });
   });
   if (segment.length) chartSegments.push(downsample(segment));
+  const firstPoint = chartSegments[0]?.[0];
   const latestPoint = chartSegments[chartSegments.length - 1]?.[chartSegments[chartSegments.length - 1].length - 1];
   const latestColor = finiteRows[finiteRows.length - 1]?.color ?? 0;
-  const stroke = latestColor >= 0 ? "#5eead4" : "#c4b5fd";
+  const stroke = view === "target" ? "#38bdf8" : view === "benchmark" ? "#a78bfa" : "#fbbf24";
+  const thirdMagnitude = Math.min(1, Math.abs(latestColor) / Math.max(
+    ...finiteRows.map((row) => Math.abs(row.color ?? 0)),
+    1e-6,
+  ));
+  const thirdTone = latestColor > 0 ? "positive" : latestColor < 0 ? "negative" : "near zero";
   const subject = view === "difference"
     ? `${targetSymbol} − ${benchmarkSymbol}`
     : view === "target" ? targetSymbol : benchmarkSymbol;
+  const latestRow = finiteRows[finiteRows.length - 1];
+  const inspectedRow = selectedDate ? finiteRows.find((row) => row.date === selectedDate) : null;
+  const displayedRow = inspectedRow ?? latestRow;
+  const inspectedPoint = inspectedRow
+    ? {
+      x: 160 + (inspectedRow.x / extentX) * 136,
+      y: 90 - (inspectedRow.y / extentY) * 66,
+    }
+    : null;
 
   return (
     <article className="snap-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
@@ -291,15 +517,33 @@ function ScopeChart({
           <h3 className="text-sm font-semibold text-white">{definition.title}</h3>
           <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{definition.description}</p>
         </div>
-        <span className="shrink-0 rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-slate-400">{subject}</span>
+        <div className="text-right">
+          <span className="shrink-0 rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-slate-300">{subject}</span>
+          <p className="mt-1 font-mono text-[9px] text-slate-500">
+            {inspectedRow?.date ? `${inspectedRow.date} · ` : ""}x {formatNumber(displayedRow?.x)} · y {formatNumber(displayedRow?.y)} · third {formatNumber(displayedRow?.color)}
+          </p>
+        </div>
       </div>
-      <svg viewBox="0 0 320 180" className="mt-2 h-[154px] w-full" role="img" aria-label={`${definition.title} phase path for ${subject}`}>
+      <svg
+        viewBox="0 0 320 180"
+        className="mt-2 h-[154px] w-full touch-none"
+        role="img"
+        aria-label={`${definition.title} trajectory for ${subject}`}
+        onPointerMove={(event) => {
+          const index = pointerSeriesIndex(event, visibleXSeries.length, 320, 24, 306);
+          onSelectedDateChange(visibleXSeries[index]?.date ?? null);
+        }}
+        onPointerLeave={() => onSelectedDateChange(null)}
+      >
         <defs>
           <linearGradient id={`scope-${definition.id}-${view}`} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#334155" stopOpacity=".25" />
-            <stop offset="66%" stopColor={stroke} stopOpacity=".58" />
+            <stop offset="0%" stopColor={stroke} stopOpacity=".12" />
+            <stop offset="66%" stopColor={stroke} stopOpacity=".55" />
             <stop offset="100%" stopColor={stroke} stopOpacity="1" />
           </linearGradient>
+          <marker id={`scope-arrow-${definition.id}-${view}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={stroke} />
+          </marker>
         </defs>
         <line x1="24" x2="306" y1="90" y2="90" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
         <line x1="160" x2="160" y1="19" y2="158" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
@@ -317,7 +561,20 @@ function ScopeChart({
                 vectorEffect="non-scaling-stroke"
               />
             ))}
-            {latestPoint ? <circle cx={latestPoint.x} cy={latestPoint.y} r="4.5" fill={stroke} stroke="#e2e8f0" strokeWidth="1.5" /> : null}
+            {firstPoint ? <circle cx={firstPoint.x} cy={firstPoint.y} r="2.7" fill="#0f172a" stroke={stroke} strokeWidth="1.2" /> : null}
+            {latestPoint && chartSegments[chartSegments.length - 1]?.length > 1 ? (
+              <line
+                x1={chartSegments[chartSegments.length - 1][chartSegments[chartSegments.length - 1].length - 2].x}
+                y1={chartSegments[chartSegments.length - 1][chartSegments[chartSegments.length - 1].length - 2].y}
+                x2={latestPoint.x}
+                y2={latestPoint.y}
+                stroke={stroke}
+                strokeWidth="2.1"
+                markerEnd={`url(#scope-arrow-${definition.id}-${view})`}
+              />
+            ) : null}
+            {latestPoint ? <circle cx={latestPoint.x} cy={latestPoint.y} r={4.2 + thirdMagnitude * 2.2} fill={stroke} stroke="#e2e8f0" strokeWidth={1.2 + thirdMagnitude * 0.8} /> : null}
+            {inspectedPoint ? <circle cx={inspectedPoint.x} cy={inspectedPoint.y} r="6.5" fill="none" stroke="#f8fafc" strokeWidth="1.2" strokeDasharray="2 2" /> : null}
           </>
         ) : (
           <text x="160" y="94" textAnchor="middle" fill="#64748b" fontSize="11">Not enough shared support</text>
@@ -325,7 +582,9 @@ function ScopeChart({
         <text x="160" y="176" textAnchor="middle" fill="#64748b" fontSize="9">{xCoordinate?.label ?? definition.x} →</text>
         <text x="7" y="90" textAnchor="middle" fill="#64748b" fontSize="9" transform="rotate(-90 7 90)">{yCoordinate?.label ?? definition.y} →</text>
       </svg>
-      <p className="text-[10px] leading-4 text-slate-500">Shared subject domain · latest supported hue: teal ≥ 0, violet &lt; 0 · gaps remain broken · no cycle inference</p>
+      <p className="text-[10px] leading-4 text-slate-500">
+        {scale === "shared" ? "Shared subject scale" : "Zoomed to the selected trajectory"} · older observations fade · third measure is {thirdTone} and changes only the current-point halo
+      </p>
     </article>
   );
 }
@@ -358,8 +617,9 @@ function scaledLanePath(
   top: number,
   height: number,
   centered = false,
+  anchors: number[] = [],
 ): string {
-  const finiteValues = values.filter(finite);
+  const finiteValues = [...values.filter(finite), ...anchors];
   if (!finiteValues.length) return "";
   const minimum = centered ? -Math.max(...finiteValues.map(Math.abs), 1e-9) : Math.min(...finiteValues);
   const maximum = centered ? Math.max(...finiteValues.map(Math.abs), 1e-9) : Math.max(...finiteValues);
@@ -385,47 +645,159 @@ function scaledLanePath(
   return segments.join(" ");
 }
 
+function scaledLaneY(
+  value: number,
+  values: Array<number | null>,
+  top: number,
+  height: number,
+  centered = false,
+): number {
+  const finiteValues = values.filter(finite);
+  if (!finiteValues.length) return top + height / 2;
+  const minimum = centered ? -Math.max(...finiteValues.map(Math.abs), 1e-9) : Math.min(...finiteValues);
+  const maximum = centered ? Math.max(...finiteValues.map(Math.abs), 1e-9) : Math.max(...finiteValues);
+  const span = Math.max(maximum - minimum, 1e-9);
+  return top + height - ((value - minimum) / span) * height;
+}
+
 function RelativeProgressTrace({
   data,
+  selectedDate,
+  onSelectedDateChange,
 }: {
   data: MarketWeatherComparisonResponse;
+  selectedDate: string | null;
+  onSelectedDateChange: (date: string | null) => void;
 }) {
-  const rows = downsample(data.price_series, 180);
+  const [mobileLane, setMobileLane] = useState<"relative" | "beta">("relative");
+  // Keep the complete aligned sequence here so null beta rows remain visible
+  // chain breaks rather than being bridged by generic point sampling.
+  const rows = data.price_series;
   const relative = rows.map((point) => point.relative_index);
-  const betaResidual = rows.map((point) => point.beta_adjusted_cumulative_return ?? null);
+  const betaAdjusted = rows.map((point) => point.beta_adjusted_cumulative_return ?? null);
   const latestRelative = [...relative].reverse().find(finite);
-  const latestResidual = [...betaResidual].reverse().find(finite);
+  const latestBetaAdjusted = [...betaAdjusted].reverse().find(finite);
+  const relativeBaselineY = scaledLaneY(100, [...relative, 100], 18, 62);
+  const betaBaselineY = scaledLaneY(0, [...betaAdjusted, 0], 111, 64, true);
+  const latestRelativeY = finite(latestRelative)
+    ? scaledLaneY(latestRelative, [...relative, 100], 18, 62)
+    : 27;
+  const latestBetaAdjustedY = finite(latestBetaAdjusted)
+    ? scaledLaneY(latestBetaAdjusted, [...betaAdjusted, 0], 111, 64, true)
+    : 121;
+  const chainStart = data.relative_progress.beta_adjusted_chain_start_at ?? betaChainStart(data);
+  const fullChainStartDates = new Set(data.price_series.flatMap((point, index) => (
+    point.beta_adjusted_chain_start === true
+      || (
+        finite(point.beta_adjusted_cumulative_return)
+        && (index === 0 || !finite(data.price_series[index - 1]?.beta_adjusted_cumulative_return))
+      )
+      ? [point.date]
+      : []
+  )));
+  const chainStarts = rows.flatMap((point, index) => fullChainStartDates.has(point.date) ? [index] : []);
+  const relativeStart = rows[0]?.date ?? null;
+  const latestBeta = data.relative_progress.beta;
+  const denominator = Math.max(1, rows.length - 1);
+  const inspectedIndex = selectedDate ? rows.findIndex((row) => row.date === selectedDate) : -1;
+  const inspectedRow = inspectedIndex >= 0 ? rows[inspectedIndex] : null;
+  const displayedRelative = inspectedRow?.relative_index ?? latestRelative;
+  const displayedBetaAdjusted = inspectedRow?.beta_adjusted_cumulative_return ?? latestBetaAdjusted;
+  const cursorX = inspectedIndex >= 0 ? 50 + (inspectedIndex / denominator) * 632 : null;
+  const mobileCursorX = inspectedIndex >= 0 ? 50 + (inspectedIndex / denominator) * 292 : null;
 
   return (
     <section className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <span className="page-kicker">Observed progress</span>
-          <h3 className="mt-1 text-sm font-semibold text-white">Relative price and prior-only beta adjustment</h3>
+          <span className="page-kicker">Price progress</span>
+          <h3 className="mt-1 text-sm font-semibold text-white">Relative price and prior-only beta-adjusted path</h3>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-slate-400">
+            <span>{inspectedRow?.date ? `${inspectedRow.date} · ` : ""}Relative index <strong className="text-teal-200">{finite(displayedRelative) ? displayedRelative.toFixed(2) : "—"}</strong></span>
+            <span>Beta-adjusted chain <strong className="text-amber-200">{formatPercent(displayedBetaAdjusted)}</strong></span>
+            <span>Current β <strong className="text-slate-200">{finite(latestBeta) ? latestBeta.toFixed(2) : "—"}</strong></span>
+          </div>
         </div>
         <span className="rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-slate-400">
           {data.overlap.common_observations.toLocaleString()} exact shared bars
         </span>
       </div>
-      <svg viewBox="0 0 700 190" className="mt-1 h-[176px] w-full" role="img" aria-label={`${data.target.symbol} relative price and prior-only beta adjustment versus ${data.benchmark.symbol}`}>
+      <div className="mt-3 inline-flex rounded-lg border border-stealth-700 bg-slate-950/60 p-0.5 sm:hidden" role="group" aria-label="Mobile price chart">
+        {(["relative", "beta"] as const).map((lane) => (
+          <button
+            key={lane}
+            type="button"
+            onClick={() => setMobileLane(lane)}
+            aria-pressed={mobileLane === lane}
+            className={`min-h-10 rounded-md px-3 text-[11px] font-medium ${mobileLane === lane ? "bg-sky-400/15 text-sky-200" : "text-slate-500"}`}
+          >
+            {lane === "relative" ? "Relative price" : "Beta adjusted"}
+          </button>
+        ))}
+      </div>
+      <svg
+        viewBox="0 0 700 190"
+        className="mt-1 hidden h-[176px] w-full touch-none sm:block"
+        role="img"
+        aria-label={`${data.target.symbol} relative price and prior-only beta-adjusted path versus ${data.benchmark.symbol}`}
+        onPointerMove={(event) => onSelectedDateChange(rows[pointerSeriesIndex(event, rows.length, 700, 50, 682)]?.date ?? null)}
+        onPointerLeave={() => onSelectedDateChange(null)}
+      >
+        <line x1="50" x2="682" y1={relativeBaselineY} y2={relativeBaselineY} stroke="rgba(45,212,191,.38)" strokeDasharray="4 4" />
+        <text x="688" y={relativeBaselineY + 3} fill="#5eead4" fontSize="9">100</text>
         <line x1="50" x2="682" y1="96" y2="96" stroke="rgba(71,85,105,.45)" />
-        <line x1="50" x2="682" y1="143" y2="143" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
-        <path d={scaledLanePath(relative, 632, 18, 62)} fill="none" stroke="#2dd4bf" strokeWidth="2.1" vectorEffect="non-scaling-stroke" />
-        <path d={scaledLanePath(betaResidual, 632, 111, 64, true)} fill="none" stroke="#fbbf24" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
+        <line x1="50" x2="682" y1={betaBaselineY} y2={betaBaselineY} stroke="rgba(251,191,36,.38)" strokeDasharray="4 4" />
+        <text x="688" y={betaBaselineY + 3} fill="#fcd34d" fontSize="9">0</text>
+        {chainStarts.map((index) => {
+          const x = 50 + (index / denominator) * 632;
+          return <line key={`chain-${index}`} x1={x} x2={x} y1="107" y2="179" stroke="rgba(251,191,36,.36)" strokeDasharray="2 4" />;
+        })}
+        <path d={scaledLanePath(relative, 632, 18, 62, false, [100])} fill="none" stroke="#2dd4bf" strokeWidth="2.1" vectorEffect="non-scaling-stroke" />
+        <path d={scaledLanePath(betaAdjusted, 632, 111, 64, true, [0])} fill="none" stroke="#fbbf24" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
+        {cursorX !== null ? <line x1={cursorX} x2={cursorX} y1="10" y2="179" stroke="rgba(248,250,252,.65)" strokeWidth="1" strokeDasharray="2 3" /> : null}
         <text x="5" y="32" fill="#94a3b8" fontSize="10">relative</text>
         <text x="5" y="45" fill="#64748b" fontSize="9">index</text>
         <text x="5" y="133" fill="#94a3b8" fontSize="10">β-adjusted</text>
         <text x="5" y="146" fill="#64748b" fontSize="9">cumulative</text>
-        <text x="50" y="187" fill="#64748b" fontSize="10">{rows[0]?.date ?? ""}</text>
+        <text x="676" y={Math.max(14, Math.min(92, latestRelativeY - 5))} textAnchor="end" fill="#5eead4" fontSize="10">{finite(latestRelative) ? latestRelative.toFixed(2) : "—"}</text>
+        <text x="676" y={Math.max(108, Math.min(178, latestBetaAdjustedY - 5))} textAnchor="end" fill="#fcd34d" fontSize="10">{formatPercent(latestBetaAdjusted)}</text>
+        <text x="50" y="187" fill="#64748b" fontSize="10">{relativeStart ?? ""}</text>
         <text x="682" y="187" fill="#64748b" fontSize="10" textAnchor="end">{rows[rows.length - 1]?.date ?? ""}</text>
       </svg>
+      <svg
+        viewBox="0 0 360 128"
+        className="mt-1 h-[128px] w-full touch-none sm:hidden"
+        role="img"
+        aria-label={mobileLane === "relative" ? "Relative price index" : "Current beta-adjusted return chain"}
+        onPointerMove={(event) => onSelectedDateChange(rows[pointerSeriesIndex(event, rows.length, 360, 50, 342)]?.date ?? null)}
+        onPointerLeave={() => onSelectedDateChange(null)}
+      >
+        {mobileLane === "relative" ? (
+          <>
+            <line x1="50" x2="342" y1={scaledLaneY(100, [...relative, 100], 18, 82)} y2={scaledLaneY(100, [...relative, 100], 18, 82)} stroke="rgba(45,212,191,.4)" strokeDasharray="4 4" />
+            <text x="46" y={scaledLaneY(100, [...relative, 100], 18, 82) + 3} textAnchor="end" fill="#5eead4" fontSize="10">100</text>
+            <path d={scaledLanePath(relative, 292, 18, 82, false, [100])} fill="none" stroke="#2dd4bf" strokeWidth="2.2" vectorEffect="non-scaling-stroke" />
+            <text x="338" y="15" textAnchor="end" fill="#5eead4" fontSize="11">{finite(latestRelative) ? latestRelative.toFixed(2) : "—"}</text>
+          </>
+        ) : (
+          <>
+            <line x1="50" x2="342" y1={scaledLaneY(0, [...betaAdjusted, 0], 18, 82, true)} y2={scaledLaneY(0, [...betaAdjusted, 0], 18, 82, true)} stroke="rgba(251,191,36,.4)" strokeDasharray="4 4" />
+            <text x="46" y={scaledLaneY(0, [...betaAdjusted, 0], 18, 82, true) + 3} textAnchor="end" fill="#fcd34d" fontSize="10">0</text>
+            <path d={scaledLanePath(betaAdjusted, 292, 18, 82, true, [0])} fill="none" stroke="#fbbf24" strokeWidth="2.2" vectorEffect="non-scaling-stroke" />
+            <text x="338" y="15" textAnchor="end" fill="#fcd34d" fontSize="11">{formatPercent(latestBetaAdjusted)}</text>
+          </>
+        )}
+        {mobileCursorX !== null ? <line x1={mobileCursorX} x2={mobileCursorX} y1="10" y2="105" stroke="rgba(248,250,252,.65)" strokeWidth="1" strokeDasharray="2 3" /> : null}
+        <text x="50" y="122" fill="#64748b" fontSize="10">{relativeStart ?? ""}</text>
+        <text x="342" y="122" fill="#64748b" fontSize="10" textAnchor="end">{rows[rows.length - 1]?.date ?? ""}</text>
+      </svg>
       <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] leading-4 text-slate-500">
-        <span><i className="mr-1 inline-block h-0.5 w-4 bg-teal-400 align-middle" />target / benchmark, rebased at shared-window start</span>
-        <span><i className="mr-1 inline-block h-0.5 w-4 bg-amber-300 align-middle" />current contiguous prior-only beta-adjusted chain</span>
+        <span className={mobileLane === "relative" ? "" : "hidden sm:inline"}><i className="mr-1 inline-block h-0.5 w-4 bg-teal-400 align-middle" />relative index began {formatDate(relativeStart, data.timeframe)} at 100</span>
+        <span className={mobileLane === "beta" ? "" : "hidden sm:inline"}><i className="mr-1 inline-block h-0.5 w-4 bg-amber-300 align-middle" />current chain began {formatDate(chainStart, data.timeframe)}; dashed markers show starts after unavailable beta</span>
       </div>
       <p className="sr-only">
         Latest relative index {finite(latestRelative) ? latestRelative.toFixed(2) : "unavailable"}.
-        Latest cumulative beta-adjusted return {finite(latestResidual) ? `${latestResidual.toFixed(2)} percent` : "unavailable"}.
+        Latest cumulative beta-adjusted return {finite(latestBetaAdjusted) ? `${latestBetaAdjusted.toFixed(2)} percent` : "unavailable"}.
       </p>
     </section>
   );
@@ -434,11 +806,15 @@ function RelativeProgressTrace({
 function DimensionTrend({
   coordinate,
   basis,
+  selectedDate,
+  onSelectedDateChange,
   targetSymbol,
   benchmarkSymbol,
 }: {
   coordinate: MarketWeatherComparisonCoordinate;
   basis: MarketWeatherComparisonBasis;
+  selectedDate: string | null;
+  onSelectedDateChange: (date: string | null) => void;
   targetSymbol: string;
   benchmarkSymbol: string;
 }) {
@@ -454,9 +830,23 @@ function DimensionTrend({
     : basis === "context" ? point.context_difference : point.native_difference));
   const all = [...target, ...benchmark, ...difference].filter(finite);
   const extent = Math.max(...all.map(Math.abs), 1e-6);
+  const guidance = COORDINATE_GUIDANCE[coordinate.id] ?? {
+    definition: "Implemented coordinate from the shared 15-dimensional field recipe.",
+    higher: "Higher means more of this measured quantity, not better expected performance.",
+  };
+  const currentGap = latestDifference(coordinate, basis);
+  const currentChange = fiveBarChange(coordinate, basis);
+  const inspectedIndex = selectedDate ? rows.findIndex((row) => row.date === selectedDate) : -1;
+  const inspected = inspectedIndex >= 0 ? rows[inspectedIndex] : null;
+  const displayedGap = inspected
+    ? basis === "context" ? inspected.context_difference : inspected.native_difference
+    : currentGap;
+  const cursorX = inspectedIndex >= 0
+    ? 48 + (inspectedIndex / Math.max(1, rows.length - 1)) * 616
+    : null;
 
   return (
-    <div className="self-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
+    <div className="self-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5 xl:sticky xl:top-20">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-xs font-semibold text-white">{coordinate.label} through shared time</div>
@@ -465,14 +855,22 @@ function DimensionTrend({
           </p>
         </div>
         <span className="rounded-full border border-stealth-700 px-2 py-1 font-mono text-[10px] text-slate-300">
-          gap {formatNumber(latestDifference(coordinate, basis))}
+          {inspected?.date ? `${inspected.date} · ` : ""}gap {formatNumber(displayedGap)}
         </span>
       </div>
-      <svg viewBox="0 0 680 170" className="mt-2 h-[180px] w-full" role="img" aria-label={`${coordinate.label} comparison history`}>
+      <svg
+        viewBox="0 0 680 170"
+        className="mt-2 h-[180px] w-full touch-none"
+        role="img"
+        aria-label={`${coordinate.label} comparison history`}
+        onPointerMove={(event) => onSelectedDateChange(rows[pointerSeriesIndex(event, rows.length, 680, 48, 664)]?.date ?? null)}
+        onPointerLeave={() => onSelectedDateChange(null)}
+      >
         <line x1="48" x2="664" y1="82" y2="82" stroke="rgba(100,116,139,.35)" strokeDasharray="3 5" />
         <path d={linePath(target, 616, 12, 140, extent)} fill="none" stroke="#38bdf8" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
         <path d={linePath(benchmark, 616, 12, 140, extent)} fill="none" stroke="#a78bfa" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
         <path d={linePath(difference, 616, 12, 140, extent)} fill="none" stroke="#fbbf24" strokeWidth="1.5" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+        {cursorX !== null ? <line x1={cursorX} x2={cursorX} y1="8" y2="154" stroke="rgba(248,250,252,.65)" strokeWidth="1" strokeDasharray="2 3" /> : null}
         <text x="48" y="166" fill="#64748b" fontSize="10">{rows[0]?.date ?? ""}</text>
         <text x="664" y="166" fill="#64748b" fontSize="10" textAnchor="end">{rows[rows.length - 1]?.date ?? ""}</text>
       </svg>
@@ -480,6 +878,26 @@ function DimensionTrend({
         <span><i className="mr-1 inline-block h-0.5 w-4 bg-sky-400 align-middle" />{targetSymbol}</span>
         <span><i className="mr-1 inline-block h-0.5 w-4 bg-violet-400 align-middle" />{benchmarkSymbol}</span>
         <span><i className="mr-1 inline-block h-0.5 w-4 border-t border-dashed border-amber-300 align-middle" />difference</span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-stealth-700 bg-stealth-700 sm:grid-cols-3">
+        {[
+          [targetSymbol, formatNumber(coordinate.latest.target), "direct model scale"],
+          [benchmarkSymbol, formatNumber(coordinate.latest.benchmark), "direct model scale"],
+          ["Direct gap", formatNumber(coordinate.latest.native_difference), `${targetSymbol} − ${benchmarkSymbol}`],
+          ["Own-history gap", formatNumber(coordinate.latest.context_difference), "separate fixed-fit scales"],
+          ["Five-bar change", formatNumber(currentChange), basis === "context" ? "own-history basis" : "direct model scale"],
+          ["Support", coordinate.latest.pair_supported !== false && coordinate.latest.target_supported && coordinate.latest.benchmark_supported ? "Full" : "Limited", "bilateral dependencies"],
+        ].map(([label, value, note]) => (
+          <div key={label} className="bg-slate-950/75 p-2.5">
+            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-600">{label}</div>
+            <div className="mt-0.5 font-mono text-xs font-semibold text-slate-200">{value}</div>
+            <div className="mt-0.5 text-[9px] text-slate-600">{note}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded-xl border border-stealth-700 bg-slate-950/55 p-3 text-[11px] leading-5 text-slate-400">
+        <p>{guidance.definition}</p>
+        <p className="mt-1 text-slate-500">{guidance.higher}</p>
       </div>
     </div>
   );
@@ -490,14 +908,46 @@ export default function MarketWeatherComparisonLab({
   basis,
   view,
   selectedDimension,
+  tab,
+  scopeTrail,
+  scopeScale,
+  coordinateOrder,
   onBasisChange,
   onViewChange,
   onDimensionChange,
+  onTabChange,
+  onScopeTrailChange,
+  onScopeScaleChange,
+  onCoordinateOrderChange,
 }: MarketWeatherComparisonLabProps) {
+  const [localTab, setLocalTab] = useState<PairTab>("overview");
+  const [localTrail, setLocalTrail] = useState<ScopeTrail>(24);
+  const [localScale, setLocalScale] = useState<ScopeScale>("shared");
+  const [localOrder, setLocalOrder] = useState<CoordinateOrder>("recipe");
+  const [activeMobileScope, setActiveMobileScope] = useState(SCOPE_DEFINITIONS[0].id);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [inspectedDate, setInspectedDate] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "summary" | "receipt" | "error">("idle");
+  const pairContentRef = useRef<HTMLDivElement>(null);
+  const mobileCloseRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const activeTab = tab ?? localTab;
+  const activeTrail = scopeTrail ?? localTrail;
+  const activeScale = scopeScale ?? localScale;
+  const activeOrder = coordinateOrder ?? localOrder;
+  const setActiveTab = onTabChange ?? setLocalTab;
+  const setActiveTrail = onScopeTrailChange ?? setLocalTrail;
+  const setActiveScale = onScopeScaleChange ?? setLocalScale;
+  const setActiveOrder = onCoordinateOrderChange ?? setLocalOrder;
   const coordinateMap = useMemo(
     () => new Map(data.coordinates.map((coordinate) => [coordinate.id, coordinate])),
     [data.coordinates],
   );
+  const coordinateGradients = useMemo(
+    () => new Map(data.coordinates.map((coordinate) => [coordinate.id, heatGradient(coordinate, basis)])),
+    [basis, data.coordinates],
+  );
+  const summary = useMemo(() => buildMarketWeatherPairSummary(data), [data]);
   const selected = coordinateMap.get(selectedDimension) ?? data.coordinates[0];
   const fullySupported = data.coordinates.filter(
     (coordinate) => coordinate.latest.target_supported
@@ -510,20 +960,134 @@ export default function MarketWeatherComparisonLab({
     ?? (data.overlap.session_compatible === true
       ? "compatible"
       : data.overlap.session_compatible === false ? "incompatible" : "unknown");
+  const sessionCertified = data.compatibility?.session.independently_certified === true;
   const alignmentSupported = data.overlap.alignment_supported !== false
     && data.overlap.alignment_status !== "unsupported";
   const gapTone = (data.relative_progress.active_return_pct ?? 0) > 0
     ? "text-emerald-300"
     : (data.relative_progress.active_return_pct ?? 0) < 0 ? "text-rose-300" : "text-slate-200";
+  const relativeIndex = data.relative_progress.relative_index ?? latestRelativeIndex(data);
+  const chainStart = data.relative_progress.beta_adjusted_chain_start_at ?? betaChainStart(data);
+  const fieldSeparation = data.relative_progress.field_separation;
+  const separationLookback = fieldSeparation?.lookback_shared_observations ?? 5;
+  const stretch = fieldSeparation
+    ? { latest: fieldSeparation.latest_stretch, previous: fieldSeparation.prior_stretch }
+    : relationshipStretchValues(data);
+  const supportPct = Math.round((data.support?.support_fraction ?? data.overlap.support_fraction) * 100);
+  const orderedCoordinates = useMemo(() => {
+    if (activeOrder === "largest") {
+      return [...data.coordinates].sort((left, right) => {
+        const leftValue = left.latest.pair_supported !== false
+          && left.latest.target_supported
+          && left.latest.benchmark_supported
+          && finite(left.latest.context_difference)
+          ? Math.abs(left.latest.context_difference)
+          : -1;
+        const rightValue = right.latest.pair_supported !== false
+          && right.latest.target_supported
+          && right.latest.benchmark_supported
+          && finite(right.latest.context_difference)
+          ? Math.abs(right.latest.context_difference)
+          : -1;
+        return rightValue - leftValue;
+      });
+    }
+    return data.coordinates;
+  }, [activeOrder, data.coordinates]);
+  const groupedCoordinates = useMemo(
+    () => FAMILY_ORDER.map((family) => ({
+      family,
+      coordinates: orderedCoordinates.filter((coordinate) => coordinate.family === family),
+    })).filter((group) => group.coordinates.length),
+    [orderedCoordinates],
+  );
+
+  const copySummary = async () => {
+    try {
+      await navigator.clipboard.writeText(summary.copyText);
+      setCopyStatus("summary");
+    } catch {
+      setCopyStatus("error");
+    }
+  };
+
+  const exportReceipt = () => {
+    const receipt = data.frozen_receipt;
+    if (!receipt) {
+      setCopyStatus("error");
+      return;
+    }
+    const blob = new Blob([`${JSON.stringify(receipt, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const safeSymbol = (value: string) => value.replace(/[^A-Za-z0-9._-]+/g, "-");
+    link.download = `${safeSymbol(data.target.symbol)}-${safeSymbol(data.benchmark.symbol)}-${data.timeframe}-relative-field-receipt.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setCopyStatus("receipt");
+  };
+
+  useEffect(() => {
+    const background = pairContentRef.current as (HTMLDivElement & { inert: boolean }) | null;
+    if (background) background.inert = mobileDetailOpen;
+    if (!mobileDetailOpen) return undefined;
+
+    if (!previousFocusRef.current) {
+      previousFocusRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => mobileCloseRef.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileDetailOpen(false);
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      if (background) background.inert = false;
+      const restoreTarget = previousFocusRef.current;
+      previousFocusRef.current = null;
+      window.requestAnimationFrame(() => restoreTarget?.focus());
+    };
+  }, [mobileDetailOpen]);
 
   return (
-    <section className="primary-card overflow-hidden" aria-labelledby="pair-field-title">
+    <>
+      <div ref={pairContentRef} aria-hidden={mobileDetailOpen ? true : undefined}>
+        <div className="sticky top-16 z-[80] sm:hidden">
+          <div className="mb-2 flex min-h-11 items-center justify-between gap-3 rounded-xl border border-stealth-600 bg-slate-950/92 px-3 py-2 shadow-xl backdrop-blur-xl">
+            <div className="min-w-0 truncate text-xs font-semibold text-white">
+              {data.target.symbol} vs {data.benchmark.symbol}
+              <span className="font-normal text-slate-500"> · {data.timeframe} · {data.overlap.common_observations.toLocaleString()} shared</span>
+            </div>
+            <span className="shrink-0 rounded-full border border-stealth-700 px-2 py-1 text-[9px] text-slate-400">
+              {PAIR_TAB_OPTIONS.find((option) => option.id === activeTab)?.label}
+            </span>
+          </div>
+        </div>
+        <section className="primary-card overflow-hidden" aria-labelledby="pair-field-title">
       <header className="border-b border-stealth-700 p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="page-kicker">Relative field</span>
-              <span className="page-badge border-teal-400/20 text-teal-200"><ArrowRightLeft className="h-3.5 w-3.5" /> Shared bars only</span>
+              <span className="page-badge border-teal-400/20 text-teal-200"><ArrowRightLeft className="h-3.5 w-3.5" /> Exact shared bars</span>
+              <span className={`page-badge ${sessionCertified ? "border-emerald-400/20 text-emerald-200" : "border-amber-400/20 text-amber-200"}`}>
+                Sessions {sessionCompatibility === "incompatible"
+                  ? "incompatible"
+                  : sessionCertified
+                    ? "independently certified"
+                    : sessionCompatibility === "compatible" ? "marked compatible · not independently certified" : "not independently certified"}
+              </span>
               {data.provenance.identity_control ? (
                 <span className="page-badge border-amber-400/20 text-amber-200">Identity control</span>
               ) : null}
@@ -535,243 +1099,519 @@ export default function MarketWeatherComparisonLab({
               Relative price measures progress. Coordinate differences describe how the two fields arrived there; they do not declare one instrument better.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <div className="inline-flex rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Comparison basis">
-              {(["context", "native"] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => onBasisChange(option)}
-                  aria-pressed={basis === option}
-                  className={`min-h-9 rounded-lg px-3 text-xs font-medium transition ${basis === option ? "bg-teal-400/15 text-teal-200 ring-1 ring-teal-400/30" : "text-slate-400 hover:text-white"}`}
-                  title={option === "context" ? "Difference after each side is scaled using its fixed proper-fit segment, emitted only on shared evaluation timestamps" : "Direct difference in common coordinate units"}
-                >
-                  {option === "context" ? "Fit-relative context" : "Native units"}
-                </button>
-              ))}
-            </div>
-            <div className="inline-flex rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Scope subject">
-              {(["target", "benchmark", "difference"] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => onViewChange(option)}
-                  aria-pressed={view === option}
-                  className={`min-h-9 rounded-lg px-3 text-xs font-medium capitalize transition ${view === option ? "bg-violet-400/15 text-violet-200 ring-1 ring-violet-400/30" : "text-slate-400 hover:text-white"}`}
-                >
-                  {option === "target" ? data.target.symbol : option === "benchmark" ? data.benchmark.symbol : "Difference"}
-                </button>
-              ))}
-            </div>
+          <div className="rounded-xl border border-stealth-700 bg-slate-950/40 px-3 py-2 text-right text-[10px] leading-4 text-slate-500">
+            <div className="font-mono text-slate-300">{data.timeframe} · {data.overlap.common_observations.toLocaleString()} shared</div>
+            <div>Through {formatDate(data.overlap.latest_aligned_at, data.timeframe)}</div>
           </div>
         </div>
+        <nav className="mt-4 grid grid-cols-3 gap-1 rounded-xl border border-stealth-700 bg-slate-950/55 p-1 sm:inline-grid sm:min-w-[420px]" role="tablist" aria-label="Relative Field sections">
+          {PAIR_TAB_OPTIONS.map(({ id, label }, index) => (
+            <button
+              key={id}
+              id={`pair-tab-${id}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              aria-controls={`pair-panel-${id}`}
+              tabIndex={activeTab === id ? 0 : -1}
+              onClick={() => setActiveTab(id)}
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const nextIndex = event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? PAIR_TAB_OPTIONS.length - 1
+                    : (index + (event.key === "ArrowRight" ? 1 : -1) + PAIR_TAB_OPTIONS.length) % PAIR_TAB_OPTIONS.length;
+                const next = PAIR_TAB_OPTIONS[nextIndex].id;
+                setActiveTab(next);
+                window.requestAnimationFrame(() => document.getElementById(`pair-tab-${next}`)?.focus());
+              }}
+              className={`min-h-10 rounded-lg px-3 text-xs font-medium transition sm:min-h-9 ${activeTab === id ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/30" : "text-slate-500 hover:text-white"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
       </header>
 
-      <div className="space-y-4 p-3 sm:p-4">
+      <div className="p-3 sm:p-4">
         {!alignmentSupported ? (
-          <div role="alert" className="rounded-2xl border border-rose-400/30 bg-rose-950/20 p-4 text-sm text-rose-100">
+          <div role="alert" className="mb-4 rounded-2xl border border-rose-400/30 bg-rose-950/20 p-4 text-sm text-rose-100">
             <div className="font-semibold">This timeframe pair cannot be aligned safely.</div>
             <p className="mt-1 text-xs leading-5 text-rose-200/75">{data.overlap.note} No nearest timestamp or carried value was substituted.</p>
           </div>
         ) : null}
-        <section className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-700 lg:grid-cols-5">
-          {[
-            ["Active progress", formatPercent(data.relative_progress.active_return_pct), `${data.overlap.common_observations} aligned bars`, gapTone],
-            ["Beta-adjusted", formatPercent(data.relative_progress.beta_adjusted_return_pct), `prior-only β ${finite(data.relative_progress.beta) ? data.relative_progress.beta.toFixed(2) : "—"} · up to ${data.relative_progress.lookback_bars} bars`, "text-sky-200"],
-            [data.target.symbol, formatLevel(data.relative_progress.latest_target_close), "latest aligned level", "text-white"],
-            [data.benchmark.symbol, formatLevel(data.relative_progress.latest_benchmark_close), "latest aligned level", "text-white"],
-            ["Fit-relative stretch", data.relative_progress.gap_direction.replace(/_/g, " "), "family-balanced magnitude vs 5 bars prior", "text-amber-200"],
-          ].map(([label, value, note, tone], index) => (
-            <div key={`${index}-${label}`} className={`min-w-0 bg-slate-950/80 p-3.5 ${index === 4 ? "col-span-2 lg:col-span-1" : ""}`}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
-              <div className={`mt-1 text-base font-semibold capitalize ${tone}`}>{value}</div>
-              <div className="mt-0.5 text-[10px] leading-4 text-slate-500">{note}</div>
-            </div>
-          ))}
-        </section>
 
-        <RelativeProgressTrace data={data} />
-
-        <section>
-          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <span className="page-kicker">Relationship scopes</span>
-              <h3 className="mt-1 text-base font-semibold text-white">How the paired field is moving</h3>
-            </div>
-            <p className="text-[11px] text-slate-500">Same observations · one shared axis domain per scope · descriptive trajectories</p>
-          </div>
-          <p className="mb-2 text-[10px] text-slate-500 lg:hidden" aria-hidden="true">Swipe to explore all four scopes →</p>
-          <div className="grid auto-cols-[84vw] grid-flow-col gap-3 overflow-x-auto pb-2 snap-x snap-mandatory sm:auto-cols-[62vw] lg:auto-cols-auto lg:grid-flow-row lg:grid-cols-2 lg:overflow-visible lg:pb-0">
-            {SCOPE_DEFINITIONS.map((definition) => (
-              <ScopeChart
-                key={definition.id}
-                definition={definition}
-                coordinates={coordinateMap}
-                basis={basis}
-                view={view}
-                targetSymbol={data.target.symbol}
-                benchmarkSymbol={data.benchmark.symbol}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="grid gap-3 xl:grid-cols-[minmax(300px,.72fr)_minmax(0,1.28fr)]">
-          <div className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <span className="page-kicker">15-coordinate differential</span>
-                <h3 className="mt-1 text-sm font-semibold text-white">State separation through time</h3>
+        {activeTab === "overview" ? (
+          <div id="pair-panel-overview" role="tabpanel" aria-labelledby="pair-tab-overview" className="flex flex-col gap-4">
+            <section className="order-2 rounded-2xl border border-sky-400/20 bg-gradient-to-br from-sky-400/[0.08] via-slate-950/40 to-violet-400/[0.06] p-4 sm:order-1 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <span className="page-kicker">Descriptive read</span>
+                  <h3 className="mt-1 text-lg font-semibold text-white">{summary.title}</h3>
+                </div>
+                <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1 text-[10px] text-slate-400">
+                  Deterministic {summary.summarySource === "server" ? "server summary" : "legacy client fallback"} · not a forecast
+                </span>
               </div>
-              <span className="text-[10px] text-slate-500">latest ≤72 bars · older → newer</span>
+              <div className="mt-3 max-w-5xl space-y-2 text-sm leading-6 text-slate-300">
+                <p>{summary.relativeProgressSentence}</p>
+                <p>{summary.betaAdjustedSentence}</p>
+                <button type="button" onClick={() => setActiveTab("field")} className="block text-left text-slate-300 transition hover:text-sky-200">
+                  {summary.coordinateGapSentence} <ArrowRight className="ml-1 inline h-3.5 w-3.5" />
+                </button>
+                <p>{summary.separationSentence}</p>
+                <button type="button" onClick={() => setActiveTab("audit")} className="block text-left text-xs text-amber-200/80 transition hover:text-amber-100">
+                  {summary.supportCaveat} <FileCheck2 className="ml-1 inline h-3.5 w-3.5" />
+                </button>
+              </div>
+            </section>
+
+            <section className="order-1 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-700 sm:order-2 lg:grid-cols-5">
+              {[
+                ["Relative index", finite(relativeIndex) ? relativeIndex.toFixed(2) : "—", "100 = equal progress from the shared start", "text-teal-200"],
+                ["Relative price progress", formatPercent(data.relative_progress.active_return_pct), `${data.overlap.common_observations.toLocaleString()} exact shared bars`, gapTone],
+                ["Beta-adjusted chain", formatPercent(data.relative_progress.beta_adjusted_return_pct), `β ${finite(data.relative_progress.beta) ? data.relative_progress.beta.toFixed(2) : "—"} from ${data.relative_progress.beta_prior_observations ?? data.relative_progress.lookback_bars} prior returns · began ${formatDate(chainStart, data.timeframe)}`, "text-sky-200"],
+                ["Field separation", fieldSeparation?.label ?? separationLabel(data.relative_progress.gap_direction), finite(stretch.latest) && finite(stretch.previous) ? `${stretch.latest.toFixed(2)} now vs ${stretch.previous.toFixed(2)} ${separationLookback} shared bars earlier` : "own-history basis", "text-amber-200"],
+                ["Data support", `${supportPct}%`, `${fullySupported}/${data.coordinates.length} latest coordinates · sessions ${sessionCertified ? "independently certified" : "not independently certified"}`, fullySupported === data.coordinates.length ? "text-emerald-200" : "text-amber-200"],
+              ].map(([label, value, note, tone], index) => (
+                <div key={label} className={`min-w-0 bg-slate-950/80 p-3.5 ${index === 4 ? "col-span-2 lg:col-span-1" : ""}`}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+                  <div className={`mt-1 text-base font-semibold ${tone}`}>{value}</div>
+                  <div className="mt-0.5 text-[10px] leading-4 text-slate-500">{note}</div>
+                </div>
+              ))}
+            </section>
+
+            <div className="order-3">
+              <RelativeProgressTrace data={data} selectedDate={inspectedDate} onSelectedDateChange={setInspectedDate} />
             </div>
-            <div className="mt-3 space-y-1.5">
-              {data.coordinates.map((coordinate) => {
-                const supported = coordinate.latest.target_supported
-                  && coordinate.latest.benchmark_supported
-                  && coordinate.latest.pair_supported !== false
-                  && finite(latestDifference(coordinate, basis));
-                const active = coordinate.id === selected?.id;
-                return (
+
+            <section className="order-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div className="grid gap-2 sm:grid-cols-3">
+                {summary.notableGaps.map((gap) => (
                   <button
-                    key={coordinate.id}
+                    key={gap.id}
                     type="button"
-                    onClick={() => onDimensionChange(coordinate.id)}
-                    aria-pressed={active}
-                    className={`grid min-h-10 w-full grid-cols-[96px_minmax(80px,1fr)_58px] items-center gap-2 rounded-lg border px-2 text-left transition sm:grid-cols-[128px_minmax(100px,1fr)_66px] ${active ? "border-sky-400/50 bg-sky-400/[0.08]" : "border-transparent hover:border-stealth-600 hover:bg-white/[0.025]"}`}
+                    onClick={() => {
+                      onDimensionChange(gap.id);
+                      setActiveTab("field");
+                    }}
+                    className="rounded-xl border border-stealth-700 bg-slate-950/35 p-3 text-left transition hover:border-sky-400/40 hover:bg-sky-400/[0.05]"
                   >
-                    <span className="min-w-0">
-                      <span className="block text-[11px] font-medium leading-3.5 text-slate-200">{coordinate.label}</span>
-                      <span className="block truncate text-[9px] uppercase tracking-[0.1em] text-slate-600">{FAMILY_LABELS[coordinate.family] ?? coordinate.family}</span>
-                    </span>
-                    <span
-                      className={`h-5 rounded ${supported ? "" : "opacity-35 grayscale"}`}
-                      style={{ backgroundImage: heatGradient(coordinate, basis) }}
-                      aria-hidden="true"
-                    />
-                    <span className={`text-right font-mono text-[10px] ${supported ? "text-slate-300" : "text-amber-300"}`}>
-                      {supported ? formatNumber(latestDifference(coordinate, basis)) : "limited"}
-                    </span>
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Own-history difference</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-200">{gap.label}</div>
+                    <div className="mt-1 font-mono text-sm text-sky-200">{formatNumber(gap.value)}</div>
                   </button>
-                );
-              })}
-            </div>
-            <div className="mt-3 flex items-center justify-between border-t border-stealth-700 pt-2 text-[10px] text-slate-500">
-              <span className="text-violet-300">benchmark higher ←</span>
-              <span className="text-teal-300">→ target higher</span>
+                ))}
+              </div>
+              <button type="button" onClick={() => setActiveTab("audit")} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white">
+                <FileCheck2 className="h-4 w-4" /> Frozen calculation receipt available
+              </button>
+            </section>
+          </div>
+        ) : null}
+
+        {activeTab === "field" ? (
+          <div id="pair-panel-field" role="tabpanel" aria-labelledby="pair-tab-field" className="space-y-4">
+            <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3.5">
+              <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto] xl:items-end">
+                <div>
+                  <span className="page-kicker">Comparison controls</span>
+                  <h3 className="mt-1 text-sm font-semibold text-white">How field coordinates are displayed</h3>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                    {basis === "context"
+                      ? "Own-history-relative gap: the difference after each instrument is standardized against its separate frozen proper-fit history."
+                      : "Direct model-scale gap: target coordinate minus benchmark coordinate under the shared field recipe."}
+                  </p>
+                </div>
+                <div>
+                  <div className="mb-1 text-[9px] uppercase tracking-[0.12em] text-slate-600">Comparison basis</div>
+                  <div className="inline-flex rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Comparison basis">
+                    {(["context", "native"] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => onBasisChange(option)}
+                        aria-pressed={basis === option}
+                        className={`min-h-10 rounded-lg px-3 text-[11px] font-medium transition sm:min-h-9 ${basis === option ? "bg-teal-400/15 text-teal-200 ring-1 ring-teal-400/30" : "text-slate-400 hover:text-white"}`}
+                      >
+                        {option === "context" ? "Relative to own history" : "Direct model-scale gap"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 text-[9px] uppercase tracking-[0.12em] text-slate-600">Displayed series</div>
+                  <div className="inline-flex rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Displayed series">
+                    {(["target", "benchmark", "difference"] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => onViewChange(option)}
+                        aria-pressed={view === option}
+                        className={`min-h-10 rounded-lg px-3 text-[11px] font-medium transition sm:min-h-9 ${view === option ? "bg-violet-400/15 text-violet-200 ring-1 ring-violet-400/30" : "text-slate-400 hover:text-white"}`}
+                      >
+                        {option === "target" ? data.target.symbol : option === "benchmark" ? data.benchmark.symbol : `${data.target.symbol} − ${data.benchmark.symbol}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <span className="page-kicker">Relationship scopes</span>
+                  <h3 className="mt-1 text-base font-semibold text-white">How the paired field is moving</h3>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <div className="inline-flex rounded-lg border border-stealth-700 bg-slate-950/50 p-0.5" role="group" aria-label="Scope trail length">
+                    {([12, 24, 72, "full"] as const).map((option) => (
+                      <button key={option} type="button" onClick={() => setActiveTrail(option)} aria-pressed={activeTrail === option} className={`min-h-10 rounded-md px-2.5 text-[10px] sm:min-h-8 ${activeTrail === option ? "bg-sky-400/15 text-sky-200" : "text-slate-500"}`}>
+                        {option === "full" ? "Full" : option}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="inline-flex rounded-lg border border-stealth-700 bg-slate-950/50 p-0.5" role="group" aria-label="Scope scale">
+                    {(["shared", "inspect"] as const).map((option) => (
+                      <button key={option} type="button" onClick={() => setActiveScale(option)} aria-pressed={activeScale === option} className={`min-h-10 rounded-md px-2.5 text-[10px] sm:min-h-8 ${activeScale === option ? "bg-amber-400/15 text-amber-200" : "text-slate-500"}`}>
+                        {option === "shared" ? "Shared scale" : "Inspect selected"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <p className="mb-2 text-[10px] leading-4 text-slate-500">
+                Fixed colors identify {data.target.symbol} (cyan), {data.benchmark.symbol} (purple), and their difference (amber). Hover or touch a chart to inspect the same shared date across visible field charts{inspectedDate ? ` (${inspectedDate})` : ""}. Older observations fade; gaps remain broken; trajectories are not inferred cycles.
+              </p>
+              <div className="lg:hidden">
+                <div className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-4" role="group" aria-label="Relationship scope">
+                  {SCOPE_DEFINITIONS.map((definition) => (
+                    <button
+                      key={definition.id}
+                      type="button"
+                      onClick={() => setActiveMobileScope(definition.id)}
+                      aria-pressed={activeMobileScope === definition.id}
+                      className={`min-h-10 rounded-lg border px-2 text-[10px] transition ${activeMobileScope === definition.id ? "border-sky-400/45 bg-sky-400/[0.08] text-sky-100" : "border-stealth-700 text-slate-500 hover:text-white"}`}
+                    >
+                      {definition.title}
+                    </button>
+                  ))}
+                </div>
+                {SCOPE_DEFINITIONS.filter((definition) => definition.id === activeMobileScope).map((definition) => (
+                  <ScopeChart
+                    key={definition.id}
+                    definition={definition}
+                    coordinates={coordinateMap}
+                    basis={basis}
+                    view={view}
+                    trail={activeTrail}
+                    scale={activeScale}
+                    selectedDate={inspectedDate}
+                    onSelectedDateChange={setInspectedDate}
+                    targetSymbol={data.target.symbol}
+                    benchmarkSymbol={data.benchmark.symbol}
+                  />
+                ))}
+              </div>
+              <div className="hidden gap-3 lg:grid lg:grid-cols-2">
+                {SCOPE_DEFINITIONS.map((definition) => (
+                  <ScopeChart
+                    key={definition.id}
+                    definition={definition}
+                    coordinates={coordinateMap}
+                    basis={basis}
+                    view={view}
+                    trail={activeTrail}
+                    scale={activeScale}
+                    selectedDate={inspectedDate}
+                    onSelectedDateChange={setInspectedDate}
+                    targetSymbol={data.target.symbol}
+                    benchmarkSymbol={data.benchmark.symbol}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="grid gap-3 xl:grid-cols-[minmax(320px,.74fr)_minmax(0,1.26fr)]">
+              <div className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <span className="page-kicker">15-coordinate comparison</span>
+                    <h3 className="mt-1 text-sm font-semibold text-white">How the field measurements differ through time</h3>
+                    <p className="mt-1 font-mono text-[10px] text-slate-500">{data.target.symbol} − {data.benchmark.symbol}</p>
+                  </div>
+                  <div className="text-right text-[9px] leading-4 text-slate-500">
+                    <div><span className="text-violet-300">benchmark higher ←</span> · <span className="text-teal-300">→ target higher</span></div>
+                    <div>hue = sign · intensity = magnitude within each row · dark break = unsupported</div>
+                  </div>
+                </div>
+                <div className="mt-3 inline-flex rounded-lg border border-stealth-700 bg-slate-950/55 p-0.5" role="group" aria-label="Coordinate ordering">
+                  {(["recipe", "largest"] as const).map((option) => (
+                    <button key={option} type="button" onClick={() => setActiveOrder(option)} aria-pressed={activeOrder === option} className={`min-h-10 rounded-md px-3 text-[10px] sm:min-h-8 ${activeOrder === option ? "bg-violet-400/15 text-violet-200" : "text-slate-500"}`}>
+                      {option === "recipe" ? "Recipe order" : "Largest own-history gaps"}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 space-y-3">
+                  {(activeOrder === "recipe"
+                    ? groupedCoordinates
+                    : [{ family: "ranked", coordinates: orderedCoordinates }]
+                  ).map((group) => (
+                    <details
+                      key={group.family}
+                      open={group.family === "pressure_state" || group.family === "ranked"}
+                      className="group rounded-lg"
+                    >
+                      <summary className="mb-1 flex min-h-10 cursor-pointer list-none items-center justify-between text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-600 sm:min-h-7">
+                        {group.family === "ranked" ? "Ranked by absolute own-history gap" : FAMILY_LABELS[group.family] ?? group.family}
+                        <span className="text-slate-700 group-open:rotate-45" aria-hidden="true">+</span>
+                      </summary>
+                      <div className="space-y-1">
+                        {group.coordinates.map((coordinate) => {
+                          const supported = coordinate.latest.target_supported
+                            && coordinate.latest.benchmark_supported
+                            && coordinate.latest.pair_supported !== false
+                            && finite(latestDifference(coordinate, basis));
+                          const active = coordinate.id === selected?.id;
+                          return (
+                            <button
+                              key={coordinate.id}
+                              type="button"
+                              onClick={(event) => {
+                                onDimensionChange(coordinate.id);
+                                if (typeof window !== "undefined" && window.innerWidth < 640) {
+                                  previousFocusRef.current = event.currentTarget;
+                                  setMobileDetailOpen(true);
+                                }
+                              }}
+                              aria-pressed={active}
+                              className={`grid min-h-10 w-full grid-cols-[104px_minmax(80px,1fr)_58px] items-center gap-2 rounded-lg border px-2 text-left transition sm:grid-cols-[138px_minmax(100px,1fr)_66px] ${active ? "border-sky-400/50 bg-sky-400/[0.08]" : "border-transparent hover:border-stealth-600 hover:bg-white/[0.025]"}`}
+                            >
+                              <span className="min-w-0 truncate text-[11px] font-medium leading-3.5 text-slate-200">{coordinate.label}</span>
+                              <span className={`h-5 rounded ${supported ? "" : "opacity-35 grayscale"}`} style={{ backgroundImage: coordinateGradients.get(coordinate.id) }} aria-hidden="true" />
+                              <span className={`text-right font-mono text-[10px] ${supported ? "text-slate-300" : "text-amber-300"}`}>
+                                {supported ? formatNumber(latestDifference(coordinate, basis)) : "limited"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </div>
+              {selected ? (
+                <>
+                  <div className="hidden xl:block">
+                    <DimensionTrend
+                      coordinate={selected}
+                      basis={basis}
+                      selectedDate={inspectedDate}
+                      onSelectedDateChange={setInspectedDate}
+                      targetSymbol={data.target.symbol}
+                      benchmarkSymbol={data.benchmark.symbol}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      previousFocusRef.current = event.currentTarget;
+                      setMobileDetailOpen(true);
+                    }}
+                    className="inline-flex min-h-11 items-center justify-between gap-3 rounded-xl border border-sky-400/25 bg-sky-400/[0.06] px-3 text-left text-xs text-sky-100 xl:hidden"
+                  >
+                    <span>Inspect {selected.label}</span>
+                    <span className="font-mono text-[10px] text-sky-200">gap {formatNumber(latestDifference(selected, basis))}</span>
+                  </button>
+                </>
+              ) : (
+                <div className="grid min-h-[240px] place-items-center rounded-2xl border border-stealth-700 text-sm text-slate-500">No comparable coordinates were returned.</div>
+              )}
+            </section>
+
+            <div className="flex items-start gap-2 rounded-xl border border-amber-400/15 bg-amber-400/[0.055] px-3 py-2.5 text-[11px] leading-5 text-amber-100/80">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div>Positive coordinate gaps mean more of that measured quantity in the target—not higher quality, a forecast, or a trade signal.</div>
             </div>
           </div>
-          {selected ? (
+        ) : null}
+
+        {activeTab === "audit" ? (
+          <div id="pair-panel-audit" role="tabpanel" aria-labelledby="pair-tab-audit" className="space-y-4">
+            <section className="flex flex-col gap-3 rounded-2xl border border-sky-400/20 bg-sky-400/[0.045] p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <span className="page-kicker">Frozen evidence</span>
+                <h3 className="mt-1 text-sm font-semibold text-white">Share the recipe or preserve this exact receipt</h3>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500">The page URL reruns against then-current data. The JSON receipt freezes hashes, aligned keys, current measurements, and authority boundaries.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => void copySummary()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white">
+                  <ClipboardCopy className="h-4 w-4" /> {copyStatus === "summary" ? "Summary copied" : "Copy summary"}
+                </button>
+                <button type="button" onClick={exportReceipt} disabled={!data.frozen_receipt} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white disabled:opacity-40">
+                  <Download className="h-4 w-4" /> {copyStatus === "receipt" ? "Receipt exported" : "Export current receipt"}
+                </button>
+              </div>
+            </section>
+            <p className={`-mt-2 text-[10px] ${copyStatus === "error" ? "text-rose-300" : "text-slate-600"}`} role="status" aria-live="polite">
+              {copyStatus === "error"
+                ? "The requested clipboard or receipt action was unavailable."
+                : `Summary source: ${summary.summarySource === "server" ? "deterministic server payload" : "legacy client fallback; refresh to obtain a frozen server receipt"}.`}
+            </p>
+
+            <section className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3.5">
+                <div className="flex items-start gap-2.5">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                  <div>
+                    <h3 className="text-xs font-semibold text-white">Alignment, support, and compatibility</h3>
+                    <p className="mt-1 text-[11px] leading-5 text-slate-400">
+                      Requested {data.window?.requested_shared_observations ?? data.overlap.common_observations} bars; returned {data.window?.returned_exact_shared_observations ?? data.overlap.common_observations} exact shared bars from {formatDate(data.overlap.start, data.timeframe)} to {formatDate(data.overlap.end, data.timeframe)}.
+                      {" "}{supportPct}% coordinate-cell support; {data.overlap.target_dropped} target and {data.overlap.benchmark_dropped} benchmark timestamps were excluded without carrying values.
+                    </p>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-slate-500">
+                      <div><dt>Session</dt><dd className="text-slate-300">{data.compatibility?.session.status ?? sessionCompatibility} · {data.compatibility?.session.independently_certified ? "certified" : "not independently certified"}</dd></div>
+                      <div><dt>Currency</dt><dd className="text-slate-300">{data.compatibility?.currency.status ?? "unknown"}</dd></div>
+                      <div><dt>Adjustment</dt><dd className="text-slate-300">{data.compatibility?.price_adjustment.status ?? "provider as returned"}</dd></div>
+                      <div><dt>Timestamp rule</dt><dd className="text-slate-300">{data.overlap.alignment_rule ?? "exact shared key"}</dd></div>
+                    </dl>
+                    {unsupported ? <p className="mt-2 text-[10px] text-amber-300">{unsupported} latest coordinate{unsupported === 1 ? " lacks" : "s lack"} bilateral support.</p> : null}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3.5">
+                <div className="flex items-start gap-2.5">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
+                  <div>
+                    <h3 className="text-xs font-semibold text-white">Identity & authority boundary</h3>
+                    <p className="mt-1 text-[11px] leading-5 text-slate-400">{data.provenance.note}</p>
+                    <p className="mt-1 break-all font-mono text-[10px] leading-4 text-slate-500" title={data.comparison_hash}>
+                      comparison {data.comparison_hash} · target {data.target.analysis_hash} · benchmark {data.benchmark.analysis_hash}
+                    </p>
+                    {data.frozen_receipt?.receipt_hash ? <p className="mt-1 break-all font-mono text-[10px] leading-4 text-slate-500">receipt {data.frozen_receipt.receipt_hash}</p> : null}
+                    {data.provenance.identity_control ? (
+                      <p className="mt-2 text-[10px] text-amber-300">Same-analysis identity control: every bilaterally supported signed difference should be zero.</p>
+                    ) : null}
+                    <p className="mt-2 text-[10px] text-amber-200">Research display only · zero scanner, option-learning, veto, sizing, or execution authority.</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="grid gap-px overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-700 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                [`${data.target.symbol} aligned close`, formatLevel(data.relative_progress.latest_target_close), data.target.provider_symbol ?? data.target.symbol],
+                [`${data.benchmark.symbol} aligned close`, formatLevel(data.relative_progress.latest_benchmark_close), data.benchmark.provider_symbol ?? data.benchmark.symbol],
+                ["Beta chain", `${data.relative_progress.beta_adjusted_chain_observations ?? "—"} observations`, `${data.relative_progress.beta_adjusted_chain_reset_count ?? 0} resets`],
+                ["Cache/debug", data.cache?.analysis?.status ?? "not reported", data.generated_at ? `generated ${formatDate(data.generated_at, data.timeframe)}` : "generation time unavailable"],
+              ].map(([label, value, note], index) => (
+                <div key={`${index}-${label}`} className="bg-slate-950/75 p-3">
+                  <div className="text-[9px] uppercase tracking-[0.12em] text-slate-600">{label}</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-200">{value}</div>
+                  <div className="mt-0.5 text-[10px] text-slate-500">{note}</div>
+                </div>
+              ))}
+            </section>
+
+            <details className="group overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/25">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
+                <div><span className="page-kicker">Relative Field methodology</span><h3 className="mt-1 text-sm font-semibold text-white">Definitions, chronology, and limits</h3></div>
+                <span className="text-xs text-slate-500 transition group-open:rotate-45" aria-hidden="true">+</span>
+              </summary>
+              <div className="grid gap-px border-t border-stealth-700 bg-stealth-700 md:grid-cols-2">
+                {[
+                  ["Relative index", "The target level divided by the benchmark level is rebased to 100 at the first shared returned bar. It measures observed relative progress, not field quality."],
+                  ["Direct model-scale gap", "For coordinate k, the direct gap is target minus benchmark on the coordinate's implemented 15D scale—not raw market or economic units."],
+                  ["Relative to own history", "Each coordinate is standardized against its instrument's separate fixed proper-fit median and robust scale, then differenced only on shared evaluation timestamps."],
+                  ["Prior-only beta adjustment", "The beta-adjusted chain starts after the minimum prior aligned returns and uses a beta fit only on strictly earlier observations. It does not subtract the fitted intercept and is not an OLS residual or alpha."],
+                  ["Field separation", `The family-balanced mean absolute own-history gap is compared with ${separationLookback} shared bars earlier on the same supported-coordinate intersection. Inside tolerance is reported as no clear net change.`],
+                  ["Alignment & support", "Only exact timestamp intersections are used. No price or coordinate is forward-filled, interpolated, or nearest-neighbor matched."],
+                  ["Identity & authority", "The ordered comparison hash binds both component analyses, alignment, and normalization. Pair v1 remains descriptive and has no decision or execution authority."],
+                ].map(([title, body]) => (
+                  <article key={title} className="bg-slate-950/75 p-4"><h4 className="text-xs font-semibold text-slate-200">{title}</h4><p className="mt-1 text-[11px] leading-5 text-slate-500">{body}</p></article>
+                ))}
+              </div>
+              {data.caveats.length ? (
+                <div className="border-t border-stealth-700 bg-slate-950/70 p-4">
+                  <h4 className="text-xs font-semibold text-slate-200">Response-specific caveats</h4>
+                  <ul className="mt-2 grid gap-1 text-[11px] leading-5 text-slate-500 md:grid-cols-2 md:gap-x-6">{data.caveats.map((caveat) => <li key={caveat}>• {caveat}</li>)}</ul>
+                </div>
+              ) : null}
+            </details>
+          </div>
+        ) : null}
+        </div>
+      </section>
+      </div>
+      {mobileDetailOpen && selected ? (
+        <div
+          className="fixed inset-0 z-[300] flex items-end bg-slate-950/75 p-2 backdrop-blur-sm xl:hidden"
+          onPointerDown={(event) => {
+            if (event.currentTarget === event.target) setMobileDetailOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pair-mobile-coordinate-title"
+            className="max-h-[88dvh] w-full overflow-y-auto rounded-t-3xl border border-stealth-600 bg-slate-900 p-2 shadow-2xl"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setMobileDetailOpen(false);
+                return;
+              }
+              if (event.key !== "Tab") return;
+              const focusable = Array.from(
+                event.currentTarget.querySelectorAll<HTMLElement>(
+                  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+                ),
+              ).filter((element) => element.getAttribute("aria-hidden") !== "true");
+              if (!focusable.length) {
+                event.preventDefault();
+                return;
+              }
+              const first = focusable[0];
+              const last = focusable[focusable.length - 1];
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-2xl bg-slate-900/95 px-2 py-2 backdrop-blur">
+              <div>
+                <div className="page-kicker">Selected coordinate</div>
+                <h3 id="pair-mobile-coordinate-title" className="mt-0.5 text-sm font-semibold text-white">{selected.label}</h3>
+              </div>
+              <button
+                ref={mobileCloseRef}
+                type="button"
+                onClick={() => setMobileDetailOpen(false)}
+                className="grid h-10 w-10 place-items-center rounded-xl border border-stealth-600 text-slate-300"
+                aria-label="Close coordinate detail"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
             <DimensionTrend
               coordinate={selected}
               basis={basis}
+              selectedDate={inspectedDate}
+              onSelectedDateChange={setInspectedDate}
               targetSymbol={data.target.symbol}
               benchmarkSymbol={data.benchmark.symbol}
             />
-          ) : (
-            <div className="grid min-h-[240px] place-items-center rounded-2xl border border-stealth-700 text-sm text-slate-500">
-              No comparable coordinates were returned.
-            </div>
-          )}
-        </section>
-
-        <section className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3.5">
-            <div className="flex items-start gap-2.5">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-              <div>
-                <h3 className="text-xs font-semibold text-white">Alignment & support</h3>
-                <p className="mt-1 text-[11px] leading-5 text-slate-400">
-                  {data.overlap.common_observations.toLocaleString()} common provider/cache bars from {formatDate(data.overlap.start, data.timeframe)} to {formatDate(data.overlap.end, data.timeframe)}.
-                  {" "}{Math.round(data.overlap.support_fraction * 100)}% shared support; {data.overlap.target_dropped} target and {data.overlap.benchmark_dropped} benchmark timestamps were excluded without forward-filling.
-                </p>
-                {data.generated_at || data.cache?.analysis?.status ? (
-                  <p className="mt-1 text-[10px] text-slate-500">
-                    {data.cache?.analysis?.status ? `Pair calculation: ${data.cache.analysis.status}. ` : ""}
-                    {data.generated_at ? `Generated ${formatDate(data.generated_at, data.timeframe)}.` : ""}
-                  </p>
-                ) : null}
-                <p className={`mt-1 text-[10px] ${sessionCompatibility === "compatible" ? "text-emerald-300" : "text-amber-300"}`}>
-                  {sessionCompatibility === "compatible"
-                    ? "Sessions are marked compatible by the response contract."
-                    : sessionCompatibility === "incompatible"
-                      ? "Sessions are incompatible; the relationship is unavailable or materially limited."
-                      : "Session compatibility is unknown and is not certified."}
-                  {unsupported ? ` ${unsupported} latest coordinate${unsupported === 1 ? " lacks" : "s lack"} bilateral support.` : ""}
-                </p>
-                {(data.overlap.target_unmatched_after_latest_aligned ?? 0) > 0 || (data.overlap.benchmark_unmatched_after_latest_aligned ?? 0) > 0 ? (
-                  <p className="mt-1 text-[10px] leading-4 text-amber-300">
-                    Latest returned rows do not share an anchor: {data.target.symbol} {formatDate(data.overlap.target_latest_returned_at, data.timeframe)} · {data.benchmark.symbol} {formatDate(data.overlap.benchmark_latest_returned_at, data.timeframe)}. The summary remains pinned to {formatDate(data.overlap.latest_aligned_at, data.timeframe)}.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3.5">
-            <div className="flex items-start gap-2.5">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
-              <div>
-                <h3 className="text-xs font-semibold text-white">Identity & authority boundary</h3>
-                <p className="mt-1 text-[11px] leading-5 text-slate-400">{data.provenance.note}</p>
-                <p className="mt-1 break-all font-mono text-[9px] text-slate-600" title={data.comparison_hash}>
-                  comparison {data.comparison_hash.slice(0, 16)} · target {data.target.analysis_hash.slice(0, 10)} · benchmark {data.benchmark.analysis_hash.slice(0, 10)}
-                </p>
-                {data.target.provider_symbol || data.benchmark.provider_symbol ? (
-                  <p className="mt-1 text-[10px] text-slate-500">
-                    Provider symbols: {data.target.symbol} → {data.target.provider_symbol ?? data.target.symbol} · {data.benchmark.symbol} → {data.benchmark.provider_symbol ?? data.benchmark.symbol}
-                  </p>
-                ) : null}
-                {data.provenance.identity_control ? (
-                  <p className="mt-1 text-[10px] text-amber-300">
-                    Same-analysis identity control: supported signed differences should be zero.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="flex items-start gap-2 rounded-xl border border-amber-400/15 bg-amber-400/[0.055] px-3 py-2.5 text-[11px] leading-5 text-amber-100/80">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <div>
-            Relative price and beta-adjusted progress remain separate from field differences. Positive coordinate gaps mean “more of this measured quantity” in the target—not higher quality, a forecast, or a trade signal.
           </div>
         </div>
-
-        <details className="group overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/25">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
-            <div>
-              <span className="page-kicker">Relative Field methodology</span>
-              <h3 className="mt-1 text-sm font-semibold text-white">Definitions, chronology, and limits</h3>
-            </div>
-            <span className="text-xs text-slate-500 transition group-open:rotate-45" aria-hidden="true">+</span>
-          </summary>
-          <div className="grid gap-px border-t border-stealth-700 bg-stealth-700 md:grid-cols-2">
-            {[
-              ["Relative index", "The target level divided by the benchmark level is rebased to 100 at the first shared returned bar. It measures observed relative progress, not field quality."],
-              ["Native gap", "For coordinate k, the direct gap is x(target,k) − x(benchmark,k) on the coordinate's own 15D scale—not raw market units. A positive result means more of that measured quantity in the target."],
-              ["Context gap", "The displayed context gap is target_context − benchmark_context. Each side uses median and IQR fixed on its proper fit segment; values appear only on shared evaluation timestamps, and evaluation values never refit the scale."],
-              ["Active progress & beta", "Active progress is the target/benchmark relative index minus 100. A beta-adjusted chain begins only after 20 prior aligned log returns and uses up to 60 strictly prior observations. It does not subtract a fitted intercept. The chain resets when benchmark variation is too small or beta fails its quality gate; stale beta is never carried forward. Field coordinates are never multiplied by price beta."],
-              ["Fit-relative stretch", "This label family-balances the mean absolute context gaps over the same supported coordinate intersection and compares the latest value with five bars earlier. Changes smaller than max(0.05, 5% of the earlier value) are labeled mixed."],
-              ["Alignment & support", "Only timestamp intersections of provider/cache rows are used. No prices or coordinates are forward-filled. The endpoint does not independently certify the latest row as exchange-complete. A pair value is supported only when both component coordinates are measured and dependency-supported."],
-              ["Identity & authority", "The ordered comparison hash binds the two component analysis hashes, recipe, and alignment. Pair output is descriptive research with zero scanner, sizing, execution, or manager-decision authority."],
-            ].map(([title, body]) => (
-              <article key={title} className="bg-slate-950/75 p-4">
-                <h4 className="text-xs font-semibold text-slate-200">{title}</h4>
-                <p className="mt-1 text-[11px] leading-5 text-slate-500">{body}</p>
-              </article>
-            ))}
-          </div>
-          {data.caveats.length ? (
-            <div className="border-t border-stealth-700 bg-slate-950/70 p-4">
-              <h4 className="text-xs font-semibold text-slate-200">Response-specific caveats</h4>
-              <ul className="mt-2 grid gap-1 text-[11px] leading-5 text-slate-500 md:grid-cols-2 md:gap-x-6">
-                {data.caveats.map((caveat) => <li key={caveat}>• {caveat}</li>)}
-              </ul>
-            </div>
-          ) : null}
-        </details>
-      </div>
-    </section>
+      ) : null}
+    </>
   );
 }

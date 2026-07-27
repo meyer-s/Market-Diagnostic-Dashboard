@@ -99,6 +99,14 @@ progress nor a field-coordinate difference changes a Form, declares one
 instrument “better,” or makes higher disorder, propagation, volatility,
 participation, or liquidity stress desirable.
 
+Each price row reports its actual prior-return count plus nullable chain ID and
+start/reset markers. A reset is marked only on the first unavailable-beta row
+after an active chain; leading unavailable rows are not resets. The latest
+summary reports the configured and minimum lookbacks, actual current sample
+count, current chain start/end and observations, total chain/reset counts, and
+the last reset. The legacy `lookback_bars` field is not the actual current
+beta-sample count.
+
 The pair service aligns daily and weekly observations by the serialized market
 session date; it does not independently certify exchange calendars or
 timezones. For intraday source timestamps that retain timezone information,
@@ -116,19 +124,57 @@ provider alias remains explicit in provenance; `UUP` is not silently
 substituted. Provider, currency, adjustment, session, and forming-bar
 differences can still limit comparability.
 
-The compact fit-relative stretch label uses the same supported coordinate
+The response separates requested, available, and returned exact shared-window
+counts. It also reports both legs' available counts, truncation status, exact
+start/end keys, dropped counts, unmatched tails, and latest-returned
+timestamps. Window support is counted across all `15 × returned bars`
+coordinate cells under the bilateral full-dependency rule; this is distinct
+from the latest 15-coordinate support displayed in the overview. Missing cells
+are never carried. Compatibility is separately qualified for session,
+currency, price adjustment, and timestamp alignment. For daily and weekly
+session-date joins, timezone metadata is `not_applicable_session_date`, not
+inferred to be available.
+
+The compact own-history-relative field-separation summary uses the same supported coordinate
 intersection at the latest bar and five bars earlier. It first averages
 absolute context gaps within each of the three coordinate families, then
 averages those three family values. A change within
 `max(0.05, 5% × earlier_stretch)` is labeled `mixed`; missing family coverage
-makes the label unavailable.
+makes the label unavailable. The payload returns the current and prior
+separation, change, tolerance, family count, and coordinate count. The reader
+label translates `mixed` to **No clear net change** because the classification
+also covers movement inside tolerance.
 
-Every pair receipt contains the two component analysis hashes and an ordered
-comparison hash over target, benchmark, alignment, and normalization
-contracts. Swapping target and benchmark therefore changes the hash and
-reverses signed differences. Form IDs and centroids are never paired: a
-request-local `F.001` for one instrument has no identity relationship to
-`F.001` for another.
+The ordered `comparison_hash` contains the two component analysis hashes plus
+target, benchmark, alignment, normalization, timeframe, and shared-key
+identities. Swapping target and benchmark therefore changes this calculation
+identity and reverses signed differences. Form IDs and centroids are never
+paired: a request-local `F.001` for one instrument has no identity relationship
+to `F.001` for another.
+
+The comparison response also carries a deterministic, non-predictive
+`pair_summary_v1` and a self-verifying `market_field_pair_receipt_v1`. The
+summary translates only authoritative price, beta-chain, coordinate,
+separation, support, and session fields. Its three notable coordinates are the
+supported latest context gaps with largest absolute magnitude, using recipe
+order as the deterministic tie-breaker. The frozen receipt binds the exact
+shared keys, latest measurements, support and compatibility disclosures,
+component/comparison identities, and zero-authority contract. Its SHA-256 is
+an unkeyed identity and tamper checksum, not a signature, certification of
+provider truth, or market-completeness proof. It excludes summary wording,
+generation/cache metadata, caveats, and complete chart histories, so it is not
+a standalone chart-replay archive. A copied URL preserves the live selector
+recipe and reruns with then-current data; the exported JSON preserves the
+current compact receipt.
+
+The page separates this material into **Overview**, **Field detail**, and
+**Audit receipt**. Field controls live beside the field visualizations and are
+URL-addressable: comparison basis, displayed series, selected coordinate,
+scope trail (`12`, `24`, `72`, or full), explicit shared versus inspection
+scale, and recipe versus largest-own-history-gap ordering. Scope subject colors
+remain fixed; the third coordinate changes only the current-point halo.
+Visible field charts share one inspected-date cursor. These are translation
+and inspection conventions, not additional model features.
 
 Pair v1 is display and research instrumentation only. It has zero direct
 scanner weight, is excluded from the outcome-learning canary, and cannot
@@ -183,7 +229,7 @@ relative_feature_j(Form k)
   = (centroid_kj - fit_median(X_j)) / fit_robust_scale(X_j)
 ```
 
-The interface leads with directional pressure and its change, then identifies the most distinctive interpretable characteristic—such as lower realized volatility, higher trend agreement, or lower participation—relative to the proper fit segment. Learned states keep a stable order inside one analysis for traceability. Forward returns never affect this description.
+The interface leads with directional pressure and its change, then identifies the most distinctive interpretable characteristic—such as lower realized volatility, higher trend agreement, or lower participation—relative to the proper fit segment. Request-local Forms keep a stable order inside one analysis for traceability. Forward returns never affect this description.
 
 The primary Dictionary uses explicit quantities:
 
@@ -247,7 +293,8 @@ The implementation preserves a strict chronology:
 6. pair-native differences require shared supported observations under one
    recipe, while pair-context differences begin only after both frozen
    proper-fit and calibration partitions;
-7. pair residual returns use only prior aligned returns to estimate beta, and
+7. pair beta-adjusted log-return differentials use only prior aligned returns
+   to estimate beta, do not subtract the fitted intercept, and
    neither pair output refits either component field.
 
 This makes the language inspectable, but not validated as a trading system. The next major version should persist append-only forms across analyses, reconcile similar prototypes without renaming prior forms, and test a global Climate layer on untouched symbols and later dates.

@@ -178,7 +178,7 @@ The focused repository checks also passed: 32 market-weather/context tests and 9
 | Figure 2: phase portraits | `figures/fig_timeframe_phase_portraits.png` | The state-space trajectory changes shape across clock horizons |
 | Figure 3: resolution convergence | `figures/fig_resolution_convergence.png` | Sparse horizon grids materially alter several features |
 | Figure 4: sensitivity and semantic anchors | `figures/fig_sensitivity_audits.png` | History depth, entropy window, and flat-state formula anchors must be disclosed |
-| Figure 5: state timeline | `figures/fig_spy_state_timeline.png` | Learned states are descriptive regimes; upper calibration-distance-tail flags cluster through time |
+| Figure 5: Form timeline | `figures/fig_spy_state_timeline.png` | Request-local Forms are descriptive prototypes; upper calibration-distance-tail flags cluster through time |
 
 For the main paper, the unrounded prefix row, initialization contract, per-step comparison count, and Figure 4 are the strongest peer-review responses. The state timeline belongs in a limitations or diagnostics section unless future prequential validation shows stable calibration.
 

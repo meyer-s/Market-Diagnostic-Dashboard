@@ -180,13 +180,13 @@ describe("MarketWeatherRadar report state", () => {
     renderPage("/market-weather?symbol=SPY&comparison=pair&compare=SPY");
 
     expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(false);
-    expect((screen.getByLabelText("Benchmark or competitor symbol") as HTMLInputElement).value).toBe("SPY");
+    expect((screen.getByLabelText("Benchmark or comparison symbol") as HTMLInputElement).value).toBe("SPY");
     expect(screen.getByRole("button", { name: "DXY" })).not.toBeNull();
     const sectors = screen.getByLabelText("Select Sector SPDR benchmark") as HTMLSelectElement;
     expect(Array.from(sectors.options).map((option) => option.value).filter(Boolean)).toEqual([
       "XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY",
     ]);
-    expect(screen.getByLabelText("Benchmark or competitor symbol")).not.toBeNull();
+    expect(screen.getByLabelText("Benchmark or comparison symbol")).not.toBeNull();
   });
 
   it("warns before requesting a DXY timeframe with unsupported bar anchors", () => {

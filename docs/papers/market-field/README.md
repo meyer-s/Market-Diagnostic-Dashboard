@@ -54,8 +54,10 @@ self-contained copy of the exact market-data inputs.
   longer-horizon research.
 - The production research page also contains Relative Field Pair v1: a
   two-instrument, same-recipe descriptive comparison with explicit alignment,
-  support, component-hash, and zero-authority receipts. It is implementation
-  scope, not an additional empirical result in this package.
+  exact window/support/compatibility disclosures, component and ordered
+  comparison identities, a deterministic `pair_summary_v1`, and a compact
+  self-verifying `market_field_pair_receipt_v1`. It is implementation scope,
+  not an additional empirical result in this package.
 
 The official ICLR 2026 style and bibliography files are included unchanged from
 the conference template. In the 24-page Tectonic 0.16.9 build, all main text,
@@ -194,6 +196,12 @@ secrets, or secret-option records are part of this package.
   preserves Yahoo `DX-Y.NYB` as an explicit provider alias rather than silently
   substituting `UUP`. Provider, session, adjustment, and currency differences
   remain visible limitations.
+- Requested, available, and returned exact shared-window counts are distinct.
+  The response also reports both leg counts, truncation, dropped observations,
+  unmatched tails, latest-returned timestamps, and all-window bilateral
+  coordinate-cell support with `missing_values_carried=false`. Daily/weekly
+  session-date alignment reports timezone metadata as not applicable rather
+  than inferred available.
 - The optional prior-only beta-adjusted path needs at least 20 prior aligned
   log-return pairs and uses at most 60. Its centered covariance/variance slope
   is equivalent to the slope from an intercept-inclusive fit, but the displayed
@@ -203,18 +211,27 @@ secrets, or secret-option records are part of this package.
   is nonfinite, or its absolute value exceeds 25. Rejected values are never
   clipped or carried forward: the row is unavailable, the cumulative
   beta-adjusted chain resets, and the current beta/return summary remains
-  unavailable when the current beta is unavailable.
+  unavailable when the current beta is unavailable. Per-row actual sample
+  counts and chain start/reset markers plus current-chain start/end,
+  observations, chain/reset counts, and last reset make this discontinuity
+  explicit; the retained `lookback_bars` alias is not the actual sample count.
 - Relative price uses the full-precision normalized aligned closes rather than
   the four-decimal display serialization. Coordinate gaps separately consume
   the public component receipt: four-decimal coordinate series and six-decimal
   fit references, with six-decimal standardized values and gaps. The
-  fit-relative stretch label
+  own-history-relative field-separation summary
   family-balances mean absolute context gaps over the same supported coordinate
-  intersection and compares the latest value with five bars earlier.
-- Pair receipts include both component analysis hashes and an ordered
-  comparison hash. Swapping the instruments reverses signed differences and
-  changes the comparison identity. Request-local Form IDs are never matched
-  across instruments.
+  intersection and returns the latest value, five-bar-prior value, change,
+  tolerance, classification, and participating support.
+- The ordered `comparison_hash` identifies the component calculations and
+  comparison contract. The distinct `market_field_pair_receipt_v1` freezes
+  exact shared keys, latest values, support, compatibility disclosures, and
+  zero authority under an unkeyed SHA-256 checksum also exposed in the response
+  header. It excludes summary wording, cache/generation metadata, caveats, and
+  full chart histories, so it is not a signed attestation or complete replay
+  archive. Live URLs preserve selectors and rerun with current data; JSON
+  export preserves this compact receipt. Request-local Form IDs are never
+  matched across instruments.
 - Pair v1 has zero scanner, canary, veto, verdict, sizing, and execution
   authority. It does not establish relative leadership, connectedness,
   prediction, or economic value. Basket fields, cross-sectional peer ranks, and

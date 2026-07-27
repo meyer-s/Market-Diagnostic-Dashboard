@@ -655,6 +655,10 @@ export interface MarketWeatherHistoryCacheMetadata {
 export type MarketWeatherComparisonMode = "single" | "pair";
 export type MarketWeatherComparisonBasis = "native" | "context";
 export type MarketWeatherComparisonView = "target" | "benchmark" | "difference";
+export type MarketWeatherPairTab = "overview" | "field" | "audit";
+export type MarketWeatherPairScopeTrail = 12 | 24 | 72 | "full";
+export type MarketWeatherPairScopeScale = "shared" | "inspect";
+export type MarketWeatherPairCoordinateOrder = "recipe" | "largest";
 
 export interface MarketWeatherComparisonSeriesPoint {
   date: string;
@@ -689,6 +693,199 @@ export interface MarketWeatherComparisonCoordinate {
   series: MarketWeatherComparisonSeriesPoint[];
 }
 
+export interface MarketWeatherPairWindow {
+  requested_shared_observations: number;
+  available_exact_shared_observations: number;
+  returned_exact_shared_observations: number;
+  target_available_observations: number;
+  benchmark_available_observations: number;
+  truncated_to_requested_window: boolean;
+  start: string | null;
+  end: string | null;
+}
+
+export interface MarketWeatherPairSupport {
+  supported_coordinate_cells: number;
+  total_coordinate_cells: number;
+  support_fraction: number;
+  all_returned_coordinate_cells_supported: boolean;
+  support_rule: "bilateral_full_dependency_support" | string;
+  missing_values_carried: boolean;
+}
+
+export interface MarketWeatherPairCompatibility {
+  session: {
+    status: "compatible" | "incompatible" | "unknown" | string;
+    independently_certified: boolean;
+    basis: string;
+  };
+  currency: {
+    status: "compatible" | "incompatible" | "unknown" | string;
+    independently_certified: boolean;
+  };
+  price_adjustment: {
+    status: "provider_as_returned" | string;
+    independently_certified: boolean;
+  };
+  timestamp_alignment: {
+    status: "supported" | "unsupported" | string;
+    rule: string;
+    timezone_metadata_available: boolean | null;
+    timezone_status?: "available" | "unavailable" | "not_applicable_session_date" | string;
+  };
+}
+
+export interface MarketWeatherPairOverlap {
+  common_observations: number;
+  requested_observations?: number;
+  available_common_observations?: number;
+  returned_common_observations?: number;
+  start: string | null;
+  end: string | null;
+  target_dropped: number;
+  benchmark_dropped: number;
+  target_unmatched_after_latest_aligned?: number;
+  benchmark_unmatched_after_latest_aligned?: number;
+  target_latest_returned_at?: string | null;
+  benchmark_latest_returned_at?: string | null;
+  latest_aligned_at: string | null;
+  supported_coordinate_cells?: number;
+  total_coordinate_cells?: number;
+  support_fraction: number;
+  session_compatibility?: "compatible" | "incompatible" | "unknown";
+  session_compatibility_independently_certified?: boolean;
+  /** Compatibility alias for early Pair v1 payloads. */
+  session_compatible?: boolean | null;
+  alignment_supported?: boolean;
+  alignment_status?: "aligned" | "identity_control" | "unsupported" | string;
+  alignment_rule?: "serialized_session_date" | "exact_utc_timestamp" | "exact_serialized_timestamp_timezone_unavailable" | string;
+  note: string;
+}
+
+export interface MarketWeatherPairFieldSeparation {
+  direction: "widening" | "converging" | "mixed" | "unavailable" | string;
+  label: string;
+  latest_stretch: number | null;
+  prior_stretch: number | null;
+  change: number | null;
+  tolerance: number | null;
+  lookback_shared_observations: number;
+  compared_families: number;
+  compared_coordinates: number;
+}
+
+export interface MarketWeatherPairRelativeProgress {
+  latest_target_close: number | null;
+  latest_benchmark_close: number | null;
+  relative_index?: number | null;
+  active_return_pct: number | null;
+  beta_adjusted_return_pct: number | null;
+  beta: number | null;
+  beta_status?: "available" | "unavailable";
+  lookback_bars: number;
+  beta_configured_lookback_returns?: number;
+  beta_minimum_prior_returns?: number;
+  beta_prior_observations?: number;
+  beta_adjusted_chain_start_at?: string | null;
+  beta_adjusted_chain_end_at?: string | null;
+  beta_adjusted_chain_observations?: number;
+  beta_adjusted_chain_count?: number;
+  beta_adjusted_chain_reset_count?: number;
+  beta_adjusted_last_reset_at?: string | null;
+  gap_direction: "widening" | "converging" | "mixed" | "unavailable" | string;
+  field_separation?: MarketWeatherPairFieldSeparation;
+}
+
+export interface MarketWeatherPairSummarySentence {
+  id:
+    | "relative_progress"
+    | "beta_adjusted_chain"
+    | "field_separation"
+    | "coordinate_gaps"
+    | "data_support"
+    | string;
+  text: string;
+  section: "price_progress" | "field_detail" | "audit_receipt" | string;
+}
+
+export interface MarketWeatherPairSummaryGap {
+  id: string;
+  label: string;
+  family: string;
+  target_context: number | null;
+  benchmark_context: number | null;
+  context_difference: number;
+  direction: "target_higher" | "benchmark_higher" | "equal" | string;
+  pair_supported: boolean;
+}
+
+export interface MarketWeatherPairDescriptiveSummary {
+  schema_version: "pair_summary_v1" | string;
+  title: string;
+  observed_through: string | null;
+  text: string;
+  sentences: MarketWeatherPairSummarySentence[];
+  notable_context_gaps: MarketWeatherPairSummaryGap[];
+  authority: "deterministic_descriptive_only" | string;
+}
+
+export interface MarketWeatherPairAuthority {
+  mode: "research_display_only" | string;
+  scanner_weight: number;
+  option_learning_weight: number;
+  veto: boolean;
+  sizing: boolean;
+  execution: boolean;
+}
+
+export interface MarketWeatherPairReceiptLeg {
+  symbol: string;
+  requested_symbol?: string;
+  provider_symbol?: string;
+  instrument_kind?: string;
+  analysis_hash: string;
+  data_source?: string;
+  latest_aligned_close?: number | null;
+  latest_returned_close?: number | null;
+}
+
+export interface MarketWeatherPairFrozenReceipt {
+  schema_version: "market_field_pair_receipt_v1" | string;
+  pair_schema_version: "market_field_pair_v1" | string;
+  semantic_revision?: string | null;
+  frozen_as_of: string | null;
+  comparison_hash: string;
+  target: MarketWeatherPairReceiptLeg;
+  benchmark: MarketWeatherPairReceiptLeg;
+  timeframe: MarketWeatherTimeframe;
+  window: MarketWeatherPairWindow;
+  overlap: MarketWeatherPairOverlap;
+  alignment: {
+    shared_keys: string[];
+    shared_keys_hash: string;
+    contract: string;
+  };
+  support: MarketWeatherPairSupport;
+  compatibility: MarketWeatherPairCompatibility;
+  relative_progress: MarketWeatherPairRelativeProgress;
+  latest_coordinates: Array<
+    Pick<MarketWeatherComparisonCoordinate, "id" | "label" | "family" | "unit" | "latest">
+  >;
+  provenance: {
+    target_analysis_hash: string;
+    benchmark_analysis_hash: string;
+    comparison_hash: string;
+    component_recipe_hash: string;
+    alignment_contract: string;
+    normalization_contract: string;
+    ordered_pair: boolean;
+    identity_control: boolean;
+  };
+  authority: MarketWeatherPairAuthority;
+  note: string;
+  receipt_hash: string;
+}
+
 export interface MarketWeatherComparisonResponse {
   schema_version: "market_field_pair_v1";
   semantic_revision?: string;
@@ -698,6 +895,7 @@ export interface MarketWeatherComparisonResponse {
     requested_symbol?: string;
     canonical_symbol?: string;
     provider_symbol?: string;
+    instrument_kind?: string;
     analysis_hash: string;
     data_source?: string;
     latest_close?: number | null;
@@ -709,6 +907,7 @@ export interface MarketWeatherComparisonResponse {
     requested_symbol?: string;
     canonical_symbol?: string;
     provider_symbol?: string;
+    instrument_kind?: string;
     analysis_hash: string;
     data_source?: string;
     latest_close?: number | null;
@@ -717,36 +916,12 @@ export interface MarketWeatherComparisonResponse {
   };
   comparison_hash: string;
   timeframe: MarketWeatherTimeframe;
-  overlap: {
-    common_observations: number;
-    start: string | null;
-    end: string | null;
-    target_dropped: number;
-    benchmark_dropped: number;
-    target_unmatched_after_latest_aligned?: number;
-    benchmark_unmatched_after_latest_aligned?: number;
-    target_latest_returned_at?: string | null;
-    benchmark_latest_returned_at?: string | null;
-    latest_aligned_at: string | null;
-    support_fraction: number;
-    session_compatibility?: "compatible" | "incompatible" | "unknown";
-    /** Compatibility alias for early Pair v1 payloads. */
-    session_compatible?: boolean | null;
-    alignment_supported?: boolean;
-    alignment_status?: "supported" | "unsupported" | string;
-    alignment_rule?: "serialized_session_date" | "exact_utc_timestamp" | "exact_serialized_timestamp_timezone_unavailable" | string;
-    note: string;
-  };
-  relative_progress: {
-    latest_target_close: number | null;
-    latest_benchmark_close: number | null;
-    active_return_pct: number | null;
-    beta_adjusted_return_pct: number | null;
-    beta: number | null;
-    beta_status?: "available" | "unavailable";
-    lookback_bars: number;
-    gap_direction: "widening" | "converging" | "mixed" | "unavailable" | string;
-  };
+  overlap: MarketWeatherPairOverlap;
+  window?: MarketWeatherPairWindow;
+  support?: MarketWeatherPairSupport;
+  compatibility?: MarketWeatherPairCompatibility;
+  summary?: MarketWeatherPairDescriptiveSummary;
+  relative_progress: MarketWeatherPairRelativeProgress;
   coordinates: MarketWeatherComparisonCoordinate[];
   price_series: Array<{
     date: string;
@@ -755,8 +930,13 @@ export interface MarketWeatherComparisonResponse {
     relative_index: number | null;
     active_return: number | null;
     prior_return_beta?: number | null;
+    beta_prior_observations?: number;
+    beta_adjusted_chain_id?: number | null;
+    beta_adjusted_chain_start?: boolean;
+    beta_adjusted_chain_reset?: boolean;
     beta_adjusted_cumulative_return?: number | null;
   }>;
+  frozen_receipt?: MarketWeatherPairFrozenReceipt;
   provenance: {
     target_analysis_hash: string;
     benchmark_analysis_hash: string;
@@ -774,14 +954,7 @@ export interface MarketWeatherComparisonResponse {
     identity_control?: boolean;
     note: string;
   };
-  authority?: {
-    mode: "research_display_only" | string;
-    scanner_weight: number;
-    option_learning_weight: number;
-    veto: boolean;
-    sizing: boolean;
-    execution: boolean;
-  };
+  authority?: MarketWeatherPairAuthority;
   cache?: {
     target_history?: MarketWeatherHistoryCacheMetadata | Record<string, unknown>;
     benchmark_history?: MarketWeatherHistoryCacheMetadata | Record<string, unknown>;

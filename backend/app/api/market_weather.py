@@ -413,6 +413,11 @@ def compare_market_weather(
         if cached_comparison.status == "wait"
         else "not_checked"
     )
+    frozen_receipt = result.get("frozen_receipt")
+    if isinstance(frozen_receipt, dict):
+        receipt_hash = str(frozen_receipt.get("receipt_hash") or "")
+        if receipt_hash:
+            response.headers["X-Market-Weather-Receipt-Hash"] = receipt_hash
     browser_max_age = min(30, max(0, history_ttl_seconds))
     response.headers["Cache-Control"] = (
         f"private, max-age={browser_max_age}, must-revalidate"

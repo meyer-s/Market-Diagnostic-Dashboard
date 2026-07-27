@@ -4,6 +4,10 @@ import type {
   MarketWeatherComparisonView,
   MarketWeatherLanguageView,
   MarketWeatherMode,
+  MarketWeatherPairCoordinateOrder,
+  MarketWeatherPairScopeScale,
+  MarketWeatherPairScopeTrail,
+  MarketWeatherPairTab,
   MarketWeatherTimeframe,
   MarketWeatherTimelineLens,
 } from "../types/marketWeather";
@@ -33,6 +37,10 @@ export interface MarketWeatherQueryState {
   comparisonBasis: MarketWeatherComparisonBasis;
   comparisonView: MarketWeatherComparisonView;
   comparisonDimension: string;
+  pairTab: MarketWeatherPairTab;
+  pairScopeTrail: MarketWeatherPairScopeTrail;
+  pairScopeScale: MarketWeatherPairScopeScale;
+  pairCoordinateOrder: MarketWeatherPairCoordinateOrder;
   mode: MarketWeatherMode;
   channel: string;
   view: MarketWeatherLanguageView;
@@ -63,6 +71,10 @@ export const DEFAULT_MARKET_WEATHER_QUERY_STATE: MarketWeatherQueryState = {
   comparisonBasis: "context",
   comparisonView: "difference",
   comparisonDimension: "pressure",
+  pairTab: "overview",
+  pairScopeTrail: 24,
+  pairScopeScale: "shared",
+  pairCoordinateOrder: "recipe",
   mode: "regime",
   channel: "pressure",
   view: "now",
@@ -88,6 +100,10 @@ const MODES = new Set<MarketWeatherMode>(["regime", "convection", "topographic",
 const COMPARISON_MODES = new Set<MarketWeatherComparisonMode>(["single", "pair"]);
 const COMPARISON_BASES = new Set<MarketWeatherComparisonBasis>(["native", "context"]);
 const COMPARISON_VIEWS = new Set<MarketWeatherComparisonView>(["target", "benchmark", "difference"]);
+const PAIR_TABS = new Set<MarketWeatherPairTab>(["overview", "field", "audit"]);
+const PAIR_SCOPE_TRAILS = new Set(["12", "24", "72", "full"]);
+const PAIR_SCOPE_SCALES = new Set<MarketWeatherPairScopeScale>(["shared", "inspect"]);
+const PAIR_COORDINATE_ORDERS = new Set<MarketWeatherPairCoordinateOrder>(["recipe", "largest"]);
 const COMPARISON_DIMENSIONS = new Set([
   "pressure",
   "velocity",
@@ -164,6 +180,10 @@ export function parseMarketWeatherQuery(source: URLSearchParams | string): Marke
   const comparisonBasisCandidate = (params.get("basis") ?? defaults.comparisonBasis) as MarketWeatherComparisonBasis;
   const comparisonViewCandidate = (params.get("comparison_view") ?? defaults.comparisonView) as MarketWeatherComparisonView;
   const rawComparisonDimension = (params.get("comparison_dimension") ?? defaults.comparisonDimension).trim().toLowerCase();
+  const pairTabCandidate = (params.get("pair_tab") ?? defaults.pairTab) as MarketWeatherPairTab;
+  const pairScopeTrailCandidate = params.get("scope_trail") ?? String(defaults.pairScopeTrail);
+  const pairScopeScaleCandidate = (params.get("scope_scale") ?? defaults.pairScopeScale) as MarketWeatherPairScopeScale;
+  const pairCoordinateOrderCandidate = (params.get("coordinate_order") ?? defaults.pairCoordinateOrder) as MarketWeatherPairCoordinateOrder;
 
   const config = normalizeHorizonGrid({
     symbol: SYMBOL_PATTERN.test(rawSymbol) ? rawSymbol : defaults.config.symbol,
@@ -184,6 +204,11 @@ export function parseMarketWeatherQuery(source: URLSearchParams | string): Marke
   const timelineWindow: MarketTimelineWindow = TIMELINE_WINDOWS.has(windowCandidate)
     ? windowCandidate === "all" ? "all" : Number(windowCandidate) as 60 | 120 | 250
     : defaults.timelineWindow;
+  const pairScopeTrail: MarketWeatherPairScopeTrail = PAIR_SCOPE_TRAILS.has(pairScopeTrailCandidate)
+    ? pairScopeTrailCandidate === "full"
+      ? "full"
+      : Number(pairScopeTrailCandidate) as 12 | 24 | 72
+    : defaults.pairScopeTrail;
 
   return {
     config,
@@ -194,6 +219,10 @@ export function parseMarketWeatherQuery(source: URLSearchParams | string): Marke
     comparisonDimension: COMPARISON_DIMENSIONS.has(rawComparisonDimension)
       ? rawComparisonDimension
       : defaults.comparisonDimension,
+    pairTab: PAIR_TABS.has(pairTabCandidate) ? pairTabCandidate : defaults.pairTab,
+    pairScopeTrail,
+    pairScopeScale: PAIR_SCOPE_SCALES.has(pairScopeScaleCandidate) ? pairScopeScaleCandidate : defaults.pairScopeScale,
+    pairCoordinateOrder: PAIR_COORDINATE_ORDERS.has(pairCoordinateOrderCandidate) ? pairCoordinateOrderCandidate : defaults.pairCoordinateOrder,
     mode: MODES.has(modeCandidate) ? modeCandidate : defaults.mode,
     channel: CHANNELS.has(channelCandidate) ? channelCandidate : defaults.channel,
     view: VIEWS.has(viewCandidate) ? viewCandidate : defaults.view,
@@ -241,6 +270,10 @@ export function serializeMarketWeatherQuery(state: MarketWeatherQueryState): URL
     params.set("basis", state.comparisonBasis);
     params.set("comparison_view", state.comparisonView);
     params.set("comparison_dimension", state.comparisonDimension);
+    params.set("pair_tab", state.pairTab);
+    params.set("scope_trail", String(state.pairScopeTrail));
+    params.set("scope_scale", state.pairScopeScale);
+    params.set("coordinate_order", state.pairCoordinateOrder);
   }
   params.set("mode", state.mode);
   params.set("channel", state.channel);

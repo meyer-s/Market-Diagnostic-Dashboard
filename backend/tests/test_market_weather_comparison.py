@@ -131,6 +131,12 @@ def test_identity_pair_is_explicit_zero_control() -> None:
     assert result["overlap"]["target_dropped"] == 0
     assert result["overlap"]["benchmark_dropped"] == 0
     assert result["overlap"]["support_fraction"] == 1.0
+    assert result["relative_progress"]["gap_direction"] == "mixed"
+    assert result["relative_progress"]["field_separation"]["label"] == (
+        "No clear net change"
+    )
+    assert result["relative_progress"]["field_separation"]["latest_stretch"] == 0.0
+    assert result["relative_progress"]["field_separation"]["prior_stretch"] == 0.0
     assert all(point["relative_index"] == 100.0 for point in result["price_series"])
     volatility = next(
         coordinate
@@ -440,6 +446,65 @@ def test_current_beta_summary_never_carries_a_stale_estimate() -> None:
     assert summary["status"] == "unavailable"
 
 
+def test_beta_adjusted_chain_metadata_marks_starts_resets_and_recovery() -> None:
+    initial_returns = 0.003 * np.sin(np.arange(40) / 4.0 + 0.7)
+    flat_returns = np.zeros(70)
+    recovered_returns = 0.0025 * np.sin(np.arange(40) / 3.0 + 0.9)
+    benchmark_returns = np.concatenate(
+        (initial_returns, flat_returns, recovered_returns)
+    )
+    target_returns = 1.35 * benchmark_returns
+    benchmark_close = 100.0 * np.exp(
+        np.concatenate(([0.0], np.cumsum(benchmark_returns)))
+    )
+    target_close = 100.0 * np.exp(
+        np.concatenate(([0.0], np.cumsum(target_returns)))
+    )
+    keys = [
+        (
+            pd.Timestamp("2025-01-02", tz="UTC")
+            + pd.Timedelta(days=index)
+        ).isoformat()
+        for index in range(len(target_close))
+    ]
+
+    def rows(values: np.ndarray) -> dict[str, dict[str, object]]:
+        return {
+            key: {"date": key, "close": float(value)}
+            for key, value in zip(keys, values, strict=True)
+        }
+
+    series, summary = _relative_price_series(
+        common_keys=keys,
+        target_rows=rows(target_close),
+        benchmark_rows=rows(benchmark_close),
+        timeframe="15m",
+    )
+
+    starts = [
+        index
+        for index, row in enumerate(series)
+        if row["beta_adjusted_chain_start"]
+    ]
+    resets = [
+        index
+        for index, row in enumerate(series)
+        if row["beta_adjusted_chain_reset"]
+    ]
+    assert len(starts) == 2
+    assert len(resets) == 1
+    assert starts[0] < resets[0] < starts[1]
+    assert series[resets[0]]["beta_adjusted_cumulative_return"] is None
+    assert series[starts[1]]["beta_adjusted_chain_id"] == 2
+    assert summary["current_chain_start_at"] == series[starts[1]]["date"]
+    assert summary["current_chain_end_at"] == series[-1]["date"]
+    assert summary["current_chain_observations"] == len(series) - starts[1]
+    assert summary["chain_count"] == len(starts)
+    assert summary["chain_reset_count"] == len(resets)
+    assert summary["last_chain_reset_at"] == series[resets[0]]["date"]
+    assert summary["latest_beta_prior_observations"] == 60
+
+
 def test_beta_uses_centered_slope_gates_invalid_windows_and_does_not_subtract_alpha() -> None:
     benchmark_prior = np.linspace(-0.02, 0.02, 20)
     alpha = 0.003
@@ -666,6 +731,97 @@ def test_comparison_hash_commits_calculation_identity_but_not_cache_provenance()
     assert receipt(keys=common_keys[1:]) != baseline
 
 
+def test_summary_window_support_and_frozen_receipt_are_exact_and_deterministic() -> None:
+    target = _leg("ABT", _history(drift=0.18))
+    benchmark = _leg("RSP", _history(drift=0.08, phase_shift=0.6))
+
+    first = build_market_weather_comparison(
+        target=target,
+        benchmark=benchmark,
+        timeframe="1D",
+        visible_bars=500,
+    )
+    second = build_market_weather_comparison(
+        target=target,
+        benchmark=benchmark,
+        timeframe="1D",
+        visible_bars=500,
+    )
+
+    assert first["window"] == {
+        "requested_shared_observations": 500,
+        "available_exact_shared_observations": 180,
+        "returned_exact_shared_observations": 180,
+        "target_available_observations": 180,
+        "benchmark_available_observations": 180,
+        "truncated_to_requested_window": False,
+        "start": first["overlap"]["start"],
+        "end": first["overlap"]["end"],
+    }
+    assert first["overlap"]["requested_observations"] == 500
+    assert first["overlap"]["available_common_observations"] == 180
+    assert first["overlap"]["returned_common_observations"] == 180
+    assert first["support"]["supported_coordinate_cells"] == first["overlap"][
+        "supported_coordinate_cells"
+    ]
+    assert first["support"]["total_coordinate_cells"] == 15 * 180
+    assert first["support"]["support_fraction"] == first["overlap"][
+        "support_fraction"
+    ]
+    assert first["support"]["missing_values_carried"] is False
+    assert first["compatibility"]["session"] == {
+        "status": "unknown",
+        "independently_certified": False,
+        "basis": "not_independently_available",
+    }
+    assert first["compatibility"]["timestamp_alignment"][
+        "timezone_metadata_available"
+    ] is None
+    assert first["compatibility"]["timestamp_alignment"][
+        "timezone_status"
+    ] == "not_applicable_session_date"
+    assert first["summary"]["schema_version"] == "pair_summary_v1"
+    assert first["summary"]["observed_through"] == first["overlap"]["end"]
+    assert "exact shared 1D bars" in first["summary"]["text"]
+    assert first["summary"]["authority"] == "deterministic_descriptive_only"
+    assert first["relative_progress"]["relative_index"] == first["price_series"][-1][
+        "relative_index"
+    ]
+
+    receipt = first["frozen_receipt"]
+    assert receipt == second["frozen_receipt"]
+    assert receipt["schema_version"] == "market_field_pair_receipt_v1"
+    assert receipt["comparison_hash"] == first["comparison_hash"]
+    assert receipt["overlap"] == first["overlap"]
+    assert receipt["overlap"]["target_latest_returned_at"] == first["overlap"][
+        "target_latest_returned_at"
+    ]
+    assert receipt["overlap"]["target_dropped"] == first["overlap"][
+        "target_dropped"
+    ]
+    assert receipt["overlap"]["target_unmatched_after_latest_aligned"] == first[
+        "overlap"
+    ]["target_unmatched_after_latest_aligned"]
+    assert receipt["alignment"]["shared_keys_hash"] == comparison_service._canonical_sha256(
+        receipt["alignment"]["shared_keys"]
+    )
+    assert len(receipt["alignment"]["shared_keys"]) == 180
+    assert len(receipt["latest_coordinates"]) == 15
+    assert receipt["authority"] == first["authority"]
+    receipt_body = dict(receipt)
+    receipt_hash = receipt_body.pop("receipt_hash")
+    assert receipt_hash == comparison_service._canonical_sha256(receipt_body)
+    assert "generated_at" not in receipt
+
+
+def test_pair_canonical_json_and_summary_normalize_signed_zero() -> None:
+    assert comparison_service._rounded(-0.0000001) == 0.0
+    assert comparison_service._format_signed(-0.0, suffix="%") == "0.00%"
+    assert comparison_service._canonical_sha256(
+        {"difference": -0.0}
+    ) == comparison_service._canonical_sha256({"difference": 0.0})
+
+
 def test_pair_endpoint_uses_one_fetch_for_identity_and_reuses_analysis_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -718,6 +874,9 @@ def test_pair_endpoint_uses_one_fetch_for_identity_and_reuses_analysis_cache(
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json()["provenance"]["identity_control"] is True
+    assert first.headers["x-market-weather-receipt-hash"] == first.json()[
+        "frozen_receipt"
+    ]["receipt_hash"]
     assert first.headers["x-market-weather-comparison-cache"] == "miss"
     assert second.headers["x-market-weather-comparison-cache"] == "hit"
     assert calls == [("PAIRIDENTITY", "1D", 192)]

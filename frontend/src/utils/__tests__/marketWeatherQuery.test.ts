@@ -27,7 +27,7 @@ describe("market weather report query", () => {
 
   it("round-trips a pair comparison without confusing the field renderer mode", () => {
     const state = parseMarketWeatherQuery(
-      "?symbol=nvda&comparison=pair&compare=smh&basis=native&comparison_view=benchmark&comparison_dimension=propagation",
+      "?symbol=nvda&comparison=pair&compare=smh&basis=native&comparison_view=benchmark&comparison_dimension=propagation&pair_tab=field&scope_trail=72&scope_scale=inspect&coordinate_order=largest",
     );
 
     expect(state.comparisonMode).toBe("pair");
@@ -35,6 +35,10 @@ describe("market weather report query", () => {
     expect(state.comparisonBasis).toBe("native");
     expect(state.comparisonView).toBe("benchmark");
     expect(state.comparisonDimension).toBe("propagation");
+    expect(state.pairTab).toBe("field");
+    expect(state.pairScopeTrail).toBe(72);
+    expect(state.pairScopeScale).toBe("inspect");
+    expect(state.pairCoordinateOrder).toBe("largest");
     expect(parseMarketWeatherQuery(serializeMarketWeatherQuery(state))).toEqual(state);
   });
 
@@ -50,6 +54,16 @@ describe("market weather report query", () => {
     );
     expect(state.comparisonDimension).toBe("pressure");
     expect(serializeMarketWeatherQuery(state).get("comparison_dimension")).toBe("pressure");
+  });
+
+  it("repairs unknown Pair presentation controls to shareable defaults", () => {
+    const state = parseMarketWeatherQuery(
+      "?comparison=pair&pair_tab=elsewhere&scope_trail=36&scope_scale=zoom&coordinate_order=alpha",
+    );
+    expect(state.pairTab).toBe("overview");
+    expect(state.pairScopeTrail).toBe(24);
+    expect(state.pairScopeScale).toBe("shared");
+    expect(state.pairCoordinateOrder).toBe("recipe");
   });
 
   it("accepts documented timeframe aliases and repairs unsupported selectors", () => {

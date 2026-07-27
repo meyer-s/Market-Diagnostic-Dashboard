@@ -123,14 +123,16 @@ describe("MarketWeatherMethodologyReport", () => {
     fireEvent.click(screen.getByRole("button", { name: /Design breakdown: how the interface translates the model/i }));
 
     expect(screen.getByText("Dictionary relationship scopes")).not.toBeNull();
-    expect(screen.getByText(/Organization \/ disorder places structure on x/i)).not.toBeNull();
+    expect(screen.getByText(/Structure \/ information places the implemented Structure coordinate on x/i)).not.toBeNull();
     expect(screen.getByText(/causal exponential display average with α=0.5/i)).not.toBeNull();
     expect(screen.getByText(/does not feed the field, Form learning, state assignment/i)).not.toBeNull();
     expect(screen.getByText("Relative Field coordinate lenses")).not.toBeNull();
     expect(screen.getByText(/begins only on the intersection of their evaluation segments/i)).not.toBeNull();
     expect(screen.getByText(/Relative price is indexed to 100/i)).not.toBeNull();
     expect(screen.getByText(/zero scanner, outcome-learning-canary, veto, verdict, sizing, and execution authority/i)).not.toBeNull();
-    expect(screen.getByText(/recreates a selector recipe, not a frozen market-data snapshot/i)).not.toBeNull();
+    expect(screen.getByText(/recreates a live selector recipe, not a frozen market-data snapshot/i)).not.toBeNull();
+    expect(screen.getByText("Pair reading hierarchy")).not.toBeNull();
+    expect(screen.getByText("Live recipe versus frozen receipt")).not.toBeNull();
   });
 
   it("separates implemented Pair instrumentation from future basket and efficacy work", () => {

@@ -173,6 +173,17 @@ K^{\mathrm{all}}_{AB} &=
 K_{AB} &= \tail_V(K^{\mathrm{all}}_{AB}).
 \label{eq:intersection}
 \end{align}
+The explicit window counts are
+\begin{align}
+N_{\mathrm{requested}}&=V,\\
+N_{\mathrm{available}}&=|K^{\mathrm{all}}_{AB}|,\\
+N_{\mathrm{returned}}&=|K_{AB}|
+=\min(V,N_{\mathrm{available}}).
+\label{eq:window-counts}
+\end{align}
+The response also returns $|K_A|$, $|K_B|$, the first and last returned keys,
+and whether $N_{\mathrm{available}}>N_{\mathrm{returned}}$. These counts
+separate the requested display window from what exact alignment made available.
 At least 20 exact shared observations must exist before the visible tail is selected. No nearest-neighbor match, interpolation, forward fill, or carry-forward is permitted.
 
 Daily and weekly dates are provider-serialized date labels, not an independent exchange-calendar certification. Aware intraday times are normalized to UTC before exact equality; naive intraday times remain naive and require exact serialized equality. A matching key does not prove the two observations describe the same economic session. Session compatibility is reported as \texttt{compatible} only for the same canonical symbol and otherwise remains \texttt{unknown}.
@@ -203,11 +214,19 @@ M^A_{j,t}M^B_{j,t}
 The support fraction in the response is
 \begin{equation}
 \operatorname{SupportFraction}
-=\frac{\sum_{t\in K_{AB}}\sum_{j=1}^{15}S_{j,t}}
-       {15|K_{AB}|}.
+=\frac{C_{\mathrm{supported}}}{C_{\mathrm{total}}},
+\qquad
+C_{\mathrm{supported}}
+=\sum_{t\in K_{AB}}\sum_{j=1}^{15}S_{j,t},
+\qquad
+C_{\mathrm{total}}=15N_{\mathrm{returned}}.
 \label{eq:support-fraction}
 \end{equation}
-This is visible-window native-coordinate support. It is neither context support nor a price-overlap fraction.
+The response reports both cell counts, their ratio, the literal bilateral
+full-dependency-support rule, whether every returned cell is supported, and
+\texttt{missing\_values\_carried=false}. This is visible-window
+native-coordinate support. It is neither latest-coordinate support, context
+support, nor a price-overlap fraction.
 
 \subsection{DXY routing boundary}
 
@@ -338,7 +357,7 @@ The displayed cumulative value is
 BA_i=100\{\exp(C_i)-1\}.
 \label{eq:ba}
 \end{equation}
-An unavailable beta resets the chain. A later valid beta starts a new contiguous chain, and the latest summary never carries a stale estimate. Because the estimator is built only from visible common returns, its first possible value requires 20 prior returns plus the current return---22 aligned prices including the base row. If common keys contain time gaps, the corresponding log returns span those gaps; no elapsed-time normalization is applied.
+An unavailable beta resets the chain. A later valid beta starts a new contiguous chain, and the latest summary never carries a stale estimate. Every price row reports the number of prior return pairs, nullable chain identifier, chain-start marker, and reset marker. The current summary separately reports the configured and realized prior-return counts, current-chain start and end, current-chain observation count, total chain and reset counts, and last-reset timestamp. Because the estimator is built only from visible common returns, its first possible value requires 20 prior returns plus the current return---22 aligned prices including the base row. If common keys contain time gaps, the corresponding log returns span those gaps; no elapsed-time normalization is applied.
 
 \section{Family-Balanced Relationship Stretch}
 
@@ -369,7 +388,7 @@ the label is
 \end{cases}
 \label{eq:stretch-label}
 \end{equation}
-The three families receive equal total weight despite containing 5, 7, and 3 coordinates. Only the categorical label is currently returned. ``Mixed'' includes changes within tolerance; it is not evidence of a statistical mixture. Stretch measures standardized separation magnitude, not direction or leadership.
+The three families receive equal total weight despite containing 5, 7, and 3 coordinates. The response returns $S_t$, $S_{t^{-5}}$, their change, $\eta$, the lookback, and the counts of participating families and coordinates alongside the categorical value. The reader-facing translation maps \texttt{mixed} to ``No clear net change'' because the branch includes movement that remains within tolerance; it is not evidence of a statistical mixture. Stretch measures standardized separation magnitude, not direction or leadership.
 
 \section{Algebraic and Software Invariants}
 
@@ -424,7 +443,55 @@ The ordered comparison preimage contains:
     \item normalization contract \texttt{native\_and\_fixed\_proper\_fit\_relative\_v1}; and
     \item $\sha(K_{AB})$ for the ordered visible common keys.
 \end{itemize}
-Canonical JSON uses sorted keys, compact separators, finite JSON numbers, and SHA-256. Requested aliases such as \texttt{DXY} versus \texttt{\^{}DXY} remain visible provenance but are not distinct comparison-hash fields after they resolve to the same canonical and provider symbols. Provider name and data-source labels are also not committed separately. The API cache key includes the requested aliases so an alias-specific provenance receipt is not served from a differently requested alias.
+Canonical JSON uses sorted keys, compact separators, finite JSON numbers, ASCII escaping, UTF-8 bytes, canonical positive zero, and SHA-256. Requested aliases such as \texttt{DXY} versus \texttt{\^{}DXY} remain visible provenance but are not distinct comparison-hash fields after they resolve to the same canonical and provider symbols. Provider name and data-source labels are also not committed separately. The API cache key includes the requested aliases so an alias-specific provenance receipt is not served from a differently requested alias.
+
+\subsection{Frozen result receipt and deterministic translation}
+
+The comparison hash identifies the ordered calculation contract; a separate
+\texttt{market\_field\_pair\_receipt\_v1} freezes the returned evidence needed
+to preserve one observed result. Let $R^{-}$ denote a canonical JSON object
+containing:
+\begin{itemize}
+    \item the Pair and semantic schema identifiers, timeframe, and shared-window endpoint;
+    \item requested, canonical, and provider identities for both legs, their analysis hashes, data-source labels, and latest aligned/returned closes;
+    \item the requested, available, and returned exact shared-window counts, per-leg dropped counts, unmatched tails, and latest-returned timestamps;
+    \item the complete ordered shared-key sequence, $\sha(K_{AB})$, and alignment contract;
+    \item coordinate-cell support counts and the explicit no-carry rule;
+    \item session, currency, adjustment, and timestamp-alignment disclosures;
+    \item the latest relative-index, beta-chain, field-separation, and 15-coordinate values;
+    \item the component, comparison, recipe, alignment, and normalization identities; and
+    \item the identity-control flag and zero-authority contract.
+\end{itemize}
+The service returns
+\begin{equation}
+R=R^{-}\cup\{\texttt{receipt\_hash}:\sha(R^{-})\}.
+\label{eq:frozen-receipt}
+\end{equation}
+The response header repeats this digest as
+\texttt{X-Market-Weather-Receipt-Hash}. Recomputing Equation~\ref{eq:frozen-receipt}
+detects mutation of the serialized receipt body; it does not certify provider
+truth, bar completeness, economic validity, or independent custody. SHA-256 is
+used here as an unkeyed checksum, not a digital signature or proof of origin.
+
+A separate \texttt{pair\_summary\_v1} is a deterministic descriptive
+translation of authoritative relative-progress, current beta-chain,
+coordinate-gap, field-separation, support, and session fields. It introduces
+no fitted score, peer choice, forecast, or authority. Its three notable
+coordinate rows are
+\begin{equation}
+\mathcal T_t=
+\operatorname{first}_3
+\operatorname{sort}_{j:S_{j,t}=1,\ \Delta^C_{j,t}\ \mathrm{finite}}
+\left(-|\Delta^C_{j,t}|,\ j\right),
+\label{eq:summary-top-three}
+\end{equation}
+where recipe position $j$ is the deterministic tie-breaker. Summary prose uses
+two-decimal display formatting while the numeric response retains its declared
+serialization precision. The live URL preserves
+the selector recipe and reruns with then-current data; exporting $R$ preserves
+the current evidence boundary. Version 1 of $R$ does not bind the summary
+wording, generation/cache metadata, caveat prose, full price path, or full
+coordinate histories and is therefore not a complete chart-replay archive.
 
 \subsection{Operational caching}
 
@@ -453,7 +520,7 @@ Pair data are consumed by the Market Field research API and page. Pair v1 does n
 
 \section{Verification Evidence}
 
-The focused backend suite uses deterministic synthetic OHLCV fixtures and endpoint doubles. At the addendum audit boundary, all 20 Pair-v1 tests passed. The suite establishes implementation properties, not market efficacy:
+The focused backend suite uses deterministic synthetic OHLCV fixtures and endpoint doubles. At the addendum audit boundary, all 23 Pair-v1 tests passed. The suite establishes implementation properties, not market efficacy:
 
 \begin{table}[h]
 \centering
@@ -474,17 +541,20 @@ DXY contract & Canonical alias, Yahoo provider symbol, hourly rejection, and ide
 Prior-only beta & Future price mutation leaves earlier beta and cumulative values unchanged \\
 Known-vector beta & Centered slope, sample/gate boundaries, and deliberate retention of the fitted intercept in the displayed differential \\
 Invalid current beta & No stale beta or cumulative value is carried into the current summary \\
+Beta-chain metadata & Interruption, reset, and recovery produce explicit chain identifiers, starts, counts, and dates \\
 Input depth & Largest horizon increases the required leg depth \\
 Price precision & Positive micro-price relative progress survives four-decimal component display rounding \\
 Endpoint/cache & Identity uses one fetch and subsequent pair computation reuses the analysis cache \\
 Drop/hash boundaries & Pre-window rows are excluded from dropout; tails are subsets; committed and uncommitted receipt fields are distinguished \\
+Frozen evidence & Exact window/support disclosures, deterministic summary inputs, and canonical frozen-receipt self-hash replay \\
+Canonical serialization & Signed zero normalizes before summary formatting and SHA-256 serialization \\
 \bottomrule
 \end{tabular}
 \caption{Pair-specific verification scope. Several rows summarize multiple tests.}
 \label{tab:tests}
 \end{table}
 
-The frontend comparison component and query-state tests cover rendering, selectors, DXY guards, loading/error behavior, and clearing stale results. They are DOM and interaction tests, not a complete accessibility, pixel-level visual-regression, or browser/performance audit. No machine-readable production live-probe receipt is committed with this addendum, so operational deployment observations are deliberately excluded from its evidence.
+The frontend comparison, summary, methodology, page, and query-state tests cover deterministic translation, Overview/Field/Audit hierarchy, selectors, URL round trips, DXY guards, loading/error behavior, and clearing stale results. Browser checks exercise the desktop and narrow-screen hierarchy, one-scope/one-price-chart mobile behavior, coordinate-detail sheet, and horizontal-overflow boundary. They are not a complete accessibility, pixel-level visual-regression, device, or performance audit. No machine-readable production live-probe receipt is committed with this addendum, so operational deployment observations are deliberately excluded from its evidence.
 
 \section{Failure Semantics}
 
@@ -608,10 +678,14 @@ Scanner and option-learning weights & 0.0 \\
 Response area & Interpretation \\
 \midrule
 \texttt{target}, \texttt{benchmark} & Requested/canonical/provider identities, analysis hash, data source, latest aligned close, and latest returned close \\
+\texttt{window}, \texttt{support}, \texttt{compatibility} & Requested/available/returned shared counts, exact bilateral cell support, and explicit session/currency/adjustment/timestamp disclosures \\
 \texttt{overlap} & Visible common range, exact alignment rule, support fraction, dropout counts, unmatched tails, and session-compatibility status \\
 \texttt{coordinates} & Metadata, latest values/support, and complete visible series for target, benchmark, native gap, and context gap \\
 \texttt{price\_series} & Full-precision-derived closes, relative index, active progress, prior beta, and cumulative beta-adjusted return \\
-\texttt{relative\_progress} & Latest aligned price and beta summaries plus relationship-stretch label \\
+\texttt{relative\_progress} & Latest aligned price, beta-chain metadata, and exact field-separation values/classification \\
+\texttt{summary} & Deterministic non-predictive translation of authoritative result and support fields \\
+\texttt{frozen\_receipt} & Exact shared keys, latest evidence, identities, disclosures, zero authority, and self-verifying receipt hash \\
+\texttt{X-Market-Weather-Receipt-Hash} & Response-header copy of the unkeyed frozen-receipt identity checksum \\
 \texttt{provenance} & Component identities, ordered comparison hash, canonical/provider aliases, and contract versions \\
 \texttt{cache} & Per-leg history lineage and per-request analysis-cache behavior \\
 \texttt{authority} & Research-only mode and zero decision/execution authority \\

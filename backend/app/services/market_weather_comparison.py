@@ -20,11 +20,14 @@ from app.services.market_weather_history_cache import get_or_refresh_market_weat
 PAIR_SCHEMA_VERSION = "market_field_pair_v1"
 PAIR_ALIGNMENT_VERSION = "pair_alignment_v1"
 PAIR_NORMALIZATION_VERSION = "native_and_fixed_proper_fit_relative_v1"
+PAIR_SUMMARY_VERSION = "pair_summary_v1"
+PAIR_RECEIPT_VERSION = "market_field_pair_receipt_v1"
 MINIMUM_SHARED_OBSERVATIONS = 20
 BETA_LOOKBACK = 60
 BETA_MINIMUM_PRIOR_RETURNS = 20
 BETA_MINIMUM_BENCHMARK_STD = 1e-7
 BETA_MAX_ABSOLUTE = 25.0
+FIELD_SEPARATION_LOOKBACK = 5
 
 _DXY_ALIASES = {"DXY", "^DXY", "DX-Y.NYB"}
 _DXY_PROVIDER_SYMBOL = "DX-Y.NYB"
@@ -338,7 +341,9 @@ def build_market_weather_comparison(
         benchmark_rows[benchmark_latest_key]["close"]
     )
     active_return_pct = _finite_or_none(price_series[-1]["active_return"])
-    context_gap_direction = _gap_direction(coordinates)
+    relative_index = _finite_or_none(price_series[-1]["relative_index"])
+    field_separation = _gap_summary(coordinates)
+    context_gap_direction = str(field_separation["direction"])
     intraday_timezone_aware = (
         timeframe not in {"1D", "1W"}
         and pd.Timestamp(common_keys[-1]).tzinfo is not None
@@ -361,78 +366,211 @@ def build_market_weather_comparison(
         target.symbol.canonical_symbol == benchmark.symbol.canonical_symbol
         and target_analysis_hash == benchmark_analysis_hash
     )
+    alignment_rule = (
+        "serialized_session_date"
+        if timeframe in {"1D", "1W"}
+        else (
+            "exact_utc_timestamp"
+            if intraday_timezone_aware
+            else "exact_serialized_timestamp_timezone_unavailable"
+        )
+    )
+    start = _display_date(
+        common_keys[0],
+        target_rows[common_keys[0]]["date"],
+        timeframe,
+    )
+    end = _display_date(
+        common_keys[-1],
+        target_rows[common_keys[-1]]["date"],
+        timeframe,
+    )
+    target_latest_returned_at = _display_date(
+        target_latest_key,
+        target_rows[target_latest_key]["date"],
+        timeframe,
+    )
+    benchmark_latest_returned_at = _display_date(
+        benchmark_latest_key,
+        benchmark_rows[benchmark_latest_key]["date"],
+        timeframe,
+    )
+    support_fraction = _rounded(supported_cells / max(1, total_cells), 6)
+    window = {
+        "requested_shared_observations": visible_bars,
+        "available_exact_shared_observations": len(all_common_keys),
+        "returned_exact_shared_observations": len(common_keys),
+        "target_available_observations": len(target_rows),
+        "benchmark_available_observations": len(benchmark_rows),
+        "truncated_to_requested_window": len(all_common_keys) > len(common_keys),
+        "start": start,
+        "end": end,
+    }
+    support = {
+        "supported_coordinate_cells": supported_cells,
+        "total_coordinate_cells": total_cells,
+        "support_fraction": support_fraction,
+        "all_returned_coordinate_cells_supported": (
+            supported_cells == total_cells
+        ),
+        "support_rule": "bilateral_full_dependency_support",
+        "missing_values_carried": False,
+    }
+    compatibility = {
+        "session": {
+            "status": session_compatibility,
+            "independently_certified": False,
+            "basis": (
+                "identity_control"
+                if identity_control
+                else "not_independently_available"
+            ),
+        },
+        "currency": {
+            "status": "unknown",
+            "independently_certified": False,
+        },
+        "price_adjustment": {
+            "status": "provider_as_returned",
+            "independently_certified": False,
+        },
+        "timestamp_alignment": {
+            "status": "supported",
+            "rule": alignment_rule,
+            "timezone_metadata_available": (
+                None
+                if timeframe in {"1D", "1W"}
+                else intraday_timezone_aware
+            ),
+            "timezone_status": (
+                "not_applicable_session_date"
+                if timeframe in {"1D", "1W"}
+                else "available"
+                if intraday_timezone_aware
+                else "unavailable"
+            ),
+        },
+    }
+    overlap = {
+        "common_observations": len(common_keys),
+        "requested_observations": visible_bars,
+        "available_common_observations": len(all_common_keys),
+        "returned_common_observations": len(common_keys),
+        "start": start,
+        "end": end,
+        "target_dropped": target_dropped_count,
+        "benchmark_dropped": benchmark_dropped_count,
+        "target_unmatched_after_latest_aligned": target_tail_drops,
+        "benchmark_unmatched_after_latest_aligned": benchmark_tail_drops,
+        "target_latest_returned_at": target_latest_returned_at,
+        "benchmark_latest_returned_at": benchmark_latest_returned_at,
+        "latest_aligned_at": end,
+        "supported_coordinate_cells": supported_cells,
+        "total_coordinate_cells": total_cells,
+        "support_fraction": support_fraction,
+        "session_compatible": (
+            True if session_compatibility == "compatible"
+            else False if session_compatibility == "incompatible"
+            else None
+        ),
+        "session_compatibility": session_compatibility,
+        "session_compatibility_independently_certified": False,
+        "alignment_supported": True,
+        "alignment_status": "identity_control" if identity_control else "aligned",
+        "alignment_rule": alignment_rule,
+        "note": overlap_note,
+    }
+    relative_progress = {
+        "latest_target_close": target_latest_close,
+        "latest_benchmark_close": benchmark_latest_close,
+        "relative_index": relative_index,
+        "active_return_pct": active_return_pct,
+        "beta_adjusted_return_pct": beta_summary["cumulative_residual_pct"],
+        "beta": beta_summary["latest_beta"],
+        "beta_status": beta_summary["status"],
+        # Retained for Pair-v1 clients; the explicit fields below distinguish
+        # the configured cap from the observations actually used.
+        "lookback_bars": beta_summary["lookback_bars"],
+        "beta_configured_lookback_returns": BETA_LOOKBACK,
+        "beta_minimum_prior_returns": BETA_MINIMUM_PRIOR_RETURNS,
+        "beta_prior_observations": beta_summary["latest_beta_prior_observations"],
+        "beta_adjusted_chain_start_at": beta_summary["current_chain_start_at"],
+        "beta_adjusted_chain_end_at": beta_summary["current_chain_end_at"],
+        "beta_adjusted_chain_observations": beta_summary[
+            "current_chain_observations"
+        ],
+        "beta_adjusted_chain_count": beta_summary["chain_count"],
+        "beta_adjusted_chain_reset_count": beta_summary["chain_reset_count"],
+        "beta_adjusted_last_reset_at": beta_summary["last_chain_reset_at"],
+        "gap_direction": context_gap_direction,
+        "field_separation": field_separation,
+    }
+    target_payload = _leg_payload(
+        target,
+        latest_aligned_close=target_latest_close,
+        latest_returned_close=target_latest_returned_close,
+    )
+    benchmark_payload = _leg_payload(
+        benchmark,
+        latest_aligned_close=benchmark_latest_close,
+        latest_returned_close=benchmark_latest_returned_close,
+    )
+    authority = {
+        "mode": "research_display_only",
+        "scanner_weight": 0.0,
+        "option_learning_weight": 0.0,
+        "veto": False,
+        "sizing": False,
+        "execution": False,
+    }
+    summary = _descriptive_summary(
+        target_symbol=target.symbol.canonical_symbol,
+        benchmark_symbol=benchmark.symbol.canonical_symbol,
+        timeframe=timeframe,
+        returned_observations=len(common_keys),
+        observed_through=end,
+        relative_progress=relative_progress,
+        coordinates=coordinates,
+        support=support,
+        session_compatibility=session_compatibility,
+    )
+    frozen_receipt = _frozen_receipt(
+        semantic_revision=target.analysis.get("semantic_revision"),
+        target=target_payload,
+        benchmark=benchmark_payload,
+        timeframe=timeframe,
+        comparison_hash=comparison_hash,
+        common_keys=common_keys,
+        window=window,
+        overlap=overlap,
+        support=support,
+        compatibility=compatibility,
+        relative_progress=relative_progress,
+        coordinates=coordinates,
+        target_analysis_hash=target_analysis_hash,
+        benchmark_analysis_hash=benchmark_analysis_hash,
+        component_recipe_hash=_recipe_hash(target.analysis),
+        identity_control=identity_control,
+        authority=authority,
+    )
 
     return {
         "schema_version": PAIR_SCHEMA_VERSION,
         "semantic_revision": target.analysis.get("semantic_revision"),
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "target": _leg_payload(
-            target,
-            latest_aligned_close=target_latest_close,
-            latest_returned_close=target_latest_returned_close,
-        ),
-        "benchmark": _leg_payload(
-            benchmark,
-            latest_aligned_close=benchmark_latest_close,
-            latest_returned_close=benchmark_latest_returned_close,
-        ),
+        "target": target_payload,
+        "benchmark": benchmark_payload,
         "comparison_hash": comparison_hash,
         "timeframe": timeframe,
-        "overlap": {
-            "common_observations": len(common_keys),
-            "start": _display_date(common_keys[0], target_rows[common_keys[0]]["date"], timeframe),
-            "end": _display_date(common_keys[-1], target_rows[common_keys[-1]]["date"], timeframe),
-            "target_dropped": target_dropped_count,
-            "benchmark_dropped": benchmark_dropped_count,
-            "target_unmatched_after_latest_aligned": target_tail_drops,
-            "benchmark_unmatched_after_latest_aligned": benchmark_tail_drops,
-            "target_latest_returned_at": _display_date(
-                target_latest_key,
-                target_rows[target_latest_key]["date"],
-                timeframe,
-            ),
-            "benchmark_latest_returned_at": _display_date(
-                benchmark_latest_key,
-                benchmark_rows[benchmark_latest_key]["date"],
-                timeframe,
-            ),
-            "latest_aligned_at": _display_date(
-                common_keys[-1],
-                target_rows[common_keys[-1]]["date"],
-                timeframe,
-            ),
-            "support_fraction": _rounded(supported_cells / max(1, total_cells), 6),
-            "session_compatible": (
-                True if session_compatibility == "compatible"
-                else False if session_compatibility == "incompatible"
-                else None
-            ),
-            "session_compatibility": session_compatibility,
-            "alignment_supported": True,
-            "alignment_status": "identity_control" if identity_control else "aligned",
-            "alignment_rule": (
-                "serialized_session_date"
-                if timeframe in {"1D", "1W"}
-                else (
-                    "exact_utc_timestamp"
-                    if intraday_timezone_aware
-                    else "exact_serialized_timestamp_timezone_unavailable"
-                )
-            ),
-            "note": overlap_note,
-        },
-        "relative_progress": {
-            "latest_target_close": target_latest_close,
-            "latest_benchmark_close": benchmark_latest_close,
-            "active_return_pct": active_return_pct,
-            "beta_adjusted_return_pct": beta_summary["cumulative_residual_pct"],
-            "beta": beta_summary["latest_beta"],
-            "beta_status": beta_summary["status"],
-            "lookback_bars": beta_summary["lookback_bars"],
-            "gap_direction": context_gap_direction,
-        },
+        "window": window,
+        "support": support,
+        "compatibility": compatibility,
+        "overlap": overlap,
+        "summary": summary,
+        "relative_progress": relative_progress,
         "coordinates": coordinates,
         "price_series": price_series,
+        "frozen_receipt": frozen_receipt,
         "provenance": {
             "target_analysis_hash": target_analysis_hash,
             "benchmark_analysis_hash": benchmark_analysis_hash,
@@ -458,14 +596,7 @@ def build_market_weather_comparison(
             "target_history": target.history_cache,
             "benchmark_history": benchmark.history_cache,
         },
-        "authority": {
-            "mode": "research_display_only",
-            "scanner_weight": 0.0,
-            "option_learning_weight": 0.0,
-            "veto": False,
-            "sizing": False,
-            "execution": False,
-        },
+        "authority": authority,
         "caveats": [
             "A higher field coordinate is not inherently better and does not identify a winner.",
             "Native differences require source-observed, full-dependency support on both legs.",
@@ -690,7 +821,7 @@ def _relative_price_series(
     target_rows: Mapping[str, Mapping[str, object]],
     benchmark_rows: Mapping[str, Mapping[str, object]],
     timeframe: str,
-) -> tuple[list[dict[str, object]], dict[str, float | int | None]]:
+) -> tuple[list[dict[str, object]], dict[str, object]]:
     target_close = [float(target_rows[key]["close"]) for key in common_keys]
     benchmark_close = [float(benchmark_rows[key]["close"]) for key in common_keys]
     if any(
@@ -712,8 +843,16 @@ def _relative_price_series(
     ]
 
     betas: list[float | None] = [None]
+    beta_prior_observations = [0]
     cumulative_residual: float | None = None
     cumulative_residuals: list[float | None] = [None]
+    chain_ids: list[int | None] = [None]
+    chain_starts = [False]
+    chain_resets = [False]
+    current_chain_id = 0
+    current_chain_active = False
+    chain_reset_count = 0
+    last_chain_reset_index: int | None = None
     for point_index in range(1, len(common_keys)):
         prior_end = point_index - 1
         prior_start = max(0, prior_end - BETA_LOOKBACK)
@@ -721,13 +860,36 @@ def _relative_price_series(
         prior_benchmark = benchmark_returns[prior_start:prior_end]
         beta = _beta(prior_target, prior_benchmark)
         betas.append(beta)
+        beta_prior_observations.append(len(prior_target))
         if beta is None:
+            reset = current_chain_active
+            if reset:
+                chain_reset_count += 1
+                last_chain_reset_index = point_index
+            current_chain_active = False
             cumulative_residual = None
             cumulative_residuals.append(None)
+            chain_ids.append(None)
+            chain_starts.append(False)
+            chain_resets.append(reset)
             continue
-        residual = target_returns[point_index - 1] - beta * benchmark_returns[point_index - 1]
-        cumulative_residual = residual if cumulative_residual is None else cumulative_residual + residual
+        chain_start = not current_chain_active
+        if chain_start:
+            current_chain_id += 1
+        current_chain_active = True
+        residual = (
+            target_returns[point_index - 1]
+            - beta * benchmark_returns[point_index - 1]
+        )
+        cumulative_residual = (
+            residual
+            if cumulative_residual is None
+            else cumulative_residual + residual
+        )
         cumulative_residuals.append(cumulative_residual)
+        chain_ids.append(current_chain_id)
+        chain_starts.append(chain_start)
+        chain_resets.append(False)
 
     rows: list[dict[str, object]] = []
     for index, key in enumerate(common_keys):
@@ -743,6 +905,10 @@ def _relative_price_series(
                 "relative_index": _rounded(relative_index, 6),
                 "active_return": _rounded(relative_index - 100.0, 6),
                 "prior_return_beta": _rounded(betas[index], 6),
+                "beta_prior_observations": beta_prior_observations[index],
+                "beta_adjusted_chain_id": chain_ids[index],
+                "beta_adjusted_chain_start": chain_starts[index],
+                "beta_adjusted_chain_reset": chain_resets[index],
                 "beta_adjusted_cumulative_return": (
                     _rounded((math.exp(cumulative_residuals[index]) - 1.0) * 100.0, 6)
                     if cumulative_residuals[index] is not None
@@ -752,6 +918,15 @@ def _relative_price_series(
         )
     latest_beta = betas[-1]
     latest_residual = cumulative_residuals[-1]
+    current_chain_indices = (
+        [
+            index
+            for index, chain_id in enumerate(chain_ids)
+            if chain_id == chain_ids[-1]
+        ]
+        if chain_ids[-1] is not None
+        else []
+    )
     return rows, {
         "latest_beta": _rounded(latest_beta, 6),
         "cumulative_residual_pct": (
@@ -759,8 +934,32 @@ def _relative_price_series(
             if latest_residual is not None
             else None
         ),
+        "cumulative_beta_adjusted_pct": (
+            _rounded((math.exp(latest_residual) - 1.0) * 100.0, 6)
+            if latest_residual is not None
+            else None
+        ),
         "lookback_bars": min(BETA_LOOKBACK, max(0, len(common_keys) - 2)),
+        "latest_beta_prior_observations": beta_prior_observations[-1],
         "status": "available" if latest_beta is not None else "unavailable",
+        "current_chain_start_at": (
+            rows[current_chain_indices[0]]["date"]
+            if current_chain_indices
+            else None
+        ),
+        "current_chain_end_at": (
+            rows[current_chain_indices[-1]]["date"]
+            if current_chain_indices
+            else None
+        ),
+        "current_chain_observations": len(current_chain_indices),
+        "chain_count": current_chain_id,
+        "chain_reset_count": chain_reset_count,
+        "last_chain_reset_at": (
+            rows[last_chain_reset_index]["date"]
+            if last_chain_reset_index is not None
+            else None
+        ),
     }
 
 
@@ -786,7 +985,9 @@ def _beta(target_returns: Sequence[float], benchmark_returns: Sequence[float]) -
     return beta
 
 
-def _gap_direction(coordinates: Sequence[Mapping[str, object]]) -> str:
+def _gap_summary(
+    coordinates: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
     # Use the same supported coordinate intersection at both endpoints so a
     # feature becoming available/unavailable cannot masquerade as separation.
     family_pairs: dict[str, list[tuple[float, float]]] = {}
@@ -796,10 +997,13 @@ def _gap_direction(coordinates: Sequence[Mapping[str, object]]) -> str:
         if family:
             observed_families.add(family)
         series = coordinate.get("series")
-        if not isinstance(series, list) or len(series) < 6:
+        if (
+            not isinstance(series, list)
+            or len(series) < FIELD_SEPARATION_LOOKBACK + 1
+        ):
             continue
         latest_row = series[-1]
-        previous_row = series[-6]
+        previous_row = series[-(FIELD_SEPARATION_LOOKBACK + 1)]
         if not isinstance(latest_row, Mapping) or not isinstance(previous_row, Mapping):
             continue
         latest_value = _finite_or_none(latest_row.get("context_difference"))
@@ -808,7 +1012,17 @@ def _gap_direction(coordinates: Sequence[Mapping[str, object]]) -> str:
             continue
         family_pairs.setdefault(family, []).append((latest_value, previous_value))
     if not observed_families or set(family_pairs) != observed_families:
-        return "unavailable"
+        return {
+            "direction": "unavailable",
+            "label": "Insufficient shared support",
+            "latest_stretch": None,
+            "prior_stretch": None,
+            "change": None,
+            "tolerance": None,
+            "lookback_shared_observations": FIELD_SEPARATION_LOOKBACK,
+            "compared_families": len(family_pairs),
+            "compared_coordinates": sum(len(pairs) for pairs in family_pairs.values()),
+        }
 
     latest_family_means = [
         sum(abs(latest) for latest, _previous in pairs) / len(pairs)
@@ -822,10 +1036,339 @@ def _gap_direction(coordinates: Sequence[Mapping[str, object]]) -> str:
     previous = sum(previous_family_means) / len(previous_family_means)
     tolerance = max(0.05, previous * 0.05)
     if latest > previous + tolerance:
-        return "widening"
-    if latest < previous - tolerance:
-        return "converging"
-    return "mixed"
+        direction = "widening"
+        label = "Field separation widening"
+    elif latest < previous - tolerance:
+        direction = "converging"
+        label = "Field separation narrowing"
+    else:
+        direction = "mixed"
+        label = "No clear net change"
+    return {
+        "direction": direction,
+        "label": label,
+        "latest_stretch": _rounded(latest),
+        "prior_stretch": _rounded(previous),
+        "change": _rounded(latest - previous),
+        "tolerance": _rounded(tolerance),
+        "lookback_shared_observations": FIELD_SEPARATION_LOOKBACK,
+        "compared_families": len(family_pairs),
+        "compared_coordinates": sum(len(pairs) for pairs in family_pairs.values()),
+    }
+
+
+def _gap_direction(coordinates: Sequence[Mapping[str, object]]) -> str:
+    return str(_gap_summary(coordinates)["direction"])
+
+
+def _descriptive_summary(
+    *,
+    target_symbol: str,
+    benchmark_symbol: str,
+    timeframe: str,
+    returned_observations: int,
+    observed_through: str,
+    relative_progress: Mapping[str, object],
+    coordinates: Sequence[Mapping[str, object]],
+    support: Mapping[str, object],
+    session_compatibility: str,
+) -> dict[str, object]:
+    relative_index = _finite_or_none(relative_progress.get("relative_index"))
+    active_return = _finite_or_none(relative_progress.get("active_return_pct"))
+    beta_adjusted = _finite_or_none(
+        relative_progress.get("beta_adjusted_return_pct")
+    )
+    beta = _finite_or_none(relative_progress.get("beta"))
+    beta_prior_observations = int(
+        relative_progress.get("beta_prior_observations") or 0
+    )
+    chain_start = relative_progress.get("beta_adjusted_chain_start_at")
+    field_separation = relative_progress.get("field_separation")
+    separation = (
+        field_separation
+        if isinstance(field_separation, Mapping)
+        else {"label": "Insufficient shared support"}
+    )
+    notable_gaps = _notable_context_gaps(coordinates)
+
+    progress_text = (
+        f"{target_symbol} relative progress versus {benchmark_symbol} is "
+        f"{_format_signed(active_return, suffix='%')} over "
+        f"{returned_observations} exact shared {timeframe} bars "
+        f"(relative index {_format_decimal(relative_index)})."
+    )
+    if beta_adjusted is not None and beta is not None and chain_start:
+        beta_text = (
+            "The current prior-only beta-adjusted chain is "
+            f"{_format_signed(beta_adjusted, suffix='%')}, with beta "
+            f"{_format_decimal(beta)} estimated from "
+            f"{beta_prior_observations} prior shared returns; the chain "
+            f"began {chain_start}."
+        )
+    else:
+        beta_text = (
+            "No current prior-only beta-adjusted chain is available under "
+            "the preregistered minimum-history, variance, and beta gates."
+        )
+
+    latest_stretch = _finite_or_none(separation.get("latest_stretch"))
+    prior_stretch = _finite_or_none(separation.get("prior_stretch"))
+    tolerance = _finite_or_none(separation.get("tolerance"))
+    separation_label = str(
+        separation.get("label") or "Insufficient shared support"
+    )
+    if (
+        latest_stretch is not None
+        and prior_stretch is not None
+        and tolerance is not None
+    ):
+        separation_text = (
+            f"{separation_label}: {_format_decimal(latest_stretch)} now "
+            f"versus {_format_decimal(prior_stretch)} "
+            f"{FIELD_SEPARATION_LOOKBACK} shared bars earlier "
+            f"(classification tolerance {_format_decimal(tolerance)})."
+        )
+    else:
+        separation_text = (
+            f"{separation_label}; the bilateral five-bar coordinate "
+            "intersection is incomplete."
+        )
+
+    if notable_gaps:
+        gap_fragments = [
+            (
+                f"{row['label']} "
+                f"({_context_direction_label(str(row['direction']))}, "
+                f"{_format_signed(_finite_or_none(row['context_difference']))})"
+            )
+            for row in notable_gaps
+        ]
+        coordinate_text = (
+            "Largest current own-history-relative coordinate gaps are "
+            + "; ".join(gap_fragments)
+            + ". Higher does not mean better expected performance."
+        )
+    else:
+        coordinate_text = (
+            "No current own-history-relative coordinate gap has complete "
+            "bilateral evaluation support."
+        )
+
+    supported_cells = int(support.get("supported_coordinate_cells") or 0)
+    total_cells = int(support.get("total_coordinate_cells") or 0)
+    support_fraction = _finite_or_none(support.get("support_fraction"))
+    session_note = (
+        "identity-compatible but not externally session-certified"
+        if session_compatibility == "compatible"
+        else (
+            "marked incompatible by the response contract"
+            if session_compatibility == "incompatible"
+            else "not independently certified"
+        )
+    )
+    support_text = (
+        f"Data support is {supported_cells}/{total_cells} coordinate cells "
+        f"({_format_percent_fraction(support_fraction)}); session "
+        f"compatibility is {session_note}."
+    )
+    sentences = [
+        {
+            "id": "relative_progress",
+            "text": progress_text,
+            "section": "price_progress",
+        },
+        {
+            "id": "beta_adjusted_chain",
+            "text": beta_text,
+            "section": "price_progress",
+        },
+        {
+            "id": "field_separation",
+            "text": separation_text,
+            "section": "field_detail",
+        },
+        {
+            "id": "coordinate_gaps",
+            "text": coordinate_text,
+            "section": "field_detail",
+        },
+        {
+            "id": "data_support",
+            "text": support_text,
+            "section": "audit_receipt",
+        },
+    ]
+    return {
+        "schema_version": PAIR_SUMMARY_VERSION,
+        "title": f"{target_symbol} compared with {benchmark_symbol}",
+        "observed_through": observed_through,
+        "text": " ".join(str(row["text"]) for row in sentences),
+        "sentences": sentences,
+        "notable_context_gaps": notable_gaps,
+        "authority": "deterministic_descriptive_only",
+    }
+
+
+def _notable_context_gaps(
+    coordinates: Sequence[Mapping[str, object]],
+    *,
+    limit: int = 3,
+) -> list[dict[str, object]]:
+    rows: list[tuple[float, int, dict[str, object]]] = []
+    for recipe_index, coordinate in enumerate(coordinates):
+        latest = coordinate.get("latest")
+        if not isinstance(latest, Mapping) or not bool(latest.get("pair_supported")):
+            continue
+        difference = _finite_or_none(latest.get("context_difference"))
+        if difference is None:
+            continue
+        direction = (
+            "target_higher"
+            if difference > 0
+            else "benchmark_higher"
+            if difference < 0
+            else "equal"
+        )
+        payload = {
+            "id": str(coordinate.get("id") or ""),
+            "label": str(coordinate.get("label") or ""),
+            "family": str(coordinate.get("family") or ""),
+            "target_context": _finite_or_none(latest.get("target_context")),
+            "benchmark_context": _finite_or_none(latest.get("benchmark_context")),
+            "context_difference": difference,
+            "direction": direction,
+            "pair_supported": True,
+        }
+        rows.append((-abs(difference), recipe_index, payload))
+    rows.sort(key=lambda row: (row[0], row[1]))
+    return [row[2] for row in rows[: max(0, limit)]]
+
+
+def _frozen_receipt(
+    *,
+    semantic_revision: object,
+    target: Mapping[str, object],
+    benchmark: Mapping[str, object],
+    timeframe: str,
+    comparison_hash: str,
+    common_keys: Sequence[str],
+    window: Mapping[str, object],
+    overlap: Mapping[str, object],
+    support: Mapping[str, object],
+    compatibility: Mapping[str, object],
+    relative_progress: Mapping[str, object],
+    coordinates: Sequence[Mapping[str, object]],
+    target_analysis_hash: str,
+    benchmark_analysis_hash: str,
+    component_recipe_hash: str,
+    identity_control: bool,
+    authority: Mapping[str, object],
+) -> dict[str, object]:
+    def leg_receipt(leg: Mapping[str, object]) -> dict[str, object]:
+        return {
+            key: leg.get(key)
+            for key in (
+                "symbol",
+                "requested_symbol",
+                "provider_symbol",
+                "instrument_kind",
+                "analysis_hash",
+                "data_source",
+                "latest_aligned_close",
+                "latest_returned_close",
+            )
+        }
+
+    latest_coordinates = []
+    for coordinate in coordinates:
+        latest = coordinate.get("latest")
+        latest_coordinates.append(
+            {
+                "id": coordinate.get("id"),
+                "label": coordinate.get("label"),
+                "family": coordinate.get("family"),
+                "unit": coordinate.get("unit"),
+                "latest": dict(latest) if isinstance(latest, Mapping) else {},
+            }
+        )
+
+    body: dict[str, object] = {
+        "schema_version": PAIR_RECEIPT_VERSION,
+        "pair_schema_version": PAIR_SCHEMA_VERSION,
+        "semantic_revision": semantic_revision,
+        "frozen_as_of": window.get("end"),
+        "comparison_hash": comparison_hash,
+        "target": leg_receipt(target),
+        "benchmark": leg_receipt(benchmark),
+        "timeframe": timeframe,
+        "window": dict(window),
+        "overlap": dict(overlap),
+        "alignment": {
+            "shared_keys": list(common_keys),
+            "shared_keys_hash": _canonical_sha256(list(common_keys)),
+            "contract": PAIR_ALIGNMENT_VERSION,
+        },
+        "support": dict(support),
+        "compatibility": dict(compatibility),
+        "relative_progress": dict(relative_progress),
+        "latest_coordinates": latest_coordinates,
+        "provenance": {
+            "target_analysis_hash": target_analysis_hash,
+            "benchmark_analysis_hash": benchmark_analysis_hash,
+            "comparison_hash": comparison_hash,
+            "component_recipe_hash": component_recipe_hash,
+            "alignment_contract": PAIR_ALIGNMENT_VERSION,
+            "normalization_contract": PAIR_NORMALIZATION_VERSION,
+            "ordered_pair": True,
+            "identity_control": identity_control,
+        },
+        "authority": dict(authority),
+        "note": (
+            "This deterministic receipt freezes calculation identities, exact "
+            "shared alignment keys, latest displayed values, support, and "
+            "compatibility disclosures. It does not certify provider "
+            "completeness, economic validity, or a trading conclusion. Its "
+            "unkeyed SHA-256 is an identity checksum, not a digital signature."
+        ),
+    }
+    normalized_body = _normalize_signed_zero(body)
+    if not isinstance(normalized_body, dict):  # Defensive type guard.
+        raise TypeError("Pair receipt body must remain a mapping.")
+    return {
+        **normalized_body,
+        "receipt_hash": _canonical_sha256(normalized_body),
+    }
+
+
+def _format_decimal(value: float | None, digits: int = 2) -> str:
+    normalized = 0.0 if value == 0.0 else value
+    return "unavailable" if normalized is None else f"{normalized:.{digits}f}"
+
+
+def _format_signed(
+    value: float | None,
+    *,
+    digits: int = 2,
+    suffix: str = "",
+) -> str:
+    normalized = 0.0 if value == 0.0 else value
+    if normalized is None:
+        return "unavailable"
+    if normalized == 0.0:
+        return f"{normalized:.{digits}f}{suffix}"
+    return f"{normalized:+.{digits}f}{suffix}"
+
+
+def _format_percent_fraction(value: float | None) -> str:
+    return "unavailable" if value is None else f"{value * 100.0:.2f}%"
+
+
+def _context_direction_label(direction: str) -> str:
+    return {
+        "target_higher": "target higher",
+        "benchmark_higher": "benchmark higher",
+        "equal": "equal",
+    }.get(direction, "direction unavailable")
 
 
 def _session_compatibility(
@@ -937,12 +1480,29 @@ def _finite_or_none(value: object) -> float | None:
 
 
 def _rounded(value: float | None, digits: int = 6) -> float | None:
-    return round(value, digits) if value is not None and math.isfinite(value) else None
+    if value is None or not math.isfinite(value):
+        return None
+    rounded = round(value, digits)
+    return 0.0 if rounded == 0.0 else rounded
+
+
+def _normalize_signed_zero(payload: object) -> object:
+    """Return a JSON-equivalent value with every floating signed zero canonicalized."""
+    if isinstance(payload, float):
+        return 0.0 if payload == 0.0 else payload
+    if isinstance(payload, Mapping):
+        return {
+            key: _normalize_signed_zero(value)
+            for key, value in payload.items()
+        }
+    if isinstance(payload, (list, tuple)):
+        return [_normalize_signed_zero(value) for value in payload]
+    return payload
 
 
 def _canonical_sha256(payload: object) -> str:
     encoded = json.dumps(
-        payload,
+        _normalize_signed_zero(payload),
         allow_nan=False,
         ensure_ascii=True,
         separators=(",", ":"),
