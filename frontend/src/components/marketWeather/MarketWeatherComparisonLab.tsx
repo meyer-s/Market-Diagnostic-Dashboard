@@ -1,13 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
-  ArrowRightLeft,
   CheckCircle2,
   ClipboardCopy,
   Download,
-  FileCheck2,
   Info,
-  ShieldCheck,
   X,
 } from "lucide-react";
 
@@ -113,8 +110,8 @@ const SCOPE_DEFINITIONS: ScopeDefinition[] = [
 
 const FAMILY_LABELS: Record<string, string> = {
   pressure_state: "Motion",
-  field_transform: "Field",
-  ohlcv_carrier: "Carrier",
+  field_transform: "Field structure",
+  ohlcv_carrier: "Activity and liquidity",
 };
 
 const FAMILY_ORDER = ["pressure_state", "field_transform", "ohlcv_carrier"] as const;
@@ -225,11 +222,99 @@ function formatDate(value: string | null | undefined, timeframe: MarketWeatherTi
     : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function separationLabel(value: string): string {
-  if (value === "widening") return "Field separation widening";
-  if (value === "converging") return "Field separation narrowing";
-  if (value === "mixed") return "No clear net change";
-  return "Insufficient shared support";
+function observationFrequency(timeframe: MarketWeatherTimeframe): string {
+  if (timeframe === "1D") return "daily";
+  if (timeframe === "1W") return "weekly";
+  return timeframe;
+}
+
+function relativeStanding(
+  targetSymbol: string,
+  benchmarkSymbol: string,
+  value: number | null | undefined,
+): {
+  headline: string;
+  plain: string;
+} {
+  if (!finite(value)) {
+    return {
+      headline: "Relative progress unavailable",
+      plain: `${targetSymbol} and ${benchmarkSymbol} do not have a supported current relative-progress reading.`,
+    };
+  }
+  if (value > 0) {
+    return {
+      headline: `${targetSymbol} ahead of ${benchmarkSymbol}`,
+      plain: `${targetSymbol} is ahead of ${benchmarkSymbol} by ${Math.abs(value).toFixed(2)}%`,
+    };
+  }
+  if (value < 0) {
+    return {
+      headline: `${targetSymbol} behind ${benchmarkSymbol}`,
+      plain: `${targetSymbol} is behind ${benchmarkSymbol} by ${Math.abs(value).toFixed(2)}%`,
+    };
+  }
+  return {
+    headline: `${targetSymbol} level with ${benchmarkSymbol}`,
+    plain: `${targetSymbol} and ${benchmarkSymbol} are level from the shared starting point`,
+  };
+}
+
+function betaStanding(
+  targetSymbol: string,
+  benchmarkSymbol: string,
+  value: number | null | undefined,
+): string {
+  if (!finite(value)) return "A current adjusted comparison is unavailable.";
+  if (value > 0) return `${targetSymbol} remains ahead of ${benchmarkSymbol} on the current adjusted chain.`;
+  if (value < 0) return `${targetSymbol} trails ${benchmarkSymbol} on the current adjusted chain.`;
+  return `${targetSymbol} and ${benchmarkSymbol} are level on the current adjusted chain.`;
+}
+
+function AuditGroup({
+  code,
+  title,
+  summary,
+  initiallyOpen = false,
+  children,
+}: {
+  code: string;
+  title: string;
+  summary: string;
+  initiallyOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="group overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/30"
+    >
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-2.5 text-left">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-sky-400/20 bg-sky-400/[0.06] font-mono text-[10px] text-sky-200">
+            {code}
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-xs font-semibold text-slate-100">{title}</h3>
+            <p className="mt-0.5 truncate text-[10px] text-slate-400">{summary}</p>
+          </div>
+        </div>
+        <span className="shrink-0 text-xs text-slate-500 transition group-open:rotate-45" aria-hidden="true">+</span>
+      </summary>
+      <div className="border-t border-stealth-700 p-3.5">
+        {children}
+      </div>
+    </details>
+  );
+}
+
+function relationshipStateLabel(value: string): string {
+  if (value === "widening") return "Widening";
+  if (value === "converging") return "Narrowing";
+  if (value === "mixed") return "No clear change";
+  return "Insufficient support";
 }
 
 function betaChainStart(data: MarketWeatherComparisonResponse): string | null {
@@ -243,14 +328,6 @@ function betaChainStart(data: MarketWeatherComparisonResponse): string | null {
     }
   }
   return start;
-}
-
-function latestRelativeIndex(data: MarketWeatherComparisonResponse): number | null {
-  for (let index = data.price_series.length - 1; index >= 0; index -= 1) {
-    const value = data.price_series[index]?.relative_index;
-    if (finite(value)) return value;
-  }
-  return null;
 }
 
 function relationshipStretchValues(data: MarketWeatherComparisonResponse): {
@@ -645,6 +722,26 @@ function pointerSeriesIndex(
   const viewX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * viewBoxWidth;
   const fraction = Math.max(0, Math.min(1, (viewX - left) / Math.max(1, right - left)));
   return Math.round(fraction * (count - 1));
+}
+
+function inspectLinearSeriesWithKeyboard(
+  event: React.KeyboardEvent<SVGSVGElement>,
+  dates: string[],
+  selectedDate: string | null,
+  onSelectedDateChange: (date: string | null) => void,
+): void {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !dates.length) return;
+  event.preventDefault();
+  const selectedIndex = selectedDate ? dates.indexOf(selectedDate) : dates.length - 1;
+  const anchor = selectedIndex >= 0 ? selectedIndex : dates.length - 1;
+  const nextIndex = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? dates.length - 1
+      : event.key === "ArrowLeft"
+        ? Math.max(0, anchor - 1)
+        : Math.min(dates.length - 1, anchor + 1);
+  onSelectedDateChange(dates[nextIndex] ?? null);
 }
 
 function formatMagnitude(value: number): string {
@@ -1191,7 +1288,7 @@ function RelativeProgressTrace({
   selectedDate: string | null;
   onSelectedDateChange: (date: string | null) => void;
 }) {
-  const [mobileLane, setMobileLane] = useState<"relative" | "beta">("relative");
+  const [lane, setLane] = useState<"relative" | "beta">("relative");
   // Keep the complete aligned sequence here so null beta rows remain visible
   // chain breaks rather than being bridged by generic point sampling.
   const rows = data.price_series;
@@ -1199,15 +1296,6 @@ function RelativeProgressTrace({
   const betaAdjusted = rows.map((point) => point.beta_adjusted_cumulative_return ?? null);
   const latestRelative = [...relative].reverse().find(finite);
   const latestBetaAdjusted = [...betaAdjusted].reverse().find(finite);
-  const relativeBaselineY = scaledLaneY(100, [...relative, 100], 18, 62);
-  const betaBaselineY = scaledLaneY(0, [...betaAdjusted, 0], 111, 64, true);
-  const latestRelativeY = finite(latestRelative)
-    ? scaledLaneY(latestRelative, [...relative, 100], 18, 62)
-    : 27;
-  const latestBetaAdjustedY = finite(latestBetaAdjusted)
-    ? scaledLaneY(latestBetaAdjusted, [...betaAdjusted, 0], 111, 64, true)
-    : 121;
-  const chainStart = data.relative_progress.beta_adjusted_chain_start_at ?? betaChainStart(data);
   const fullChainStartDates = new Set(data.price_series.flatMap((point, index) => (
     point.beta_adjusted_chain_start === true
       || (
@@ -1223,117 +1311,126 @@ function RelativeProgressTrace({
   const denominator = Math.max(1, rows.length - 1);
   const inspectedIndex = selectedDate ? rows.findIndex((row) => row.date === selectedDate) : -1;
   const inspectedRow = inspectedIndex >= 0 ? rows[inspectedIndex] : null;
-  const displayedRelative = inspectedRow?.relative_index ?? latestRelative;
-  const displayedBetaAdjusted = inspectedRow?.beta_adjusted_cumulative_return ?? latestBetaAdjusted;
-  const cursorX = inspectedIndex >= 0 ? 50 + (inspectedIndex / denominator) * 632 : null;
-  const mobileCursorX = inspectedIndex >= 0 ? 50 + (inspectedIndex / denominator) * 292 : null;
+  const displayedRelative = inspectedRow ? inspectedRow.relative_index : latestRelative;
+  const displayedBetaAdjusted = inspectedRow ? inspectedRow.beta_adjusted_cumulative_return : latestBetaAdjusted;
+  const values = lane === "relative" ? relative : betaAdjusted;
+  const baseline = lane === "relative" ? 100 : 0;
+  const centered = lane === "beta";
+  const chartTop = 22;
+  const chartHeight = 116;
+  const chartWidth = 632;
+  const baselineY = scaledLaneY(baseline, [...values, baseline], chartTop, chartHeight, centered);
+  const displayedValue = lane === "relative" ? displayedRelative : displayedBetaAdjusted;
+  const latestValue = lane === "relative" ? latestRelative : latestBetaAdjusted;
+  const cursorX = inspectedIndex >= 0 ? 50 + (inspectedIndex / denominator) * chartWidth : null;
+  let latestFiniteIndex = -1;
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (finite(values[index])) {
+      latestFiniteIndex = index;
+      break;
+    }
+  }
+  const latestX = latestFiniteIndex >= 0
+    ? 50 + (latestFiniteIndex / denominator) * chartWidth
+    : null;
+  const latestValueDate = latestFiniteIndex >= 0 ? rows[latestFiniteIndex]?.date ?? null : null;
+  const latestRowSupported = latestFiniteIndex === rows.length - 1;
+  const displayedDate = inspectedRow?.date
+    ?? (lane === "beta" ? latestValueDate : rows[rows.length - 1]?.date)
+    ?? "Current";
+  const latestStatusValue = lane === "relative"
+    ? data.relative_progress.active_return_pct
+    : latestBetaAdjusted;
+  const latestY = finite(latestValue)
+    ? scaledLaneY(latestValue, [...values, baseline], chartTop, chartHeight, centered)
+    : null;
 
   return (
-    <section className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
+    <section className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5 sm:p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <span className="page-kicker">Price progress</span>
-          <h3 className="mt-1 text-sm font-semibold text-white">Relative price and prior-only beta-adjusted path</h3>
+          <span className="page-kicker">Primary evidence</span>
+          <h3 className="mt-1 text-base font-semibold text-white">Relative progress</h3>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-slate-400">
-            <span>{inspectedRow?.date ? `${inspectedRow.date} · ` : ""}Relative index <strong className="text-teal-200">{finite(displayedRelative) ? displayedRelative.toFixed(2) : "—"}</strong></span>
-            <span>Beta-adjusted chain <strong className="text-amber-200">{formatPercent(displayedBetaAdjusted)}</strong></span>
-            <span>Current β <strong className="text-slate-200">{finite(latestBeta) ? latestBeta.toFixed(2) : "—"}</strong></span>
+            <span>{displayedDate} · {lane === "relative" ? "relative index" : "adjusted chain"} <strong className={lane === "relative" ? "text-teal-200" : "text-amber-200"}>{lane === "relative" ? finite(displayedValue) ? displayedValue.toFixed(2) : "—" : formatPercent(displayedValue)}</strong></span>
+            {lane === "beta" ? <span>current β <strong className="text-slate-200">{finite(latestBeta) ? latestBeta.toFixed(2) : "—"}</strong></span> : null}
           </div>
         </div>
-        <span className="rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-slate-400">
-          {data.overlap.common_observations.toLocaleString()} exact shared bars
-        </span>
-      </div>
-      <div className="mt-3 inline-flex rounded-lg border border-stealth-700 bg-slate-950/60 p-0.5 sm:hidden" role="group" aria-label="Mobile price chart">
-        {(["relative", "beta"] as const).map((lane) => (
-          <button
-            key={lane}
-            type="button"
-            onClick={() => setMobileLane(lane)}
-            aria-pressed={mobileLane === lane}
-            className={`min-h-10 rounded-md px-3 text-[11px] font-medium ${mobileLane === lane ? "bg-sky-400/15 text-sky-200" : "text-slate-400"}`}
-          >
-            {lane === "relative" ? "Relative price" : "Beta adjusted"}
-          </button>
-        ))}
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <span className={`rounded-full border px-2.5 py-1 font-mono text-xs ${lane === "relative" ? "border-teal-400/25 bg-teal-400/[0.06] text-teal-200" : "border-amber-400/25 bg-amber-400/[0.06] text-amber-200"}`}>
+            {latestRowSupported ? "Current" : `Supported through ${latestValueDate ?? "—"}`} {data.target.symbol} vs {data.benchmark.symbol} {formatPercent(latestStatusValue)}
+            {lane === "beta" && !latestRowSupported ? " · current chain unavailable" : ""}
+          </span>
+          <div className="inline-flex rounded-lg border border-stealth-700 bg-slate-950/60 p-0.5" role="group" aria-label="Relative progress chart">
+            {(["relative", "beta"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setLane(option)}
+                aria-pressed={lane === option}
+                className={`min-h-10 rounded-md px-3 text-[11px] font-medium sm:min-h-9 ${lane === option ? "bg-sky-400/15 text-sky-200" : "text-slate-400"}`}
+              >
+                {option === "relative" ? "Relative performance" : "Beta adjusted"}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <svg
-        viewBox="0 0 700 190"
-        className="mt-1 hidden h-[176px] w-full touch-none sm:block"
+        viewBox="0 0 700 176"
+        className="mt-2 h-[158px] w-full touch-none rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40 sm:h-[210px]"
         role="img"
-        aria-label={`${data.target.symbol} relative price versus ${data.benchmark.symbol}, based at 100 on ${formatDate(relativeStart, data.timeframe)}; latest ${finite(latestRelative) ? latestRelative.toFixed(2) : "unavailable"}. Prior-only beta-adjusted current chain ${formatPercent(latestBetaAdjusted)} with ${Math.max(0, chainStarts.length - 1)} restart${Math.max(0, chainStarts.length - 1) === 1 ? "" : "s"}.`}
+        tabIndex={0}
+        aria-label={lane === "relative"
+          ? `${data.target.symbol} relative price versus ${data.benchmark.symbol}, based at 100 on ${formatDate(relativeStart, data.timeframe)}; latest ${finite(latestRelative) ? latestRelative.toFixed(2) : "unavailable"}. Use Left and Right arrows to inspect shared dates.`
+          : `${latestRowSupported ? "Current" : `Latest supported through ${latestValueDate ?? "an unavailable date"}`} prior-only beta-adjusted chain ${formatPercent(latestBetaAdjusted)} with ${Math.max(0, chainStarts.length - 1)} restart${Math.max(0, chainStarts.length - 1) === 1 ? "" : "s"}; zero is the comparison baseline. Use Left and Right arrows to inspect shared dates.`}
         onPointerMove={(event) => onSelectedDateChange(rows[pointerSeriesIndex(event, rows.length, 700, 50, 682)]?.date ?? null)}
         onPointerLeave={() => onSelectedDateChange(null)}
+        onKeyDown={(event) => inspectLinearSeriesWithKeyboard(
+          event,
+          rows.map((row) => row.date),
+          selectedDate,
+          onSelectedDateChange,
+        )}
       >
-        <line x1="50" x2="682" y1={relativeBaselineY} y2={relativeBaselineY} stroke="rgba(45,212,191,.38)" strokeDasharray="4 4" />
-        <text x="688" y={relativeBaselineY + 3} fill="#5eead4" fontSize="9">100</text>
-        <line x1="50" x2="682" y1="96" y2="96" stroke="rgba(71,85,105,.45)" />
-        <line x1="50" x2="682" y1={betaBaselineY} y2={betaBaselineY} stroke="rgba(251,191,36,.38)" strokeDasharray="4 4" />
-        <text x="688" y={betaBaselineY + 3} fill="#fcd34d" fontSize="9">0</text>
-        {chainStarts.map((index) => {
-          const x = 50 + (index / denominator) * 632;
+        <line x1="50" x2="682" y1={baselineY} y2={baselineY} stroke={lane === "relative" ? "rgba(45,212,191,.42)" : "rgba(251,191,36,.42)"} strokeDasharray="4 4" />
+        <text x="46" y={baselineY + 3} textAnchor="end" fill={lane === "relative" ? "#5eead4" : "#fcd34d"} fontSize="10">{baseline}</text>
+        {lane === "beta" ? chainStarts.map((index) => {
+          const x = 50 + (index / denominator) * chartWidth;
           return (
             <g key={`chain-${index}`}>
               <title>{`${index === chainStarts[0] ? "Beta chain start" : "Beta chain restart"} on ${rows[index]?.date ?? "an unavailable date"}`}</title>
-              <line x1={x} x2={x} y1="107" y2="179" stroke="rgba(251,191,36,.58)" strokeWidth="1.2" strokeDasharray="2 4" />
-              <path d={`M ${x - 3.5} 108 L ${x + 3.5} 108 L ${x} 114 Z`} fill="#fbbf24" stroke="#0f172a" strokeWidth=".8" />
+              <line x1={x} x2={x} y1="16" y2="145" stroke="rgba(251,191,36,.52)" strokeWidth="1.1" strokeDasharray="2 4" />
+              <path d={`M ${x - 3.5} 18 L ${x + 3.5} 18 L ${x} 24 Z`} fill="#fbbf24" stroke="#0f172a" strokeWidth=".8" />
             </g>
           );
-        })}
-        <path d={scaledLanePath(relative, 632, 18, 62, false, [100])} fill="none" stroke="#2dd4bf" strokeWidth="2.1" vectorEffect="non-scaling-stroke" />
-        <path d={scaledLanePath(betaAdjusted, 632, 111, 64, true, [0])} fill="none" stroke="#fbbf24" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
-        {cursorX !== null ? <line x1={cursorX} x2={cursorX} y1="10" y2="179" stroke="rgba(248,250,252,.65)" strokeWidth="1" strokeDasharray="2 3" /> : null}
-        <text x="5" y="32" fill="#94a3b8" fontSize="10">relative</text>
-        <text x="5" y="45" fill="#64748b" fontSize="9">index</text>
-        <text x="5" y="133" fill="#94a3b8" fontSize="10">β-adjusted</text>
-        <text x="5" y="146" fill="#64748b" fontSize="9">cumulative</text>
-        <text x="676" y={Math.max(14, Math.min(92, latestRelativeY - 5))} textAnchor="end" fill="#5eead4" fontSize="10">{finite(latestRelative) ? latestRelative.toFixed(2) : "—"}</text>
-        <text x="676" y={Math.max(108, Math.min(178, latestBetaAdjustedY - 5))} textAnchor="end" fill="#fcd34d" fontSize="10">{formatPercent(latestBetaAdjusted)}</text>
-        <text x="50" y="187" fill="#64748b" fontSize="10">{relativeStart ?? ""}</text>
-        <text x="682" y="187" fill="#64748b" fontSize="10" textAnchor="end">{rows[rows.length - 1]?.date ?? ""}</text>
+        }) : null}
+        <path
+          d={scaledLanePath(values, chartWidth, chartTop, chartHeight, centered, [baseline])}
+          fill="none"
+          stroke={lane === "relative" ? "#2dd4bf" : "#fbbf24"}
+          strokeWidth="2.2"
+          vectorEffect="non-scaling-stroke"
+        />
+        {latestX !== null && latestY !== null ? (
+          <circle cx={latestX} cy={latestY} r="3.5" fill={lane === "relative" ? "#2dd4bf" : "#fbbf24"} stroke="#f8fafc" strokeWidth="1.1" />
+        ) : null}
+        {cursorX !== null ? <line x1={cursorX} x2={cursorX} y1="12" y2="145" stroke="rgba(248,250,252,.65)" strokeWidth="1" strokeDasharray="2 3" /> : null}
+        <text x="50" y="166" fill="#64748b" fontSize="10">{relativeStart ?? ""}</text>
+        <text x="682" y="166" fill="#64748b" fontSize="10" textAnchor="end">{rows[rows.length - 1]?.date ?? ""}</text>
       </svg>
-      <svg
-        viewBox="0 0 360 128"
-        className="mt-1 h-[128px] w-full touch-none sm:hidden"
-        role="img"
-        aria-label={mobileLane === "relative"
-          ? `Relative price index based at 100 on ${formatDate(relativeStart, data.timeframe)}; latest ${finite(latestRelative) ? latestRelative.toFixed(2) : "unavailable"}.`
-          : `Current prior-only beta-adjusted return chain ${formatPercent(latestBetaAdjusted)}; began ${formatDate(chainStart, data.timeframe)} with ${Math.max(0, chainStarts.length - 1)} restart${Math.max(0, chainStarts.length - 1) === 1 ? "" : "s"}.`}
-        onPointerMove={(event) => onSelectedDateChange(rows[pointerSeriesIndex(event, rows.length, 360, 50, 342)]?.date ?? null)}
-        onPointerLeave={() => onSelectedDateChange(null)}
-      >
-        {mobileLane === "relative" ? (
-          <>
-            <line x1="50" x2="342" y1={scaledLaneY(100, [...relative, 100], 18, 82)} y2={scaledLaneY(100, [...relative, 100], 18, 82)} stroke="rgba(45,212,191,.4)" strokeDasharray="4 4" />
-            <text x="46" y={scaledLaneY(100, [...relative, 100], 18, 82) + 3} textAnchor="end" fill="#5eead4" fontSize="10">100</text>
-            <path d={scaledLanePath(relative, 292, 18, 82, false, [100])} fill="none" stroke="#2dd4bf" strokeWidth="2.2" vectorEffect="non-scaling-stroke" />
-            <text x="338" y="15" textAnchor="end" fill="#5eead4" fontSize="11">{finite(latestRelative) ? latestRelative.toFixed(2) : "—"}</text>
-          </>
-        ) : (
-          <>
-            <line x1="50" x2="342" y1={scaledLaneY(0, [...betaAdjusted, 0], 18, 82, true)} y2={scaledLaneY(0, [...betaAdjusted, 0], 18, 82, true)} stroke="rgba(251,191,36,.4)" strokeDasharray="4 4" />
-            <text x="46" y={scaledLaneY(0, [...betaAdjusted, 0], 18, 82, true) + 3} textAnchor="end" fill="#fcd34d" fontSize="10">0</text>
-            {chainStarts.map((index) => {
-              const x = 50 + (index / denominator) * 292;
-              return (
-                <g key={`mobile-chain-${index}`}>
-                  <title>{`${index === chainStarts[0] ? "Beta chain start" : "Beta chain restart"} on ${rows[index]?.date ?? "an unavailable date"}`}</title>
-                  <line x1={x} x2={x} y1="16" y2="104" stroke="rgba(251,191,36,.58)" strokeWidth="1.2" strokeDasharray="2 4" />
-                  <path d={`M ${x - 3.5} 18 L ${x + 3.5} 18 L ${x} 24 Z`} fill="#fbbf24" stroke="#0f172a" strokeWidth=".8" />
-                </g>
-              );
-            })}
-            <path d={scaledLanePath(betaAdjusted, 292, 18, 82, true, [0])} fill="none" stroke="#fbbf24" strokeWidth="2.2" vectorEffect="non-scaling-stroke" />
-            <text x="338" y="15" textAnchor="end" fill="#fcd34d" fontSize="11">{formatPercent(latestBetaAdjusted)}</text>
-          </>
-        )}
-        {mobileCursorX !== null ? <line x1={mobileCursorX} x2={mobileCursorX} y1="10" y2="105" stroke="rgba(248,250,252,.65)" strokeWidth="1" strokeDasharray="2 3" /> : null}
-        <text x="50" y="122" fill="#64748b" fontSize="10">{relativeStart ?? ""}</text>
-        <text x="342" y="122" fill="#64748b" fontSize="10" textAnchor="end">{rows[rows.length - 1]?.date ?? ""}</text>
-      </svg>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] leading-4 text-slate-400">
-        <span className={mobileLane === "relative" ? "" : "hidden sm:inline"}><i className="mr-1 inline-block h-0.5 w-4 bg-teal-400 align-middle" />relative index began {formatDate(relativeStart, data.timeframe)} at 100</span>
-        <span className={mobileLane === "beta" ? "" : "hidden sm:inline"}><i className="mr-1 inline-block h-0 w-0 border-x-[4px] border-t-[7px] border-x-transparent border-t-amber-300 align-middle" />current chain began {formatDate(chainStart, data.timeframe)}; triangle + dashed line marks every start/restart after unavailable beta</span>
+      <div className="flex flex-wrap items-start justify-between gap-2 text-[10px] leading-4 text-slate-400">
+        <span>{lane === "relative"
+          ? <>100 marks equal progress from the shared start on {formatDate(relativeStart, data.timeframe)}.</>
+          : <>Zero is the adjusted-chain baseline; triangles mark starts or resets after unavailable beta.</>}</span>
+        <details className="group max-w-xl text-right">
+          <summary className="inline-flex min-h-8 cursor-pointer list-none items-center rounded-lg border border-stealth-700 px-2.5 text-[10px] text-slate-300 hover:border-sky-400/35 hover:text-white">
+            How this is measured
+          </summary>
+          <p className="mt-2 rounded-lg border border-stealth-700 bg-slate-950/75 p-2.5 text-left leading-5 text-slate-400">
+            Relative performance rebases the target-to-benchmark price ratio to 100 at the first exact shared observation. The adjusted view applies a beta estimated only from strictly earlier aligned returns. It is a chained descriptive comparison, does not subtract a fitted intercept, and restarts after unsupported beta rows.
+          </p>
+        </details>
       </div>
       <p className="sr-only">
         Latest relative index {finite(latestRelative) ? latestRelative.toFixed(2) : "unavailable"}.
@@ -1358,6 +1455,7 @@ function DimensionTrend({
   targetSymbol: string;
   benchmarkSymbol: string;
 }) {
+  const instanceId = useId().replace(/:/g, "");
   const rows = coordinate.series;
   const target = downsampleNullable(rows.map((point) => point.target_supported === false
     ? null
@@ -1389,7 +1487,7 @@ function DimensionTrend({
     616,
     48,
   );
-  const hatchId = `pair-unsupported-${coordinate.id.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+  const hatchId = `pair-unsupported-${instanceId}-${coordinate.id.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   const guidance = COORDINATE_GUIDANCE[coordinate.id] ?? {
     definition: "Implemented coordinate from the shared 15-dimensional field recipe.",
     higher: "Higher means more of this measured quantity, not better expected performance.",
@@ -1413,7 +1511,7 @@ function DimensionTrend({
     && finite(currentGap);
 
   return (
-    <div className="self-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5 xl:sticky xl:top-20">
+    <div className="self-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5 lg:sticky lg:top-20">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-xs font-semibold text-white">{coordinate.label} through shared time</div>
@@ -1427,11 +1525,18 @@ function DimensionTrend({
       </div>
       <svg
         viewBox="0 0 680 170"
-        className="mt-2 h-[180px] w-full touch-none"
+        className="mt-2 h-[180px] w-full touch-none rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40"
         role="img"
-        aria-label={`${coordinate.label} comparison history on the ${basis === "context" ? "relative-to-own-history" : "direct-model-scale"} basis. Latest ${targetSymbol} ${formatNumber(latestTarget)}, ${benchmarkSymbol} ${formatNumber(latestBenchmark)}, target-minus-benchmark gap ${formatNumber(currentGap)}; current selected-basis value ${selectedBasisAvailable ? "available" : "limited"}. Solid circle is target, dashed diamond is benchmark, dotted square is difference, and hatched periods are unsupported.`}
+        tabIndex={0}
+        aria-label={`${coordinate.label} comparison history on the ${basis === "context" ? "relative-to-own-history" : "direct-model-scale"} basis. Latest ${targetSymbol} ${formatNumber(latestTarget)}, ${benchmarkSymbol} ${formatNumber(latestBenchmark)}, target-minus-benchmark gap ${formatNumber(currentGap)}; current selected-basis value ${selectedBasisAvailable ? "available" : "limited"}. Solid circle is target, dashed diamond is benchmark, dotted square is difference, and hatched periods are unsupported. Use Left and Right arrows to inspect shared dates.`}
         onPointerMove={(event) => onSelectedDateChange(rows[pointerSeriesIndex(event, rows.length, 680, 48, 664)]?.date ?? null)}
         onPointerLeave={() => onSelectedDateChange(null)}
+        onKeyDown={(event) => inspectLinearSeriesWithKeyboard(
+          event,
+          rows.map((row) => row.date),
+          selectedDate,
+          onSelectedDateChange,
+        )}
       >
         <defs>
           <pattern id={hatchId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
@@ -1513,8 +1618,11 @@ export default function MarketWeatherComparisonLab({
   const [localOrder, setLocalOrder] = useState<CoordinateOrder>("recipe");
   const [activeMobileScope, setActiveMobileScope] = useState(SCOPE_DEFINITIONS[0].id);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [showAllCoordinates, setShowAllCoordinates] = useState(false);
   const [inspectedDate, setInspectedDate] = useState<string | null>(null);
-  const [copyStatus, setCopyStatus] = useState<"idle" | "summary" | "receipt" | "error">("idle");
+  const [copyStatus, setCopyStatus] = useState<
+    "idle" | "quick" | "full" | "overview_link" | "current_link" | "receipt" | "error"
+  >("idle");
   const pairContentRef = useRef<HTMLDivElement>(null);
   const overviewPanelRef = useRef<HTMLDivElement>(null);
   const mobileCloseRef = useRef<HTMLButtonElement>(null);
@@ -1558,7 +1666,6 @@ export default function MarketWeatherComparisonLab({
   const gapTone = (data.relative_progress.active_return_pct ?? 0) > 0
     ? "text-emerald-300"
     : (data.relative_progress.active_return_pct ?? 0) < 0 ? "text-rose-300" : "text-slate-200";
-  const relativeIndex = data.relative_progress.relative_index ?? latestRelativeIndex(data);
   const chainStart = data.relative_progress.beta_adjusted_chain_start_at ?? betaChainStart(data);
   const fieldSeparation = data.relative_progress.field_separation;
   const separationLookback = fieldSeparation?.lookback_shared_observations ?? 5;
@@ -1573,7 +1680,6 @@ export default function MarketWeatherComparisonLab({
     ?? data.overlap.supported_coordinate_cells
     ?? Math.round(totalWindowCells * (data.support?.support_fraction ?? data.overlap.support_fraction));
   const missingValuesCarried = data.support?.missing_values_carried;
-  const relativeBaseDate = data.price_series[0]?.date ?? data.overlap.start;
   const orderedCoordinates = useMemo(() => {
     if (activeOrder === "largest") {
       return [...data.coordinates].sort((left, right) => {
@@ -1601,8 +1707,72 @@ export default function MarketWeatherComparisonLab({
     })).filter((group) => group.coordinates.length),
     [orderedCoordinates],
   );
+  const largestCoordinates = useMemo(
+    () => {
+      const fromSummary = summary.notableGaps
+        .map((gap) => coordinateMap.get(gap.id))
+        .filter((coordinate): coordinate is MarketWeatherComparisonCoordinate => Boolean(coordinate));
+      if (fromSummary.length >= 3) return fromSummary.slice(0, 3);
+      const observed = new Set(fromSummary.map((coordinate) => coordinate.id));
+      const fallback = [...data.coordinates]
+        .filter((coordinate) => (
+          !observed.has(coordinate.id)
+          && coordinate.latest.target_supported
+          && coordinate.latest.benchmark_supported
+          && coordinate.latest.pair_supported !== false
+          && finite(coordinate.latest.context_difference)
+        ))
+        .sort((left, right) => (
+          Math.abs(right.latest.context_difference ?? 0) - Math.abs(left.latest.context_difference ?? 0)
+        ));
+      return [...fromSummary, ...fallback].slice(0, 3);
+    },
+    [coordinateMap, data.coordinates, summary.notableGaps],
+  );
+  const relativeRead = relativeStanding(
+    data.target.symbol,
+    data.benchmark.symbol,
+    data.relative_progress.active_return_pct,
+  );
+  const completeFieldCoverage = fullySupported === data.coordinates.length
+    && (data.support?.all_returned_coordinate_cells_supported
+      ?? supportedWindowCells === totalWindowCells);
+  const coverageLabel = completeFieldCoverage
+    ? "Complete field coverage"
+    : `${supportPct}% field coverage · ${fullySupported}/${data.coordinates.length} current`;
+  const fieldRelationshipState = relationshipStateLabel(
+    fieldSeparation?.direction ?? data.relative_progress.gap_direction,
+  );
+  const overviewSynthesis = [
+    `${relativeRead.plain} across ${data.overlap.common_observations.toLocaleString()} shared ${observationFrequency(data.timeframe)} observations.`,
+    finite(data.relative_progress.beta_adjusted_return_pct)
+      ? `After accounting for benchmark sensitivity estimated only from earlier returns, the current adjusted chain is ${formatPercent(data.relative_progress.beta_adjusted_return_pct)}.`
+      : "A current prior-only beta-adjusted chain is unavailable.",
+    finite(stretch.latest) && finite(stretch.previous)
+      ? `Their own-history field distance moved from ${stretch.previous.toFixed(2)} to ${stretch.latest.toFixed(2)}, a ${fieldRelationshipState.toLowerCase()} relationship over the latest ${separationLookback} shared observations.`
+      : `Their own-history field relationship is ${fieldRelationshipState.toLowerCase()}; an exact distance change is unavailable in this response.`,
+    "Together these describe observed relationships, not future performance.",
+  ].join(" ");
+  const quickSummaryText = [
+    `${data.target.symbol} vs ${data.benchmark.symbol}: ${relativeRead.plain} across ${data.overlap.common_observations.toLocaleString()} shared ${observationFrequency(data.timeframe)} observations.`,
+    finite(data.relative_progress.beta_adjusted_return_pct)
+      ? `Prior-only beta-adjusted chain: ${formatPercent(data.relative_progress.beta_adjusted_return_pct)} at β ${finite(data.relative_progress.beta) ? data.relative_progress.beta.toFixed(2) : "unavailable"}.`
+      : "Prior-only beta-adjusted chain unavailable.",
+    `Field relationship: ${fieldRelationshipState}. Descriptive comparison only; not a forecast or trade signal.`,
+  ].join(" ");
+  const authority = data.authority ?? data.frozen_receipt?.authority;
+  const copyStatusMessage: Record<typeof copyStatus, string> = {
+    idle: `Summary source: ${summary.summarySource === "server" ? "deterministic server payload" : "legacy client fallback"}.`,
+    quick: "Quick summary copied.",
+    full: "Full research summary copied.",
+    overview_link: "Overview link copied. It will rerun against then-current data.",
+    current_link: "Current page link copied. It preserves the report recipe and selected tab, then reruns against then-current data.",
+    receipt: "Receipt download started.",
+    error: "The requested clipboard or receipt action was unavailable.",
+  };
 
-  const selectTab = (nextTab: PairTab) => {
+  const selectTab = (nextTab: PairTab, moveFocus = false) => {
+    if (moveFocus) document.getElementById(`pair-tab-${nextTab}`)?.focus();
     setActiveTab(nextTab);
   };
 
@@ -1628,17 +1798,47 @@ export default function MarketWeatherComparisonLab({
     onDimensionChange(nextDimension);
   };
 
-  const copySummary = async () => {
+  const copyText = async (
+    text: string,
+    status: "quick" | "full" | "overview_link" | "current_link",
+  ) => {
     try {
-      await navigator.clipboard.writeText(summary.copyText);
-      setCopyStatus("summary");
-      trackPairEvent("pair_summary_copied", data.comparison_hash, {
-        summary_source: summary.summarySource,
-        timeframe: data.timeframe,
-      });
+      await navigator.clipboard.writeText(text);
+      setCopyStatus(status);
+      trackPairEvent(
+        status === "overview_link" || status === "current_link"
+          ? "pair_live_recipe_copied"
+          : "pair_summary_copied",
+        data.comparison_hash,
+        {
+          copy_type: status,
+          summary_source: summary.summarySource,
+          timeframe: data.timeframe,
+        },
+      );
     } catch {
       setCopyStatus("error");
     }
+  };
+
+  const copyOverviewLink = async () => {
+    const link = new URL(window.location.href);
+    link.searchParams.set("pair_tab", "overview");
+    await copyText(link.toString(), "overview_link");
+  };
+
+  const copyCurrentLink = async () => {
+    const link = new URL(window.location.href);
+    link.searchParams.set("pair_tab", activeTab);
+    await copyText(link.toString(), "current_link");
+  };
+
+  const copyFullSummary = async () => {
+    await copyText(summary.copyText, "full");
+  };
+
+  const copyQuickSummary = async () => {
+    await copyText(quickSummaryText, "quick");
   };
 
   const exportReceipt = () => {
@@ -1661,6 +1861,10 @@ export default function MarketWeatherComparisonLab({
       timeframe: data.timeframe,
     });
   };
+
+  useEffect(() => {
+    setShowAllCoordinates(false);
+  }, [data.comparison_hash]);
 
   useEffect(() => {
     if (renderedHashRef.current === data.comparison_hash) return undefined;
@@ -1778,36 +1982,39 @@ export default function MarketWeatherComparisonLab({
           </div>
         </div>
         <section className="primary-card overflow-hidden" aria-labelledby="pair-field-title">
-      <header className="border-b border-stealth-700 p-4 sm:p-5">
+      <header className="border-b border-stealth-700 p-3.5 sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="page-kicker">Relative field</span>
-              <span className="page-badge border-teal-400/20 text-teal-200"><ArrowRightLeft className="h-3.5 w-3.5" /> Exact shared bars</span>
-              <span className={`page-badge ${sessionCertified ? "border-emerald-400/20 text-emerald-200" : "border-amber-400/20 text-amber-200"}`}>
-                Sessions {sessionCompatibility === "incompatible"
-                  ? "incompatible"
-                  : sessionCertified
-                    ? "independently certified"
-                    : sessionCompatibility === "compatible" ? "marked compatible · not independently certified" : "not independently certified"}
-              </span>
+              <span className="page-kicker">Relative field pair</span>
               {data.provenance.identity_control ? (
                 <span className="page-badge border-amber-400/20 text-amber-200">Identity control</span>
               ) : null}
             </div>
             <h2 id="pair-field-title" className="mt-1 text-xl font-semibold text-white sm:text-2xl">
-              {data.target.symbol} compared with {data.benchmark.symbol}
+              {data.target.symbol} vs {data.benchmark.symbol}
             </h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
-              Relative price measures progress. Coordinate differences describe how the two fields arrived there; they do not declare one instrument better.
+            <p className="mt-0.5 text-sm text-slate-300">Relative market-path comparison</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-400">
+              {data.overlap.common_observations.toLocaleString()} shared {observationFrequency(data.timeframe)} observations · {formatDate(data.overlap.start, data.timeframe)} – {formatDate(data.overlap.end, data.timeframe)}
             </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
+              <span className={completeFieldCoverage ? "text-emerald-200" : "text-amber-200"}>{coverageLabel}</span>
+              <span aria-hidden="true">·</span>
+              <span className={alignmentSupported ? undefined : "text-rose-200"}>
+                {alignmentSupported ? "Exact date alignment" : "Alignment unsupported"}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>{sessionCompatibility === "incompatible"
+                ? "Sessions incompatible"
+                : sessionCertified ? "Session equivalence certified" : "Session equivalence unverified"}</span>
+            </div>
           </div>
-          <div className="rounded-xl border border-stealth-700 bg-slate-950/40 px-3 py-2 text-right text-[10px] leading-4 text-slate-400">
-            <div className="font-mono text-slate-300">{data.timeframe} · {data.overlap.common_observations.toLocaleString()} shared</div>
-            <div>Through {formatDate(data.overlap.latest_aligned_at, data.timeframe)}</div>
-          </div>
+          <span className="page-badge self-start border-sky-400/20 bg-sky-400/[0.05] text-sky-100">
+            Descriptive only
+          </span>
         </div>
-        <nav className="mt-4 grid grid-cols-3 gap-1 rounded-xl border border-stealth-700 bg-slate-950/55 p-1 sm:inline-grid sm:min-w-[420px]" role="tablist" aria-label="Relative Field sections">
+        <nav className="mt-3 grid grid-cols-3 gap-1 rounded-xl border border-stealth-700 bg-slate-950/55 p-1 sm:inline-grid sm:min-w-[420px]" role="tablist" aria-label="Relative Field sections">
           {PAIR_TAB_OPTIONS.map(({ id, label }, index) => (
             <button
               key={id}
@@ -1847,85 +2054,94 @@ export default function MarketWeatherComparisonLab({
         ) : null}
 
         {activeTab === "overview" ? (
-          <div id="pair-panel-overview" role="tabpanel" aria-labelledby="pair-tab-overview" className="flex flex-col gap-4">
-            <section ref={overviewPanelRef} className="order-2 rounded-2xl border border-sky-400/20 bg-gradient-to-br from-sky-400/[0.08] via-slate-950/40 to-violet-400/[0.06] p-4 sm:order-1 sm:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+          <div id="pair-panel-overview" role="tabpanel" aria-labelledby="pair-tab-overview" className="flex flex-col gap-3.5">
+            <section className="grid gap-2.5 lg:grid-cols-[1.2fr_.9fr_.9fr]">
+              <article ref={overviewPanelRef} className="rounded-2xl border border-teal-400/25 bg-gradient-to-br from-teal-400/[0.09] via-slate-950/50 to-sky-400/[0.05] p-4 sm:p-5">
+                <span className="page-kicker">Relative performance</span>
+                <h3 className="mt-1.5 text-lg font-semibold text-white">{relativeRead.headline}</h3>
+                <div className={`mt-2 font-mono text-3xl font-semibold tracking-tight ${gapTone}`}>
+                  {formatPercent(data.relative_progress.active_return_pct)}
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-slate-400">
+                  From the common starting point across {data.overlap.common_observations.toLocaleString()} shared {observationFrequency(data.timeframe)} observations.
+                </p>
+              </article>
+
+              <article className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-4">
+                <span className="page-kicker">After beta adjustment</span>
+                <div className="mt-2 font-mono text-2xl font-semibold text-sky-200">{formatPercent(data.relative_progress.beta_adjusted_return_pct)}</div>
+                <p className="mt-1 text-[11px] leading-5 text-slate-300">{betaStanding(data.target.symbol, data.benchmark.symbol, data.relative_progress.beta_adjusted_return_pct)}</p>
+                <p className="mt-1 font-mono text-[10px] text-slate-400">β {finite(data.relative_progress.beta) ? data.relative_progress.beta.toFixed(2) : "—"}</p>
+                <details className="mt-2 text-[10px] text-slate-400">
+                  <summary className="min-h-8 cursor-pointer list-none text-sky-200">Measurement details</summary>
+                  <p className="leading-5">
+                    {data.relative_progress.beta_prior_observations ?? data.relative_progress.lookback_bars} strictly prior returns · chain began {formatDate(chainStart, data.timeframe)} · {data.relative_progress.beta_adjusted_chain_observations ?? "—"} supported observations · {data.relative_progress.beta_adjusted_chain_reset_count ?? 0} resets. This is not an OLS residual and does not subtract a fitted intercept.
+                  </p>
+                </details>
+              </article>
+
+              <article className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-4">
+                <span className="page-kicker">Field relationship</span>
+                <div className="mt-2 text-xl font-semibold text-amber-200">{fieldRelationshipState}</div>
+                <p className="mt-1 font-mono text-sm text-slate-200">
+                  {finite(stretch.previous) && finite(stretch.latest) ? `${stretch.previous.toFixed(2)} → ${stretch.latest.toFixed(2)}` : "Current comparison available"}
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-400">Own-history distance over the latest {separationLookback} shared observations.</p>
+                <details className="mt-2 text-[10px] text-slate-400">
+                  <summary className="min-h-8 cursor-pointer list-none text-amber-200">Classification details</summary>
+                  <p className="leading-5">
+                    Family-balanced across {fieldSeparation?.compared_families ?? FAMILY_ORDER.length} measurement groups and {fieldSeparation?.compared_coordinates ?? fullySupported} supported coordinates
+                    {finite(fieldSeparation?.tolerance) ? `; tolerance ${fieldSeparation.tolerance.toFixed(2)}` : ""}.
+                  </p>
+                </details>
+              </article>
+            </section>
+
+            <section className="rounded-2xl border border-stealth-700 bg-slate-950/25 px-4 py-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <p className="max-w-5xl text-sm leading-6 text-slate-300">{overviewSynthesis}</p>
+                <button
+                  type="button"
+                  onClick={() => selectTab("audit", true)}
+                  className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 self-start rounded-full border px-2.5 text-[10px] ${completeFieldCoverage ? "border-emerald-400/20 text-emerald-200" : "border-amber-400/20 text-amber-200"}`}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" /> {coverageLabel}
+                </button>
+              </div>
+              <p className="mt-2 text-[10px] text-slate-500">Descriptive comparison only · Not a forecast or trade signal</p>
+            </section>
+
+            <RelativeProgressTrace data={data} selectedDate={inspectedDate} onSelectedDateChange={setInspectedDate} />
+
+            <section className="rounded-2xl border border-stealth-700 bg-slate-950/25 p-3.5">
+              <div className="flex flex-wrap items-end justify-between gap-2">
                 <div>
-                  <span className="page-kicker">Descriptive read</span>
-                  <h3 className="mt-1 text-lg font-semibold text-white">{summary.title}</h3>
+                  <span className="page-kicker">Current context</span>
+                  <h3 className="mt-1 text-sm font-semibold text-white">What is different now?</h3>
                 </div>
-                <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1 text-[10px] text-slate-400">
-                  Deterministic {summary.summarySource === "server" ? "server summary" : "legacy client fallback"} · not a forecast
-                </span>
+                <p className="max-w-xl text-[10px] leading-4 text-slate-400">Higher means more of that measured quantity, not better expected performance.</p>
               </div>
-              <div className="mt-3 max-w-5xl space-y-2 text-sm leading-6 text-slate-300">
-                <p>{summary.relativeProgressSentence}</p>
-                <p>{summary.betaAdjustedSentence}</p>
-                <button type="button" onClick={() => selectTab("field")} className="block text-left text-slate-300 transition hover:text-sky-200">
-                  {summary.coordinateGapSentence} <ArrowRight className="ml-1 inline h-3.5 w-3.5" />
-                </button>
-                <p>{summary.separationSentence}</p>
-                <button type="button" onClick={() => selectTab("audit")} className="block text-left text-xs text-amber-200/80 transition hover:text-amber-100">
-                  {summary.supportCaveat} <FileCheck2 className="ml-1 inline h-3.5 w-3.5" />
-                </button>
-              </div>
-            </section>
-
-            <section className="order-1 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-700 sm:order-2 lg:grid-cols-5">
-              {[
-                ["Relative index", finite(relativeIndex) ? relativeIndex.toFixed(2) : "—", `100 on ${formatDate(relativeBaseDate, data.timeframe)} · equal progress at the base`, "text-teal-200"],
-                ["Relative price progress", formatPercent(data.relative_progress.active_return_pct), `${data.overlap.common_observations.toLocaleString()} exact shared bars`, gapTone],
-                ["Beta-adjusted chain", formatPercent(data.relative_progress.beta_adjusted_return_pct), `β ${finite(data.relative_progress.beta) ? data.relative_progress.beta.toFixed(2) : "—"} from ${data.relative_progress.beta_prior_observations ?? data.relative_progress.lookback_bars} prior returns · began ${formatDate(chainStart, data.timeframe)}`, "text-sky-200"],
-                ["Field separation", fieldSeparation?.label ?? separationLabel(data.relative_progress.gap_direction), finite(stretch.latest) && finite(stretch.previous) ? `${stretch.latest.toFixed(2)} now vs ${stretch.previous.toFixed(2)} ${separationLookback} shared bars earlier` : "own-history basis", "text-amber-200"],
-              ].map(([label, value, note, tone]) => (
-                <div key={label} role="group" aria-label={`${label}: ${value}. ${note}`} className="min-w-0 bg-slate-950/80 p-3.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</div>
-                  <div className={`mt-1 text-base font-semibold ${tone}`}>{value}</div>
-                  <div className="mt-0.5 text-[10px] leading-4 text-slate-400">{note}</div>
-                </div>
-              ))}
-              <div
-                role="group"
-                aria-label={`Data support: ${supportedWindowCells} of ${totalWindowCells} window coordinate cells; ${fullySupported} of ${data.coordinates.length} current coordinates; missing values carried ${missingValuesCarried === false ? "no" : missingValuesCarried === true ? "yes" : "not reported"}; session status ${sessionCompatibility}; ${sessionCertified ? "independently certified" : "not independently certified"}.`}
-                className="col-span-2 min-w-0 bg-slate-950/80 p-3.5 lg:col-span-1"
-              >
-                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Data support</div>
-                <div className={`mt-1 text-base font-semibold ${fullySupported === data.coordinates.length ? "text-emerald-200" : "text-amber-200"}`}>{supportPct}% window cells</div>
-                <dl className="mt-1 grid gap-0.5 text-[10px] leading-4 text-slate-400">
-                  <div className="flex justify-between gap-2"><dt>Window cells</dt><dd className="font-mono text-slate-300">{supportedWindowCells.toLocaleString()} / {totalWindowCells.toLocaleString()}</dd></div>
-                  <div className="flex justify-between gap-2"><dt>Current coordinates</dt><dd className="font-mono text-slate-300">{fullySupported} / {data.coordinates.length}</dd></div>
-                  <div className="flex justify-between gap-2"><dt>Missing values carried</dt><dd className="text-slate-300">{missingValuesCarried === false ? "No" : missingValuesCarried === true ? "Yes" : "Not reported"}</dd></div>
-                  <div className="flex justify-between gap-2"><dt>Session status</dt><dd className="text-right capitalize text-slate-300">{sessionCompatibility.replace(/_/g, " ")}</dd></div>
-                  <div className="flex justify-between gap-2"><dt>Session certification</dt><dd className="text-right text-slate-300">{sessionCertified ? "Independently certified" : "Not independently certified"}</dd></div>
-                </dl>
-              </div>
-            </section>
-
-            <div className="order-3">
-              <RelativeProgressTrace data={data} selectedDate={inspectedDate} onSelectedDateChange={setInspectedDate} />
-            </div>
-
-            <section className="order-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
-              <div className="grid gap-2 sm:grid-cols-3">
-                {summary.notableGaps.map((gap) => (
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {summary.notableGaps.slice(0, 3).map((gap) => (
                   <button
                     key={gap.id}
                     type="button"
                     onClick={() => {
                       selectDimension(gap.id);
-                      selectTab("field");
+                      selectTab("field", true);
                     }}
-                    className="rounded-xl border border-stealth-700 bg-slate-950/35 p-3 text-left transition hover:border-sky-400/40 hover:bg-sky-400/[0.05]"
+                    className="group flex min-h-16 items-center justify-between gap-3 rounded-xl border border-stealth-700 bg-slate-950/45 px-3 py-2.5 text-left transition hover:border-sky-400/40 hover:bg-sky-400/[0.05]"
                   >
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Own-history difference</div>
-                    <div className="mt-1 text-xs font-semibold text-slate-200">{gap.label}</div>
-                    <div className="mt-1 font-mono text-sm text-sky-200">{formatNumber(gap.value)}</div>
+                    <span>
+                      <span className="block text-xs font-semibold text-slate-200">{gap.label}</span>
+                      <span className="mt-0.5 block text-[11px] text-slate-400">
+                        {gap.higherSymbol ? `${gap.higherSymbol} higher by ${Math.abs(gap.value).toFixed(2)}` : "Near equal"}
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-sky-300" />
                   </button>
                 ))}
               </div>
-              <button type="button" onClick={() => selectTab("audit")} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white">
-                <FileCheck2 className="h-4 w-4" /> Self-checking compact receipt
-              </button>
             </section>
           </div>
         ) : null}
@@ -2055,139 +2271,156 @@ export default function MarketWeatherComparisonLab({
               </div>
             </section>
 
-            <section className="grid gap-3 xl:grid-cols-[minmax(320px,.74fr)_minmax(0,1.26fr)]">
-              <div className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div>
-                    <span className="page-kicker">15-coordinate comparison</span>
-                    <h3 className="mt-1 text-sm font-semibold text-white">How the field measurements differ through time</h3>
-                    <p className="mt-1 font-mono text-[10px] text-slate-400">{data.target.symbol} − {data.benchmark.symbol}</p>
-                  </div>
-                  <div className="text-right text-[9px] leading-4 text-slate-400">
-                    <div><span className="text-violet-300">benchmark higher ←</span> · <span className="text-teal-300">→ target higher</span></div>
-                    <div>above/below center = sign · height/intensity = magnitude · end arrow = current sign · hatch = unsupported</div>
-                  </div>
-                </div>
-                <div className="mt-3 inline-flex rounded-lg border border-stealth-700 bg-slate-950/55 p-0.5" role="group" aria-label="Coordinate ordering">
-                  {(["recipe", "largest"] as const).map((option) => (
-                    <button key={option} type="button" onClick={() => setActiveOrder(option)} aria-pressed={activeOrder === option} className={`min-h-10 rounded-md px-3 text-[10px] sm:min-h-8 ${activeOrder === option ? "bg-violet-400/15 text-violet-200" : "text-slate-400"}`}>
-                      {option === "recipe" ? "Recipe order" : "Largest own-history gaps"}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-3 space-y-3">
-                  {(activeOrder === "recipe"
-                    ? groupedCoordinates
-                    : [{ family: "ranked", coordinates: orderedCoordinates }]
-                  ).map((group) => (
-                    <details
-                      key={group.family}
-                      open={group.family === "pressure_state" || group.family === "ranked"}
-                      className="group rounded-lg"
+            <section aria-labelledby="pair-coordinate-section-title">
+              <div className="mb-2">
+                <span className="page-kicker">Selected coordinate</span>
+                <h3 id="pair-coordinate-section-title" className="mt-1 text-base font-semibold text-white">Inspect one measurement, then expand the field</h3>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)] lg:items-start">
+                {selected ? (
+                  <>
+                    <div className="hidden lg:block">
+                      <DimensionTrend
+                        coordinate={selected}
+                        basis={basis}
+                        selectedDate={inspectedDate}
+                        onSelectedDateChange={setInspectedDate}
+                        targetSymbol={data.target.symbol}
+                        benchmarkSymbol={data.benchmark.symbol}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        previousFocusRef.current = event.currentTarget;
+                        setMobileDetailOpen(true);
+                      }}
+                      className="inline-flex min-h-11 items-center justify-between gap-3 rounded-xl border border-sky-400/25 bg-sky-400/[0.06] px-3 text-left text-xs text-sky-100 lg:hidden"
                     >
-                      <summary className="mb-1 flex min-h-10 cursor-pointer list-none items-center justify-between text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 sm:min-h-7">
-                        {group.family === "ranked" ? "Ranked by absolute own-history gap" : FAMILY_LABELS[group.family] ?? group.family}
-                        <span className="text-slate-700 group-open:rotate-45" aria-hidden="true">+</span>
-                      </summary>
-                      <div className="space-y-1">
-                        {group.coordinates.map((coordinate) => {
-                          const supported = coordinate.latest.target_supported
-                            && coordinate.latest.benchmark_supported
-                            && coordinate.latest.pair_supported !== false
-                            && finite(latestDifference(coordinate, basis));
-                          const active = coordinate.id === selected?.id;
-                          const currentDifference = latestDifference(coordinate, basis);
-                          const directionNotch = finite(currentDifference)
-                            ? currentDifference > 0 ? "→" : currentDifference < 0 ? "←" : "•"
-                            : "×";
-                          const segments = coordinateSegments.get(coordinate.id) ?? [];
-                          return (
-                            <button
-                              key={coordinate.id}
-                              type="button"
-                              onClick={(event) => {
-                                selectDimension(coordinate.id);
-                                if (typeof window !== "undefined" && window.innerWidth < 640) {
-                                  previousFocusRef.current = event.currentTarget;
-                                  setMobileDetailOpen(true);
-                                }
-                              }}
-                              aria-pressed={active}
-                              aria-label={`${coordinate.label}; ${basis === "context" ? "relative-to-own-history" : "direct-model-scale"} target-minus-benchmark gap ${supported ? formatNumber(currentDifference) : "limited"}; current direction ${directionNotch === "→" ? "target higher" : directionNotch === "←" ? "benchmark higher" : directionNotch === "•" ? "near equal" : "unsupported"}; selected-basis value ${supported ? "available" : "limited"}.`}
-                              className={`grid min-h-10 w-full grid-cols-[104px_minmax(80px,1fr)_58px] items-center gap-2 rounded-lg border px-2 text-left transition sm:grid-cols-[138px_minmax(100px,1fr)_66px] ${active ? "border-sky-400/50 bg-sky-400/[0.08]" : "border-transparent hover:border-stealth-600 hover:bg-white/[0.025]"}`}
-                            >
-                              <span className="min-w-0 truncate text-[11px] font-medium leading-3.5 text-slate-200">{coordinate.label}</span>
-                              <span className="relative flex h-5 min-w-0 overflow-hidden rounded border border-white/[0.08] bg-slate-950/75" aria-hidden="true">
-                                {segments.map((segment, index) => (
-                                  <i
-                                    key={`${coordinate.id}-segment-${index}`}
-                                    className="relative min-w-px flex-1"
-                                  >
-                                    {segment.supported ? (
-                                      <i
-                                        className="absolute inset-x-0 min-h-px"
-                                        style={{
-                                          backgroundColor: segment.color,
-                                          height: `${Math.max(8, segment.magnitude * 48)}%`,
-                                          ...(finite(segment.value) && segment.value < 0
-                                            ? { top: "50%" }
-                                            : { bottom: "50%" }),
-                                        }}
-                                      />
-                                    ) : (
-                                      <i
-                                        className="absolute inset-0"
-                                        style={{
-                                        backgroundColor: segment.color,
-                                        backgroundImage: "repeating-linear-gradient(135deg, rgba(226,232,240,.38) 0 1px, transparent 1px 4px)",
-                                        }}
-                                      />
-                                    )}
+                      <span>Inspect {selected.label}</span>
+                      <span className="font-mono text-[10px] text-sky-200">gap {formatNumber(latestDifference(selected, basis))}</span>
+                    </button>
+                  </>
+                ) : (
+                  <div className="grid min-h-[160px] place-items-center rounded-2xl border border-stealth-700 text-sm text-slate-400">No comparable coordinates were returned.</div>
+                )}
+
+                <div className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <span className="page-kicker">15-coordinate explorer</span>
+                      <h3 className="mt-1 text-sm font-semibold text-white">
+                        {showAllCoordinates ? "All field measurements" : "Largest current differences"}
+                      </h3>
+                      <p className="mt-1 text-[10px] leading-4 text-slate-400">
+                        {showAllCoordinates
+                          ? `${basis === "context" ? "Own-history" : "Direct model-scale"} values · ${data.target.symbol} − ${data.benchmark.symbol}`
+                          : "The same supported own-history ranking used in the Overview."}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllCoordinates((current) => !current)}
+                      aria-expanded={showAllCoordinates}
+                      aria-controls="pair-coordinate-explorer-list"
+                      className="inline-flex min-h-10 items-center rounded-xl border border-stealth-600 px-3 text-[10px] text-slate-300 transition hover:border-sky-400/45 hover:text-white"
+                    >
+                      {showAllCoordinates ? "Show top 3" : `Show all ${data.coordinates.length} coordinates`}
+                    </button>
+                  </div>
+
+                  {showAllCoordinates ? (
+                    <div className="mt-3 inline-flex rounded-lg border border-stealth-700 bg-slate-950/55 p-0.5" role="group" aria-label="Coordinate ordering">
+                      {(["recipe", "largest"] as const).map((option) => (
+                        <button key={option} type="button" onClick={() => setActiveOrder(option)} aria-pressed={activeOrder === option} className={`min-h-10 rounded-md px-3 text-[10px] sm:min-h-8 ${activeOrder === option ? "bg-violet-400/15 text-violet-200" : "text-slate-400"}`}>
+                          {option === "recipe" ? "Recipe order" : "Largest gaps first"}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div id="pair-coordinate-explorer-list" className="mt-3 space-y-3">
+                    {(showAllCoordinates
+                      ? groupedCoordinates
+                      : [{ family: "largest", coordinates: largestCoordinates }]
+                    ).map((group) => (
+                      <section key={group.family} aria-labelledby={`pair-coordinate-family-${group.family}`}>
+                        <h4 id={`pair-coordinate-family-${group.family}`} className="mb-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                          {group.family === "largest" ? "Largest own-history differences" : FAMILY_LABELS[group.family] ?? group.family}
+                        </h4>
+                        <div className="space-y-1">
+                          {group.coordinates.map((coordinate) => {
+                            const displayedBasis: MarketWeatherComparisonBasis = showAllCoordinates ? basis : "context";
+                            const currentDifference = latestDifference(coordinate, displayedBasis);
+                            const supported = coordinate.latest.target_supported
+                              && coordinate.latest.benchmark_supported
+                              && coordinate.latest.pair_supported !== false
+                              && finite(currentDifference);
+                            const active = coordinate.id === selected?.id;
+                            const directionNotch = finite(currentDifference)
+                              ? currentDifference > 0 ? "→" : currentDifference < 0 ? "←" : "•"
+                              : "×";
+                            const segments = showAllCoordinates
+                              ? coordinateSegments.get(coordinate.id) ?? []
+                              : heatSegments(coordinate, "context");
+                            return (
+                              <button
+                                key={coordinate.id}
+                                type="button"
+                                onClick={(event) => {
+                                  selectDimension(coordinate.id);
+                                  if (typeof window !== "undefined" && window.innerWidth < 640) {
+                                    previousFocusRef.current = event.currentTarget;
+                                    setMobileDetailOpen(true);
+                                  }
+                                }}
+                                aria-pressed={active}
+                                aria-label={`${coordinate.label}; ${displayedBasis === "context" ? "relative-to-own-history" : "direct-model-scale"} target-minus-benchmark gap ${supported ? formatNumber(currentDifference) : "limited"}; current direction ${directionNotch === "→" ? "target higher" : directionNotch === "←" ? "benchmark higher" : directionNotch === "•" ? "near equal" : "unsupported"}; selected-basis value ${supported ? "available" : "limited"}.`}
+                                className={`grid min-h-10 w-full grid-cols-[104px_minmax(80px,1fr)_58px] items-center gap-2 rounded-lg border px-2 text-left transition sm:grid-cols-[138px_minmax(100px,1fr)_66px] ${active ? "border-sky-400/50 bg-sky-400/[0.08]" : "border-transparent hover:border-stealth-600 hover:bg-white/[0.025]"}`}
+                              >
+                                <span className="min-w-0 truncate text-[11px] font-medium leading-3.5 text-slate-200">{coordinate.label}</span>
+                                <span className="relative flex h-5 min-w-0 overflow-hidden rounded border border-white/[0.08] bg-slate-950/75" aria-hidden="true">
+                                  {segments.map((segment, index) => (
+                                    <i key={`${coordinate.id}-segment-${index}`} className="relative min-w-px flex-1">
+                                      {segment.supported ? (
+                                        <i
+                                          className="absolute inset-x-0 min-h-px"
+                                          style={{
+                                            backgroundColor: segment.color,
+                                            height: `${Math.max(8, segment.magnitude * 48)}%`,
+                                            ...(finite(segment.value) && segment.value < 0
+                                              ? { top: "50%" }
+                                              : { bottom: "50%" }),
+                                          }}
+                                        />
+                                      ) : (
+                                        <i
+                                          className="absolute inset-0"
+                                          style={{
+                                            backgroundColor: segment.color,
+                                            backgroundImage: "repeating-linear-gradient(135deg, rgba(226,232,240,.38) 0 1px, transparent 1px 4px)",
+                                          }}
+                                        />
+                                      )}
+                                    </i>
+                                  ))}
+                                  <i className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-px bg-slate-200/45" />
+                                  <i className="pointer-events-none absolute inset-y-0 right-0 grid w-5 place-items-center bg-slate-950/55 text-[11px] not-italic text-white shadow-[-4px_0_8px_rgba(2,6,23,.45)]">
+                                    {directionNotch}
                                   </i>
-                                ))}
-                                <i className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-px bg-slate-200/45" />
-                                <i className="pointer-events-none absolute inset-y-0 right-0 grid w-5 place-items-center bg-slate-950/55 text-[11px] not-italic text-white shadow-[-4px_0_8px_rgba(2,6,23,.45)]">
-                                  {directionNotch}
-                                </i>
-                              </span>
-                              <span className={`text-right font-mono text-[10px] ${supported ? "text-slate-300" : "text-amber-300"}`}>
-                                {supported ? formatNumber(latestDifference(coordinate, basis)) : "limited"}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </details>
-                  ))}
+                                </span>
+                                <span className={`text-right font-mono text-[10px] ${supported ? "text-slate-300" : "text-amber-300"}`}>
+                                  {supported ? formatNumber(currentDifference) : "limited"}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
                 </div>
               </div>
-              {selected ? (
-                <>
-                  <div className="hidden xl:block">
-                    <DimensionTrend
-                      coordinate={selected}
-                      basis={basis}
-                      selectedDate={inspectedDate}
-                      onSelectedDateChange={setInspectedDate}
-                      targetSymbol={data.target.symbol}
-                      benchmarkSymbol={data.benchmark.symbol}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      previousFocusRef.current = event.currentTarget;
-                      setMobileDetailOpen(true);
-                    }}
-                    className="inline-flex min-h-11 items-center justify-between gap-3 rounded-xl border border-sky-400/25 bg-sky-400/[0.06] px-3 text-left text-xs text-sky-100 xl:hidden"
-                  >
-                    <span>Inspect {selected.label}</span>
-                    <span className="font-mono text-[10px] text-sky-200">gap {formatNumber(latestDifference(selected, basis))}</span>
-                  </button>
-                </>
-              ) : (
-                <div className="grid min-h-[240px] place-items-center rounded-2xl border border-stealth-700 text-sm text-slate-400">No comparable coordinates were returned.</div>
-              )}
             </section>
 
             <div className="flex items-start gap-2 rounded-xl border border-amber-400/15 bg-amber-400/[0.055] px-3 py-2.5 text-[11px] leading-5 text-amber-100/80">
@@ -2198,119 +2431,169 @@ export default function MarketWeatherComparisonLab({
         ) : null}
 
         {activeTab === "audit" ? (
-          <div id="pair-panel-audit" role="tabpanel" aria-labelledby="pair-tab-audit" className="space-y-4">
-            <section className="flex flex-col gap-3 rounded-2xl border border-sky-400/20 bg-sky-400/[0.045] p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <span className="page-kicker">Self-checking compact receipt</span>
-                <h3 className="mt-1 text-sm font-semibold text-white">Share the live recipe or preserve this compact evidence boundary</h3>
-                <p className="mt-1 text-[11px] leading-5 text-slate-400">The page URL reruns against then-current data. The JSON receipt freezes hashes, aligned keys, current measurements, and authority boundaries.</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => void copySummary()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white">
-                  <ClipboardCopy className="h-4 w-4" /> {copyStatus === "summary" ? "Summary copied" : "Copy summary"}
-                </button>
-                <button
-                  type="button"
-                  onClick={exportReceipt}
-                  disabled={!data.frozen_receipt}
-                  title="Preserves aligned keys, current measurements, support, identities, disclosures, and authority. Does not preserve full chart histories and is not digitally signed."
-                  className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white disabled:opacity-40"
-                >
-                  <Download className="h-4 w-4" /> {copyStatus === "receipt" ? "Receipt exported" : "Export compact receipt · JSON"}
-                </button>
-              </div>
-            </section>
-            <p className={`-mt-2 text-[10px] ${copyStatus === "error" ? "text-rose-300" : "text-slate-400"}`} role="status" aria-live="polite">
-              {copyStatus === "error"
-                ? "The requested clipboard or receipt action was unavailable."
-                : `Summary source: ${summary.summarySource === "server" ? "deterministic server payload" : "legacy client fallback; refresh to obtain a frozen server receipt"}.`}
-            </p>
-
-            <section className="grid gap-3 lg:grid-cols-2">
-              <div className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3.5">
-                <div className="flex items-start gap-2.5">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                  <div>
-                    <h3 className="text-xs font-semibold text-white">Alignment, support, and compatibility</h3>
-                    <p className="mt-1 text-[11px] leading-5 text-slate-400">
-                      Requested {data.window?.requested_shared_observations ?? data.overlap.common_observations} bars; returned {data.window?.returned_exact_shared_observations ?? data.overlap.common_observations} exact shared bars from {formatDate(data.overlap.start, data.timeframe)} to {formatDate(data.overlap.end, data.timeframe)}.
-                      {" "}{supportPct}% coordinate-cell support; {data.overlap.target_dropped} target and {data.overlap.benchmark_dropped} benchmark timestamps were excluded without carrying values.
+          <div id="pair-panel-audit" role="tabpanel" aria-labelledby="pair-tab-audit" className="space-y-3">
+            <section className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.04] p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="max-w-3xl">
+                  <span className="page-kicker">Share and evidence</span>
+                  <h3 className="mt-1 text-base font-semibold text-white">Reuse the reading, rerun the recipe, or preserve the compact receipt</h3>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-400">
+                    Text copies are human-readable. Links rerun against then-current data. The compact JSON preserves aligned keys, latest measurements, support, identities, and the zero-authority boundary—without full chart histories.
+                  </p>
+                  {data.frozen_receipt ? (
+                    <p className="mt-2 font-mono text-[10px] text-slate-500">
+                      evidence through {data.frozen_receipt.frozen_as_of ?? data.overlap.end ?? "—"} · {data.frozen_receipt.schema_version} · checksum {data.frozen_receipt.receipt_hash.slice(0, 12)}…
                     </p>
-                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-slate-400">
-                      <div><dt>Session</dt><dd className="text-slate-300">{data.compatibility?.session.status ?? sessionCompatibility} · {data.compatibility?.session.independently_certified ? "certified" : "not independently certified"}</dd></div>
-                      <div><dt>Currency</dt><dd className="text-slate-300">{data.compatibility?.currency.status ?? "unknown"}</dd></div>
-                      <div><dt>Adjustment</dt><dd className="text-slate-300">{data.compatibility?.price_adjustment.status ?? "provider as returned"}</dd></div>
-                      <div><dt>Timestamp rule</dt><dd className="text-slate-300">{data.overlap.alignment_rule ?? "exact shared key"}</dd></div>
-                    </dl>
-                    {unsupported ? <p className="mt-2 text-[10px] text-amber-300">{unsupported} latest coordinate{unsupported === 1 ? " lacks" : "s lack"} bilateral support.</p> : null}
-                  </div>
+                  ) : (
+                    <p className="mt-2 text-[10px] text-amber-300">Compact receipt unavailable for this response; reanalyze to request a current receipt.</p>
+                  )}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:max-w-[560px]">
+                  <button type="button" onClick={() => void copyQuickSummary()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white">
+                    <ClipboardCopy className="h-4 w-4" /> Copy quick summary
+                  </button>
+                  <button type="button" onClick={() => void copyFullSummary()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white">
+                    <ClipboardCopy className="h-4 w-4" /> Copy full research summary
+                  </button>
+                  <button type="button" onClick={() => void copyOverviewLink()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white">
+                    <ClipboardCopy className="h-4 w-4" /> Copy overview link
+                  </button>
+                  <button type="button" onClick={() => void copyCurrentLink()} aria-describedby="pair-current-link-limit" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white">
+                    <ClipboardCopy className="h-4 w-4" /> Copy current page link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportReceipt}
+                    disabled={!data.frozen_receipt}
+                    aria-describedby="pair-receipt-limit"
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-600 px-3 text-xs text-slate-300 transition hover:border-sky-400/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 sm:col-span-2"
+                  >
+                    <Download className="h-4 w-4" /> Export compact receipt · JSON
+                  </button>
                 </div>
               </div>
-              <div className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3.5">
-                <div className="flex items-start gap-2.5">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
-                  <div>
-                    <h3 className="text-xs font-semibold text-white">Identity & authority boundary</h3>
-                    <p className="mt-1 text-[11px] leading-5 text-slate-400">{data.provenance.note}</p>
-                    <p className="mt-1 break-all font-mono text-[10px] leading-4 text-slate-400" title={data.comparison_hash}>
-                      comparison {data.comparison_hash} · target {data.target.analysis_hash} · benchmark {data.benchmark.analysis_hash}
-                    </p>
-                    {data.frozen_receipt?.receipt_hash ? <p className="mt-1 break-all font-mono text-[10px] leading-4 text-slate-400">receipt {data.frozen_receipt.receipt_hash}</p> : null}
-                    {data.provenance.identity_control ? (
-                      <p className="mt-2 text-[10px] text-amber-300">Same-analysis identity control: every bilaterally supported signed difference should be zero.</p>
-                    ) : null}
-                    <p className="mt-2 text-[10px] text-amber-200">Research display only · zero scanner, option-learning, veto, sizing, or execution authority.</p>
-                  </div>
-                </div>
-              </div>
+              <p id="pair-receipt-limit" className="mt-3 text-[10px] leading-4 text-slate-500">
+                The receipt checksum detects mutation; it is not a digital signature, proof of origin, provider attestation, or bar-completeness certification.
+              </p>
+              <p id="pair-current-link-limit" className="mt-1 text-[10px] leading-4 text-slate-500">
+                Current page links preserve the report recipe and selected tab. Local chart-lane, scope-card, and coordinate-expansion toggles reset when reopened.
+              </p>
+              <p className={`mt-2 text-[10px] ${copyStatus === "error" ? "text-rose-300" : "text-slate-400"}`} role="status" aria-live="polite">
+                {copyStatusMessage[copyStatus]}
+              </p>
             </section>
 
-            <section className="grid gap-px overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-700 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                [`${data.target.symbol} aligned close`, formatLevel(data.relative_progress.latest_target_close), data.target.provider_symbol ?? data.target.symbol],
-                [`${data.benchmark.symbol} aligned close`, formatLevel(data.relative_progress.latest_benchmark_close), data.benchmark.provider_symbol ?? data.benchmark.symbol],
-                ["Beta chain", `${data.relative_progress.beta_adjusted_chain_observations ?? "—"} observations`, `${data.relative_progress.beta_adjusted_chain_reset_count ?? 0} resets`],
-                [
-                  "Cache / runtime",
-                  data.cache?.analysis?.status ?? data.runtime?.cache.status ?? "not reported",
-                  data.runtime
-                    ? `${formatMilliseconds(data.runtime.response.handler_to_response_ready_ms)} backend response-ready · single response; JSON, transfer, and browser paint excluded`
-                    : data.generated_at ? `generated ${formatDate(data.generated_at, data.timeframe)}` : "generation time unavailable",
-                ],
-              ].map(([label, value, note], index) => (
-                <div key={`${index}-${label}`} className="bg-slate-950/75 p-3">
-                  <div className="text-[9px] uppercase tracking-[0.12em] text-slate-400">{label}</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-200">{value}</div>
-                  <div className="mt-0.5 text-[10px] text-slate-400">{note}</div>
-                </div>
-              ))}
-            </section>
+            <div className="space-y-2">
+              <AuditGroup
+                code="A"
+                title="Data alignment"
+                summary={`${data.overlap.common_observations.toLocaleString()} exact shared observations · ${formatDate(data.overlap.start, data.timeframe)} – ${formatDate(data.overlap.end, data.timeframe)}`}
+                initiallyOpen
+              >
+                <dl className="grid gap-x-6 gap-y-2 text-[10px] text-slate-400 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    ["Requested observations", String(data.window?.requested_shared_observations ?? data.overlap.common_observations)],
+                    ["Returned exact shared", String(data.window?.returned_exact_shared_observations ?? data.overlap.common_observations)],
+                    ["Latest aligned", formatDate(data.overlap.latest_aligned_at, data.timeframe)],
+                    [`${data.target.symbol} aligned close`, formatLevel(data.relative_progress.latest_target_close)],
+                    [`${data.benchmark.symbol} aligned close`, formatLevel(data.relative_progress.latest_benchmark_close)],
+                    [`${data.target.symbol} unmatched`, String(data.overlap.target_dropped)],
+                    [`${data.benchmark.symbol} unmatched`, String(data.overlap.benchmark_dropped)],
+                    ["Alignment rule", data.overlap.alignment_rule ?? "exact shared key"],
+                  ].map(([label, value], index) => <div key={`${index}-${label}`}><dt>{label}</dt><dd className="mt-0.5 text-slate-200">{value}</dd></div>)}
+                </dl>
+                <p className="mt-3 text-[10px] leading-5 text-slate-400">Exact shared keys only. No price or coordinate was forward-filled, interpolated, or nearest-neighbor matched.</p>
+              </AuditGroup>
 
-            <details className="group overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/25">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
-                <div><span className="page-kicker">Relative Field methodology</span><h3 className="mt-1 text-sm font-semibold text-white">Definitions, chronology, and limits</h3></div>
-                <span className="text-xs text-slate-400 transition group-open:rotate-45" aria-hidden="true">+</span>
-              </summary>
-              <div className="grid gap-px border-t border-stealth-700 bg-stealth-700 md:grid-cols-2">
-                {[
-                  ["Relative index", "The target level divided by the benchmark level is rebased to 100 at the first shared returned bar. It measures observed relative progress, not field quality."],
-                  ["Direct model-scale gap", "For coordinate k, the direct gap is target minus benchmark on the coordinate's implemented 15D scale—not raw market or economic units."],
-                  ["Relative to own history", "Each coordinate is standardized against its instrument's separate fixed proper-fit median and robust scale, then differenced only on shared evaluation timestamps."],
-                  ["Prior-only beta adjustment", "The beta-adjusted chain starts after the minimum prior aligned returns and uses a beta fit only on strictly earlier observations. It does not subtract the fitted intercept and is not an OLS residual or alpha."],
-                  ["Field separation", `The family-balanced mean absolute own-history gap is compared with ${separationLookback} shared bars earlier on the same supported-coordinate intersection. Inside tolerance is reported as no clear net change.`],
-                  ["Alignment & support", "Only exact timestamp intersections are used. No price or coordinate is forward-filled, interpolated, or nearest-neighbor matched."],
-                  ["Identity & authority", "The ordered comparison hash binds both component analyses, alignment, and normalization. Pair v1 remains descriptive and has no decision or execution authority."],
-                ].map(([title, body]) => (
-                  <article key={title} className="bg-slate-950/75 p-4"><h4 className="text-xs font-semibold text-slate-200">{title}</h4><p className="mt-1 text-[11px] leading-5 text-slate-400">{body}</p></article>
-                ))}
-              </div>
-              {data.caveats.length ? (
-                <div className="border-t border-stealth-700 bg-slate-950/70 p-4">
-                  <h4 className="text-xs font-semibold text-slate-200">Response-specific caveats</h4>
-                  <ul className="mt-2 grid gap-1 text-[11px] leading-5 text-slate-400 md:grid-cols-2 md:gap-x-6">{data.caveats.map((caveat) => <li key={caveat}>• {caveat}</li>)}</ul>
+              <AuditGroup code="B" title="Field support" summary={`${supportPct}% window cells · ${fullySupported}/${data.coordinates.length} current coordinates`}>
+                <dl className="grid gap-x-6 gap-y-2 text-[10px] text-slate-400 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    ["Supported coordinate cells", supportedWindowCells.toLocaleString()],
+                    ["Total coordinate cells", totalWindowCells.toLocaleString()],
+                    ["Current bilateral coordinates", `${fullySupported} / ${data.coordinates.length}`],
+                    ["Support rule", data.support?.support_rule ?? "bilateral full dependency support"],
+                    ["Missing values carried", missingValuesCarried === false ? "No" : missingValuesCarried === true ? "Yes" : "Not reported"],
+                    ["Latest unsupported", String(unsupported)],
+                  ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd className="mt-0.5 text-slate-200">{value}</dd></div>)}
+                </dl>
+              </AuditGroup>
+
+              <AuditGroup code="C" title="Beta calculation" summary={`prior-only β ${finite(data.relative_progress.beta) ? data.relative_progress.beta.toFixed(2) : "unavailable"} · ${data.relative_progress.beta_adjusted_chain_reset_count ?? 0} resets`}>
+                <dl className="grid gap-x-6 gap-y-2 text-[10px] text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    ["Configured lookback", String(data.relative_progress.beta_configured_lookback_returns ?? data.relative_progress.lookback_bars)],
+                    ["Minimum prior returns", String(data.relative_progress.beta_minimum_prior_returns ?? "—")],
+                    ["Actual prior returns", String(data.relative_progress.beta_prior_observations ?? "—")],
+                    ["Current beta", finite(data.relative_progress.beta) ? data.relative_progress.beta.toFixed(4) : "Unavailable"],
+                    ["Chain start", formatDate(chainStart, data.timeframe)],
+                    ["Chain end", formatDate(data.relative_progress.beta_adjusted_chain_end_at ?? data.overlap.end, data.timeframe)],
+                    ["Chain observations", String(data.relative_progress.beta_adjusted_chain_observations ?? "—")],
+                    ["Chain resets", String(data.relative_progress.beta_adjusted_chain_reset_count ?? 0)],
+                  ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd className="mt-0.5 text-slate-200">{value}</dd></div>)}
+                </dl>
+                <p className="mt-3 text-[10px] leading-5 text-slate-400">Each beta estimate uses only strictly earlier aligned returns. The chain does not subtract a fitted intercept, is not an OLS residual, and restarts after unavailable beta rows.</p>
+              </AuditGroup>
+
+              <AuditGroup code="D" title="Compatibility" summary={`${sessionCompatibility.replace(/_/g, " ")} sessions · ${sessionCertified ? "certified" : "not independently certified"}`}>
+                <dl className="grid gap-x-6 gap-y-2 text-[10px] text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    ["Session status", data.compatibility?.session.status ?? sessionCompatibility],
+                    ["Session basis", data.compatibility?.session.basis ?? "Response contract"],
+                    ["Currency", data.compatibility?.currency.status ?? "Unknown"],
+                    ["Price adjustment", data.compatibility?.price_adjustment.status ?? "Provider as returned"],
+                    ["Timestamp status", data.compatibility?.timestamp_alignment.status ?? (alignmentSupported ? "Supported" : "Unsupported")],
+                    ["Timezone metadata", data.compatibility?.timestamp_alignment.timezone_status ?? (data.compatibility?.timestamp_alignment.timezone_metadata_available ? "Available" : "Unavailable")],
+                    ["Session certification", sessionCertified ? "Independent" : "Not independent"],
+                    ["Adjustment certification", data.compatibility?.price_adjustment.independently_certified ? "Independent" : "Not independent"],
+                  ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd className="mt-0.5 capitalize text-slate-200">{String(value).replace(/_/g, " ")}</dd></div>)}
+                </dl>
+              </AuditGroup>
+
+              <AuditGroup code="E" title="Identity and authority" summary="Ordered hashes · research display only · no decision authority">
+                <p className="text-[11px] leading-5 text-slate-400">{data.provenance.note}</p>
+                <dl className="mt-3 grid gap-2 font-mono text-[10px] text-slate-400">
+                  <div><dt>Comparison hash</dt><dd className="break-all text-slate-300">{data.comparison_hash}</dd></div>
+                  <div><dt>Target analysis hash</dt><dd className="break-all text-slate-300">{data.target.analysis_hash}</dd></div>
+                  <div><dt>Benchmark analysis hash</dt><dd className="break-all text-slate-300">{data.benchmark.analysis_hash}</dd></div>
+                  {data.provenance.component_recipe_hash ? <div><dt>Component recipe hash</dt><dd className="break-all text-slate-300">{data.provenance.component_recipe_hash}</dd></div> : null}
+                  {data.frozen_receipt?.receipt_hash ? <div><dt>Receipt checksum</dt><dd className="break-all text-slate-300">{data.frozen_receipt.receipt_hash}</dd></div> : null}
+                </dl>
+                {data.provenance.identity_control ? <p className="mt-3 text-[10px] text-amber-300">Same-analysis identity control: every bilaterally supported signed difference should be zero.</p> : null}
+                <div className="mt-3 rounded-xl border border-amber-400/15 bg-amber-400/[0.045] p-3 text-[10px] leading-5 text-amber-100/80">
+                  Pair comparison is research display only. Scanner weight {authority?.scanner_weight ?? 0}%; pair option-learning weight {authority?.option_learning_weight ?? 0}%; veto {authority?.veto ? "enabled" : "disabled"}; sizing {authority?.sizing ? "enabled" : "disabled"}; execution {authority?.execution ? "enabled" : "disabled"}.
                 </div>
-              ) : null}
-            </details>
+              </AuditGroup>
+
+              <AuditGroup code="F" title="Methodology" summary="Definitions, chronology, evidence limits, and operational metadata">
+                <div className="grid gap-2 md:grid-cols-2">
+                  {[
+                    ["Relative index", "Target divided by benchmark, rebased to 100 at the first exact shared observation. It measures observed relative progress."],
+                    ["Direct model-scale gap", "Target coordinate minus benchmark coordinate on the implemented 15-dimensional recipe scale, not raw market units."],
+                    ["Relative to own history", "Each coordinate is measured against its instrument's separate frozen proper-fit median and robust scale, then differenced on shared evaluation timestamps."],
+                    ["Prior-only beta adjustment", "A chained price comparison using beta estimated from strictly prior aligned returns, with explicit breaks and restarts."],
+                    ["Field relationship", `Family-balanced mean absolute own-history distance compared with ${separationLookback} shared observations earlier on the same supported-coordinate intersection.`],
+                    ["Evidence boundary", "Exact date alignment does not independently prove exchange-session equivalence, provider truth, or complete economic simultaneity."],
+                  ].map(([title, body]) => (
+                    <article key={title} className="rounded-xl border border-stealth-700 bg-slate-950/45 p-3">
+                      <h4 className="text-[11px] font-semibold text-slate-200">{title}</h4>
+                      <p className="mt-1 text-[10px] leading-5 text-slate-400">{body}</p>
+                    </article>
+                  ))}
+                </div>
+                {data.caveats.length ? (
+                  <div className="mt-3">
+                    <h4 className="text-[11px] font-semibold text-slate-200">Response-specific caveats</h4>
+                    <ul className="mt-1 grid gap-1 text-[10px] leading-5 text-slate-400 md:grid-cols-2 md:gap-x-6">{data.caveats.map((caveat) => <li key={caveat}>• {caveat}</li>)}</ul>
+                  </div>
+                ) : null}
+                <dl className="mt-3 grid gap-2 border-t border-stealth-700 pt-3 text-[10px] text-slate-400 sm:grid-cols-3">
+                  <div><dt>Generated</dt><dd className="mt-0.5 text-slate-300">{data.generated_at ? formatDate(data.generated_at, data.timeframe) : "Not reported"}</dd></div>
+                  <div><dt>Analysis cache</dt><dd className="mt-0.5 text-slate-300">{data.cache?.analysis?.status ?? data.runtime?.cache.status ?? "Not reported"}</dd></div>
+                  <div><dt>Backend response-ready</dt><dd className="mt-0.5 text-slate-300">{data.runtime ? formatMilliseconds(data.runtime.response.handler_to_response_ready_ms) : "Not measured"}</dd></div>
+                </dl>
+                <p className="mt-2 text-[9px] leading-4 text-slate-500">Runtime excludes browser paint; analytical identities exclude cache and timing metadata.</p>
+              </AuditGroup>
+            </div>
           </div>
         ) : null}
         </div>
@@ -2318,7 +2601,7 @@ export default function MarketWeatherComparisonLab({
       </div>
       {mobileDetailOpen && selected ? (
         <div
-          className="fixed inset-0 z-[300] flex items-end bg-slate-950/75 p-2 backdrop-blur-sm xl:hidden"
+            className="fixed inset-0 z-[300] flex items-end bg-slate-950/75 p-2 backdrop-blur-sm lg:hidden"
           onPointerDown={(event) => {
             if (event.currentTarget === event.target) setMobileDetailOpen(false);
           }}

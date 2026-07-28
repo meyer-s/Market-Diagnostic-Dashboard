@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 import { assertPairV1Contract, attachProbeEvidence } from "./support/pairContract";
 
@@ -257,7 +258,7 @@ async function openPair(page: Page, width: number, height: number) {
     "/market-weather?symbol=ABT&comparison=pair&compare=RSP&timeframe=1D&bars=750&pair_tab=overview&scope_trail=24&scope_scale=shared&coordinate_order=recipe",
     { waitUntil: "domcontentloaded" },
   );
-  await expect(page.locator("#pair-field-title")).toHaveText("ABT compared with RSP");
+  await expect(page.locator("#pair-field-title")).toHaveText("ABT vs RSP");
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -333,22 +334,20 @@ test("@release Relative Field Pair keeps the desktop hierarchy inspectable", asy
   await expect(
     page.getByText(/RSP · Equal-weight market reference · User selected · suitability not evaluated/i),
   ).toBeVisible();
-  await expect(page.getByText("Descriptive read")).toBeVisible();
-  await expect(page.getByText("Relative price progress", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Self-checking compact receipt/i })).toBeVisible();
+  await expect(page.getByText("Relative market-path comparison")).toBeVisible();
   await expect(
-    page.getByRole("group", {
-      name: /Data support: 540 of 540 window coordinate cells; 15 of 15 current coordinates; missing values carried no;.*not independently certified/i,
-    }),
+    page.locator("span.page-kicker").filter({ hasText: /^Relative performance$/ }),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Complete field coverage" })).toBeVisible();
   await expect(
     page.getByRole("img", {
-      name: /ABT relative price versus RSP, based at 100 on .*; latest .*Prior-only beta-adjusted current chain .* with 0 restarts/i,
+      name: /ABT relative price versus RSP, based at 100 on .*; latest/i,
     }),
   ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole("tab", { name: "Field detail" }).click();
+  await expect(page.getByRole("button", { name: "Show all 15 coordinates" })).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator('svg[aria-label*="trajectory"]:visible')).toHaveCount(4);
   await expect(
     page.getByRole("img", {
@@ -365,9 +364,11 @@ test("@release Relative Field Pair keeps the desktop hierarchy inspectable", asy
       name: /Pressure; relative-to-own-history target-minus-benchmark gap .*current direction .*selected-basis value available/i,
     }),
   ).toBeVisible();
-  await expect(
-    page.getByText(/above\/below center = sign · height\/intensity = magnitude · end arrow = current sign · hatch = unsupported/i),
-  ).toBeVisible();
+  await expect(page.getByText("Largest own-history differences")).toBeVisible();
+  await page.getByRole("button", { name: "Show all 15 coordinates" }).click();
+  await expect(page.getByText("Motion", { exact: true })).toBeVisible();
+  await expect(page.getByText("Field structure", { exact: true })).toBeVisible();
+  await expect(page.getByText("Activity and liquidity", { exact: true })).toBeVisible();
   await page.locator('svg[aria-label*="Directional phase trajectory"]:visible').hover({ position: { x: 20, y: 80 } });
   await expect(page.getByText(/same shared date across visible field charts \(/i)).toBeVisible();
   await expectNoHorizontalOverflow(page);
@@ -375,18 +376,26 @@ test("@release Relative Field Pair keeps the desktop hierarchy inspectable", asy
   await page.getByRole("tab", { name: "Audit receipt" }).click();
   const exportReceipt = page.getByRole("button", { name: "Export compact receipt · JSON" });
   await expect(exportReceipt).toBeEnabled();
-  await expect(exportReceipt).toHaveAttribute(
-    "title",
-    /Does not preserve full chart histories and is not digitally signed/i,
-  );
-  await expect(page.getByText("Cache / runtime")).toBeVisible();
+  await expect(page.getByText(/not a digital signature, proof of origin/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Data alignment" }).locator("xpath=ancestor::details")).toHaveAttribute("open", "");
+  await expect(page.getByRole("heading", { name: "Methodology" })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await exportReceipt.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("ABT-RSP-1D-relative-field-receipt.json");
+  const downloadPath = await download.path();
+  expect(downloadPath).toBeTruthy();
+  const receipt = JSON.parse(await readFile(downloadPath!, "utf8")) as Record<string, unknown>;
+  expect(receipt.schema_version).toBe("market_field_pair_receipt_v1");
+  expect(receipt.receipt_hash).toBe("d".repeat(64));
+  await expect(page.getByText("Receipt download started.")).toBeVisible();
 });
 
 test("@release Relative Field Pair uses compact mobile chart, scope, and detail controls", async ({ page }) => {
   await openPair(page, 390, 844);
 
   await expect(page.getByText(/ABT vs RSP · 1D · 36 shared/i)).toBeVisible();
-  await expect(page.locator('svg[aria-label^="Relative price index based at 100 on"]:visible')).toHaveCount(1);
+  await expect(page.locator('svg[aria-label*="relative price versus"]:visible')).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Beta adjusted" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
@@ -416,12 +425,7 @@ for (const viewport of RESPONSIVE_VIEWPORTS) {
 
     await expect(page.getByRole("tablist", { name: "Relative Field sections" })).toBeVisible();
     await expect(page.getByRole("tab")).toHaveCount(3);
-    await expect(page.locator('svg[aria-label^="Relative price index based at 100 on"]:visible')).toHaveCount(
-      viewport.width < 640 ? 1 : 0,
-    );
-    await expect(
-      page.locator('svg[aria-label*="relative price versus"]:visible'),
-    ).toHaveCount(viewport.width >= 640 ? 1 : 0);
+    await expect(page.locator('svg[aria-label*="relative price versus"]:visible')).toHaveCount(1);
     await expectNoHorizontalOverflow(page);
     await expectPairControlsInsideViewport(page);
     await attachPairScreenshot(page, testInfo, `pair-overview-${viewport.label}`);

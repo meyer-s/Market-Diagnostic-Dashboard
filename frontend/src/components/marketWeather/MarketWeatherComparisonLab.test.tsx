@@ -113,6 +113,7 @@ const DEFAULT_INNER_WIDTH = window.innerWidth;
 
 afterEach(() => {
   cleanup();
+  window.history.replaceState({}, "", "/");
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
     value: DEFAULT_INNER_WIDTH,
@@ -134,20 +135,19 @@ describe("MarketWeatherComparisonLab", () => {
     );
 
     expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByText("Descriptive read")).not.toBeNull();
-    expect(screen.getAllByText(/Relative index/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Relative price progress")).not.toBeNull();
-    expect(screen.getByText("Field separation")).not.toBeNull();
-    expect(screen.getByText("Data support")).not.toBeNull();
-    expect(screen.getByText("1,764 / 1,800")).not.toBeNull();
-    expect(screen.getByText("14 / 15")).not.toBeNull();
-    expect(screen.getByText("No")).not.toBeNull();
-    expect(screen.getByText(/100 on Jul 23, 2026/i)).not.toBeNull();
-    expect(screen.getByText("Relative price and prior-only beta-adjusted path")).not.toBeNull();
-    expect(screen.getByRole("button", { name: /Self-checking compact receipt/i })).not.toBeNull();
-    expect(screen.getByText(/beta-adjusted return chain/i)).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "NVDA vs QQQ" })).not.toBeNull();
+    expect(screen.getByText("Relative market-path comparison")).not.toBeNull();
+    expect(screen.getByText("NVDA ahead of QQQ")).not.toBeNull();
+    expect(screen.getByText("After beta adjustment")).not.toBeNull();
+    expect(screen.getByText("Field relationship")).not.toBeNull();
+    expect(screen.getAllByText("98% field coverage · 14/15 current").length).toBeGreaterThan(0);
+    expect(screen.getByText("Relative progress")).not.toBeNull();
+    expect(screen.getByText("What is different now?")).not.toBeNull();
+    expect(screen.getByText(/Descriptive comparison only/i)).not.toBeNull();
+    expect(screen.queryByText("1,764 / 1,800")).toBeNull();
+    expect(screen.queryByText("14 / 15")).toBeNull();
     expect(screen.queryByText("Relationship scopes")).toBeNull();
-    expect(screen.queryByText("Identity & authority boundary")).toBeNull();
+    expect(screen.queryByText("Identity and authority")).toBeNull();
     expect(screen.queryByText("Native units")).toBeNull();
     expect(screen.queryByText("State separation through time")).toBeNull();
     expect(screen.queryByText(/^Mixed$/i)).toBeNull();
@@ -155,7 +155,36 @@ describe("MarketWeatherComparisonLab", () => {
     expect(screen.queryByText(/leads/i)).toBeNull();
   });
 
-  it("exposes linkable field controls, one scope at a time, and all 15 drillable coordinates", () => {
+  it("moves focus to the destination tab when an Overview drilldown changes panels", () => {
+    const onDimensionChange = vi.fn();
+    render(
+      <MarketWeatherComparisonLab
+        data={DATA}
+        basis="context"
+        view="difference"
+        selectedDimension="pressure"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={onDimensionChange}
+      />,
+    );
+
+    const coverage = screen.getByRole("button", { name: /field coverage/i });
+    coverage.focus();
+    fireEvent.click(coverage);
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Audit receipt" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    const contextSection = screen.getByRole("heading", { name: "What is different now?" }).closest("section");
+    expect(contextSection).not.toBeNull();
+    const firstGap = within(contextSection as HTMLElement).getAllByRole("button")[0];
+    firstGap.focus();
+    fireEvent.click(firstGap);
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Field detail" }));
+    expect(onDimensionChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes linkable field controls, one scope at a time, and progressively discloses all 15 coordinates", () => {
     const onBasisChange = vi.fn();
     const onViewChange = vi.fn();
     const onDimensionChange = vi.fn();
@@ -179,6 +208,22 @@ describe("MarketWeatherComparisonLab", () => {
     fireEvent.click(higherMotion);
     expect(higherMotion.getAttribute("aria-pressed")).toBe("true");
     expect(screen.getAllByText(/Is pressure change accelerating/i).length).toBeGreaterThan(0);
+    const coordinateHistory = screen.getAllByRole("img", { name: /Pressure comparison history/i })[0];
+    coordinateHistory.focus();
+    fireEvent.keyDown(coordinateHistory, { key: "Home" });
+    expect(screen.getAllByText(/2026-07-23 · gap/i).length).toBeGreaterThan(0);
+
+    const showAll = screen.getByRole("button", { name: "Show all 15 coordinates" });
+    expect(showAll.getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelectorAll("#pair-coordinate-explorer-list button[aria-pressed]").length).toBe(3);
+    expect(screen.getByText("Largest own-history differences")).not.toBeNull();
+    expect(screen.queryByText("Activity and liquidity")).toBeNull();
+    fireEvent.click(showAll);
+    expect(showAll.getAttribute("aria-expanded")).toBe("true");
+    expect(document.querySelectorAll("#pair-coordinate-explorer-list button[aria-pressed]").length).toBe(15);
+    expect(screen.getByText("Motion")).not.toBeNull();
+    expect(screen.getByText("Field structure")).not.toBeNull();
+    expect(screen.getByText("Activity and liquidity")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Direct model-scale gap" }));
     const displayedSeries = screen.getByRole("group", { name: "Displayed series" });
@@ -190,13 +235,35 @@ describe("MarketWeatherComparisonLab", () => {
     expect(screen.getByRole("group", { name: "Scope trail length" })).not.toBeNull();
     expect(screen.getByRole("group", { name: "Scope scale" })).not.toBeNull();
     expect(screen.getAllByRole("button", { pressed: false }).length).toBeGreaterThan(15);
-    expect(screen.getByText("Motion")).not.toBeNull();
-    expect(screen.getByText("Field")).not.toBeNull();
-    expect(screen.getByText("Carrier")).not.toBeNull();
     expect(screen.getByText(/Bounded signed multihorizon directional pressure/i)).not.toBeNull();
+    const collapse = screen.getByRole("button", { name: "Show top 3" });
+    collapse.focus();
+    fireEvent.click(collapse);
+    expect(collapse).toBe(document.activeElement);
+    expect(document.querySelectorAll("#pair-coordinate-explorer-list button[aria-pressed]").length).toBe(3);
   });
 
-  it("moves chronology, hashes, nominal closes, cache detail, and zero authority into Audit", () => {
+  it("keeps a deep-linked selected coordinate inspectable before the top-three list is expanded", () => {
+    render(
+      <MarketWeatherComparisonLab
+        data={DATA}
+        basis="context"
+        view="difference"
+        selectedDimension="scaling_exponent"
+        tab="field"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Inspect scaling exponent/i })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /scaling exponent; relative-to-own-history/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show all 15 coordinates" }));
+    expect(screen.getByRole("button", { name: /scaling exponent; relative-to-own-history/i }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("moves chronology, hashes, nominal closes, cache detail, and zero authority into collapsed Audit groups", () => {
     render(
       <MarketWeatherComparisonLab
         data={DATA}
@@ -210,15 +277,18 @@ describe("MarketWeatherComparisonLab", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Audit receipt" }));
-    expect(screen.getByRole("button", { name: "Export compact receipt · JSON" }).getAttribute("title")).toContain("not digitally signed");
-    expect(screen.getByText("Identity & authority boundary")).not.toBeNull();
-    expect(screen.getByText("Cache / runtime")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Export compact receipt · JSON" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/Compact receipt unavailable/i)).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Data alignment" }).closest("details")?.hasAttribute("open")).toBe(true);
+    expect(screen.getByRole("heading", { name: "Field support" }).closest("details")?.hasAttribute("open")).toBe(false);
     expect(screen.getByText("NVDA aligned close")).not.toBeNull();
-    fireEvent.click(screen.getByText("Definitions, chronology, and limits"));
+    fireEvent.click(screen.getByRole("heading", { name: "Identity and authority" }));
+    expect(screen.getByText(/Scanner weight 0%/i)).not.toBeNull();
+    fireEvent.click(screen.getByRole("heading", { name: "Methodology" }));
     expect(screen.getByText("Relative index")).not.toBeNull();
     expect(screen.getByText("Direct model-scale gap")).not.toBeNull();
     expect(screen.getByText("Relative to own history")).not.toBeNull();
-    expect(screen.getByText(/zero scanner, option-learning, veto, sizing, or execution authority/i)).not.toBeNull();
+    expect(screen.getByText("Generated")).not.toBeNull();
   });
 
   it("does not certify unknown sessions and renders unsupported alignment explicitly", () => {
@@ -245,8 +315,10 @@ describe("MarketWeatherComparisonLab", () => {
     );
 
     expect(screen.getByText(/cannot be aligned safely/i)).not.toBeNull();
-    expect(screen.getAllByText(/Sessions not independently certified/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/not summarized because the response marks this alignment unsupported/i)).not.toBeNull();
+    expect(screen.getAllByText(/Session equivalence unverified/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("Alignment unsupported")).not.toBeNull();
+    expect(screen.queryByText("Exact date alignment")).toBeNull();
+    expect(screen.getByText(/No nearest timestamp or carried value was substituted/i)).not.toBeNull();
     expect(screen.queryByText("Sessions are marked compatible.")).toBeNull();
   });
 
@@ -276,7 +348,7 @@ describe("MarketWeatherComparisonLab", () => {
     expect(screen.getByText(/supported signed difference should be zero/i)).not.toBeNull();
   });
 
-  it("copies the deterministic descriptive summary from the Audit receipt", async () => {
+  it("copies quick and full summaries plus an Overview-forced rerunnable link from Audit", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -295,10 +367,24 @@ describe("MarketWeatherComparisonLab", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Audit receipt" }));
-    fireEvent.click(screen.getByRole("button", { name: "Copy summary" }));
-    expect(writeText).toHaveBeenCalledTimes(1);
-    expect(String(writeText.mock.calls[0][0])).toContain("NVDA compared with QQQ");
-    expect(String(writeText.mock.calls[0][0])).toContain("not a forecast, ranking, or trade signal");
+    fireEvent.click(screen.getByRole("button", { name: "Copy quick summary" }));
+    expect(String(writeText.mock.calls[0][0]).split(/\s+/).length).toBeLessThan(80);
+    expect(String(writeText.mock.calls[0][0])).toContain("Descriptive comparison only");
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy full research summary" }));
+    expect(String(writeText.mock.calls[1][0])).toContain("NVDA compared with QQQ");
+    expect(String(writeText.mock.calls[1][0])).toContain("not a forecast, ranking, or trade signal");
+
+    window.history.replaceState({}, "", "/market-weather?comparison=pair&pair_tab=audit&compare=QQQ");
+    fireEvent.click(screen.getByRole("button", { name: "Copy overview link" }));
+    const link = new URL(String(writeText.mock.calls[2][0]));
+    expect(link.searchParams.get("pair_tab")).toBe("overview");
+    expect(link.searchParams.get("comparison")).toBe("pair");
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy current page link" }));
+    const currentLink = new URL(String(writeText.mock.calls[3][0]));
+    expect(currentLink.searchParams.get("pair_tab")).toBe("audit");
+    expect(screen.getByText(/Local chart-lane, scope-card, and coordinate-expansion toggles reset/i)).not.toBeNull();
   });
 
   it("fades scope trails by chronology, preserves support gaps, and uses unique SVG definitions", () => {
@@ -458,27 +544,102 @@ describe("MarketWeatherComparisonLab", () => {
       />,
     );
 
-    const chart = screen.getByRole("img", { name: /Relative price index based at 100/i }) as unknown as SVGSVGElement;
+    const chart = screen.getByRole("img", { name: /NVDA relative price versus QQQ/i }) as unknown as SVGSVGElement;
     Object.defineProperty(chart, "getBoundingClientRect", {
       configurable: true,
       value: () => ({
-        bottom: 128,
-        height: 128,
+        bottom: 176,
+        height: 176,
         left: 0,
-        right: 360,
+        right: 700,
         top: 0,
-        width: 360,
+        width: 700,
         x: 0,
         y: 0,
         toJSON: () => ({}),
       }),
     });
-    fireEvent(chart, new MouseEvent("pointermove", { bubbles: true, clientX: 190 }));
+    chart.focus();
+    fireEvent.keyDown(chart, { key: "Home" });
+    expect(
+      screen.getByText((_content, element) => (
+        element?.tagName === "SPAN"
+        && element.textContent?.startsWith("2026-07-23 · relative index") === true
+      )),
+    ).not.toBeNull();
+    fireEvent.keyDown(chart, { key: "End" });
+    expect(
+      screen.getByText((_content, element) => (
+        element?.tagName === "SPAN"
+        && element.textContent?.startsWith("2026-07-24 · relative index") === true
+      )),
+    ).not.toBeNull();
+    fireEvent(chart, new MouseEvent("pointermove", { bubbles: true, clientX: 180 }));
 
     expect(
       screen.getByText((_content, element) => (
         element?.tagName === "SPAN"
-        && element.textContent?.startsWith("2026-07-23 · Relative index") === true
+        && element.textContent?.startsWith("2026-07-23 · relative index") === true
+      )),
+    ).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Beta adjusted" }));
+    expect(screen.getByRole("img", { name: /prior-only beta-adjusted chain/i })).not.toBeNull();
+  });
+
+  it("keeps unsupported beta rows unavailable and labels a trailing supported endpoint honestly", () => {
+    render(
+      <MarketWeatherComparisonLab
+        data={{
+          ...DATA,
+          relative_progress: {
+            ...DATA.relative_progress,
+            beta_adjusted_return_pct: null,
+          },
+          price_series: [
+            { date: "2026-07-22", target_close: 178, benchmark_close: 607, relative_index: 100, active_return: 0, prior_return_beta: null, beta_adjusted_cumulative_return: null },
+            { date: "2026-07-23", target_close: 180, benchmark_close: 608, relative_index: 101, active_return: 1, prior_return_beta: 1.2, beta_adjusted_cumulative_return: 1.2 },
+            { date: "2026-07-24", target_close: 184.25, benchmark_close: 611.4, relative_index: 102, active_return: 2, prior_return_beta: null, beta_adjusted_cumulative_return: null },
+          ],
+        }}
+        basis="context"
+        view="difference"
+        selectedDimension="pressure"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Beta adjusted" }));
+    expect(
+      screen.getByText((_content, element) => (
+        element?.tagName === "SPAN"
+        && element.textContent?.startsWith("2026-07-23 · adjusted chain") === true
+        && element.textContent?.includes("+1.20%") === true
+      )),
+    ).not.toBeNull();
+    expect(screen.getByText(/Supported through 2026-07-23 NVDA vs QQQ \+1.20% · current chain unavailable/i)).not.toBeNull();
+    const chart = screen.getByRole("img", { name: /Latest supported through 2026-07-23 prior-only beta-adjusted chain/i }) as unknown as SVGSVGElement;
+    Object.defineProperty(chart, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 176,
+        height: 176,
+        left: 0,
+        right: 700,
+        top: 0,
+        width: 700,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+    fireEvent(chart, new MouseEvent("pointermove", { bubbles: true, clientX: 682 }));
+    expect(
+      screen.getByText((_content, element) => (
+        element?.tagName === "SPAN"
+        && element.textContent?.startsWith("2026-07-24 · adjusted chain") === true
+        && element.textContent?.includes("—") === true
       )),
     ).not.toBeNull();
   });
