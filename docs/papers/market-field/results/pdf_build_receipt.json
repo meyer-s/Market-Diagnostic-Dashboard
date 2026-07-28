@@ -1,0 +1,160 @@
+{
+  "alias_checks": [
+    {
+      "alias": "market-field-calculus-working-paper.pdf",
+      "byte_identical": true,
+      "source": "share.pdf"
+    },
+    {
+      "alias": "relative-field-pair-technical-addendum.pdf",
+      "byte_identical": true,
+      "source": "relative-field-addendum-share.pdf"
+    }
+  ],
+  "dirty_paths_before_build": [],
+  "outputs": [
+    {
+      "bytes": 413140,
+      "pages": 23,
+      "path": "main.pdf",
+      "sha256": "41c61df0d24a1a74eaae545bc01599c103d454c02b95a3e8e803a58335a564b7"
+    },
+    {
+      "bytes": 406716,
+      "pages": 23,
+      "path": "share.pdf",
+      "sha256": "9260eec4de9496e17fc36f6682014011a000c733e29cf9a251439dcf8105f4d8"
+    },
+    {
+      "bytes": 406716,
+      "pages": 23,
+      "path": "market-field-calculus-working-paper.pdf",
+      "sha256": "9260eec4de9496e17fc36f6682014011a000c733e29cf9a251439dcf8105f4d8"
+    },
+    {
+      "bytes": 134200,
+      "pages": 15,
+      "path": "relative-field-addendum.pdf",
+      "sha256": "728a314222d35721ed8e836503202f86a87bebd5ee7fe77a5e4bbe917babed5d"
+    },
+    {
+      "bytes": 129027,
+      "pages": 15,
+      "path": "relative-field-addendum-share.pdf",
+      "sha256": "333c4a2b7a6ad57515ce6c94e78aac8aa830786aa2997b536fbec47084245eb5"
+    },
+    {
+      "bytes": 129027,
+      "pages": 15,
+      "path": "relative-field-pair-technical-addendum.pdf",
+      "sha256": "333c4a2b7a6ad57515ce6c94e78aac8aa830786aa2997b536fbec47084245eb5"
+    }
+  ],
+  "schema_version": "market_field_pdf_build_receipt_v1",
+  "source_head": "9457d148ccf1162fe5b8edd6eab49aae42b86327",
+  "source_tree_clean_before_build": true,
+  "sources": [
+    {
+      "bytes": 77874,
+      "path": "main.tex",
+      "sha256": "54cc0a4e5c2620a6640a32023b8867ed9bd99976697b181294e0535d96b3a4e4"
+    },
+    {
+      "bytes": 75,
+      "path": "share.tex",
+      "sha256": "f57a579e10e413a617974a255491e39e67b18051e473d264140c0d2543180f46"
+    },
+    {
+      "bytes": 48515,
+      "path": "relative-field-addendum.tex",
+      "sha256": "f4f24152e9cceba7e788753b697f02d7a755d2ef4e7cffe8c9cede4ed65b8a69"
+    },
+    {
+      "bytes": 98,
+      "path": "relative-field-addendum-share.tex",
+      "sha256": "9bb293dfb5e15871cb16419d1e723d19fb68429aa22d701f0997fd4404a692d3"
+    },
+    {
+      "bytes": 14413,
+      "path": "references.bib",
+      "sha256": "ff01958296f2cdddef80ef1fb761fa316faad9a4a2321eb90a68796d880a24d0"
+    },
+    {
+      "bytes": 1185,
+      "path": "relative-field-addendum-references.bib",
+      "sha256": "5a0bb902b3dddfc22fb6182a723274bc69a5e054505795f9c73a666fbe1ccaaa"
+    },
+    {
+      "bytes": 9025,
+      "path": "iclr2026_conference.sty",
+      "sha256": "a4852f68e080d6c5245057ca2039100b409e31727898aa93c03d78ddb84374a3"
+    },
+    {
+      "bytes": 26973,
+      "path": "iclr2026_conference.bst",
+      "sha256": "2d67552db7ed38ccfccb5957b52f95656e25c249724761d3cf5f7922ad1844c5"
+    },
+    {
+      "bytes": 45154,
+      "path": "natbib.sty",
+      "sha256": "88bc70c0e48461934cab5b2accef06b74a8b3ac45ad03ccd3f2a6b7e0d6d530d"
+    },
+    {
+      "bytes": 20521,
+      "path": "fancyhdr.sty",
+      "sha256": "b56ec4434b9f4607529a4b23dc68ad8d4b94f1f631c8cddaf7da78140d53a5ea"
+    },
+    {
+      "bytes": 141,
+      "path": "requirements-paper.txt",
+      "sha256": "84a8221f94d93a2fbd31eb572511d4b451fee2963d54691ef37b4d0f60b898ac"
+    },
+    {
+      "bytes": 5810,
+      "path": "scripts/build_papers.py",
+      "sha256": "3d9558826cdfd95e36b708e2370eaa97c6bd65c0e40787f4a4b607b8732d3ecd"
+    },
+    {
+      "bytes": 5968,
+      "path": "scripts/generate_research_contract.py",
+      "sha256": "aa56de62ac6f618b651b52034bc545ff9cb68fce5e716eed3fe71c7e37c5e084"
+    },
+    {
+      "bytes": 34778,
+      "path": "figures/research_contract.pdf",
+      "sha256": "adf3377964ad167f4e435384c967d997f77cf01c4f7107848f1cafa75bc4220b"
+    },
+    {
+      "bytes": 102288,
+      "path": "figures/spy_field_phase.pdf",
+      "sha256": "773714495b6bc44410497f0b5651d0a3c42554370562260f53af0af9b2c06951"
+    },
+    {
+      "bytes": 38846,
+      "path": "figures/synthetic_diagnostics.pdf",
+      "sha256": "714cdc6ad844b8b2cc202ca74fbfa3b5701913a8e403773a68b14a4fa9bffcce"
+    },
+    {
+      "bytes": 37335,
+      "path": "figures/representation_sensitivity.pdf",
+      "sha256": "3dbf54b7b48f233f854fd89c7b0c799d679474577d657d47f1ec90e6c4defbb2"
+    },
+    {
+      "bytes": 29169,
+      "path": "figures/calibration_rates.pdf",
+      "sha256": "b3018dcd7bb44fcbbbb669bc67a98f0208b7ee1db21b979ec6484bba891f1dc6"
+    },
+    {
+      "bytes": 518,
+      "path": "tables/asset_summary.tex",
+      "sha256": "60157b590c6e2ffa8d861a7dabc3cdef53d4d5c242237e4847617b1960919426"
+    },
+    {
+      "bytes": 885,
+      "path": "tables/validation_summary.tex",
+      "sha256": "6ea82c78a6cf7ab5d11b855525a4f1c4b7ff5fbaaac0a944e22ad5b344ccb08d"
+    }
+  ],
+  "status": "ok",
+  "tectonic_version": "Tectonic 0.16.9"
+}

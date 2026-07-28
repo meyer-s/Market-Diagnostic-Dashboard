@@ -137,7 +137,8 @@ lineage:
 | `71e30b6b9168735816b02af93a82374c97a99ca3` | Relative Field Pair hierarchy and evidence-contract source | Adds the deterministic descriptive summary, exact window/support/compatibility and beta-chain disclosures, compact frozen receipt, three-layer responsive UI, linkable presentation controls, browser coverage, and synchronized research text. The additive revision changes no coordinate, relative-index, beta, or field-separation formula. |
 | `0b8e8aa72be43cfd1038b983494f4693b50b4115` | Relative Field Pair trust and validation source | Adds auditable-recipe and self-checking-receipt semantics, split support and comparator-role presentation, redundant non-color encodings, explicit base/restart evidence, request-local runtime boundaries, bounded product telemetry, a machine-readable probe, and the 11-check browser release gate. It changes no Pair coordinate, relative-index, beta, field-separation, receipt, hash, or authority formula. |
 | `178a4081e7093b16a433886a65f0c6d6664e5417` | Prior Pair paper-artifact source | Synchronizes the standalone addendum and main-paper Pair boundary with the validated Pair-v1 implementation before the later information-hierarchy work. |
-| `55359cd301127fd771ea9fb2567195cf8d542688` | Goal-led reader-hierarchy implementation source | Adds chronological scope trails, one selected relationship scope, all-coordinate drilldown, compact Overview/Field/Audit disclosure, mobile guided flow, and lower-cost lazy detail mounting. These are presentation and interaction changes; the Pair numerical backend and identities are unchanged. |
+| `55359cd301127fd771ea9fb2567195cf8d542688` | Pair reader-hierarchy implementation source | Adds chronological scope trails, one selected relationship scope, all-coordinate drilldown, compact Overview/Field/Audit disclosure, mobile guided flow, and lower-cost lazy detail mounting. These are presentation and interaction changes; the Pair numerical backend and identities are unchanged. |
+| `9457d148ccf1162fe5b8edd6eab49aae42b86327` | Goal-led manuscript and release-gate accessibility source | Rebuilds the paper around an inspectable decision problem, conclusion--evidence--definition--receipt hierarchy, negative baseline, lessons, and prospective study; synchronizes Pair terminology; and closes strict-locator, dialog-focus, and contrast issues exposed by the browser gate. `results/pdf_build_receipt.json` records the clean-source paper build at this exact head. |
 
 Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
 the historical primary and supplementary clean execution heads bind the same
@@ -146,10 +147,13 @@ records a separate clean-tree run at
 `b6fb1a873c1d4eb072ac9b8923cdaa95e2d4043b`. That receipt exercises the
 evaluation machinery on already-inspected retained data; it does not alter the
 historical primary receipts or establish predictive or economic efficacy.
-The current Relative Field Pair product, evidence-contract, and validation
-source is `0b8e8aa72be43cfd1038b983494f4693b50b4115`; the paper-artifact commit
-that follows it changes only research documentation, provenance text, and
-rebuilt PDFs.
+The numerical Pair-v1 trust and validation source remains
+`0b8e8aa72be43cfd1038b983494f4693b50b4115`; its current reader hierarchy is
+bound to `55359cd301127fd771ea9fb2567195cf8d542688`. The goal-led paper and
+release-gate accessibility closeout source is
+`9457d148ccf1162fe5b8edd6eab49aae42b86327`. These later presentation,
+accessibility, and research-document changes do not alter Pair-v1 numerical
+formulas or authority.
 
 The committed manifest, hashes, derived CSVs, figures, tables, executed
 notebooks, direct requirements, and full environment version capture document
