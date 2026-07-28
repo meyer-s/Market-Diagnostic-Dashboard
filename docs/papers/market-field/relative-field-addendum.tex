@@ -42,11 +42,11 @@ Independent Researcher\\
 \begin{document}
 \maketitle
 \ifdefined\relativefieldsharecopy
-\lhead{Market Field Calculus technical addendum}
+\lhead{Market Field technical addendum}
 \fi
 
 \begin{abstract}
-This addendum specifies \Pair{}, a versioned comparison receipt over two independently constructed 15-coordinate Market Field instances. The operator enforces a common component recipe, exact timestamp intersection, bilateral coordinate support, independent proper-fit normalization, full-precision relative-price context, a strictly prior rolling beta adjustment, ordered provenance, and zero decision authority. We give the alignment key, availability masks, native and fit-relative differences, relative-index and beta-adjusted-return equations, family-balanced relationship-stretch rule, precision boundaries, receipt hash, algebraic invariants, failure modes, and test map needed to reconstruct the implementation. The method does not select peers, estimate cointegration, infer connectedness, identify a winner, or establish predictive or economic value. Its contribution is an auditable comparison and translation layer, not a relative-value trading model.
+This addendum specifies \Pair{}, a versioned comparison receipt over two independently constructed 15-coordinate Market Field instances. The operator enforces a common component recipe, timeframe-specific exact shared-key intersection, bilateral coordinate support, independent proper-fit normalization, full-precision relative-price context, a strictly prior rolling beta adjustment, ordered provenance, and zero decision authority. We give the alignment key, availability masks, native and fit-relative differences, relative-index and beta-adjusted-return equations, family-balanced relationship-stretch rule, precision boundaries, receipt hash, algebraic invariants, failure modes, and test map needed to reconstruct the implementation. The method does not select peers, estimate cointegration, infer connectedness, identify a winner, or establish predictive or economic value. Its contribution is an auditable comparison and translation layer, not a relative-value trading model.
 \end{abstract}
 
 \section{Technical Summary}
@@ -512,14 +512,23 @@ description states that it preserves aligned keys, current measurements,
 support, identities, disclosures, and authority, excludes full chart
 histories, and is not digitally signed.
 
+The reader-facing order is Overview, Field detail, and Audit receipt. Field
+detail mounts one of four relationship scopes at a time and exposes all 15
+coordinate histories on demand; audit groups remain collapsed until requested.
 Visual identity is redundant rather than color-only: target, benchmark, and
 difference use solid/circle, dashed/diamond, and dotted/square encodings,
-respectively. Current scope points also differ in outline and size. Unsupported
-intervals use a gap or hatch. Coordinate strips place signed microbars above or
-below a centerline, encode magnitude through height and intensity, and retain a
-latest-direction arrow. Beta-chain starts and restarts remain visible as
-discontinuities and labeled markers. These are translation conventions and do
-not change any Pair coordinate, support mask, or identity.
+respectively. Current scope points also differ in outline and size. Trail
+opacity follows source chronology rather than screen position, while bounded
+display simplification preserves supported endpoints and turns. Unsupported
+intervals remain broken or hatched. Synchronized inspection uses shared dates,
+and distinct start, first-supported, current, and latest-supported labels appear
+only when their conditions hold. Coordinate strips place signed microbars above
+or below a centerline, encode magnitude through height and intensity, and
+retain a latest-direction arrow. Beta-chain starts and restarts remain visible
+as discontinuities and labeled markers. The default inspection scale may zoom
+the selected trail; a linkable shared scale preserves subject comparability.
+These are translation conventions and do not change any Pair coordinate,
+support mask, or identity.
 
 \subsection{Operational caching}
 
@@ -604,7 +613,7 @@ Canonical serialization & Signed zero normalizes before summary formatting and S
 \label{tab:tests}
 \end{table}
 
-The complete frontend suite passed 135 tests. Its comparison, summary,
+The complete frontend suite passed 146 tests. Its comparison, summary,
 methodology, page, query-state, and product-telemetry cases cover deterministic
 translation, Overview/Field/Audit hierarchy, selectors, URL round trips, DXY
 guards, loading/error behavior, clearing stale results, and bounded event
@@ -647,7 +656,7 @@ HTTP class & Pair endpoint behavior \\
 \caption{Public failure boundary. Unavailable coordinates and beta rows remain successful responses with explicit nulls.}
 \end{table}
 
-The service does not independently certify exchange calendars, currency equivalence, adjustment-policy equivalence, corporate-action treatment, or completion of the latest bar. Exact timestamps may still represent asynchronous or stale markets. Missing common timestamps produce irregular elapsed intervals in the relative-price and beta paths.
+The service does not independently certify exchange calendars, currency equivalence, adjustment-policy equivalence, corporate-action treatment, or completion of the latest bar. Matched alignment keys may still represent asynchronous or stale markets. Missing common observations produce irregular elapsed intervals in the relative-price and beta paths.
 
 \section{Limitations and Robustness Risks}
 
@@ -706,10 +715,14 @@ beta-chain metadata, and frozen-receipt contract were verified at
 \path{71e30b6b9168735816b02af93a82374c97a99ca3}. The trust-language,
 reader-facing evidence, runtime, product-telemetry, probe, and browser-gate
 revision is bound to
-\path{0b8e8aa72be43cfd1038b983494f4693b50b4115}. No coordinate,
-relative-index, beta, field-separation, receipt, hash, or authority formula
-changed. The revision also avoids calling Equation~\ref{eq:beta-adjusted} an
-OLS residual.
+\path{0b8e8aa72be43cfd1038b983494f4693b50b4115}. The later one-scope,
+chronological-trail, progressive-disclosure, and mobile hierarchy is bound to
+\path{55359cd301127fd771ea9fb2567195cf8d542688}. The current goal-led paper
+source and release-gate closeout are identified by
+\path{results/pdf_build_receipt.json}. None changes a coordinate,
+relative-index, beta, field-separation, receipt, hash, or authority formula.
+The revision also avoids calling Equation~\ref{eq:beta-adjusted} an OLS
+residual.
 
 \begin{table}[h]
 \centering
@@ -766,9 +779,10 @@ Scanner and option-learning weights & 0.0 \\
 \end{tabular}
 \end{center}
 
+\clearpage
 \section{Response Field Interpretation}
 
-\begin{table}[h]
+\begin{center}
 \centering
 \small
 \setlength{\tabcolsep}{4pt}
@@ -792,7 +806,7 @@ Response area & Interpretation \\
 \texttt{caveats} & Reader-facing interpretation boundaries \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{center}
 
 \section{AI-Assistance Disclosure}
 

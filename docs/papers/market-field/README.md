@@ -3,23 +3,27 @@
 This directory is an ICLR 2026-formatted source and derived-artifact package
 for:
 
-> Non-Anticipative Market Field Calculus: An Auditable Multiscale Representation for
-> Option-Path Decision Support
+> Market Field: An Auditable Multiscale Market-State Instrument for Prospective
+> Option Research
 
-Status: preliminary systems and methods paper, revised 2026-07-27. The evidence
-supports reconstructibility and selected implementation properties, not a
-representation-learning advance. A matched five-coordinate, single-horizon
-baseline produces stronger fit separation under the same codebook gate; the
-paper reports that negative result directly. It does not claim forecast skill,
-profitable trading, arbitrage, natural latent states, or a physical market law.
-Raw provider snapshots are not redistributed, so the package is not a
-self-contained copy of the exact market-data inputs.
+Status: preliminary systems and methods paper, revised 2026-07-28. The paper is
+organized around one goal: translate a completed market path into a conclusion
+that can be traced through visible evidence, measured definitions, support, and
+an audit receipt. The evidence supports that measurement and translation
+contract, not a representation-learning advance. A matched five-coordinate,
+single-horizon baseline produces stronger fit separation under the same
+codebook gate, and the retained-cache forecasting dry run is not favorable
+enough to justify a performance claim. The paper treats those results as
+lessons that narrow the contribution and motivate prospective simplification,
+human-comprehension, pair, and option studies. Raw provider snapshots are not
+redistributed, so the package is not a self-contained copy of the exact
+market-data inputs.
 
 ## Shareable artifacts
 
-- market-field-calculus-working-paper.pdf: descriptively named copy for direct
-  sharing.
-- share.pdf: named-author build target for the same working paper.
+- share.pdf: canonical named-author build target for the working paper.
+- market-field-calculus-working-paper.pdf: legacy share alias retained for
+  compatible links.
 - main.pdf: anonymous conference-review version.
 - relative-field-pair-technical-addendum.pdf: descriptively named, named-author
   copy of the standalone Pair-v1 methods and reconstructibility addendum.
@@ -29,6 +33,9 @@ self-contained copy of the exact market-data inputs.
   relative-field-addendum-references.bib: addendum source, named wrapper, and
   addendum-only bibliography entries.
 - main.tex and references.bib: paper source and bibliography.
+- figures/research_contract.pdf and
+  scripts/generate_research_contract.py: the market-data-cache-independent
+  conclusion--evidence--definition--receipt reading hierarchy.
 - market_field_reproducibility.ipynb: executed companion notebook.
 - figures, tables, and results: generated evidence used by the paper.
 - results/representation_baseline.csv: eight-asset Market Field versus cheap
@@ -43,6 +50,9 @@ self-contained copy of the exact market-data inputs.
 - requirements-paper-lock.txt: full version capture of the repository Python
   environment used for the revision audit; this is an environment record, not
   a claim of cross-platform solver reproducibility.
+- scripts/build_papers.py and results/pdf_build_receipt.json: the
+  market-data-cache-independent four-target Tectonic build, descriptive alias checks,
+  source hashes, PDF hashes, and page counts.
 - supplement: broader nine-timeframe, resolution, window-stability, and live
   boundary audit with an executed notebook.
 - evaluation: frozen development-only prequential protocol, runner, tests, and
@@ -61,11 +71,10 @@ self-contained copy of the exact market-data inputs.
   not an additional empirical result in this package.
 
 The official ICLR 2026 style and bibliography files are included unchanged from
-the conference template. In the 24-page Tectonic 0.16.9 build, all main text,
-including the conclusion, reproducibility statement, and ethics statement, ends
-on page 9; references begin on page 10, and Appendix A begins on page 13. This
-remains within the conference's nine-page main-text limit, which excludes
-references and appendices.
+the conference template. Page counts and boundaries for the current Tectonic
+0.16.9 build are recorded in `results/pdf_build_receipt.json`; the main text
+remains within the conference's nine-page limit, which excludes references and
+appendices.
 
 ## Rebuild
 
@@ -75,6 +84,7 @@ directory is intentionally excluded from Git:
 
 ~~~powershell
 .\.venv\Scripts\python.exe docs\papers\market-field\scripts\generate_assets.py --offline
+.\.venv\Scripts\python.exe docs\papers\market-field\scripts\generate_research_contract.py
 .\.venv\Scripts\python.exe docs\papers\market-field\scripts\audit_references.py
 .\.venv\Scripts\python.exe docs\papers\market-field\scripts\build_notebook.py --execute
 .\.venv\Scripts\python.exe docs\papers\market-field\evaluation\evaluate_prequential.py --protocol docs\papers\market-field\evaluation\protocol_v0.json
@@ -85,19 +95,19 @@ Yahoo Finance snapshot. A refresh can change provider-revised history and
 therefore the reported hashes and results; it does not reconstruct the paper's
 original inputs unless the canonical row hashes happen to match.
 
-Compile from the paper directory with Tectonic 0.16.9 or a standard LaTeX
-distribution:
+Compile all named and anonymous targets, refresh descriptive aliases, and emit
+the market-data-cache-independent PDF receipt from the repository root:
 
 ~~~powershell
-cd docs\papers\market-field
-tectonic -X compile main.tex
-tectonic -X compile share.tex
-tectonic -X compile relative-field-addendum.tex
-tectonic -X compile relative-field-addendum-share.tex
+.\.venv\Scripts\python.exe docs\papers\market-field\scripts\build_papers.py --tectonic C:\path\to\tectonic.exe
 ~~~
 
-For a conventional TeX installation, BibTeX and repeated LaTeX passes may be
-used instead. The checked PDFs were built with Tectonic 0.16.9.
+`TECTONIC_BIN` or a `tectonic` executable on `PATH` may be used instead of the
+explicit argument. The script refuses to label the source clean when the
+repository is dirty unless `--allow-dirty` is supplied. For a conventional TeX
+installation, BibTeX and repeated LaTeX passes may still be used, but they do
+not emit the canonical receipt. The checked PDFs were built with Tectonic
+0.16.9.
 
 ## Provenance
 
@@ -126,6 +136,8 @@ lineage:
 | `4c848dafecd41a64bd52844c9a12140e6534a784` | Relative Field Pair v1 implementation source audited by the addendum | Contains the ordered same-recipe pair service and research UI through the final mobile-label correction. The standalone addendum reconstructs this numerical backend; the addendum PR adds terminology, schema-contract, and regression-test corrections without changing its numerical formulas. |
 | `71e30b6b9168735816b02af93a82374c97a99ca3` | Relative Field Pair hierarchy and evidence-contract source | Adds the deterministic descriptive summary, exact window/support/compatibility and beta-chain disclosures, compact frozen receipt, three-layer responsive UI, linkable presentation controls, browser coverage, and synchronized research text. The additive revision changes no coordinate, relative-index, beta, or field-separation formula. |
 | `0b8e8aa72be43cfd1038b983494f4693b50b4115` | Relative Field Pair trust and validation source | Adds auditable-recipe and self-checking-receipt semantics, split support and comparator-role presentation, redundant non-color encodings, explicit base/restart evidence, request-local runtime boundaries, bounded product telemetry, a machine-readable probe, and the 11-check browser release gate. It changes no Pair coordinate, relative-index, beta, field-separation, receipt, hash, or authority formula. |
+| `178a4081e7093b16a433886a65f0c6d6664e5417` | Prior Pair paper-artifact source | Synchronizes the standalone addendum and main-paper Pair boundary with the validated Pair-v1 implementation before the later information-hierarchy work. |
+| `55359cd301127fd771ea9fb2567195cf8d542688` | Goal-led reader-hierarchy implementation source | Adds chronological scope trails, one selected relationship scope, all-coordinate drilldown, compact Overview/Field/Audit disclosure, mobile guided flow, and lower-cost lazy detail mounting. These are presentation and interaction changes; the Pair numerical backend and identities are unchanged. |
 
 Evaluated implementation source: `f5d3884c9112e9cd5aa9442bc546194db9314697`;
 the historical primary and supplementary clean execution heads bind the same

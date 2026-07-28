@@ -1772,7 +1772,7 @@ function DimensionTrend({
       <details className="mt-2 rounded-xl border border-stealth-700 bg-slate-950/45">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between px-3 text-[10px] font-medium text-slate-300">
           Definition and more evidence
-          <span className="text-slate-500">Expand</span>
+          <span className="text-slate-400">Expand</span>
         </summary>
         <div className="border-t border-stealth-700 p-3 text-[10px] leading-5 text-slate-400">
           <p>{guidance.definition} {guidance.higher}</p>
@@ -2940,7 +2940,7 @@ export default function MarketWeatherComparisonLab({
               if (event.key !== "Tab") return;
               const focusable = Array.from(
                 event.currentTarget.querySelectorAll<HTMLElement>(
-                  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+                  'button:not([disabled]), summary, [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
                 ),
               ).filter((element) => element.getAttribute("aria-hidden") !== "true");
               if (!focusable.length) {

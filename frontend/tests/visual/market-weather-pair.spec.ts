@@ -404,12 +404,12 @@ test("@release Relative Field Pair uses compact mobile chart, scope, and detail 
   await expect(page.locator('svg[aria-label*="trajectory"]:visible')).toHaveCount(1);
   await page.getByRole("button", { name: "Higher motion" }).click();
   await expect(page.locator('svg[aria-label*="Higher motion trajectory"]:visible')).toHaveCount(1);
-  await page.getByRole("button", { name: /Inspect Pressure/i }).click();
+  await page.getByRole("button", { name: "Inspect Pressure", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Pressure" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Close coordinate detail" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Pressure" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Inspect Pressure/i })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Inspect Pressure", exact: true })).toBeFocused();
   await expectNoHorizontalOverflow(page);
 });
 
@@ -439,7 +439,9 @@ for (const viewport of RESPONSIVE_VIEWPORTS) {
     await expectPairControlsInsideViewport(page);
 
     await page.getByRole("tab", { name: "Audit receipt" }).click();
-    await expect(page.getByRole("button", { name: /Export .*receipt/i })).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "Export compact receipt · JSON", exact: true }),
+    ).toBeEnabled();
     await expectNoHorizontalOverflow(page);
     await expectPairControlsInsideViewport(page);
   });
@@ -470,7 +472,7 @@ test("@release keyboard tabs and mobile dialog preserve focus ownership", async 
   await page.keyboard.press("ArrowRight");
   await expect(fieldTab).toBeFocused();
 
-  const trigger = page.getByRole("button", { name: /Inspect Pressure/i });
+  const trigger = page.getByRole("button", { name: "Inspect Pressure", exact: true });
   await trigger.focus();
   await page.keyboard.press("Enter");
 
@@ -483,10 +485,16 @@ test("@release keyboard tabs and mobile dialog preserve focus ownership", async 
     page.locator('section[aria-labelledby="pair-field-title"]').locator("xpath=.."),
   ).toHaveAttribute("inert", "");
 
+  const chart = dialog.locator('svg[tabindex="0"]');
+  const definition = dialog.locator("summary").filter({ hasText: "Definition and more evidence" });
+  await page.keyboard.press("Tab");
+  await expect(chart).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(definition).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(close).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expect(close).toBeFocused();
+  await expect(definition).toBeFocused();
   await page.keyboard.press("Escape");
 
   await expect(dialog).toHaveCount(0);
@@ -522,7 +530,7 @@ test("@release Pair surfaces pass serious and critical automated accessibility c
 
   await openPair(page, 390, 844);
   await page.getByRole("tab", { name: "Field detail" }).click();
-  await page.getByRole("button", { name: /Inspect Pressure/i }).click();
+  await page.getByRole("button", { name: "Inspect Pressure", exact: true }).click();
   blocking.push(...await expectNoSeriousAxeViolations(
     page,
     '[role="dialog"]',
@@ -556,7 +564,9 @@ test("@release 200 percent zoom-equivalent reflow retains every Pair control", a
   await expectPairControlsInsideViewport(page);
 
   await page.getByRole("tab", { name: "Audit receipt" }).click();
-  await expect(page.getByRole("button", { name: /Export .*receipt/i })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Export compact receipt · JSON", exact: true }),
+  ).toBeEnabled();
   await expectNoHorizontalOverflow(page);
   await expectPairControlsInsideViewport(page);
   await attachPairScreenshot(page, testInfo, "pair-audit-200-percent-zoom-equivalent");

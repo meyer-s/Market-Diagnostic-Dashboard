@@ -10,6 +10,33 @@ immutable and readable and the expanded
 Disposition labels are **MC** (manuscript correction), **NE** (new evidence),
 **PF** (production follow-up), and **DE** (deferred efficacy work).
 
+## Goal-led manuscript and information-hierarchy revision
+
+The latest revision changes the manuscript's organizing question rather than
+adding another defensive layer around the equations:
+
+> Can completed market paths be translated into an inspectable answer to what
+> is moving, how that motion is organized across horizons, how unusual it is
+> relative to the instrument's own fixed history, and how it differs from a
+> chosen reference—without hiding missing support or silently granting
+> decision authority?
+
+The title, abstract, introduction, section order, result headings, discussion,
+and conclusion now follow the same
+**conclusion → evidence → definition → audit receipt** hierarchy used by the
+research interface. Exact algebra, missing-value rules, fixed constants,
+clustering chronology, option authority formulas, Pair alignment, and receipt
+contracts remain in the appendices and companion artifacts.
+
+| Editorial issue | Revision | Result and boundary |
+|---|---|---|
+| The paper read like a rebuttal ledger | Replaced version/claim disclaimers as the main spine with a reader problem, four auditable questions, a visual evidence hierarchy, and goal-aligned evaluation criteria. | Precision corrections remain intact, but mathematics now supports the argument instead of being the argument. |
+| The conclusion only denied claims | Added evidence-backed lessons on auditability versus usefulness, the cheap baseline, missing support, comparison bases, and the interface as part of the epistemic method. | The positive conclusion is an auditable measurement/translation instrument; prediction and economic value remain prospective. |
+| Potential was an undifferentiated future-work list | Ordered next work into simplification/family ablations, a human-comprehension study, and point-in-time pair/basket/option studies under the frozen promotion rule. | Work that can be engineered now is separated from evidence that must accumulate and history that cannot be reconstructed. |
+| Pair visuals and page hierarchy had evolved after the paper | Updated the paper/addendum for four one-at-a-time scopes, source-time trail opacity, broken unsupported runs, exact endpoint semantics, all-coordinate drilldown, mobile guided flow, and linkable shared/inspection scales. | These are translation and interaction changes only; Pair coordinates, hashes, support, and authority formulas are unchanged. |
+| PDF production was manual and unreceipted | Added a market-data-cache-independent four-target Tectonic build script with source/output hashes, page counts, and byte-identical descriptive-alias checks. | The receipt binds document construction, not provider truth or empirical reruns. |
+| Current browser checks were stale after the UI rewrite | Corrected ambiguous release-gate locators, restored keyboard containment over all dialog controls, fixed the newly exposed contrast issue, and reran the gate. | The current unit and release evidence is 146/146 and 11/11; it is product validation, not proof of reader comprehension. |
+
 ## Third-round contribution and scope revision
 
 The third review correctly identified that software correctness did not
@@ -22,7 +49,7 @@ evidence instead of implying that the gap is already solved.
 | Product-documentation scope | Removed detailed Secret Options authentication mechanics from the paper, compressed production security to one ethics sentence, moved operational API limits/prefetch behavior to the README, and moved the elementary boundedness argument to the appendix. | Security remains implemented and tested in the product; it is no longer presented as a research contribution. |
 | Load-bearing entropy sensitivity | Recomputed the complete long-history SPY dictionary at entropy windows 8, 12, 24, 48, and 96. | All variants retain two Forms; assignment ARI versus window 24 is 0.878--0.908, while tail rates range 10.6%--16.7%. Coarse assignments are comparatively stable here, but Information and calibration-relative diagnostics remain parameter-dependent. |
 | Dictionary fragility | Added long-history SPY prefix stability and a matched baseline alongside the shorter supplementary result. | Market Field ARI is 0.842/0.751 at 70%/85%; baseline is 0.803/0.925. Neither dominates, and the 749-bar sample's 0.000/0.873 result remains visible. |
-| Hedging density | Added an explicit “what this paper claims / does not claim” box and rewrote the abstract, results, discussion, and conclusion around the supported systems claim and negative baseline. | Caveats remain where technically necessary, but the credited contribution is stated once up front. |
+| Hedging density | Rebuilt the abstract, opening research questions, evidence hierarchy, results, lessons, and conclusion around the supported systems claim and negative baseline. | Caveats remain where technically necessary, but the credited contribution is stated once up front and each deeper layer serves that goal. |
 | Hand-set constants | Added a compact appendix inventory with rationale and chronology. | Constants predate the new comparison but were not preregistered and are not claimed optimal. |
 | ICLR LLM policy | Updated the statement to disclose significant ideation, writing, code, and analysis assistance; it states that disclosure must also appear in the submission form and that the human author is fully responsible. | Wording follows the ICLR 2026 Author Guide and LLM FAQ checked on 2026-07-23. |
 | Bibliography | Added a reproducible 38-entry DOI/ISBN/source-page audit and discrepancy notes; protected the Wilder suffix as a literal personal name. | 30 records match directly, five source pages were inspected, and three registry-format discrepancies are reconciled in `results/bibliography_audit_notes.md`. |
@@ -54,7 +81,7 @@ requires future observations.
 | 6 | Scaling exponent lacked a reference baseline | The paper now specifies epsilon, stencil, reduction, the ordinary 0.5 reference, interpretations near 0 and 1, and the exact nonnegativity invariant; a materially negative value is a quality failure, not a state. | **MC/NE/PF complete; DE:** Response/UI expose reference, excess, and degenerate validity. More synthetic reference-process tests remain deferred. |
 | 7 | Permutation-entropy wording and startup were wrong | The revision states six possible patterns and all startup/tie/reduction conventions. A new 8/12/48/96-versus-24 sensitivity audit finds material window dependence. | **MC/NE/PF complete:** Initialization coverage is exposed and the fixed 24-instance v1 window is explicitly versioned and documented. |
 | 8 | Calibration-distance language overstated support | The paper replaces substantive “outside learned range” language with “upper state-conditional calibration-distance tail,” explains discrete ranks, reports unsupported observations separately, emphasizes asset/window instability, and specifies the match denominator. | **MC/PF complete; DE:** Canonical names and analog status were added while legacy keys remain aliases; no efficacy or coverage guarantee is claimed. |
-| 9 | “Causal” lacked a formal definition and tests were overstated | The title now uses “Non-Anticipative”; Remark 1 states prefix-only live computation and the elementary argument is in the appendix. A new audit passes 46/46 prefixes and 24,472 full-precision live values at tolerance `1e-12`; the original 32/6,688 serialized audit is still described accurately. | **MC/NE/PF:** Extend coverage to minimum-input/initialization-coverage metadata, hypotheses, lexicon fields, and complete option snapshots; this is not causal inference. |
+| 9 | “Causal” lacked a formal definition and tests were overstated | The paper now defines non-anticipation as prefix-only live computation, gives the elementary argument in the appendix, and avoids using causal as an inference claim. A new audit passes 46/46 prefixes and 24,472 full-precision live values at tolerance `1e-12`; the original 32/6,688 serialized audit is still described accurately. | **MC/NE/PF:** Extend coverage to minimum-input/initialization-coverage metadata, hypotheses, lexicon fields, and complete option snapshots; this is not causal inference. |
 | 10 | Figure reference and 540-count statements were wrong | The asset sentence now references the tail-rate figure. Step 4 is reported as 180 pairs; 540 is reserved for all three nonreference grids. | **MC/NE:** The comparison-count artifact independently records 180 pairs per step. |
 | 11 | Codebook rhetoric and attribution were too strong | The revision gives metric/family/support/silhouette-conditioned wording, enumerates candidate selection and tie handling, separately cites k-means and farthest-point initialization, and now includes a matched cheap baseline. | **MC/NE/DE:** The negative unsupervised comparison is complete; predictive and economic comparisons remain deferred. |
 | 12 | Option and latency safeguards were overstated | The paper separates algorithmic authority from human influence, narrows side alignment, specifies recurrence and pressure-aligned exhaustion velocity, and points to run-receipted latency/payload artifacts instead of treating volatile point estimates as a contract. It also states that advisory urgency can recompute the next-review date. | **MC/NE/PF partial; DE additive closeout:** Authority, action/delta alignment, applied-effect metadata, separate scanner and lifecycle metamorphic checks, frozen rank receipts, and candidate-level impression logging shipped. One continuous eligibility-through-broker proof remains unavailable because the application owns no automated order path; cold/concurrent/SLA testing remains deferred. |
