@@ -215,6 +215,7 @@ export default function MarketWeatherRadar() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rawDataOpen, setRawDataOpen] = useState(false);
+  const [mobileRecipeOpen, setMobileRecipeOpen] = useState(false);
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">("idle");
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsDialogRef = useRef<HTMLFormElement | null>(null);
@@ -384,6 +385,7 @@ export default function MarketWeatherRadar() {
     event.preventDefault();
     if (pairAlignmentUnsupported) return;
     commitAnalysis(draft);
+    setMobileRecipeOpen(false);
   };
 
   const applySettings = () => {
@@ -615,16 +617,16 @@ export default function MarketWeatherRadar() {
 
   return (
     <>
-    <div className="page-shell-wide space-y-4 md:space-y-5">
-      <section className="page-hero">
-        <div className="relative z-[1] flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <div className="page-shell-wide space-y-3 md:space-y-5">
+      <section className="page-hero px-3 py-3 sm:px-4 sm:py-5 md:px-6 md:py-6">
+        <div className="relative z-[1] flex flex-col gap-2 sm:gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="page-kicker">Multi-horizon market structure</span>
               <span className="page-badge border-sky-400/20 text-sky-200"><FlaskConical className="h-3.5 w-3.5" /> Auditable field recipe</span>
             </div>
-            <h1 className="page-title">Market Field Language</h1>
-            <p className="page-subtitle max-w-3xl">Direction, activity, horizon agreement, disorder, and cross-horizon movement are shown as separate measurements. Request-local Forms summarize calibration-relative profiles.</p>
+            <h1 className="page-title text-xl sm:text-2xl md:text-3xl">Market Field Language</h1>
+            <p className="page-subtitle hidden max-w-3xl sm:block">Direction, activity, horizon agreement, disorder, and cross-horizon movement are shown as separate measurements. Request-local Forms summarize calibration-relative profiles.</p>
           </div>
           {data || (comparisonMode === "pair" && comparisonData) ? (
             <div className="flex flex-wrap gap-2 text-xs text-slate-300">
@@ -647,6 +649,35 @@ export default function MarketWeatherRadar() {
       </section>
 
       <section className="surface-card-strong p-3 sm:p-4">
+        {data || (comparisonMode === "pair" && comparisonData) ? (
+          <div className="flex items-center justify-between gap-3 sm:hidden">
+            <div className="min-w-0">
+              <div className="page-kicker">Applied report</div>
+              <div className="mt-0.5 truncate text-sm font-semibold text-white">
+                {comparisonMode === "pair" && comparisonData
+                  ? `${comparisonData.target.symbol} vs ${comparisonData.benchmark.symbol}`
+                  : data?.symbol}
+                <span className="font-normal text-slate-400"> · {comparisonMode === "pair" && comparisonData ? comparisonData.timeframe : data?.timeframe} · {applied.bars.toLocaleString()} bars</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileRecipeOpen((current) => !current)}
+              aria-expanded={mobileRecipeOpen}
+              aria-controls="market-field-recipe-controls"
+              aria-label={mobileRecipeOpen ? "Close analysis inputs" : "Change analysis inputs"}
+              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-stealth-600 px-3 text-xs text-sky-100"
+            >
+              {mobileRecipeOpen ? "Close" : "Change"}
+              <ChevronDown className={`h-3.5 w-3.5 transition ${mobileRecipeOpen ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+        ) : null}
+        <div
+          id="market-field-recipe-controls"
+          data-mobile-collapsed={Boolean((data || (comparisonMode === "pair" && comparisonData)) && !mobileRecipeOpen)}
+          className={(data || (comparisonMode === "pair" && comparisonData)) && !mobileRecipeOpen ? "hidden sm:block" : ""}
+        >
         <form onSubmit={runAnalysis} className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="flex flex-col gap-1.5">
@@ -819,6 +850,7 @@ export default function MarketWeatherRadar() {
               : "Report links preserve the analysis recipe and visible lenses; current provider data is loaded when opened."}
           <span className="sr-only" aria-live="polite">{shareStatus === "copied" ? "Report link copied." : shareStatus === "error" ? "The report link could not be copied." : ""}</span>
         </p>
+        </div>
       </section>
 
       {comparisonMode === "pair" && comparisonData ? (

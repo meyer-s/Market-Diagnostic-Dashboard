@@ -194,6 +194,36 @@ function finite(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value);
 }
 
+function useMinimumWidth(minimumWidth: number): boolean {
+  const read = () => {
+    if (typeof window === "undefined") return false;
+    return typeof window.matchMedia === "function"
+      ? window.matchMedia(`(min-width: ${minimumWidth}px)`).matches
+      : window.innerWidth >= minimumWidth;
+  };
+  const [matches, setMatches] = useState(read);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const media = typeof window.matchMedia === "function"
+      ? window.matchMedia(`(min-width: ${minimumWidth}px)`)
+      : null;
+    const update = () => setMatches(read());
+    media?.addEventListener?.("change", update);
+    window.addEventListener("resize", update);
+    return () => {
+      media?.removeEventListener?.("change", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [minimumWidth]);
+
+  return matches;
+}
+
+function useDesktopLayout(): boolean {
+  return useMinimumWidth(1024);
+}
+
 function formatNumber(value: number | null | undefined, digits = 2): string {
   if (!finite(value)) return "—";
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -374,8 +404,9 @@ function fiveBarChange(
   if (coordinate.series.length < 6) return null;
   const current = coordinate.series[coordinate.series.length - 1];
   const previous = coordinate.series[coordinate.series.length - 6];
-  const currentValue = basis === "context" ? current?.context_difference : current?.native_difference;
-  const previousValue = basis === "context" ? previous?.context_difference : previous?.native_difference;
+  if (!current || !previous) return null;
+  const currentValue = supportedValueForPoint(current, basis, "difference");
+  const previousValue = supportedValueForPoint(previous, basis, "difference");
   return finite(currentValue) && finite(previousValue) ? currentValue - previousValue : null;
 }
 
@@ -416,6 +447,11 @@ function latestDifference(
   coordinate: MarketWeatherComparisonCoordinate,
   basis: MarketWeatherComparisonBasis,
 ): number | null {
+  if (
+    coordinate.latest.target_supported === false
+    || coordinate.latest.benchmark_supported === false
+    || coordinate.latest.pair_supported === false
+  ) return null;
   return basis === "context" ? coordinate.latest.context_difference : coordinate.latest.native_difference;
 }
 
@@ -573,6 +609,53 @@ interface ScopeStrokeChunk {
   dashOffset: number;
 }
 
+interface ScopeChartFrame {
+  width: number;
+  height: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  xTickY: number;
+  xTitleY: number;
+  yTitleX: number;
+}
+
+const COMPACT_SCOPE_FRAME: ScopeChartFrame = {
+  width: 360,
+  height: 236,
+  left: 42,
+  right: 348,
+  top: 18,
+  bottom: 196,
+  xTickY: 211,
+  xTitleY: 232,
+  yTitleX: 9,
+};
+
+const WIDE_SCOPE_FRAME: ScopeChartFrame = {
+  width: 672,
+  height: 220,
+  left: 48,
+  right: 624,
+  top: 18,
+  bottom: 184,
+  xTickY: 198,
+  xTitleY: 216,
+  yTitleX: 10,
+};
+
+function formatScopeAxisValue(value: number, extent: number): string {
+  const magnitude = Math.abs(extent);
+  if (magnitude < 1e-4) {
+    const normalized = Math.abs(value) < 1e-12 ? 0 : value;
+    return normalized.toExponential(1);
+  }
+  const digits = magnitude < 0.01 ? 4 : magnitude < 0.1 ? 3 : magnitude < 10 ? 2 : 1;
+  const normalized = Math.abs(value) < 0.5 * 10 ** -digits ? 0 : value;
+  return `${normalized > 0 ? "+" : ""}${normalized.toFixed(digits)}`;
+}
+
 function pointLineDistance(
   point: { x: number; y: number },
   start: { x: number; y: number },
@@ -644,7 +727,7 @@ function temporalStrokeChunks(
   runs: ScopePlotPoint[][],
   visibleCount: number,
   view: MarketWeatherComparisonView,
-  maximumChunks = 28,
+  maximumChunks = 56,
 ): ScopeStrokeChunk[] {
   const totalEdges = runs.reduce((sum, run) => sum + Math.max(0, run.length - 1), 0);
   const edgesPerChunk = Math.max(1, Math.ceil(totalEdges / maximumChunks));
@@ -664,7 +747,7 @@ function temporalStrokeChunks(
         points,
         startIndex,
         endIndex,
-        opacity: 0.08 + 0.92 * age * age,
+        opacity: 0.1 + 0.9 * Math.pow(age, 1.45),
         sourceEnd,
         dashOffset: dashPeriod ? -(distanceBefore % dashPeriod) : 0,
       });
@@ -691,23 +774,6 @@ function nearestScopePoint(
     }
   });
   return closest;
-}
-
-function downsampleNullable(values: Array<number | null>, maximum = 180): Array<number | null> {
-  if (values.length <= maximum) return values;
-  const result: Array<number | null> = [];
-  for (let index = 0; index < maximum; index += 1) {
-    const start = Math.floor(index * values.length / maximum);
-    const end = Math.max(start + 1, Math.floor((index + 1) * values.length / maximum));
-    const bucket = values.slice(start, end);
-    const finiteBucket = bucket.filter(finite);
-    result.push(
-      finiteBucket.length === bucket.length && finiteBucket.length
-        ? finiteBucket.reduce((sum, value) => sum + value, 0) / finiteBucket.length
-        : null,
-    );
-  }
-  return result;
 }
 
 function pointerSeriesIndex(
@@ -896,6 +962,12 @@ function ScopeChart({
   const clipId = `${instanceId}-clip`;
   const meaningId = `${instanceId}-meaning`;
   const coordinateKeyId = `${instanceId}-coordinate-key`;
+  const wideFrame = useMinimumWidth(640);
+  const frame = wideFrame ? WIDE_SCOPE_FRAME : COMPACT_SCOPE_FRAME;
+  const centerX = (frame.left + frame.right) / 2;
+  const centerY = (frame.top + frame.bottom) / 2;
+  const xRadius = (frame.right - frame.left) * 0.46;
+  const yRadius = (frame.bottom - frame.top) * 0.46;
   const xCoordinate = coordinates.get(definition.x);
   const yCoordinate = coordinates.get(definition.y);
   const markerCoordinate = coordinates.get(definition.marker);
@@ -967,8 +1039,8 @@ function ScopeChart({
       run.push({
         date: point.date,
         sourceIndex,
-        x: 160 + (point.x / extentX) * 136,
-        y: 90 - (point.y / extentY) * 66,
+        x: centerX + (point.x / extentX) * xRadius,
+        y: centerY - (point.y / extentY) * yRadius,
         rawX: point.x,
         rawY: point.y,
         marker: point.marker,
@@ -987,18 +1059,22 @@ function ScopeChart({
       firstPoint: rawPlotPoints[0],
       latestPoint: rawPlotPoints[rawPlotPoints.length - 1],
       rawPlotPoints,
+      extentX,
+      extentY,
       selectedExtentX,
       selectedExtentY,
       sharedExtentX,
       sharedExtentY,
       strokeChunks: temporalStrokeChunks(chartRuns, rows.length, view),
     };
-  }, [basis, rows, scale, trail, view, xCoordinate, yCoordinate]);
+  }, [basis, centerX, centerY, rows, scale, trail, view, xCoordinate, xRadius, yCoordinate, yRadius]);
   const {
     finiteRows,
     firstPoint,
     latestPoint,
     rawPlotPoints,
+    extentX,
+    extentY,
     selectedExtentX,
     selectedExtentY,
     sharedExtentX,
@@ -1020,7 +1096,9 @@ function ScopeChart({
   const displayedRow = inspectedRow ?? latestRow;
   const inspectedPoint = selectedDate ? rawPlotPoints.find((point) => point.date === selectedDate) : null;
   const basisLabel = basis === "context" ? "relative to each instrument's own history" : "direct model scale";
+  const firstVisibleDate = visibleXSeries[0]?.date ?? null;
   const currentVisibleDate = visibleXSeries[visibleXSeries.length - 1]?.date ?? null;
+  const firstSupportedIsVisibleStart = Boolean(firstPoint?.date && firstPoint.date === firstVisibleDate);
   const latestSupportedIsCurrent = Boolean(latestRow?.date && latestRow.date === currentVisibleDate);
   const reading = scopeReading({
     definition,
@@ -1041,6 +1119,12 @@ function ScopeChart({
     : latestRow?.date
       ? `${latestSupportedIsCurrent ? "Latest" : "Latest supported"} ${latestRow.date}`
       : "Unavailable";
+  const arrowChunkId = latestPoint
+    ? [...strokeChunks].reverse().find((chunk) => chunk.sourceEnd === latestPoint.sourceIndex)?.id ?? null
+    : null;
+  const chipUnit = basis === "context"
+    ? view === "difference" ? "own-history gap" : "vs fit median"
+    : "model scale";
 
   const selectKeyboardPoint = (event: React.KeyboardEvent<SVGSVGElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !rawPlotPoints.length) return;
@@ -1059,35 +1143,52 @@ function ScopeChart({
   };
 
   return (
-    <article className="snap-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+    <article className="snap-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3 sm:p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold text-white">{definition.title}</h3>
-          <p className="mt-0.5 text-[11px] leading-4 text-slate-300">{definition.question}</p>
+          <p className="mt-0.5 hidden text-[11px] leading-4 text-slate-300 sm:block">{definition.question}</p>
         </div>
-        <div className="max-w-full text-right">
-          <span className="shrink-0 rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-slate-300">{subject}</span>
-          <p className="mt-1 font-mono text-[9px] leading-4 text-slate-400">
-            {xCoordinate?.label ?? definition.x} {formatNumber(displayedRow?.x)} · {yCoordinate?.label ?? definition.y} {formatNumber(displayedRow?.y)} · {markerCoordinate?.label ?? definition.marker} {formatNumber(displayedRow?.marker)}
-          </p>
-        </div>
+        <span className="shrink-0 rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-slate-300">{subject}</span>
       </div>
-      <p id={meaningId} className="mt-2 rounded-lg border border-stealth-800 bg-slate-950/45 px-2.5 py-2 text-[10px] leading-4 text-slate-300">
-        <span className="mr-1.5 font-semibold uppercase tracking-[0.12em] text-sky-300">{inspectedLabel}</span>
-        {reading}
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {[
+          [xCoordinate?.label ?? definition.x, displayedRow?.x],
+          [yCoordinate?.label ?? definition.y, displayedRow?.y],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="rounded-xl border border-stealth-800 bg-slate-950/55 px-2.5 py-2">
+            <div className="truncate text-[9px] uppercase tracking-[0.1em] text-slate-500">{label}</div>
+            <div className="mt-0.5 flex items-baseline justify-between gap-2">
+              <strong className="font-mono text-sm text-slate-100">{formatNumber(value as number | null | undefined)}</strong>
+              <span className="truncate text-[9px] font-medium text-slate-400">{chipUnit}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p data-scope-reading="true" className="mt-2 text-[10px] leading-4 text-slate-300">
+        <span className="font-semibold uppercase tracking-[0.1em] text-sky-300">{inspectedLabel}</span>
+        {" · "}{reading}
+        {!latestSupportedIsCurrent && !inspectedRow && latestRow ? " The current visible bar is unsupported for this scope." : ""}
+      </p>
+
+      <p id={meaningId} className="sr-only">
+        {inspectedLabel}. {reading}
         {!latestSupportedIsCurrent && !inspectedRow && latestRow ? " The current visible bar is unsupported for this scope." : ""}
       </p>
       <svg
-        viewBox="0 0 320 180"
-        className="mt-1 h-[154px] w-full touch-none rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+        viewBox={`0 0 ${frame.width} ${frame.height}`}
+        className="mx-auto mt-2 h-auto w-full max-w-5xl touch-none rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+        style={{ aspectRatio: `${frame.width} / ${frame.height}` }}
+        data-scope-frame={wideFrame ? "wide" : "compact"}
         role="img"
         tabIndex={0}
         aria-describedby={`${meaningId} ${coordinateKeyId}`}
         aria-label={`${definition.title} trajectory for ${subject}, ${basisLabel}; chronological trail. ${finiteRows.length} of ${rows.length} displayed observations supported. Oldest segments are faintest and newest segments are most opaque. Latest supported date ${latestRow?.date ?? "unavailable"}, x ${formatNumber(latestRow?.x)}, y ${formatNumber(latestRow?.y)}, third coordinate used for marker size ${formatNumber(latestMarker)}. Use Left and Right arrows to inspect supported dates.`}
         onPointerMove={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
-          const pointerX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 320;
-          const pointerY = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * 180;
+          const pointerX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * frame.width;
+          const pointerY = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * frame.height;
           onSelectedDateChange(nearestScopePoint(rawPlotPoints, pointerX, pointerY)?.date ?? null);
         }}
         onPointerLeave={() => onSelectedDateChange(null)}
@@ -1095,18 +1196,18 @@ function ScopeChart({
       >
         <defs>
           <clipPath id={clipId}>
-            <rect x="20" y="16" width="288" height="144" rx="4" />
+            <rect x={frame.left} y={frame.top} width={frame.right - frame.left} height={frame.bottom - frame.top} rx="6" />
           </clipPath>
           <marker id={arrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill={stroke} />
           </marker>
         </defs>
-        <rect x="24" y="19" width="272" height="139" rx="4" fill="rgba(2,6,23,.18)" stroke="rgba(51,65,85,.22)" />
-        <line x1="24" x2="296" y1="90" y2="90" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
-        <line x1="160" x2="160" y1="19" y2="158" stroke="rgba(100,116,139,.3)" strokeDasharray="3 5" />
+        <rect x={frame.left} y={frame.top} width={frame.right - frame.left} height={frame.bottom - frame.top} rx="6" fill="rgba(2,6,23,.3)" stroke="rgba(71,85,105,.42)" />
+        <line x1={frame.left} x2={frame.right} y1={centerY} y2={centerY} stroke="rgba(100,116,139,.42)" strokeDasharray="3 5" />
+        <line x1={centerX} x2={centerX} y1={frame.top} y2={frame.bottom} stroke="rgba(100,116,139,.42)" strokeDasharray="3 5" />
         {finiteRows.length ? (
           <g clipPath={`url(#${clipId})`}>
-            {strokeChunks.map((chunk, index) => (
+            {strokeChunks.map((chunk) => (
               <path
                 key={`${definition.id}-${chunk.id}`}
                 d={smoothPath(chunk.points, chunk.startIndex, chunk.endIndex)}
@@ -1119,7 +1220,7 @@ function ScopeChart({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
-                markerEnd={index === strokeChunks.length - 1 ? `url(#${arrowId})` : undefined}
+                markerEnd={chunk.id === arrowChunkId ? `url(#${arrowId})` : undefined}
                 data-scope-trail-segment="true"
                 data-source-end={chunk.sourceEnd}
                 data-age-opacity={chunk.opacity.toFixed(4)}
@@ -1139,20 +1240,50 @@ function ScopeChart({
               />
             ) : null}
             {inspectedPoint ? <circle cx={inspectedPoint.x} cy={inspectedPoint.y} r="6.5" fill="none" stroke="#f8fafc" strokeWidth="1.2" strokeDasharray="2 2" /> : null}
+            {firstPoint ? (
+              <text
+                x={firstPoint.x < centerX ? firstPoint.x + 7 : firstPoint.x - 7}
+                y={firstPoint.y > centerY ? firstPoint.y - 8 : firstPoint.y + 14}
+                textAnchor={firstPoint.x < centerX ? "start" : "end"}
+                fill="#64748b"
+                fontSize="8"
+              >
+                {firstSupportedIsVisibleStart ? "START" : "FIRST SUPPORTED"}
+              </text>
+            ) : null}
+            {latestPoint ? (
+              <text
+                x={latestPoint.x > centerX ? latestPoint.x - 8 : latestPoint.x + 8}
+                y={latestPoint.y < centerY ? latestPoint.y + 14 : latestPoint.y - 8}
+                textAnchor={latestPoint.x > centerX ? "end" : "start"}
+                fill="#f8fafc"
+                fontSize="9"
+                fontWeight="700"
+              >
+                {latestSupportedIsCurrent ? "NOW" : "LATEST SUPPORTED"}
+              </text>
+            ) : null}
           </g>
         ) : (
-          <text x="160" y="94" textAnchor="middle" fill="#64748b" fontSize="11">Not enough shared support</text>
+          <text x={centerX} y={centerY + 4} textAnchor="middle" fill="#64748b" fontSize="11">Not enough shared support</text>
         )}
-        <text x="160" y="176" textAnchor="middle" fill="#64748b" fontSize="9">{xCoordinate?.label ?? definition.x} →</text>
-        <text x="7" y="90" textAnchor="middle" fill="#64748b" fontSize="9" transform="rotate(-90 7 90)">{yCoordinate?.label ?? definition.y} →</text>
+        <text x={frame.left} y={frame.xTickY} fill="#64748b" fontSize="8">{formatScopeAxisValue(-extentX, extentX)}</text>
+        <text x={frame.right} y={frame.xTickY} textAnchor="end" fill="#64748b" fontSize="8">{formatScopeAxisValue(extentX, extentX)}</text>
+        <text x={frame.left - 6} y={frame.top + 7} textAnchor="end" fill="#64748b" fontSize="8">{formatScopeAxisValue(extentY, extentY)}</text>
+        <text x={frame.left - 6} y={frame.bottom} textAnchor="end" fill="#64748b" fontSize="8">{formatScopeAxisValue(-extentY, extentY)}</text>
+        <text x={centerX} y={frame.xTitleY} textAnchor="middle" fill="#94a3b8" fontSize="10">{xCoordinate?.label ?? definition.x} →</text>
+        <text x={frame.yTitleX} y={centerY} textAnchor="middle" fill="#94a3b8" fontSize="10" transform={`rotate(-90 ${frame.yTitleX} ${centerY})`}>{yCoordinate?.label ?? definition.y} →</text>
       </svg>
-      <p id={coordinateKeyId} className="text-[10px] leading-4 text-slate-400">
-        <span className="text-slate-300">Horizontal</span> {definition.xMeaning} · <span className="text-slate-300">Vertical</span> {definition.yMeaning} · <span className="text-slate-300">Marker size</span> magnitude of {definition.markerMeaning}, scaled only within this visible trail{finite(latestMarker) ? ` (latest ${formatNumber(latestMarker)})` : " (unavailable)"}. {definition.caution}
+
+      <p id={coordinateKeyId} className="sr-only">
+        Horizontal axis is {definition.xMeaning}. Vertical axis is {definition.yMeaning}. Marker size is the magnitude of {definition.markerMeaning}. Opacity follows age.
       </p>
-      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[9px] leading-4 text-slate-500">
-        <span>
-          {scale === "shared" ? "Compare-subject scale" : "Fit-selected-trail scale"} · {view === "target" ? "solid/circle target" : view === "benchmark" ? "dashed/diamond benchmark" : "dotted/square difference"} · opacity follows age, not screen position
-        </span>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-[9px] text-slate-500" aria-hidden="true">
+          <span>Older</span>
+          <span data-scope-age-key="true" className="h-0.5 w-20" style={{ backgroundImage: `linear-gradient(90deg, transparent, ${stroke})` }} />
+          <span className="font-medium text-slate-300">Now</span>
+        </div>
         {sharedScaleCompressed ? (
           <button
             type="button"
@@ -1163,6 +1294,18 @@ function ScopeChart({
           </button>
         ) : null}
       </div>
+      <details className="group mt-2 rounded-xl border border-stealth-800 bg-slate-950/35 text-[10px] text-slate-400">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between px-3 font-medium text-slate-300">
+          How to read this scope
+          <span aria-hidden="true" className="text-slate-500 transition group-open:rotate-45">+</span>
+        </summary>
+        <div className="space-y-1.5 border-t border-stealth-800 px-3 py-2.5 leading-4">
+          <p>{definition.question}</p>
+          <p><span className="font-semibold text-sky-300">{inspectedLabel}.</span> {reading}{!latestSupportedIsCurrent && !inspectedRow && latestRow ? " The current visible bar is unsupported for this scope." : ""}</p>
+          <p>Horizontal: {definition.xMeaning}. Vertical: {definition.yMeaning}. Marker size: {definition.markerMeaning}{finite(latestMarker) ? ` (latest ${formatNumber(latestMarker)})` : " (unavailable)"}.</p>
+          <p>{definition.caution} {scale === "shared" ? "The scale is shared across subjects." : "The scale is fit to the selected trail."}</p>
+        </div>
+      </details>
     </article>
   );
 }
@@ -1244,13 +1387,14 @@ function lastLinePoint(
   top: number,
   height: number,
   extent: number,
-): { x: number; y: number } | null {
+): { x: number; y: number; index: number } | null {
   for (let index = values.length - 1; index >= 0; index -= 1) {
     const value = values[index];
     if (!finite(value)) continue;
     return {
       x: 48 + (index / Math.max(1, values.length - 1)) * width,
       y: top + height / 2 - (value / extent) * (height * 0.42),
+      index,
     };
   }
   return null;
@@ -1457,15 +1601,15 @@ function DimensionTrend({
 }) {
   const instanceId = useId().replace(/:/g, "");
   const rows = coordinate.series;
-  const target = downsampleNullable(rows.map((point) => point.target_supported === false
+  const target = rows.map((point) => point.target_supported === false
     ? null
-    : basis === "context" ? point.target_context ?? null : point.target));
-  const benchmark = downsampleNullable(rows.map((point) => point.benchmark_supported === false
+    : basis === "context" ? point.target_context ?? null : point.target);
+  const benchmark = rows.map((point) => point.benchmark_supported === false
     ? null
-    : basis === "context" ? point.benchmark_context ?? null : point.benchmark));
-  const difference = downsampleNullable(rows.map((point) => point.target_supported === false || point.benchmark_supported === false || point.pair_supported === false
+    : basis === "context" ? point.benchmark_context ?? null : point.benchmark);
+  const difference = rows.map((point) => point.target_supported === false || point.benchmark_supported === false || point.pair_supported === false
     ? null
-    : basis === "context" ? point.context_difference : point.native_difference));
+    : basis === "context" ? point.context_difference : point.native_difference);
   const all = [...target, ...benchmark, ...difference].filter(finite);
   const extent = Math.max(...all.map(Math.abs), 1e-6);
   const targetPoint = lastLinePoint(target, 616, 12, 140, extent);
@@ -1492,23 +1636,44 @@ function DimensionTrend({
     definition: "Implemented coordinate from the shared 15-dimensional field recipe.",
     higher: "Higher means more of this measured quantity, not better expected performance.",
   };
-  const currentGap = latestDifference(coordinate, basis);
+  const latestRow = rows[rows.length - 1];
+  const currentGap = latestRow
+    ? supportedValueForPoint(latestRow, basis, "difference")
+    : latestDifference(coordinate, basis);
+  const alternateGap = latestRow
+    ? supportedValueForPoint(latestRow, basis === "context" ? "native" : "context", "difference")
+    : null;
   const currentChange = fiveBarChange(coordinate, basis);
   const inspectedIndex = selectedDate ? rows.findIndex((row) => row.date === selectedDate) : -1;
   const inspected = inspectedIndex >= 0 ? rows[inspectedIndex] : null;
   const displayedGap = inspected
-    ? basis === "context" ? inspected.context_difference : inspected.native_difference
+    ? supportedValueForPoint(inspected, basis, "difference")
     : currentGap;
   const cursorX = inspectedIndex >= 0
     ? 48 + (inspectedIndex / Math.max(1, rows.length - 1)) * 616
     : null;
-  const latestRow = rows[rows.length - 1];
   const latestTarget = latestRow ? supportedValueForPoint(latestRow, basis, "target") : null;
   const latestBenchmark = latestRow ? supportedValueForPoint(latestRow, basis, "benchmark") : null;
   const selectedBasisAvailable = latestRow?.target_supported !== false
     && latestRow?.benchmark_supported !== false
     && latestRow?.pair_supported !== false
     && finite(currentGap);
+  const endpointStatus = (point: { index: number } | null) => (
+    point?.index === rows.length - 1 ? "current" : "latest-supported"
+  );
+  const endpointCandidates: Array<{
+    label: string;
+    point: { x: number; y: number; index: number } | null;
+  }> = [
+    { label: targetSymbol, point: targetPoint },
+    { label: benchmarkSymbol, point: benchmarkPoint },
+    { label: "gap", point: differencePoint },
+  ];
+  const staleEndpoints = endpointCandidates.flatMap(({ label, point }) => (
+    point && point.index !== rows.length - 1
+      ? [`${label} through ${rows[point.index]?.date ?? "an unavailable date"}`]
+      : []
+  ));
 
   return (
     <div className="self-start rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5 lg:sticky lg:top-20">
@@ -1528,7 +1693,7 @@ function DimensionTrend({
         className="mt-2 h-[180px] w-full touch-none rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40"
         role="img"
         tabIndex={0}
-        aria-label={`${coordinate.label} comparison history on the ${basis === "context" ? "relative-to-own-history" : "direct-model-scale"} basis. Latest ${targetSymbol} ${formatNumber(latestTarget)}, ${benchmarkSymbol} ${formatNumber(latestBenchmark)}, target-minus-benchmark gap ${formatNumber(currentGap)}; current selected-basis value ${selectedBasisAvailable ? "available" : "limited"}. Solid circle is target, dashed diamond is benchmark, dotted square is difference, and hatched periods are unsupported. Use Left and Right arrows to inspect shared dates.`}
+        aria-label={`${coordinate.label} comparison history on the ${basis === "context" ? "relative-to-own-history" : "direct-model-scale"} basis. Latest ${targetSymbol} ${formatNumber(latestTarget)}, ${benchmarkSymbol} ${formatNumber(latestBenchmark)}, target-minus-benchmark gap ${formatNumber(currentGap)}; current selected-basis value ${selectedBasisAvailable ? "available" : "limited"}. Solid circle is target, dashed diamond is benchmark, dotted square is difference, and hatched periods mean the bilateral pair gap is unavailable even when one subject remains supported. Use Left and Right arrows to inspect shared dates.`}
         onPointerMove={(event) => onSelectedDateChange(rows[pointerSeriesIndex(event, rows.length, 680, 48, 664)]?.date ?? null)}
         onPointerLeave={() => onSelectedDateChange(null)}
         onKeyDown={(event) => inspectLinearSeriesWithKeyboard(
@@ -1558,9 +1723,24 @@ function DimensionTrend({
         <path d={linePath(target, 616, 12, 140, extent)} fill="none" stroke="#38bdf8" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
         <path d={linePath(benchmark, 616, 12, 140, extent)} fill="none" stroke="#a78bfa" strokeWidth="1.8" strokeDasharray="8 4" vectorEffect="non-scaling-stroke" />
         <path d={linePath(difference, 616, 12, 140, extent)} fill="none" stroke="#fbbf24" strokeWidth="1.7" strokeDasharray="2 4" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        {targetPoint ? <SeriesPointMarker view="target" x={targetPoint.x} y={targetPoint.y} stroke="#38bdf8" size={4.1} emphasized /> : null}
-        {benchmarkPoint ? <SeriesPointMarker view="benchmark" x={benchmarkPoint.x} y={benchmarkPoint.y} stroke="#a78bfa" size={4.1} emphasized /> : null}
-        {differencePoint ? <SeriesPointMarker view="difference" x={differencePoint.x} y={differencePoint.y} stroke="#fbbf24" size={4.1} emphasized /> : null}
+        {targetPoint ? (
+          <g data-series-endpoint="target" data-endpoint-status={endpointStatus(targetPoint)}>
+            <title>{endpointStatus(targetPoint) === "current" ? `${targetSymbol} current endpoint` : `${targetSymbol} latest supported endpoint through ${rows[targetPoint.index]?.date ?? "an unavailable date"}`}</title>
+            <SeriesPointMarker view="target" x={targetPoint.x} y={targetPoint.y} stroke="#38bdf8" size={4.1} emphasized={endpointStatus(targetPoint) === "current"} />
+          </g>
+        ) : null}
+        {benchmarkPoint ? (
+          <g data-series-endpoint="benchmark" data-endpoint-status={endpointStatus(benchmarkPoint)}>
+            <title>{endpointStatus(benchmarkPoint) === "current" ? `${benchmarkSymbol} current endpoint` : `${benchmarkSymbol} latest supported endpoint through ${rows[benchmarkPoint.index]?.date ?? "an unavailable date"}`}</title>
+            <SeriesPointMarker view="benchmark" x={benchmarkPoint.x} y={benchmarkPoint.y} stroke="#a78bfa" size={4.1} emphasized={endpointStatus(benchmarkPoint) === "current"} />
+          </g>
+        ) : null}
+        {differencePoint ? (
+          <g data-series-endpoint="difference" data-endpoint-status={endpointStatus(differencePoint)}>
+            <title>{endpointStatus(differencePoint) === "current" ? "Pair gap current endpoint" : `Pair gap latest supported endpoint through ${rows[differencePoint.index]?.date ?? "an unavailable date"}`}</title>
+            <SeriesPointMarker view="difference" x={differencePoint.x} y={differencePoint.y} stroke="#fbbf24" size={4.1} emphasized={endpointStatus(differencePoint) === "current"} />
+          </g>
+        ) : null}
         {cursorX !== null ? <line x1={cursorX} x2={cursorX} y1="8" y2="154" stroke="rgba(248,250,252,.65)" strokeWidth="1" strokeDasharray="2 3" /> : null}
         <text x="48" y="166" fill="#64748b" fontSize="10">{rows[0]?.date ?? ""}</text>
         <text x="664" y="166" fill="#64748b" fontSize="10" textAnchor="end">{rows[rows.length - 1]?.date ?? ""}</text>
@@ -1569,28 +1749,49 @@ function DimensionTrend({
         <span><i className="mr-1 inline-block h-2 w-2 rounded-full border border-white bg-sky-400 align-middle" /><i className="mr-1 inline-block h-0.5 w-3 bg-sky-400 align-middle" />{targetSymbol} · solid/circle</span>
         <span><i className="mr-1 inline-block h-2 w-2 rotate-45 border border-white bg-violet-400 align-middle" /><i className="mr-1 inline-block h-0.5 w-3 border-t-2 border-dashed border-violet-400 align-middle" />{benchmarkSymbol} · dashed/diamond</span>
         <span><i className="mr-1 inline-block h-2 w-2 border border-white bg-amber-300 align-middle" /><i className="mr-1 inline-block h-0.5 w-3 border-t-2 border-dotted border-amber-300 align-middle" />difference · dotted/square</span>
-        <span><i className="mr-1 inline-block h-2 w-3 bg-[repeating-linear-gradient(135deg,rgba(148,163,184,.5)_0_1px,transparent_1px_3px)] align-middle" />unsupported · hatched gap</span>
+        <span><i className="mr-1 inline-block h-2 w-3 bg-[repeating-linear-gradient(135deg,rgba(148,163,184,.5)_0_1px,transparent_1px_3px)] align-middle" />pair gap unavailable · hatched</span>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-stealth-700 bg-stealth-700 sm:grid-cols-3">
+      {staleEndpoints.length ? (
+        <p className="mt-1.5 text-[9px] leading-4 text-amber-200/80">
+          Outlined endpoints mark latest supported values: {staleEndpoints.join("; ")}.
+        </p>
+      ) : null}
+      <div className="mt-3 grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-stealth-700 bg-stealth-700">
         {[
-          [targetSymbol, formatNumber(coordinate.latest.target), "direct model scale"],
-          [benchmarkSymbol, formatNumber(coordinate.latest.benchmark), "direct model scale"],
-          ["Direct gap", formatNumber(coordinate.latest.native_difference), `${targetSymbol} − ${benchmarkSymbol}`],
-          ["Own-history gap", formatNumber(coordinate.latest.context_difference), "separate fixed-fit scales"],
-          ["Five-bar change", formatNumber(currentChange), basis === "context" ? "own-history basis" : "direct model scale"],
-          ["Support", coordinate.latest.pair_supported !== false && coordinate.latest.target_supported && coordinate.latest.benchmark_supported ? "Full" : "Limited", "bilateral dependencies"],
+          [targetSymbol, formatNumber(latestTarget), basis === "context" ? "own history" : "model scale"],
+          [benchmarkSymbol, formatNumber(latestBenchmark), basis === "context" ? "own history" : "model scale"],
+          [basis === "context" ? "Own-history gap" : "Direct gap", formatNumber(currentGap), `${targetSymbol} − ${benchmarkSymbol}`],
         ].map(([label, value, note]) => (
-          <div key={label} className="bg-slate-950/75 p-2.5">
+          <div key={label} className="min-w-0 bg-slate-950/75 p-2.5">
             <div className="text-[9px] uppercase tracking-[0.12em] text-slate-400">{label}</div>
-            <div className="mt-0.5 font-mono text-xs font-semibold text-slate-200">{value}</div>
-            <div className="mt-0.5 text-[9px] text-slate-400">{note}</div>
+            <div className="mt-0.5 truncate font-mono text-xs font-semibold text-slate-200">{value}</div>
+            <div className="mt-0.5 truncate text-[9px] text-slate-400">{note}</div>
           </div>
         ))}
       </div>
-      <div className="mt-3 rounded-xl border border-stealth-700 bg-slate-950/55 p-3 text-[11px] leading-5 text-slate-400">
-        <p>{guidance.definition}</p>
-        <p className="mt-1 text-slate-400">{guidance.higher}</p>
-      </div>
+      <details className="mt-2 rounded-xl border border-stealth-700 bg-slate-950/45">
+        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between px-3 text-[10px] font-medium text-slate-300">
+          Definition and more evidence
+          <span className="text-slate-500">Expand</span>
+        </summary>
+        <div className="border-t border-stealth-700 p-3 text-[10px] leading-5 text-slate-400">
+          <p>{guidance.definition} {guidance.higher}</p>
+          <dl className="mt-2 grid grid-cols-3 gap-2">
+            <div>
+              <dt>{basis === "context" ? "Direct gap" : "Own-history gap"}</dt>
+              <dd className="font-mono text-slate-200">{formatNumber(alternateGap)}</dd>
+            </div>
+            <div>
+              <dt>Five-bar change</dt>
+              <dd className="font-mono text-slate-200">{formatNumber(currentChange)}</dd>
+            </div>
+            <div>
+              <dt>Support</dt>
+              <dd className="font-mono text-slate-200">{coordinate.latest.pair_supported !== false && coordinate.latest.target_supported && coordinate.latest.benchmark_supported ? "Full" : "Limited"}</dd>
+            </div>
+          </dl>
+        </div>
+      </details>
     </div>
   );
 }
@@ -1616,7 +1817,8 @@ export default function MarketWeatherComparisonLab({
   const [localTrail, setLocalTrail] = useState<ScopeTrail>(24);
   const [localScale, setLocalScale] = useState<ScopeScale>("shared");
   const [localOrder, setLocalOrder] = useState<CoordinateOrder>("recipe");
-  const [activeMobileScope, setActiveMobileScope] = useState(SCOPE_DEFINITIONS[0].id);
+  const [activeScope, setActiveScope] = useState(SCOPE_DEFINITIONS[0].id);
+  const desktopLayout = useDesktopLayout();
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [showAllCoordinates, setShowAllCoordinates] = useState(false);
   const [inspectedDate, setInspectedDate] = useState<string | null>(null);
@@ -1644,8 +1846,10 @@ export default function MarketWeatherComparisonLab({
     [data.coordinates],
   );
   const coordinateSegments = useMemo(
-    () => new Map(data.coordinates.map((coordinate) => [coordinate.id, heatSegments(coordinate, basis)])),
-    [basis, data.coordinates],
+    () => showAllCoordinates
+      ? new Map(data.coordinates.map((coordinate) => [coordinate.id, heatSegments(coordinate, basis)]))
+      : new Map<string, ReturnType<typeof heatSegments>>(),
+    [basis, data.coordinates, showAllCoordinates],
   );
   const summary = useMemo(() => buildMarketWeatherPairSummary(data), [data]);
   const selected = coordinateMap.get(selectedDimension) ?? data.coordinates[0];
@@ -1772,8 +1976,12 @@ export default function MarketWeatherComparisonLab({
   };
 
   const selectTab = (nextTab: PairTab, moveFocus = false) => {
-    if (moveFocus) document.getElementById(`pair-tab-${nextTab}`)?.focus();
     setActiveTab(nextTab);
+    if (moveFocus) {
+      const destination = document.getElementById(`pair-tab-${nextTab}`);
+      destination?.focus({ preventScroll: true });
+      destination?.scrollIntoView?.({ block: "start", behavior: "auto" });
+    }
   };
 
   const selectBasis = (nextBasis: MarketWeatherComparisonBasis) => {
@@ -1935,10 +2143,12 @@ export default function MarketWeatherComparisonLab({
     return () => observer.disconnect();
   }, [activeTab, data.comparison_hash, data.timeframe]);
 
+  const mobileSheetOpen = mobileDetailOpen && !desktopLayout;
+
   useEffect(() => {
     const background = pairContentRef.current as (HTMLDivElement & { inert: boolean }) | null;
-    if (background) background.inert = mobileDetailOpen;
-    if (!mobileDetailOpen) return undefined;
+    if (background) background.inert = mobileSheetOpen;
+    if (!mobileSheetOpen) return undefined;
 
     if (!previousFocusRef.current) {
       previousFocusRef.current = document.activeElement instanceof HTMLElement
@@ -1965,22 +2175,15 @@ export default function MarketWeatherComparisonLab({
       previousFocusRef.current = null;
       window.requestAnimationFrame(() => restoreTarget?.focus());
     };
-  }, [mobileDetailOpen]);
+  }, [mobileSheetOpen]);
+
+  useEffect(() => {
+    if (desktopLayout && mobileDetailOpen) setMobileDetailOpen(false);
+  }, [desktopLayout, mobileDetailOpen]);
 
   return (
     <>
-      <div ref={pairContentRef} aria-hidden={mobileDetailOpen ? true : undefined}>
-        <div className="sticky top-16 z-[80] sm:hidden">
-          <div className="mb-2 flex min-h-11 items-center justify-between gap-3 rounded-xl border border-stealth-600 bg-slate-950/92 px-3 py-2 shadow-xl backdrop-blur-xl">
-            <div className="min-w-0 truncate text-xs font-semibold text-white">
-              {data.target.symbol} vs {data.benchmark.symbol}
-              <span className="font-normal text-slate-400"> · {data.timeframe} · {data.overlap.common_observations.toLocaleString()} shared</span>
-            </div>
-            <span className="shrink-0 rounded-full border border-stealth-700 px-2 py-1 text-[9px] text-slate-400">
-              {PAIR_TAB_OPTIONS.find((option) => option.id === activeTab)?.label}
-            </span>
-          </div>
-        </div>
+      <div ref={pairContentRef} aria-hidden={mobileSheetOpen ? true : undefined} className="pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-0">
         <section className="primary-card overflow-hidden" aria-labelledby="pair-field-title">
       <header className="border-b border-stealth-700 p-3.5 sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1994,23 +2197,24 @@ export default function MarketWeatherComparisonLab({
             <h2 id="pair-field-title" className="mt-1 text-xl font-semibold text-white sm:text-2xl">
               {data.target.symbol} vs {data.benchmark.symbol}
             </h2>
-            <p className="mt-0.5 text-sm text-slate-300">Relative market-path comparison</p>
-            <p className="mt-1 text-[11px] leading-5 text-slate-400">
-              {data.overlap.common_observations.toLocaleString()} shared {observationFrequency(data.timeframe)} observations · {formatDate(data.overlap.start, data.timeframe)} – {formatDate(data.overlap.end, data.timeframe)}
+            <p className="mt-0.5 hidden text-sm text-slate-300 sm:block">Relative market-path comparison</p>
+            <p className="mt-1 text-[10px] leading-4 text-slate-400 sm:text-[11px] sm:leading-5">
+              <span className="sm:hidden">{data.overlap.common_observations.toLocaleString()} shared {observationFrequency(data.timeframe)} observations · through {formatDate(data.overlap.end, data.timeframe)}</span>
+              <span className="hidden sm:inline">{data.overlap.common_observations.toLocaleString()} shared {observationFrequency(data.timeframe)} observations · {formatDate(data.overlap.start, data.timeframe)} – {formatDate(data.overlap.end, data.timeframe)}</span>
             </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
               <span className={completeFieldCoverage ? "text-emerald-200" : "text-amber-200"}>{coverageLabel}</span>
-              <span aria-hidden="true">·</span>
-              <span className={alignmentSupported ? undefined : "text-rose-200"}>
+              <span aria-hidden="true" className={alignmentSupported ? "hidden sm:inline" : undefined}>·</span>
+              <span className={alignmentSupported ? "hidden sm:inline" : "text-rose-200"}>
                 {alignmentSupported ? "Exact date alignment" : "Alignment unsupported"}
               </span>
-              <span aria-hidden="true">·</span>
-              <span>{sessionCompatibility === "incompatible"
+              <span aria-hidden="true" className="hidden sm:inline">·</span>
+              <span className="hidden sm:inline">{sessionCompatibility === "incompatible"
                 ? "Sessions incompatible"
                 : sessionCertified ? "Session equivalence certified" : "Session equivalence unverified"}</span>
             </div>
           </div>
-          <span className="page-badge self-start border-sky-400/20 bg-sky-400/[0.05] text-sky-100">
+          <span className="page-badge hidden self-start border-sky-400/20 bg-sky-400/[0.05] text-sky-100 sm:inline-flex">
             Descriptive only
           </span>
         </div>
@@ -2147,51 +2351,90 @@ export default function MarketWeatherComparisonLab({
         ) : null}
 
         {activeTab === "field" ? (
-          <div id="pair-panel-field" role="tabpanel" aria-labelledby="pair-tab-field" className="space-y-4">
-            <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3.5">
-              <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto] xl:items-end">
-                <div>
-                  <span className="page-kicker">Comparison controls</span>
-                  <h3 className="mt-1 text-sm font-semibold text-white">How field coordinates are displayed</h3>
-                  <p className="mt-1 text-[11px] leading-5 text-slate-400">
-                    {basis === "context"
-                      ? "Own-history-relative gap: each instrument is measured against its separate frozen proper-fit history. One fit-spread unit is one stored robust fit scale—not a z-score, probability, or raw market unit."
-                      : "Direct model-scale gap: target coordinate minus benchmark coordinate under the shared field recipe."}
-                  </p>
-                </div>
-                <div>
-                  <div className="mb-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Comparison basis</div>
-                  <div className="inline-flex rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Comparison basis">
-                    {(["context", "native"] as const).map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => selectBasis(option)}
-                        aria-pressed={basis === option}
-                        className={`min-h-10 rounded-lg px-3 text-[11px] font-medium transition sm:min-h-9 ${basis === option ? "bg-teal-400/15 text-teal-200 ring-1 ring-teal-400/30" : "text-slate-400 hover:text-white"}`}
-                      >
-                        {option === "context" ? "Relative to own history" : "Direct model-scale gap"}
-                      </button>
-                    ))}
+          <div id="pair-panel-field" role="tabpanel" aria-labelledby="pair-tab-field" className="flex flex-col gap-3 lg:gap-4">
+            <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 lg:p-3.5">
+              {desktopLayout ? (
+                <div className="grid gap-2 lg:grid-cols-[1fr_auto_auto] lg:items-end lg:gap-3">
+                  <div>
+                    <span className="page-kicker">Comparison controls</span>
+                    <h3 className="mt-1 text-sm font-semibold text-white">How field coordinates are displayed</h3>
+                    <p className="mt-1 text-[11px] leading-5 text-slate-400">
+                      {basis === "context"
+                        ? "Own-history-relative gap: each instrument is measured against its separate frozen proper-fit history. One fit-spread unit is one stored robust fit scale—not a z-score, probability, or raw market unit."
+                        : "Direct model-scale gap: target coordinate minus benchmark coordinate under the shared field recipe."}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Comparison basis</div>
+                    <div className="inline-flex rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Comparison basis">
+                      {(["context", "native"] as const).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => selectBasis(option)}
+                          aria-pressed={basis === option}
+                          className={`min-h-9 rounded-lg px-3 text-[11px] font-medium transition ${basis === option ? "bg-teal-400/15 text-teal-200 ring-1 ring-teal-400/30" : "text-slate-400 hover:text-white"}`}
+                        >
+                          {option === "context" ? "Relative to own history" : "Direct model-scale gap"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Displayed series</div>
+                    <div className="inline-flex rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Displayed series">
+                      {(["target", "benchmark", "difference"] as const).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => onViewChange(option)}
+                          aria-pressed={view === option}
+                          className={`min-h-9 rounded-lg px-3 text-[11px] font-medium transition ${view === option ? "bg-violet-400/15 text-violet-200 ring-1 ring-violet-400/30" : "text-slate-400 hover:text-white"}`}
+                        >
+                          {option === "target" ? data.target.symbol : option === "benchmark" ? data.benchmark.symbol : `${data.target.symbol} − ${data.benchmark.symbol}`}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <div className="mb-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Displayed series</div>
-                  <div className="inline-flex rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Displayed series">
-                    {(["target", "benchmark", "difference"] as const).map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => onViewChange(option)}
-                        aria-pressed={view === option}
-                        className={`min-h-10 rounded-lg px-3 text-[11px] font-medium transition sm:min-h-9 ${view === option ? "bg-violet-400/15 text-violet-200 ring-1 ring-violet-400/30" : "text-slate-400 hover:text-white"}`}
-                      >
-                        {option === "target" ? data.target.symbol : option === "benchmark" ? data.benchmark.symbol : `${data.target.symbol} − ${data.benchmark.symbol}`}
-                      </button>
-                    ))}
+              ) : (
+                <details>
+                  <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3">
+                    <span>
+                      <span className="page-kicker">Display</span>
+                      <span className="mt-1 block text-xs font-semibold text-white">
+                        {basis === "context" ? "Own history" : "Model scale"} · {view === "target" ? data.target.symbol : view === "benchmark" ? data.benchmark.symbol : `${data.target.symbol} − ${data.benchmark.symbol}`}
+                      </span>
+                    </span>
+                    <span className="text-[10px] text-sky-200">Change</span>
+                  </summary>
+                  <div className="mt-2 grid gap-3 border-t border-stealth-700 pt-3">
+                    <div>
+                      <div className="mb-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Comparison basis</div>
+                      <div className="grid grid-cols-2 rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Comparison basis">
+                        {(["context", "native"] as const).map((option) => (
+                          <button key={option} type="button" onClick={() => selectBasis(option)} aria-pressed={basis === option} className={`min-h-10 rounded-lg px-2 text-[10px] font-medium ${basis === option ? "bg-teal-400/15 text-teal-200 ring-1 ring-teal-400/30" : "text-slate-400"}`}>
+                            {option === "context" ? "Own history" : "Model scale"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Displayed series</div>
+                      <div className="grid grid-cols-3 rounded-xl border border-stealth-600 bg-slate-950/55 p-1" role="group" aria-label="Displayed series">
+                        {(["target", "benchmark", "difference"] as const).map((option) => (
+                          <button key={option} type="button" onClick={() => onViewChange(option)} aria-pressed={view === option} className={`min-h-10 rounded-lg px-2 text-[10px] font-medium ${view === option ? "bg-violet-400/15 text-violet-200 ring-1 ring-violet-400/30" : "text-slate-400"}`}>
+                            {option === "target" ? data.target.symbol : option === "benchmark" ? data.benchmark.symbol : "Difference"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[10px] leading-4 text-slate-400">
+                      {basis === "context" ? "Each instrument is compared with its own frozen history." : "Both instruments use the direct model scale."}
+                    </p>
                   </div>
-                </div>
-              </div>
+                </details>
+              )}
             </section>
 
             <section>
@@ -2200,7 +2443,7 @@ export default function MarketWeatherComparisonLab({
                   <span className="page-kicker">Relationship scopes</span>
                   <h3 className="mt-1 text-base font-semibold text-white">How the paired field is moving</h3>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="hidden flex-wrap gap-2 sm:flex">
                   <div className="inline-flex rounded-lg border border-stealth-700 bg-slate-950/50 p-0.5" role="group" aria-label="Scope trail length">
                     {([12, 24, 72, "full"] as const).map((option) => (
                       <button key={option} type="button" onClick={() => setActiveTrail(option)} aria-pressed={activeTrail === option} className={`min-h-10 rounded-md px-2.5 text-[10px] ${activeTrail === option ? "bg-sky-400/15 text-sky-200" : "text-slate-400"}`}>
@@ -2218,41 +2461,45 @@ export default function MarketWeatherComparisonLab({
                 </div>
               </div>
               <p className="mb-2 text-[10px] leading-4 text-slate-400">
-                Each scope asks a market-state question, then connects the two measurements through shared time—there is no time axis inside the plot. Newer path segments are more opaque regardless of screen position. Hover, touch, or use arrow keys on a chart to inspect the same shared date across visible field charts{inspectedDate ? ` (${inspectedDate})` : ""}. Loops mean the coordinates revisited similar combinations; they are not detected cycles, lead-lag evidence, or forecasts.
+                Endpoints identify the first and latest supported states; START and NOW appear only when those window edges are supported. Hover, touch, or use arrow keys to inspect the same shared date{inspectedDate ? ` (${inspectedDate})` : ""}.
               </p>
-              <div className="lg:hidden">
-                <div className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-4" role="group" aria-label="Relationship scope">
-                  {SCOPE_DEFINITIONS.map((definition) => (
-                    <button
-                      key={definition.id}
-                      type="button"
-                      onClick={() => setActiveMobileScope(definition.id)}
-                      aria-pressed={activeMobileScope === definition.id}
-                      className={`min-h-10 rounded-lg border px-2 text-[10px] transition ${activeMobileScope === definition.id ? "border-sky-400/45 bg-sky-400/[0.08] text-sky-100" : "border-stealth-700 text-slate-400 hover:text-white"}`}
-                    >
-                      {definition.title}
-                    </button>
-                  ))}
+              <details className="mb-2 rounded-xl border border-stealth-700 bg-slate-950/35 sm:hidden">
+                <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between px-3 text-[10px] font-medium text-slate-300">
+                  Trail {activeTrail === "full" ? "full" : activeTrail} · {activeScale === "shared" ? "compare subjects" : "fit selected trail"}
+                  <span className="text-slate-500">Adjust</span>
+                </summary>
+                <div className="flex flex-wrap gap-2 border-t border-stealth-700 p-2">
+                  <div className="inline-flex rounded-lg border border-stealth-700 bg-slate-950/50 p-0.5" role="group" aria-label="Scope trail length">
+                    {([12, 24, 72, "full"] as const).map((option) => (
+                      <button key={option} type="button" onClick={() => setActiveTrail(option)} aria-pressed={activeTrail === option} className={`min-h-10 rounded-md px-2.5 text-[10px] ${activeTrail === option ? "bg-sky-400/15 text-sky-200" : "text-slate-400"}`}>
+                        {option === "full" ? "Full" : option}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="inline-flex rounded-lg border border-stealth-700 bg-slate-950/50 p-0.5" role="group" aria-label="Scope scale">
+                    {(["shared", "inspect"] as const).map((option) => (
+                      <button key={option} type="button" onClick={() => setActiveScale(option)} aria-pressed={activeScale === option} className={`min-h-10 rounded-md px-2.5 text-[10px] ${activeScale === option ? "bg-amber-400/15 text-amber-200" : "text-slate-400"}`}>
+                        {option === "shared" ? "Compare subjects" : "Fit trail"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                {SCOPE_DEFINITIONS.filter((definition) => definition.id === activeMobileScope).map((definition) => (
-                  <ScopeChart
+              </details>
+              <div className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-4" role="group" aria-label="Relationship scope">
+                {SCOPE_DEFINITIONS.map((definition) => (
+                  <button
                     key={definition.id}
-                    definition={definition}
-                    coordinates={coordinateMap}
-                    basis={basis}
-                    view={view}
-                    trail={activeTrail}
-                    scale={activeScale}
-                    selectedDate={inspectedDate}
-                    onSelectedDateChange={setInspectedDate}
-                    onScaleChange={setActiveScale}
-                    targetSymbol={data.target.symbol}
-                    benchmarkSymbol={data.benchmark.symbol}
-                  />
+                    type="button"
+                    onClick={() => setActiveScope(definition.id)}
+                    aria-pressed={activeScope === definition.id}
+                    className={`min-h-10 rounded-lg border px-2 text-[10px] transition ${activeScope === definition.id ? "border-sky-400/45 bg-sky-400/[0.08] text-sky-100" : "border-stealth-700 text-slate-400 hover:text-white"}`}
+                  >
+                    {definition.title}
+                  </button>
                 ))}
               </div>
-              <div className="hidden gap-3 lg:grid lg:grid-cols-2">
-                {SCOPE_DEFINITIONS.map((definition) => (
+              <div>
+                {SCOPE_DEFINITIONS.filter((definition) => definition.id === activeScope).map((definition) => (
                   <ScopeChart
                     key={definition.id}
                     definition={definition}
@@ -2274,12 +2521,15 @@ export default function MarketWeatherComparisonLab({
             <section aria-labelledby="pair-coordinate-section-title">
               <div className="mb-2">
                 <span className="page-kicker">Selected coordinate</span>
-                <h3 id="pair-coordinate-section-title" className="mt-1 text-base font-semibold text-white">Inspect one measurement, then expand the field</h3>
+                <h3 id="pair-coordinate-section-title" className="mt-1 text-base font-semibold text-white">
+                  <span className="lg:hidden">Review the largest differences</span>
+                  <span className="hidden lg:inline">Inspect one measurement, then expand the field</span>
+                </h3>
               </div>
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)] lg:items-start">
                 {selected ? (
                   <>
-                    <div className="hidden lg:block">
+                    {desktopLayout ? <div>
                       <DimensionTrend
                         coordinate={selected}
                         basis={basis}
@@ -2288,7 +2538,7 @@ export default function MarketWeatherComparisonLab({
                         targetSymbol={data.target.symbol}
                         benchmarkSymbol={data.benchmark.symbol}
                       />
-                    </div>
+                    </div> : null}
                     <button
                       type="button"
                       onClick={(event) => {
@@ -2305,7 +2555,7 @@ export default function MarketWeatherComparisonLab({
                   <div className="grid min-h-[160px] place-items-center rounded-2xl border border-stealth-700 text-sm text-slate-400">No comparable coordinates were returned.</div>
                 )}
 
-                <div className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3.5">
+                <div className="rounded-2xl border border-stealth-700 bg-slate-950/35 p-3 lg:p-3.5">
                   <div className="flex flex-wrap items-end justify-between gap-3">
                     <div>
                       <span className="page-kicker">15-coordinate explorer</span>
@@ -2379,7 +2629,7 @@ export default function MarketWeatherComparisonLab({
                                 className={`grid min-h-10 w-full grid-cols-[104px_minmax(80px,1fr)_58px] items-center gap-2 rounded-lg border px-2 text-left transition sm:grid-cols-[138px_minmax(100px,1fr)_66px] ${active ? "border-sky-400/50 bg-sky-400/[0.08]" : "border-transparent hover:border-stealth-600 hover:bg-white/[0.025]"}`}
                               >
                                 <span className="min-w-0 truncate text-[11px] font-medium leading-3.5 text-slate-200">{coordinate.label}</span>
-                                <span className="relative flex h-5 min-w-0 overflow-hidden rounded border border-white/[0.08] bg-slate-950/75" aria-hidden="true">
+                                <span className="relative flex h-7 min-w-0 overflow-hidden rounded border border-white/[0.08] bg-slate-950/75" aria-hidden="true">
                                   {segments.map((segment, index) => (
                                     <i key={`${coordinate.id}-segment-${index}`} className="relative min-w-px flex-1">
                                       {segment.supported ? (
@@ -2387,7 +2637,7 @@ export default function MarketWeatherComparisonLab({
                                           className="absolute inset-x-0 min-h-px"
                                           style={{
                                             backgroundColor: segment.color,
-                                            height: `${Math.max(8, segment.magnitude * 48)}%`,
+                                            height: `${Math.max(12, segment.magnitude * 80)}%`,
                                             ...(finite(segment.value) && segment.value < 0
                                               ? { top: "50%" }
                                               : { bottom: "50%" }),
@@ -2488,7 +2738,7 @@ export default function MarketWeatherComparisonLab({
                 code="A"
                 title="Data alignment"
                 summary={`${data.overlap.common_observations.toLocaleString()} exact shared observations · ${formatDate(data.overlap.start, data.timeframe)} – ${formatDate(data.overlap.end, data.timeframe)}`}
-                initiallyOpen
+                initiallyOpen={!alignmentSupported}
               >
                 <dl className="grid gap-x-6 gap-y-2 text-[10px] text-slate-400 sm:grid-cols-2 lg:grid-cols-3">
                   {[
@@ -2598,8 +2848,77 @@ export default function MarketWeatherComparisonLab({
         ) : null}
         </div>
       </section>
+        <aside
+          className="fixed inset-x-2 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] z-[180] rounded-2xl border border-sky-400/25 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-xl lg:hidden"
+          aria-label="Research next"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">Research next</div>
+              <div className="truncate text-[10px] text-slate-300">
+                {activeTab === "overview"
+                  ? !alignmentSupported
+                    ? "Alignment needs review"
+                    : largestCoordinates[0]
+                      ? `${largestCoordinates[0].label} is the largest current field difference`
+                      : "Review the available data support"
+                  : activeTab === "field"
+                    ? `${selected?.label ?? "Coordinate"} is selected`
+                    : data.frozen_receipt ? "Preserve the compact evidence receipt" : "Return to the concise reading"}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={activeTab === "field" && !selected}
+              onClick={(event) => {
+                if (activeTab === "overview") {
+                  if (!alignmentSupported || !largestCoordinates[0]) {
+                    selectTab("audit", true);
+                    return;
+                  }
+                  const nextCoordinate = largestCoordinates[0];
+                  if (nextCoordinate) selectDimension(nextCoordinate.id);
+                  selectTab(nextCoordinate ? "field" : "audit", true);
+                  return;
+                }
+                if (activeTab === "field") {
+                  previousFocusRef.current = event.currentTarget;
+                  setMobileDetailOpen(true);
+                  return;
+                }
+                if (data.frozen_receipt) exportReceipt();
+                else selectTab("overview", true);
+              }}
+              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-sky-400 px-3 text-[10px] font-semibold text-slate-950 disabled:opacity-40"
+              aria-controls={activeTab === "overview"
+                ? alignmentSupported && largestCoordinates[0] ? "pair-panel-field" : "pair-panel-audit"
+                : activeTab === "field" ? "pair-mobile-coordinate-dialog" : undefined}
+              aria-haspopup={activeTab === "field" ? "dialog" : undefined}
+            >
+              {activeTab === "overview"
+                ? !alignmentSupported ? "Review limits" : largestCoordinates[0] ? `Inspect ${largestCoordinates[0].label}` : "Review data support"
+                : activeTab === "field" ? `Inspect ${selected?.label ?? "coordinate"}`
+                  : data.frozen_receipt ? "Export receipt" : "View overview"}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <nav className="mt-1.5 grid grid-cols-3 gap-1" aria-label="Pair sections">
+            {PAIR_TAB_OPTIONS.map((option) => (
+              <button
+                key={`mobile-rail-${option.id}`}
+                type="button"
+                onClick={() => selectTab(option.id, true)}
+                aria-pressed={activeTab === option.id}
+                aria-controls={`pair-panel-${option.id}`}
+                className={`min-h-8 rounded-lg text-[9px] font-medium ${activeTab === option.id ? "bg-white/[0.08] text-white" : "text-slate-500"}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
       </div>
-      {mobileDetailOpen && selected ? (
+      {mobileSheetOpen && selected ? (
         <div
             className="fixed inset-0 z-[300] flex items-end bg-slate-950/75 p-2 backdrop-blur-sm lg:hidden"
           onPointerDown={(event) => {
@@ -2607,6 +2926,7 @@ export default function MarketWeatherComparisonLab({
           }}
         >
           <div
+            id="pair-mobile-coordinate-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="pair-mobile-coordinate-title"

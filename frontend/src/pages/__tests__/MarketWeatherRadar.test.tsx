@@ -190,6 +190,25 @@ describe("MarketWeatherRadar report state", () => {
     expect(screen.getByTestId("location-search").textContent).toContain("v=2");
   });
 
+  it("collapses an applied mobile recipe into a concise report summary", () => {
+    renderPage("/market-weather?symbol=NVDA&comparison=pair&compare=QQQ&timeframe=1D&bars=750");
+
+    const appliedReport = screen.getByText("Applied report").parentElement;
+    expect(appliedReport?.textContent).toContain("NVDA vs QQQ");
+    expect(appliedReport?.textContent).toContain("1D · 750 bars");
+
+    const controls = document.getElementById("market-field-recipe-controls");
+    const change = screen.getByRole("button", { name: "Change analysis inputs" });
+    expect(change.getAttribute("aria-expanded")).toBe("false");
+    expect(controls?.dataset.mobileCollapsed).toBe("true");
+    expect(controls?.className).toContain("hidden");
+
+    fireEvent.click(change);
+    expect(screen.getByRole("button", { name: "Close analysis inputs" }).getAttribute("aria-expanded")).toBe("true");
+    expect(controls?.dataset.mobileCollapsed).toBe("false");
+    expect(controls?.className).not.toContain("hidden");
+  });
+
   it("exposes index, currency, sector, and custom competitor controls without silently replacing identity pairs", () => {
     renderPage("/market-weather?symbol=SPY&comparison=pair&compare=SPY");
 

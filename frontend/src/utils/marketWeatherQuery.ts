@@ -73,7 +73,7 @@ export const DEFAULT_MARKET_WEATHER_QUERY_STATE: MarketWeatherQueryState = {
   comparisonDimension: "pressure",
   pairTab: "overview",
   pairScopeTrail: 24,
-  pairScopeScale: "shared",
+  pairScopeScale: "inspect",
   pairCoordinateOrder: "recipe",
   mode: "regime",
   channel: "pressure",

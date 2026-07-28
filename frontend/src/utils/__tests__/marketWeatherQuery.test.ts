@@ -62,7 +62,7 @@ describe("market weather report query", () => {
     );
     expect(state.pairTab).toBe("overview");
     expect(state.pairScopeTrail).toBe(24);
-    expect(state.pairScopeScale).toBe("shared");
+    expect(state.pairScopeScale).toBe("inspect");
     expect(state.pairCoordinateOrder).toBe("recipe");
   });
 

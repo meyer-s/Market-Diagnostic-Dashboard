@@ -203,10 +203,13 @@ describe("MarketWeatherComparisonLab", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
     expect(screen.getByText("Relationship scopes")).not.toBeNull();
     expect(screen.getAllByText("Directional phase").length).toBeGreaterThanOrEqual(2);
+    expect(document.querySelectorAll('svg[aria-label*="trajectory"]').length).toBe(1);
     const higherMotion = screen.getByRole("button", { name: "Higher motion" });
     expect(higherMotion.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(higherMotion);
     expect(higherMotion.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("img", { name: /Directional phase trajectory/i })).toBeNull();
+    expect(screen.getByRole("img", { name: /Higher motion trajectory/i })).not.toBeNull();
     expect(screen.getAllByText(/Is pressure change accelerating/i).length).toBeGreaterThan(0);
     const coordinateHistory = screen.getAllByRole("img", { name: /Pressure comparison history/i })[0];
     coordinateHistory.focus();
@@ -232,8 +235,8 @@ describe("MarketWeatherComparisonLab", () => {
     expect(onBasisChange).toHaveBeenCalledWith("native");
     expect(onViewChange).toHaveBeenCalledWith("target");
     expect(onDimensionChange).toHaveBeenCalledWith("velocity");
-    expect(screen.getByRole("group", { name: "Scope trail length" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Scope scale" })).not.toBeNull();
+    expect(screen.getAllByRole("group", { name: "Scope trail length" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("group", { name: "Scope scale" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { pressed: false }).length).toBeGreaterThan(15);
     expect(screen.getByText(/Bounded signed multihorizon directional pressure/i)).not.toBeNull();
     const collapse = screen.getByRole("button", { name: "Show top 3" });
@@ -257,7 +260,8 @@ describe("MarketWeatherComparisonLab", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Inspect scaling exponent/i })).not.toBeNull();
+    const fieldPanel = screen.getByRole("tabpanel", { name: "Field detail" });
+    expect(within(fieldPanel).getByRole("button", { name: /Inspect scaling exponent/i })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /scaling exponent; relative-to-own-history/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show all 15 coordinates" }));
     expect(screen.getByRole("button", { name: /scaling exponent; relative-to-own-history/i }).getAttribute("aria-pressed")).toBe("true");
@@ -279,7 +283,7 @@ describe("MarketWeatherComparisonLab", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Audit receipt" }));
     expect(screen.getByRole("button", { name: "Export compact receipt · JSON" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByText(/Compact receipt unavailable/i)).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Data alignment" }).closest("details")?.hasAttribute("open")).toBe(true);
+    expect(screen.getByRole("heading", { name: "Data alignment" }).closest("details")?.hasAttribute("open")).toBe(false);
     expect(screen.getByRole("heading", { name: "Field support" }).closest("details")?.hasAttribute("open")).toBe(false);
     expect(screen.getByText("NVDA aligned close")).not.toBeNull();
     fireEvent.click(screen.getByRole("heading", { name: "Identity and authority" }));
@@ -451,7 +455,158 @@ describe("MarketWeatherComparisonLab", () => {
 
     const directionArticle = scope.closest("article");
     expect(directionArticle?.textContent).toContain("fit-spread units more elevated");
+    const visibleReading = directionArticle?.querySelector<HTMLElement>('[data-scope-reading="true"]');
+    expect(visibleReading?.textContent).toContain("fit-spread units more elevated");
+    expect(visibleReading?.classList.contains("sr-only")).toBe(false);
     expect(directionArticle?.textContent).not.toMatch(/\bbullish\b|\bbearish\b|\boutperform\b|\btrade signal\b/i);
+    expect(
+      (directionArticle?.querySelector<HTMLElement>('[data-scope-age-key="true"]')?.style.backgroundImage ?? "").toLowerCase(),
+    ).toContain("#fbbf24");
+  });
+
+  it("keeps scope endpoints chronological across leading, trailing, and singleton support runs", () => {
+    const dates = Array.from({ length: 5 }, (_value, index) => `2026-07-${String(index + 20).padStart(2, "0")}`);
+    const withSupport = (support: boolean[]): MarketWeatherComparisonResponse => ({
+      ...DATA,
+      coordinates: DATA.coordinates.map((coordinate) => {
+        const series = dates.map((date, index) => {
+          const value = 0.1 + index * 0.05;
+          return {
+            date,
+            target: value,
+            benchmark: 0,
+            target_context: value,
+            benchmark_context: 0,
+            native_difference: value,
+            context_difference: value,
+            target_supported: support[index],
+            benchmark_supported: support[index],
+            pair_supported: support[index],
+          };
+        });
+        return { ...coordinate, latest: series[series.length - 1], series };
+      }),
+    });
+    const props = {
+      basis: "context" as const,
+      view: "difference" as const,
+      selectedDimension: "pressure",
+      scopeTrail: "full" as const,
+      onBasisChange: vi.fn(),
+      onViewChange: vi.fn(),
+      onDimensionChange: vi.fn(),
+    };
+    const { rerender } = render(
+      <MarketWeatherComparisonLab data={withSupport([false, true, true, false, true])} {...props} />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
+    let scope = screen.getByRole("img", { name: /Directional phase trajectory/i }) as unknown as SVGSVGElement;
+    expect(scope.textContent).toContain("FIRST SUPPORTED");
+    expect(scope.textContent).toContain("NOW");
+    expect(scope.querySelectorAll("path[marker-end]").length).toBe(0);
+
+    rerender(<MarketWeatherComparisonLab data={withSupport([false, true, true, true, false])} {...props} />);
+    scope = screen.getByRole("img", { name: /Directional phase trajectory/i }) as unknown as SVGSVGElement;
+    expect(scope.textContent).toContain("LATEST SUPPORTED");
+    expect(scope.textContent).not.toMatch(/\bNOW\b/);
+    expect(scope.querySelectorAll("path[marker-end]").length).toBe(1);
+  });
+
+  it("uses a compact undistorted scope frame and readable precision for tiny values", () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
+    const tinyCoordinates = DATA.coordinates.map((coordinate) => {
+      const series = coordinate.series.map((point, index) => {
+        const value = (index + 1) * 2.5e-6;
+        return {
+          ...point,
+          target: value,
+          benchmark: 0,
+          target_context: value,
+          benchmark_context: 0,
+          native_difference: value,
+          context_difference: value,
+        };
+      });
+      const latest = series[series.length - 1];
+      return {
+        ...coordinate,
+        latest: {
+          ...coordinate.latest,
+          ...latest,
+          target_supported: latest.target_supported !== false,
+          benchmark_supported: latest.benchmark_supported !== false,
+        },
+        series,
+      };
+    });
+    render(
+      <MarketWeatherComparisonLab
+        data={{ ...DATA, coordinates: tinyCoordinates }}
+        basis="context"
+        view="difference"
+        selectedDimension="pressure"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
+    const scope = screen.getByRole("img", { name: /Directional phase trajectory/i }) as unknown as SVGSVGElement;
+    expect(scope.getAttribute("viewBox")).toBe("0 0 360 236");
+    expect(scope.dataset.scopeFrame).toBe("compact");
+    expect(scope.getAttribute("style")).toContain("aspect-ratio: 360 / 236");
+    expect(scope.textContent).toMatch(/e-\d+/i);
+  });
+
+  it("gates pair gaps and changes on support while identifying stale series endpoints", () => {
+    const dates = Array.from({ length: 6 }, (_value, index) => `2026-07-${String(index + 18).padStart(2, "0")}`);
+    const coordinates = DATA.coordinates.map((coordinate) => {
+      const series = dates.map((date, index) => ({
+        date,
+        target: 0.2 + index * 0.04,
+        benchmark: 0.1 + index * 0.02,
+        target_context: 0.3 + index * 0.04,
+        benchmark_context: 0.1 + index * 0.02,
+        native_difference: 0.1 + index * 0.02,
+        context_difference: 0.2 + index * 0.02,
+        target_supported: true,
+        benchmark_supported: true,
+        pair_supported: index !== dates.length - 1,
+      }));
+      return { ...coordinate, latest: series[series.length - 1], series };
+    });
+    render(
+      <MarketWeatherComparisonLab
+        data={{ ...DATA, coordinates }}
+        basis="context"
+        view="difference"
+        selectedDimension="pressure"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
+    const chart = screen.getByRole("img", { name: /pressure comparison history/i }) as unknown as SVGSVGElement;
+    expect(chart.getAttribute("aria-label")).toContain("target-minus-benchmark gap —");
+    expect(chart.getAttribute("aria-label")).toContain("current selected-basis value limited");
+    expect(chart.getAttribute("aria-label")).toContain("bilateral pair gap is unavailable");
+    const trend = chart.closest("div");
+    expect(trend).not.toBeNull();
+    expect(within(trend as HTMLElement).getByText("pair gap unavailable · hatched")).not.toBeNull();
+    expect(within(trend as HTMLElement).getByText(/Outlined endpoints mark latest supported values: gap through 2026-07-22/i)).not.toBeNull();
+    expect(chart.querySelector('[data-series-endpoint="target"]')?.getAttribute("data-endpoint-status")).toBe("current");
+    expect(chart.querySelector('[data-series-endpoint="difference"]')?.getAttribute("data-endpoint-status")).toBe("latest-supported");
+    const gapCard = within(trend as HTMLElement).getByText("Own-history gap").parentElement;
+    expect(gapCard?.textContent).toContain("—");
+    const fiveBarEvidence = within(trend as HTMLElement).getByText("Five-bar change").parentElement;
+    expect(fiveBarEvidence?.textContent).toContain("—");
   });
 
   it("classifies only direct single-subject motion and keeps missing marker evidence unavailable", () => {
@@ -482,6 +637,7 @@ describe("MarketWeatherComparisonLab", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
     expect(screen.getAllByText(/positive pressure that is strengthening/i).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Propagation & carriers" }));
     const propagation = screen.getByRole("img", { name: /Propagation & carriers trajectory/i });
     expect(propagation.closest("article")?.textContent).toContain("(unavailable)");
     expect(propagation.getAttribute("aria-label")).toContain("third coordinate used for marker size —");
@@ -502,22 +658,7 @@ describe("MarketWeatherComparisonLab", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
     const scope = screen.getAllByRole("img", { name: /Directional phase trajectory/i })[0] as unknown as SVGSVGElement;
-    Object.defineProperty(scope, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        bottom: 180,
-        height: 180,
-        left: 0,
-        right: 320,
-        top: 0,
-        width: 320,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }),
-    });
-    fireEvent(scope, new MouseEvent("pointermove", { bubbles: true, clientX: 210, clientY: 66 }));
-
+    fireEvent.keyDown(scope, { key: "Home" });
     expect(screen.getByText(/Hover, touch, or use arrow keys/i).textContent).toContain("(2026-07-23)");
     expect(screen.getAllByText("Inspected 2026-07-23").length).toBeGreaterThan(0);
 
@@ -662,12 +803,85 @@ describe("MarketWeatherComparisonLab", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
-    const trigger = screen.getByRole("button", { name: /Inspect pressure/i });
+    const trigger = within(screen.getByRole("tabpanel", { name: "Field detail" }))
+      .getByRole("button", { name: /Inspect pressure/i });
     fireEvent.click(trigger);
     expect(screen.getByRole("dialog", { name: "pressure" })).not.toBeNull();
     await waitFor(() => expect(screen.getByRole("button", { name: "Close coordinate detail" })).toBe(document.activeElement));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "pressure" })).toBeNull();
     await waitFor(() => expect(trigger).toBe(document.activeElement));
+  });
+
+  it("turns the mobile report into a guided research path without mounting hidden heavy charts", () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
+    const onDimensionChange = vi.fn();
+    render(
+      <MarketWeatherComparisonLab
+        data={DATA}
+        basis="context"
+        view="difference"
+        selectedDimension="pressure"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={onDimensionChange}
+      />,
+    );
+
+    const researchRail = screen.getByRole("complementary", { name: "Research next" });
+    expect(within(researchRail).getByText(/largest current field difference/i)).not.toBeNull();
+    expect(screen.queryByRole("img", { name: /Pressure comparison history/i })).toBeNull();
+
+    fireEvent.click(within(researchRail).getByRole("button", { name: /Inspect pressure/i }));
+    expect(screen.getByRole("tab", { name: "Field detail" }).getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Field detail" }));
+    expect(onDimensionChange).toHaveBeenCalledWith("pressure");
+    expect(screen.queryByRole("img", { name: /Pressure comparison history/i })).toBeNull();
+
+    fireEvent.click(within(researchRail).getByRole("button", { name: /Inspect pressure/i }));
+    expect(screen.getByRole("dialog", { name: "pressure" })).not.toBeNull();
+    expect(screen.getByRole("img", { name: /Pressure comparison history/i })).not.toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(within(researchRail).getByRole("button", { name: "Audit receipt" }));
+    expect(screen.getByRole("tab", { name: "Audit receipt" }).getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Audit receipt" }));
+  });
+
+  it("unlocks the mobile sheet if the viewport becomes desktop-sized", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
+    render(
+      <MarketWeatherComparisonLab
+        data={DATA}
+        basis="context"
+        view="difference"
+        selectedDimension="pressure"
+        tab="field"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={vi.fn()}
+      />,
+    );
+
+    const fieldPanel = screen.getByRole("tabpanel", { name: "Field detail" });
+    fireEvent.click(within(fieldPanel).getByRole("button", { name: /Inspect pressure/i }));
+    expect(screen.getByRole("dialog", { name: "pressure" })).not.toBeNull();
+    expect(document.body.style.overflow).toBe("hidden");
+
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1280,
+    });
+    fireEvent(window, new Event("resize"));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "pressure" })).toBeNull());
+    expect(document.body.style.overflow).toBe("");
+    expect(fieldPanel.closest('[aria-hidden="true"]')).toBeNull();
   });
 });

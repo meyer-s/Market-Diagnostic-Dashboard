@@ -348,7 +348,7 @@ test("@release Relative Field Pair keeps the desktop hierarchy inspectable", asy
 
   await page.getByRole("tab", { name: "Field detail" }).click();
   await expect(page.getByRole("button", { name: "Show all 15 coordinates" })).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator('svg[aria-label*="trajectory"]:visible')).toHaveCount(4);
+  await expect(page.locator('svg[aria-label*="trajectory"]:visible')).toHaveCount(1);
   await expect(
     page.getByRole("img", {
       name: /Directional phase trajectory for ABT − RSP, relative to each instrument's own history.*displayed observations supported.*third coordinate/i,
@@ -370,14 +370,14 @@ test("@release Relative Field Pair keeps the desktop hierarchy inspectable", asy
   await expect(page.getByText("Field structure", { exact: true })).toBeVisible();
   await expect(page.getByText("Activity and liquidity", { exact: true })).toBeVisible();
   await page.locator('svg[aria-label*="Directional phase trajectory"]:visible').hover({ position: { x: 20, y: 80 } });
-  await expect(page.getByText(/same shared date across visible field charts \(/i)).toBeVisible();
+  await expect(page.getByText(/inspect the same shared date \(/i)).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole("tab", { name: "Audit receipt" }).click();
   const exportReceipt = page.getByRole("button", { name: "Export compact receipt · JSON" });
   await expect(exportReceipt).toBeEnabled();
   await expect(page.getByText(/not a digital signature, proof of origin/i)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Data alignment" }).locator("xpath=ancestor::details")).toHaveAttribute("open", "");
+  await expect(page.getByRole("heading", { name: "Data alignment" }).locator("xpath=ancestor::details")).not.toHaveAttribute("open", "");
   await expect(page.getByRole("heading", { name: "Methodology" })).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
   await exportReceipt.click();
@@ -394,7 +394,8 @@ test("@release Relative Field Pair keeps the desktop hierarchy inspectable", asy
 test("@release Relative Field Pair uses compact mobile chart, scope, and detail controls", async ({ page }) => {
   await openPair(page, 390, 844);
 
-  await expect(page.getByText(/ABT vs RSP · 1D · 36 shared/i)).toBeVisible();
+  await expect(page.getByText(/ABT vs RSP · 1D · 750 bars/i)).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Research next" })).toBeVisible();
   await expect(page.locator('svg[aria-label*="relative price versus"]:visible')).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Beta adjusted" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
@@ -413,8 +414,8 @@ test("@release Relative Field Pair uses compact mobile chart, scope, and detail 
 });
 
 const RESPONSIVE_VIEWPORTS = [
-  { label: "desktop-1440", width: 1440, height: 1000, visibleScopes: 4 },
-  { label: "desktop-1024", width: 1024, height: 900, visibleScopes: 4 },
+  { label: "desktop-1440", width: 1440, height: 1000, visibleScopes: 1 },
+  { label: "desktop-1024", width: 1024, height: 900, visibleScopes: 1 },
   { label: "tablet-768", width: 768, height: 900, visibleScopes: 1 },
   { label: "mobile-390", width: 390, height: 844, visibleScopes: 1 },
 ] as const;
@@ -548,6 +549,7 @@ test("@release 200 percent zoom-equivalent reflow retains every Pair control", a
 
   await page.getByRole("tab", { name: "Field detail" }).click();
   await expect(page.locator('svg[aria-label*="trajectory"]:visible')).toHaveCount(1);
+  await page.locator("summary").filter({ hasText: /^Display/ }).click();
   await expect(page.getByRole("group", { name: "Comparison basis" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Displayed series" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
