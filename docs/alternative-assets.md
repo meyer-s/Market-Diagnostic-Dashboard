@@ -1,20 +1,23 @@
 # Alternative Assets
 
-This document replaces the older AAS rollout summaries and keeps the active alternative-assets documentation in one place.
+This document replaces the older AAS rollout summaries and records the active split between the metals and crypto research surfaces.
 
 ## Scope
 
-The alternative-assets section now covers:
+The cross-asset subsystem now covers:
 
-- the AAS backend and breakdown endpoints
-- the frontend alternative-assets page
+- the legacy AAS backend aggregate used by dashboard evidence
 - precious metals diagnostics
 - crypto diagnostics
 
 Key frontend routes:
 
-- `/alternative-assets`
-- `/aas-breakdown`
+- `/metals-indicators`
+- `/crypto-indicators`
+
+`/aas-breakdown` is retired and intentionally absent from the route registry.
+`/indicators/AAS` is transition guidance rather than an aggregate research surface, and
+`/precious-metals` remains only as a redirect to `/metals-indicators` for older bookmarks.
 
 Key backend routes from `backend/app/api/aas.py`:
 
@@ -33,9 +36,9 @@ This repo no longer needs point-in-time "10 of 18" or "ready for deployment" mem
 
 What matters now:
 
-- AAS is a maintained subsystem with its own API surface.
-- The frontend includes both the main alternative-assets page and the AAS breakdown view.
-- crypto and precious metals each have their own diagnostic views under the broader alternative-assets section.
+- AAS remains a backend aggregate with its own API surface and a compact dashboard contributor.
+- Metals and crypto each have a supported, independent frontend diagnostic.
+- New navigation, documentation, and tests must point to the split routes rather than reviving the retired aggregate page.
 
 ## Core Files
 
@@ -43,40 +46,41 @@ Backend:
 
 - `backend/app/api/aas.py`
 - the AAS calculation service in `backend/app/services/`
-- `backend/refresh_aas_data.py`
 - `backend/backfill_aas.py`
 - `backend/backfill_aas_weekly.py`
 
 Frontend:
 
-- `frontend/src/pages/AlternativeAssetStability.tsx`
-- `frontend/src/pages/AASComponentBreakdown.tsx`
+- `frontend/src/pages/PreciousMetalsDiagnostic.tsx`
 - `frontend/src/pages/CryptoDiagnostic.tsx`
+- `frontend/src/components/widgets/AASWidget.tsx` (dashboard summary only)
 
 ## Data and Refresh Flow
 
 Alternative-assets data is refreshed through the broader ingestion and scheduler flow. For targeted work, use the backend scripts already in the repo instead of maintaining one-off doc-driven deployment playbooks.
 
-Common scripts:
+Common targeted scripts:
 
-- `backend/refresh_aas_data.py`
 - `backend/backfill_aas.py`
 - `backend/backfill_aas_weekly.py`
 - `backend/fetch_cb_holdings.py`
 - `backend/fetch_comex_data.py`
 - `backend/fetch_extended_crypto.py`
 
-Use these deliberately. They are operational tools, not a separate deployment system.
+Use these deliberately. They are operational tools, not a separate deployment system. The former
+interactive `refresh_aas_data.py` orchestrator was removed because it referenced retired models and
+estimated legacy components; scheduled ingestion and the targeted scripts above are the supported
+refresh paths.
 
 ## Precious Metals
 
-The metals diagnostic remains part of the alternative-assets surface and relies on its own backend routes, history endpoints, and market-cap context.
+The metals diagnostic is the supported `/metals-indicators` surface and relies on its own backend routes, history endpoints, and market-cap context.
 
 If you need the historical specification work, that older material remains in `archive/`.
 
 ## Crypto
 
-The crypto diagnostic is part of the active product now. It focuses on BTC, ETH, SOL, and XRP and uses dedicated backend routes for market overview and diagnostic context.
+The crypto diagnostic is the supported `/crypto-indicators` surface. It focuses on BTC, ETH, SOL, and XRP and uses dedicated backend routes for market overview and diagnostic context.
 
 Current routes in the backend include:
 
@@ -90,8 +94,9 @@ The current frontend implementation uses raw-price charting and relative leaders
 When updating this part of the app:
 
 1. Treat the API routes and frontend pages as the source of truth.
-2. Avoid writing new status memos that freeze the system to one deployment moment.
-3. Keep temporary rollout notes in commits or issue tracking, not in top-level docs.
+2. Do not restore a combined AAS research surface; legacy deep links may only point users separately to metals and crypto.
+3. Avoid writing new status memos that freeze the system to one deployment moment.
+4. Keep temporary rollout notes in commits or issue tracking, not in top-level docs.
 
 ## Related Docs
 

@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-29T16:31:39.9754528Z",
+  "title": "Design System: Market Diagnostic Dashboard",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Midnight Canvas",
+        "canonical": "#0e1520",
+        "tonalRamp": ["#0e1520", "#121c2a", "#182333", "#1e2b3d", "#26364a", "#3f5068", "#91a4bd", "#f4f7fb"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Evidence Surface",
+        "canonical": "#182333",
+        "tonalRamp": ["#0e1520", "#121c2a", "#182333", "#1e2b3d", "#334258", "#62758e", "#b7c3d3", "#f4f7fb"]
+      },
+      "evidence-blue": {
+        "role": "primary",
+        "displayName": "Evidence Blue",
+        "canonical": "#83bfff",
+        "tonalRamp": ["#10283f", "#173c5d", "#22547f", "#3373a6", "#5798d2", "#83bfff", "#b8dcff", "#e9f5ff"]
+      },
+      "stable": {
+        "role": "secondary",
+        "displayName": "Stable Mint",
+        "canonical": "#69d6a3",
+        "tonalRamp": ["#0d2c21", "#164535", "#216249", "#318360", "#49a97d", "#69d6a3", "#a8ebcd", "#e7faf1"]
+      },
+      "caution": {
+        "role": "tertiary",
+        "displayName": "Caution Amber",
+        "canonical": "#f3cb69",
+        "tonalRamp": ["#352709", "#55400f", "#765b18", "#987623", "#bf9938", "#f3cb69", "#fae2a1", "#fff7df"]
+      },
+      "stress": {
+        "role": "tertiary",
+        "displayName": "Stress Coral",
+        "canonical": "#ff8a93",
+        "tonalRamp": ["#3a1116", "#5c1b22", "#812932", "#aa3d47", "#d85d68", "#ff8a93", "#ffc0c5", "#fff0f1"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Rare high-emphasis product framing."
+      },
+      "headline": {
+        "displayName": "Page Headline",
+        "purpose": "The single route H1 and current-read statements."
+      },
+      "title": {
+        "displayName": "Evidence Title",
+        "purpose": "Section and card headings."
+      },
+      "body": {
+        "displayName": "Research Body",
+        "purpose": "Findings, explanations, and persistent interface copy."
+      },
+      "label": {
+        "displayName": "Audit Label",
+        "purpose": "Metadata and compact controls at the 12px floor."
+      }
+    },
+    "shadows": [
+      {
+        "name": "field-ambient",
+        "value": "0 18px 48px -32px rgba(0, 0, 0, 0.78)",
+        "purpose": "Low structural separation beneath primary evidence surfaces."
+      },
+      {
+        "name": "interactive-lift",
+        "value": "0 24px 58px -32px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(147, 197, 253, 0.35)",
+        "purpose": "Clickable-card hover and focus feedback only."
+      },
+      {
+        "name": "dialog-elevation",
+        "value": "0 32px 96px -30px rgba(0, 0, 0, 0.96)",
+        "purpose": "Modal priority over an inert backdrop."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-standard",
+        "value": "160ms ease",
+        "purpose": "Border, background, and text state changes."
+      },
+      {
+        "name": "disclosure",
+        "value": "240ms ease",
+        "purpose": "Grid-based disclosure expansion with a reduced-motion fallback."
+      }
+    ],
+    "breakpoints": [
+      { "name": "xs", "value": "475px" },
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" },
+      { "name": "2xl", "value": "1536px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "A direct data or workflow action with one clear outcome.",
+      "html": "<button class=\"ds-btn-primary\">RETRY EVIDENCE</button>",
+      "css": ".ds-btn-primary { min-height: 44px; padding: 10px 16px; border: 1px solid transparent; border-radius: 8px; background: var(--field-accent, #83bfff); color: var(--field-canvas, #0e1520); font: 700 14px/1.4 \"Segoe UI Variable Text\", \"Aptos\", \"Segoe UI\", system-ui, sans-serif; transition: background-color 160ms ease, box-shadow 160ms ease; } .ds-btn-primary:hover { background: var(--field-accent-strong, #a8d2ff); } .ds-btn-primary:focus-visible { outline: 2px solid var(--field-focus, #9fd0ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A supporting or reversible action.",
+      "html": "<button class=\"ds-btn-secondary\">VIEW VALUES</button>",
+      "css": ".ds-btn-secondary { min-height: 44px; padding: 10px 16px; border: 1px solid var(--field-border-strong, #62758e); border-radius: 8px; background: var(--field-canvas-raised, #121c2a); color: var(--field-text, #f4f7fb); font: 700 14px/1.4 \"Segoe UI Variable Text\", \"Aptos\", \"Segoe UI\", system-ui, sans-serif; transition: border-color 160ms ease, background-color 160ms ease; } .ds-btn-secondary:hover { border-color: var(--field-accent, #83bfff); background: var(--field-surface, #182333); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--field-focus, #9fd0ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Evidence Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A bounded group of related findings with tonal, not decorative, depth.",
+      "html": "<article class=\"ds-card\"><span class=\"ds-card-kicker\">CURRENT READ</span><h2>Participation is mixed</h2><p>Seven of eleven sectors are advancing, while breadth remains uneven.</p></article>",
+      "css": ".ds-card { padding: 20px; border: 1px solid var(--field-border, #3f5068); border-radius: 16px; background: var(--field-surface, #182333); color: var(--field-text, #f4f7fb); box-shadow: 0 18px 48px -32px rgba(0,0,0,.78); font-family: \"Segoe UI Variable Text\", \"Aptos\", \"Segoe UI\", system-ui, sans-serif; } .ds-card-kicker { color: var(--field-accent-strong, #a8d2ff); font-size: 12px; font-weight: 700; letter-spacing: .16em; } .ds-card h2 { margin: 8px 0 0; font-size: 20px; line-height: 1.3; } .ds-card p { margin: 8px 0 0; max-width: 65ch; color: var(--field-text-muted, #b7c3d3); font-size: 15px; line-height: 1.6; }"
+    },
+    {
+      "name": "Labeled Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A persistent label and clearly bounded research input.",
+      "html": "<label class=\"ds-field\"><span>Stock symbol</span><input value=\"AAPL\" aria-label=\"Stock symbol\" /></label>",
+      "css": ".ds-field { display: grid; gap: 7px; color: var(--field-text-muted, #b7c3d3); font: 700 13px/1.4 \"Segoe UI Variable Text\", \"Aptos\", \"Segoe UI\", system-ui, sans-serif; } .ds-field input { min-height: 44px; padding: 10px 14px; border: 1px solid var(--field-border-strong, #62758e); border-radius: 14px; background: var(--field-canvas-raised, #121c2a); color: var(--field-text, #f4f7fb); font: 400 15px/1.5 inherit; } .ds-field input:focus-visible { border-color: var(--field-accent, #83bfff); outline: 2px solid var(--field-focus, #9fd0ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Selected Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "A compact selected lens that communicates state through border, surface, and text.",
+      "html": "<button class=\"ds-chip\" aria-pressed=\"true\">90 DAYS</button>",
+      "css": ".ds-chip { min-height: 40px; padding: 8px 13px; border: 1px solid var(--field-border-strong, #62758e); border-radius: 9999px; background: var(--field-surface-raised, #1e2b3d); color: var(--field-text, #f4f7fb); font: 700 12px/1.4 \"Segoe UI Variable Text\", \"Aptos\", \"Segoe UI\", system-ui, sans-serif; letter-spacing: .08em; } .ds-chip:hover { background: var(--field-surface, #182333); } .ds-chip:focus-visible { outline: 2px solid var(--field-focus, #9fd0ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Primary Navigation Item",
+      "kind": "nav",
+      "description": "A current route shown through a raised surface and strong border, not color alone.",
+      "html": "<a class=\"ds-nav-item\" href=\"#\" aria-current=\"page\">Dashboard</a>",
+      "css": ".ds-nav-item { display: inline-flex; min-height: 44px; padding: 0 14px; align-items: center; border: 1px solid var(--field-border-strong, #62758e); border-radius: 10px; background: var(--field-surface-raised, #1e2b3d); color: var(--field-text, #f4f7fb); font: 700 13px/1.4 \"Segoe UI Variable Text\", \"Aptos\", \"Segoe UI\", system-ui, sans-serif; text-decoration: none; } .ds-nav-item:hover { background: var(--field-surface, #182333); } .ds-nav-item:focus-visible { outline: 2px solid var(--field-focus, #9fd0ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Partial Data State",
+      "kind": "custom",
+      "description": "An honest state panel that preserves available evidence and names the missing surface.",
+      "html": "<section class=\"ds-state\"><span aria-hidden=\"true\"></span><div><h2>Partial market update</h2><p>The headline is available; historical evidence is temporarily unavailable.</p></div></section>",
+      "css": ".ds-state { display: grid; grid-template-columns: 5px minmax(0,1fr); gap: 16px; min-height: 120px; padding: 20px; border: 1px solid var(--field-border, #3f5068); border-radius: 14px; background: var(--field-surface, #182333); color: var(--field-text, #f4f7fb); font-family: \"Segoe UI Variable Text\", \"Aptos\", \"Segoe UI\", system-ui, sans-serif; } .ds-state > span { border-radius: 4px; background: var(--field-caution, #f3cb69); } .ds-state h2 { margin: 0; font-size: 18px; } .ds-state p { margin: 7px 0 0; color: var(--field-text-muted, #b7c3d3); font-size: 14px; line-height: 1.6; }"
+    },
+    {
+      "name": "Chart Data Disclosure",
+      "kind": "custom",
+      "description": "The keyboard-reachable values companion to a decision-bearing chart.",
+      "html": "<details class=\"ds-chart-data\"><summary>View chart data</summary><div>Timestamped values appear here.</div></details>",
+      "css": ".ds-chart-data { border-top: 1px solid var(--field-border, #3f5068); color: var(--field-text-muted, #b7c3d3); font-family: \"Segoe UI Variable Text\", \"Aptos\", \"Segoe UI\", system-ui, sans-serif; } .ds-chart-data summary { display: flex; min-height: 44px; align-items: center; color: var(--field-accent-strong, #a8d2ff); font-size: 13px; font-weight: 700; cursor: pointer; } .ds-chart-data summary:focus-visible { outline: 2px solid var(--field-focus, #9fd0ff); outline-offset: 2px; } .ds-chart-data div { padding: 10px 12px; border-radius: 8px; background: var(--field-canvas-raised, #121c2a); font-size: 13px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Evidence Field",
+    "overview": "Market Diagnostic Dashboard should feel like a calm research instrument: quiet enough to support concentration, structured enough to audit, and direct enough to use under time pressure. It is not a promotional finance site and it should never imply more certainty than the data supports. The interface earns trust by connecting each conclusion to its drivers, values, definitions, freshness, and provenance.\n\nThe default page spine is Now → Drivers → Evidence → Definition → Audit. Operational workspaces may add Action, but action must remain visibly governed by the user. Dense evidence is welcome when it has hierarchy; arbitrary card walls, microscopic labels, and decorative dashboard effects are not.",
+    "keyCharacteristics": [
+      "Midnight analytical canvas with crisp, cool surfaces.",
+      "Current read first; methodology and raw evidence remain directly reachable.",
+      "Asset-family color identifies data, while green, yellow, and red identify condition.",
+      "Missingness, staleness, partial coverage, and protected state are visible product states.",
+      "Desktop and mobile preserve the same meaning, even when their composition differs."
+    ],
+    "rules": [
+      {
+        "name": "The Identity/Condition Rule",
+        "body": "Asset-family colors identify what a measure belongs to. Stable, caution, and stress colors communicate its condition. Do not swap those jobs.",
+        "section": "colors"
+      },
+      {
+        "name": "The Rare Accent Rule",
+        "body": "Evidence Blue is an orientation tool. If every card glows blue, nothing is oriented.",
+        "section": "colors"
+      },
+      {
+        "name": "The Twelve-Pixel Floor",
+        "body": "No persistent label or annotation renders below 12px. When space is tight, shorten the label or reveal detail on demand.",
+        "section": "typography"
+      },
+      {
+        "name": "The Financial Numeral Rule",
+        "body": "Scores, prices, changes, dates, and quantities use tabular numerals; aligned comparisons may use monospace.",
+        "section": "typography"
+      },
+      {
+        "name": "The One-H1 Rule",
+        "body": "Every route and material state has one page H1, followed by logical section headings.",
+        "section": "layout"
+      },
+      {
+        "name": "The Evidence Spine Rule",
+        "body": "Preserve Now → Drivers → Evidence → Definition → Audit unless a shorter page genuinely needs fewer steps.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "A surface is structurally separated at rest. Elevation increases only because state or layering requires it.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do lead with the present market read and name the evidence that supports it.",
+      "Do show source, timestamp, coverage, missingness, and freshness near the evidence they qualify.",
+      "Do preserve a 44px mobile target for primary controls and a 12px absolute type floor.",
+      "Do make real scrollers labeled and keyboard-focusable, with visible overflow affordance.",
+      "Do keep human judgment editable in protected or operational workflows."
+    ],
+    "donts": [
+      "Don't use microscopic labels, raw floating-point output, pure black layers, or decorative gradients as a substitute for hierarchy.",
+      "Don't communicate selection, condition, or chart meaning through color or hover alone.",
+      "Don't stack every desktop card into an unprioritized mobile wall.",
+      "Don't invent certainty, forecasts, performance claims, sources, or data that the backend does not establish.",
+      "Don't revive retired AAS routes; metals and crypto are the supported asset diagnostics."
+    ]
+  }
+}

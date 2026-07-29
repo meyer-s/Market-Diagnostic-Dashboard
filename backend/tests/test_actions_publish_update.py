@@ -146,6 +146,46 @@ def test_invalid_slug_returns_400(client: TestClient):
     assert body["detail"]["message"] == "Invalid payload."
 
 
+@pytest.mark.parametrize("alt_text", ["", "chart", "A chart.", "Image 1", "figure.png"])
+def test_markdown_images_require_meaningful_alt_text(
+    client: TestClient,
+    alt_text: str,
+):
+    payload = _valid_payload()
+    payload["content_markdown"] += (
+        f"\n![{alt_text}](https://example.com/market-diagnostic.png)\n"
+    )
+    resp = client.post(
+        "/api/actions/publish_update",
+        json=payload,
+        headers={"Authorization": f"Bearer {settings.GPT_ACTION_PUBLISH_KEY}"},
+    )
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"]["message"] == "Invalid payload."
+    assert "must include meaningful alt text" in str(body["detail"]["errors"])
+
+
+def test_markdown_images_accept_descriptive_alt_and_decorative_convention(
+    client: TestClient,
+):
+    payload = _valid_payload(slug="market-diagnostic-2026-02-08")
+    payload["content_markdown"] += (
+        "\n![S&P 500 participation rose while index returns held flat]"
+        "(https://example.com/market-diagnostic.png)\n"
+        "![decorative](https://example.com/section-divider.svg)\n"
+    )
+    resp = client.post(
+        "/api/actions/publish_update",
+        json=payload,
+        headers={"Authorization": f"Bearer {settings.GPT_ACTION_PUBLISH_KEY}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["action"] == "posted"
+
+
 def test_future_slug_returns_400(client: TestClient):
     future_date = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
     payload = _valid_payload(slug=f"market-diagnostic-{future_date}")

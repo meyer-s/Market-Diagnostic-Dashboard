@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.update_post import UpdateStatus
+from app.services.market_diagnostic_validation import validate_markdown_image_alt_text
 
 
 class UpdatePostCreate(BaseModel):
@@ -16,6 +17,12 @@ class UpdatePostCreate(BaseModel):
     chart_urls: List[str] = Field(default_factory=list)
     published: bool = True
     pinned: bool = False
+
+    @field_validator("content_markdown")
+    @classmethod
+    def validate_content_markdown_field(cls, value: str) -> str:
+        validate_markdown_image_alt_text(value or "")
+        return value
 
 
 class UpdatePostPatch(BaseModel):

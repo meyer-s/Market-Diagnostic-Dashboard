@@ -4,6 +4,7 @@ Backfill real crypto prices from FRED API and yfinance
 from datetime import datetime, timedelta
 import requests
 import time
+from app.core.config import settings
 from app.core.db import SessionLocal
 from app.models.alternative_assets import CryptoPrice
 
@@ -13,11 +14,13 @@ try:
 except ImportError:
     HAS_YFINANCE = False
 
-FRED_API_KEY = "6f12b75f50396346d15aa95aac7beaef"
+FRED_API_KEY = settings.FRED_API_KEY
 FRED_API = "https://api.stlouisfed.org/fred/series/observations"
 
 def fetch_fred_series(series_id, start_date):
     """Fetch a FRED series"""
+    if not FRED_API_KEY:
+        raise RuntimeError("FRED_API_KEY is required to fetch crypto history")
     params = {
         "series_id": series_id,
         "api_key": FRED_API_KEY,

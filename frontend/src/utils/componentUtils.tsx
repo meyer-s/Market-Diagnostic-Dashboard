@@ -3,16 +3,18 @@
  * 
  * Shared logic for common component patterns.
  */
-import MarketLoading from "../components/ui/MarketLoading";
+import PageState from "../components/ui/PageState";
 
 /**
  * Loading state component pattern
  */
-export function LoadingState({ message = "Loading..." }: { message?: string }) {
+export function LoadingState({ message = "Waiting for current data." }: { message?: string }) {
   return (
-    <div className="p-6 text-gray-200 flex justify-center">
-      <MarketLoading size={80} variant="pulse" label={message} />
-    </div>
+    <PageState
+      variant="loading"
+      title="Loading current data"
+      message={message}
+    />
   );
 }
 
@@ -21,10 +23,11 @@ export function LoadingState({ message = "Loading..." }: { message?: string }) {
  */
 export function ErrorState({ message }: { message: string }) {
   return (
-    <div className="bg-red-900/20 border border-red-700 text-red-200 p-4 rounded">
-      <div className="font-semibold mb-2">Error:</div>
-      <div className="text-sm">{message}</div>
-    </div>
+    <PageState
+      variant="error"
+      title="Data could not be loaded"
+      message={message}
+    />
   );
 }
 
@@ -33,9 +36,11 @@ export function ErrorState({ message }: { message: string }) {
  */
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="bg-stealth-800 border border-stealth-700 text-stealth-400 p-4 rounded text-center">
-      {message}
-    </div>
+    <PageState
+      variant="empty"
+      title="No data available"
+      message={message}
+    />
   );
 }
 

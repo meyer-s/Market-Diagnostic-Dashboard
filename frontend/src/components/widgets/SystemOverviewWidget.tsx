@@ -172,9 +172,9 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
     GREEN: "text-green-400",
     YELLOW: "text-yellow-400",
     RED: "text-red-400",
-    UNKNOWN: "text-gray-500",
+    UNKNOWN: "text-stealth-500",
   };
-  const stateColor = stateColorMap[data.state] || "text-gray-500";
+  const stateColor = stateColorMap[data.state] || "text-stealth-500";
 
   const compositeScore = data.composite_score ?? 0;
   const compositePercentage = Math.min(100, compositeScore);
@@ -197,7 +197,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   const trendColor = {
     IMPROVING: "text-green-400",
     WORSENING: "text-red-400",
-    STABLE: "text-gray-400",
+    STABLE: "text-stealth-400",
   }[trendDirection];
 
   const periodLabel = trendPeriod === 365 ? "1 year" : trendPeriod === 180 ? "6 months" : "90 days";
@@ -455,7 +455,12 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             </h4>
             <div className="w-full h-60 sm:h-72 lg:h-80 -mx-6 sm:mx-0 px-3 sm:px-0">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <ComposedChart data={stabilityBandData} margin={CHART_MARGIN}>
+                <ComposedChart
+                  accessibilityLayer
+                  aria-label="Composite stability score and state-distribution history"
+                  data={stabilityBandData}
+                  margin={CHART_MARGIN}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                   <XAxis
                     dataKey="timestampNum"
@@ -472,12 +477,12 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                         day: "numeric",
                       });
                     }}
-                    tick={{ fill: "#6b7280", fontSize: 10 }}
+                    tick={{ fill: "#6b7280", fontSize: 12 }}
                     stroke="#555560"
                   />
                   <YAxis
                     yAxisId="score"
-                    tick={{ fill: "#6b7280", fontSize: 10 }}
+                    tick={{ fill: "#6b7280", fontSize: 12 }}
                     stroke="#555560"
                     domain={['dataMin - 5', 'dataMax + 5']}
                     scale="linear"
@@ -497,8 +502,8 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                       borderRadius: "6px",
                       padding: "8px",
                     }}
-                    labelStyle={{ color: "#a4a4b0", fontSize: 11 }}
-                    itemStyle={{ color: "#ffffff", fontSize: 11 }}
+                    labelStyle={{ color: "#a4a4b0", fontSize: 12 }}
+                    itemStyle={{ color: "#ffffff", fontSize: 12 }}
                     formatter={(value: number, name: string | number, item: { dataKey?: unknown; payload?: Record<string, unknown> }) => {
                       const dataKey = typeof item?.dataKey === "string" ? item.dataKey : "";
                       const payload = item?.payload ?? {};

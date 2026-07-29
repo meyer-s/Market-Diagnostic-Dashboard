@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { getFamilyColor, getMetricColor } from "../../theme/metricColors";
+import { getFamilyColor } from "../../theme/metricColors";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import {
   buildTechnicalProjections,
@@ -81,7 +81,6 @@ interface AASWidgetProps {
 }
 
 export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetProps) {
-  const navigate = useNavigate();
   const { data: aasData, loading } = useApi<AASData>('/aas/current');
   const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>(`/aas/history?days=${parseInt(timeframe)}`);
   const { data: metalsProjectionData } = useApi<MetalsProjectionResponse>('/precious-metals/projections/latest');
@@ -135,8 +134,6 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
       maximumFractionDigits: value >= 1000 ? 0 : 2,
     }).format(value);
   };
-
-  const getMetalColor = (metal: string) => getMetricColor(metal);
 
   const metalsRankings = (metalsProjectionData?.projections ?? []).slice().sort((left, right) => left.rank - right.rank);
   const cryptoRankings: RelativeCryptoRanking[] = buildRelativeRankings(cryptoMarketData?.assets ?? []);
@@ -342,15 +339,18 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   }
 
   return (
-      <div
-        className="primary-card primary-card-hover p-4 md:p-6 cursor-pointer h-full"
-        onClick={() => navigate('/metals-indicators')}
-      >
+      <div className="primary-card h-full p-4 md:p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-stealth-100">Metals and Crypto Stability</h3>
-          <svg className="w-5 h-5 text-stealth-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
+          <Link
+            to="/metals-indicators"
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-stealth-300 transition-colors hover:bg-stealth-800 hover:text-stealth-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          >
+            Open metals
+            <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </Link>
         </div>
 
         {/* Stability Score */}
@@ -361,7 +361,14 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
             </div>
             <div className="text-xs text-stealth-400 mb-1">/ 100</div>
           </div>
-          <div className="w-full bg-stealth-700 rounded-full h-2">
+          <div
+            aria-label={`Stability score ${aasData.stability_score.toFixed(1)} out of 100`}
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={aasData.stability_score}
+            className="h-2 w-full rounded-full bg-stealth-700"
+            role="progressbar"
+          >
             <div 
               className={`h-2 rounded-full transition-all ${
                 aasData.stability_score >= 67 ? 'bg-green-500' :
@@ -429,7 +436,6 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
           <Link
             to="/metals-indicators"
-            onClick={(event) => event.stopPropagation()}
             className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
             aria-label="Open Metals detail"
           >
@@ -437,7 +443,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: metalsColor }}>
                 Metals Leaders
               </p>
-              <span className="text-[11px] text-stealth-500 transition-colors group-hover:text-stealth-300">ranked basket</span>
+              <span className="text-xs text-stealth-500 transition-colors group-hover:text-stealth-300">ranked basket</span>
             </div>
             <div className="space-y-2">
               {metalsRankings.length > 0 ? (
@@ -445,11 +451,11 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                   <div key={metal.metal} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs transition-colors group-hover:border-amber-500/40 group-hover:bg-stealth-800/90">
                     <div className="min-w-0">
                       <div className="font-semibold text-stealth-100">
-                        #{metal.rank} <span style={{ color: getMetalColor(metal.metal) }}>{metal.metal_name}</span>
+                        #{metal.rank} <span>{metal.metal_name}</span>
                       </div>
                       <div className="text-stealth-400">{formatMiniPrice(metal.current_price)} · Score {metal.score_total.toFixed(0)}</div>
                     </div>
-                    <span className={`shrink-0 rounded border px-2 py-1 text-[11px] font-semibold ${getRelativeClassStyles(metal.relative_classification)}`}>
+                    <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassStyles(metal.relative_classification)}`}>
                       {metal.relative_classification}
                     </span>
                   </div>
@@ -460,7 +466,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                 </div>
               )}
             </div>
-            <div className="mt-2 flex items-center justify-end text-[11px] text-stealth-500 transition-colors group-hover:text-amber-300">
+            <div className="mt-2 flex items-center justify-end text-xs text-stealth-500 transition-colors group-hover:text-amber-300">
               View metals tab
               <span className="ml-1">→</span>
             </div>
@@ -468,7 +474,6 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
 
           <Link
             to="/crypto-indicators"
-            onClick={(event) => event.stopPropagation()}
             className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
             aria-label="Open Crypto detail"
           >
@@ -476,7 +481,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: cryptoColor }}>
                 Crypto Leaders
               </p>
-              <span className="text-[11px] text-stealth-500 transition-colors group-hover:text-stealth-300">technical basket</span>
+              <span className="text-xs text-stealth-500 transition-colors group-hover:text-stealth-300">technical basket</span>
             </div>
             <div className="space-y-2">
               {cryptoRankings.length > 0 ? (
@@ -484,11 +489,11 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                   <div key={asset.symbol} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs transition-colors group-hover:border-blue-500/40 group-hover:bg-stealth-800/90">
                     <div className="min-w-0">
                       <div className="font-semibold text-stealth-100">
-                        #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
+                        #{asset.rank} <span>{asset.name}</span>
                       </div>
                       <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.score_total.toFixed(0)}</div>
                     </div>
-                    <span className={`shrink-0 rounded border px-2 py-1 text-[11px] font-semibold ${getRelativeClassStyles(asset.relativeClassification)}`}>
+                    <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassStyles(asset.relativeClassification)}`}>
                       {asset.relativeClassification}
                     </span>
                   </div>
@@ -499,7 +504,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                 </div>
               )}
             </div>
-            <div className="mt-2 flex items-center justify-end text-[11px] text-stealth-500 transition-colors group-hover:text-blue-300">
+            <div className="mt-2 flex items-center justify-end text-xs text-stealth-500 transition-colors group-hover:text-blue-300">
               View crypto tab
               <span className="ml-1">→</span>
             </div>
@@ -512,17 +517,22 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
           {chartData.length > 0 ? (
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 20 }}>
+                <AreaChart
+                  accessibilityLayer
+                  aria-label={`${parseInt(timeframe)}-day Metals and Crypto contribution trend`}
+                  data={chartData}
+                  margin={{ top: 5, right: 5, left: -20, bottom: 20 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                   <XAxis 
                     dataKey="date" 
                     stroke={CHART_NEUTRAL.tick}
-                    tick={{ fontSize: 10 }}
+                    tick={{ fontSize: 12 }}
                     interval={Math.floor(Math.max(0, chartData.length / 4))}
                   />
                   <YAxis
                     stroke={CHART_NEUTRAL.tick}
-                    tick={{ fontSize: 10 }}
+                    tick={{ fontSize: 12 }}
                     domain={[0, 100]}
                   />
                   <Tooltip 

@@ -2,11 +2,13 @@ import { BrowserRouter, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import Topbar from "./components/layout/Topbar";
 import Footer from "./components/layout/Footer";
+import RouteErrorBoundary from "./components/layout/RouteErrorBoundary";
+import RouteExperience from "./components/layout/RouteExperience";
 import { trackPageView } from "./utils/analytics";
 import { trackSubsequentOptionsOpen } from "./utils/marketWeatherPairTelemetry";
-import { AppRoutes, getAnalyticsNameForPath } from "./routes/registry";
+import { AppRoutes, getAnalyticsNameForPath, getPageNameForPath } from "./routes/registry";
 
-function AppWithAnalytics() {
+export function AppWithAnalytics() {
   const location = useLocation();
   const hideOptionsWorkflowFooter = location.pathname === "/secret/options";
 
@@ -22,10 +24,19 @@ function AppWithAnalytics() {
 
   return (
     <div className="app-shell flex min-h-screen flex-col">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <Topbar />
+      <RouteExperience />
 
-      <main className="flex-1">
-        <AppRoutes />
+      <main
+        id="main-content"
+        className="flex-1"
+        tabIndex={-1}
+        aria-label={`${getPageNameForPath(location.pathname)} content`}
+      >
+        <RouteErrorBoundary key={location.pathname}>
+          <AppRoutes />
+        </RouteErrorBoundary>
       </main>
 
       <div className={hideOptionsWorkflowFooter ? "hidden xl:block" : undefined}>

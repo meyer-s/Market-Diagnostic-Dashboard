@@ -251,7 +251,7 @@ function SetupBadge({ setup }: { setup: SetupRegime }) {
   }[setup];
 
   return (
-    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${config.cls}`}>
+    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.14em] ${config.cls}`}>
       {config.label}
     </span>
   );
@@ -266,7 +266,7 @@ function MaBadge({ alignment }: { alignment: MaAlignment }) {
   }[alignment];
 
   return (
-    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${config.cls}`}>
+    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.14em] ${config.cls}`}>
       {config.label}
     </span>
   );
@@ -282,7 +282,7 @@ function PcBadge({ ratio }: { ratio: number | null | undefined }) {
       : "border-stealth-600 bg-stealth-800/70 text-stealth-300";
 
   return (
-    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${cls}`}>
+    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.14em] ${cls}`}>
       P/C {ratio.toFixed(2)}
     </span>
   );
@@ -416,7 +416,19 @@ function StructureBand({
   const primaryResistanceReach = primaryResistance === null ? 0 : profileReach(resistances, scaleY(primaryResistance), resistanceProfileStyle);
 
   return (
-    <svg viewBox={`0 0 ${VW} ${VH}`} className="w-full" style={{ height: 300 }} aria-label="Options structure band">
+    <svg
+      viewBox={`0 0 ${VW} ${VH}`}
+      className="w-full"
+      style={{ height: 300 }}
+      role="img"
+      aria-labelledby={`${idPrefix}-structure-title ${idPrefix}-structure-desc`}
+    >
+      <title id={`${idPrefix}-structure-title`}>Options structure band</title>
+      <desc id={`${idPrefix}-structure-desc`}>
+        Current price {fmtPrice(currentPrice)}, nearest support
+        {" "}{primarySupport !== null ? fmtPrice(primarySupport) : "unavailable"}, and nearest
+        resistance {primaryResistance !== null ? fmtPrice(primaryResistance) : "unavailable"}.
+      </desc>
       <defs>
         <linearGradient id={spineFillId} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor="rgba(71,85,105,0.26)" />
@@ -486,10 +498,10 @@ function StructureBand({
         </mask>
       </defs>
 
-      <text x={24} y="18" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.8">
+      <text x={24} y="18" fill="#64748b" fontSize="12" fontFamily="monospace" letterSpacing="1.8">
         RESISTANCE STRUCTURE
       </text>
-      <text x={24} y={PLOT_BOTTOM + 28} fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.8">
+      <text x={24} y={PLOT_BOTTOM + 28} fill="#64748b" fontSize="12" fontFamily="monospace" letterSpacing="1.8">
         SUPPORT STRUCTURE
       </text>
 
@@ -551,13 +563,9 @@ function StructureBand({
             <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
               y1={scaleY(sma200)} y2={scaleY(sma200)}
               stroke="rgba(107,114,128,0.4)" strokeWidth="0.5" />
-            <text x={CENTER_X} y={scaleY(sma200) - 1.5} textAnchor="middle"
-              fill="#6b7280" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
-              200
-            </text>
-            <text x={CENTER_X} y={scaleY(sma200) + 8} textAnchor="middle"
-              fill="#9ca3af" fontSize="7.5" fontFamily="monospace" fontWeight="600">
-              {fmtPrice(sma200)}
+            <text x={CENTER_X} y={scaleY(sma200) + 4} textAnchor="middle"
+              fill="#9ca3af" fontSize="12" fontFamily="monospace" fontWeight="600">
+              200D
             </text>
           </g>
         ) : null}
@@ -566,13 +574,9 @@ function StructureBand({
             <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
               y1={scaleY(sma50)} y2={scaleY(sma50)}
               stroke="rgba(167,139,250,0.45)" strokeWidth="0.5" />
-            <text x={CENTER_X} y={scaleY(sma50) - 1.5} textAnchor="middle"
-              fill="#a78bfa" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
-              50
-            </text>
-            <text x={CENTER_X} y={scaleY(sma50) + 8} textAnchor="middle"
-              fill="#c4b5fd" fontSize="7.5" fontFamily="monospace" fontWeight="600">
-              {fmtPrice(sma50)}
+            <text x={CENTER_X} y={scaleY(sma50) + 4} textAnchor="middle"
+              fill="#c4b5fd" fontSize="12" fontFamily="monospace" fontWeight="600">
+              50D
             </text>
           </g>
         ) : null}
@@ -581,13 +585,9 @@ function StructureBand({
             <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
               y1={scaleY(primaryResistance)} y2={scaleY(primaryResistance)}
               stroke="rgba(251,146,60,0.4)" strokeWidth="0.5" />
-            <text x={CENTER_X} y={scaleY(primaryResistance) - 1.5} textAnchor="middle"
-              fill="#fb923c" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
+            <text x={CENTER_X} y={scaleY(primaryResistance) + 4} textAnchor="middle"
+              fill="#fdba74" fontSize="12" fontFamily="monospace" fontWeight="600">
               R
-            </text>
-            <text x={CENTER_X} y={scaleY(primaryResistance) + 8} textAnchor="middle"
-              fill="#fdba74" fontSize="7.5" fontFamily="monospace" fontWeight="600">
-              {fmtPrice(primaryResistance)}
             </text>
           </g>
         ) : null}
@@ -596,13 +596,9 @@ function StructureBand({
             <line x1={LEFT_SPINE_X} x2={RIGHT_SPINE_X}
               y1={scaleY(primarySupport)} y2={scaleY(primarySupport)}
               stroke="rgba(56,189,248,0.4)" strokeWidth="0.5" />
-            <text x={CENTER_X} y={scaleY(primarySupport) - 1.5} textAnchor="middle"
-              fill="#38bdf8" fontSize="6.5" fontFamily="monospace" letterSpacing="0.3">
+            <text x={CENTER_X} y={scaleY(primarySupport) + 4} textAnchor="middle"
+              fill="#7dd3fc" fontSize="12" fontFamily="monospace" fontWeight="600">
               S
-            </text>
-            <text x={CENTER_X} y={scaleY(primarySupport) + 8} textAnchor="middle"
-              fill="#7dd3fc" fontSize="7.5" fontFamily="monospace" fontWeight="600">
-              {fmtPrice(primarySupport)}
             </text>
           </g>
         ) : null}
@@ -613,7 +609,7 @@ function StructureBand({
         <text
           x={Math.min(VW - 12, RIGHT_SPINE_X + primaryResistanceReach + 18)}
           y={Math.max(14, scaleY(primaryResistance) + 3)}
-          textAnchor="end" fill="#fdba74" fontSize="10" fontFamily="monospace">
+          textAnchor="end" fill="#fdba74" fontSize="12" fontFamily="monospace">
           {fmtPrice(primaryResistance)}
         </text>
       ) : null}
@@ -621,7 +617,7 @@ function StructureBand({
         <text
           x={Math.max(12, LEFT_SPINE_X - primarySupportReach - 16)}
           y={Math.min(VH - 72, scaleY(primarySupport) + 3)}
-          fill="#7dd3fc" fontSize="10" fontFamily="monospace">
+          fill="#7dd3fc" fontSize="12" fontFamily="monospace">
           {fmtPrice(primarySupport)}
         </text>
       ) : null}
@@ -632,17 +628,17 @@ function StructureBand({
       <circle cx={CENTER_X} cy={currentY} r="5.5" fill="#f8fafc" />
 
       <g transform={`translate(0 ${VH - 54})`}>
-        <text x={36} y="0" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.6">SUPPORT</text>
-        <text x={CENTER_X} y="0" textAnchor="middle" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.6">CURRENT</text>
-        <text x={VW - 36} y="0" textAnchor="end" fill="#64748b" fontSize="10" fontFamily="monospace" letterSpacing="1.6">RESISTANCE</text>
+        <text x={36} y="0" fill="#64748b" fontSize="12" fontFamily="monospace" letterSpacing="1.6">SUPPORT</text>
+        <text x={CENTER_X} y="0" textAnchor="middle" fill="#64748b" fontSize="12" fontFamily="monospace" letterSpacing="1.6">CURRENT</text>
+        <text x={VW - 36} y="0" textAnchor="end" fill="#64748b" fontSize="12" fontFamily="monospace" letterSpacing="1.6">RESISTANCE</text>
 
         <text x={36} y="28" fill="#7dd3fc" fontSize="15" fontWeight="600">{primarySupport !== null ? fmtPrice(primarySupport) : "n/a"}</text>
         <text x={CENTER_X} y="28" textAnchor="middle" fill="#f8fafc" fontSize="15" fontWeight="600">{fmtPrice(currentPrice)}</text>
         <text x={VW - 36} y="28" textAnchor="end" fill="#fdba74" fontSize="15" fontWeight="600">{primaryResistance !== null ? fmtPrice(primaryResistance) : "n/a"}</text>
 
-        <text x={36} y="47" fill="#94a3b8" fontSize="10">{primarySupport !== null ? formatDistance(primarySupport, currentPrice) : "No nearby support"}</text>
-        <text x={CENTER_X} y="47" textAnchor="middle" fill="#94a3b8" fontSize="10">{describeRangePosition(currentPrice, primarySupport, primaryResistance)}</text>
-        <text x={VW - 36} y="47" textAnchor="end" fill="#94a3b8" fontSize="10">{primaryResistance !== null ? formatDistance(primaryResistance, currentPrice) : "No nearby resistance"}</text>
+        <text x={36} y="47" fill="#94a3b8" fontSize="12">{primarySupport !== null ? formatDistance(primarySupport, currentPrice) : "No nearby support"}</text>
+        <text x={CENTER_X} y="47" textAnchor="middle" fill="#94a3b8" fontSize="12">{describeRangePosition(currentPrice, primarySupport, primaryResistance)}</text>
+        <text x={VW - 36} y="47" textAnchor="end" fill="#94a3b8" fontSize="12">{primaryResistance !== null ? formatDistance(primaryResistance, currentPrice) : "No nearby resistance"}</text>
       </g>
     </svg>
   );
@@ -683,7 +679,7 @@ export function OptionsStructureMap({
           <PcBadge ratio={putCallRatio} />
         </div>
         {label ? (
-          <span className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">{label}</span>
+          <span className="text-xs uppercase tracking-[0.18em] text-stealth-500">{label}</span>
         ) : null}
       </div>
 
@@ -698,6 +694,13 @@ export function OptionsStructureMap({
           primarySupport={primarySupport}
           primaryResistance={primaryResistance}
         />
+        {sma50 || sma200 ? (
+          <p className="mt-2 text-center text-xs tabular-nums text-stealth-400">
+            {sma50 ? `50-day average ${fmtPrice(sma50)}` : "50-day average unavailable"}
+            {" · "}
+            {sma200 ? `200-day average ${fmtPrice(sma200)}` : "200-day average unavailable"}
+          </p>
+        ) : null}
       </div>
 
       <p className="mt-3 text-xs leading-relaxed text-stealth-300">{interpretation}</p>

@@ -51,9 +51,9 @@ export default function Footer() {
             type="button"
             tabIndex={-1}
             onClick={handlePrivateShortcut}
-            className="block rounded-sm border-0 bg-transparent p-0 text-[10px] uppercase tracking-[0.26em] text-stealth-500 transition-colors hover:text-stealth-400 focus-visible:outline-none"
+            className="block min-h-11 rounded-lg border-0 bg-transparent px-2 py-2 text-xs uppercase tracking-[0.2em] text-stealth-400 transition-colors hover:text-stealth-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >
-            Market Diagnostic Tool
+            Market Diagnostic Dashboard
           </button>
           © 2026 Steven J Meyer LLC. All rights reserved.
         </div>

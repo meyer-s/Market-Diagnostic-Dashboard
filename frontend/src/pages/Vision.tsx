@@ -14,55 +14,55 @@ type VisionHighlightId = "vision" | "goal" | "advantage";
 
 const principles = [
   {
-    title: "Learn In Public",
+    title: "Make The Read Inspectable",
     body:
-      "This started as a way to sharpen my own macro process: collect the signals I kept checking, put them in one place, and make the relationships easier to review without rebuilding the same context every day.",
+      "A conclusion is useful only when its supporting signals, definitions, freshness, and limitations remain close at hand. The interface starts with the current read and keeps the path back to evidence visible.",
     motif: "curve",
   },
   {
     title: "Keep The Whole Board Visible",
     body:
-      "The dashboard is meant to keep rates, credit, breadth, leadership, volatility, commodities, metals, and crypto in view together. It is a personal research surface first, built around the belief that macro context is easier to reason about when the moving parts are not scattered across tabs.",
+      "Rates, credit, breadth, leadership, volatility, commodities, metals, and crypto interact. The dashboard keeps those moving parts in one research system without flattening them into an opaque score.",
     motif: "board",
   },
   {
-    title: "Invite Useful Feedback",
+    title: "Improve Through Scrutiny",
     body:
-      "Sharing the project is part of the process. I am looking for thoughtful feedback on the framework, the data choices, the scoring logic, and the way the tool explains market conditions before I think about anything broader.",
+      "The framework is meant to be questioned. Better data, clearer definitions, and reproducible criticism should change the system; persuasive presentation alone should not.",
     motif: "decision",
   },
 ] satisfies PrincipleCard[];
 
 const audience = [
-  "Macro-curious investors who want to see how different market signals can be organized into a coherent daily read.",
-  "Traders and analysts who are willing to challenge the framework, point out blind spots, and suggest better inputs.",
-  "Builders and data-minded users who can help pressure test the methodology, presentation, and assumptions.",
+  "Self-directed investors who need a coherent market-state read without losing the underlying evidence.",
+  "Traders and analysts who want to challenge the framework, identify blind spots, and compare signals across asset classes.",
+  "Builders and data-minded researchers who can pressure-test the methodology, presentation, and assumptions.",
 ];
 
 const heroHighlights = [
   {
     id: "vision" as const,
     eyebrow: "Current State",
-    title: "A passion project, not a polished product.",
-    summary: "This is a working macro dashboard built around my own research process.",
+    title: "An operational research system, continuously improved.",
+    summary: "The dashboard supports a repeatable macro review while keeping uncertainty and source context visible.",
     detail:
-      "Market Diagnostic Dashboard is currently a personal tool for macroeconomic analysis. I use it to organize cross-asset signals, think through regime changes, and make the broader market backdrop easier to review in one place.",
+      "Market Diagnostic Dashboard organizes cross-asset signals into a current regime read, then connects that read to its drivers, historical values, definitions, freshness, and provenance.",
   },
   {
     id: "goal" as const,
-    eyebrow: "Why Share It",
-    title: "Open the work to better questions.",
-    summary: "The project improves when thoughtful people can inspect it and respond to it.",
+    eyebrow: "Why It Is Public",
+    title: "Better questions make the framework stronger.",
+    summary: "The product improves when people can inspect the evidence and challenge the assumptions.",
     detail:
-      "I am sharing the tool because feedback is more useful while the framework is still flexible. The goal is to learn what is clear, what is confusing, what is missing, and which assumptions deserve more scrutiny.",
+      "Public access makes it easier to learn what is clear, what is confusing, what is missing, and which claims deserve more scrutiny. Feedback is most valuable when it points to a reproducible gap.",
   },
   {
     id: "advantage" as const,
     eyebrow: "Longer View",
-    title: "Build toward something more useful.",
-    summary: "The near-term goal is learning; the long-term goal is a stronger analytical framework.",
+    title: "Keep strengthening the analytical contract.",
+    summary: "The long-term goal is a more trustworthy framework, not a more confident-looking interface.",
     detail:
-      "This may eventually become more product-like, but it is not ready for go-to-market positioning yet. For now, the priority is improving the data model, methodology, explanations, and user experience through real use and grounded feedback.",
+      "The priority is better data coverage, tighter methodology, clearer explanations, stronger accessibility, and an audit trail that makes every important read easier to verify.",
   },
 ];
 
@@ -425,28 +425,44 @@ export default function Vision() {
   const activeHeroHighlight = heroHighlights.find((item) => item.id === activeHighlight) ?? heroHighlights[1];
 
   return (
-    <div className="bg-stealth-900 text-gray-100">
-      <section className="relative overflow-hidden border-b border-stealth-700">
+    <div className="bg-stealth-950 text-stealth-100">
+      <section id="vision-now" className="relative scroll-mt-28 overflow-hidden border-b border-stealth-700">
         <HeroSignalIllustration />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(110,231,183,0.16),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(96,165,250,0.14),_transparent_34%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(96deg,_rgba(15,23,42,0.9)_0%,_rgba(15,23,42,0.72)_46%,_rgba(15,23,42,0.42)_100%)]" />
-        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 lg:py-24">
+        <div className="absolute inset-0 bg-stealth-950/75" />
+        <div className="relative mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
           <div className="max-w-4xl">
             <div className="inline-flex items-center rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
               Vision
             </div>
-            <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold leading-tight text-white">
-              A Personal Macro Workbench, Shared In Public.
+            <h1 className="mt-6 text-3xl font-semibold leading-tight text-white sm:text-4xl">
+              An Evidence-Led Market Research System.
             </h1>
-            <p className="mt-6 max-w-3xl text-lg sm:text-xl leading-8 text-stealth-200">
-              Market Diagnostic Dashboard is a passion project and personal tool for organizing macroeconomic context, cross-asset signals, and market regime notes.
+            <p className="mt-6 max-w-3xl text-lg leading-8 text-stealth-200">
+              Market Diagnostic Dashboard organizes macro context and cross-asset signals into a current regime read that remains connected to its evidence.
             </p>
-            <p className="mt-4 max-w-3xl text-base sm:text-lg leading-8 text-stealth-300">
-              I am sharing it before it is a finished product because the most useful next step is feedback: what is clear, what is missing, and what would make the framework more trustworthy.
+            <p className="mt-4 max-w-3xl text-base leading-8 text-stealth-300">
+              It is built for fast orientation and deliberate scrutiny: what changed, what drove it, how complete the evidence is, and where the framework may still be wrong.
             </p>
           </div>
         </div>
       </section>
+
+      <nav
+        aria-label="Vision sections"
+        tabIndex={0}
+        className="sticky top-16 z-20 mx-auto flex max-w-6xl gap-2 overflow-x-auto border-b border-stealth-700 bg-stealth-950/95 px-4 py-2 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400 sm:px-6 lg:px-8"
+      >
+        {[
+          ["#vision-now", "Purpose"],
+          ["#vision-principles", "Principles"],
+          ["#vision-audience", "Who it helps"],
+          ["#vision-feedback", "Inspect the work"],
+        ].map(([href, label]) => (
+          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+            {label}
+          </a>
+        ))}
+      </nav>
 
       <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
         <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
@@ -458,16 +474,17 @@ export default function Vision() {
                 <button
                   key={item.id}
                   type="button"
+                  aria-pressed={isActive}
                   onClick={() => setActiveHighlight(item.id)}
                   onMouseEnter={() => setActiveHighlight(item.id)}
                   onFocus={() => setActiveHighlight(item.id)}
-                  className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors duration-200 ${
+                  className={`min-h-11 w-full rounded-xl border px-4 py-4 text-left transition-colors duration-200 ${
                     isActive
                       ? "border-emerald-300/40 bg-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
                       : "border-stealth-700 bg-stealth-900/35 hover:border-stealth-500 hover:bg-white/[0.04]"
                   }`}
                 >
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stealth-400">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
                     {item.eyebrow}
                   </div>
                   <div className="mt-2 text-lg font-semibold text-white">
@@ -478,7 +495,7 @@ export default function Vision() {
             })}
           </div>
 
-          <div className="rounded-[28px] border border-emerald-300/20 bg-gradient-to-br from-white/[0.08] to-white/[0.03] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.18)]">
+          <div className="rounded-2xl border border-stealth-600 bg-stealth-850 p-5 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.78)] sm:p-6">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
               {activeHeroHighlight.eyebrow}
             </div>
@@ -497,7 +514,7 @@ export default function Vision() {
         </div>
       </section>
 
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-14 sm:pb-16">
+      <section id="vision-principles" className="scroll-mt-28 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-14 sm:pb-16">
         <div>
           {principles.map((item, idx) => {
             const isReversed = idx % 2 === 1;
@@ -560,24 +577,24 @@ export default function Vision() {
         </div>
       </section>
 
-      <section className="border-y border-stealth-700 bg-stealth-850/60">
+      <section id="vision-audience" className="scroll-mt-28 border-y border-stealth-700 bg-stealth-850/60">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16 grid gap-10 lg:grid-cols-[1.1fr_0.9fr] items-start">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-400">
-              The Honest Case
+              Operating Principle
             </div>
             <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
-              This is not pretending to be a finished platform.
+              Built to be used, inspected, and corrected.
             </h2>
             <p className="mt-5 text-lg leading-8 text-stealth-200">
-              The current version exists because I wanted a better way to read macro conditions without rebuilding the same context from scratch. It pulls together the indicators I care about, exposes the scoring logic, and gives me a more consistent place to evaluate whether market behavior is improving, deteriorating, or simply mixed.
+              The system exists to make macro conditions easier to review without rebuilding the same context from scratch. It brings the important indicators together, exposes the scoring logic, and gives each update a consistent place to show whether market behavior is improving, deteriorating, or mixed.
             </p>
             <p className="mt-4 text-lg leading-8 text-stealth-200">
-              It is still evolving. Some pieces are more mature than others, and I expect the methodology to keep changing as better data, clearer explanations, and sharper critiques come in. That is why the project is being shared now: not as a sales pitch, but as an open invitation to make the tool more useful.
+              The methodology will keep changing when better data or sharper evidence warrants it. Public scrutiny is part of that process: not a sales pitch, but an invitation to identify gaps and make the analytical contract stronger.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-stealth-700 bg-gradient-to-br from-stealth-800 to-stealth-900 p-6 sm:p-7">
+          <div className="rounded-2xl border border-stealth-700 bg-stealth-900 p-6 sm:p-7">
             <div className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300">
               Who It Helps
             </div>
@@ -595,8 +612,8 @@ export default function Vision() {
         </div>
       </section>
 
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
-        <div className="relative overflow-hidden rounded-3xl border border-stealth-700 bg-stealth-800/80 p-8 sm:p-10 lg:min-h-[360px] lg:p-12">
+      <section id="vision-feedback" className="scroll-mt-28 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
+        <div className="relative overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-800 p-8 sm:p-10 lg:min-h-[360px] lg:p-12">
           <div className="absolute inset-y-0 right-0 hidden lg:block lg:w-[460px] xl:w-[520px] pointer-events-none">
             <div className="absolute inset-y-0 left-0 right-0 bg-[radial-gradient(circle_at_center,_rgba(110,231,183,0.08),_transparent_62%)]" />
           </div>
@@ -607,17 +624,17 @@ export default function Vision() {
                 Follow The Work
               </div>
               <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">
-                Read the methodology, then tell me what breaks.
+                Inspect the methodology, then test the weak points.
               </h2>
               <p className="mt-5 text-lg leading-8 text-stealth-200">
-                The dashboard is useful to me because it turns scattered macro inputs into a repeatable review process. The next step is making that process easier for other people to inspect, question, and improve.
+                The dashboard turns scattered macro inputs into a repeatable review process. Its evidence, definitions, and limitations are meant to be inspected, questioned, and improved.
               </p>
             </div>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-4">
               <Link
                 to="/"
-                className="inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-stealth-900 transition-colors hover:bg-emerald-300"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-5 py-3 text-sm font-semibold text-stealth-900 transition-colors hover:bg-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
                 Explore The Dashboard
               </Link>
@@ -625,7 +642,7 @@ export default function Vision() {
                 href="https://github.com/meyer-s/Market-Diagnostic-Dashboard/wiki"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center justify-center rounded-xl border border-stealth-600 px-5 py-3 text-sm font-semibold text-stealth-100 transition-colors hover:border-stealth-400 hover:bg-white/[0.03]"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-stealth-600 px-5 py-3 text-sm font-semibold text-stealth-100 transition-colors hover:border-stealth-400 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
                 Read The Wiki
               </a>

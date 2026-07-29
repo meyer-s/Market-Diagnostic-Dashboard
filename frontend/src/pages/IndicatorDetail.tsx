@@ -1,18 +1,29 @@
 import React from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { IndicatorHistoryPoint } from "../types";
 import StateSparkline from "../components/widgets/StateSparkline";
 import { ComponentChart } from "../components/widgets/ComponentChart";
 import BondStressAttributionChart from "../components/bonds/BondStressAttributionChart";
+import MuniStressPanel from "../features/indicatorDetail/MuniStressPanel";
+import TreasuryYieldCurvePanel from "../features/indicatorDetail/TreasuryYieldCurvePanel";
+import type {
+  MuniSubsystemResponse,
+  YieldCurveResponse,
+} from "../features/indicatorDetail/types";
 import { processComponentData } from "../utils/chartDataUtils";
 import { prepareExtendedComponentData } from "../utils/indicatorDetailHelpers";
 import { formatDateTime } from "../utils/styleUtils";
 import { CHART_ANIMATION, CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor, statePalette } from "../theme/metricColors";
-import { muniPublicSectorThresholds, muniPublicSectorWeights } from "../theme/metricRegistry";
-import MarketLoading from "../components/ui/MarketLoading";
 import InfoTooltip from "../components/ui/InfoTooltip";
+import EvidenceStateNotice from "../components/ui/EvidenceStateNotice";
+import {
+  classifyCollectionEvidence,
+  classifyResourceEvidence,
+  combineEvidenceStates,
+  type EvidenceState,
+} from "../utils/evidenceState";
 import {
   Area,
   AreaChart,
@@ -168,6 +179,39 @@ interface SentimentCompositeComponentData {
   };
 }
 
+const componentEvidenceMessage = (
+  subject: string,
+  state: EvidenceState,
+  error: string | null,
+  partialMessage: string,
+) => {
+  switch (state) {
+    case "loading":
+      return `Loading ${subject} component evidence.`;
+    case "complete":
+      return `All expected ${subject} component series are available.`;
+    case "partial":
+      return partialMessage;
+    case "stale":
+      return error
+        ? `Showing the last loaded ${subject} component evidence because the latest refresh failed.`
+        : `Showing the last loaded ${subject} component evidence while a newer response is requested.`;
+    case "error":
+      return `${subject} component evidence is unavailable${error ? `: ${error}` : "."}`;
+    case "empty":
+      return `The ${subject} component request completed without observations.`;
+  }
+};
+
+const routeEvidenceMessage: Record<EvidenceState, string> = {
+  loading: "Loading the indicator definition, history, and component evidence.",
+  complete: "Definition, history, and component evidence are all available.",
+  partial: "The route is usable, but one or more evidence panels are missing or incomplete.",
+  stale: "Previously loaded evidence remains visible while at least one panel cannot refresh.",
+  empty: "No indicator evidence is available for this route.",
+  error: "The indicator evidence requests failed.",
+};
+
 interface AnalystAnxietyComponentData {
   date: string;
   vix: {
@@ -238,99 +282,6 @@ interface SectorDivergenceComponentsData {
   history: SectorDivergenceHistoryPoint[];
 }
 
-interface MuniSeriesPoint {
-  date: string;
-  value: number | null;
-  stability_score: number | null;
-  z_score?: number | null;
-}
-
-interface MuniSeries {
-  key: string;
-  name?: string;
-  label: string;
-  source?: string;
-  unit?: string;
-  is_proxy?: boolean;
-  is_live?: boolean;
-  as_of?: string | null;
-  value?: number | null;
-  stability_score?: number | null;
-  notes?: string;
-  latest?: MuniSeriesPoint | null;
-  trend?: string;
-  history?: MuniSeriesPoint[];
-  stress_cues?: {
-    stress_level?: "normal" | "stress" | "severe";
-    [key: string]: string | number | boolean | null | undefined;
-  };
-}
-
-interface MuniCurvePoint {
-  date: string;
-  yields?: Record<string, number | null>;
-  level?: number | null;
-  slope?: number | null;
-  score?: number | null;
-}
-
-interface MuniCurve {
-  label?: string;
-  source?: string;
-  notes?: string;
-  latest?: MuniCurvePoint | null;
-  trend?: string;
-  history?: MuniCurvePoint[];
-  status?: string;
-  reason?: string;
-}
-
-interface YieldCurvePoint {
-  maturity: string;
-  yield: number;
-}
-
-interface YieldCurveDateEntry {
-  date: string;
-  curve: YieldCurvePoint[];
-}
-
-interface YieldCurveResponse {
-  month: string;
-  months_requested?: number;
-  curves: YieldCurveDateEntry[];
-}
-
-interface MuniSubsystemResponse {
-  as_of?: string;
-  series: MuniSeries[];
-  composite?: {
-    score: number | null;
-    state: "GREEN" | "YELLOW" | "RED" | "UNKNOWN";
-    as_of?: string;
-    coverage_live: number;
-    coverage_total: number;
-    missing_keys: string[];
-    weights_used: Record<string, number>;
-    near_threshold?: "GREEN" | "RED" | null;
-  };
-  composite_history?: Array<{
-    date: string;
-    stability_score: number | null;
-  }>;
-  relationship_signal?: {
-    name: string;
-    state: "GREEN" | "YELLOW" | "RED";
-    message?: string | null;
-    inputs?: {
-      public_sector_score?: number | null;
-      bond_market_score?: number | null;
-      muni_spread_z_60d?: number | null;
-    };
-  };
-  curve?: MuniCurve | null;
-}
-
 interface BreadthHealthSector {
   ticker: string;
   name: string;
@@ -398,23 +349,35 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
     return 730;
   };
   
-  const { data: meta } = useApi<IndicatorDetailResponse>(
+  const { data: meta, loading: metaLoading, error: metaError, refetch: refetchMeta } = useApi<IndicatorDetailResponse>(
     apiCode ? `/indicators/${apiCode}` : ""
   );
-  const { data: history } = useApi<IndicatorHistoryPoint[]>(
+  const { data: history, loading: historyLoading, error: historyError, refetch: refetchHistory } = useApi<IndicatorHistoryPoint[]>(
     apiCode ? `/indicators/${apiCode}/history?days=${getHistoryDays()}` : ""
   );
-  const { data: components } = useApi<ComponentData[]>(
+  const {
+    data: components,
+    loading: componentsLoading,
+    error: componentsError,
+  } = useApi<ComponentData[]>(
     apiCode === "CONSUMER_HEALTH"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: bondComponents } = useApi<BondComponentData[]>(
+  const {
+    data: bondComponents,
+    loading: bondComponentsLoading,
+    error: bondComponentsError,
+  } = useApi<BondComponentData[]>(
     apiCode === "BOND_MARKET_STABILITY"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: liquidityComponents } = useApi<LiquidityComponentData[]>(
+  const {
+    data: liquidityComponents,
+    loading: liquidityComponentsLoading,
+    error: liquidityComponentsError,
+  } = useApi<LiquidityComponentData[]>(
     apiCode === "LIQUIDITY_PROXY"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
@@ -424,7 +387,11 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: sentimentCompositeComponents } = useApi<SentimentCompositeComponentData[]>(
+  const {
+    data: sentimentCompositeComponents,
+    loading: sentimentCompositeComponentsLoading,
+    error: sentimentCompositeComponentsError,
+  } = useApi<SentimentCompositeComponentData[]>(
     apiCode === "SENTIMENT_COMPOSITE"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
@@ -464,7 +431,15 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
   };
 
   if (!apiCode) {
-    return <div className="page-shell text-stealth-200">No indicator code provided.</div>;
+    return (
+      <div className="page-shell page-stack text-stealth-200">
+        <h1 className="page-title">Indicator not specified</h1>
+        <p className="text-stealth-300">Choose an indicator from the diagnostic library to inspect its evidence.</p>
+        <Link to="/indicators" className="inline-flex min-h-11 w-fit items-center rounded-lg border border-stealth-600 px-4 text-sm font-semibold text-stealth-100 hover:bg-stealth-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+          Browse indicators
+        </Link>
+      </div>
+    );
   }
 
   const displayName = isAnalystConfidence ? "Analyst Confidence" : meta?.name ?? apiCode;
@@ -486,6 +461,66 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
   };
   
   const chartRange = getChartRange();
+  const latestConsumerComponent = components?.[components.length - 1];
+  const latestSentimentComponent =
+    sentimentCompositeComponents?.[sentimentCompositeComponents.length - 1];
+  const consumerComponentState = classifyCollectionEvidence({
+    data: components,
+    loading: componentsLoading,
+    error: componentsError,
+    partial: Boolean(
+      latestConsumerComponent &&
+      (!latestConsumerComponent.xly_xlp || latestConsumerComponent.xly_xlp.ratio === null),
+    ),
+  });
+  const bondComponentState = classifyCollectionEvidence({
+    data: bondComponents,
+    loading: bondComponentsLoading,
+    error: bondComponentsError,
+  });
+  const liquidityComponentState = classifyCollectionEvidence({
+    data: liquidityComponents,
+    loading: liquidityComponentsLoading,
+    error: liquidityComponentsError,
+  });
+  const sentimentComponentState = classifyCollectionEvidence({
+    data: sentimentCompositeComponents,
+    loading: sentimentCompositeComponentsLoading,
+    error: sentimentCompositeComponentsError,
+    partial: Boolean(
+      latestSentimentComponent &&
+      (
+        !latestSentimentComponent.nfib_optimism ||
+        !latestSentimentComponent.ism_new_orders ||
+        !latestSentimentComponent.capex_proxy
+      ),
+    ),
+  });
+  const activeComponentState =
+    apiCode === "CONSUMER_HEALTH"
+      ? consumerComponentState
+      : apiCode === "BOND_MARKET_STABILITY"
+        ? bondComponentState
+        : apiCode === "LIQUIDITY_PROXY"
+          ? liquidityComponentState
+          : apiCode === "SENTIMENT_COMPOSITE"
+            ? sentimentComponentState
+            : null;
+  const definitionEvidenceState = classifyResourceEvidence({
+    available: Boolean(meta),
+    loading: metaLoading,
+    error: metaError,
+  });
+  const historyEvidenceState = classifyCollectionEvidence({
+    data: history,
+    loading: historyLoading,
+    error: historyError,
+  });
+  const routeEvidenceState = combineEvidenceStates([
+    definitionEvidenceState,
+    historyEvidenceState,
+    ...(activeComponentState ? [activeComponentState] : []),
+  ]);
   const bondStressAttributionData =
     apiCode === "BOND_MARKET_STABILITY" && bondComponents
       ? (() => {
@@ -515,22 +550,66 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
 
   return (
     <div className="page-shell page-stack text-stealth-200">
-      <h2 className="text-2xl sm:text-3xl font-bold mb-4 md:mb-6">
-        {displayName}
-      </h2>
+      <header>
+        <p className="page-kicker">Indicator evidence</p>
+        <h1 className="page-title">{displayName}</h1>
+        <p className="page-subtitle">Current read, underlying components, scoring definition, and historical evidence.</p>
+      </header>
 
+      <nav
+        aria-label="Indicator detail sections"
+        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur"
+      >
+        {[
+          ["#indicator-framework", "Definition"],
+          ["#indicator-evidence", "Evidence"],
+          ["#indicator-history", "History"],
+        ].map(([href, label]) => (
+          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      <EvidenceStateNotice
+        panelId="indicator-route"
+        title="Data completeness"
+        state={routeEvidenceState}
+        message={routeEvidenceMessage[routeEvidenceState]}
+        details={
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span>Definition: {definitionEvidenceState}</span>
+            <span>History: {historyEvidenceState}</span>
+            {activeComponentState ? <span>Components: {activeComponentState}</span> : null}
+            {(metaError || historyError) && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (metaError) refetchMeta();
+                  if (historyError) refetchHistory();
+                }}
+                className="inline-flex min-h-11 items-center rounded-lg border border-current/40 px-4 text-xs font-semibold hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
+              >
+                Retry missing evidence
+              </button>
+            )}
+          </div>
+        }
+      />
+
+      <div id="indicator-framework" className="scroll-mt-32" aria-hidden="true" />
       {/* Metadata Section */}
       {meta?.metadata && (() => {
         const firstSentence = meta.metadata.description.split(/\.\s+/)[0].replace(/\.$/, "");
         return (
-          <div className="surface-card-strong mb-4 overflow-hidden md:mb-6">
+          <section className="surface-card-strong mb-4 overflow-hidden md:mb-6">
             <button
               onClick={() => setDescExpanded(e => !e)}
               className="flex w-full items-start justify-between gap-4 p-4 text-left md:p-5"
               aria-expanded={descExpanded}
             >
               <div className="flex-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Indicator Framework</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stealth-400">Indicator Framework</div>
                 <p className="mt-2 flex-1 text-sm leading-relaxed text-stealth-300 md:text-base">
                   {descExpanded ? meta.metadata.description : firstSentence + "."}
                 </p>
@@ -568,10 +647,11 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               </div>
               </div>
             </div>
-          </div>
+          </section>
         );
       })()}
 
+      <div id="indicator-evidence" className="scroll-mt-32" aria-hidden="true" />
       {apiCode === "SECTOR_REGIME_ALIGNMENT" && sectorDivergenceComponents && (() => {
         const cutoffMs = Date.now() - (chartRange.days * 24 * 60 * 60 * 1000);
         const sectorHistory = sectorDivergenceComponents.history
@@ -616,27 +696,27 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Alignment Score</div>
                 <div className={`text-2xl font-bold ${scoreColor}`}>{latest.alignment_score.toFixed(1)}</div>
-                <div className="text-[11px] text-stealth-500 mt-1">0-100 composite</div>
+                <div className="text-xs text-stealth-500 mt-1">0-100 composite</div>
               </div>
               <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">System State</div>
                 <div className={`text-2xl font-bold ${latest.system_state === "GREEN" ? "text-green-400" : latest.system_state === "RED" ? "text-red-400" : "text-yellow-400"}`}>{latest.system_state}</div>
-                <div className="text-[11px] text-stealth-500 mt-1">Active regime</div>
+                <div className="text-xs text-stealth-500 mt-1">Active regime</div>
               </div>
               <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Def vs Cyc Spread</div>
                 <div className={`text-2xl font-bold ${spreadColor}`}>{latest.spread > 0 ? "+" : ""}{latest.spread.toFixed(1)}</div>
-                <div className="text-[11px] text-stealth-500 mt-1">Positive = defensive lead</div>
+                <div className="text-xs text-stealth-500 mt-1">Positive = defensive lead</div>
               </div>
               <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Defensive Avg</div>
                 <div className="text-2xl font-bold text-blue-400">{latest.defensive_avg.toFixed(1)}</div>
-                <div className="text-[11px] text-stealth-500 mt-1">XLU, XLP, XLV</div>
+                <div className="text-xs text-stealth-500 mt-1">XLU, XLP, XLV</div>
               </div>
               <div className="data-card">
                 <div className="text-xs text-stealth-400 mb-1">Cyclical Avg</div>
                 <div className="text-2xl font-bold text-orange-400">{latest.cyclical_avg.toFixed(1)}</div>
-                <div className="text-[11px] text-stealth-500 mt-1">XLE, XLF, XLK, XLY</div>
+                <div className="text-xs text-stealth-500 mt-1">XLE, XLF, XLK, XLY</div>
               </div>
             </div>
 
@@ -670,17 +750,22 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 <div className="text-sm font-semibold text-stealth-200 mb-2">Defensive vs Cyclical Spread</div>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <LineChart data={sectorHistory} margin={CHART_MARGIN}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label="Defensive versus cyclical sector-spread history"
+                      data={sectorHistory}
+                      margin={CHART_MARGIN}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
                         dataKey="timestampNum"
                         type="number"
                         domain={["dataMin", "dataMax"]}
-                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        tick={{ fill: "#94a3b8", fontSize: 12 }}
                         stroke={CHART_NEUTRAL.axis}
                         tickFormatter={(value: number) => formatDateUtc(value)}
                       />
-                      <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} stroke={CHART_NEUTRAL.axis} />
+                      <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} stroke={CHART_NEUTRAL.axis} />
                       <Tooltip
                         contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 10 }}
                         labelFormatter={(value: number) => formatDateUtc(value)}
@@ -696,17 +781,22 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 <div className="text-sm font-semibold text-stealth-200 mb-2">Alignment Score History</div>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <LineChart data={sectorHistory} margin={CHART_MARGIN}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label="Sector alignment score history"
+                      data={sectorHistory}
+                      margin={CHART_MARGIN}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
                         dataKey="timestampNum"
                         type="number"
                         domain={["dataMin", "dataMax"]}
-                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        tick={{ fill: "#94a3b8", fontSize: 12 }}
                         stroke={CHART_NEUTRAL.axis}
                         tickFormatter={(value: number) => formatDateUtc(value)}
                       />
-                      <YAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 11 }} stroke={CHART_NEUTRAL.axis} />
+                      <YAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 12 }} stroke={CHART_NEUTRAL.axis} />
                       <Tooltip
                         contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 10 }}
                         labelFormatter={(value: number) => formatDateUtc(value)}
@@ -725,17 +815,17 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               <div className="data-card">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Regime Expectation</div>
                 <div className="text-sm text-stealth-300 leading-6">{expectedLeadership}</div>
-                <div className="text-[11px] text-stealth-500 mt-2">Current regime: {latest.system_state}</div>
+                <div className="text-xs text-stealth-500 mt-2">Current regime: {latest.system_state}</div>
               </div>
               <div className="data-card">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Observed Leadership</div>
                 <div className="text-sm text-stealth-300 leading-6">{observedLeadership}</div>
-                <div className="text-[11px] text-stealth-500 mt-2">Spread compares defensive basket versus cyclical basket</div>
+                <div className="text-xs text-stealth-500 mt-2">Spread compares defensive basket versus cyclical basket</div>
               </div>
               <div className="data-card">
                 <div className="text-xs font-semibold text-stealth-200 mb-2">Live Scoring Snapshot</div>
                 <div className="text-sm font-mono text-stealth-300">{scoringFormula}</div>
-                <div className="text-[11px] text-stealth-500 mt-2">Current score {latest.alignment_score.toFixed(1)} lands in the {scoreBand}</div>
+                <div className="text-xs text-stealth-500 mt-2">Current score {latest.alignment_score.toFixed(1)} lands in the {scoreBand}</div>
               </div>
             </div>
 
@@ -747,6 +837,20 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       })()}
 
       {/* Component Breakdown for Consumer Health */}
+      {apiCode === "CONSUMER_HEALTH" && (
+        <EvidenceStateNotice
+          panelId="consumer-health-components"
+          title="Consumer component evidence"
+          state={consumerComponentState}
+          message={componentEvidenceMessage(
+            "consumer",
+            consumerComponentState,
+            componentsError,
+            "PCE, personal income, and CPI are available; XLY/XLP ratio evidence is unavailable.",
+          )}
+          className="mb-4 md:mb-6"
+        />
+      )}
       {apiCode === "CONSUMER_HEALTH" && components && components.length > 0 && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
@@ -801,7 +905,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     As of {formatAsOf(latestPceEntry.pce.as_of || latestPceEntry.date)}
                   </div>
                   {isWaiting(latestPceEntry.pce.as_of || latestPceEntry.date) && (
-                    <div className="text-[11px] text-amber-400 mt-1">Waiting on release</div>
+                    <div className="text-xs text-amber-400 mt-1">Waiting on release</div>
                   )}
                 </div>
 
@@ -816,7 +920,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     As of {formatAsOf(latestPiEntry.pi.as_of || latestPiEntry.date)}
                   </div>
                   {isWaiting(latestPiEntry.pi.as_of || latestPiEntry.date) && (
-                    <div className="text-[11px] text-amber-400 mt-1">Waiting on release</div>
+                    <div className="text-xs text-amber-400 mt-1">Waiting on release</div>
                   )}
                 </div>
 
@@ -831,11 +935,16 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     As of {formatAsOf(latestCpiEntry.cpi.as_of || latestCpiEntry.date)}
                   </div>
                   {isWaiting(latestCpiEntry.cpi.as_of || latestCpiEntry.date) && (
-                    <div className="text-[11px] text-amber-400 mt-1">Waiting on release</div>
+                    <div className="text-xs text-amber-400 mt-1">Waiting on release</div>
                   )}
                 </div>
 
-                <div className="data-card">
+                <div
+                  className="data-card"
+                  data-evidence-panel="consumer-xly-xlp"
+                  data-evidence-state={ratio !== null ? "complete" : "empty"}
+                  role={ratio === null ? "status" : undefined}
+                >
                   <div className="text-xs text-stealth-400 mb-1">XLY / XLP (Wants vs Needs)</div>
                   <div className={`text-lg font-bold ${ratio !== null && ratio > 1 ? "text-emerald-400" : "text-orange-400"}`}>
                     {ratio !== null ? ratio.toFixed(3) : "—"}
@@ -848,7 +957,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                       ? `Range: ${ratio52wLow.toFixed(3)} – ${ratio52wHigh.toFixed(3)}`
                       : ""}
                   </div>
-                  <div className="text-[11px] text-stealth-600 mt-1">Daily · 15% weight</div>
+                  <div className="text-xs text-stealth-600 mt-1">Daily · 15% weight</div>
+                  {ratio === null ? (
+                    <div className="mt-1 text-xs text-amber-300">
+                      XLY/XLP ratio evidence is unavailable in this response.
+                    </div>
+                  ) : null}
                 </div>
               </div>
             );
@@ -952,7 +1066,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             className={`pb-3 px-2 font-semibold border-b-2 transition ${
               bondTab === "core"
                 ? "border-blue-500 text-blue-300"
-                : "border-transparent text-stealth-400 hover:text-gray-300"
+                : "border-transparent text-stealth-400 hover:text-stealth-300"
             }`}
           >
             Core Bond Stability
@@ -962,7 +1076,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             className={`pb-3 px-2 font-semibold border-b-2 transition ${
               bondTab === "public"
                 ? "border-emerald-500 text-emerald-300"
-                : "border-transparent text-stealth-400 hover:text-gray-300"
+                : "border-transparent text-stealth-400 hover:text-stealth-300"
             }`}
           >
             Public-sector credit &amp; funding stress
@@ -972,7 +1086,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             className={`pb-3 px-2 font-semibold border-b-2 transition ${
               bondTab === "yield"
                 ? "border-cyan-500 text-cyan-300"
-                : "border-transparent text-stealth-400 hover:text-gray-300"
+                : "border-transparent text-stealth-400 hover:text-stealth-300"
             }`}
           >
             Live Yield Curve
@@ -981,6 +1095,20 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       )}
 
       {/* Component Breakdown for Bond Market Stability */}
+      {apiCode === "BOND_MARKET_STABILITY" && bondTab === "core" && (
+        <EvidenceStateNotice
+          panelId="bond-core-components"
+          title="Core bond component evidence"
+          state={bondComponentState}
+          message={componentEvidenceMessage(
+            "core bond",
+            bondComponentState,
+            bondComponentsError,
+            "Some expected core bond component series are unavailable.",
+          )}
+          className="mb-4 md:mb-6"
+        />
+      )}
       {apiCode === "BOND_MARKET_STABILITY" && bondTab === "core" && bondComponents && bondComponents.length > 0 && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
@@ -1011,7 +1139,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
 
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="data-card">
+                <div className="data-card">
               <div className="text-xs text-stealth-400 mb-1">Credit Spreads</div>
               <div className="text-lg font-bold text-red-400">
                 {latest.credit_spread_stress.stability_score.toFixed(1)}
@@ -1023,7 +1151,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 Weight {(latest.credit_spread_stress.weight * 100).toFixed(0)}% · Contrib {latest.credit_spread_stress.contribution.toFixed(1)}
               </div>
               <div className={`text-xs mt-1 ${trendTone(creditTrend)}`}>Trend: {creditTrend}</div>
-              <div className="text-[11px] text-stealth-500 mt-2">Widening spreads reduce stability.</div>
+              <div className="text-xs text-stealth-500 mt-2">Widening spreads reduce stability.</div>
             </div>
             
             <div className="data-card">
@@ -1041,7 +1169,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 Weight {(latest.yield_curve_stress.weight * 100).toFixed(0)}% · Contrib {latest.yield_curve_stress.contribution.toFixed(1)}
               </div>
               <div className={`text-xs mt-1 ${trendTone(curveTrend)}`}>Trend: {curveTrend}</div>
-              <div className="text-[11px] text-stealth-500 mt-2">Flatter/inverted curves signal stress.</div>
+              <div className="text-xs text-stealth-500 mt-2">Flatter/inverted curves signal stress.</div>
             </div>
             
             <div className="data-card">
@@ -1056,7 +1184,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 Weight {(latest.rates_momentum_stress.weight * 100).toFixed(0)}% · Contrib {latest.rates_momentum_stress.contribution.toFixed(1)}
               </div>
               <div className={`text-xs mt-1 ${trendTone(momentumTrend)}`}>Trend: {momentumTrend}</div>
-              <div className="text-[11px] text-stealth-500 mt-2">Sharp rate spikes reduce stability.</div>
+              <div className="text-xs text-stealth-500 mt-2">Sharp rate spikes reduce stability.</div>
             </div>
             
             <div className="data-card">
@@ -1071,7 +1199,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 Weight {(latest.treasury_volatility_stress.weight * 100).toFixed(0)}% · Contrib {latest.treasury_volatility_stress.contribution.toFixed(1)}
               </div>
               <div className={`text-xs mt-1 ${trendTone(volTrend)}`}>Trend: {volTrend}</div>
-              <div className="text-[11px] text-stealth-500 mt-2">Higher volatility signals stress.</div>
+              <div className="text-xs text-stealth-500 mt-2">Higher volatility signals stress.</div>
             </div>
               </div>
             );
@@ -1197,13 +1325,15 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             <div className="h-52 mb-5">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart
+                  accessibilityLayer
+                  aria-label="Participation and breadth proxy history"
                   data={breadthHealthComponents.history}
                   margin={CHART_MARGIN}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
                   <XAxis
                     dataKey="date"
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
                     axisLine={{ stroke: "#475569" }}
                     tickLine={{ stroke: "#475569" }}
                     minTickGap={28}
@@ -1212,7 +1342,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   <YAxis
                     yAxisId="idx"
                     domain={["auto", "auto"]}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
                     axisLine={{ stroke: "#475569" }}
                     tickLine={{ stroke: "#475569" }}
                     width={36}
@@ -1222,7 +1352,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     yAxisId="pct"
                     orientation="right"
                     domain={[0, 100]}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
                     axisLine={{ stroke: "#475569" }}
                     tickLine={{ stroke: "#475569" }}
                     width={34}
@@ -1243,7 +1373,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     labelFormatter={(label: string) => label}
                   />
                   <Legend
-                    wrapperStyle={{ fontSize: 11, color: "#94a3b8", paddingTop: 4 }}
+                    wrapperStyle={{ fontSize: 12, color: "#94a3b8", paddingTop: 4 }}
                   />
                   <Line
                     yAxisId="idx"
@@ -1296,32 +1426,32 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             return (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
                 <div className="stat-card p-3">
-                  <div className="text-[10px] uppercase text-stealth-500 mb-1">RSP/SPY (90d Δ)</div>
+                  <div className="text-xs uppercase text-stealth-500 mb-1">RSP/SPY (90d Δ)</div>
                   <div className={`text-base font-semibold ${rspDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
                     {rspDelta >= 0 ? "+" : ""}{rspDelta.toFixed(1)}
                   </div>
-                  <div className="text-[10px] text-stealth-500 mt-0.5">Equal-wt vs cap-wt</div>
+                  <div className="text-xs text-stealth-500 mt-0.5">Equal-wt vs cap-wt</div>
                 </div>
                 <div className="stat-card p-3">
-                  <div className="text-[10px] uppercase text-stealth-500 mb-1">IWM/SPY (90d Δ)</div>
+                  <div className="text-xs uppercase text-stealth-500 mb-1">IWM/SPY (90d Δ)</div>
                   <div className={`text-base font-semibold ${iwmDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
                     {iwmDelta >= 0 ? "+" : ""}{iwmDelta.toFixed(1)}
                   </div>
-                  <div className="text-[10px] text-stealth-500 mt-0.5">Small-cap breadth</div>
+                  <div className="text-xs text-stealth-500 mt-0.5">Small-cap breadth</div>
                 </div>
                 <div className="stat-card p-3">
-                  <div className="text-[10px] uppercase text-stealth-500 mb-1">Sectors &gt; 20d MA</div>
+                  <div className="text-xs uppercase text-stealth-500 mb-1">Sectors &gt; 20d MA</div>
                   <div className={`text-base font-semibold ${latest.sectors_above_ma20_pct >= 55 ? "text-green-300" : latest.sectors_above_ma20_pct >= 36 ? "text-yellow-300" : "text-red-300"}`}>
                     {latest.sectors_above_ma20_pct.toFixed(0)}%
                   </div>
-                  <div className="text-[10px] text-stealth-500 mt-0.5">of 11 SPDR sectors</div>
+                  <div className="text-xs text-stealth-500 mt-0.5">of 11 SPDR sectors</div>
                 </div>
                 <div className="stat-card p-3">
-                  <div className="text-[10px] uppercase text-stealth-500 mb-1">Positive 20d Return</div>
+                  <div className="text-xs uppercase text-stealth-500 mb-1">Positive 20d Return</div>
                   <div className={`text-base font-semibold ${latest.sectors_positive_20d_pct >= 55 ? "text-green-300" : latest.sectors_positive_20d_pct >= 36 ? "text-yellow-300" : "text-red-300"}`}>
                     {latest.sectors_positive_20d_pct.toFixed(0)}%
                   </div>
-                  <div className="text-[10px] text-stealth-500 mt-0.5">of 11 SPDR sectors</div>
+                  <div className="text-xs text-stealth-500 mt-0.5">of 11 SPDR sectors</div>
                 </div>
               </div>
             );
@@ -1341,14 +1471,14 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                         : "border-red-600/50 bg-red-500/10"
                     }`}
                   >
-                    <div className="text-[11px] font-semibold text-stealth-100">{sector.ticker}</div>
-                    <div className="text-[10px] text-stealth-400 mb-1">{sector.name}</div>
+                    <div className="text-xs font-semibold text-stealth-100">{sector.ticker}</div>
+                    <div className="text-xs text-stealth-400 mb-1">{sector.name}</div>
                     <div
                       className={`text-xs font-medium ${sector.return_20d_pct >= 0 ? "text-green-300" : "text-red-300"}`}
                     >
                       {sector.return_20d_pct >= 0 ? "+" : ""}{sector.return_20d_pct.toFixed(1)}%
                     </div>
-                    <div className={`text-[9px] mt-0.5 ${sector.above_ma20 ? "text-green-500" : "text-red-500"}`}>
+                    <div className={`mt-0.5 text-xs ${sector.above_ma20 ? "text-green-300" : "text-red-300"}`}>
                       {sector.above_ma20 ? "▲ above MA" : "▼ below MA"}
                     </div>
                   </div>
@@ -1360,6 +1490,20 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       )}
 
       {/* Component Breakdown for Liquidity Proxy */}
+      {apiCode === "LIQUIDITY_PROXY" && (
+        <EvidenceStateNotice
+          panelId="liquidity-components"
+          title="Liquidity component evidence"
+          state={liquidityComponentState}
+          message={componentEvidenceMessage(
+            "liquidity",
+            liquidityComponentState,
+            liquidityComponentsError,
+            "Some expected liquidity component series are unavailable.",
+          )}
+          className="mb-4 md:mb-6"
+        />
+      )}
       {apiCode === "LIQUIDITY_PROXY" && liquidityComponents && liquidityComponents.length > 0 && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
@@ -1570,7 +1714,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               
               return (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={deduplicatedData7} margin={CHART_MARGIN}>
+                  <LineChart
+                    accessibilityLayer
+                    aria-label="Analyst-confidence component stability history over 90 days"
+                    data={deduplicatedData7}
+                    margin={CHART_MARGIN}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="dateNum"
@@ -1675,7 +1824,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               
               return (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={deduplicatedData8} margin={CHART_MARGIN}>
+                  <LineChart
+                    accessibilityLayer
+                    aria-label="Analyst-confidence composite stability history over 90 days"
+                    data={deduplicatedData8}
+                    margin={CHART_MARGIN}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="dateNum"
@@ -1720,8 +1874,8 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                       strokeWidth={3}
                       dot={false}
                     />
-                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: statePalette.green, fontSize: 11 }} />
-                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: statePalette.red, fontSize: 11 }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: statePalette.green, fontSize: 12 }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: statePalette.red, fontSize: 12 }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -1731,6 +1885,20 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       )}
 
       {/* Component Breakdown for Sentiment Composite */}
+      {apiCode === "SENTIMENT_COMPOSITE" && (
+        <EvidenceStateNotice
+          panelId="sentiment-components"
+          title="Sentiment component evidence"
+          state={sentimentComponentState}
+          message={componentEvidenceMessage(
+            "sentiment",
+            sentimentComponentState,
+            sentimentCompositeComponentsError,
+            "Consumer sentiment is available; one or more business-confidence series are unavailable.",
+          )}
+          className="mb-4 md:mb-6"
+        />
+      )}
       {apiCode === "SENTIMENT_COMPOSITE" && sentimentCompositeComponents && sentimentCompositeComponents.length > 0 && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>
@@ -1741,7 +1909,11 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           
           {/* Latest Component Values */}
           <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="data-card">
+            <div
+              className="data-card"
+              data-evidence-panel="sentiment-consumer-confidence"
+              data-evidence-state="complete"
+            >
               <div className="text-xs text-stealth-400 mb-1">Consumer Confidence</div>
               <div className="text-lg font-bold" style={{ color: getFamilyColor("sentiment") }}>
                 {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].michigan_sentiment.value.toFixed(1)}
@@ -1754,8 +1926,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               </div>
             </div>
             
-            {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism && (
-              <div className="data-card">
+            {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism ? (
+              <div
+                className="data-card"
+                data-evidence-panel="sentiment-nfib-confidence"
+                data-evidence-state="complete"
+              >
                 <div className="text-xs text-stealth-400 mb-1">NFIB Business Confidence</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("growth", "muted") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism!.value.toFixed(1)}
@@ -1767,10 +1943,27 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   Weight: {(sentimentCompositeComponents[sentimentCompositeComponents.length - 1].nfib_optimism!.weight * 100).toFixed(0)}%
                 </div>
               </div>
+            ) : (
+              <div
+                className="data-card"
+                data-evidence-panel="sentiment-nfib-confidence"
+                data-evidence-state="empty"
+                role="status"
+              >
+                <div className="text-xs text-stealth-400 mb-1">NFIB Business Confidence</div>
+                <div className="text-sm font-semibold text-stealth-200">Unavailable</div>
+                <div className="mt-1 text-xs text-stealth-500">
+                  This response does not include the NFIB series.
+                </div>
+              </div>
             )}
             
-            {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders && (
-              <div className="data-card">
+            {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders ? (
+              <div
+                className="data-card"
+                data-evidence-panel="sentiment-new-orders"
+                data-evidence-state="complete"
+              >
                 <div className="text-xs text-stealth-400 mb-1">Regional New Orders (NY/TX/PHI)</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("growth") }}>
                   {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders!.value.toFixed(1)}
@@ -1782,10 +1975,27 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   Weight: {(sentimentCompositeComponents[sentimentCompositeComponents.length - 1].ism_new_orders!.weight * 100).toFixed(0)}%
                 </div>
               </div>
+            ) : (
+              <div
+                className="data-card"
+                data-evidence-panel="sentiment-new-orders"
+                data-evidence-state="empty"
+                role="status"
+              >
+                <div className="text-xs text-stealth-400 mb-1">Regional New Orders (NY/TX/PHI)</div>
+                <div className="text-sm font-semibold text-stealth-200">Unavailable</div>
+                <div className="mt-1 text-xs text-stealth-500">
+                  This response does not include regional new-orders evidence.
+                </div>
+              </div>
             )}
             
-            {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy && (
-              <div className="data-card">
+            {sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy ? (
+              <div
+                className="data-card"
+                data-evidence-panel="sentiment-capex-orders"
+                data-evidence-state="complete"
+              >
                 <div className="text-xs text-stealth-400 mb-1">CapEx Orders (Billions)</div>
                 <div className="text-lg font-bold" style={{ color: getFamilyColor("growth", "muted") }}>
                   ${(sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy!.value / 1000).toFixed(1)}B
@@ -1795,6 +2005,19 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 </div>
                 <div className="text-xs text-stealth-500">
                   Weight: {(sentimentCompositeComponents[sentimentCompositeComponents.length - 1].capex_proxy!.weight * 100).toFixed(0)}%
+                </div>
+              </div>
+            ) : (
+              <div
+                className="data-card"
+                data-evidence-panel="sentiment-capex-orders"
+                data-evidence-state="empty"
+                role="status"
+              >
+                <div className="text-xs text-stealth-400 mb-1">CapEx Orders (Billions)</div>
+                <div className="text-sm font-semibold text-stealth-200">Unavailable</div>
+                <div className="mt-1 text-xs text-stealth-500">
+                  This response does not include capital-expenditure orders.
                 </div>
               </div>
             )}
@@ -1871,7 +2094,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                   </p>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                      <AreaChart data={deduplicatedCloudData} margin={CHART_MARGIN}>
+                      <AreaChart
+                        accessibilityLayer
+                        aria-label="Business-versus-consumer confidence decoupling history"
+                        data={deduplicatedCloudData}
+                        margin={CHART_MARGIN}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                         <XAxis
                           dataKey="dateNum"
@@ -1942,7 +2170,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               
               return (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={deduplicatedData9} margin={CHART_MARGIN}>
+                  <LineChart
+                    accessibilityLayer
+                    aria-label="Sentiment component confidence history over 12 months"
+                    data={deduplicatedData9}
+                    margin={CHART_MARGIN}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="dateNum"
@@ -2060,7 +2293,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               
               return (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={deduplicatedData10} margin={CHART_MARGIN}>
+                  <LineChart
+                    accessibilityLayer
+                    aria-label="Sentiment composite stability history over 12 months"
+                    data={deduplicatedData10}
+                    margin={CHART_MARGIN}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="dateNum"
@@ -2098,8 +2336,8 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                       strokeWidth={3}
                       dot={false}
                     />
-                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: statePalette.green, fontSize: 11 }} />
-                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: statePalette.red, fontSize: 11 }} />
+                    <ReferenceLine y={70} stroke={statePalette.green} strokeDasharray="3 3" label={{ value: 'GREEN Threshold', position: 'insideTopRight', fill: statePalette.green, fontSize: 12 }} />
+                    <ReferenceLine y={40} stroke={statePalette.red} strokeDasharray="3 3" label={{ value: 'RED Threshold', position: 'insideBottomRight', fill: statePalette.red, fontSize: 12 }} />
                   </LineChart>
                 </ResponsiveContainer>
               );
@@ -2116,7 +2354,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
         const isStale = daysOld > 45;
         
         return isStale ? (
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6">
+          <div
+            className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6"
+            data-evidence-panel="indicator-freshness"
+            data-evidence-state="stale"
+            role="status"
+          >
             <div className="flex items-start gap-3">
               <div className="text-yellow-400 text-xl">Warning</div>
               <div>
@@ -2145,7 +2388,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4">
             <div className="text-sm text-stealth-400 mb-1">Stability Score</div>
             <div className="text-2xl font-bold text-stealth-100">
-              {meta.latest.score}
+              {meta.latest.score.toFixed(1)}
               <span className="text-sm text-stealth-400 ml-1">/ 100</span>
             </div>
           </div>
@@ -2244,7 +2487,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               
               return (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={chartData} margin={{ ...CHART_MARGIN, right: 30 }}>
+                  <LineChart
+                    accessibilityLayer
+                    aria-label={`${displayName} raw-value history`}
+                    data={chartData}
+                    margin={{ ...CHART_MARGIN, right: 30 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="timestampNum"
@@ -2305,6 +2553,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
         </div>
         */}
         
+        <div id="indicator-history" className="scroll-mt-32" aria-hidden="true" />
         {showGenericStabilityHistory && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6">
           <div className="flex items-center gap-2 mb-4">
@@ -2392,7 +2641,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               
               return (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={chartData} margin={{ ...CHART_MARGIN, right: 30 }}>
+                  <LineChart
+                    accessibilityLayer
+                    aria-label={`${displayName} stability score history`}
+                    data={chartData}
+                    margin={{ ...CHART_MARGIN, right: 30 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="timestampNum"
@@ -2474,6 +2728,41 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
               </div>
             )}
           </div>
+          {history && history.length > 0 && (
+            <details className="mt-4 border-t border-stealth-700 pt-2 text-xs">
+              <summary className="flex min-h-11 cursor-pointer items-center rounded-lg px-2 font-semibold text-stealth-300 hover:bg-stealth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+                View recent score values
+              </summary>
+              <div
+                className="max-w-full overflow-x-auto rounded-lg border border-stealth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                role="region"
+                aria-label={`${displayName} recent history values`}
+                tabIndex={0}
+              >
+                <table className="w-full min-w-[30rem] text-left">
+                  <caption className="sr-only">Most recent {displayName} observations</caption>
+                  <thead className="bg-stealth-900 text-stealth-300">
+                    <tr>
+                      <th scope="col" className="px-3 py-2">Date</th>
+                      <th scope="col" className="px-3 py-2">Raw value</th>
+                      <th scope="col" className="px-3 py-2">Score</th>
+                      <th scope="col" className="px-3 py-2">State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.slice(-24).reverse().map((point) => (
+                      <tr key={point.timestamp} className="border-t border-stealth-700 text-stealth-200">
+                        <td className="px-3 py-2">{new Date(point.timestamp).toLocaleDateString()}</td>
+                        <td className="px-3 py-2 font-mono tabular-nums">{Number.isFinite(point.raw_value) ? point.raw_value.toFixed(2) : "—"}</td>
+                        <td className="px-3 py-2 font-mono tabular-nums">{Number.isFinite(point.score) ? point.score.toFixed(1) : "—"}</td>
+                        <td className="px-3 py-2">{point.state}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
         </div>
         )}
 
@@ -2533,12 +2822,12 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                 <div className="data-card">
                   <div className="text-xs font-semibold text-stealth-200 mb-2">Current Scoring Pass</div>
                   <div className="text-xs font-mono text-stealth-300 leading-6">{scoringFormula}</div>
-                  <div className="text-[11px] text-stealth-500 mt-2">Active regime: {latest.system_state}</div>
+                  <div className="text-xs text-stealth-500 mt-2">Active regime: {latest.system_state}</div>
                 </div>
                 <div className="data-card">
                   <div className="text-xs font-semibold text-stealth-200 mb-2">Interpretation</div>
                   <div className="text-sm text-stealth-300 leading-6">{interpretation}</div>
-                  <div className="text-[11px] text-stealth-500 mt-2">Latest snapshot: {formatDateTime(sectorDivergenceComponents.updated_at)}</div>
+                  <div className="text-xs text-stealth-500 mt-2">Latest snapshot: {formatDateTime(sectorDivergenceComponents.updated_at)}</div>
                 </div>
               </div>
 
@@ -2570,715 +2859,6 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           );
         })()}
       </div>
-    </div>
-  );
-}
-
-// Maturity labels in order for the x-axis
-const MATURITY_ORDER = ["1M","2M","3M","4M","6M","1Y","2Y","3Y","5Y","7Y","10Y","20Y","30Y"];
-const DAILY_CURVE_STYLES = [
-  { color: "#67e8f9", opacity: 1.0, width: 3 },
-  { color: "#22d3ee", opacity: 0.88, width: 2.6 },
-  { color: "#06b6d4", opacity: 0.74, width: 2.2 },
-  { color: "#0891b2", opacity: 0.60, width: 1.8 },
-  { color: "#0e7490", opacity: 0.48, width: 1.4 },
-];
-const MONTHLY_CURVE_STYLES = [
-  { color: "#fbbf24", opacity: 0.95, width: 2.1 },
-  { color: "#fbbf24", opacity: 0.78, width: 1.8 },
-  { color: "#fbbf24", opacity: 0.62, width: 1.5 },
-  { color: "#fbbf24", opacity: 0.46, width: 1.3 },
-  { color: "#fbbf24", opacity: 0.32, width: 1.1 },
-];
-const YIELD_CURVE_MA_COLOR = "var(--chart-tooltip-label)";
-
-interface YieldCurveTooltipItem {
-  dataKey?: string | number;
-  name?: string;
-  value?: number | string | null;
-  color?: string;
-}
-
-interface YieldCurveTooltipProps {
-  active?: boolean;
-  payload?: readonly YieldCurveTooltipItem[];
-  label?: string | number;
-}
-
-function getYieldCurveTooltipSection(dataKey?: string | number) {
-  if (typeof dataKey !== "string") {
-    return "other";
-  }
-
-  if (dataKey.startsWith("daily_")) {
-    return "daily";
-  }
-
-  if (dataKey.startsWith("monthly_")) {
-    return "monthly";
-  }
-
-  if (dataKey === "moving_average_200d") {
-    return "average";
-  }
-
-  return "other";
-}
-
-function getYieldCurveTooltipOrder(dataKey?: string | number) {
-  const section = getYieldCurveTooltipSection(dataKey);
-
-  if (section === "daily") {
-    return 0;
-  }
-
-  if (section === "monthly") {
-    return 1;
-  }
-
-  if (section === "average") {
-    return 2;
-  }
-
-  return 3;
-}
-
-function getYieldCurveTooltipLabel(name?: string) {
-  if (!name) {
-    return "Series";
-  }
-
-  if (name.startsWith("Daily ")) {
-    return `Daily · ${name.replace("Daily ", "")}`;
-  }
-
-  if (name.startsWith("Monthly ")) {
-    return `Monthly · ${name.replace("Monthly ", "")}`;
-  }
-
-  if (name === "200D Avg") {
-    return "200-day average";
-  }
-
-  return name;
-}
-
-function renderYieldCurveTooltip({ active, payload, label }: YieldCurveTooltipProps) {
-  if (!active || !payload || payload.length === 0) {
-    return null;
-  }
-
-  const visibleItems = payload
-    .filter((item) => typeof item.value === "number")
-    .sort((left, right) => getYieldCurveTooltipOrder(left.dataKey) - getYieldCurveTooltipOrder(right.dataKey));
-
-  if (visibleItems.length === 0) {
-    return null;
-  }
-
-  let currentSection = "";
-
-  return (
-    <div className="min-w-[220px] rounded-md border border-stealth-700 bg-stealth-900/95 px-3 py-2 shadow-lg">
-      <div className="mb-2 text-sm font-semibold text-stealth-100">{label} maturity</div>
-      <div className="space-y-1.5">
-        {visibleItems.map((item, index) => {
-          const section = getYieldCurveTooltipSection(item.dataKey);
-          const sectionTitle =
-            section === "daily"
-              ? "Daily curves"
-              : section === "monthly"
-                ? "Monthly snapshots"
-                : section === "average"
-                  ? "Reference"
-                  : "Other";
-          const showSectionHeader = section !== currentSection;
-          currentSection = section;
-
-          return (
-            <React.Fragment key={`${String(item.dataKey)}-${index}`}>
-              {showSectionHeader && (
-                <div className="pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-stealth-500">
-                  {sectionTitle}
-                </div>
-              )}
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-stealth-200">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: item.color ?? "#9ca3af" }}
-                  />
-                  <span>{getYieldCurveTooltipLabel(item.name)}</span>
-                </div>
-                <span className="font-semibold text-stealth-100">{Number(item.value).toFixed(2)}%</span>
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function TreasuryYieldCurvePanel({
-  data,
-  loading,
-  error,
-}: {
-  data: YieldCurveResponse | null | undefined;
-  loading: boolean;
-  error: string | null;
-}) {
-  if (loading) return <MarketLoading />;
-  if (error) return <div className="text-red-400 text-sm p-4">Failed to load yield curve: {error}</div>;
-  if (!data || !data.curves || data.curves.length === 0)
-    return <div className="text-stealth-400 text-sm p-4">No yield curve data available.</div>;
-
-  const recentDailyCurves = data.curves.slice(0, 5);
-  const latestMonthKey = recentDailyCurves[0]?.date.slice(0, 7);
-  const monthlySnapshots: YieldCurveDateEntry[] = [];
-  const seenMonths = new Set<string>(latestMonthKey ? [latestMonthKey] : []);
-
-  for (const entry of data.curves) {
-    const monthKey = entry.date.slice(0, 7);
-    if (seenMonths.has(monthKey)) {
-      continue;
-    }
-    monthlySnapshots.push(entry);
-    seenMonths.add(monthKey);
-    if (monthlySnapshots.length === 5) {
-      break;
-    }
-  }
-
-  const movingAverageWindow = data.curves.slice(0, 200);
-  const movingAverageCurve = MATURITY_ORDER.map((maturity) => {
-    let total = 0;
-    let count = 0;
-
-    for (const entry of movingAverageWindow) {
-      const point = entry.curve.find((curvePoint) => curvePoint.maturity === maturity);
-      if (point && Number.isFinite(point.yield)) {
-        total += point.yield;
-        count += 1;
-      }
-    }
-
-    return {
-      maturity,
-      yield: count > 0 ? total / count : null,
-    };
-  });
-
-  const chartData = MATURITY_ORDER.map((maturity) => {
-    const row: Record<string, string | number | null> = { maturity };
-
-    recentDailyCurves.forEach((entry, index) => {
-      const point = entry.curve.find((curvePoint) => curvePoint.maturity === maturity);
-      row[`daily_${index}`] = point ? point.yield : null;
-    });
-
-    monthlySnapshots.forEach((entry, index) => {
-      const point = entry.curve.find((curvePoint) => curvePoint.maturity === maturity);
-      row[`monthly_${index}`] = point ? point.yield : null;
-    });
-
-    row.moving_average_200d = movingAverageCurve.find((point) => point.maturity === maturity)?.yield ?? null;
-
-    return row;
-  });
-
-  const latestEntry = recentDailyCurves[0];
-  const latestCurve = latestEntry.curve;
-  const shortEnd = latestCurve.find((p) => p.maturity === "2Y")?.yield ?? null;
-  const longEnd = latestCurve.find((p) => p.maturity === "10Y")?.yield ?? null;
-  const spread10y2y = shortEnd !== null && longEnd !== null ? (longEnd - shortEnd).toFixed(2) : "—";
-  const inverted = shortEnd !== null && longEnd !== null && longEnd < shortEnd;
-
-  const monthLabel = `${data.month.slice(0, 4)}-${data.month.slice(4)}`;
-  const sourceRangeLabel = data.curves.length > 0
-    ? `${data.curves[data.curves.length - 1].date} to ${data.curves[0].date}`
-    : monthLabel;
-
-  return (
-    <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-        <div>
-          <h3 className="text-lg md:text-xl font-semibold text-stealth-100">
-            Live Treasury Yield Curve
-          </h3>
-          <p className="text-xs text-stealth-400 mt-0.5">
-            Source: U.S. Treasury · {sourceRangeLabel} · Updated daily
-          </p>
-        </div>
-        <div className="flex gap-4">
-          <div className="bg-stealth-900/60 border border-stealth-700 rounded px-3 py-2 text-center">
-            <div className="text-xs text-stealth-400">10Y-2Y Spread</div>
-            <div className={`text-base font-bold ${inverted ? "text-red-400" : "text-green-400"}`}>
-              {spread10y2y} %
-            </div>
-            <div className={`text-[11px] ${inverted ? "text-red-400" : "text-stealth-500"}`}>
-              {inverted ? "Inverted" : "Normal"}
-            </div>
-          </div>
-          <div className="bg-stealth-900/60 border border-stealth-700 rounded px-3 py-2 text-center">
-            <div className="text-xs text-stealth-400">Latest Date</div>
-            <div className="text-sm font-semibold text-cyan-300">{latestEntry.date}</div>
-          </div>
-          <div className="bg-stealth-900/60 border border-stealth-700 rounded px-3 py-2 text-center">
-            <div className="text-xs text-stealth-400">Lookback</div>
-            <div className="text-sm font-semibold text-stealth-200">5D · 5M · 200D MA</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="text-xs text-stealth-400 mb-3 flex flex-wrap gap-x-4 gap-y-1">
-        <span className="text-cyan-300">Daily curves</span>
-        <span className="text-amber-300">Monthly snapshots</span>
-        <span className="text-slate-300">200-day moving average</span>
-      </div>
-
-      <div className="h-80">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={chartData} margin={CHART_MARGIN}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              dataKey="maturity"
-              tick={{ fontSize: 11, fill: "#9ca3af" }}
-              axisLine={{ stroke: "#4b5563" }}
-            />
-            <YAxis
-              domain={["auto", "auto"]}
-              tick={{ fontSize: 11, fill: "#9ca3af" }}
-              axisLine={{ stroke: "#4b5563" }}
-              tickFormatter={(v) => `${v}%`}
-              label={{ value: "Yield (%)", angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 11 }}
-            />
-            <Tooltip
-              content={renderYieldCurveTooltip}
-            />
-            <Legend wrapperStyle={{ fontSize: 11, color: "#9ca3af" }} />
-            {recentDailyCurves.map((entry, index) => {
-              const style = DAILY_CURVE_STYLES[index] ?? DAILY_CURVE_STYLES[DAILY_CURVE_STYLES.length - 1];
-              return (
-                <Line
-                  key={`daily_${entry.date}`}
-                  type="monotone"
-                  dataKey={`daily_${index}`}
-                  name={`Daily ${entry.date}`}
-                  stroke={style.color}
-                  strokeOpacity={style.opacity}
-                  strokeWidth={style.width}
-                  dot={
-                    index === 0
-                      ? { r: 3, fill: style.color, fillOpacity: style.opacity }
-                      : false
-                  }
-                  connectNulls
-                  {...CHART_ANIMATION}
-                />
-              );
-            })}
-            {monthlySnapshots.map((entry, index) => {
-              const style = MONTHLY_CURVE_STYLES[index] ?? MONTHLY_CURVE_STYLES[MONTHLY_CURVE_STYLES.length - 1];
-              const monthName = new Date(`${entry.date}T00:00:00`).toLocaleDateString(undefined, {
-                month: "short",
-                year: "2-digit",
-              });
-              return (
-                <Line
-                  key={`monthly_${entry.date}`}
-                  type="monotone"
-                  dataKey={`monthly_${index}`}
-                  name={`Monthly ${monthName}`}
-                  stroke={style.color}
-                  strokeOpacity={style.opacity}
-                  strokeWidth={style.width}
-                  dot={false}
-                  connectNulls
-                  {...CHART_ANIMATION}
-                />
-              );
-            })}
-            <Line
-              type="monotone"
-              dataKey="moving_average_200d"
-              name="200D Avg"
-              stroke={YIELD_CURVE_MA_COLOR}
-              strokeWidth={2.5}
-              strokeDasharray="2 6"
-              dot={false}
-              connectNulls
-              {...CHART_ANIMATION}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Latest values table */}
-      <div className="mt-4">
-        <h4 className="text-sm font-semibold text-stealth-200 mb-2">Latest Rates ({latestEntry.date})</h4>
-        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-          {latestCurve.map((pt) => (
-            <div key={pt.maturity} className="bg-stealth-900/60 border border-stealth-700 rounded p-2 text-center">
-              <div className="text-[11px] text-stealth-400">{pt.maturity}</div>
-              <div className="text-sm font-bold text-cyan-300">{pt.yield.toFixed(2)}%</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MuniStressPanel({
-  data,
-  loading,
-  error,
-  chartRangeDays,
-}: {
-  data: MuniSubsystemResponse | null;
-  loading: boolean;
-  error: string | null;
-  chartRangeDays: number;
-}) {
-  if (loading) {
-    return (
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 mb-6">
-        <div className="flex justify-center py-6">
-          <MarketLoading size={90} variant="pulse" label="Loading municipal stress data..." />
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-900/20 border border-red-700 text-red-200 p-4 rounded mb-6">
-        Error loading municipal subsystem: {error}
-      </div>
-    );
-  }
-
-  if (!data || !data.series || data.series.length === 0) {
-    return (
-      <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-6 mb-6">
-        <div className="text-stealth-400">No municipal subsystem data available.</div>
-      </div>
-    );
-  }
-
-  const formatValue = (value: number | null | undefined, unit?: string) => {
-    if (value === null || value === undefined || Number.isNaN(value)) return "n/a";
-    if (unit === "percent") return `${value.toFixed(2)}%`;
-    return value.toFixed(2);
-  };
-
-  const trendClass = (trend?: string) => {
-    switch (trend) {
-      case "improving":
-        return "text-green-400";
-      case "worsening":
-      case "deteriorating":
-        return "text-red-400";
-      case "stable":
-        return "text-stealth-300";
-      default:
-        return "text-stealth-500";
-    }
-  };
-
-  const seriesColors = (key: string) => {
-    switch (key) {
-      case "MUNI_LONG_SPREAD":
-        return getFamilyColor("credit");
-      case "SIFMA_INDEX":
-        return getFamilyColor("liquidity");
-      case "MUNI_CURVE_SLOPE_STABILITY":
-        return getFamilyColor("rates");
-      case "MUNI_REVENUE_PROXY":
-        return getFamilyColor("system");
-      default:
-        return getFamilyColor("system");
-    }
-  };
-
-  const hasLineData = (rows: object[], dataKey: string, minPoints = 2) => {
-    let count = 0;
-    for (const row of rows) {
-      const value = (row as Record<string, unknown>)?.[dataKey];
-      if (Number.isFinite(value)) {
-        count += 1;
-        if (count >= minPoints) return true;
-      }
-    }
-    return false;
-  };
-
-  const orderedSeries = React.useMemo(() => {
-    const weightMap = muniPublicSectorWeights;
-    return [...data.series].sort((a, b) => {
-      const weightA = weightMap[a.key as keyof typeof weightMap] ?? 0;
-      const weightB = weightMap[b.key as keyof typeof weightMap] ?? 0;
-      if ((a.is_live ?? true) !== (b.is_live ?? true)) {
-        return (b.is_live ? 1 : 0) - (a.is_live ? 1 : 0);
-      }
-      return weightB - weightA;
-    });
-  }, [data.series]);
-
-  const combined = React.useMemo(() => {
-    const map = new Map<string, any>();
-    data.series.forEach((series) => {
-      series.history?.forEach((point) => {
-        if (!point?.date) return;
-        const existing = map.get(point.date) || { date: point.date };
-        existing[`${series.key}_score`] = point.stability_score;
-        map.set(point.date, existing);
-      });
-    });
-
-    if (data.curve?.history) {
-      data.curve.history.forEach((point) => {
-        if (!point?.date) return;
-        const existing = map.get(point.date) || { date: point.date };
-        existing.curve_score = point.score;
-        existing.curve_level = point.level;
-        existing.curve_slope = point.slope;
-        map.set(point.date, existing);
-      });
-    }
-
-    return Array.from(map.values()).sort((a, b) => (a.date > b.date ? 1 : -1));
-  }, [data]);
-
-  const { data: chartData, dateRange } = processComponentData(combined, chartRangeDays);
-  const missingSeries = data.series.filter((series) => !(series.history && series.history.length > 0));
-  const hasCurveLevel = hasLineData(chartData, "curve_level");
-  const hasCurveSlope = hasLineData(chartData, "curve_slope");
-  const hasCurveScore = hasLineData(chartData, "curve_score");
-
-  return (
-    <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-6">
-      <div className="flex items-start justify-between flex-col gap-2 md:flex-row md:items-center mb-4">
-        <div>
-          <h3 className="text-lg md:text-xl font-semibold text-stealth-100">
-            Public-sector credit &amp; funding stress
-          </h3>
-          <p className="text-xs md:text-sm text-stealth-400 mt-1 max-w-3xl">
-            Isolates tax-exempt and public-finance funding conditions using public,
-            derived proxies rather than proprietary municipal curve feeds.
-          </p>
-          <p className="text-[11px] text-stealth-500 mt-2 max-w-3xl">
-            This public-sector view is a critical companion to the core bond composite, and in a richer
-            dataset the two would be expected to move together. Because proxy inputs are limited and
-            can be brittle, we do not compute a divergence metric today. If higher-quality data were
-            available, the spread between these lines would be a more direct read on relative health.
-          </p>
-        </div>
-        <div className="text-xs text-stealth-500">
-          {data.as_of && <div>As of {data.as_of}</div>}
-          {data.composite && (
-            <div className="mt-1">
-              Coverage: {data.composite.coverage_live}/{data.composite.coverage_total}
-              {data.composite.missing_keys?.length > 0 && (
-                <span className="text-amber-400"> (missing: {data.composite.missing_keys.join(", ")})</span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {data.relationship_signal && data.relationship_signal.state !== "GREEN" && (
-        <div className="data-card mb-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-stealth-400">{data.relationship_signal.name}</div>
-            <div
-              className={`text-xs font-semibold ${
-                data.relationship_signal.state === "RED"
-                  ? "text-red-400"
-                  : "text-yellow-400"
-              }`}
-            >
-              {data.relationship_signal.state}
-            </div>
-          </div>
-          {data.relationship_signal.message && (
-            <div className="text-xs text-stealth-300 mt-2">
-              {data.relationship_signal.message}
-            </div>
-          )}
-        </div>
-      )}
-
-      {data.composite && (
-        <div className="data-card mb-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-stealth-400">Composite Stability</div>
-            <div className="text-xs text-stealth-500">
-              Green ≥ {muniPublicSectorThresholds.green}, Yellow ≥ {muniPublicSectorThresholds.yellow}
-            </div>
-          </div>
-          <div className="flex items-baseline gap-3 mt-1">
-            <div className="text-2xl font-bold text-stealth-100">
-              {data.composite.score !== null && data.composite.score !== undefined
-                ? data.composite.score.toFixed(1)
-                : "n/a"}
-            </div>
-            <div
-              className={`text-sm font-semibold ${
-                data.composite.state === "GREEN"
-                  ? "text-green-400"
-                  : data.composite.state === "YELLOW"
-                  ? "text-yellow-400"
-                  : data.composite.state === "RED"
-                  ? "text-red-400"
-                  : "text-stealth-400"
-              }`}
-            >
-              {data.composite.state}
-              {data.composite.near_threshold ? " ±" : ""}
-            </div>
-          </div>
-          {data.composite.near_threshold && (
-            <div className="text-xs text-amber-400 mt-1">
-              Near {data.composite.near_threshold} boundary
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-6">
-        {orderedSeries.map((series) => (
-          <div key={series.key} className="data-card">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-stealth-400 mb-1">{series.label}</div>
-              <div className="flex items-center gap-2">
-                {series.is_live === false && (
-                  <span className="text-[10px] text-stealth-300 bg-stealth-500/10 border border-stealth-500/30 px-2 py-0.5 rounded-full">
-                    archived
-                  </span>
-                )}
-                {series.is_proxy && (
-                <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
-                  proxy
-                </span>
-                )}
-              </div>
-            </div>
-            <div className="text-lg font-bold" style={{ color: seriesColors(series.key) }}>
-              {formatValue(series.latest?.value ?? null, series.unit)}
-            </div>
-            <div className="text-xs text-stealth-500 mt-1">
-              Stability: {series.latest?.stability_score !== null && series.latest?.stability_score !== undefined ? series.latest?.stability_score.toFixed(0) : "n/a"}
-            </div>
-            <div className={`text-xs mt-1 ${trendClass(series.trend)}`}>
-              Trend: {series.trend || "n/a"}
-            </div>
-            {series.stress_cues?.stress_level && series.stress_cues.stress_level !== "normal" && (
-              <div className={`text-[11px] mt-1 ${series.stress_cues.stress_level === "severe" ? "text-red-400" : "text-amber-300"}`}>
-                {series.stress_cues.stress_level === "severe" ? "Severe stress cue" : "Stress cue"}
-              </div>
-            )}
-            {series.notes && (
-              <div className="text-[11px] text-stealth-500 mt-2">{series.notes}</div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {missingSeries.length > 0 && (
-        <div className="text-[11px] text-stealth-500 mb-5">
-          No recent data available for: {missingSeries.map((series) => series.label).join(", ")}.
-        </div>
-      )}
-
-      <div className="data-card mb-6 text-xs text-stealth-400">
-        <div className="text-stealth-200 font-semibold mb-2">Methodology (summary)</div>
-        <div>
-          Components &amp; default weights: Long-end stress proxy {(muniPublicSectorWeights.MUNI_LONG_SPREAD * 100).toFixed(0)}% ·
-          SIFMA {(muniPublicSectorWeights.SIFMA_INDEX * 100).toFixed(0)}% · Slope Stability {(muniPublicSectorWeights.MUNI_CURVE_SLOPE_STABILITY * 100).toFixed(0)}% ·
-          Revenue Proxy {(muniPublicSectorWeights.MUNI_REVENUE_PROXY * 100).toFixed(0)}%.
-          Missing live inputs are dropped and remaining weights re-normalized.
-        </div>
-        <div className="mt-2">
-          Long-end stress proxy uses Revdex drawdowns and volatility; curve stability uses a Treasury proxy curve.
-          Stability scoring uses rolling z-scores with direction adjustment, mapped to 0–100.
-          Composite states: Green ≥ {muniPublicSectorThresholds.green}, Yellow ≥ {muniPublicSectorThresholds.yellow}, Red &lt; {muniPublicSectorThresholds.yellow}.
-        </div>
-      </div>
-
-      <div className="h-80 mb-6">
-        <h4 className="text-sm font-semibold mb-2 text-stealth-200">Municipal Stability Scores</h4>
-        {chartData.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-stealth-400">
-            No history available
-          </div>
-        ) : (
-          <ComponentChart
-            data={chartData}
-            lines={[
-              ...data.series.map((series) => ({
-                dataKey: `${series.key}_score`,
-                name: series.label,
-                stroke: seriesColors(series.key),
-                conditional: (rows: object[]) => hasLineData(rows, `${series.key}_score`),
-                connectNulls: true,
-              })),
-              ...(data.curve && data.curve.status !== "unavailable"
-                ? [{
-                    dataKey: "curve_score",
-                    name: data.curve.label || "Muni Yield Curve",
-                    stroke: getFamilyColor("system"),
-                    strokeWidth: 3,
-                    conditional: () => hasCurveScore,
-                    connectNulls: true,
-                  }]
-                : []),
-            ]}
-            referenceLines={[
-              { y: muniPublicSectorThresholds.green, stroke: statePalette.green, label: "GREEN", labelFill: statePalette.green },
-              { y: muniPublicSectorThresholds.yellow, stroke: statePalette.red, label: "RED", labelFill: statePalette.red },
-            ]}
-            yAxisLabel="Stability Score (0-100)"
-            yAxisDomain={[0, 100]}
-            dateRange={dateRange}
-          />
-        )}
-      </div>
-
-      {data.curve?.status === "unavailable" ? (
-        <div className="data-card text-xs text-stealth-400">
-          Yield curve data unavailable: {data.curve.reason}
-        </div>
-      ) : data.curve?.history && data.curve.history.length > 0 ? (
-        <div className="h-80">
-          <h4 className="text-sm font-semibold mb-2 text-stealth-200">
-            Municipal Yield Curve Structure (Level &amp; Slope)
-          </h4>
-          <ComponentChart
-            data={chartData}
-            lines={[
-              {
-                dataKey: "curve_level",
-                name: "Long-End Level",
-                stroke: getFamilyColor("rates"),
-                conditional: () => hasCurveLevel,
-                connectNulls: true,
-              },
-              {
-                dataKey: "curve_slope",
-                name: "10y-2y Slope",
-                stroke: getFamilyColor("growth"),
-                conditional: () => hasCurveSlope,
-                connectNulls: true,
-              },
-            ]}
-            yAxisLabel="Yield (%)"
-            dateRange={dateRange}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

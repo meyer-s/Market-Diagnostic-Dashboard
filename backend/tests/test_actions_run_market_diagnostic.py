@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import logging
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -13,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.actions import router as actions_router
 from app.core.config import settings
 from app.core.db import Base
+from app.schemas.market_diagnostic_payload import MarketDiagnosticPublishPayload
 from app.services.market_diagnostic_runner import OpenAIJsonResult
 from app.services.market_diagnostic_runner import _build_prompts
 from app.services.market_diagnostic_validation import postprocess_citations, validate_citations_match_sources, validate_market_diagnostic_structure
@@ -120,6 +122,20 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 def test_missing_authorization_header_returns_401(client: TestClient):
     resp = client.post("/api/actions/run_market_diagnostic", json={})
     assert resp.status_code == 401
+
+
+def test_generated_payload_enforces_markdown_image_alt_text():
+    payload = _valid_generated_payload(run_date_utc="2026-02-10")
+    payload["content_markdown"] += "\n![chart](https://example.com/chart.png)\n"
+    with pytest.raises(ValidationError, match="must include meaningful alt text"):
+        MarketDiagnosticPublishPayload.model_validate(payload)
+
+    payload["content_markdown"] = payload["content_markdown"].replace(
+        "![chart]",
+        "![decorative]",
+    )
+    parsed = MarketDiagnosticPublishPayload.model_validate(payload)
+    assert "![decorative]" in parsed.content_markdown
 
 
 def test_successful_run_returns_posted_then_skipped(client: TestClient):
@@ -421,4 +437,3 @@ def test_postprocess_citations_injects_real_urls():
         for l in result.splitlines()
         if "Meta beat" in l
     )
-

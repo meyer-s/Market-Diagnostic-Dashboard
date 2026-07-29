@@ -12,7 +12,7 @@ export default function SearchInput({ value, onChange }: SearchInputProps) {
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Search title or tags"
-        className="w-full rounded-2xl border border-stealth-700 bg-stealth-850 px-4 py-2.5 text-sm text-stealth-100 placeholder:text-stealth-500 focus:border-stealth-500 focus:outline-none"
+        className="min-h-11 w-full rounded-2xl border border-stealth-700 bg-stealth-850 px-4 text-sm text-stealth-100 placeholder:text-stealth-400 focus:border-stealth-400 focus:outline-none"
       />
     </label>
   );

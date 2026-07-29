@@ -160,14 +160,14 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
           <div className="mt-2">
             <Link
               to="/tools/volume-breadth"
-              className="inline-flex items-center rounded-full border border-stealth-700 px-2.5 py-1 text-[11px] text-stealth-300 hover:border-stealth-500 hover:text-stealth-100"
+              className="inline-flex items-center rounded-full border border-stealth-700 px-2.5 py-1 text-xs text-stealth-300 hover:border-stealth-500 hover:text-stealth-100"
             >
               Open Full Volume/Breadth Page
             </Link>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[11px] text-stealth-500">As of {asOfLabel}</div>
+          <div className="text-xs text-stealth-500">As of {asOfLabel}</div>
           <div className={`text-xs ${adRateDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
             A/D pace {adRateDelta >= 0 ? "+" : ""}{adRateDelta.toFixed(0)}
           </div>
@@ -183,7 +183,7 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
           <button
             key={item.key}
             onClick={() => setSelectedExchange(item.key)}
-            className={`rounded-full px-2.5 py-1 text-[11px] font-medium border transition ${
+            className={`rounded-full px-2.5 py-1 text-xs font-medium border transition ${
               selectedExchange === item.key
                 ? "border-stealth-500 bg-stealth-700 text-white"
                 : "border-stealth-700 text-stealth-400 hover:border-stealth-600 hover:text-stealth-200"
@@ -197,19 +197,24 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
       {history.length > 0 && (
         <div className="h-40 mb-3">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <ComposedChart data={history} margin={CHART_MARGIN}>
+            <ComposedChart
+              accessibilityLayer
+              aria-label={`${exchangeName} advance, decline, volume, participation, and pace history`}
+              data={history}
+              margin={CHART_MARGIN}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
               <XAxis
                 dataKey="dateLabel"
                 minTickGap={24}
-                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                tick={{ fill: "#94a3b8", fontSize: 12 }}
                 axisLine={{ stroke: "#475569" }}
                 tickLine={{ stroke: "#475569" }}
               />
               <YAxis
                 yAxisId="pct"
                 domain={[0, 100]}
-                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                tick={{ fill: "#94a3b8", fontSize: 12 }}
                 axisLine={{ stroke: "#475569" }}
                 tickLine={{ stroke: "#475569" }}
                 width={30}
@@ -289,12 +294,12 @@ export default function AdvanceDeclineCard({ trendPeriod = 90 }: AdvanceDeclineC
 
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-stealth-700/70 pt-3">
         <div className="stat-card">
-          <div className="text-[10px] uppercase text-stealth-500">Participation</div>
+          <div className="text-xs uppercase text-stealth-500">Participation</div>
           <div className="mt-1 text-base font-semibold text-stealth-100">{bucket.participation_pct.toFixed(0)}%</div>
-          <div className="text-[11px] text-stealth-500 mt-1">{bucket.universe_size} names tracked</div>
+          <div className="text-xs text-stealth-500 mt-1">{bucket.universe_size} names tracked</div>
         </div>
         <div className="stat-card">
-          <div className="text-[10px] uppercase text-stealth-500">All Exchange Composite</div>
+          <div className="text-xs uppercase text-stealth-500">All Exchange Composite</div>
           <div className="mt-1 flex items-center justify-between text-xs">
             <span className="text-green-300">A/D {composite.advancing_pct.toFixed(0)}%</span>
             <span className="text-red-300">{composite.declining_pct.toFixed(0)}%</span>

@@ -4,7 +4,16 @@ This document describes the current runtime split for the Market Diagnostic Dash
 
 ## Production services
 
-The production compose file is [`docker-compose.yml`](../docker-compose.yml). It now separates responsibilities into four services:
+The base production compose file is [`docker-compose.yml`](../docker-compose.yml). The
+Lightsail deployment layers [`docker-compose.ibgateway.yml`](../docker-compose.ibgateway.yml)
+on top so the application and IB Gateway share the intended Docker network. Use both files
+for production inspection and deployment:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ibgateway.yml config
+```
+
+The base stack separates responsibilities into four application services:
 
 | Service | Purpose | Exposure |
 | --- | --- | --- |
@@ -20,6 +29,8 @@ Key production properties:
 - Scheduler work runs only in the dedicated `scheduler` container with `RUN_SCHEDULER=true`.
 - Web workers run with `RUN_SCHEDULER=false`.
 - Startup runs `alembic upgrade head` before indicator seeding.
+- An application-only release may rebuild and recreate `frontend`, `backend`, and
+  `scheduler` without restarting the independent `ibgateway` service.
 
 ## Local development
 
@@ -51,10 +62,10 @@ Copy them into your deploy environment and replace placeholder values before shi
 Typical runtime checks:
 
 ```bash
-docker compose ps
-docker compose logs backend --tail 100
-docker compose logs scheduler --tail 100
-docker compose logs frontend --tail 100
+docker compose -f docker-compose.yml -f docker-compose.ibgateway.yml ps
+docker compose -f docker-compose.yml -f docker-compose.ibgateway.yml logs backend --tail 100
+docker compose -f docker-compose.yml -f docker-compose.ibgateway.yml logs scheduler --tail 100
+docker compose -f docker-compose.yml -f docker-compose.ibgateway.yml logs frontend --tail 100
 curl http://localhost/healthz
 curl http://localhost/api/health/
 ```
@@ -65,4 +76,23 @@ Admin refresh/backfill routes still exist, but they are bearer-token protected t
 
 ## Visual regression
 
-Playwright coverage lives in [`frontend/tests/visual/routes.spec.ts`](../frontend/tests/visual/routes.spec.ts) with config in [`frontend/playwright.config.ts`](../frontend/playwright.config.ts). The GitHub Actions workflow keeps backend and frontend checks on every push/PR, and exposes the visual suite through manual `workflow_dispatch`.
+Playwright coverage lives in [`frontend/tests/visual`](../frontend/tests/visual) with
+config in [`frontend/playwright.config.ts`](../frontend/playwright.config.ts). The
+GitHub Actions workflow runs the focused browser release gate on pushes and pull
+requests.
+
+The exact full-height route and material-state audits run weekly, and can also be
+enabled from `workflow_dispatch` with `run_full_site_audit=true`. Desktop and mobile
+run independently, proxy only GET requests to `audit_origin`, block other live
+methods, and upload their JSON manifests plus screenshots as retained workflow
+artifacts. The audit fails on missing supported or classified legacy routes, blank
+or short captures, page overflow, unresolved loading, runtime/request failures,
+unlabeled controls, unfocusable data scrollers, or Axe violations.
+
+To run the same gate locally against the default read-only production origin:
+
+```bash
+cd frontend
+pnpm build
+pnpm test:site-audit
+```

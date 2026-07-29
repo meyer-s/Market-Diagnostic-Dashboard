@@ -19,7 +19,10 @@ interface UpdatesViewerProps {
 // so ReactMarkdown/remark-gfm won't auto-link it and break extraction.
 const SOURCE_TOKEN_PATTERN = /\s*\[\[SOURCE:u=([^\]]+)\]\]\s*$/;
 const SOURCE_PAREN_PATTERN = /\s*\(Source:\s*([^)]+)\)\s*$/;
+const DECORATIVE_MARKDOWN_IMAGE_ALT = "decorative";
 const isHttpUrl = (value: string) => /^https?:\/\//i.test(value.trim());
+const isDecorativeMarkdownImage = (alt?: string) =>
+  alt?.trim().toLowerCase() === DECORATIVE_MARKDOWN_IMAGE_ALT;
 
 const HOST_LABEL_OVERRIDES: Record<string, string> = {
   "fred.stlouisfed.org": "FRED",
@@ -219,6 +222,40 @@ const renderSourceTag = (source?: string) => {
   return <span className="md-source-tag">{url}</span>;
 };
 
+function ScrollableMarkdownTable({
+  label,
+  children,
+  ...props
+}: React.TableHTMLAttributes<HTMLTableElement> & { label: string }) {
+  const regionRef = React.useRef<HTMLDivElement | null>(null);
+  const [isScrollable, setIsScrollable] = useState(false);
+
+  useEffect(() => {
+    const updateScrollableState = () => {
+      const region = regionRef.current;
+      setIsScrollable(Boolean(region && region.scrollWidth > region.clientWidth + 1));
+    };
+    const frame = window.requestAnimationFrame(updateScrollableState);
+    window.addEventListener("resize", updateScrollableState);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateScrollableState);
+    };
+  }, [children]);
+
+  return (
+    <div
+      ref={regionRef}
+      className="mt-4 max-w-full overflow-x-auto rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-pulse-400"
+      role="region"
+      aria-label={label}
+      tabIndex={isScrollable ? 0 : undefined}
+    >
+      <table {...props}>{children}</table>
+    </div>
+  );
+}
+
 export default function UpdatesViewer({
   post,
   loading,
@@ -256,21 +293,28 @@ export default function UpdatesViewer({
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 min-h-[68vh]">
-        <LoadingState message="Loading post..." />
-      </div>
+      <section className="min-h-[68vh] rounded-2xl border border-stealth-700 bg-stealth-800/90 p-5">
+        <h1 className="text-2xl font-semibold text-stealth-100">Loading recap</h1>
+        <LoadingState message="Loading the selected recap…" />
+      </section>
     );
   }
 
   if (error) {
-    return <ErrorState message={error} />;
+    return (
+      <section className="min-h-[50vh] rounded-2xl border border-stealth-700 bg-stealth-800/90 p-5">
+        <h1 className="mb-4 text-2xl font-semibold text-stealth-100">Recap unavailable</h1>
+        <ErrorState message={error} />
+      </section>
+    );
   }
 
   if (!post) {
     return (
-      <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6 min-h-[68vh]">
+      <section className="min-h-[68vh] rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6">
+        <h1 className="text-2xl font-semibold text-stealth-100">Recap</h1>
         <EmptyState message="No update selected yet." />
-      </div>
+      </section>
     );
   }
 
@@ -297,7 +341,7 @@ export default function UpdatesViewer({
           <h1 className="text-2xl font-semibold text-stealth-100">{post.title}</h1>
           {summaryParts.lead && (
             <div className="mt-4 rounded-2xl border border-pulse-500/20 bg-gradient-to-r from-pulse-500/10 via-stealth-850/90 to-stealth-850/90 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-pulse-300/85">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-pulse-300/85">
                 AI Summary
               </div>
               <p className="mt-2 text-[15px] font-medium leading-7 text-stealth-100">{summaryParts.lead}</p>
@@ -311,7 +355,7 @@ export default function UpdatesViewer({
               {post.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full border border-stealth-700 bg-stealth-850 px-2.5 py-1 text-[11px] text-stealth-400"
+                  className="rounded-full border border-stealth-700 bg-stealth-850 px-2.5 py-1 text-xs text-stealth-300"
                 >
                   {tag}
                 </span>
@@ -320,20 +364,25 @@ export default function UpdatesViewer({
           )}
         </header>
 
-        {post.chart_urls.length > 0 && (
-          <section className="border-b border-stealth-700 px-5 py-5 md:px-6">
-            <h2 className="mb-3 text-sm font-semibold text-stealth-200">Charts</h2>
+        <section
+          className="border-b border-stealth-700 px-5 py-5 md:px-6"
+          data-evidence-panel="recap-gallery"
+          data-evidence-state={post.chart_urls.length > 0 ? "complete" : "empty"}
+          aria-label={`Recap chart gallery: ${post.chart_urls.length > 0 ? "complete" : "no data"}`}
+        >
+          <h2 className="mb-3 text-sm font-semibold text-stealth-200">Charts</h2>
+          {post.chart_urls.length > 0 ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {post.chart_urls.map((url, index) => (
                 <button
                   key={`${post.id}-chart-${index}`}
                   type="button"
                   onClick={() => onOpenChart(index)}
-                  className="group overflow-hidden rounded-xl border border-stealth-700 bg-stealth-850 text-left"
+                  className="group min-h-11 overflow-hidden rounded-xl border border-stealth-700 bg-stealth-850 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-pulse-400"
                 >
                   <img
                     src={url}
-                    alt={`${post.title} chart ${index + 1}`}
+                    alt={`Chart ${index + 1} supporting ${post.title}`}
                     loading="lazy"
                     className="h-36 w-full object-cover transition duration-300 group-hover:scale-[1.01]"
                   />
@@ -341,16 +390,46 @@ export default function UpdatesViewer({
                 </button>
               ))}
             </div>
-          </section>
-        )}
+          ) : (
+            <p
+              className="rounded-xl border border-stealth-700 bg-stealth-850 px-4 py-3 text-sm text-stealth-300"
+              role="status"
+            >
+              This recap does not include chart snapshots. The written analysis is shown below.
+            </p>
+          )}
+        </section>
 
         <section className="px-5 py-5 md:px-6">
-          <div className="text-sm leading-7 text-stealth-200 [&_h1]:mt-8 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:text-stealth-100 [&_h2]:mt-7 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-stealth-100 [&_h3]:mt-6 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-stealth-100 [&_hr]:my-6 [&_hr]:border-stealth-700 [&_p]:mt-3 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:mt-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_li]:text-stealth-200 [&_table]:mt-4 [&_table]:w-full [&_table]:border-collapse [&_table]:overflow-hidden [&_table]:rounded-lg [&_th]:border [&_th]:border-stealth-700 [&_th]:bg-stealth-850 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_td]:border [&_td]:border-stealth-700 [&_td]:px-3 [&_td]:py-2 [&_a]:text-pulse-400 [&_a]:underline-offset-2 hover:[&_a]:text-blue-300 [&_img]:mt-4 [&_img]:rounded-xl [&_img]:border [&_img]:border-stealth-700">
+          <div className="text-sm leading-7 text-stealth-200 [&_h2]:mt-7 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-stealth-100 [&_h3]:mt-6 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-stealth-100 [&_hr]:my-6 [&_hr]:border-stealth-700 [&_p]:mt-3 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:mt-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_li]:text-stealth-200 [&_table]:w-full [&_table]:min-w-[640px] [&_table]:border-collapse [&_th]:border [&_th]:border-stealth-700 [&_th]:bg-stealth-850 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_td]:border [&_td]:border-stealth-700 [&_td]:px-3 [&_td]:py-2 [&_a]:text-pulse-400 [&_a]:underline-offset-2 hover:[&_a]:text-blue-300 [&_img]:mt-4 [&_img]:max-w-full [&_img]:rounded-xl [&_img]:border [&_img]:border-stealth-700">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
-                img: ({ node: _node, ...props }) => <img {...props} loading="lazy" alt={props.alt || "Chart"} />,
+                a: ({ node: _node, children, ...props }) => (
+                  <a {...props} target="_blank" rel="noreferrer noopener">
+                    {children}
+                  </a>
+                ),
+                h1: ({ node: _node, children, ...props }) => <h2 {...props}>{children}</h2>,
+                img: ({ node: _node, alt, title, ...props }) => {
+                  const decorative = isDecorativeMarkdownImage(alt);
+                  return (
+                    <img
+                      {...props}
+                      loading="lazy"
+                      alt={decorative ? "" : alt?.trim() || `Supporting figure for ${post.title}`}
+                      title={decorative ? undefined : title}
+                    />
+                  );
+                },
+                table: ({ node: _node, children, ...props }) => (
+                  <ScrollableMarkdownTable
+                    {...props}
+                    label={`Data table in ${post.title}`}
+                  >
+                    {children}
+                  </ScrollableMarkdownTable>
+                ),
                 li: ({ node: _node, children, ...props }) => {
                   const { node: cleaned, source } = stripSourceFromNode(children);
                   return (
@@ -369,7 +448,11 @@ export default function UpdatesViewer({
       </div>
 
       {overlayLoading && (
-        <div className="absolute inset-0 flex items-start justify-center bg-stealth-950/45 backdrop-blur-[1px]">
+        <div
+          className="absolute inset-0 flex items-start justify-center bg-stealth-950/45 backdrop-blur-[1px]"
+          role="status"
+          aria-live="polite"
+        >
           <div className="mt-6 w-[min(560px,92%)] rounded-2xl border border-stealth-700 bg-stealth-900/80 p-4 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)]">
             <div className="h-1 w-full overflow-hidden rounded-full bg-stealth-800">
               <div className="h-full w-1/2 animate-[updatesIndeterminate_900ms_ease-in-out_infinite] motion-reduce:animate-none rounded-full bg-stealth-500/70" />

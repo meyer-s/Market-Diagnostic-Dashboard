@@ -35,7 +35,7 @@ export function ConvictionSnapshot({
     if (s >= 55) return { label: "Buy", icon: "↑", color: "text-lime-400" };
     if (s <= 35) return { label: "Strong Sell", icon: "↓↓", color: "text-red-400" };
     if (s <= 45) return { label: "Sell", icon: "↓", color: "text-orange-400" };
-    return { label: "Neutral", icon: "→", color: "text-gray-400" };
+    return { label: "Neutral", icon: "→", color: "text-stealth-400" };
   };
   
   const signal = getSignalType(score);
@@ -55,8 +55,8 @@ export function ConvictionSnapshot({
     <div className={`rounded-lg p-3 sm:p-4 border ${convictionLevel.border} ${convictionLevel.bg}`}>
       {/* Header */}
       <div className="mb-3">
-        <p className="text-xs text-gray-400 mb-1">Conviction Snapshot</p>
-        <p className="text-xs text-gray-300">Confidence in {horizon}</p>
+        <p className="text-xs text-stealth-400 mb-1">Conviction Snapshot</p>
+        <p className="text-xs text-stealth-300">Confidence in {horizon}</p>
       </div>
       
       {/* Main Conviction Display */}
@@ -64,12 +64,12 @@ export function ConvictionSnapshot({
         {/* Conviction Gauge */}
         <div className="col-span-2">
           <div className="flex items-end justify-between mb-1.5">
-            <span className="text-xs text-gray-400">Conviction</span>
+            <span className="text-xs text-stealth-400">Conviction</span>
             <span className={`text-lg font-bold ${convictionLevel.color}`}>
               {conviction.toFixed(0)}%
             </span>
           </div>
-          <div className="w-full bg-gray-700 rounded-full h-1.5">
+          <div className="w-full bg-stealth-700 rounded-full h-1.5">
             <div
               className={`h-1.5 rounded-full transition-all ${
                 conviction >= 75
@@ -91,7 +91,7 @@ export function ConvictionSnapshot({
         </div>
         
         {/* Signal Indicator */}
-        <div className="flex flex-col items-center justify-center bg-gray-800/50 rounded p-1.5">
+        <div className="flex flex-col items-center justify-center bg-stealth-800/50 rounded p-1.5">
           <span className={`text-xl font-bold ${signal.color} mb-0.5`}>{signal.icon}</span>
           <p className={`text-xs font-semibold ${signal.color} text-center leading-tight`}>
             {signal.label}
@@ -102,14 +102,14 @@ export function ConvictionSnapshot({
       {/* Details Grid */}
       <div className="grid grid-cols-2 gap-1.5 mb-3 text-xs">
         {/* Score */}
-        <div className="bg-gray-800/30 rounded p-1.5 border border-gray-700/50">
-          <p className="text-gray-400 mb-0.5 text-xs">Score</p>
+        <div className="bg-stealth-800/30 rounded p-1.5 border border-stealth-700/50">
+          <p className="text-stealth-400 mb-0.5 text-xs">Score</p>
           <p className="text-sm font-bold text-blue-300">{score.toFixed(0)}/100</p>
         </div>
         
         {/* Volatility */}
-        <div className="bg-gray-800/30 rounded p-1.5 border border-gray-700/50">
-          <p className="text-gray-400 mb-0.5 text-xs">Vol</p>
+        <div className="bg-stealth-800/30 rounded p-1.5 border border-stealth-700/50">
+          <p className="text-stealth-400 mb-0.5 text-xs">Vol</p>
           <p className={`text-sm font-bold ${volStatus.color}`}>
             {volatility.toFixed(1)}%
           </p>
@@ -117,9 +117,9 @@ export function ConvictionSnapshot({
       </div>
       
       {/* Conviction Explanation */}
-      <div className="bg-gray-800/20 rounded p-2 border border-gray-700/30 text-xs text-gray-300">
+      <div className="bg-stealth-800/20 rounded p-2 border border-stealth-700/30 text-xs text-stealth-300">
         <p className="mb-1 font-semibold text-xs">Why?</p>
-        <ul className="space-y-0.5 text-gray-400 text-xs">
+        <ul className="space-y-0.5 text-stealth-400 text-xs">
           {conviction >= 60 && (
             <li>✓ Good signal alignment</li>
           )}

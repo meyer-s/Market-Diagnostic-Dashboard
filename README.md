@@ -20,7 +20,7 @@ Core and supporting indicators include:
 - Liquidity Proxy
 - Analyst Confidence
 - Sentiment Composite
-- Alternative Asset Stability
+- Alternative Asset Stability (internal aggregate feeding the separate metals and crypto views)
 - Agriculture, energy, and real-estate stability overlays
 
 ## Current product surface
@@ -33,10 +33,15 @@ Route, navigation, and analytics metadata are centralized in [`frontend/src/rout
 - `/system-breakdown` system methodology and state view
 - `/vision` product framing
 - `/market-map`, `/sector-projections`, `/stock-analysis`
-- `/alternative-assets`, `/aas-breakdown`
+- `/institutional-flow`, `/market-weather`
+- `/metals-indicators`, `/crypto-indicators`
 - `/news`
-- `/tools/recap`
+- `/tools/recap`, `/tools/volume-breadth`
 - `/agriculture`, `/energy`, `/real-estate`
+
+The retired `/aas-breakdown` research route is intentionally not registered. A legacy
+`/indicators/AAS` deep link now shows transition guidance only; Metals and Crypto are the
+supported replacement research surfaces.
 
 ## Stack
 
@@ -77,10 +82,18 @@ Useful endpoints:
 
 ## Production deployment
 
-Use the production compose file for immutable containers:
+Production includes the IB Gateway overlay. Build and recreate only the service being released:
 
 ```bash
-docker compose up -d --build
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.ibgateway.yml \
+  build frontend
+
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.ibgateway.yml \
+  up -d --no-deps frontend
 ```
 
 Environment examples live in [`devops/env`](devops/env):
@@ -96,7 +109,8 @@ More operational detail lives in [`docs/deployment.md`](docs/deployment.md).
 - Indicator methodology: [`docs/indicator-specification.md`](docs/indicator-specification.md)
 - Deployment workflow: [`docs/deployment.md`](docs/deployment.md)
 - API draft: [`docs/api-contract.md`](docs/api-contract.md)
-- Alternative assets: [`docs/alternative-assets.md`](docs/alternative-assets.md)
+- Metals and crypto: [`docs/alternative-assets.md`](docs/alternative-assets.md)
+- Visual system: [`DESIGN.md`](DESIGN.md)
 - Secret Options: [`docs/secret-options.md`](docs/secret-options.md)
 - Discord integration: [`docs/discord.md`](docs/discord.md)
 

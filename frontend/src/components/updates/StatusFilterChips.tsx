@@ -15,7 +15,11 @@ export default function StatusFilterChips({
   onChange,
 }: StatusFilterChipsProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div
+      className="flex flex-wrap items-center gap-2"
+      role="group"
+      aria-label="Filter recap posts by status"
+    >
       {STATUS_OPTIONS.map((option) => {
         const isActive = value === option;
         const baseClass =
@@ -31,8 +35,9 @@ export default function StatusFilterChips({
           <button
             key={option}
             type="button"
+            aria-pressed={isActive}
             onClick={() => onChange(option)}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${baseClass}`}
+            className={`min-h-11 rounded-full px-4 text-xs font-semibold transition ${baseClass}`}
           >
             {option === "ALL" ? "All" : option}
           </button>

@@ -15,6 +15,7 @@ import {
 } from "recharts";
 
 import MarketLoading from "../components/ui/MarketLoading";
+import SectionNav from "../components/ui/SectionNav";
 import { useApi } from "../hooks/useApi";
 import { CompactContextDigest, type AgricultureContextData } from "../components/agriculture/AgricultureContextPanel";
 import { apiFetch } from "../utils/apiUtils";
@@ -268,7 +269,7 @@ function StabilityTooltip({ active, payload, label }: { active?: boolean; payloa
               <p className="font-medium" style={{ color: entry.color ?? "var(--chart-tooltip-label)" }}>
                 {meta.label}: {formatTooltipValue(entry.value, 1)}
               </p>
-              <p className="text-[11px] leading-4 text-stealth-200">{meta.description}</p>
+              <p className="text-xs leading-5 text-stealth-200">{meta.description}</p>
             </div>
           );
         })}
@@ -293,7 +294,7 @@ function MacdTooltip({ active, payload, label }: { active?: boolean; payload?: A
               <p className="font-medium" style={{ color: entry.color ?? "var(--chart-tooltip-label)" }}>
                 {meta.label}: {formatTooltipValue(entry.value, 2)}
               </p>
-              <p className="text-[11px] leading-4 text-stealth-200">{meta.description}</p>
+              <p className="text-xs leading-5 text-stealth-200">{meta.description}</p>
             </div>
           );
         })}
@@ -475,8 +476,8 @@ function IndicatorFallbackDigest({
             {properCase(component.name)} is leaning {bias.label.toLowerCase()} inside {group.label}, driven by {move.label} momentum at {formatSignedPercent(move.value)} with {volatilityLabel(component.volatility).toLowerCase()} volatility.
           </p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-black/15 p-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Context Feed</p>
+        <div className="rounded-2xl border border-white/8 bg-stealth-950/40 p-3">
+          <p className="text-xs uppercase tracking-[0.12em] text-stealth-400">Context Feed</p>
           <p className="mt-1 text-sm font-semibold text-white">Using local market structure</p>
           <p className="mt-1 text-xs text-stealth-400">Official context is not available for this indicator yet.</p>
         </div>
@@ -484,17 +485,17 @@ function IndicatorFallbackDigest({
 
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Why Now</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-stealth-400">Why Now</p>
           <p className="mt-1 text-sm font-semibold text-white">{move.label} momentum</p>
           <p className="mt-1 text-xs text-stealth-400">{formatSignedPercent(move.value)}</p>
         </div>
         <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Risk State</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-stealth-400">Risk State</p>
           <p className="mt-1 text-sm font-semibold text-white">{volatilityLabel(component.volatility)}</p>
           <p className="mt-1 text-xs text-stealth-400">{breadthLabel(group.breadth_score)}</p>
         </div>
         <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Market Fit</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-stealth-400">Market Fit</p>
           <p className="mt-1 text-sm font-semibold text-white">{group.label}</p>
           <p className="mt-1 text-xs text-stealth-400">vs composite {group.correlation_to_composite?.toFixed(2) ?? "—"}</p>
         </div>
@@ -506,15 +507,15 @@ function IndicatorFallbackDigest({
             key={`${link.label}-${link.url}`}
             href={link.url}
             target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/15"
+            rel="noreferrer noopener"
+            className="inline-flex min-h-11 items-center rounded-full border border-sky-400/30 bg-sky-500/10 px-3 text-xs font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/15"
           >
             {link.label}
           </a>
         ))}
       </div>
 
-      {friendlyError ? <p className="mt-4 text-xs text-stealth-500">{friendlyError}</p> : null}
+      {friendlyError ? <p className="mt-4 text-xs text-stealth-300">{friendlyError}</p> : null}
     </div>
   );
 }
@@ -805,8 +806,15 @@ export default function AgricultureIndex() {
 
   if (loading) {
     return (
-      <div className="page-shell-wide flex min-h-[60vh] items-center justify-center">
-        <MarketLoading size={120} variant="pulse" label="Loading Agriculture Index..." />
+      <div className="page-shell-wide page-stack">
+        <header>
+          <span className="page-kicker">Tools</span>
+          <h1 className="page-title">Agriculture Index</h1>
+          <p className="page-subtitle">Loading futures-based agriculture diagnostics.</p>
+        </header>
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <MarketLoading size={120} variant="pulse" label="Loading Agriculture Index..." />
+        </div>
       </div>
     );
   }
@@ -830,12 +838,34 @@ export default function AgricultureIndex() {
       <div>
         <span className="page-kicker">Tools</span>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Agriculture Index</h1>
-        <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300 md:text-[15px]">
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-stealth-300 md:text-[15px]">
           A futures-based macro diagnostic for agriculture regime stability. This is not a trading signal and is designed for contextual market structure analysis.
         </p>
       </div>
 
-      <div className="surface-card-strong p-4 md:p-5">
+      <SectionNav
+        id="agriculture-page-sections"
+        label="Agriculture sections"
+        items={
+          activeTab === "overview"
+            ? [
+                { id: "agriculture-now", label: "Now" },
+                { id: "agriculture-summary", label: "Summary" },
+                { id: "agriculture-views", label: "Views" },
+                { id: "agriculture-panel-overview", label: "Trend evidence" },
+              ]
+            : [
+                { id: "agriculture-now", label: "Now" },
+                { id: "agriculture-views", label: "Views" },
+                { id: "agriculture-sectors", label: "Sectors" },
+                { id: "agriculture-correlations", label: "Correlations" },
+                { id: "agriculture-signals", label: "Signals" },
+                { id: "agriculture-coverage", label: "Coverage" },
+              ]
+        }
+      />
+
+      <div id="agriculture-now" className="section-anchor surface-card-strong p-4 md:p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Stability Snapshot</p>
@@ -845,19 +875,19 @@ export default function AgricultureIndex() {
             </div>
             <p className="mt-2 text-xs text-stealth-400">As of {new Date(overview.as_of).toLocaleString()}</p>
           </div>
-          <div className="min-w-[220px] rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2">
+          <div className="w-full min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2 sm:w-auto sm:min-w-[220px]">
             <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Regime</p>
             <p className={`mt-1 text-xl font-semibold ${getRegimeTone(overview.regime_label)}`}>{overview.regime_label}</p>
             <p className="mt-1 text-xs text-stealth-400">Coverage: {overview.availability.available_group_count} sectors</p>
           </div>
-          <div className="min-w-[220px] rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2">
+          <div className="w-full min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2 sm:w-auto sm:min-w-[220px]">
             <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Availability</p>
             <p className="mt-1 text-xl font-semibold text-stealth-100">
               {overview.availability.available_symbol_count}/{overview.availability.total_configured_symbols}
             </p>
             <p className="mt-1 text-xs text-stealth-400">Symbols with sufficient history</p>
           </div>
-          <div className="min-w-[240px] rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2">
+          <div className="w-full min-w-0 rounded-lg border border-stealth-700 bg-stealth-900/50 px-3 py-2 sm:w-auto sm:min-w-[240px]">
             <p className="text-xs uppercase tracking-[0.14em] text-stealth-500">Composite Moves</p>
             <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
               <p className="text-stealth-400">5d: <span className="text-stealth-200">{overview.composite.changes["5d"]?.toFixed(2) ?? "—"}%</span></p>
@@ -869,22 +899,32 @@ export default function AgricultureIndex() {
         </div>
       </div>
 
-      <div className="surface-card-strong p-5">
+      <div id="agriculture-summary" className="section-anchor surface-card-strong p-5">
         <p className="text-sm text-stealth-200">{overview.summary}</p>
       </div>
 
-      <div className="mb-2 border-b border-stealth-700 flex gap-4">
+      <div
+        id="agriculture-views"
+        className="section-anchor mb-2 flex gap-2 border-b border-stealth-700"
+        role="tablist"
+        aria-label="Agriculture analysis view"
+      >
         {([
           { key: "overview", label: "Overview" },
           { key: "deepdive", label: "Deep Dive" },
         ] as Array<{ key: TabKey; label: string }>).map((tab) => (
           <button
             key={tab.key}
+            id={`agriculture-tab-${tab.key}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.key}
+            aria-controls={`agriculture-panel-${tab.key}`}
             onClick={() => setActiveTab(tab.key)}
-            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+            className={`min-h-11 border-b-2 px-3 font-semibold transition ${
               activeTab === tab.key
                 ? "border-emerald-500 text-emerald-300"
-                : "border-transparent text-stealth-400 hover:text-gray-300"
+                : "border-transparent text-stealth-400 hover:text-stealth-300"
             }`}
           >
             {tab.label}
@@ -893,7 +933,12 @@ export default function AgricultureIndex() {
       </div>
 
       {activeTab === "overview" ? (
-        <>
+        <section
+          id="agriculture-panel-overview"
+          role="tabpanel"
+          aria-labelledby="agriculture-tab-overview"
+          className="section-anchor space-y-6 md:space-y-8"
+        >
           <div className="surface-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -904,12 +949,14 @@ export default function AgricultureIndex() {
                     : "Regime quality momentum centered around zero — positive histogram means stability is improving. Breadth and trend overlaid for context."}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Stability history window">
                 {(["30d", "90d", "180d", "365d", "30y"] as Timeframe[]).map((tf) => (
                   <button
                     key={tf}
+                    type="button"
+                    aria-pressed={timeframe === tf}
                     onClick={() => setTimeframe(tf)}
-                    className={`rounded-md px-3 py-1 text-xs font-medium ${
+                    className={`min-h-11 rounded-md px-3 text-xs font-medium ${
                       timeframe === tf
                         ? "bg-stealth-700 text-stealth-100"
                         : "bg-stealth-900 text-stealth-400 hover:text-stealth-200"
@@ -922,7 +969,12 @@ export default function AgricultureIndex() {
             </div>
             <div className="mt-4 h-80">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <ComposedChart data={activeMacdData} margin={CHART_MARGIN}>
+                <ComposedChart
+                  accessibilityLayer
+                  aria-label="Agriculture stability momentum and signal history"
+                  data={activeMacdData}
+                  margin={CHART_MARGIN}
+                >
                   <CartesianGrid {...commonGridProps} />
                   <XAxis dataKey="date" {...commonXAxisProps} />
                   {/* Left axis: MACD/histogram scale */}
@@ -1005,7 +1057,12 @@ export default function AgricultureIndex() {
             <h2 className="text-base font-semibold text-stealth-100">Stability Score</h2>
             <div className="mt-4 h-48">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <LineChart data={activeStabilityData} margin={CHART_MARGIN}>
+                <LineChart
+                  accessibilityLayer
+                  aria-label="Agriculture composite stability score history"
+                  data={activeStabilityData}
+                  margin={CHART_MARGIN}
+                >
                   <CartesianGrid {...commonGridProps} />
                   <XAxis dataKey="date" {...commonXAxisProps} />
                   <YAxis {...commonYAxisProps} domain={[0, 100]} />
@@ -1026,7 +1083,12 @@ export default function AgricultureIndex() {
               <h2 className="text-base font-semibold text-stealth-100">Stability Components (History)</h2>
               <div className="mt-4 h-72">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={smoothedComponentHistory} margin={CHART_MARGIN}>
+                  <LineChart
+                    accessibilityLayer
+                    aria-label="Agriculture stability component history"
+                    data={smoothedComponentHistory}
+                    margin={CHART_MARGIN}
+                  >
                     <CartesianGrid {...commonGridProps} />
                     <XAxis dataKey="date" {...commonXAxisProps} />
                     <YAxis {...commonYAxisProps} domain={[0, 100]} />
@@ -1078,12 +1140,17 @@ export default function AgricultureIndex() {
               </div>
             </div>
           </div>
-        </>
+        </section>
       ) : null}
 
       {activeTab === "deepdive" ? (
-        <>
-          <div>
+        <section
+          id="agriculture-panel-deepdive"
+          role="tabpanel"
+          aria-labelledby="agriculture-tab-deepdive"
+          className="section-anchor space-y-6 md:space-y-8"
+        >
+          <div id="agriculture-sectors" className="section-anchor">
             <h2 className="text-base font-semibold text-stealth-100">Sector Analysis</h2>
             <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {groups.map((group) => (
@@ -1135,15 +1202,20 @@ export default function AgricultureIndex() {
                     </div>
                   </div>
                   <div className="mt-4">
-                    <div className="flex flex-wrap gap-2">
+                    <div
+                      className="flex flex-wrap gap-2"
+                      role="group"
+                      aria-label={`Select ${group.label} component`}
+                    >
                       {sortGroupComponents(group).map((component) => {
                         const selected = selectedIndicatorsByGroup[group.group] === component.code;
                         return (
                           <button
                             key={component.code}
                             type="button"
+                            aria-pressed={selected}
                             onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [group.group]: component.code }))}
-                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                            className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition ${
                               selected
                                 ? "border-emerald-300 bg-emerald-300/12 text-emerald-100"
                                 : "border-stealth-700 bg-stealth-900/60 text-stealth-300 hover:border-stealth-500 hover:text-white"
@@ -1181,7 +1253,7 @@ export default function AgricultureIndex() {
                             />
                           )}
                         </div>
-                        <p className="mt-4 text-[11px] text-stealth-500">
+                        <p className="mt-4 text-xs leading-5 text-stealth-400">
                           Detailed datapoints remain available in the broader diagnostics, but this view stays focused on the current read and catalyst.
                         </p>
                       </div>
@@ -1192,25 +1264,34 @@ export default function AgricultureIndex() {
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <div className="surface-card p-4">
-              <h2 className="text-base font-semibold text-stealth-100">Rolling Correlation Matrix (60d)</h2>
-              <div className="mt-3 overflow-x-auto">
-                <table className="min-w-full border-collapse text-xs text-stealth-300">
+          <div id="agriculture-correlations" className="section-anchor grid gap-4 xl:grid-cols-2">
+            <div className="surface-card min-w-0 max-w-full overflow-hidden p-4">
+              <h2 id="agriculture-correlation-heading" className="text-base font-semibold text-stealth-100">Rolling Correlation Matrix (60d)</h2>
+              <p id="agriculture-correlation-description" className="mt-1 text-xs leading-5 text-stealth-300">
+                Pairwise 60-day group correlations. Scroll horizontally on narrow screens.
+              </p>
+              <div
+                className="mt-3 max-w-full overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400"
+                role="region"
+                aria-labelledby="agriculture-correlation-heading"
+                aria-describedby="agriculture-correlation-description"
+                tabIndex={0}
+              >
+                <table className="w-max min-w-[640px] border-collapse text-xs text-stealth-300">
                   <thead>
                     <tr>
-                      <th className="border border-stealth-700 px-2 py-1 text-left text-stealth-400">Group</th>
+                      <th scope="col" className="border border-stealth-700 px-2 py-2 text-left text-stealth-300">Group</th>
                       {matrix60[0] ? Object.keys(matrix60[0].values).map((col) => (
-                        <th key={col} className="border border-stealth-700 px-2 py-1 text-left text-stealth-400">{formatGroupCode(col)}</th>
+                        <th scope="col" key={col} className="border border-stealth-700 px-2 py-2 text-left text-stealth-300">{formatGroupCode(col)}</th>
                       )) : null}
                     </tr>
                   </thead>
                   <tbody>
                     {matrix60.map((row) => (
                       <tr key={row.row}>
-                        <td className="border border-stealth-700 px-2 py-1 font-medium text-stealth-200">{formatGroupCode(row.row)}</td>
+                        <th scope="row" className="border border-stealth-700 px-2 py-2 font-medium text-stealth-200">{formatGroupCode(row.row)}</th>
                         {Object.entries(row.values).map(([col, value]) => (
-                          <td key={col} className={`border border-stealth-700 px-2 py-1 ${getCorrCellStyle(value)}`}>
+                          <td key={col} className={`border border-stealth-700 px-2 py-2 ${getCorrCellStyle(value)}`}>
                             {value === null ? "—" : value.toFixed(2)}
                           </td>
                         ))}
@@ -1221,7 +1302,7 @@ export default function AgricultureIndex() {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div id="agriculture-signals" className="section-anchor space-y-4">
               <div className="surface-card p-4">
                 <h2 className="text-base font-semibold text-stealth-100">Special Signals</h2>
                 <div className="mt-3 space-y-3 text-sm text-stealth-300">
@@ -1276,7 +1357,7 @@ export default function AgricultureIndex() {
             </div>
           </div>
 
-          <div className="surface-card p-4">
+          <div id="agriculture-coverage" className="section-anchor surface-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-base font-semibold text-stealth-100">Data Coverage</h2>
               <div className="flex gap-4 text-xs text-stealth-400">
@@ -1317,7 +1398,7 @@ export default function AgricultureIndex() {
               ))}
             </div>
           </div>
-        </>
+        </section>
       ) : null}
     </div>
   );

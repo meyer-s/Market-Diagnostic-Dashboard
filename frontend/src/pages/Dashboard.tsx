@@ -122,6 +122,7 @@ export default function Dashboard() {
   const [indicators, setIndicators] = useState<IndicatorStatus[] | null>(null);
   const [indicatorsLoading, setIndicatorsLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [trendPeriod, setTrendPeriod] = useState<90 | 180 | 365>(90);
   const [insights, setInsights] = useState<Partial<Record<InsightSignal["id"], InsightSignal>>>({});
 
@@ -161,7 +162,7 @@ export default function Dashboard() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [retryNonce]);
 
   const newsCount = news.length;
   const visibleIndicators = useMemo(() => indicators?.filter((i) => i.code !== "AAS" && i.code !== "AAP") ?? [], [indicators]);
@@ -220,9 +221,9 @@ export default function Dashboard() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col">
           <span className="page-kicker">Daily Diagnostic</span>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Dashboard</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Real-time market regime assessment across volatility, rates, liquidity, and sentiment.</p>
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Dashboard</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Real-time market regime assessment across volatility, rates, liquidity, and sentiment.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stealth-300">
             <span className="page-badge">{visibleIndicators.length} active indicators</span>
             <span className="page-badge">Trend window {overallTrendLabel}</span>
             <span className="page-badge border-stealth-600 bg-stealth-900/80 text-stealth-200">Read-only public dashboard</span>
@@ -247,8 +248,10 @@ export default function Dashboard() {
           <div className="flex flex-col justify-end gap-2 sm:flex-row sm:items-center sm:gap-3">
             <div className="control-strip">
               <button
+                type="button"
                 onClick={() => setTrendPeriod(90)}
-                className={`flex-1 whitespace-nowrap rounded-full px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium transition ${
+                aria-pressed={trendPeriod === 90}
+                className={`min-h-11 flex-1 whitespace-nowrap rounded-full px-3 text-xs font-medium transition sm:text-sm ${
                   trendPeriod === 90
                     ? 'bg-stealth-700 text-white'
                     : 'text-stealth-400 hover:text-stealth-200'
@@ -257,8 +260,10 @@ export default function Dashboard() {
                 90d
               </button>
               <button
+                type="button"
                 onClick={() => setTrendPeriod(180)}
-                className={`flex-1 whitespace-nowrap rounded-full px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium transition ${
+                aria-pressed={trendPeriod === 180}
+                className={`min-h-11 flex-1 whitespace-nowrap rounded-full px-3 text-xs font-medium transition sm:text-sm ${
                   trendPeriod === 180
                     ? 'bg-stealth-700 text-white'
                     : 'text-stealth-400 hover:text-stealth-200'
@@ -267,8 +272,10 @@ export default function Dashboard() {
                 6mo
               </button>
               <button
+                type="button"
                 onClick={() => setTrendPeriod(365)}
-                className={`flex-1 whitespace-nowrap rounded-full px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium transition ${
+                aria-pressed={trendPeriod === 365}
+                className={`min-h-11 flex-1 whitespace-nowrap rounded-full px-3 text-xs font-medium transition sm:text-sm ${
                   trendPeriod === 365
                     ? 'bg-stealth-700 text-white'
                     : 'text-stealth-400 hover:text-stealth-200'
@@ -281,15 +288,43 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div>
+      <nav
+        aria-label="Dashboard sections"
+        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur"
+      >
+        {[
+          ["#current-read", "Current read"],
+          ["#drivers", "Drivers"],
+          ["#indicator-breadth", "Indicator breadth"],
+        ].map(([href, label]) => (
+          <a
+            key={href}
+            href={href}
+            className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 transition-colors hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      <section id="current-read" aria-labelledby="current-read-title" className="scroll-mt-32">
+        <h2 id="current-read-title" className="sr-only">Current market read</h2>
         {dashboardError && (
-          <div className="surface-card p-4 sm:p-5">
-            <p className="text-sm text-red-300">Dashboard data is partially unavailable: {dashboardError}</p>
+          <div className="surface-card border-red-800/70 p-4 sm:p-5" role="alert">
+            <p className="text-sm font-semibold text-red-200">Some dashboard evidence is unavailable.</p>
+            <p className="mt-1 text-sm text-red-300">{dashboardError}</p>
+            <button
+              type="button"
+              onClick={() => setRetryNonce((value) => value + 1)}
+              className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-red-700 bg-red-950/50 px-4 text-sm font-semibold text-red-100 transition-colors hover:bg-red-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+            >
+              Retry unavailable data
+            </button>
           </div>
         )}
         {!overallInsight && (
-          <div className="surface-card-strong p-4 sm:p-5">
-            <p className="text-xs text-stealth-400">Overall read forming...</p>
+          <div className="surface-card-strong p-4 sm:p-5" role="status">
+            <p className="text-sm text-stealth-300">Calculating the current read from available indicators…</p>
           </div>
         )}
         {overallInsight && (
@@ -297,7 +332,7 @@ export default function Dashboard() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
-                <div className={`text-lg font-semibold ${overallInsight.color}`}>{overallInsight.label}</div>
+                <h2 className={`text-lg font-semibold ${overallInsight.color}`}>{overallInsight.label}</h2>
               </div>
               <div className="text-xs text-stealth-500 text-right">
                 {confidenceLabel}
@@ -313,11 +348,11 @@ export default function Dashboard() {
                     <span className="text-xs font-semibold text-stealth-100">
                       {insight.label}
                     </span>
-                    <span className={`text-[10px] uppercase ${directionStyles[insight.primaryDirection]}`}>
+                    <span className={`text-xs uppercase ${directionStyles[insight.primaryDirection]}`}>
                       {directionLabel[insight.primaryDirection]}
                     </span>
                   </div>
-                  <div className="text-[10px] text-stealth-200 mt-1 truncate">
+                  <div className="mt-1 text-xs text-stealth-200">
                     {formatInsightSummary(insight)}
                   </div>
                 </div>
@@ -328,22 +363,29 @@ export default function Dashboard() {
             </p>
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 gap-3 md:gap-6 lg:grid-cols-2">
-        <SystemOverviewWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
-        <DowTheoryWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
-        <SectorDivergenceWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
-        <AASWidget
-          timeframe={trendPeriod === 90 ? '90d' : trendPeriod === 180 ? '180d' : '365d'}
-          onInsight={handleInsight}
-        />
-      </div>
+      <section id="drivers" aria-labelledby="drivers-title" className="scroll-mt-32">
+        <div className="mb-3">
+          <div className="page-kicker">Drivers</div>
+          <h2 id="drivers-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">What is moving the read</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:gap-6 lg:grid-cols-2">
+          <SystemOverviewWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
+          <DowTheoryWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
+          <SectorDivergenceWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
+          <AASWidget
+            timeframe={trendPeriod === 90 ? '90d' : trendPeriod === 180 ? '180d' : '365d'}
+            onInsight={handleInsight}
+          />
+        </div>
+      </section>
 
+      <section id="indicator-breadth" aria-labelledby="indicator-breadth-title" className="scroll-mt-32">
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="page-kicker">Breadth</div>
-          <h3 className="mt-1 text-lg font-semibold text-stealth-100 sm:text-xl">Indicators</h3>
+          <h2 id="indicator-breadth-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">Indicators</h2>
         </div>
       </div>
       {indicatorsLoading && (
@@ -356,6 +398,7 @@ export default function Dashboard() {
           <IndicatorCard key={i.code} indicator={i} />
         ))}
       </div>
+      </section>
     </div>
   );
 }

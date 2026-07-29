@@ -40,7 +40,7 @@ import MarketLoading from "../components/ui/MarketLoading";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { formatDateTimeWithWeekday } from "../utils/styleUtils";
 import { CHART_MARGIN, CHART_NEUTRAL } from "../utils/chartUtils";
-import { apiFetch } from "../utils/apiUtils";
+import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { getFamilyColor, statePalette } from "../theme/metricColors";
 
 // =============================================================================
@@ -156,6 +156,8 @@ const MarketMap = () => {
   const [sectorProjections, setSectorProjections] = useState<Record<string, SectorProjection[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Map sector names to ETF symbols
   const sectorToEtf: Record<string, string> = {
@@ -177,6 +179,7 @@ const MarketMap = () => {
    */
   const fetchData = async () => {
     try {
+      setErrorMessage(null);
       const [mapResult, intradayResult] = await Promise.all([
         apiFetch<MarketMapData>("/market-map/data?days=5"),
         apiFetch<{ data: IntradayData[] }>("/market-map/spy-intraday"),
@@ -186,8 +189,10 @@ const MarketMap = () => {
       setData(mapResult);
       setIntradayData(intradayResult.data || []);
       setSectorProjections(projectionsResult?.projections || null);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error("Error fetching market map:", error);
+      setErrorMessage(getErrorMessage(error));
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -277,7 +282,12 @@ const MarketMap = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="page-shell-wide page-stack" aria-busy="true">
+        <div>
+          <p className="page-kicker">Market breadth</p>
+          <h1 className="page-title">Market Map</h1>
+          <p className="page-subtitle">Preparing intraday index and sector participation evidence.</p>
+        </div>
         <MarketLoading size={120} variant="scan" label="Loading market map..." />
       </div>
     );
@@ -285,12 +295,17 @@ const MarketMap = () => {
 
   if (!data || !data.sectors || data.sectors.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-stealth-400">
-          {!data ? 'No data available' : 'No sectors found'}
-          <div className="text-xs mt-2">
-            {data && JSON.stringify(Object.keys(data))}
-          </div>
+      <div className="page-shell page-stack">
+        <div>
+          <p className="page-kicker">Market breadth</p>
+          <h1 className="page-title">Market Map</h1>
+        </div>
+        <div className="surface-card border-red-800/70 p-5" role="alert">
+          <h2 className="text-lg font-semibold text-red-200">Market map evidence is unavailable</h2>
+          <p className="mt-2 text-sm text-red-300">{errorMessage ?? "No sector observations were returned for this update."}</p>
+          <button type="button" onClick={handleRefresh} className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-red-700 bg-red-950/50 px-4 text-sm font-semibold text-red-100 hover:bg-red-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+            Retry market map
+          </button>
         </div>
       </div>
     );
@@ -300,6 +315,14 @@ const MarketMap = () => {
   const totalVolume = data.sectors.reduce((sum, sector) => {
     return sum + sector.stocks.reduce((s, stock) => s + stock.volume, 0);
   }, 0);
+  const stocksWithSector = data.sectors.flatMap((sector) =>
+    sector.stocks.map((stock) => ({ ...stock, sector: sector.name }))
+  );
+  const advancingCount = stocksWithSector.filter((stock) => stock.pct_change > 0).length;
+  const decliningCount = stocksWithSector.filter((stock) => stock.pct_change < 0).length;
+  const rankedSectors = [...data.sectors].sort((left, right) => right.pct_change - left.pct_change);
+  const leadingSector = rankedSectors[0];
+  const laggingSector = rankedSectors[rankedSectors.length - 1];
 
   // =============================================================================
   // UTILITY FUNCTIONS
@@ -333,14 +356,15 @@ const MarketMap = () => {
   // =============================================================================
 
   return (
-    <div className="p-3 md:p-6 space-y-3 md:space-y-6">
+    <div className="page-shell-wide page-stack">
       {/* =================================================================
           HEADER SECTION
           ================================================================= */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-stealth-100">Market Map</h1>
-          <p className="text-xs sm:text-sm text-stealth-400 mt-1">
+          <p className="page-kicker">Market breadth</p>
+          <h1 className="page-title">Market Map</h1>
+          <p className="page-subtitle">
             S&P 500 sector performance - bubble size represents trading volume
           </p>
         </div>
@@ -349,7 +373,7 @@ const MarketMap = () => {
         <button
           onClick={handleRefresh}
           disabled={isRefreshing}
-          className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-xs sm:text-sm transition whitespace-nowrap ${
+          className={`flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-xs font-medium transition sm:text-sm ${
             isRefreshing
               ? 'bg-stealth-700 text-stealth-400 cursor-not-allowed'
               : 'bg-stealth-700 text-stealth-200 hover:bg-stealth-600 hover:text-stealth-100'
@@ -370,21 +394,70 @@ const MarketMap = () => {
             />
           </svg>
           <span className="hidden xs:inline">{isRefreshing ? 'Refreshing...' : 'Refresh Data'}</span>
-          <span className="xs:hidden">{isRefreshing ? 'Loading...' : 'Refresh'}</span>
+          <span className="xs:hidden">{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
         </button>
       </div>
+
+      <nav
+        aria-label="Market map sections"
+        tabIndex={0}
+        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
+      >
+        {[
+          ["#market-map-now", "Current read"],
+          ["#market-map-intraday", "Intraday"],
+          ["#market-map-sectors", "Sector map"],
+          ["#market-map-data", "Data table"],
+        ].map(([href, label]) => (
+          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      {errorMessage && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4" role="status">
+          <h2 className="text-sm font-semibold text-amber-200">Refresh failed; showing the last successful map</h2>
+          <p className="mt-1 text-sm text-amber-100">{errorMessage}</p>
+        </div>
+      )}
+
+      <section id="market-map-now" aria-labelledby="market-map-now-title" className="surface-card-strong scroll-mt-32 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="page-kicker">Current read</p>
+            <h2 id="market-map-now-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">
+              {advancingCount >= decliningCount ? "Participation is net positive" : "Participation is net negative"}
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300">
+              {advancingCount} stocks are advancing and {decliningCount} are declining across {data.sectors.length} sectors.
+              {leadingSector && laggingSector ? ` ${leadingSector.name} leads at ${leadingSector.pct_change >= 0 ? "+" : ""}${leadingSector.pct_change.toFixed(2)}%, while ${laggingSector.name} trails at ${laggingSector.pct_change.toFixed(2)}%.` : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="page-badge">{stocksWithSector.length} symbols</span>
+            <span className="page-badge">{data.sectors.length} sectors</span>
+            {lastUpdated && <span className="page-badge">Updated {lastUpdated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
+          </div>
+        </div>
+      </section>
 
       {/* =================================================================
           INTRADAY MAJOR INDICES CHART
           Shows 5-minute interval price action for SPY, DJI, RTY across last 5 trading days
           ================================================================= */}
-      <div className="primary-card p-3 md:p-6">
-        <h2 className="text-base md:text-lg font-semibold text-stealth-200 mb-2">Major Indices Intraday (5 min)</h2>
+      <section id="market-map-intraday" className="primary-card scroll-mt-32 p-3 md:p-6" aria-labelledby="market-map-intraday-title">
+        <h2 id="market-map-intraday-title" className="text-base md:text-lg font-semibold text-stealth-200 mb-2">Major Indices Intraday (5 min)</h2>
         <p className="text-stealth-400 text-xs mb-3 md:mb-4">SPY (S&P 500), DJI (Dow Jones), RTY (Russell 2000)</p>
         <div className="h-48 sm:h-64">
           {intradaySeriesAligned.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <LineChart data={intradaySeriesAligned} margin={CHART_MARGIN}>
+              <LineChart
+                accessibilityLayer
+                aria-label="SPY, Dow Jones, and Russell 2000 intraday price history"
+                data={intradaySeriesAligned}
+                margin={CHART_MARGIN}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                 <XAxis
                   dataKey="timestamp"
@@ -404,8 +477,8 @@ const MarketMap = () => {
                     borderColor: CHART_NEUTRAL.tooltipBorder,
                     borderRadius: "6px",
                   }}
-                  labelStyle={{ color: CHART_NEUTRAL.label, fontSize: 11 }}
-                  itemStyle={{ fontSize: 11 }}
+                  labelStyle={{ color: CHART_NEUTRAL.label, fontSize: 12 }}
+                  itemStyle={{ fontSize: 12 }}
                   labelFormatter={(timestamp: string) => formatDateTimeWithWeekday(timestamp)}
                   formatter={(value: number, name: string) => {
                     const indexNames: Record<string, string> = {
@@ -502,15 +575,51 @@ const MarketMap = () => {
             </div>
           ))}
         </div>
-      </div>
+        <details className="mt-4 border-t border-stealth-700 pt-2 text-xs">
+          <summary className="flex min-h-11 cursor-pointer items-center rounded-lg px-2 font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+            View recent index values
+          </summary>
+          <div className="max-w-full overflow-x-auto rounded-lg border border-stealth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" role="region" aria-label="Recent major index intraday values" tabIndex={0}>
+            <table className="w-full min-w-[32rem] text-left">
+              <caption className="sr-only">The most recent thirty aligned intraday observations</caption>
+              <thead className="bg-stealth-900 text-stealth-300">
+                <tr>
+                  <th scope="col" className="px-3 py-2">Time</th>
+                  <th scope="col" className="px-3 py-2">S&amp;P 500</th>
+                  <th scope="col" className="px-3 py-2">Dow Jones</th>
+                  <th scope="col" className="px-3 py-2">Russell 2000</th>
+                </tr>
+              </thead>
+              <tbody>
+                {intradaySeriesAligned.slice(-30).reverse().map((point) => (
+                  <tr key={point.timestamp} className="border-t border-stealth-800 text-stealth-200">
+                    <td className="px-3 py-2">{formatDateTimeWithWeekday(point.timestamp)}</td>
+                    <td className="px-3 py-2 font-mono tabular-nums">{point.SPY == null ? "—" : `${point.SPY.toFixed(2)}%`}</td>
+                    <td className="px-3 py-2 font-mono tabular-nums">{point.DJI == null ? "—" : `${point.DJI.toFixed(2)}%`}</td>
+                    <td className="px-3 py-2 font-mono tabular-nums">{point.RTY == null ? "—" : `${point.RTY.toFixed(2)}%`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
 
       {/* =================================================================
           SECTOR PERFORMANCE GRID
           Each card shows one sector with vertical bubble chart
           ================================================================= */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
-        {data.sectors
-          .sort((a, b) => b.pct_change - a.pct_change)  // Sort by performance (best first)
+      <div className="flex flex-col gap-3 rounded-xl border border-stealth-700 bg-stealth-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="max-w-3xl text-sm leading-6 text-stealth-300">
+          The bubble map is a visual, pointer-first overview. Keyboard and screen-reader users can
+          use the equivalent symbol table for every quote, daily move, and volume value.
+        </p>
+        <a href="#market-map-data" className="field-button field-button-secondary shrink-0">
+          Skip to symbol data
+        </a>
+      </div>
+      <section id="market-map-sectors" aria-label="Sector bubble map" className="scroll-mt-32 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+        {rankedSectors
           .map((sector) => {
             const sectorVolume = sector.stocks.reduce((sum, stock) => sum + stock.volume, 0);
             const volumePercent = (sectorVolume / totalVolume) * 100;
@@ -588,14 +697,16 @@ const MarketMap = () => {
                             {/* Data point circles - only show final point colored */}
                             <circle cx="50" cy={sparkPoints[3]} r="1.5" fill={trendUp ? statePalette.green : trendDown ? statePalette.red : statePalette.neutral} />
                           </svg>
-                          <div className="text-[9px] text-stealth-500">T + 12M</div>
+                          <div className="text-xs text-stealth-500">T + 12M</div>
                         </div>
                       );
                     })()}
                   </div>
                   <span
                     className={`text-xs font-bold px-1.5 py-0.5 rounded self-start ${
-                      sector.pct_change >= 0 ? "bg-green-600 text-white" : "bg-red-600 text-white"
+                      sector.pct_change >= 0
+                        ? "bg-emerald-900 text-emerald-100"
+                        : "bg-rose-900 text-rose-100"
                     }`}
                   >
                     {sector.pct_change >= 0 ? "+" : ""}{sector.pct_change.toFixed(1)}%
@@ -682,9 +793,14 @@ const MarketMap = () => {
                         };
 
                         return (
-                          <div
+                          <a
                             key={stock.ticker}
-                            className="absolute rounded-full flex items-center justify-center cursor-pointer hover:scale-125 hover:z-50 transition-all group"
+                            href={`https://finance.yahoo.com/quote/${stock.ticker}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            tabIndex={-1}
+                            aria-label={`${stock.ticker}: ${stock.pct_change >= 0 ? "up" : "down"} ${Math.abs(stock.pct_change).toFixed(2)} percent at $${stock.price.toFixed(2)}. Open quote in a new tab.`}
+                            className="group absolute flex items-center justify-center rounded-full transition-transform hover:z-50 hover:scale-125 focus-visible:z-50 focus-visible:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-stealth-900 before:absolute before:-inset-2 before:content-['']"
                             style={{
                               width: `${size}px`,
                               height: `${size}px`,
@@ -695,27 +811,26 @@ const MarketMap = () => {
                               opacity: 0.8,
                               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
                             }}
-                            onClick={() => window.open(`https://finance.yahoo.com/quote/${stock.ticker}`, '_blank')}
                           >
                             {/* Show ticker only for NASDAQ-100 or on hover */}
-                            <span className={`text-[10px] font-bold text-white drop-shadow ${isNasdaq100 ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+                            <span aria-hidden="true" className={`text-xs font-bold text-white drop-shadow ${isNasdaq100 ? '' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'} transition-opacity`}>
                               {stock.ticker}
                             </span>
                             
                             {/* Tooltip */}
-                            <div className="absolute hidden group-hover:block bottom-full mb-2 bg-stealth-900 border border-stealth-600 rounded px-3 py-2 text-xs whitespace-nowrap z-50 shadow-xl pointer-events-none">
+                            <div aria-hidden="true" className="pointer-events-none absolute bottom-full z-50 mb-2 hidden whitespace-nowrap rounded border border-stealth-600 bg-stealth-900 px-3 py-2 text-xs shadow-xl group-hover:block group-focus-visible:block">
                               <div className="text-stealth-100 font-bold">{stock.ticker}</div>
                               <div className={`font-semibold ${stock.pct_change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {stock.pct_change >= 0 ? '+' : ''}{stock.pct_change.toFixed(2)}%
                               </div>
-                              <div className="text-stealth-400 text-[10px] mt-1">
+                              <div className="mt-1 text-xs text-stealth-400">
                                 ${stock.price.toFixed(2)}
                               </div>
-                              <div className="text-stealth-400 text-[10px]">
+                              <div className="text-xs text-stealth-400">
                                 Vol: {(stock.volume / 1e6).toFixed(1)}M
                               </div>
                             </div>
-                          </div>
+                          </a>
                         );
                       })}
                     </div>
@@ -730,7 +845,52 @@ const MarketMap = () => {
               </div>
             );
           })}
-      </div>
+      </section>
+
+      <section id="market-map-data" aria-labelledby="market-map-data-title" className="surface-card-strong scroll-mt-32 p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="page-kicker">Accessible values</p>
+            <h2 id="market-map-data-title" className="mt-1 text-xl font-semibold text-stealth-100">All mapped symbols</h2>
+            <p className="mt-1 text-sm text-stealth-300">The same price, change, and volume evidence encoded by the sector bubbles.</p>
+          </div>
+          <span className="page-badge">{stocksWithSector.length} rows</span>
+        </div>
+        <details className="mt-3 border-t border-stealth-700 pt-2">
+          <summary className="flex min-h-11 cursor-pointer items-center rounded-lg px-2 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+            Open symbol data table
+          </summary>
+          <div className="max-h-[34rem] max-w-full overflow-auto rounded-lg border border-stealth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" role="region" aria-label="All market map symbol values. Scroll vertically and horizontally as needed." tabIndex={0}>
+            <table className="w-full min-w-[38rem] text-left text-sm">
+              <caption className="sr-only">All market map stock observations ordered by daily change</caption>
+              <thead className="sticky top-0 bg-stealth-900 text-stealth-300">
+                <tr>
+                  <th scope="col" className="px-3 py-2">Symbol</th>
+                  <th scope="col" className="px-3 py-2">Sector</th>
+                  <th scope="col" className="px-3 py-2 text-right">Price</th>
+                  <th scope="col" className="px-3 py-2 text-right">Change</th>
+                  <th scope="col" className="px-3 py-2 text-right">Volume</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...stocksWithSector].sort((left, right) => right.pct_change - left.pct_change).map((stock) => (
+                  <tr key={`${stock.sector}-${stock.ticker}`} className="border-t border-stealth-800 text-stealth-200">
+                    <th scope="row" className="px-3 py-2 font-semibold">
+                      <a href={`https://finance.yahoo.com/quote/${stock.ticker}`} target="_blank" rel="noopener noreferrer" className="text-sky-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+                        {stock.ticker}<span className="sr-only"> quote opens in a new tab</span>
+                      </a>
+                    </th>
+                    <td className="px-3 py-2">{stock.sector}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">${stock.price.toFixed(2)}</td>
+                    <td className={`px-3 py-2 text-right font-mono tabular-nums ${stock.pct_change >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{stock.pct_change >= 0 ? "+" : ""}{stock.pct_change.toFixed(2)}%</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{stock.volume.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
     </div>
   );
 };

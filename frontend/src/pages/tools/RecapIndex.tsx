@@ -14,7 +14,6 @@ export default function RecapIndex() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -48,16 +47,6 @@ export default function RecapIndex() {
     [data],
   );
 
-  useEffect(() => {
-    if (posts.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    if (!selectedId || !posts.some((post) => post.id === selectedId)) {
-      setSelectedId(posts[0].id);
-    }
-  }, [posts, selectedId]);
-
   const handleOpenPost = (id: string) => {
     const post = posts.find((item) => item.id === id);
     if (!post) {
@@ -67,12 +56,13 @@ export default function RecapIndex() {
   };
 
   return (
-    <div className="space-y-4 p-4 text-stealth-100 md:space-y-6 md:p-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <div className="page-shell page-stack">
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-stealth-100">Recap</h1>
-          <p className="mt-1 text-sm text-stealth-400">
-            Browse recap posts. Open any title for a dedicated post page.
+          <span className="page-kicker">Research archive</span>
+          <h1 className="page-title">Market Recaps</h1>
+          <p className="page-subtitle">
+            Browse published market-state recaps and open a dedicated reading view.
           </p>
         </div>
         <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto">
@@ -81,20 +71,34 @@ export default function RecapIndex() {
           </div>
           <StatusFilterChips value={statusFilter} onChange={setStatusFilter} />
         </div>
-      </div>
+      </header>
 
       {loading ? (
-        <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6 text-sm text-stealth-400">
-          Loading recap posts...
+        <div
+          className="rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6 text-sm text-stealth-300"
+          role="status"
+          aria-live="polite"
+        >
+          Loading recap posts…
         </div>
       ) : error ? (
         <ErrorState message={error} />
       ) : posts.length === 0 ? (
-        <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6 text-sm text-stealth-400">
+        <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6 text-sm text-stealth-300">
           No recap posts match the current filters.
         </div>
       ) : (
-        <UpdatesList posts={posts} selectedId={selectedId} onSelect={handleOpenPost} />
+        <section aria-labelledby="recap-results-heading">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 id="recap-results-heading" className="text-lg font-semibold text-stealth-100">
+              Recap posts
+            </h2>
+            <p className="text-sm text-stealth-300" aria-live="polite">
+              {posts.length} result{posts.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <UpdatesList posts={posts} selectedId={null} onSelect={handleOpenPost} />
+        </section>
       )}
     </div>
   );

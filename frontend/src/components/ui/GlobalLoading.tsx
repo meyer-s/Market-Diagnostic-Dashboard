@@ -8,7 +8,7 @@ export default function GlobalLoading() {
 
   return (
     <div className="fixed bottom-5 right-5 z-40 pointer-events-none">
-      <MarketLoading size={52} variant="drift" label="Syncing data..." />
+      <MarketLoading size={52} variant="drift" label="Loading requested market data…" />
     </div>
   );
 }

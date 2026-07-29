@@ -6,7 +6,20 @@ on:
     branches:
       - main
       - "copilot/**"
+  schedule:
+    - cron: "17 8 * * 1"
   workflow_dispatch:
+    inputs:
+      run_full_site_audit:
+        description: Run the production-proxy full-site and material-state audit
+        required: false
+        default: false
+        type: boolean
+      audit_origin:
+        description: Read-only API origin used by the full-site audit
+        required: false
+        default: "https://marketdiagnostictool.com"
+        type: string
 
 jobs:
   backend:
@@ -82,4 +95,61 @@ jobs:
             frontend/playwright-report
             frontend/test-results
           if-no-files-found: warn
+          retention-days: 14
+
+  full-site-audit:
+    if: >-
+      ${{
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.run_full_site_audit)
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport:
+          - desktop
+          - mobile
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      AUDIT_RUN_ID: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.viewport }}
+      AUDIT_ORIGIN: ${{ inputs.audit_origin || vars.SITE_AUDIT_ORIGIN || 'https://marketdiagnostictool.com' }}
+      AUDIT_VIEWPORT: ${{ matrix.viewport }}
+      AUDIT_STATE_VIEWPORT: ${{ matrix.viewport }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build production frontend
+        run: pnpm build
+      - name: Verify route and response-state audit contracts
+        run: >-
+          pnpm exec vitest run
+          src/routes/__tests__/registry.test.tsx
+          src/components/ui/primitives.test.tsx
+      - name: Run read-only full-site audit
+        run: pnpm test:site-audit
+      - name: Upload full-site audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-audit-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.viewport }}
+          path: |
+            artifacts/site-audit/${{ env.AUDIT_RUN_ID }}
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: error
           retention-days: 14

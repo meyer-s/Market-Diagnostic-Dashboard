@@ -122,24 +122,29 @@ Working reference for the current backend API surface used by the frontend.
   - Response fields: `{ date, price }`
   - Consumers: precious metals diagnostic page
 
-## Alternative Assets
+## Shared Metals and Crypto Aggregates
+
+These endpoints retain the historical `/aas` backend namespace, but the combined
+Alternative Assets route is retired. Supported consumers split the evidence into
+the Metals and Crypto diagnostics. The `/indicators/AAS` frontend deep link is
+transition guidance only and does not consume the aggregate as a detail page.
 
 - `GET /aas/current`
   - Response fields: `stability_score`, `regime`, `components`, `metals_contribution`, `crypto_contribution`
-  - Consumers: AAS widget and alternative-assets page
+  - Consumers: dashboard aggregate widget plus the supported Metals and Crypto diagnostics
 - `GET /aas/history?days=365`
   - Params: `days`
   - Response fields: stability-score history and subsystem history
-  - Consumers: alternative-assets page
+  - Consumers: dashboard aggregate history where wired
 - `GET /aas/components/breakdown`
 - `GET /aas/components/history?days=365`
   - Params: `days` where supported
   - Response fields: component breakdowns and histories
-  - Consumers: alternative-assets page and AAS breakdown page
+  - Consumers: Crypto component evidence; Metals uses its dedicated precious-metals endpoints
 - `GET /aas/regime/current`
 - `GET /aas/regime/history`
   - Response fields: regime snapshots and history
-  - Consumers: alternative-assets page
+  - Consumers: dashboard aggregate context where wired
 - `GET /aas/dashboard`
   - Response fields: dashboard-facing AAS snapshot
   - Consumers: dashboard where wired
@@ -152,6 +157,24 @@ Working reference for the current backend API surface used by the frontend.
 - `GET /crypto/diagnostic-context`
   - Response fields: narrative and supporting diagnostic context
   - Consumers: crypto diagnostic page
+
+## Recap Updates
+
+- `GET /updates`
+- `GET /updates/{post_id}`
+- `GET /updates/by-slug/{slug}`
+- `POST /updates`
+  - Publishing requires the configured updates key.
+  - Informative Markdown images must use a meaningful alternative such as
+    `![S&P 500 breadth improved through July](https://example.com/breadth.png)`.
+  - Purely decorative Markdown images use the explicit authoring convention
+    `![decorative](https://example.com/rule.png)` and render with `alt=""`.
+  - Empty, filename-only, numbered, or generic alternatives such as `Chart`
+    are rejected before publication.
+- `POST /api/actions/publish_update`
+- `POST /api/actions/run_market_diagnostic`
+  - GPT Action and generated-diagnostic publishing enforce the same image
+    accessibility contract.
 
 ## Secret Options
 

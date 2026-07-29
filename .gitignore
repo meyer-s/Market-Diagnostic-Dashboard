@@ -11,6 +11,10 @@ downloads/
 eggs/
 .eggs/
 lib/
+!/.agents/skills/impeccable/scripts/lib/
+!/.agents/skills/impeccable/scripts/lib/**
+!/.github/skills/impeccable/scripts/lib/
+!/.github/skills/impeccable/scripts/lib/**
 lib64/
 parts/
 sdist/
@@ -74,6 +78,7 @@ dist-ssr/
 *.tsbuildinfo
 /frontend/playwright-report/
 /frontend/test-results/
+/artifacts/
 
 # Backup files
 *.backup

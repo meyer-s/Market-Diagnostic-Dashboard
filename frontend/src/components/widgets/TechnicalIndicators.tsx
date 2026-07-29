@@ -7,7 +7,8 @@
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import { getFamilyColor, statePalette } from "../../theme/metricColors";
-import { memo } from "react";
+import { memo, useId } from "react";
+import DataScroller from "../ui/DataScroller";
 
 interface Candle {
   date: string;
@@ -176,6 +177,7 @@ function TechnicalIndicatorsComponent({
   onHistoryWindowChange,
   hideOptionsContext = false,
 }: TechnicalIndicatorsProps) {
+  const chartIdBase = `technical-${useId().replace(/:/g, "")}`;
 
   if (!technicalData && !optionsFlow) {
     return (
@@ -216,34 +218,34 @@ function TechnicalIndicatorsComponent({
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs text-stealth-400 font-semibold">Options Flow</p>
         {optionsFlow?.expiry && (
-          <span className="text-[10px] text-stealth-500">Exp {formatExpiry(optionsFlow.expiry)}</span>
+          <span className="text-xs text-stealth-500">Exp {formatExpiry(optionsFlow.expiry)}</span>
         )}
       </div>
       {optionsAvailable ? (
         <>
           <div className="grid grid-cols-2 gap-2 mb-3">
             <div className="secondary-card p-2">
-              <p className="text-[10px] text-stealth-400 mb-1">Call wall (resistance)</p>
+              <p className="text-xs text-stealth-400 mb-1">Call wall (resistance)</p>
               <p className="text-sm font-bold text-green-400">
                 ${callWall?.strike.toFixed(2)}
               </p>
-              <p className="text-[10px] text-stealth-500">OI {formatCompact(callWall?.open_interest || 0)}</p>
+              <p className="text-xs text-stealth-500">OI {formatCompact(callWall?.open_interest || 0)}</p>
               {callWall && (
-                <p className="text-[10px] text-stealth-500">{formatDistance(callWall.strike)} vs price</p>
+                <p className="text-xs text-stealth-500">{formatDistance(callWall.strike)} vs price</p>
               )}
             </div>
             <div className="secondary-card p-2">
-              <p className="text-[10px] text-stealth-400 mb-1">Put wall (support)</p>
+              <p className="text-xs text-stealth-400 mb-1">Put wall (support)</p>
               <p className="text-sm font-bold text-red-400">
                 ${putWall?.strike.toFixed(2)}
               </p>
-              <p className="text-[10px] text-stealth-500">OI {formatCompact(putWall?.open_interest || 0)}</p>
+              <p className="text-xs text-stealth-500">OI {formatCompact(putWall?.open_interest || 0)}</p>
               {putWall && (
-                <p className="text-[10px] text-stealth-500">{formatDistance(putWall.strike)} vs price</p>
+                <p className="text-xs text-stealth-500">{formatDistance(putWall.strike)} vs price</p>
               )}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 mb-3 text-[10px]">
+          <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
             <div>
               <p className="text-stealth-400 mb-1">Top call walls</p>
               <div className="space-y-1">
@@ -279,7 +281,7 @@ function TechnicalIndicatorsComponent({
               </div>
             </div>
           </div>
-          <div className="space-y-1 text-[10px] text-stealth-400">
+          <div className="space-y-1 text-xs text-stealth-400">
             <div className="flex justify-between">
               <span>Call OI</span>
               <span className="text-green-300">{formatCompact(optionsFlow?.call_open_interest_total || 0)}</span>
@@ -470,7 +472,7 @@ function TechnicalIndicatorsComponent({
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base sm:text-lg font-semibold">Price History</h3>
           <div className="flex items-center gap-2">
-            <div className="text-[10px] text-stealth-500">{isShortView ? `${overlayEventCount} flow markers` : candleIntervalLabel}</div>
+            <div className="text-xs text-stealth-500">{isShortView ? `${overlayEventCount} flow markers` : candleIntervalLabel}</div>
             <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/70 p-0.5">
               {([
                 { value: "252d", label: "252D" },
@@ -482,7 +484,7 @@ function TechnicalIndicatorsComponent({
                   key={opt.value}
                   type="button"
                   onClick={() => onHistoryWindowChange?.(opt.value)}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                  className={`px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-[0.08em] ${
                     historyWindow === opt.value ? "bg-stealth-700 text-white" : "text-stealth-300 hover:text-white"
                   }`}
                 >
@@ -493,15 +495,27 @@ function TechnicalIndicatorsComponent({
           </div>
         </div>
 
-        <div className="secondary-card p-4 mb-4 overflow-x-auto">
+        <DataScroller
+          label="Price history chart"
+          className="secondary-card mb-4 p-4"
+          hint="Scroll horizontally to inspect the full price history."
+        >
           {unifiedChartData.length > 0 ? (
             <svg
+              role="img"
+              aria-labelledby={`${chartIdBase}-price-title ${chartIdBase}-price-desc`}
               width="100%"
               height="100%"
               viewBox={`0 0 ${chartWidth} ${priceChartHeight}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ minWidth: "800px" }}
             >
+              <title id={`${chartIdBase}-price-title`}>Price history</title>
+              <desc id={`${chartIdBase}-price-desc`}>
+                Price history for the selected {historyWindow} window. Current price is
+                {" "}${technicalData.current_price.toFixed(2)} and the classified trend is
+                {" "}{technicalData.trend}.
+              </desc>
               {[0, 0.25, 0.5, 0.75, 1].map((percent) => {
                 const y = pricePaddingBox.top + percent * pricePlotHeight;
                 const price = maxPrice + pricePadding - percent * (priceRange + pricePadding * 2);
@@ -516,7 +530,7 @@ function TechnicalIndicatorsComponent({
                       strokeWidth="1"
                       strokeDasharray="4 4"
                     />
-                    <text x={pricePaddingBox.left - 10} y={y + 4} fill={chartColors.tick} fontSize="10" textAnchor="end">
+                    <text x={pricePaddingBox.left - 10} y={y + 4} fill={chartColors.tick} fontSize="12" textAnchor="end">
                       ${price.toFixed(0)}
                     </text>
                   </g>
@@ -587,12 +601,12 @@ function TechnicalIndicatorsComponent({
               })}
 
               {isShortView && ema50Series.some((value) => value !== null) && (
-                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema50Series.filter((value): value is number => value !== null).slice(-1)[0]) + 4} fill="#f59e0b" fontSize="10">
+                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema50Series.filter((value): value is number => value !== null).slice(-1)[0]) + 4} fill="#f59e0b" fontSize="12">
                   EMA50
                 </text>
               )}
               {isShortView && ema200Series.some((value) => value !== null) && (
-                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema200Series.filter((value): value is number => value !== null).slice(-1)[0]) - 4} fill="#a78bfa" fontSize="10">
+                <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema200Series.filter((value): value is number => value !== null).slice(-1)[0]) - 4} fill="#a78bfa" fontSize="12">
                   EMA200
                 </text>
               )}
@@ -608,7 +622,7 @@ function TechnicalIndicatorsComponent({
                   const x = scalePriceX(idx);
                   const label = formatTick(unifiedChartData[idx].x);
                   return (
-                    <text key={`tick-${idx}`} x={x} y={priceChartHeight - 14} fill={chartColors.tick} fontSize="10" textAnchor="middle">
+                    <text key={`tick-${idx}`} x={x} y={priceChartHeight - 14} fill={chartColors.tick} fontSize="12" textAnchor="middle">
                       {label}
                     </text>
                   );
@@ -623,7 +637,7 @@ function TechnicalIndicatorsComponent({
               No price history available for this window.
             </div>
           )}
-        </div>
+        </DataScroller>
 
         {/* Price Info Row */}
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
@@ -666,7 +680,7 @@ function TechnicalIndicatorsComponent({
         </div>
 
         {overlayEventCount > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-stealth-400">
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-400">
             <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-1 text-green-300">Buy events</span>
             <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-300">Sell events</span>
             <span className="rounded-full border border-stealth-600/40 bg-stealth-700/20 px-2 py-1 text-stealth-300">Neutral events</span>
@@ -677,14 +691,25 @@ function TechnicalIndicatorsComponent({
       <div className="secondary-card p-4 mt-4">
         <p className="text-xs text-stealth-400 mb-3 font-semibold">MACD</p>
 
-        <div className="rounded-lg border border-stealth-800 bg-stealth-950/85 p-3 overflow-x-auto">
+        <DataScroller
+          label="MACD chart"
+          className="rounded-lg border border-stealth-800 bg-stealth-950/85 p-3"
+          hint="Scroll horizontally to inspect the MACD, signal, and histogram history."
+        >
           <svg
+            role="img"
+            aria-labelledby={`${chartIdBase}-macd-title ${chartIdBase}-macd-desc`}
             width="100%"
             height="100%"
             viewBox={`0 0 ${chartWidth} 200`}
             preserveAspectRatio="xMidYMid meet"
             style={{ minWidth: "800px" }}
           >
+            <title id={`${chartIdBase}-macd-title`}>MACD history</title>
+            <desc id={`${chartIdBase}-macd-desc`}>
+              MACD, signal, and histogram history. Current MACD is {macd.current.toFixed(2)},
+              signal is {macd.signal.toFixed(2)}, and status is {macd.status}.
+            </desc>
             {(() => {
               const macdPadding = { top: 20, right: 50, bottom: 30, left: 50 };
               const macdPlotHeight = 200 - macdPadding.top - macdPadding.bottom;
@@ -742,7 +767,7 @@ function TechnicalIndicatorsComponent({
                           x={macdPadding.left - 10}
                           y={y + 4}
                           fill={chartColors.tick}
-                          fontSize="10"
+                          fontSize="12"
                           textAnchor="end"
                         >
                           {value.toFixed(2)}
@@ -817,7 +842,7 @@ function TechnicalIndicatorsComponent({
               );
             })()}
           </svg>
-        </div>
+        </DataScroller>
 
       </div>
 
@@ -825,7 +850,7 @@ function TechnicalIndicatorsComponent({
       <div className="secondary-card p-4 mt-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs text-stealth-400 font-semibold">Volume &amp; RSI (14)</p>
-          <div className="flex items-center gap-3 text-[10px] text-stealth-500">
+          <div className="flex items-center gap-3 text-xs text-stealth-500">
             <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500/60" /> Vol</span>
             <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-full" style={{ background: "#a855f7" }} /> RSI</span>
             <span style={{ color: rsi.current > 70 ? "#f87171" : rsi.current < 30 ? "#4ade80" : "#eab308", fontWeight: 600 }}>
@@ -833,14 +858,25 @@ function TechnicalIndicatorsComponent({
             </span>
           </div>
         </div>
-        <div className="rounded-lg border border-stealth-800 bg-stealth-950/85 p-3 overflow-x-auto">
+        <DataScroller
+          label="Volume and RSI chart"
+          className="rounded-lg border border-stealth-800 bg-stealth-950/85 p-3"
+          hint="Scroll horizontally to inspect volume and RSI history."
+        >
           <svg
+            role="img"
+            aria-labelledby={`${chartIdBase}-volume-title ${chartIdBase}-volume-desc`}
             width="100%"
             height="100%"
             viewBox={`0 0 ${chartWidth} ${volumeChartHeight}`}
             preserveAspectRatio="xMidYMid meet"
             style={{ minWidth: "800px" }}
           >
+            <title id={`${chartIdBase}-volume-title`}>Volume and RSI history</title>
+            <desc id={`${chartIdBase}-volume-desc`}>
+              Trading volume with 14-period relative strength. Current RSI is
+              {" "}{rsi.current.toFixed(1)} and status is {rsi.status}.
+            </desc>
             {/* Volume Y-axis (left) */}
             {[0, 0.5, 1].map((t) => {
               const y = volumePadding.top + t * volumePlotHeight;
@@ -860,7 +896,7 @@ function TechnicalIndicatorsComponent({
                     x={volumePadding.left - 10}
                     y={y + 4}
                     fill={chartColors.tick}
-                    fontSize="10"
+                    fontSize="12"
                     textAnchor="end"
                   >
                     {formatCompact(v)}
@@ -916,7 +952,7 @@ function TechnicalIndicatorsComponent({
                           x={rsiRightX}
                           y={y + 4}
                           fill="#a855f7"
-                          fontSize="10"
+                          fontSize="12"
                           textAnchor="start"
                           opacity="0.8"
                         >
@@ -962,7 +998,7 @@ function TechnicalIndicatorsComponent({
               strokeWidth="2"
             />
           </svg>
-        </div>
+        </DataScroller>
       </div>
 
       </div>

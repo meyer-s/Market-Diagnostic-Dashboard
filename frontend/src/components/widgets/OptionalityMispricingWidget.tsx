@@ -16,7 +16,7 @@ const getStateColor = (state: MispricingState) =>
     CHEAP: "text-green-400",
     FAIR: "text-yellow-300",
     EXPENSIVE: "text-red-400",
-    UNKNOWN: "text-gray-400",
+    UNKNOWN: "text-stealth-400",
   }[state]);
 
 const getStateLabel = (state: MispricingState) =>
@@ -91,43 +91,43 @@ export function OptionalityMispricingWidget({ metrics }: OptionalityMispricingWi
         </div>
         <div className="text-right">
           <div className={`text-lg font-semibold ${stateColor}`}>{stateLabel}</div>
-          <div className="text-[10px] text-stealth-500 uppercase tracking-[0.16em]">Options chain value</div>
+          <div className="text-xs text-stealth-500 uppercase tracking-[0.16em]">Options chain value</div>
         </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 p-2.5">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-stealth-500">IV30 vs HV30</div>
+          <div className="mb-1 text-xs uppercase tracking-[0.16em] text-stealth-500">IV30 vs HV30</div>
           <div className="text-sm text-stealth-100">
             {iv30 !== null ? `${iv30.toFixed(1)}%` : "n/a"} / {hv30 !== null ? `${hv30.toFixed(1)}%` : "n/a"}
           </div>
-          <div className={`text-[10px] ${ivSpread !== null && ivSpread >= 0 ? "text-rose-300" : "text-emerald-300"}`}>
+          <div className={`text-xs ${ivSpread !== null && ivSpread >= 0 ? "text-rose-300" : "text-emerald-300"}`}>
             {ivSpread !== null ? `${ivSpread > 0 ? "+" : ""}${ivSpread.toFixed(1)} pts` : "n/a"}
           </div>
         </div>
 
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 p-2.5">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-stealth-500">IV Percentile</div>
+          <div className="mb-1 text-xs uppercase tracking-[0.16em] text-stealth-500">IV Percentile</div>
           <div className="text-sm text-stealth-100">
             {ivPercentile !== null ? `${ivPercentile.toFixed(1)}%` : "n/a"}
           </div>
-          <div className="text-[10px] text-stealth-400">Higher = richer IV</div>
+          <div className="text-xs text-stealth-400">Higher = richer IV</div>
         </div>
 
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 p-2.5">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-stealth-500">Avg EDR (front 3-6)</div>
+          <div className="mb-1 text-xs uppercase tracking-[0.16em] text-stealth-500">Avg EDR (front 3-6)</div>
           <div className="text-sm text-stealth-100">
             {avgEdr !== null ? `${avgEdr.toFixed(1)}%` : "n/a"}
           </div>
-          <div className="text-[10px] text-stealth-400">Extrinsic / price</div>
+          <div className="text-xs text-stealth-400">Extrinsic / price</div>
         </div>
 
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 p-2.5">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-stealth-500">Vol Spread</div>
+          <div className="mb-1 text-xs uppercase tracking-[0.16em] text-stealth-500">Vol Spread</div>
           <div className="text-sm text-stealth-100">
             {ivSpread !== null ? `${ivSpread > 0 ? "+" : ""}${ivSpread.toFixed(1)} pts` : "n/a"}
           </div>
-          <div className="text-[10px] text-stealth-400">IV30 - HV30</div>
+          <div className="text-xs text-stealth-400">IV30 - HV30</div>
         </div>
       </div>
     </div>

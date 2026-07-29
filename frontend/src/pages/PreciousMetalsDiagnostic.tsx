@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, type KeyboardEvent, type ReactNode } from "react";
 import { useApi } from "../hooks/useApi";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
@@ -6,6 +6,7 @@ import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
 import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
+import SectionNav from "../components/ui/SectionNav";
 
 interface RegimeStatus {
   gold_bias: "MONETARY_HEDGE" | "NEUTRAL" | "FINANCIAL_ASSET" | null;
@@ -214,6 +215,18 @@ const METAL_CATEGORIES: Record<string, "precious" | "industrial"> = {
 const getMetalColor = (metal: string, variant: "base" | "muted" | "faint" = "base") =>
   getMetricColor(metal, variant);
 
+const getMetalTextColor = (metal: string) => {
+  const textColors: Record<string, string> = {
+    AU: "#fbbf24",
+    AG: "#e2e8f0",
+    PT: "#d8b4fe",
+    PD: "#fda4af",
+    CU: "#fdba74",
+    AL: "#cbd5e1",
+  };
+  return textColors[metal] ?? "#e2e8f0";
+};
+
 const getMetalName = (metal: string): string => {
   return METAL_LABELS[metal] || metal;
 };
@@ -229,10 +242,22 @@ const formatValue = (value: number | null | undefined, digits = 1) =>
 const formatSignedValue = (value: number | null | undefined, digits = 1) =>
   isNumber(value) ? `${value > 0 ? "+" : ""}${value.toFixed(digits)}` : "n/a";
 
+const formatTimestamp = (value: string | null | undefined) => {
+  if (!value) return "Timestamp unavailable";
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime())
+    ? value
+    : timestamp.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+};
+
 const DerivedLabel = ({ label }: { label: ReactNode }) => (
-  <span className="inline-flex items-center gap-1" title={DERIVED_TITLE}>
+  <span className="inline-flex items-center gap-1">
     {label}
-    <span className="text-stealth-500">*</span>
+    <span className="text-stealth-500" aria-hidden="true">*</span>
+    <span className="sr-only"> ({DERIVED_TITLE.toLowerCase()})</span>
   </span>
 );
 
@@ -249,12 +274,12 @@ const getRegimeBadgeClass = (regime: string | null): string => {
     case "INDUSTRIAL_COMMODITY":
       return "bg-blue-900/30 border-blue-600 text-blue-200";
     default:
-      return "bg-stealth-700 border-stealth-600 text-gray-300";
+      return "bg-stealth-700 border-stealth-600 text-stealth-300";
   }
 };
 
 const getRiskBadgeClass = (risk: string | null): string => {
-  if (!risk) return "bg-stealth-700 border-stealth-600 text-gray-300";
+  if (!risk) return "bg-stealth-700 border-stealth-600 text-stealth-300";
   if (risk === "HIGH") return "bg-red-900/30 border-red-600 text-red-200";
   if (risk === "MODERATE") return "bg-yellow-900/30 border-yellow-600 text-yellow-200";
   return "bg-green-900/30 border-green-600 text-green-200";
@@ -310,7 +335,7 @@ const getClassificationColor = (classification: string) => {
     case "Neutral": return "text-yellow-400";
     case "Bearish": return "text-orange-400";
     case "Weak": return "text-red-400";
-    default: return "text-gray-400";
+    default: return "text-stealth-400";
   }
 };
 
@@ -342,9 +367,9 @@ function ProjectionMetric({
 
   return (
     <div className={`rounded-xl border px-2.5 py-2 ${toneClass}`}>
-      <div className="text-[10px] uppercase tracking-[0.16em] opacity-70">{label}</div>
+      <div className="text-xs uppercase tracking-[0.16em] opacity-70">{label}</div>
       <div className="mt-1 text-sm font-semibold">{value}</div>
-      {detail ? <div className="mt-0.5 text-[10px] text-stealth-400">{detail}</div> : null}
+      {detail ? <div className="mt-0.5 text-xs text-stealth-400">{detail}</div> : null}
     </div>
   );
 }
@@ -356,16 +381,16 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
     <div className="surface-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">{proj.metal}</div>
+          <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">{proj.metal}</div>
           <h3 className="mt-1 text-base font-semibold text-stealth-100">
-            <span style={{ color: getMetalColor(proj.metal) }}>{proj.metal_name}</span>
+            <span style={{ color: getMetalTextColor(proj.metal) }}>{proj.metal_name}</span>
             <span className="ml-1 text-stealth-500">({proj.etf_symbol})</span>
           </h3>
           <div className={`mt-1 text-xs font-semibold ${getClassificationColor(proj.classification)}`}>
             {proj.classification} setup
           </div>
         </div>
-        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${getRelativeClassColor(proj.relative_classification)}`}>
+        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${getRelativeClassColor(proj.relative_classification)}`}>
           {proj.relative_classification}
         </span>
       </div>
@@ -373,7 +398,7 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
       <div className="mt-3 grid grid-cols-2 gap-2">
         <ProjectionMetric label="Current" value={`$${proj.current_price.toFixed(2)}`} />
         <ProjectionMetric label="RSI" value={proj.technicals.rsi?.toFixed(1) || "n/a"} />
-        <ProjectionMetric label="Total Score" value={`${proj.score_total}/100`} />
+        <ProjectionMetric label="Total Score" value={`${proj.score_total.toFixed(1)}/100`} />
         <ProjectionMetric label="SMA 50" value={proj.technicals.sma_50 ? `$${proj.technicals.sma_50.toFixed(2)}` : "n/a"} />
       </div>
 
@@ -409,15 +434,15 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
       <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
         <ProjectionMetric label="Upper" value={`$${proj.levels.take_profit.toFixed(2)}`} tone="buy" />
         <ProjectionMetric label="Lower" value={`$${proj.levels.stop_loss.toFixed(2)}`} tone="sell" />
-        <ProjectionMetric label="Trend" value={`${proj.score_trend}/100`} />
-        <ProjectionMetric label="Momentum" value={`${proj.score_momentum}/100`} />
+        <ProjectionMetric label="Trend" value={`${proj.score_trend.toFixed(1)}/100`} />
+        <ProjectionMetric label="Momentum" value={`${proj.score_momentum.toFixed(1)}/100`} />
       </div>
 
       {proj.relative_confirmation ? (
         <div className="mt-3 rounded-xl border border-stealth-700 bg-stealth-900/60 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-stealth-500">Relative Confirmation</div>
-            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+            <div className="text-xs uppercase tracking-[0.18em] text-stealth-500">Relative Confirmation</div>
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
               proj.relative_confirmation.rotation_confirmed
                 ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
                 : "border-stealth-700 bg-stealth-950/70 text-stealth-300"
@@ -459,17 +484,29 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
 }
 
 export default function PreciousMetalsDiagnostic({ embedded = false }: { embedded?: boolean }) {
-  const { data: indicators, loading, error } = useApi<MetalIndicators>("/precious-metals/regime");
-  const { data: correlations } = useApi<CorrelationMatrix>("/precious-metals/correlations");
-  const { data: cb_holdings } = useApi<CBHolding[]>("/precious-metals/cb-holdings");
-  const { data: supply_data } = useApi<SupplyData[]>("/precious-metals/supply");
-  const { data: demand_data } = useApi<DemandData[]>("/precious-metals/demand");
-  const { data: market_caps } = useApi<MarketCapsResponse>("/precious-metals/market-caps");
-  const { data: market_caps_history } = useApi<MarketCapsHistoryResponse>("/precious-metals/market-caps/history?years=50");
-  const { data: projectionsData } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
-  const { data: futuresCurve } = useApi<FuturesCurveResponse>("/precious-metals/futures-curve?contracts=4");
+  const {
+    data: indicators,
+    loading,
+    error,
+    refetch: refetchRegime,
+  } = useApi<MetalIndicators>("/precious-metals/regime");
+  const { data: correlations, loading: correlationsLoading, error: correlationsError } = useApi<CorrelationMatrix>("/precious-metals/correlations");
+  const { data: cb_holdings, loading: cbLoading, error: cbError } = useApi<CBHolding[]>("/precious-metals/cb-holdings");
+  const { data: supply_data, loading: supplyLoading, error: supplyError } = useApi<SupplyData[]>("/precious-metals/supply");
+  const { data: demand_data, loading: demandLoading, error: demandError } = useApi<DemandData[]>("/precious-metals/demand");
+  const { data: market_caps, loading: marketCapsLoading, error: marketCapsError } = useApi<MarketCapsResponse>("/precious-metals/market-caps");
+  const { data: market_caps_history, loading: marketCapsHistoryLoading, error: marketCapsHistoryError } = useApi<MarketCapsHistoryResponse>("/precious-metals/market-caps/history?years=50");
+  const { data: projectionsData, loading: projectionsLoading, error: projectionsError } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
+  const { data: futuresCurve, loading: futuresLoading, error: futuresError } = useApi<FuturesCurveResponse>("/precious-metals/futures-curve?contracts=4");
 
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextTab = selectedTab === "overview" ? "deep-dive" : "overview";
+    setSelectedTab(nextTab);
+    document.getElementById(`metals-${nextTab}-tab`)?.focus();
+  };
 
   if (loading) {
     return (
@@ -484,8 +521,16 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   if (error) {
     return (
       <div className={embedded ? "py-8" : "page-shell-wide"}>
-        <div className="bg-red-900/20 border border-red-700 text-red-200 p-4 rounded">
-          Error loading data: {error}
+        <div className="rounded-xl border border-red-700 bg-red-900/20 p-4 text-red-100" role="alert">
+          <p className="text-lg font-semibold">Metals diagnostic could not load</p>
+          <p className="mt-1 text-sm text-red-200">{error}</p>
+          <button
+            type="button"
+            onClick={refetchRegime}
+            className="mt-4 min-h-11 rounded-xl border border-red-400/60 bg-red-950/50 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
+          >
+            Try again
+          </button>
         </div>
       </div>
     );
@@ -494,12 +539,57 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   if (!indicators) {
     return (
       <div className={embedded ? "py-8" : "page-shell-wide"}>
-        <div className="text-stealth-400">No data available.</div>
+        <div className="surface-card p-5" role="status">
+          <p className="text-lg font-semibold text-white">Metals diagnostic is unavailable</p>
+          <p className="mt-1 text-sm text-stealth-300">The regime endpoint returned no current observation.</p>
+          <button
+            type="button"
+            onClick={refetchRegime}
+            className="mt-4 min-h-11 rounded-xl border border-stealth-600 bg-stealth-800 px-4 py-2 text-sm font-semibold text-white hover:border-blue-400 hover:bg-stealth-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+          >
+            Check again
+          </button>
+        </div>
       </div>
     );
   }
 
   const projections = projectionsData?.projections || [];
+  const supportingSources = [
+    correlations,
+    cb_holdings,
+    supply_data,
+    demand_data,
+    market_caps,
+    market_caps_history,
+    projectionsData,
+    futuresCurve,
+  ];
+  const supportingLoading = [
+    correlationsLoading,
+    cbLoading,
+    supplyLoading,
+    demandLoading,
+    marketCapsLoading,
+    marketCapsHistoryLoading,
+    projectionsLoading,
+    futuresLoading,
+  ].filter(Boolean).length;
+  const supportingErrors = [
+    correlationsError,
+    cbError,
+    supplyError,
+    demandError,
+    marketCapsError,
+    marketCapsHistoryError,
+    projectionsError,
+    futuresError,
+  ].filter(Boolean).length;
+  const supportingAvailable = supportingSources.filter((source) => source !== null).length;
+  const freshestTimestamp = futuresCurve?.as_of
+    ?? projections[0]?.as_of
+    ?? correlations?.timestamp
+    ?? null;
 
   return (
     <div className={embedded ? "page-stack text-stealth-200" : "page-shell-wide page-stack text-stealth-200"}>
@@ -513,14 +603,49 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           <div className="page-meta">
             <span className="page-badge">Precious + industrial sleeve</span>
             <span className="page-badge">Macro regime + technical structure</span>
-            <span className="page-badge">Relative leadership monitor</span>
+            <span className="page-badge">As of {formatTimestamp(freshestTimestamp)}</span>
           </div>
         </section>
       )}
 
+      {!embedded ? (
+        <SectionNav
+          id="metals-page-sections"
+          label="Metals sections"
+          items={
+            selectedTab === "overview"
+              ? [
+                  { id: "metals-now", label: "Now" },
+                  { id: "metals-views", label: "Views" },
+                  { id: "metals-price-history", label: "Price history" },
+                  { id: "metals-projections", label: "Projections" },
+                ]
+              : [
+                  { id: "metals-now", label: "Now" },
+                  { id: "metals-views", label: "Views" },
+                  { id: "metals-drivers", label: "Drivers" },
+                  { id: "metals-market-structure", label: "Market structure" },
+                  { id: "metals-supply-demand", label: "Supply & demand" },
+                  { id: "metals-evidence", label: "Evidence" },
+                  { id: "metals-definition", label: "Definition" },
+                ]
+          }
+        />
+      ) : null}
+
       {/* SECTION 1: REGIME CLASSIFICATION PANEL (PINNED TOP) */}
-      <div className="surface-card-strong p-4 md:p-5">
-        <h2 className="text-lg md:text-xl font-bold mb-4 text-white">Regime Classification</h2>
+      <section id="metals-now" className="section-anchor surface-card-strong p-4 md:p-5" aria-labelledby="metals-now-heading">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="page-kicker">Now</p>
+            <h2 id="metals-now-heading" className="mt-1 text-lg font-bold text-white md:text-xl">Regime Classification</h2>
+          </div>
+          <div className="text-xs text-stealth-300" role="status" aria-live="polite">
+            {supportingAvailable}/8 supporting datasets available
+            {supportingLoading > 0 ? ` · ${supportingLoading} updating` : ""}
+            {supportingErrors > 0 ? ` · ${supportingErrors} unavailable` : ""}
+          </div>
+        </div>
         
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
           {/* Gold Bias Card */}
@@ -558,16 +683,23 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           </div>
         </div>
 
-        <div className="text-xs md:text-sm text-stealth-400 mt-4">
-          Last Updated: {new Date().toISOString().split('T')[0]} - Data freshness: Real-time spot | CB data (quarterly lag)
+        <div className="mt-4 text-xs text-stealth-300">
+          Latest supporting timestamp: {formatTimestamp(freshestTimestamp)} · Spot and futures can update intraday; central-bank data can lag by a quarter.
         </div>
-      </div>
+      </section>
 
       {/* TAB NAVIGATION */}
-      <div className="control-strip self-start">
+      <div id="metals-views" className="section-anchor control-strip self-start" role="tablist" aria-label="Metals diagnostic view">
         <button
+          type="button"
+          id="metals-overview-tab"
+          role="tab"
+          aria-selected={selectedTab === "overview"}
+          aria-controls="metals-overview-panel"
+          tabIndex={selectedTab === "overview" ? 0 : -1}
           onClick={() => setSelectedTab("overview")}
-          className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+          onKeyDown={handleTabKeyDown}
+          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
             selectedTab === "overview"
               ? "bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.28)]"
               : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
@@ -576,8 +708,15 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           Overview
         </button>
         <button
+          type="button"
+          id="metals-deep-dive-tab"
+          role="tab"
+          aria-selected={selectedTab === "deep-dive"}
+          aria-controls="metals-deep-dive-panel"
+          tabIndex={selectedTab === "deep-dive" ? 0 : -1}
           onClick={() => setSelectedTab("deep-dive")}
-          className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+          onKeyDown={handleTabKeyDown}
+          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
             selectedTab === "deep-dive"
               ? "bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.28)]"
               : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
@@ -588,59 +727,79 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
       </div>
 
       {selectedTab === "overview" && (
-        <div className="page-stack">
+        <div
+          id="metals-overview-panel"
+          role="tabpanel"
+          aria-labelledby="metals-overview-tab"
+          className="page-stack"
+          tabIndex={0}
+        >
           {/* PRICE HISTORY CHART */}
-          <PriceHistoryChart />
+          <div id="metals-price-history" className="section-anchor">
+            <PriceHistoryChart />
+          </div>
 
           {/* PROJECTIONS & TECHNICAL ANALYSIS */}
           {projections.length > 0 && (
-            <ProjectionsPanel projections={projections} />
+            <div id="metals-projections" className="section-anchor">
+              <ProjectionsPanel projections={projections} />
+            </div>
           )}
         </div>
       )}
 
       {selectedTab === "deep-dive" && (
-        <>
+        <div
+          id="metals-deep-dive-panel"
+          role="tabpanel"
+          aria-labelledby="metals-deep-dive-tab"
+          className="page-stack"
+          tabIndex={0}
+        >
           {/* SECTION 2 & 3: CB CONTEXT & PRICE ANCHORS (2-COLUMN) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <section id="metals-drivers" className="section-anchor" aria-labelledby="metals-drivers-heading">
+            <h2 id="metals-drivers-heading" className="mb-4 text-xl font-semibold text-white">Drivers</h2>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Section 2: Monetary & CB Context */}
             <CBContextPanel cb_holdings={cb_holdings} indicators={indicators} />
 
             {/* Section 3: Price vs Monetary Anchors */}
               <PriceAnchorsPanel indicators={indicators} correlations={correlations} />
-          </div>
+            </div>
+          </section>
 
-          {/* SECTION 4 & 5: RELATIVE VALUE & PHYSICAL/PAPER (2-COLUMN) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* Section 4: Relative Value */}
-            <RelativeValuePanel indicators={indicators} />
+          <section id="metals-market-structure" className="section-anchor" aria-labelledby="metals-market-structure-heading">
+            <h2 id="metals-market-structure-heading" className="mb-4 text-xl font-semibold text-white">Market structure</h2>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <RelativeValuePanel indicators={indicators} />
+              <PhysicalPaperPanel indicators={indicators} />
+            </div>
+            <div className="mt-6">
+              <FuturesCurvePanel futuresCurve={futuresCurve} />
+            </div>
+          </section>
 
-            {/* Section 5: Physical vs Paper */}
-            <PhysicalPaperPanel indicators={indicators} />
-          </div>
+          <section id="metals-supply-demand" className="section-anchor" aria-labelledby="metals-supply-demand-heading">
+            <h2 id="metals-supply-demand-heading" className="mb-4 text-xl font-semibold text-white">Supply and demand</h2>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <SupplyPanel supply_data={supply_data} />
+              <DemandPanel demand_data={demand_data} />
+            </div>
+          </section>
 
-          <div className="mb-6">
-            <FuturesCurvePanel futuresCurve={futuresCurve} />
-          </div>
+          <section id="metals-evidence" className="section-anchor" aria-labelledby="metals-evidence-heading">
+            <h2 id="metals-evidence-heading" className="mb-4 text-xl font-semibold text-white">Evidence</h2>
+            <div className="grid grid-cols-1 gap-6">
+              <MarketCapPanel market_caps={market_caps} market_caps_history={market_caps_history} />
+              <CorrelationPanel correlations={correlations} />
+            </div>
+          </section>
 
-          {/* SECTION 6 & 7: SUPPLY-DEMAND (2-COLUMN) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* Section 6: Supply */}
-            <SupplyPanel supply_data={supply_data} />
-
-            {/* Section 7: Demand (Placeholder for future data) */}
-            <DemandPanel demand_data={demand_data} />
-          </div>
-
-          {/* SECTION 8 & 9: MARKET CAP & CORRELATIONS */}
-          <div className="grid grid-cols-1 gap-6 mb-6">
-            <MarketCapPanel market_caps={market_caps} market_caps_history={market_caps_history} />
-            <CorrelationPanel correlations={correlations} />
-          </div>
-
-          {/* METHODOLOGY SECTION */}
-          <MethodologyPanel />
-        </>
+          <section id="metals-definition" className="section-anchor" aria-labelledby="metals-definition-heading">
+            <h2 id="metals-definition-heading" className="mb-4 text-xl font-semibold text-white">Definition and provenance</h2>
+            <MethodologyPanel />
+          </section>
+        </div>
       )}
     </div>
   );
@@ -674,6 +833,7 @@ function MethodologyPanel() {
     return (
       <div className="border-b border-stealth-700 last:border-b-0">
         <button
+          type="button"
           onClick={() => toggleSection(id)}
           className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-stealth-700/50"
           aria-expanded={isExpanded}
@@ -1128,8 +1288,8 @@ function RelativeValuePanel({ indicators }: { indicators: MetalIndicators }) {
               <span className="text-sm font-semibold text-stealth-300">
                 <DerivedLabel label={
                   <span>
-                    <span style={{ color: getMetalColor('AU') }}>Au</span>/
-                    <span style={{ color: getMetalColor('AG') }}>Ag</span> Ratio
+                    <span style={{ color: getMetalTextColor('AU') }}>Au</span>/
+                    <span style={{ color: getMetalTextColor('AG') }}>Ag</span> Ratio
                   </span>
                 } />
               </span>
@@ -1149,8 +1309,8 @@ function RelativeValuePanel({ indicators }: { indicators: MetalIndicators }) {
                   : "Unknown"}
               </span>
             </div>
-          <div className="bg-stealth-700 rounded p-2">
-            <div className="flex justify-between text-xs text-stealth-400">
+          <div className="rounded bg-stealth-800 p-2">
+            <div className="flex justify-between text-xs text-stealth-200">
               <span>50 (Industrial)</span>
               <span>65 (Balanced)</span>
               <span>75 (Stress)</span>
@@ -1164,8 +1324,8 @@ function RelativeValuePanel({ indicators }: { indicators: MetalIndicators }) {
               <span className="text-sm font-semibold text-stealth-300">
                 <DerivedLabel label={
                   <span>
-                    <span style={{ color: getMetalColor('PT') }}>Pt</span>/
-                    <span style={{ color: getMetalColor('AU') }}>Au</span> Ratio
+                    <span style={{ color: getMetalTextColor('PT') }}>Pt</span>/
+                    <span style={{ color: getMetalTextColor('AU') }}>Au</span> Ratio
                   </span>
                 } />
               </span>
@@ -1187,8 +1347,8 @@ function RelativeValuePanel({ indicators }: { indicators: MetalIndicators }) {
               <span className="text-sm font-semibold text-stealth-300">
                 <DerivedLabel label={
                   <span>
-                    <span style={{ color: getMetalColor('PD') }}>Pd</span>/
-                    <span style={{ color: getMetalColor('AU') }}>Au</span> Ratio
+                    <span style={{ color: getMetalTextColor('PD') }}>Pd</span>/
+                    <span style={{ color: getMetalTextColor('AU') }}>Au</span> Ratio
                   </span>
                 } />
               </span>
@@ -1380,7 +1540,7 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
 
       {metals.length > 0 ? (
         <>
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Metal futures curve">
             {metals.map((metal) => {
               const isActive = metal.metal === activeCurve?.metal;
               return (
@@ -1388,7 +1548,8 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
                   key={metal.metal}
                   type="button"
                   onClick={() => setSelectedMetal(metal.metal)}
-                  className={`rounded-full border px-3 py-1.5 text-sm transition ${isActive ? "border-stealth-400 bg-stealth-700 text-white" : "border-stealth-700 bg-stealth-900/70 text-stealth-300 hover:border-stealth-500 hover:text-white"}`}
+                  aria-pressed={isActive}
+                  className={`min-h-11 rounded-full border px-3 py-2 text-sm transition ${isActive ? "border-stealth-400 bg-stealth-700 text-white" : "border-stealth-700 bg-stealth-900/70 text-stealth-300 hover:border-stealth-500 hover:text-white"}`}
                 >
                   {metal.label}
                 </button>
@@ -1401,18 +1562,20 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
               <div className="text-sm font-semibold text-white">{chartTitle}</div>
               <div className="text-xs text-stealth-400 mt-1">{chartSubtitle}</div>
             </div>
-            <div className="inline-flex rounded-full border border-stealth-700 bg-stealth-950/80 p-1">
+            <div className="inline-flex rounded-full border border-stealth-700 bg-stealth-950/80 p-1" role="group" aria-label="Futures curve metric">
               <button
                 type="button"
                 onClick={() => setCurveView("spread")}
-                className={`rounded-full px-3 py-1 text-xs transition ${curveView === "spread" ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-white"}`}
+                aria-pressed={curveView === "spread"}
+                className={`min-h-11 rounded-full px-3 py-2 text-xs transition ${curveView === "spread" ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-white"}`}
               >
                 Spread %
               </button>
               <button
                 type="button"
                 onClick={() => setCurveView("log")}
-                className={`rounded-full px-3 py-1 text-xs transition ${curveView === "log" ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-white"}`}
+                aria-pressed={curveView === "log"}
+                className={`min-h-11 rounded-full px-3 py-2 text-xs transition ${curveView === "log" ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-white"}`}
               >
                 Log Price
               </button>
@@ -1436,16 +1599,21 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
                 </div>
 
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+                  <LineChart
+                    aria-label={`${activeCurve.label} futures curve ${curveView === "log" ? "prices" : "percentage change"}`}
+                    data={chartData}
+                    margin={{ top: 8, right: 12, left: 0, bottom: 8 }}
+                    accessibilityLayer
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="contract"
                       stroke={CHART_NEUTRAL.axis}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 11 }}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                     />
                     <YAxis
                       stroke={CHART_NEUTRAL.axis}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 11 }}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                       scale={curveView === "log" ? "log" : "auto"}
                       domain={curveView === "log" && minPrice && maxPrice ? [minPrice * 0.998, maxPrice * 1.002] : ["auto", "auto"]}
                       tickFormatter={(value) => curveView === "log" ? `$${Number(value).toFixed(0)}` : `${Number(value).toFixed(2)}%`}
@@ -1530,7 +1698,7 @@ function SupplyPanel({ supply_data }: { supply_data: SupplyData[] | null }) {
                       <div className="flex justify-between items-start mb-2">
                         <span 
                           className="text-sm font-semibold" 
-                          style={{ color: getMetalColor(metal.metal) }}
+                          style={{ color: getMetalTextColor(metal.metal) }}
                         >
                           {getMetalName(metal.metal)} ({metal.metal})
                         </span>
@@ -1608,7 +1776,7 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
                   <div className="flex justify-between items-start mb-2">
                     <span 
                       className="text-sm font-semibold" 
-                      style={{ color: getMetalColor(metal.metal) }}
+                      style={{ color: getMetalTextColor(metal.metal) }}
                     >
                       {getMetalName(metal.metal)} ({metal.metal})
                     </span>
@@ -1623,7 +1791,7 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
                           <div
                             key={i}
                             style={{ width: `${cat.pct}%`, backgroundColor: cat.color }}
-                            className="flex items-center justify-center text-[10px] font-bold text-white"
+                            className="flex items-center justify-center text-xs font-bold text-stealth-950"
                             title={`${cat.label}: ${cat.value.toFixed(0)}t (${cat.pct?.toFixed(1)}%)`}
                           >
                             {isNumber(cat.pct) && cat.pct > 8 ? `${cat.pct.toFixed(0)}%` : ""}
@@ -1743,25 +1911,25 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
         <p className="text-xs text-stealth-500 mb-4">Tracked holdings use ETF assets plus central bank gold.</p>
       <div className="space-y-4 text-sm">
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-stealth-700 rounded p-3">
-              <div className="text-stealth-400 text-xs mb-1">
+            <div className="rounded bg-stealth-800 p-3">
+              <div className="mb-1 text-xs text-stealth-200">
                 Gold ({isNumber(gold_pct) ? `${gold_pct.toFixed(1)}%` : "n/a"})
               </div>
               <div className="text-lg font-bold text-blue-300">{formatMarketCap(gold_cap)}</div>
-              <div className="text-xs text-stealth-500">
+              <div className="text-xs text-stealth-300">
                 {isNumber(market_caps.metals?.AU?.stock_oz) && isNumber(gold_price)
                   ? `${(market_caps.metals.AU.stock_oz / 1e9).toFixed(1)}B oz tracked @ $${gold_price.toFixed(0)}/oz`
                   : "n/a"}
               </div>
             </div>
-            <div className="bg-stealth-700 rounded p-3">
-              <div className="text-stealth-400 text-xs mb-1">Other 3 Metals</div>
+            <div className="rounded bg-stealth-800 p-3">
+              <div className="mb-1 text-xs text-stealth-200">Other 3 Metals</div>
               <div className="text-lg font-bold text-blue-300">{formatMarketCap(others_cap)}</div>
-              <div className="text-xs text-stealth-500">Silver, Platinum, Palladium</div>
+              <div className="text-xs text-stealth-300">Silver, Platinum, Palladium</div>
             </div>
           </div>
-            <div className="bg-stealth-700 rounded p-3">
-              <div className="text-stealth-400 text-xs mb-2">
+            <div className="rounded bg-stealth-800 p-3">
+              <div className="mb-2 text-xs text-stealth-200">
                 <DerivedLabel label="Tracked Ratio to Global M2" />
               </div>
               <div className="flex justify-between items-center">
@@ -1780,21 +1948,25 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
             {yearlyRatioHistory.length > 0 && hasLogHistory ? (
               <>
                 <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={yearlyRatioHistory}>
+                  <LineChart
+                    accessibilityLayer
+                    aria-label="Tracked precious-metals-to-M2 annual average history"
+                    data={yearlyRatioHistory}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                     <XAxis
                       dataKey="year"
                       stroke={CHART_NEUTRAL.axis}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                       tickFormatter={(value) => String(value)}
                     />
                     <YAxis
                       stroke={CHART_NEUTRAL.axis}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                       scale="log"
                       domain={[minPositiveBps * 0.8, 'auto']}
                       tickFormatter={(value) => formatBps(Number(value))}
-                      label={{ value: 'Metals/M2 (bps, log)', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 10 } }}
+                      label={{ value: 'Metals/M2 (bps, log)', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 12 } }}
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: '4px' }}
@@ -1854,7 +2026,12 @@ function CorrelationPanel({ correlations }: { correlations: CorrelationMatrix | 
       <h3 className="text-lg font-bold mb-4 text-white">Does Gold Zig When Stocks Zag?</h3>
       <p className="text-xs text-stealth-400 mb-4">Negative correlation to stocks/dollar = working as a hedge. Positive = riding the same wave.</p>
       
-      <div className="overflow-x-auto">
+      <div
+        className="overflow-x-auto"
+        role="region"
+        aria-label="Metals correlation matrix"
+        tabIndex={0}
+      >
         <table className="w-full text-sm">
           <thead className="text-xs text-stealth-400 border-b border-stealth-600">
             <tr>
@@ -1866,35 +2043,35 @@ function CorrelationPanel({ correlations }: { correlations: CorrelationMatrix | 
           <tbody className="text-xs text-stealth-300">
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} <span style={{ color: getMetalColor('AG') }}>Ag</span>
+                <span style={{ color: getMetalTextColor('AU') }}>Au</span> {"<->"} <span style={{ color: getMetalTextColor('AG') }}>Ag</span>
               </td>
                 <td className="text-right font-semibold">{formatCorr(correlations.au_ag)}</td>
               <td className="text-right">High correlation (both monetary)</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} SPY
+                <span style={{ color: getMetalTextColor('AU') }}>Au</span> {"<->"} SPY
               </td>
                 <td className="text-right font-semibold">{formatCorr(correlations.au_spy)}</td>
               <td className="text-right">Diversification benefit</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} TLT
+                <span style={{ color: getMetalTextColor('AU') }}>Au</span> {"<->"} TLT
               </td>
                 <td className="text-right font-semibold">{formatCorr(correlations.au_tlt)}</td>
               <td className="text-right">Bond substitute marker</td>
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} DXY
+                <span style={{ color: getMetalTextColor('AU') }}>Au</span> {"<->"} DXY
               </td>
                 <td className="text-right font-semibold">{formatCorr(correlations.au_dxy)}</td>
               <td className="text-right">Currency hedge effect</td>
             </tr>
             <tr>
               <td className="py-2">
-                <span style={{ color: getMetalColor('AU') }}>Au</span> {"<->"} VIX
+                <span style={{ color: getMetalTextColor('AU') }}>Au</span> {"<->"} VIX
               </td>
                 <td className="text-right font-semibold">{formatCorr(correlations.au_vix)}</td>
               <td className="text-right">Stress indicator</td>
@@ -1903,7 +2080,7 @@ function CorrelationPanel({ correlations }: { correlations: CorrelationMatrix | 
         </table>
       </div>
 
-      <div className="mt-4 p-3 bg-stealth-700 rounded text-xs text-stealth-400 border-l-2 border-blue-500">
+      <div className="mt-4 rounded border border-stealth-700 bg-stealth-900 p-3 text-xs text-stealth-200">
         <strong>Note:</strong> Correlations change with market regime. Breakdowns {'>'} +/-2sigma can indicate regime shifts. Use as
         regime confirmation, not a mean-reversion cue.
       </div>
@@ -1959,7 +2136,7 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
             <div className="secondary-card p-3 text-stealth-300">{industrialRead}</div>
           </div>
           <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300">Conclusion</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">Conclusion</div>
             <p className="mt-1 text-sm text-stealth-100 leading-relaxed">{conclusion}</p>
           </div>
         </div>
@@ -1969,10 +2146,10 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
           <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-2">
             {rankedProjections.map((proj) => (
               <div key={proj.metal} className={`rounded-xl border px-3 py-2 ${getRelativeClassColor(proj.relative_classification)}`}>
-                <div className="text-[10px] uppercase tracking-[0.16em] opacity-80">#{proj.rank}</div>
-                <div className="mt-1 text-sm font-semibold" style={{ color: getMetalColor(proj.metal) }}>{proj.metal_name}</div>
+                <div className="text-xs uppercase tracking-[0.16em] opacity-80">#{proj.rank}</div>
+                <div className="mt-1 text-sm font-semibold" style={{ color: getMetalTextColor(proj.metal) }}>{proj.metal_name}</div>
                 <div className="mt-1 text-sm font-bold text-stealth-100">${proj.current_price.toFixed(2)}</div>
-                <div className="mt-1 text-[10px] text-stealth-400">Score {proj.score_total}/100</div>
+                <div className="mt-1 text-xs text-stealth-400">Score {proj.score_total.toFixed(1)}/100</div>
               </div>
             ))}
           </div>
@@ -2009,16 +2186,31 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
 function PriceHistoryChart() {
   const [historyData, setHistoryData] = useState<PriceHistoryDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [availableSeries, setAvailableSeries] = useState(0);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
+    let active = true;
+
     const fetchHistory = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const metals = ['AU', 'AG', 'PT', 'PD'];
-        const responses = await Promise.all(
+        const results = await Promise.allSettled(
           metals.map(metal => 
             apiFetch<PriceHistory[]>(`/precious-metals/history/${metal}?days=365`)
           )
         );
+        if (!active) return;
+
+        const responses = results.map((result) => result.status === "fulfilled" ? result.value : []);
+        const usableSeries = responses.filter((series) => series.length > 0).length;
+        setAvailableSeries(usableSeries);
+        if (usableSeries === 0) {
+          throw new Error("No metal price histories were returned.");
+        }
 
         // Combine all metal histories into a single dataset
         const auData = responses[0] || [];
@@ -2065,16 +2257,25 @@ function PriceHistoryChart() {
           new Date(a.date).getTime() - new Date(b.date).getTime()
         );
 
-        setHistoryData(combined);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching price history:', error);
-        setLoading(false);
+        if (active) {
+          setHistoryData(combined);
+        }
+      } catch (historyError) {
+        if (!active) return;
+        console.error('Error fetching price history:', historyError);
+        setError(historyError instanceof Error ? historyError.message : "Price history could not be loaded.");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchHistory();
-  }, []);
+    void fetchHistory();
+    return () => {
+      active = false;
+    };
+  }, [retryKey]);
 
   if (loading) {
     return (
@@ -2085,12 +2286,48 @@ function PriceHistoryChart() {
     );
   }
 
+  if (error) {
+    return (
+      <section className="primary-card p-4 md:p-6" aria-labelledby="metals-price-history-heading">
+        <h3 id="metals-price-history-heading" className="mb-2 text-lg font-bold text-white">Price History (1 Year)</h3>
+        <div className="rounded-xl border border-red-700/70 bg-red-950/30 p-4 text-sm text-red-100" role="alert">
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => setRetryKey((key) => key + 1)}
+            className="mt-3 min-h-11 rounded-xl border border-red-400/60 px-4 py-2 font-semibold hover:bg-red-900/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
+          >
+            Retry price history
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const firstHistoryPoint = historyData[0];
+  const latestHistoryPoint = historyData[historyData.length - 1];
+  const historySeries = [
+    ["Gold", "AU"],
+    ["Silver", "AG"],
+    ["Platinum", "PT"],
+    ["Palladium", "PD"],
+  ] as const;
+
   return (
-    <div className="primary-card p-4 md:p-6">
-      <h3 className="text-lg font-bold mb-4 text-white">Price History (1 Year)</h3>
+    <section className="primary-card p-4 md:p-6" aria-labelledby="metals-price-history-heading">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+        <h3 id="metals-price-history-heading" className="text-lg font-bold text-white">Price History (1 Year)</h3>
+        <span className="text-xs text-stealth-300">
+          {availableSeries}/4 series available · through {latestHistoryPoint?.date ?? "date unavailable"}
+        </span>
+      </div>
       
       <ResponsiveContainer width="100%" height={350}>
-        <LineChart data={historyData}>
+        <LineChart
+          accessibilityLayer
+          aria-label="One-year gold, silver, platinum, and palladium price history"
+          data={historyData}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
           <XAxis 
             dataKey="date" 
@@ -2170,6 +2407,49 @@ function PriceHistoryChart() {
       <div className="mt-4 text-xs text-stealth-400">
           <p>Precious-metals history is shown in raw USD per troy ounce. Copper and aluminum are tracked in the ranking cards below because their contract units differ from the precious-metal sleeve.</p>
       </div>
-    </div>
+      <details className="mt-4 rounded-xl border border-stealth-700 bg-stealth-950/40">
+        <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-semibold text-stealth-200">
+          Read chart values
+        </summary>
+        <div
+          className="overflow-x-auto border-t border-stealth-700 p-3"
+          role="region"
+          aria-label="Metals price history summary table"
+          tabIndex={0}
+        >
+          <table className="w-full min-w-[560px] text-left text-xs">
+            <caption className="pb-2 text-left text-stealth-300">
+              First and latest available observations for the displayed one-year series.
+            </caption>
+            <thead className="text-stealth-400">
+              <tr>
+                <th className="px-2 py-2 font-semibold" scope="col">Observation</th>
+                <th className="px-2 py-2 font-semibold" scope="col">Date</th>
+                {historySeries.map(([label]) => (
+                  <th key={label} className="px-2 py-2 font-semibold" scope="col">{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="text-stealth-100">
+              {[
+                ["First", firstHistoryPoint],
+                ["Latest", latestHistoryPoint],
+              ].map(([label, point]) => {
+                const row = point as PriceHistoryDataPoint | undefined;
+                return (
+                  <tr key={String(label)} className="border-t border-stealth-800">
+                    <th className="px-2 py-2 font-semibold" scope="row">{String(label)}</th>
+                    <td className="px-2 py-2">{row?.date ?? "n/a"}</td>
+                    {historySeries.map(([, key]) => (
+                      <td key={key} className="px-2 py-2">{isNumber(row?.[key]) ? `$${row?.[key]?.toFixed(2)}` : "n/a"}</td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </section>
   );
 }

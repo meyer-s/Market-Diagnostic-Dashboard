@@ -12,7 +12,7 @@ export default function DebtTools() {
         <div>
           <span className="page-kicker">Tools</span>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Debt Diagnostics</h2>
-          <p className="mt-2 max-w-3xl text-sm text-slate-300">Expanded debt-stability view with composite stress attribution, credit quality, and live yield-curve onionskinning.</p>
+          <p className="mt-2 max-w-3xl text-sm text-stealth-300">Expanded debt-stability view with composite stress attribution, credit quality, and live yield-curve onionskinning.</p>
         </div>
         <div className="control-strip">
           <button onClick={() => setTrendPeriod(90)} className={`flex-1 rounded-full px-3 py-1 text-sm ${trendPeriod === 90 ? "bg-stealth-700 text-white" : "text-stealth-400"}`}>90d</button>

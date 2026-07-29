@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -14,6 +14,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
+import DataScroller from "../components/ui/DataScroller";
 import CommercialRealEstateTab from "../components/realEstate/CommercialRealEstateTab";
 import { useApi } from "../hooks/useApi";
 import {
@@ -294,15 +295,26 @@ const Kicker = ({ children }: { children: React.ReactNode }) => (
 );
 
 function HoverTooltip({ children, tip, width = "w-64" }: { children: React.ReactNode; tip: string; width?: string }) {
+  const tooltipId = useId();
   return (
-    <span className="group/htip relative inline-block cursor-default">
+    <div className="group/htip relative inline-flex max-w-full items-start gap-1">
       {children}
+      <button
+        type="button"
+        aria-describedby={tooltipId}
+        aria-label="Show supporting context"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-stealth-600 text-xs font-semibold text-stealth-300 transition-colors hover:border-stealth-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+      >
+        i
+      </button>
       <span
-        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-2.5 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block`}
+        id={tooltipId}
+        role="tooltip"
+        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden max-w-[min(20rem,calc(100vw-2rem))] ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-3 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block group-focus-within/htip:block`}
       >
         {tip}
       </span>
-    </span>
+    </div>
   );
 }
 
@@ -484,7 +496,7 @@ function ProxyTable({
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <Kicker>Real Estate Proxies</Kicker>
-      <div className="overflow-x-auto">
+      <DataScroller label="Real-estate proxy performance">
         <table className="w-full min-w-[580px] text-xs sm:text-sm">
           <thead>
             <tr className="border-b border-stealth-700/50">
@@ -503,7 +515,7 @@ function ProxyTable({
                 <td className="py-2">
                   <span className="font-semibold text-stealth-100">{sym.ticker}</span>
                   <span className="ml-2 text-xs text-stealth-500">{sym.name}</span>
-                  <span className="ml-1.5 text-[10px] uppercase tracking-wide text-stealth-600">{sym.group}</span>
+                  <span className="ml-1.5 text-xs uppercase tracking-wide text-stealth-600">{sym.group}</span>
                 </td>
                 <td className="py-2 text-right font-mono text-stealth-200">
                   {sym.current_price != null ? `$${sym.current_price.toFixed(2)}` : "—"}
@@ -518,7 +530,7 @@ function ProxyTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </DataScroller>
       {groups?.length ? <GroupSummaryStrip groups={groups} /> : null}
     </div>
   );
@@ -548,7 +560,12 @@ function CompositeHistoryChart({
       />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={decimated} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Real estate composite stability score history"
+            data={decimated}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
             <YAxis {...commonYAxisProps} domain={[20, 80]} />
@@ -597,9 +614,14 @@ function FactorPanel({
       />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <BarChart data={data} margin={CHART_MARGIN}>
+          <BarChart
+            accessibilityLayer
+            aria-label="Real estate stability pressure by segment"
+            data={data}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
-            <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} />
+            <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
             <YAxis {...commonYAxisProps} domain={[0, 100]} />
             <ReferenceLine y={60} stroke="#f87171" strokeDasharray="2 4" strokeOpacity={0.5} />
             <ReferenceLine y={40} stroke="#34d399" strokeDasharray="2 4" strokeOpacity={0.5} />
@@ -694,7 +716,12 @@ function MortgagePressureChart({
 
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart data={merged} margin={CHART_MARGIN}>
+          <ComposedChart
+            accessibilityLayer
+            aria-label="Mortgage and Treasury rates versus indexed homebuilder demand"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis
@@ -780,7 +807,12 @@ function TransmissionChart({
       />
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart data={merged} margin={CHART_MARGIN}>
+          <ComposedChart
+            accessibilityLayer
+            aria-label="Rate transmission to indexed REIT and homebuilder equities"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis yAxisId="idx"  {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => v.toFixed(0)} />
@@ -855,7 +887,12 @@ function CreditSpreadChart({
       />
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={merged} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Indexed REIT performance versus the credit-spread backdrop"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
@@ -943,7 +980,12 @@ function SupplyContextChart({
       </div>
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={merged} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Housing starts, permits, and completions history"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis
               {...commonXAxisProps}
@@ -1092,7 +1134,12 @@ function BuyerSellerDivergenceChart({
       </div>
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart data={merged} margin={CHART_MARGIN}>
+          <ComposedChart
+            accessibilityLayer
+            aria-label="Indexed home-buyer demand versus seller-supply history"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis
               {...commonXAxisProps}
@@ -1292,7 +1339,14 @@ function AffordabilityChart({
       </div>
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={merged} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label={newHomeSales.length > 0
+              ? "Housing inflation layers and new-home buyer-demand history"
+              : "Housing inflation-layer history"}
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis
               {...commonXAxisProps}
@@ -1499,13 +1553,36 @@ export default function RealEstateDiagnostic() {
 
   const primaryDataPending = !overviewApi.data;
   if (overviewApi.loading && primaryDataPending) {
-    return <MarketLoading label="Loading real estate market data..." />;
+    return (
+      <div className="page-shell-wide page-stack" aria-busy="true">
+        <div>
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Real Estate Markets</h1>
+          <p className="page-subtitle">Preparing the current stability, financing, and supply evidence.</p>
+        </div>
+        <MarketLoading label="Loading real estate market evidence…" />
+      </div>
+    );
   }
 
   if (!overviewApi.data) {
     return (
-      <div className="page-shell">
-        <p className="text-stealth-400">Real estate data unavailable. {overviewApi.error}</p>
+      <div className="page-shell page-stack">
+        <div>
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Real Estate Markets</h1>
+        </div>
+        <div className="surface-card border-red-800/70 p-5" role="alert">
+          <h2 className="text-lg font-semibold text-red-200">Real estate evidence is unavailable</h2>
+          <p className="mt-2 text-sm text-red-300">{overviewApi.error}</p>
+          <button
+            type="button"
+            onClick={overviewApi.refetch}
+            className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-red-700 bg-red-950/50 px-4 text-sm font-semibold text-red-100 hover:bg-red-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+          >
+            Retry real estate evidence
+          </button>
+        </div>
       </div>
     );
   }
@@ -1554,6 +1631,11 @@ export default function RealEstateDiagnostic() {
   );
   const primarySidePanelCount = Number(hasCompositePanel) + Number(hasFactorPanel);
   const longerHorizonCardCount = Number(hasSupplyPanel) + Number(hasBuyerSeller) + Number(hasAffordability);
+  const partialIssues = [
+    historyApi.error ? "Composite history" : null,
+    transmissionApi.error ? "Rate and credit transmission" : null,
+    longContextApi.error ? "Longer-horizon supply and affordability context" : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="page-shell-wide page-stack space-y-5 md:space-y-6">
@@ -1569,8 +1651,10 @@ export default function RealEstateDiagnostic() {
           {TIMEFRAME_OPTIONS.map(({ key, label }) => (
             <button
               key={key}
+              type="button"
+              aria-pressed={timeframe === key}
               onClick={() => setTimeframe(key)}
-              className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+              className={`min-h-11 rounded-xl px-3 text-xs font-medium transition-all ${
                 timeframe === key
                   ? "bg-sky-500/20 text-sky-300"
                   : "text-stealth-400 hover:text-stealth-200"
@@ -1590,11 +1674,13 @@ export default function RealEstateDiagnostic() {
           ] as const).map((tab) => (
             <button
               key={tab.key}
+              id={`real-estate-${tab.key}-tab`}
               type="button"
               role="tab"
               aria-selected={activeTab === tab.key}
+              aria-controls={activeTab === tab.key ? "real-estate-active-panel" : undefined}
               onClick={() => setActiveTab(tab.key)}
-              className={`border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+              className={`min-h-11 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? "border-sky-400 text-sky-300"
                   : "border-transparent text-stealth-400 hover:text-stealth-200"
@@ -1604,16 +1690,65 @@ export default function RealEstateDiagnostic() {
             </button>
           ))}
         </div>
-        <p className="pb-2 text-[11px] text-stealth-500">
+        <p className="pb-2 text-xs text-stealth-400">
           {activeTab === "commercial" ? "Property types, credit fundamentals, and bank exposure" : "Housing, listed REITs, financing, and supply"}
         </p>
       </div>
 
+      <nav
+        aria-label="Real estate page sections"
+        tabIndex={0}
+        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
+      >
+        {(activeTab === "overview"
+          ? [
+              ["#real-estate-now", "Current read"],
+              ["#real-estate-evidence", "Evidence"],
+              ["#real-estate-structure", "Market structure"],
+              ["#real-estate-longer-horizon", "Longer horizon"],
+              ["#real-estate-methodology", "Methodology"],
+            ]
+          : [["#real-estate-active-panel", "Commercial evidence"]]
+        ).map(([href, label]) => (
+          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      {partialIssues.length > 0 && activeTab === "overview" && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4" role="status">
+          <h2 className="text-sm font-semibold text-amber-200">Partial real estate update</h2>
+          <p className="mt-1 text-sm text-amber-100">
+            The current headline is available, but {partialIssues.join(", ").toLowerCase()} {partialIssues.length === 1 ? "is" : "are"} missing.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (historyApi.error) historyApi.refetch();
+              if (transmissionApi.error) transmissionApi.refetch();
+              if (longContextApi.error) longContextApi.refetch();
+            }}
+            className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          >
+            Retry missing evidence
+          </button>
+        </div>
+      )}
+
+      <div
+        id="real-estate-active-panel"
+        role="tabpanel"
+        aria-labelledby={`real-estate-${activeTab}-tab`}
+        tabIndex={0}
+        className="scroll-mt-32 page-stack focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+      >
       {activeTab === "overview" ? (
         <>
 
       {/* ── Hero snapshot ─────────────────────────────────────── */}
-      <div className="surface-card-strong p-4 md:p-5">
+      <section id="real-estate-now" aria-labelledby="real-estate-now-title" className="surface-card-strong scroll-mt-32 p-4 md:p-5">
+        <h2 id="real-estate-now-title" className="sr-only">Current real estate market read</h2>
         <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.95fr]">
           <div className="space-y-4">
             <div>
@@ -1621,7 +1756,14 @@ export default function RealEstateDiagnostic() {
               <p className={`mt-2 text-4xl font-semibold ${stabilityTone(headlineStability)}`}>
                 {headlineStability.toFixed(0)}
               </p>
-              <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
+              <div
+                aria-label={`Real estate stability ${headlineStability.toFixed(0)} out of 100`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={headlineStability}
+                className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700"
+                role="progressbar"
+              >
                 <div
                   className={`h-2 rounded-full ${stabilityFill(headlineStability)}`}
                   style={{ width: `${headlineStability}%` }}
@@ -1691,11 +1833,13 @@ export default function RealEstateDiagnostic() {
             />
           </div>
         </div>
-      </div>
+      </section>
 
       {/* ── Primary relationship band ──────────────────────────── */}
       {(hasMortgagePressure || primarySidePanelCount > 0) && (
-        <div
+        <section
+          id="real-estate-evidence"
+          aria-label="Real estate market evidence"
           className={`grid items-start gap-3 md:gap-4 ${
             hasMortgagePressure && primarySidePanelCount > 0
               ? "xl:grid-cols-[1.45fr_0.95fr]"
@@ -1720,11 +1864,11 @@ export default function RealEstateDiagnostic() {
               ) : null}
             </div>
           )}
-        </div>
+        </section>
       )}
 
       {/* ── Market structure band ──────────────────────────────── */}
-      <div className="space-y-2.5">
+      <section id="real-estate-structure" className="scroll-mt-32 space-y-2.5">
         <div className="flex flex-wrap items-end justify-between gap-2.5">
           <SectionHeader
             kicker="Market Structure"
@@ -1737,7 +1881,7 @@ export default function RealEstateDiagnostic() {
           groups={overview.groups}
           surfaceClassName="surface-card-strong"
         />
-      </div>
+      </section>
 
       {/* ── Transmission band ─────────────────────────────────── */}
       {(hasTransmission || hasCreditPanel) && transmission && (
@@ -1774,7 +1918,7 @@ export default function RealEstateDiagnostic() {
 
       {/* ── Longer-horizon context band ────────────────────────── */}
       {(hasSupplyPanel || hasBuyerSeller || hasAffordability) && context && (
-        <div className="surface-card-strong p-3 sm:p-4">
+        <section id="real-estate-longer-horizon" className="surface-card-strong scroll-mt-32 p-3 sm:p-4">
           <div className="flex flex-wrap items-end justify-between gap-2.5">
             <SectionHeader
               kicker="Longer Horizon"
@@ -1788,7 +1932,7 @@ export default function RealEstateDiagnostic() {
                   type="button"
                   aria-pressed={longHorizonYears === years}
                   onClick={() => setLongHorizonYears(years)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                  className={`min-h-11 rounded-xl px-3 text-xs font-medium transition-all ${
                     longHorizonYears === years
                       ? "bg-sky-500/20 text-sky-300"
                       : "text-stealth-400 hover:text-stealth-200"
@@ -1835,7 +1979,7 @@ export default function RealEstateDiagnostic() {
               />
             ) : null}
           </div>
-        </div>
+        </section>
       )}
 
       {/* Warnings */}
@@ -1855,12 +1999,15 @@ export default function RealEstateDiagnostic() {
         </HoverTooltip>
       </div>
 
-      <RealEstateMethodologyPanel />
+      <div id="real-estate-methodology" className="scroll-mt-32">
+        <RealEstateMethodologyPanel />
+      </div>
 
         </>
       ) : (
         <CommercialRealEstateTab days={days} />
       )}
+      </div>
 
     </div>
   );

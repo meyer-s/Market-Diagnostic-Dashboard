@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   LineChart,
   Line,
@@ -52,1960 +52,85 @@ import { buildSummaryInputFromSnapshot, type TechnicalDataLike, type Fundamental
 import {
   presentOptionMarketField,
   presentScannerPositionMatch,
-  type OptionMarketFieldAxisResult,
-  type OptionMarketFieldContext,
-  type OptionMarketFieldEffectsApplied,
-  type ScannerPositionMatch,
-  type ScannerPositionMatchTone,
 } from "../utils/scannerPositionMatch";
+import DataScroller from "../components/ui/DataScroller";
 import {
-  DEFAULT_MARKET_WEATHER_QUERY_STATE,
-  serializeMarketWeatherQuery,
-} from "../utils/marketWeatherQuery";
-import type { MarketWeatherTimeframe } from "../types/marketWeather";
-
-interface OptionPosition {
-  id: number;
-  trade_date: string;
-  account: string | null;
-  action: string | null;
-  contracts: number;
-  symbol: string;
-  expiration: string;
-  strike: number;
-  option_type: string;
-  fill_price: number;
-  total_cost: number;
-  underlying_at_entry: number | null;
-  estimated_delta: number | null;
-  shares_equivalent: number | null;
-  dte_at_entry: number | null;
-  underlying_reference: number | null;
-  source_event_id: number | null;
-  source_triggered_at: string | null;
-  source_match_method: string | null;
-  source_match_confidence: number | null;
-  source_match_notes: string | null;
-  evaluation_min_hold_days: number | null;
-  evaluation_hold_days: number | null;
-  evaluation_start_date: string | null;
-  evaluation_due_date: string | null;
-  evaluation_decision_deadline: string | null;
-  evaluation_source: string | null;
-  evaluation_window_basis: string | null;
-}
-
-type VolatilityState = "expanding" | "contracting" | "stable" | "unknown";
-
-interface VolatilitySnapshot {
-  event_id?: number | null;
-  triggered_at?: string | null;
-  iv30: number | null;
-  hv30: number | null;
-  iv_hv_spread: number | null;
-  iv_percentile: number | null;
-  avg_edr: number | null;
-  contract_iv: number | null;
-  data_source?: string | null;
-  quote_source?: string | null;
-  pricing_basis?: string | null;
-  expiries_scanned?: number | null;
-  as_of?: string | null;
-}
-
-interface VolatilityTrend {
-  iv30_change: number | null;
-  hv30_change: number | null;
-  iv_hv_spread_change: number | null;
-  iv_percentile_change: number | null;
-  avg_edr_change: number | null;
-  contract_iv_change: number | null;
-  algorithm_state: VolatilityState;
-  contract_iv_state: VolatilityState;
-  value_state: VolatilityState;
-  headline: string;
-}
-
-interface VolatilitySignal {
-  entry: VolatilitySnapshot | null;
-  current: VolatilitySnapshot;
-  trend: VolatilityTrend;
-  error?: string | null;
-}
-
-type OpportunityComponents = Record<string, number | null | undefined>;
-
-interface PositionOpportunity {
-  event_id: number | null;
-  model_version: string | null;
-  computed_for_date: string | null;
-  cadence: string | null;
-  basis: string | null;
-  entry: {
-    score: number | null;
-    rank_score: number | null;
-    grade: string | null;
-    components: OpportunityComponents | null;
-    triggered_at: string | null;
-  } | null;
-  current: {
-    score: number | null;
-    rank_score: number | null;
-    grade: string | null;
-    components: OpportunityComponents | null;
-    reasons: string[];
-  } | null;
-  score_change: number | null;
-  headline: string | null;
-  error?: string | null;
-}
-
-interface PositionMetrics {
-  market: {
-    current_price: number | null;
-    previous_close: number | null;
-    change: number | null;
-    change_percent: number | null;
-    implied_volatility: number | null;
-    last_updated: string;
-    data_source?: string | null;
-    quote_source?: string | null;
-  };
-  option_price: number | null;
-  option_price_source: string | null;
-  quote: {
-    bid: number | null;
-    ask: number | null;
-    last: number | null;
-    mid: number | null;
-    spread: number | null;
-    spread_pct: number | null;
-    volume: number | null;
-    open_interest: number | null;
-    implied_volatility: number | null;
-    last_trade_at: string | null;
-    data_source?: string | null;
-    quote_source?: string | null;
-    quality: string | null;
-  };
-  volatility: number | null;
-  volatility_source: string | null;
-  hv30: number | null;
-  volatility_signal: VolatilitySignal;
-  opportunity: PositionOpportunity | null;
-  dte: number | null;
-  greeks: {
-    delta: number;
-    gamma: number;
-    theta: number;
-    vega: number;
-  } | null;
-  pnl: {
-    dollar: number | null;
-    percent: number | null;
-    source: string | null;
-  };
-}
-
-interface PositionPayload {
-  position: OptionPosition;
-  metrics: PositionMetrics;
-}
-
-interface SecretOptionsAccess {
-  actor: string;
-  scope: Exclude<SecretOptionsScope, null>;
-  request_id: string;
-  auth_mode: "bearer" | "development_bypass";
-}
-
-interface PositionIndexMembership {
-  key: "SP500" | "RUSSELL2000";
-  label: "SPY" | "R2K";
-  name: string;
-}
-
-interface PositionRowScanContext {
-  event_id: number;
-  triggered_at: string | null;
-  sweep_run_id: number | null;
-  universe_key: string | null;
-  universe_label: string | null;
-  opportunity_score: number | null;
-  opportunity_grade: string | null;
-  model_version: string | null;
-  selected_expiry: string | null;
-  selected_dte: number | null;
-  selected_strike: number | null;
-  selected_option_type: string | null;
-  selected_premium: number | null;
-  selected_convexity_profit_pct: number | null;
-  selected_convexity_probability_itm: number | null;
-}
-
-interface PositionRowContext {
-  position_id: number;
-  symbol: string;
-  index_memberships: PositionIndexMembership[];
-  membership_status: "complete" | "partial" | "unavailable";
-  linked_trade: boolean;
-  source_match_method: string | null;
-  source_match_confidence: number | null;
-  source_match_notes: string | null;
-  scan: PositionRowScanContext | null;
-}
-
-interface PositionDecisionReview {
-  id: number;
-  position_id: number;
-  supersedes_review_id: number | null;
-  review_sequence: number;
-  review_date: string;
-  review_type: "mandate" | "reassessment";
-  selected_assessment_id?: number | null;
-  decision_source?: string;
-  human_override?: string;
-  override_reason?: string | null;
-  threshold_approval_status?: string;
-  symbol: string;
-  expiration: string;
-  strike: number;
-  option_type: string;
-  contracts_snapshot: number;
-  trade_role: string;
-  original_thesis: string | null;
-  contract_thesis: string | null;
-  expected_path: string | null;
-  catalyst: string | null;
-  confirmation_condition: string | null;
-  invalidation_condition: string | null;
-  risk_budget: number | null;
-  evidence_since_last: string | null;
-  thesis_status: string;
-  fresh_entry_answer: string;
-  portfolio_fit: string | null;
-  data_quality_notes: string | null;
-  verdict: string;
-  target_contracts: number;
-  quality: string;
-  urgency: string;
-  confidence: string;
-  continuation_condition: string | null;
-  next_review_date: string | null;
-  decision_deadline: string | null;
-  decision_notes: string | null;
-  snapshot: {
-    underlying_price: number | null;
-    option_price: number | null;
-    remaining_capital: number | null;
-    pnl_dollar: number | null;
-    pnl_percent: number | null;
-    dte: number | null;
-    delta: number | null;
-    theta: number | null;
-    implied_volatility: number | null;
-    quote_quality: string | null;
-    market_data_as_of: string | null;
-  };
-  created_at: string | null;
-}
-
-interface PositionDecisionStatus {
-  window_status: string;
-  review_due: boolean;
-  decision_deadline_missed: boolean;
-  additions_blocked: boolean;
-  addition_blockers: string[];
-  warnings: string[];
-  missing_mandate_fields: string[];
-}
-
-interface PositionDecisionReviewResponse {
-  position_id: number;
-  review_count: number;
-  latest_review: PositionDecisionReview | null;
-  status: PositionDecisionStatus;
-  history: PositionDecisionReview[];
-}
-
-interface PositionDecisionWindowRevision {
-  id: number;
-  position_id: number;
-  review_sequence: number;
-  review_date: string;
-  next_review_date: string | null;
-  decision_deadline: string | null;
-}
-
-interface PositionDecisionWindowResponse {
-  position_count: number;
-  window_count: number;
-  windows_by_position: Record<string, PositionDecisionWindowRevision[]>;
-}
-
-interface OptionPositionMandate {
-  id: number;
-  mandate_version: number;
-  confirmation_status: string;
-  threshold_origin: string;
-  threshold_approval_status: string;
-  trade_role: string;
-  original_thesis: string | null;
-  contract_thesis: string | null;
-  expected_path: string | null;
-  catalyst: string | null;
-  confirmation_condition: string | null;
-  invalidation_condition: string | null;
-  decision_deadline: string | null;
-  risk_budget: number | null;
-}
-
-interface PositionThesisAssessment {
-  id: number;
-  position_id: number;
-  trigger: string;
-  as_of: string | null;
-  grader_version: string;
-  data_quality_status: string;
-  company_thesis_status: string;
-  security_thesis_readiness: string;
-  path_status: string;
-  contract_status: string;
-  portfolio_fit_status: string;
-  proposed_verdict: string;
-  proposed_target_contracts: number;
-  target_contracts_min: number;
-  target_contracts_max: number;
-  quality: string;
-  urgency: string;
-  confidence: string;
-  market_field_effects?: OptionMarketFieldEffectsApplied | null;
-  continuation_condition: string | null;
-  next_review_date: string | null;
-  decision_deadline: string | null;
-  vetoes: Array<{ code: string; hard?: boolean; detail: string }>;
-  reasons: string[];
-  missing_inputs: string[];
-  input_snapshot?: ({
-    field_context?: OptionMarketFieldContext | null;
-  } & Record<string, unknown>) | null;
-  axis_results?: ({
-    market_structure?: OptionMarketFieldAxisResult | null;
-  } & Record<string, unknown>) | null;
-}
-
-interface SuggestedDecisionWindow {
-  as_of_date: string;
-  next_review_date: string | null;
-  decision_deadline: string;
-  next_review_sessions: number;
-  max_hold_sessions: number;
-  original_min_hold_days: number;
-  original_max_hold_days: number;
-  basis: string;
-  source_assessment_id: number;
-  decision_source: "latest_review" | "automatic_assessment";
-  verdict: string;
-  urgency: string;
-  rebased: boolean;
-  continuation_condition: string;
-}
-
-interface PositionThesisAssessmentResponse {
-  position_id: number;
-  mandate: OptionPositionMandate;
-  assessment: PositionThesisAssessment;
-  suggested_window: SuggestedDecisionWindow;
-  review_defaults: Record<string, string | number | null | undefined>;
-  risk_policy: {
-    id: number;
-    policy_version: number;
-    name: string;
-    active: boolean;
-    approval_status: string;
-    portfolio_capital: number | null;
-    default_trade_risk_budget: number | null;
-    max_single_position_premium_pct: number | null;
-    max_directional_premium_pct: number | null;
-    max_expiry_bucket_premium_pct: number | null;
-    max_option_spread_pct: number | null;
-    min_dte_for_add: number | null;
-  };
-  history: PositionThesisAssessment[];
-  automated_execution_enabled: false;
-  execution_note: string;
-}
-
-interface OptionTradeLearningOutcome {
-  id: number;
-  outcome_version: number;
-  outcome_status: string;
-  process_quality: string;
-  financial_outcome: string;
-  primary_lesson: string;
-  decision_alignment: string;
-  thesis_result: string;
-  contract_result: string;
-  timing_result?: string;
-  sizing_result: string;
-  portfolio_result?: string;
-  entry_execution_result?: string;
-  exit_discipline_result?: string;
-  event_result?: string;
-  review_discipline: string;
-}
-
-interface OptionLearningSummary {
-  sample: {
-    open_review_records: number;
-    automatic_assessments: number;
-    actual_closed_trades: number;
-    classified_trade_cycles: number;
-    matured_decision_horizons: number;
-  };
-  trade_outcomes: {
-    process_quality: Record<string, number>;
-    primary_lessons: Record<string, number>;
-    contract_results: Record<string, number>;
-    timing_results?: Record<string, number>;
-    portfolio_results?: Record<string, number>;
-    exit_discipline_results?: Record<string, number>;
-  };
-  scanner_recurrence_outcomes?: {
-    cohorts: Record<
-      "no_repeat" | "repeat_seen" | "strengthened_seen" | "contract_drift_seen",
-      {
-        sample_count: number;
-        profitable: number;
-        unprofitable: number;
-        flat: number;
-        average_percent_pnl: number | null;
-      }
-    >;
-    actual_closed_trades_only: boolean;
-    minimum_sample_before_comparison: number;
-    automatic_weight_changes: false;
-  };
-  market_field_outcomes?: {
-    cohorts: Record<
-      "supportive" | "fading" | "contradictory" | "mixed" | "unavailable",
-      {
-        sample_count: number;
-        profitable: number;
-        unprofitable: number;
-        flat: number;
-        average_percent_pnl: number | null;
-      }
-    >;
-    actual_closed_trades_only: boolean;
-    point_in_time_snapshot_required: boolean;
-    minimum_sample_before_comparison: number;
-    direct_rank_influence?: 0;
-    eligible_for_outcome_learning_canary?: boolean;
-    maximum_total_canary_weight?: number;
-    rank_influence_note?: string;
-    rank_influence: 0;
-    automatic_weight_changes: false;
-  };
-  promotion_readiness: {
-    minimum_classified_actual_close_cycles?: number;
-    current_classified_actual_close_cycles?: number;
-    minimum_independent_trade_cycles: number;
-    current_independent_trade_cycles: number;
-    remaining_cycles: number;
-    learned_review_model_allowed: boolean;
-    automatic_promotion: false;
-    status: string;
-  };
-  guardrails: {
-    automated_execution_enabled: false;
-  };
-}
-
-interface ClosedPositionRow {
-  id: number;
-  source_position_id?: number | null;
-  symbol: string;
-  option_type: string;
-  strike: number;
-  expiration: string;
-  contracts: number;
-  trade_date: string;
-  close_date: string;
-  fill_price: number;
-  exit_price: number;
-  total_cost: number;
-  total_proceeds: number;
-  dollar_pnl: number;
-  percent_pnl: number;
-  underlying_at_entry: number | null;
-  underlying_at_exit: number | null;
-  account: string | null;
-  notes: string | null;
-  source_event_id: number | null;
-  source_triggered_at: string | null;
-  source_match_method: string | null;
-  source_match_confidence: number | null;
-  source_match_notes: string | null;
-  source_opportunity_score: number | null;
-  source_opportunity_grade: string | null;
-  source_opportunity_rank_score: number | null;
-  source_opportunity_model_version: string | null;
-  learning_outcome?: OptionTradeLearningOutcome | null;
-}
-
-type ClosedRestoreTarget = Pick<ClosedPositionRow, "id" | "symbol" | "close_date">;
-
-interface ClosePositionResponse {
-  closed_position_id: number;
-  symbol: string;
-}
-
-interface RestoreClosedPositionResponse {
-  position: OptionPosition;
-}
-
-interface TrainingOutcomeRow {
-  event_id: number;
-  symbol: string;
-  triggered_at: string | null;
-  option_type: string;
-  review_min_hold_days: number | null;
-  review_max_hold_days: number | null;
-  hold_days: number;
-  entry_date: string;
-  exit_date: string | null;
-  entry_underlying: number;
-  exit_underlying: number | null;
-  underlying_directional_return_pct: number | null;
-  entry_option_price_est: number | null;
-  exit_option_price_est: number | null;
-  option_return_pct_est: number | null;
-  option_pnl_per_contract_est: number | null;
-  status: "matured" | "pending";
-  opportunity_score: number | null;
-  opportunity_grade: string | null;
-  opportunity_rank_score: number | null;
-  opportunity_model_version: string | null;
-}
-
-interface TrainingOutcomeSummary {
-  sample_size: number;
-  matured: number;
-  pending: number;
-  win_rate_pct: number | null;
-  avg_option_return_pct: number | null;
-  total_option_pnl_per_contract: number | null;
-}
-
-interface TrainingOutcomeResponse {
-  outcomes: TrainingOutcomeRow[];
-  summary: TrainingOutcomeSummary;
-}
-
-interface OpportunityBacktestStats {
-  count: number;
-  total_pnl: number;
-  avg_pnl: number | null;
-  avg_percent_pnl: number | null;
-  win_rate_pct: number | null;
-}
-
-interface OpportunityBacktestResponse {
-  threshold: number;
-  lookback_days: number;
-  model_version: string;
-  summary: {
-    closed_positions_checked: number;
-    scored_trades: number;
-    unscored_trades: number;
-    all_trades: OpportunityBacktestStats;
-    model_selected: OpportunityBacktestStats;
-    model_excluded: OpportunityBacktestStats;
-    avg_percent_delta_vs_all: number | null;
-    avoided_loss_from_excluded: number;
-    excluded_winners_left_on_table: number;
-    grade_buckets: Record<string, OpportunityBacktestStats>;
-  };
-}
-
-interface OptionalityClusterEvent {
-  event_id: number;
-  symbol: string;
-  triggered_at: string | null;
-  sector: string;
-  group: string;
-  iv_percentile: number | null;
-  iv_hv_spread: number | null;
-  avg_edr: number | null;
-  selected_option_type: string | null;
-}
-
-interface OptionalityCluster {
-  group: string;
-  sector: string;
-  hits: number;
-  recent_hits: number;
-  prior_hits: number;
-  momentum: number;
-  symbols: string[];
-  avg_iv_percentile: number | null;
-  avg_iv_hv_spread: number | null;
-  latest_triggered_at: string | null;
-  strength_score: number;
-  events: OptionalityClusterEvent[];
-}
-
-interface OptionalityClusterResponse {
-  lookback_days: number;
-  bucket_days: number;
-  generated_at: string;
-  clusters: OptionalityCluster[];
-}
-
-interface ScannerTopSymbol {
-  symbol: string;
-  hits: number;
-  recent_hits: number;
-  latest_triggered_at: string | null;
-  group: string;
-  sector: string;
-  avg_iv_percentile: number | null;
-  avg_iv_hv_spread: number | null;
-  avg_opportunity_score: number | null;
-}
-
-interface OptionLearningSignal {
-  family: string;
-  cohort: string;
-  available: boolean;
-  minimum_sample: number;
-  eligible_comparison_cohorts: string[];
-  reason?: string;
-  sample_count?: number;
-  score?: number;
-  reliability?: number;
-}
-
-interface OptionLearningFamilyAttribution {
-  available: boolean;
-  cohort?: string | null;
-  signal_score?: number | null;
-  reliability: number;
-  normalized_learning_weight: number;
-  learning_score_component: number;
-  counterfactual_score_delta: number;
-  applied_score_delta: number;
-  direct_scanner_weight?: number | null;
-  influence_path: "indirect_outcome_learning_canary" | "outcome_learning_canary" | "not_applied";
-  rank_without_family?: number;
-  applied_rank?: number;
-  applied_rank_delta?: number;
-  applied_rank_changed?: boolean;
-}
-
-interface OptionLearningEvaluation {
-  version: string;
-  mode: "counterfactual_shadow" | "bounded_live_canary";
-  status: "collecting_comparable_cohorts" | "counterfactual_only" | "counterfactual_operator_disabled" | "manual_promotion_eligible" | "live_canary_active" | "legacy_shadow_only";
-  champion_score: number;
-  learning_score: number | null;
-  counterfactual_score: number;
-  counterfactual_delta: number;
-  counterfactual_weight: number;
-  evidence_scaled_event_weight?: number;
-  nominal_weight_cap?: number;
-  maximum_counterfactual_weight?: number;
-  applied_score: number;
-  applied_weight: number;
-  applied_event_weight?: number;
-  maximum_applied_weight?: number;
-  champion_rank?: number;
-  counterfactual_rank?: number;
-  applied_rank?: number;
-  rank_delta?: number;
-  applied_rank_delta?: number;
-  rank_changed: boolean;
-  /** Legacy event-capture field; the separate terminal-run receipt is created later. */
-  rank_snapshot_persisted?: boolean;
-  rank_snapshot_state_at_event_capture?: string;
-  candidate_cohorts: Record<string, string>;
-  signals: OptionLearningSignal[];
-  family_attribution?: Record<string, OptionLearningFamilyAttribution>;
-  authority?: {
-    candidate_eligibility?: string;
-    hard_veto?: string;
-    position_sizing?: string;
-    review_verdict?: string;
-    automated_execution?: string;
-    direct_market_field_scanner_weight?: number;
-    outcome_learning_canary_maximum_weight?: number;
-    market_field_indirect_applied_score_delta?: number;
-    note?: string;
-  };
-  gates: Record<string, boolean>;
-  operator_authorization?: {
-    configured: boolean;
-    setting: string;
-    default: boolean;
-    frozen_in_receipt: boolean;
-  };
-  weight_control?: {
-    configured_policy_cap: number;
-    evidence_scaled_event_weight: number;
-    applied_event_weight: number;
-    operator_authorized: boolean;
-    evidence_scaling_is_policy_or_cap_change: boolean;
-    automatic_policy_or_cap_changes: boolean;
-  };
-  evidence_gates_passed?: boolean;
-  application_gates_passed?: boolean;
-  promotion_ready_for_review: boolean;
-  live_canary_active?: boolean;
-  point_in_time_receipt?: boolean;
-  manual_promotion_required: boolean;
-  automatic_weight_changes: boolean;
-  automatic_policy_or_cap_changes?: boolean;
-  reasons: string[];
-}
-
-interface OptionLearningPolicy {
-  version: string;
-  mode: "counterfactual_shadow" | "bounded_live_canary";
-  nominal_weight_cap: number;
-  actual_rank_influence: number;
-  maximum_counterfactual_weight: number;
-  maximum_applied_weight?: number;
-  live_canary_enabled?: boolean;
-  configured_operator_authorization?: boolean;
-  operator_authorization?: {
-    configured: boolean;
-    setting: string;
-    default: boolean;
-    frozen_in_context: boolean;
-  };
-  weight_policy?: {
-    configured_cap: number;
-    event_weight_is_evidence_scaled: boolean;
-    automatic_policy_or_cap_changes: boolean;
-  };
-  automatic_weight_changes: boolean;
-  automatic_policy_or_cap_changes?: boolean;
-  manual_promotion_required: boolean;
-  evidence: {
-    classified_actual_close_cycles?: number;
-    minimum_classified_actual_close_cycles?: number;
-    independent_trade_cycles: number;
-    minimum_independent_trade_cycles: number;
-    full_promotion_minimum_trade_cycles?: number;
-    non_weak_process_cycles: number;
-    non_weak_process_share: number;
-    minimum_non_weak_process_share: number;
-  };
-  base_gates: {
-    independent_cycles: boolean;
-    process_quality: boolean;
-  };
-  evaluated_opportunities: number;
-  counterfactual_rank_changes: number;
-  applied_opportunities?: number;
-  applied_rank_changes?: number;
-  observed_max_applied_weight?: number;
-  observed_mean_applied_weight?: number;
-  actual_order_unchanged: boolean;
-}
-
-interface ScannerRankedOpportunity {
-  event_id: number;
-  scan_ordinal?: number | null;
-  display_ordinal?: number | null;
-  champion_rank?: number | null;
-  counterfactual_rank?: number | null;
-  applied_rank?: number | null;
-  champion_score?: number | null;
-  counterfactual_score?: number | null;
-  applied_score?: number | null;
-  applied_weight?: number | null;
-  symbol: string;
-  triggered_at: string | null;
-  group: string;
-  sector: string;
-  score: number;
-  base_score: number;
-  grade: string | null;
-  model_version: string;
-  components: Record<string, number | null | undefined>;
-  reasons: string[];
-  message?: string | null;
-  iv_percentile: number | null;
-  iv30: number | null;
-  hv30: number | null;
-  iv_hv_spread: number | null;
-  avg_edr: number | null;
-  review_window?: {
-    min_hold_days: number | null;
-    max_hold_days: number | null;
-    basis: string | null;
-  } | null;
-  position_match?: ScannerPositionMatch | null;
-  field_context?: OptionMarketFieldContext | null;
-  learning_evaluation?: OptionLearningEvaluation | null;
-  selected_contract: {
-    expiry: string | null;
-    dte: number | null;
-    strike: number | null;
-    option_type: string | null;
-    premium: number | null;
-    price_source?: string | null;
-    bid?: number | null;
-    ask?: number | null;
-    last?: number | null;
-    spread_pct: number | null;
-    open_interest: number | null;
-    volume: number | null;
-    implied_volatility: number | null;
-    last_trade_at?: string | null;
-    contract_score: number | null;
-    reward_risk: number | null;
-    convexity_profit_pct: number | null;
-    convexity_probability_itm: number | null;
-    planned_loss_pct?: number | null;
-    target_profit_pct?: number | null;
-  };
-}
-
-interface ScannerRun {
-  id: number;
-  universe_key: string;
-  universe_label: string;
-  threshold: number;
-  trigger_source: string;
-  status: string;
-  total_symbols: number;
-  scanned_symbols: number;
-  hits: number;
-  errors: number;
-  rate_limit_errors: number;
-  hit_symbols: string[];
-  notes: string | null;
-  last_event: string | null;
-  last_symbol: string | null;
-  last_error: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  updated_at: string | null;
-}
-
-interface ScannerSummary {
-  event_count: number;
-  symbol_count: number;
-  delivered: number;
-  failed: number;
-  latest_event_at: string | null;
-  runs_returned: number;
-  active_runs: number;
-  stale_runs_marked?: number;
-  avg_hit_rate: number | null;
-}
-
-interface ScannerUniverse {
-  key: string;
-  label: string;
-}
-
-interface ScannerSummaryResponse {
-  lookback_days: number;
-  generated_at: string;
-  summary: ScannerSummary;
-  top_symbols: ScannerTopSymbol[];
-  ranked_opportunities: ScannerRankedOpportunity[];
-  learning_policy?: OptionLearningPolicy;
-  runs: ScannerRun[];
-  supported_universes: ScannerUniverse[];
-}
-
-interface ScannerRunResponse {
-  status: string;
-  run: ScannerRun;
-}
-
-interface ScannerRankSnapshotCandidate {
-  event_id: number;
-  symbol: string;
-  scan_ordinal: number;
-  display_ordinal: number;
-  champion_rank: number | null;
-  counterfactual_rank: number | null;
-  applied_rank: number;
-  champion_score: number | null;
-  counterfactual_score: number | null;
-  applied_score: number | null;
-  applied_weight: number | null;
-  opportunity_model_version: string;
-  ranking_model_version: string;
-}
-
-interface ScannerRankSnapshot {
-  id: number;
-  snapshot_uuid: string;
-  schema_version: string;
-  surface: "scanner_run_detail";
-  scope_key: string;
-  sweep_run_id: number;
-  learning_policy_version: string | null;
-  opportunity_model_versions: string[];
-  ranking_model_versions: string[];
-  candidate_count: number;
-  payload_sha256: string;
-  integrity_verified: boolean;
-  source_generated_at: string | null;
-  created_at: string | null;
-  candidates: ScannerRankSnapshotCandidate[];
-}
-
-interface ScannerImpressionDraft {
-  dedupeKey: string;
-  exposure_type:
-    | "ranking_rendered"
-    | "candidate_visible"
-    | "candidate_detail_opened"
-    | "market_field_link_clicked"
-    | "trade_prefill_opened";
-  event_id?: number;
-  visibility_ratio?: number;
-  visible_ms?: number;
-  metadata?: Record<string, string | number | boolean | null>;
-}
-
-interface ScannerImpressionWire {
-  client_impression_id: string;
-  exposure_type: ScannerImpressionDraft["exposure_type"];
-  event_id?: number;
-  client_occurred_at: string;
-  visibility_ratio?: number;
-  visible_ms?: number;
-  metadata?: Record<string, string | number | boolean | null>;
-}
-
-interface ScannerRunDetailResponse {
-  run: ScannerRun;
-  hit_count: number;
-  matched_event_count: number;
-  hits: ScannerRankedOpportunity[];
-  learning_policy?: OptionLearningPolicy;
-  ranking_snapshot?: ScannerRankSnapshot | null;
-}
-
-const createScannerTelemetryId = (): string => {
-  if (typeof globalThis.crypto?.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
-  }
-  return `scanner-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
-};
-
-interface EvaluationInsight {
-  minHoldDays: number;
-  holdDays: number;
-  elapsedDays: number;
-  daysRemaining: number;
-  windowStartRemainingDays: number;
-  progressPct: number;
-  urgency: "calm" | "watch" | "due" | "overdue";
-  label: string;
-  detail: string;
-  pillClass: string;
-  barClass: string;
-}
-
-type EvalUrgency = EvaluationInsight["urgency"];
-type PositionFilter = "all" | "attention" | "matched" | "watch" | "due" | "overdue" | "lowConfidence" | "losing";
-type MobileOptionsWorkspace = "positions" | "scanner" | "insights";
-type MobileScannerView = "history" | "hits" | "repeated" | "earnings";
-interface TimelineLane {
-  laneId: string;
-  linkedPositionId: number | null;
-  eventId: number | null;
-  symbol: string;
-  optionType: string;
-  contracts: number;
-  matched: boolean;
-  urgency: EvalUrgency;
-  minHoldDays: number;
-  maxHoldDays: number;
-  totalDays: number;
-  elapsedDays: number;
-  remainingDays: number;
-  progressPct: number;
-  label: string;
-  detail: string;
-  pillClass: string;
-  barClass: string;
-  attentionStrength: number;
-  attentionSpreadDays: number;
-  greeksHint: string;
-}
-
-interface RawPositionPayload {
-  position: OptionPosition;
-  metrics?: Partial<PositionMetrics> | null;
-}
-
-interface PositionRefreshProgress {
-  total: number;
-  completed: number;
-  current_position_id: number | null;
-  current_symbol: string | null;
-  target_position_ids: number[];
-  completed_position_ids: number[];
-}
-
-type PositionRefreshState = "idle" | "pending" | "active" | "complete";
-
-interface PositionListResponse {
-  positions: RawPositionPayload[];
-  metrics_cache?: {
-    status: "fresh" | "stale";
-    age_seconds: number;
-    refresh_in_progress: boolean;
-    refresh_progress?: PositionRefreshProgress;
-  };
-}
-
-interface GreeksPayload {
-  price_curve: { price: number; delta: number; gamma: number }[];
-  theta_curve: { days: number; theta: number }[];
-  current_greeks: {
-    delta: number;
-    gamma: number;
-    theta: number;
-    vega: number;
-    price: number;
-  } | null;
-  model_info: {
-    model?: string;
-    risk_free_rate?: number;
-    volatility?: number;
-    volatility_source?: string;
-    spot_price?: number;
-    dte?: number;
-    units?: {
-      delta: string;
-      gamma: string;
-      theta: string;
-      vega: string;
-    };
-    error?: string;
-  };
-}
-
-type SortDirection = "asc" | "desc";
-type PositionSortKey =
-  | "symbol"
-  | "strike"
-  | "expiration"
-  | "option_type"
-  | "contracts"
-  | "fill_price"
-  | "option_price"
-  | "underlying"
-  | "dte"
-  | "pnl"
-  | "delta"
-  | "theta";
-type ClosedSortKey =
-  | "symbol"
-  | "strike"
-  | "option_type"
-  | "fill_price"
-  | "exit_price"
-  | "close_date"
-  | "dollar_pnl"
-  | "percent_pnl";
-
-interface ZoneInputs {
-  profitTake: string;
-  lossCut: string;
-}
-
-interface SpotWeighting {
-  technical: number | null;
-  fundamental: number | null;
-  composite: number;
-  confidence: number;
-  signalCount: number;
-  direction: "left" | "right" | "neutral";
-}
-
-const EMPTY_SPOT_WEIGHTING: SpotWeighting = {
-  technical: null,
-  fundamental: null,
-  composite: 0,
-  confidence: 0,
-  signalCount: 0,
-  direction: "neutral",
-};
-
-const formatCurrency = (value: number | null | undefined, digits = 2) => {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
-  }
-  return `$${value.toFixed(digits)}`;
-};
-
-const formatPercent = (value: number | null | undefined, digits = 1) => {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
-  }
-  return `${value.toFixed(digits)}%`;
-};
-
-const formatSigned = (value: number | null | undefined, digits = 2) => {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
-  }
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}${value.toFixed(digits)}`;
-};
-
-const formatVolPct = (value: number | null | undefined, digits = 1) => formatPercent(value, digits);
-
-const formatPointChange = (value: number | null | undefined, digits = 1) => {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
-  }
-  return `${formatSigned(value, digits)} pts`;
-};
-
-const emptyVolatilitySnapshot = (): VolatilitySnapshot => ({
-  iv30: null,
-  hv30: null,
-  iv_hv_spread: null,
-  iv_percentile: null,
-  avg_edr: null,
-  contract_iv: null,
-});
-
-const emptyVolatilitySignal = (): VolatilitySignal => ({
-  entry: null,
-  current: emptyVolatilitySnapshot(),
-  trend: {
-    iv30_change: null,
-    hv30_change: null,
-    iv_hv_spread_change: null,
-    iv_percentile_change: null,
-    avg_edr_change: null,
-    contract_iv_change: null,
-    algorithm_state: "unknown",
-    contract_iv_state: "unknown",
-    value_state: "unknown",
-    headline: "Volatility baseline unavailable",
-  },
-});
-
-const normalizeVolatilitySnapshot = (
-  snapshot: Partial<VolatilitySnapshot> | null | undefined
-): VolatilitySnapshot | null => {
-  if (!snapshot) return null;
-  return {
-    ...emptyVolatilitySnapshot(),
-    ...snapshot,
-    iv30: snapshot.iv30 ?? null,
-    hv30: snapshot.hv30 ?? null,
-    iv_hv_spread: snapshot.iv_hv_spread ?? null,
-    iv_percentile: snapshot.iv_percentile ?? null,
-    avg_edr: snapshot.avg_edr ?? null,
-    contract_iv: snapshot.contract_iv ?? null,
-  };
-};
-
-const normalizeVolatilitySignal = (
-  signal: Partial<VolatilitySignal> | null | undefined
-): VolatilitySignal => {
-  const empty = emptyVolatilitySignal();
-  const trend = (signal?.trend ?? {}) as Partial<VolatilityTrend>;
-  return {
-    entry: normalizeVolatilitySnapshot(signal?.entry),
-    current: normalizeVolatilitySnapshot(signal?.current) ?? empty.current,
-    trend: {
-      ...empty.trend,
-      ...trend,
-      algorithm_state: trend.algorithm_state ?? "unknown",
-      contract_iv_state: trend.contract_iv_state ?? "unknown",
-      value_state: trend.value_state ?? "unknown",
-      headline: trend.headline ?? empty.trend.headline,
-    },
-    error: signal?.error ?? null,
-  };
-};
-
-const getVolatilityStateClasses = (state: VolatilityState) => {
-  if (state === "expanding") {
-    return {
-      label: "Expanding",
-      text: "text-emerald-300",
-      border: "border-emerald-500/35",
-      bg: "bg-emerald-500/10",
-    };
-  }
-  if (state === "contracting") {
-    return {
-      label: "Contracting",
-      text: "text-rose-300",
-      border: "border-rose-500/35",
-      bg: "bg-rose-500/10",
-    };
-  }
-  if (state === "stable") {
-    return {
-      label: "Stable",
-      text: "text-sky-200",
-      border: "border-sky-500/30",
-      bg: "bg-sky-500/10",
-    };
-  }
-  return {
-    label: "Unknown",
-    text: "text-gray-400",
-    border: "border-gray-700/70",
-    bg: "bg-gray-900/45",
-  };
-};
-
-const getContractHvSpread = (snapshot: VolatilitySnapshot | null, hvFallback?: number | null) => {
-  const contractIv = snapshot?.contract_iv ?? null;
-  const hv30 = snapshot?.hv30 ?? hvFallback ?? null;
-  if (contractIv === null || contractIv === undefined || hv30 === null || hv30 === undefined) {
-    return null;
-  }
-  return Number((contractIv - hv30).toFixed(2));
-};
-
-const buildVolatilityRead = (signal: VolatilitySignal) => {
-  const state = signal.trend.value_state;
-  const classes = getVolatilityStateClasses(state);
-  const contractChange = signal.trend.contract_iv_change;
-  const spreadChange = signal.trend.iv_hv_spread_change;
-  const currentSpread = signal.current.iv_hv_spread;
-  const currentContractHvSpread = getContractHvSpread(signal.current);
-  const currentIv30 = signal.current.iv30;
-  const currentHv30 = signal.current.hv30;
-  const entryContractIv = signal.entry?.contract_iv;
-  const currentContractIv = signal.current.contract_iv;
-  const label =
-    contractChange !== null && contractChange !== undefined
-      ? `IV ${formatPointChange(contractChange)}`
-      : spreadChange !== null && spreadChange !== undefined
-        ? `IV/HV ${formatPointChange(spreadChange)}`
-        : signal.trend.headline || classes.label;
-  const detail =
-    entryContractIv !== null && entryContractIv !== undefined && currentContractIv !== null && currentContractIv !== undefined
-      ? `contract ${formatVolPct(entryContractIv)} -> ${formatVolPct(currentContractIv)}`
-      : currentContractHvSpread !== null
-        ? `contract IV/HV ${formatPointChange(currentContractHvSpread)}`
-        : currentSpread !== null && currentSpread !== undefined
-      ? `spread ${formatPointChange(currentSpread)}`
-      : currentIv30 !== null && currentHv30 !== null
-        ? `IV30 ${formatVolPct(currentIv30)} / HV30 ${formatVolPct(currentHv30)}`
-        : currentContractIv !== null && currentContractIv !== undefined
-          ? `contract IV ${formatVolPct(currentContractIv)}`
-          : currentHv30 !== null && currentHv30 !== undefined
-            ? `HV30 ${formatVolPct(currentHv30)}`
-            : "vol pending";
-
-  return { ...classes, label, detail };
-};
-
-const clusterMomentumClass = (momentum: number) => {
-  if (momentum > 0) return "text-emerald-300";
-  if (momentum < 0) return "text-rose-300";
-  return "text-gray-400";
-};
-
-const scannerStatusClass = (status: string) => {
-  const normalized = status.toLowerCase();
-  if (normalized === "running" || normalized === "queued") {
-    return "border-sky-500/35 bg-sky-500/10 text-sky-200";
-  }
-  if (normalized === "completed") {
-    return "border-emerald-500/35 bg-emerald-500/10 text-emerald-200";
-  }
-  if (normalized === "stopped") {
-    return "border-amber-500/35 bg-amber-500/10 text-amber-200";
-  }
-  if (normalized === "stale") {
-    return "border-amber-500/35 bg-amber-500/10 text-amber-200";
-  }
-  return "border-rose-500/35 bg-rose-500/10 text-rose-200";
-};
-
-const SCANNER_ACTIVE_STALE_MS = 12 * 60 * 60 * 1000;
-
-const isActiveScannerRun = (run: ScannerRun) => {
-  if (run.status !== "queued" && run.status !== "running") return false;
-  const timestamp = run.updated_at || run.started_at;
-  if (!timestamp) return true;
-  const parsed = new Date(timestamp).getTime();
-  if (Number.isNaN(parsed)) return true;
-  return Date.now() - parsed < SCANNER_ACTIVE_STALE_MS;
-};
-
-const opportunityScoreClass = (score: number | null | undefined) => {
-  if (score === null || score === undefined || Number.isNaN(score)) {
-    return "border-stealth-700 bg-stealth-800 text-stealth-300";
-  }
-  if (score >= 85) return "border-emerald-400/50 bg-emerald-500/15 text-emerald-100";
-  if (score >= 75) return "border-lime-400/45 bg-lime-500/15 text-lime-100";
-  if (score >= 65) return "border-sky-400/45 bg-sky-500/15 text-sky-100";
-  if (score >= 50) return "border-amber-400/45 bg-amber-500/15 text-amber-100";
-  return "border-stealth-700 bg-stealth-900 text-stealth-300";
-};
-
-const compactOpportunityGrade = (score: number | null | undefined, fallback?: string | null) => {
-  if (score === null || score === undefined || Number.isNaN(score)) {
-    return fallback && fallback !== "Watch" ? fallback : "—";
-  }
-  if (score >= 90) return "A+";
-  if (score >= 85) return "A";
-  if (score >= 80) return "A-";
-  if (score >= 75) return "B+";
-  if (score >= 70) return "B";
-  if (score >= 65) return "B-";
-  if (score >= 60) return "C+";
-  if (score >= 55) return "C";
-  if (score >= 50) return "C-";
-  if (score >= 45) return "D+";
-  if (score >= 40) return "D";
-  return "D-";
-};
-
-const OpportunityRankBadge = ({
-  score,
-  grade,
-  rankScore,
-  modelVersion,
-  className = "",
-}: {
-  score: number | null | undefined;
-  grade?: string | null;
-  rankScore?: number | null;
-  modelVersion?: string | null;
-  className?: string;
-}) => {
-  const label = compactOpportunityGrade(score, grade);
-  if (label === "—") return null;
-  const titleParts = [
-    `Grade ${label}`,
-    score !== null && score !== undefined && !Number.isNaN(score) ? `score ${score.toFixed(1)}` : null,
-    rankScore !== null && rankScore !== undefined && !Number.isNaN(rankScore) ? `rank ${rankScore.toFixed(1)}` : null,
-    modelVersion || null,
-  ].filter(Boolean);
-  return (
-    <span
-      title={titleParts.join(" · ")}
-      className={`inline-flex min-w-8 items-center justify-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${opportunityScoreClass(score)} ${className}`}
-    >
-      {label}
-    </span>
-  );
-};
-
-const buildOpportunityRead = (opportunity: PositionOpportunity | null | undefined) => {
-  const score = opportunity?.current?.score ?? opportunity?.entry?.score ?? null;
-  const grade = opportunity?.current?.grade ?? opportunity?.entry?.grade ?? null;
-  const change = opportunity?.score_change ?? null;
-  const label = compactOpportunityGrade(score, grade);
-  const detail =
-    change !== null && change !== undefined
-      ? `${opportunity?.headline || "Rank"} ${formatSigned(change, 1)}`
-      : opportunity?.error
-        ? "—"
-        : "—";
-  return {
-    score,
-    grade,
-    label,
-    detail,
-    className: opportunityScoreClass(score),
-  };
-};
-
-const capitalizeWord = (value: string) => {
-  if (!value) return value;
-  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
-};
-
-const formatDataSource = (source?: string | null, quoteSource?: string | null) => {
-  const normalized = source?.trim().toLowerCase();
-  const provider =
-    normalized === "ibkr"
-      ? "IBKR"
-      : normalized === "yahoo" || normalized === "yfinance"
-        ? "yfinance"
-        : source?.trim() || "Unknown";
-  const detail = quoteSource?.trim();
-  return detail ? `${provider} (${detail.replace(/_/g, " ")})` : provider;
-};
-
-interface ParsedScannerAlertSection {
-  title: string;
-  rows: Array<{ label: string; value: string }>;
-  lines: string[];
-}
-
-const scannerAlertHeaders = [
-  "MISPRICING",
-  "OPPORTUNITY RANK",
-  "DIRECTION",
-  "MACD 1W",
-  "HORIZONS",
-  "EXAMPLE TRADE",
-];
-
-const cleanScannerAlertMessage = (message?: string | null) =>
-  (message || "")
-    .replace(/\u001b\[[0-9;]*m/g, "")
-    .replace(/```ansi|```/gi, "")
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter((line) => {
-      const trimmed = line.trim();
-      return trimmed.length > 0 && !/^[-=─]{6,}$/.test(trimmed);
-    });
-
-const scannerHeaderForLine = (line: string) => {
-  const normalized = line.trim().toUpperCase();
-  return scannerAlertHeaders.find((header) => normalized.startsWith(header)) || null;
-};
-
-const parseScannerAlertSections = (message?: string | null): ParsedScannerAlertSection[] => {
-  const lines = cleanScannerAlertMessage(message);
-  const sections: ParsedScannerAlertSection[] = [];
-  let current: ParsedScannerAlertSection | null = null;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const header = scannerHeaderForLine(trimmed);
-    if (header) {
-      current = { title: trimmed, rows: [], lines: [] };
-      sections.push(current);
-      continue;
-    }
-    if (!current) {
-      continue;
-    }
-    const rowMatch = trimmed.match(/^([^:]{2,28})\s*:\s*(.+)$/);
-    if (rowMatch) {
-      current.rows.push({
-        label: rowMatch[1].trim(),
-        value: rowMatch[2].trim(),
-      });
-    } else {
-      current.lines.push(trimmed);
-    }
-  }
-
-  return sections;
-};
-
-const scannerAlertSection = (sections: ParsedScannerAlertSection[], title: string) =>
-  sections.find((section) => section.title.toUpperCase().startsWith(title.toUpperCase()));
-
-const scannerAlertValue = (
-  sections: ParsedScannerAlertSection[],
-  sectionTitle: string,
-  label: string
-) =>
-  scannerAlertSection(sections, sectionTitle)?.rows.find(
-    (row) => row.label.toLowerCase() === label.toLowerCase()
-  )?.value || null;
-
-const formatComponentLabel = (value: string) =>
-  value
-    .replace(/^selected_/, "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-
-const MARKET_FIELD_TIMEFRAMES = new Set<MarketWeatherTimeframe>([
-  "1m",
-  "5m",
-  "15m",
-  "30m",
-  "1h",
-  "2h",
-  "4h",
-  "1D",
-  "1W",
-]);
-
-const marketFieldPath = (symbol: string, requestedTimeframe?: string | null) => {
-  const timeframe = requestedTimeframe && MARKET_FIELD_TIMEFRAMES.has(requestedTimeframe as MarketWeatherTimeframe)
-    ? requestedTimeframe as MarketWeatherTimeframe
-    : DEFAULT_MARKET_WEATHER_QUERY_STATE.config.timeframe;
-  const query = serializeMarketWeatherQuery({
-    ...DEFAULT_MARKET_WEATHER_QUERY_STATE,
-    config: {
-      ...DEFAULT_MARKET_WEATHER_QUERY_STATE.config,
-      symbol: symbol.trim().toUpperCase(),
-      timeframe,
-    },
-  });
-  return `/market-weather?${query.toString()}`;
-};
-
-const scannerPositionMatchBadgeClass: Record<ScannerPositionMatchTone, string> = {
-  neutral: "border-sky-500/30 bg-sky-500/10 text-sky-200",
-  positive: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
-  warning: "border-amber-500/35 bg-amber-500/10 text-amber-200",
-  negative: "border-rose-500/35 bg-rose-500/10 text-rose-200",
-};
-
-const scannerPositionMatchTextClass: Record<ScannerPositionMatchTone, string> = {
-  neutral: "text-sky-300",
-  positive: "text-emerald-300",
-  warning: "text-amber-300",
-  negative: "text-rose-300",
-};
-
-const replacementGateClass: Record<string, string> = {
-  pass: "border-emerald-500/25 bg-emerald-500/10 text-emerald-200",
-  watch: "border-amber-500/25 bg-amber-500/10 text-amber-200",
-  fail: "border-rose-500/25 bg-rose-500/10 text-rose-200",
-};
-
-export const formatLearningCanaryLabel = (
-  nominalWeightCap?: number | null,
-  version?: string,
-) => {
-  const cap =
-    nominalWeightCap ??
-    (version === "option_learning_influence_canary_v2" ? 0.05 : null);
-  return cap === null ? "Live bounded canary" : `Live ≤${(cap * 100).toFixed(0)}% canary`;
-};
-
-const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOpportunity }) => {
-  const contract = opportunity.selected_contract;
-  const learning = opportunity.learning_evaluation;
-  const liveCanaryLabel = formatLearningCanaryLabel(
-    learning?.nominal_weight_cap ?? learning?.maximum_applied_weight,
-    learning?.version,
-  );
-  const positionMatch = presentScannerPositionMatch(opportunity.position_match);
-  const marketField = presentOptionMarketField(opportunity.field_context);
-  const marketFieldHref = marketField ? marketFieldPath(opportunity.symbol, marketField.timeframe) : null;
-  const replacementDecision = opportunity.position_match?.replacement_decision || null;
-  const replacementComparison = replacementDecision?.comparison || null;
-  const sections = parseScannerAlertSections(opportunity.message);
-  const directionSection = scannerAlertSection(sections, "DIRECTION");
-  const macdSection = scannerAlertSection(sections, "MACD 1W");
-  const horizonsSection = scannerAlertSection(sections, "HORIZONS");
-  const exampleSection = scannerAlertSection(sections, "EXAMPLE TRADE");
-  const components = Object.entries(opportunity.components || {})
-    .filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]))
-    .sort((a, b) => b[1] - a[1]);
-  const dataSource = scannerAlertValue(sections, "MISPRICING", "Data Src") || contract.price_source || "—";
-  const reviewWindowLabel =
-    scannerAlertValue(sections, "EXAMPLE TRADE", "Review Window") ||
-    (opportunity.review_window?.min_hold_days && opportunity.review_window?.max_hold_days
-      ? `${opportunity.review_window.min_hold_days}-${opportunity.review_window.max_hold_days} trading days`
-      : null);
-  const ivHvEdr =
-    scannerAlertValue(sections, "MISPRICING", "IV/HV/EDR") ||
-    `${formatPercent(opportunity.iv30, 1)} / ${formatPercent(opportunity.hv30, 1)} / ${formatPercent(opportunity.avg_edr, 1)}`;
-
-  const detailRow = (label: string, value: string | number | null | undefined, className = "text-stealth-100") => (
-    <div className="flex items-start justify-between gap-3 text-[10px]">
-      <span className="shrink-0 uppercase tracking-wide text-stealth-500">{label}</span>
-      <span className={`min-w-0 max-w-[72%] break-words text-right tabular-nums ${className}`}>{value ?? "—"}</span>
-    </div>
-  );
-
-  const sectionBlock = (title: string, rows: Array<{ label: string; value: string }>, lines: string[] = []) => {
-    if (rows.length === 0 && lines.length === 0) return null;
-    return (
-      <div className="min-w-0 border-t border-stealth-800/70 pt-2">
-        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">{title}</div>
-        <div className="space-y-1">
-          {rows.map((row) => detailRow(row.label, row.value))}
-          {lines.map((line, index) => (
-            <div key={`${title}-${index}`} className="break-words text-[10px] leading-snug text-stealth-300">
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="overflow-x-hidden bg-stealth-950/40 px-3 py-3 sm:px-4">
-      {replacementDecision && replacementComparison ? (
-        <section className={`mb-3 rounded-lg border p-3 ${scannerPositionMatchBadgeClass[positionMatch?.tone || "neutral"]}`}>
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] opacity-70">Replacement decision</div>
-              <div className="mt-0.5 text-sm font-semibold">{replacementDecision.label}</div>
-              <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-stealth-300">
-                {replacementDecision.summary}
-              </p>
-            </div>
-            <div className="shrink-0 text-right">
-              <div className="text-[10px] font-semibold uppercase tracking-wide">
-                {replacementDecision.structure.label}
-              </div>
-              <div className="mt-0.5 text-[9px] text-stealth-400">
-                {replacementDecision.confidence} confidence · shadow only
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 grid gap-px overflow-hidden rounded-md border border-stealth-700/70 bg-stealth-700/70 sm:grid-cols-3">
-            <div className="bg-stealth-950/80 p-2">
-              <div className="text-[9px] uppercase tracking-wide text-stealth-500">Held</div>
-              <div className="mt-0.5 truncate text-[11px] font-semibold text-stealth-100">
-                {replacementComparison.held.contract || "Held contract"}
-              </div>
-              <div className="mt-1 text-[10px] text-stealth-400 tabular-nums">
-                Score {formatNumber(replacementComparison.held.score, 1)} · P/L {formatPercent(replacementComparison.held.pnl_pct, 1)}
-              </div>
-              <div className="text-[10px] text-stealth-500 tabular-nums">
-                {replacementComparison.held.dte ?? "—"} DTE · spread {formatPercent(replacementComparison.held.spread_pct, 1)}
-              </div>
-            </div>
-            <div className="bg-stealth-950/80 p-2">
-              <div className="text-[9px] uppercase tracking-wide text-stealth-500">Scanner candidate</div>
-              <div className="mt-0.5 truncate text-[11px] font-semibold text-stealth-100">
-                {replacementComparison.candidate.contract || "Candidate contract"}
-              </div>
-              <div className="mt-1 text-[10px] text-stealth-400 tabular-nums">
-                Score {formatNumber(replacementComparison.candidate.score, 1)} · premium {formatCurrency(replacementComparison.candidate.premium)}
-              </div>
-              <div className="text-[10px] text-stealth-500 tabular-nums">
-                {replacementComparison.candidate.dte ?? "—"} DTE · spread {formatPercent(replacementComparison.candidate.spread_pct, 1)}
-              </div>
-            </div>
-            <div className="bg-stealth-950/80 p-2">
-              <div className="text-[9px] uppercase tracking-wide text-stealth-500">Net change</div>
-              <div className="mt-0.5 text-[11px] font-semibold text-stealth-100 tabular-nums">
-                Score {replacementComparison.change.score !== null && replacementComparison.change.score !== undefined ? formatSigned(replacementComparison.change.score, 1) : "—"}
-              </div>
-              <div className="mt-1 text-[10px] text-stealth-400 tabular-nums">
-                {replacementComparison.change.dte !== null && replacementComparison.change.dte !== undefined ? `${formatSigned(replacementComparison.change.dte, 0)} DTE` : "DTE —"}
-              </div>
-              <div className="text-[10px] text-stealth-500 tabular-nums">
-                {replacementComparison.change.strike !== null && replacementComparison.change.strike !== undefined ? `${formatSigned(replacementComparison.change.strike, 2)} strike` : "Strike —"}
-              </div>
-            </div>
-          </div>
-
-          <details className="mt-2 rounded-md border border-stealth-700/60 bg-stealth-950/45 px-2.5 py-2">
-            <summary className="cursor-pointer list-none text-[10px] font-semibold text-stealth-300">
-              Why this decision · {replacementDecision.gates.length} gates
-            </summary>
-            <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-              {replacementDecision.gates.map((gate) => (
-                <div key={gate.key} className="flex items-start gap-2 rounded border border-stealth-800 bg-stealth-950/50 p-2">
-                  <span className={`mt-px shrink-0 rounded border px-1 py-0.5 text-[8px] font-semibold uppercase ${replacementGateClass[gate.status] || replacementGateClass.watch}`}>
-                    {gate.status}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-semibold text-stealth-200">{gate.label}</div>
-                    <div className="text-[9px] leading-snug text-stealth-500">{gate.detail}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-2 border-t border-stealth-800/70 pt-2 text-[9px] leading-relaxed text-stealth-500">
-              {replacementDecision.journal_rule}
-            </p>
-          </details>
-        </section>
-      ) : null}
-      {positionMatch && !replacementDecision ? (
-        <div
-          role="note"
-          aria-label={positionMatch.accessibleLabel}
-          className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-stealth-800/70 pb-2 text-[10px]"
-        >
-          <span
-            aria-hidden="true"
-            className={`rounded border px-1.5 py-0.5 font-semibold tracking-wide ${scannerPositionMatchBadgeClass[positionMatch.tone]}`}
-          >
-            {positionMatch.badgeLabel}
-          </span>
-          <span aria-hidden="true" className={scannerPositionMatchTextClass[positionMatch.tone]}>
-            {positionMatch.evidenceLine}
-          </span>
-          <span aria-hidden="true" className="ml-auto text-stealth-500">
-            Evidence only · no add signal
-          </span>
-        </div>
-      ) : null}
-      {learning ? (
-        <details className="mb-3 rounded-lg border border-violet-500/20 bg-violet-500/[0.04] px-2.5 py-2">
-          <summary className="cursor-pointer list-none">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-violet-300">
-                Outcome-learning challenger
-              </span>
-              <span className="rounded border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200">
-                {learning.applied_weight > 0
-                  ? liveCanaryLabel
-                  : learning.point_in_time_receipt === false
-                    ? "Legacy shadow"
-                    : "Canary waiting"}
-              </span>
-              <span className="text-[9px] text-stealth-500">
-                Champion {formatNumber(learning.champion_score, 1)}
-                {" · "}
-                learned {learning.learning_score === null ? "waiting" : formatNumber(learning.learning_score, 1)}
-                {" · "}
-                applied weight {(learning.applied_weight * 100).toFixed(1)}%
-              </span>
-              <span className="ml-auto text-[9px] text-stealth-500">Evidence &amp; gates</span>
-            </div>
-          </summary>
-          <div className="mt-2 grid gap-px overflow-hidden rounded-md border border-stealth-800 bg-stealth-800 sm:grid-cols-3">
-            <div className="bg-stealth-950/70 p-2">
-              <div className="text-[8px] uppercase tracking-wide text-stealth-500">Production</div>
-              <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-stealth-100">
-                {formatNumber(learning.applied_score, 2)}
-              </div>
-              <div className="text-[9px] text-stealth-500">
-                {learning.applied_weight > 0 ? "Bounded outcome-learning lean" : "Champion remains authoritative"}
-              </div>
-            </div>
-            <div className="bg-stealth-950/70 p-2">
-              <div className="text-[8px] uppercase tracking-wide text-stealth-500">Counterfactual</div>
-              <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-violet-200">
-                {formatNumber(learning.counterfactual_score, 2)}
-                {" "}
-                <span className="text-[9px] font-normal text-stealth-500">
-                  ({formatSigned(learning.counterfactual_delta, 2)})
-                </span>
-              </div>
-              <div className="text-[9px] text-stealth-500">
-                {(learning.counterfactual_weight * 100).toFixed(1)}% hypothetical blend
-              </div>
-            </div>
-            <div className="bg-stealth-950/70 p-2">
-              <div className="text-[8px] uppercase tracking-wide text-stealth-500">Rank test</div>
-              <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-stealth-100">
-                #{learning.champion_rank ?? "—"} → #{learning.applied_rank ?? "—"}
-              </div>
-              <div className="text-[9px] text-stealth-500">
-                {learning.applied_rank_delta
-                  ? `Applied move ${formatSigned(learning.applied_rank_delta, 0)}`
-                  : "No applied reorder"}
-              </div>
-            </div>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {Object.entries(learning.gates).map(([gate, passed]) => (
-              <span
-                key={gate}
-                className={`rounded border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide ${
-                  passed
-                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
-                    : "border-stealth-700 bg-stealth-900/70 text-stealth-500"
-                }`}
-              >
-                {gate.replace(/_/g, " ")}
-              </span>
-            ))}
-          </div>
-          <p className="mt-2 text-[9px] leading-relaxed text-stealth-400">
-            {learning.reasons.join(" ")}
-          </p>
-          <div className="mt-2 grid gap-1 sm:grid-cols-3">
-            {learning.signals.map((signal) => (
-              <div key={signal.family} className="rounded border border-stealth-800 bg-stealth-950/50 p-2">
-                <div className="text-[8px] uppercase tracking-wide text-stealth-500">
-                  {signal.family.replace(/_/g, " ")}
-                </div>
-                <div className="mt-0.5 text-[10px] font-semibold text-stealth-200">
-                  {signal.cohort.replace(/_/g, " ")}
-                </div>
-                {learning.family_attribution?.[signal.family] ? (
-                  <div className="mt-0.5 text-[9px] tabular-nums text-violet-300">
-                    {learning.family_attribution[signal.family].applied_score_delta === 0
-                      ? "No applied score effect"
-                      : `${formatSigned(learning.family_attribution[signal.family].applied_score_delta, 3)} applied`}
-                    {learning.family_attribution[signal.family].applied_rank_changed
-                      ? ` · rank ${formatSigned(learning.family_attribution[signal.family].applied_rank_delta ?? 0, 0)}`
-                      : ""}
-                  </div>
-                ) : null}
-                <div className="mt-0.5 text-[9px] leading-snug text-stealth-500">{signal.reason}</div>
-              </div>
-            ))}
-          </div>
-          {learning.authority?.note ? (
-            <p className="mt-2 border-t border-stealth-800 pt-2 text-[9px] leading-relaxed text-stealth-500">
-              {learning.authority.note}
-            </p>
-          ) : null}
-        </details>
-      ) : null}
-      {marketField && marketFieldHref ? (
-        <section className="mb-3 rounded-lg border border-stealth-700/80 bg-stealth-950/45 px-2.5 py-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-stealth-500">
-              Mispricing × path fit
-            </span>
-            <span className="rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200">
-              IV pct {formatPercent(opportunity.iv_percentile, 0)}
-            </span>
-            <span
-              aria-label={marketField.accessibleLabel}
-              title={marketField.accessibleLabel}
-              className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[marketField.tone]}`}
-            >
-              {marketField.badgeLabel}
-            </span>
-            {[
-              marketField.directionLabel,
-              marketField.trendAgreementLabel,
-              marketField.boundaryLabel,
-              marketField.alignmentLabel,
-              marketField.maturityLabel,
-            ].filter((label): label is string => Boolean(label)).map((label) => (
-              <span
-                key={label}
-                title={label === marketField.alignmentLabel ? marketField.alignmentCaveat || undefined : label === marketField.maturityLabel ? marketField.maturityReason || undefined : undefined}
-                className="rounded-full border border-stealth-700 bg-stealth-900/70 px-1.5 py-0.5 text-[9px] text-stealth-300"
-              >
-                {label}
-              </span>
-            ))}
-            <Link
-              to={marketFieldHref}
-              className="ml-auto rounded-md border border-sky-500/35 bg-sky-500/10 px-2 py-1 text-[9px] font-semibold text-sky-200 hover:bg-sky-500/20"
-            >
-              Open Market Field
-            </Link>
-          </div>
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-stealth-500 tabular-nums">
-            <span>{marketField.pathStateLabel}</span>
-            <span>IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}</span>
-            <span>{marketField.timeframe} · as of {opportunity.field_context?.as_of_bar || "recorded bar"}</span>
-            {opportunity.field_context?.analysis_identity?.analysis_hash ? (
-              <span title={opportunity.field_context.analysis_identity.analysis_hash}>
-                analysis {opportunity.field_context.analysis_identity.analysis_hash.slice(0, 10)}
-              </span>
-            ) : null}
-            <span>{marketField.authorityLabel}</span>
-            <span>{marketField.advisoryEffectsLabel}</span>
-          </div>
-          {marketField.authorityCaveat || marketField.alignmentCaveat || marketField.maturityLabel || marketField.diagnosticsCaveat ? (
-            <div className="mt-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[9px] leading-relaxed text-amber-100/80">
-              {[marketField.authorityCaveat, marketField.alignmentCaveat, marketField.maturityLabel ? marketField.maturityReason : null, marketField.diagnosticsCaveat]
-                .filter((value): value is string => Boolean(value))
-                .join(" ")}
-            </div>
-          ) : null}
-          <details className="mt-1.5 border-t border-stealth-800/80 pt-1.5">
-            <summary className="cursor-pointer text-[9px] font-semibold text-stealth-400">
-              Field diagnostics{marketField.diagnosticsLabel ? ` · ${marketField.diagnosticsLabel}` : ""}
-            </summary>
-            {marketField.diagnosticsCaveat ? (
-              <p className="mt-1.5 text-[9px] leading-relaxed text-amber-100/80">{marketField.diagnosticsCaveat}</p>
-            ) : null}
-            <pre className="mt-1.5 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-stealth-950/80 p-2 text-[9px] leading-relaxed text-stealth-400">
-              {JSON.stringify(opportunity.field_context, null, 2)}
-            </pre>
-          </details>
-        </section>
-      ) : null}
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr]">
-        <div className="space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Mispricing</div>
-          {detailRow("Consensus", scannerAlertValue(sections, "MISPRICING", "Consensus") || "Cheap", "text-emerald-200")}
-          {detailRow("IV pct", formatPercent(opportunity.iv_percentile, 1))}
-          {detailRow("IV/HV/EDR", ivHvEdr)}
-          {detailRow("Data", dataSource)}
-        </div>
-
-        <div className="space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Rank Drivers</div>
-          {detailRow("Grade", compactOpportunityGrade(opportunity.score, opportunity.grade), opportunityScoreClass(opportunity.score).split(" ").filter((part) => part.startsWith("text-")).join(" ") || "text-stealth-100")}
-          {detailRow("Score", opportunity.score.toFixed(1))}
-          {opportunity.reasons.length > 0 ? (
-            <div className="text-[10px] leading-snug text-stealth-300">{opportunity.reasons.slice(0, 3).join(" / ")}</div>
-          ) : null}
-          {components.length > 0 ? (
-            <div className="space-y-1.5">
-              {components.slice(0, 5).map(([key, value]) => (
-                <div key={key}>
-                  <div className="mb-0.5 flex items-center justify-between gap-2 text-[9px] uppercase tracking-wide text-stealth-500">
-                    <span className="truncate">{formatComponentLabel(key)}</span>
-                    <span className="tabular-nums">{value.toFixed(0)}</span>
-                  </div>
-                  <div className="h-1 overflow-hidden rounded-full bg-stealth-900">
-                    <div className="h-full rounded-full bg-sky-300/70" style={{ width: `${Math.max(4, Math.min(100, value))}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Contract</div>
-          {detailRow(
-            "Selected",
-            contract.option_type && contract.strike !== null && contract.strike !== undefined
-              ? `${contract.option_type.toUpperCase()} ${formatNumber(contract.strike, 2)}${contract.expiry ? ` / ${formatDate(contract.expiry)}` : ""}`
-              : "contract pending"
-          )}
-          {detailRow("Bid / Ask", `${formatCurrency(contract.bid)} / ${formatCurrency(contract.ask)}`)}
-          {detailRow("Premium", formatCurrency(contract.premium))}
-          {detailRow("Spread", formatPercent(contract.spread_pct, 1))}
-          {detailRow(
-            "OI / Vol / IV",
-            `${contract.open_interest ?? "—"} / ${contract.volume ?? "—"} / ${
-              contract.implied_volatility !== null && contract.implied_volatility !== undefined
-                ? formatPercent(contract.implied_volatility * 100, 1)
-                : "—"
-            }`
-          )}
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
-        {sectionBlock("Direction", directionSection?.rows || [], directionSection?.lines || [])}
-        {sectionBlock("Momentum", macdSection?.rows || [], macdSection?.lines || [])}
-        {sectionBlock("Horizons", horizonsSection?.rows || [], horizonsSection?.lines || [])}
-      </div>
-
-      <div className="mt-3 grid gap-3 lg:grid-cols-[1.1fr_1fr]">
-        <div className="border-t border-stealth-800/70 pt-2">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Training Trade</div>
-          <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
-            {detailRow("Hump exit", scannerAlertValue(sections, "EXAMPLE TRADE", "Hump Exit") || formatPercent(contract.convexity_profit_pct, 0))}
-            {detailRow("Hump prob", scannerAlertValue(sections, "EXAMPLE TRADE", "Hump Prob") || (contract.convexity_probability_itm !== null && contract.convexity_probability_itm !== undefined ? formatPercent(contract.convexity_probability_itm * 100, 0) : "—"))}
-            {detailRow("Base target", scannerAlertValue(sections, "EXAMPLE TRADE", "Base Tgt") || formatPercent(contract.target_profit_pct, 0))}
-            {detailRow("Risk cut", scannerAlertValue(sections, "EXAMPLE TRADE", "Risk Cut") || (contract.planned_loss_pct !== null && contract.planned_loss_pct !== undefined ? `-${formatPercent(contract.planned_loss_pct, 0)}` : "—"))}
-            {detailRow("Reward/risk", scannerAlertValue(sections, "EXAMPLE TRADE", "Reward/Risk") || (contract.reward_risk !== null && contract.reward_risk !== undefined ? `${contract.reward_risk.toFixed(2)}R` : "—"))}
-            {detailRow("Window", reviewWindowLabel)}
-            {detailRow("Gate", scannerAlertValue(sections, "EXAMPLE TRADE", "Hold") || (contract.dte !== null && contract.dte !== undefined ? `${contract.dte} DTE` : "—"))}
-          </div>
-        </div>
-
-        {exampleSection && exampleSection.rows.length > 0 ? (
-          <div className="border-t border-stealth-800/70 pt-2">
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Quote Context</div>
-            <div className="space-y-1">
-              {["Setup", "Quote", "OI/Vol/IV", "Est Prem", "Est G/L", "Stop/Tgt"].map((label) => {
-                const value = scannerAlertValue(sections, "EXAMPLE TRADE", label);
-                return value ? detailRow(label, value) : null;
-              })}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-};
+  createScannerTelemetryId,
+  EMPTY_SPOT_WEIGHTING,
+  formatCurrency,
+  formatPercent,
+  formatSigned,
+  formatVolPct,
+  formatPointChange,
+  normalizeVolatilitySignal,
+  getContractHvSpread,
+  buildVolatilityRead,
+  clusterMomentumClass,
+  scannerStatusClass,
+  isActiveScannerRun,
+  opportunityScoreClass,
+  compactOpportunityGrade,
+  OpportunityRankBadge,
+  buildOpportunityRead,
+  capitalizeWord,
+  formatDataSource,
+  parseScannerAlertSections,
+  scannerAlertValue,
+  marketFieldPath,
+  scannerPositionMatchBadgeClass,
+  scannerPositionMatchTextClass,
+  ScannerHitDetail,
+} from "../features/secretOptions";
+import type {
+  OptionPosition,
+  PositionOpportunity,
+  PositionMetrics,
+  PositionPayload,
+  SecretOptionsAccess,
+  PositionRowContext,
+  PositionDecisionReviewResponse,
+  PositionDecisionWindowRevision,
+  PositionDecisionWindowResponse,
+  PositionThesisAssessment,
+  SuggestedDecisionWindow,
+  PositionThesisAssessmentResponse,
+  OptionLearningSummary,
+  ClosedPositionRow,
+  ClosedRestoreTarget,
+  ClosePositionResponse,
+  RestoreClosedPositionResponse,
+  TrainingOutcomeRow,
+  TrainingOutcomeSummary,
+  TrainingOutcomeResponse,
+  OpportunityBacktestResponse,
+  OptionalityCluster,
+  OptionalityClusterResponse,
+  ScannerRankedOpportunity,
+  ScannerRun,
+  ScannerSummaryResponse,
+  ScannerRunResponse,
+  ScannerRankSnapshot,
+  ScannerImpressionDraft,
+  ScannerImpressionWire,
+  ScannerRunDetailResponse,
+  EvaluationInsight,
+  EvalUrgency,
+  PositionFilter,
+  MobileOptionsWorkspace,
+  MobileScannerView,
+  TimelineLane,
+  RawPositionPayload,
+  PositionRefreshProgress,
+  PositionRefreshState,
+  PositionListResponse,
+  GreeksPayload,
+  SortDirection,
+  PositionSortKey,
+  ClosedSortKey,
+  ZoneInputs,
+  SpotWeighting,
+} from "../features/secretOptions";
+export { formatLearningCanaryLabel } from "../features/secretOptions";
 
 const formatRelativeTime = (value: string | Date | null | undefined) => {
   if (!value) return "n/a";
@@ -2201,7 +326,7 @@ const getStatusTextClass = (
   if (urgency === "overdue") return "text-rose-200";
   if (urgency === "due") return "text-amber-200";
   if (urgency === "watch") return "text-lime-200";
-  if (isMonitor) return "text-gray-400";
+  if (isMonitor) return "text-stealth-400";
   if (remainingDays !== null && remainingDays <= 10) return "text-lime-200";
   if (remainingDays !== null && remainingDays <= 21) return "text-emerald-200";
   return "text-emerald-300";
@@ -2367,13 +492,13 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   return (
     <div className="min-w-0" aria-label={accessibleSummary}>
       {showHeader ? (
-        <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-          <span className="truncate text-gray-500">{metaLabel}</span>
+        <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+          <span className="truncate text-stealth-500">{metaLabel}</span>
           <span className={`shrink-0 font-semibold ${urgencyTextClass}`}>{statusLabel}</span>
         </div>
       ) : null}
-      <div className={`relative h-6 overflow-visible rounded-md border border-gray-700 bg-gray-900/75 ${isLowConfidence ? "opacity-80" : ""}`}>
-        <div className="absolute inset-y-1 left-0 rounded-sm bg-gray-700/35" style={{ width: `${todayPct}%` }} title="Elapsed contract life" />
+      <div className={`relative h-6 overflow-visible rounded-md border border-stealth-700 bg-stealth-900/75 ${isLowConfidence ? "opacity-80" : ""}`}>
+        <div className="absolute inset-y-1 left-0 rounded-sm bg-stealth-700/35" style={{ width: `${todayPct}%` }} title="Elapsed contract life" />
         {priorWindows.map((window, index) => {
           const startPct = pointPct(window.start) ?? 0;
           const deadlinePct = pointPct(window.deadline) ?? startPct;
@@ -2386,7 +511,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
               ? "bg-sky-200/[0.09] ring-1 ring-inset ring-sky-200/25"
               : index === 1
                 ? "bg-sky-200/[0.06] ring-1 ring-inset ring-sky-200/18"
-                : "bg-slate-200/[0.04] ring-1 ring-inset ring-slate-200/12";
+                : "bg-stealth-200/[0.04] ring-1 ring-inset ring-stealth-200/12";
           const historyInset = Math.min(2 + index, 7);
           return (
             <div
@@ -2422,7 +547,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
           />
         ) : null}
         <span
-          className={`absolute top-1/2 z-50 h-[26px] w-px -translate-x-1/2 -translate-y-1/2 transition-colors duration-150 before:absolute before:left-1/2 before:top-0 before:h-px before:w-1.5 before:-translate-x-1/2 after:absolute after:bottom-0 after:left-1/2 after:h-px after:w-1.5 after:-translate-x-1/2 ${isInteractive ? "bg-slate-100/70 before:bg-slate-100/70 after:bg-slate-100/70" : "bg-slate-200/35 before:bg-slate-200/35 after:bg-slate-200/35"}`}
+          className={`absolute top-1/2 z-50 h-[26px] w-px -translate-x-1/2 -translate-y-1/2 transition-colors duration-150 before:absolute before:left-1/2 before:top-0 before:h-px before:w-1.5 before:-translate-x-1/2 after:absolute after:bottom-0 after:left-1/2 after:h-px after:w-1.5 after:-translate-x-1/2 ${isInteractive ? "bg-stealth-100/70 before:bg-stealth-100/70 after:bg-stealth-100/70" : "bg-stealth-200/35 before:bg-stealth-200/35 after:bg-stealth-200/35"}`}
           style={{ left: `${todayPct}%` }}
           title={`Today: ${formatDate(today)}`}
           aria-hidden="true"
@@ -2506,18 +631,18 @@ function VolatilitySignalCard({
     kind === "points" ? formatPointChange(value, 1) : formatVolPct(value, 1);
 
   return (
-    <div className={`rounded-md border border-gray-700/70 bg-gray-900/45 p-2 ${className}`}>
+    <div className={`rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2 ${className}`}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="text-[9px] uppercase tracking-wide text-gray-500">Volatility Signal</div>
-        <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${read.border} ${read.bg} ${read.text}`}>
+        <div className="text-xs uppercase tracking-wide text-stealth-500">Volatility Signal</div>
+        <span className={`rounded-full border px-1.5 py-0.5 text-xs font-semibold ${read.border} ${read.bg} ${read.text}`}>
           {read.label}
         </span>
       </div>
-      <div className="space-y-1 text-[10px]">
+      <div className="space-y-1 text-xs">
         {rows.map((row) => (
           <div key={row.label} className="grid grid-cols-[62px_minmax(0,1fr)_54px] items-center gap-1">
-            <span className="truncate text-gray-500">{row.label}</span>
-            <span className="truncate text-gray-200">
+            <span className="truncate text-stealth-500">{row.label}</span>
+            <span className="truncate text-stealth-200">
               {row.entry !== null && row.entry !== undefined
                 ? row.current !== null && row.current !== undefined
                   ? `${formatValue(row.entry, row.kind)} -> ${formatValue(row.current, row.kind)}`
@@ -2532,7 +657,7 @@ function VolatilitySignalCard({
                   ? "text-emerald-300"
                   : (row.change ?? 0) < 0
                     ? "text-rose-300"
-                    : "text-gray-500"
+                    : "text-stealth-500"
               }`}
             >
               {formatPointChange(row.change, 1)}
@@ -2540,7 +665,7 @@ function VolatilitySignalCard({
           </div>
         ))}
       </div>
-      <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-gray-800 pt-1 text-[9px] text-gray-500">
+      <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-stealth-800 pt-1 text-xs text-stealth-500">
         <span className="truncate">{signal.entry ? "entry scanner -> current chain" : "current only"}</span>
         <span className="truncate">{source}</span>
       </div>
@@ -2572,17 +697,17 @@ function TimelinePressureStack({
   const sourceConfidence = clampRange(position.source_match_confidence ?? (lane?.matched ? 0.65 : 0.15), 0, 1);
 
   return (
-    <div className="mt-2 grid grid-cols-[14px_minmax(0,1fr)] items-center gap-x-1 gap-y-1 text-[9px] text-gray-500">
+    <div className="mt-2 grid grid-cols-[14px_minmax(0,1fr)] items-center gap-x-1 gap-y-1 text-xs text-stealth-500">
       <span>T</span>
-      <div className="h-1.5 rounded-full bg-gray-800" title="Time elapsed toward expiration">
+      <div className="h-1.5 rounded-full bg-stealth-800" title="Time elapsed toward expiration">
         <div className="h-full rounded-full bg-emerald-300" style={{ width: `${timePct}%` }} />
       </div>
       <span>V</span>
-      <div className="h-1.5 rounded-full bg-gray-800" title="Volatility/time pressure">
+      <div className="h-1.5 rounded-full bg-stealth-800" title="Volatility/time pressure">
         <div className="h-full rounded-full bg-cyan-300" style={{ width: `${pressurePct}%` }} />
       </div>
       <span>C</span>
-      <div className="h-1.5 rounded-full bg-gray-800" title="Source confidence">
+      <div className="h-1.5 rounded-full bg-stealth-800" title="Source confidence">
         <div className="h-full rounded-full bg-indigo-300" style={{ width: `${sourceConfidence * 100}%` }} />
       </div>
     </div>
@@ -2651,7 +776,7 @@ function PositionIndexBadges({ context }: { context: PositionRowContext | null |
         <span
           key={membership.key}
           title={`${membership.name} constituent (${membership.label} proxy)`}
-          className="rounded border border-sky-400/25 bg-sky-400/10 px-1 py-0.5 text-[8px] font-semibold leading-none tracking-wide text-sky-200"
+          className="rounded border border-sky-400/25 bg-sky-400/10 px-1 py-0.5 text-xs font-semibold leading-none tracking-wide text-sky-200"
         >
           {membership.label}
         </span>
@@ -2726,7 +851,6 @@ function MobilePositionCard({
         title={contextTooltip}
         aria-label={contextTooltip.replace(/\n/g, ". ")}
         className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${linkMarker}`}
-        onClick={(event) => event.stopPropagation()}
       />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -2916,10 +1040,10 @@ const ProjectionBezierOverlay = ({
     <g pointerEvents="none">
       <path d={tech.path} fill={techColor} fillOpacity={0.14} />
       <path d={fund.path} fill={fundColor} fillOpacity={0.12} />
-      <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+      <text x={tech.labelX} y={tech.labelY} fill={techColor} fontSize={12} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
         T
       </text>
-      <text x={fund.labelX} y={fund.labelY} fill={fundColor} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+      <text x={fund.labelX} y={fund.labelY} fill={fundColor} fontSize={12} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
         F
       </text>
     </g>
@@ -3261,6 +1385,122 @@ const normalizePositionMetrics = (
   };
 };
 
+interface SecretOptionsDialogProps {
+  children: ReactNode;
+  label: string;
+  onClose: () => void;
+}
+
+/**
+ * One modal contract for the Secret Options workspace. The page has several
+ * dense workflows; keeping the focus, inertness, and dismissal behavior here
+ * prevents each overlay from becoming its own slightly different keyboard
+ * experience.
+ */
+export function SecretOptionsDialog({
+  children,
+  label,
+  onClose,
+}: SecretOptionsDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const background = Array.from(document.body.children)
+      .filter((element) => !element.contains(dialog))
+      .map((element) => {
+        const htmlElement = element as HTMLElement;
+        const previousAriaHidden = htmlElement.getAttribute("aria-hidden");
+        const previousInert = htmlElement.inert;
+        htmlElement.inert = true;
+        htmlElement.setAttribute("aria-hidden", "true");
+        return { htmlElement, previousAriaHidden, previousInert };
+      });
+
+    const focusTarget =
+      dialog.querySelector<HTMLElement>("[data-dialog-initial-focus]") ??
+      dialog.querySelector<HTMLElement>(
+        'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ) ??
+      dialog;
+    const frame = window.requestAnimationFrame(() => focusTarget.focus());
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (dialog.inert || dialog.getAttribute("aria-hidden") === "true") return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.getAttribute("aria-hidden") !== "true");
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.body.style.overflow = previousOverflow;
+      background.forEach(({ htmlElement, previousAriaHidden, previousInert }) => {
+        htmlElement.inert = previousInert;
+        if (previousAriaHidden === null) htmlElement.removeAttribute("aria-hidden");
+        else htmlElement.setAttribute("aria-hidden", previousAriaHidden);
+      });
+      const returnTarget = returnFocusRef.current;
+      window.requestAnimationFrame(() => {
+        if (returnTarget?.isConnected) returnTarget.focus();
+      });
+    };
+  }, []);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={dialogRef}
+      className="fixed inset-0 z-[300]"
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 export default function SecretOptions() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [positions, setPositions] = useState<PositionPayload[]>([]);
@@ -3281,6 +1521,7 @@ export default function SecretOptions() {
   const [secretAuthScope, setSecretAuthScopeState] = useState<SecretOptionsScope>(() => getSecretOptionsScope());
   const secretWriteUpgradeRequiredRef = useRef(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const tradeFormErrorRef = useRef<HTMLDivElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [closingSubmitting, setClosingSubmitting] = useState(false);
   const [formData, setFormData] = useState(initialFormState);
@@ -3292,17 +1533,26 @@ export default function SecretOptions() {
   const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
   const [exitPrice, setExitPrice] = useState("");
   const [closeNotes, setCloseNotes] = useState("");
+  const [closePositionError, setClosePositionError] = useState<string | null>(null);
+  const closePositionErrorRef = useRef<HTMLDivElement>(null);
   const [closedPositions, setClosedPositions] = useState<ClosedPositionRow[]>([]);
   const [showClosedLog, setShowClosedLog] = useState(false);
   const [showClosedEditModal, setShowClosedEditModal] = useState(false);
   const [editingClosedPositionId, setEditingClosedPositionId] = useState<number | null>(null);
   const [closedFormData, setClosedFormData] = useState(initialClosedFormState);
   const [closedFormError, setClosedFormError] = useState<string | null>(null);
+  const closedFormErrorRef = useRef<HTMLDivElement>(null);
   const [closedSubmitting, setClosedSubmitting] = useState(false);
+  const [pendingClosedDeletion, setPendingClosedDeletion] = useState<ClosedPositionRow | null>(null);
+  const [closedDeleteError, setClosedDeleteError] = useState<string | null>(null);
+  const [closedDeleteSubmitting, setClosedDeleteSubmitting] = useState(false);
+  const closedDeleteErrorRef = useRef<HTMLDivElement>(null);
   const [pendingClosedRestore, setPendingClosedRestore] = useState<ClosedRestoreTarget | null>(null);
   const [lastClosedPosition, setLastClosedPosition] = useState<ClosedRestoreTarget | null>(null);
   const [closedRestoreSubmittingId, setClosedRestoreSubmittingId] = useState<number | null>(null);
   const [closedRestoreError, setClosedRestoreError] = useState<string | null>(null);
+  const [closedRestoreErrorTargetId, setClosedRestoreErrorTargetId] = useState<number | null>(null);
+  const closedRestoreErrorRef = useRef<HTMLDivElement>(null);
   const [showTrainingOutcomes, setShowTrainingOutcomes] = useState(false);
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
@@ -3362,6 +1612,7 @@ export default function SecretOptions() {
   const [decisionReviewMode, setDecisionReviewMode] = useState<DecisionReviewMode>("override");
   const [decisionReviewForm, setDecisionReviewForm] = useState(initialDecisionReviewFormState);
   const [decisionReviewError, setDecisionReviewError] = useState<string | null>(null);
+  const decisionReviewErrorRef = useRef<HTMLDivElement>(null);
   const [decisionReviewSubmitting, setDecisionReviewSubmitting] = useState(false);
   const [confirmingDecisionReview, setConfirmingDecisionReview] = useState(false);
   const [showRiskEvidence, setShowRiskEvidence] = useState(false);
@@ -3397,6 +1648,11 @@ export default function SecretOptions() {
           : "Refresh list";
   const secretOptionsReadOnly = secretAuthScope === "read";
   const secretMutationDisabled = secretOptionsReadOnly || secretAuthRequired;
+  const scannerWriteAccessMessage = secretOptionsReadOnly
+    ? "Scanner controls require write scope. This read-only session can inspect saved runs and hit evidence."
+    : secretAuthRequired
+      ? "Enter a write-scoped credential to run or stop the scanner."
+      : null;
 
   const resetSecretWorkspace = useCallback(() => {
     setPositions([]);
@@ -3410,6 +1666,7 @@ export default function SecretOptions() {
     setPendingClosedRestore(null);
     setLastClosedPosition(null);
     setClosedRestoreError(null);
+    setClosedRestoreErrorTargetId(null);
     setTrainingOutcomes([]);
     setTrainingSummary(null);
     setOpportunityBacktest(null);
@@ -3436,32 +1693,25 @@ export default function SecretOptions() {
     setShowCloseModal(false);
     setShowClosedLog(false);
     setShowClosedEditModal(false);
+    setPendingClosedDeletion(null);
     setShowTrainingOutcomes(false);
     setShowDecisionReviewModal(false);
     setExpandedScannerHitId(null);
     setEditingPositionId(null);
     setClosingPositionId(null);
     setEditingClosedPositionId(null);
+    setClosePositionError(null);
+    setClosedDeleteError(null);
     setMobileActionsOpen(false);
     setMobileMonitoringOpen(false);
     setError(null);
   }, []);
 
-  const anyModalOpen =
-    showAddModal ||
-    showCloseModal ||
-    showDecisionReviewModal ||
-    showClosedLog ||
-    showClosedEditModal ||
-    pendingClosedRestore !== null ||
-    showTrainingOutcomes ||
-    expandedScannerHitId !== null;
-  const renderModal = (node: JSX.Element) => {
-    if (typeof document === "undefined") {
-      return null;
-    }
-    return createPortal(node, document.body);
-  };
+  const renderModal = (label: string, onClose: () => void, node: JSX.Element) => (
+    <SecretOptionsDialog label={label} onClose={onClose}>
+      {node}
+    </SecretOptionsDialog>
+  );
 
   useEffect(() => {
     const handleRequired = (event: Event) => {
@@ -3498,13 +1748,23 @@ export default function SecretOptions() {
   }, []);
 
   useEffect(() => {
-    if (!anyModalOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [anyModalOpen]);
+    const target = formError
+      ? tradeFormErrorRef.current
+      : closePositionError
+        ? closePositionErrorRef.current
+      : closedFormError
+        ? closedFormErrorRef.current
+        : closedDeleteError
+          ? closedDeleteErrorRef.current
+        : closedRestoreError
+          ? closedRestoreErrorRef.current
+        : decisionReviewError
+          ? decisionReviewErrorRef.current
+          : null;
+    if (!target) return;
+    const frame = window.requestAnimationFrame(() => target.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [closedDeleteError, closedFormError, closedRestoreError, closePositionError, decisionReviewError, formError]);
 
   const mobilePositionParam = searchParams.get("position")?.trim().toUpperCase() ?? null;
 
@@ -4435,6 +2695,10 @@ export default function SecretOptions() {
   };
 
   const handleRunScanner = async () => {
+    if (secretMutationDisabled) {
+      setScannerError("Write scope is required to run the scanner.");
+      return;
+    }
     if (scannerRunning) return;
     const threshold = Number(scannerThreshold);
     if (!Number.isFinite(threshold) || threshold <= 0 || threshold >= 100) {
@@ -4466,6 +2730,10 @@ export default function SecretOptions() {
   };
 
   const handleStopScanner = async () => {
+    if (secretMutationDisabled) {
+      setScannerError("Write scope is required to stop the scanner.");
+      return;
+    }
     if (!activeScannerRun || scannerStopping) return;
     setScannerStopping(true);
     setScannerError(null);
@@ -4495,8 +2763,13 @@ export default function SecretOptions() {
   };
 
   const handleClosePosition = async () => {
-    if (!closingPositionId || !exitPrice) {
-      alert("Please enter an exit price");
+    const exitPriceValue = Number(exitPrice);
+    if (!closingPositionId) {
+      setClosePositionError("No open position is selected.");
+      return;
+    }
+    if (!Number.isFinite(exitPriceValue) || exitPriceValue <= 0) {
+      setClosePositionError("Enter an exit price greater than zero.");
       return;
     }
     if (closingSubmitting) {
@@ -4504,13 +2777,14 @@ export default function SecretOptions() {
     }
 
     setClosingSubmitting(true);
+    setClosePositionError(null);
     try {
       const closeDate = new Date().toISOString().split("T")[0];
       const result = await apiFetch<ClosePositionResponse>(`/secret/options/positions/${closingPositionId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          exit_price: Number(exitPrice),
+          exit_price: exitPriceValue,
           close_date: closeDate,
           notes: closeNotes || null,
         }),
@@ -4521,14 +2795,18 @@ export default function SecretOptions() {
         close_date: closeDate,
       });
       setClosedRestoreError(null);
+      setClosedRestoreErrorTargetId(null);
       
       setShowCloseModal(false);
       setExitPrice("");
       setCloseNotes("");
       setClosingPositionId(null);
+      setClosePositionError(null);
       await Promise.all([loadPositions(), loadPositionRowContexts(), loadClosedPositions()]);
     } catch (err: unknown) {
-      alert(`Failed to close position: ${err instanceof Error ? err.message : String(err)}`);
+      setClosePositionError(
+        `Failed to close position: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setClosingSubmitting(false);
     }
@@ -4538,6 +2816,7 @@ export default function SecretOptions() {
     if (closedRestoreSubmittingId !== null) return;
     setClosedRestoreSubmittingId(target.id);
     setClosedRestoreError(null);
+    setClosedRestoreErrorTargetId(null);
     try {
       const result = await apiFetch<RestoreClosedPositionResponse>(
         `/secret/options/closed-positions/${target.id}/restore`,
@@ -4545,8 +2824,9 @@ export default function SecretOptions() {
       );
       setPendingClosedRestore(null);
       setLastClosedPosition((current) => (current?.id === target.id ? null : current));
+      setClosedRestoreErrorTargetId(null);
       await Promise.all([
-        loadPositions(),
+        loadPositions({ quiet: true }),
         loadPositionRowContexts(),
         loadClosedPositions(),
         loadLearningSummary(),
@@ -4557,13 +2837,23 @@ export default function SecretOptions() {
       setClosedRestoreError(
         `Failed to restore ${target.symbol}: ${err instanceof Error ? err.message : String(err)}`,
       );
+      setClosedRestoreErrorTargetId(target.id);
     } finally {
       setClosedRestoreSubmittingId(null);
     }
   };
 
+  const closeClosePositionModal = () => {
+    setShowCloseModal(false);
+    setExitPrice("");
+    setCloseNotes("");
+    setClosingPositionId(null);
+    setClosePositionError(null);
+  };
+
   const openCloseModal = (positionId: number) => {
     setClosingPositionId(positionId);
+    setClosePositionError(null);
     setShowCloseModal(true);
   };
 
@@ -4636,24 +2926,35 @@ export default function SecretOptions() {
     }
   };
 
-  const handleDeleteClosedPosition = async (position: ClosedPositionRow) => {
-    const confirmed = window.confirm(
-      `Delete closed trade #${position.id} for ${position.symbol} ${formatDate(position.close_date)}?`
-    );
-    if (!confirmed) return;
-
+  const handleDeleteClosedPosition = async () => {
+    if (!pendingClosedDeletion || closedDeleteSubmitting) return;
+    setClosedDeleteSubmitting(true);
+    setClosedDeleteError(null);
     try {
-      await apiFetch(`/secret/options/closed-positions/${position.id}`, {
+      await apiFetch(`/secret/options/closed-positions/${pendingClosedDeletion.id}`, {
         method: "DELETE",
       });
+      setPendingClosedDeletion(null);
       await loadClosedPositions();
     } catch (err: unknown) {
-      alert(`Failed to delete closed position: ${err instanceof Error ? err.message : String(err)}`);
+      setClosedDeleteError(
+        `Failed to delete closed position: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setClosedDeleteSubmitting(false);
     }
   };
 
   useEffect(() => {
     let cancelled = false;
+    // A locked production page should not issue a deliberately unauthorized
+    // request. Validate only a credential the operator supplied; local Vite
+    // development can still discover the backend's development-bypass mode.
+    if (!getSecretOptionsToken() && !import.meta.env.DEV) {
+      return () => {
+        cancelled = true;
+      };
+    }
     void (async () => {
       if (!(await validateSecretOptionsAccess()) || cancelled) return;
       await loadPositions();
@@ -5593,7 +3894,7 @@ export default function SecretOptions() {
   ): { marker: string; rowTint: string; quality: string } => {
     if (!sourceEventId) {
       return {
-        marker: "bg-gray-600",
+        marker: "bg-stealth-600",
         rowTint: "",
         quality: "unlinked",
       };
@@ -5616,7 +3917,7 @@ export default function SecretOptions() {
   };
 
   const filterChipClass = (filter: PositionFilter, classes: string) =>
-    `inline-flex h-6 items-center rounded-md border px-2 text-[10px] font-medium transition ${classes} ${
+    `inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium transition ${classes} ${
       positionFilter === filter ? "ring-1 ring-white/45 shadow-[0_0_14px_rgba(125,211,252,0.16)]" : "hover:border-white/35"
     }`;
 
@@ -5680,7 +3981,7 @@ export default function SecretOptions() {
         <div className="-mt-1 rounded-b-xl border border-t-0 border-sky-500/35 bg-stealth-950/55 p-3 shadow-[0_12px_28px_rgba(0,0,0,0.2)]" id={`position-details-${position.id}`}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-300">Decision review</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-sky-300">Decision review</div>
               <div className="mt-1 text-base font-semibold leading-tight text-stealth-100">
                 {assessment ? `${decisionLabel(assessment.proposed_verdict)} to ${assessment.proposed_target_contracts}` : "Building assessment…"}
               </div>
@@ -5690,7 +3991,7 @@ export default function SecretOptions() {
                 </div>
               ) : null}
               {marketField ? (
-                <div className="mt-2 flex flex-wrap gap-1 text-[9px]">
+                <div className="mt-2 flex flex-wrap gap-1 text-xs">
                   <span className={`rounded border px-1.5 py-0.5 font-semibold ${scannerPositionMatchBadgeClass[marketField.tone]}`}>
                     {marketField.badgeLabel}
                   </span>
@@ -5715,19 +4016,19 @@ export default function SecretOptions() {
                 </div>
               ) : null}
               {marketField ? (
-                <div className="mt-1 text-[9px] leading-relaxed text-stealth-500">
+                <div className="mt-1 text-xs leading-relaxed text-stealth-500">
                   {marketField.authorityLabel} · {marketField.advisoryEffectsLabel}
                 </div>
               ) : null}
               {marketField?.authorityCaveat || marketField?.alignmentCaveat || marketField?.maturityLabel || marketField?.diagnosticsCaveat ? (
-                <div className="mt-1 text-[9px] leading-relaxed text-amber-200/80">
+                <div className="mt-1 text-xs leading-relaxed text-amber-200/80">
                   {[marketField.authorityCaveat, marketField.alignmentCaveat, marketField.maturityLabel ? marketField.maturityReason : null, marketField.diagnosticsCaveat]
                     .filter((value): value is string => Boolean(value))
                     .join(" ")}
                 </div>
               ) : null}
               {marketField?.diagnosticsLabel ? (
-                <details className="mt-1 text-[9px] text-stealth-500">
+                <details className="mt-1 text-xs text-stealth-500">
                   <summary className="cursor-pointer font-semibold text-stealth-400">Field diagnostics</summary>
                   <p className="mt-1 leading-relaxed">{marketField.diagnosticsLabel}</p>
                 </details>
@@ -5742,13 +4043,13 @@ export default function SecretOptions() {
             <div className="mt-2 grid grid-cols-3 overflow-hidden rounded-lg border border-stealth-800 bg-stealth-950/40">
               {selectedMarketFieldHistory.map(({ assessment: historyAssessment, field }, index) => (
                 <div key={historyAssessment.id} className="min-w-0 border-r border-stealth-800 px-2 py-2 last:border-r-0">
-                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">
+                  <div className="text-xs uppercase tracking-wide text-stealth-500">
                     {index === selectedMarketFieldHistory.length - 1 ? "Now" : index === 0 && selectedMarketFieldHistory.length === 3 ? "First" : "Prior"}
                   </div>
-                  <div className={`mt-0.5 truncate text-[10px] font-semibold ${scannerPositionMatchTextClass[field.tone]}`}>
+                  <div className={`mt-0.5 truncate text-xs font-semibold ${scannerPositionMatchTextClass[field.tone]}`}>
                     {field.badgeLabel}
                   </div>
-                  <div className="truncate text-[9px] text-stealth-500">{formatRelativeTime(historyAssessment.as_of)}</div>
+                  <div className="truncate text-xs text-stealth-500">{formatRelativeTime(historyAssessment.as_of)}</div>
                 </div>
               ))}
             </div>
@@ -5793,7 +4094,7 @@ export default function SecretOptions() {
           </details>
 
           <div className="mt-3 border-t border-stealth-800 pt-3">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Position record</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-stealth-500">Position record</div>
             <div className="grid grid-cols-2 gap-2">
               <button type="button" onClick={() => openEditModal(position)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-sm font-semibold text-sky-100"><Pencil className="h-4 w-4" aria-hidden="true" />Edit position</button>
               <button type="button" onClick={() => openCloseModal(position.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 text-sm font-semibold text-rose-100"><Trash2 className="h-4 w-4" aria-hidden="true" />Close position</button>
@@ -5817,14 +4118,14 @@ export default function SecretOptions() {
             <Activity className="h-4 w-4 text-emerald-300" aria-hidden="true" />
             <h2 className="text-base font-semibold text-stealth-100">Optionality Clusters</h2>
           </div>
-          <div className="mt-0.5 text-[11px] text-stealth-400">
+          <div className="mt-0.5 text-xs text-stealth-400">
             45d scanner hits grouped by actionable sector/theme.
           </div>
         </div>
         <button
           type="button"
           onClick={loadOptionalityClusters}
-          className="inline-flex items-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2.5 py-1.5 text-[11px] font-semibold text-stealth-200 hover:border-sky-400/50 hover:text-sky-100"
+          className="inline-flex items-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2.5 py-1.5 text-xs font-semibold text-stealth-200 hover:border-sky-400/50 hover:text-sky-100"
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
           Refresh
@@ -5847,16 +4148,16 @@ export default function SecretOptions() {
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-300/80" />
                   <div className="truncate text-sm font-semibold text-stealth-100">{cluster.group}</div>
-                  <div className={`shrink-0 text-[11px] font-semibold ${clusterMomentumClass(cluster.momentum)}`}>
+                  <div className={`shrink-0 text-xs font-semibold ${clusterMomentumClass(cluster.momentum)}`}>
                     {cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}
                   </div>
                 </div>
-                <div className="mt-1 truncate text-[11px] text-stealth-400">
+                <div className="mt-1 truncate text-xs text-stealth-400">
                   {cluster.symbols.slice(0, 6).join(" ")}
                   {cluster.symbols.length > 6 ? ` +${cluster.symbols.length - 6}` : ""}
                 </div>
               </div>
-              <div className="text-right text-[11px] tabular-nums">
+              <div className="text-right text-xs tabular-nums">
                 <div className="font-semibold text-stealth-100">{cluster.hits} hits</div>
                 <div className="text-stealth-400">IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}</div>
               </div>
@@ -5869,9 +4170,9 @@ export default function SecretOptions() {
 
   if (secretAuthRequired) {
     return (
-      <div className="page-shell-wide space-y-3 text-gray-100">
+      <div className="page-shell-wide space-y-3 text-stealth-100">
         <div className="px-1">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stealth-500">Private</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-500">Private</span>
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-white">Options Performance</h1>
         </div>
         <form
@@ -5886,7 +4187,7 @@ export default function SecretOptions() {
             <p className="mt-1 text-xs leading-relaxed text-amber-200/75">
               {secretAuthMessage || "Enter a Secret Options credential. It stays only in page memory and clears on reload or lock."}
             </p>
-            <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-200/70" htmlFor="secret-options-token-gate">
+            <label className="mt-2 block text-xs font-semibold uppercase tracking-[0.16em] text-amber-200/70" htmlFor="secret-options-token-gate">
               Bearer credential
             </label>
             <input
@@ -5900,7 +4201,7 @@ export default function SecretOptions() {
             />
           </div>
           <div className="mt-3 flex gap-2 sm:mt-0">
-            <button type="submit" className="min-h-11 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-slate-950 hover:bg-amber-400">
+            <button type="submit" className="min-h-11 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-stealth-950 hover:bg-amber-400">
               Unlock session
             </button>
             {hasSecretToken ? (
@@ -5915,24 +4216,25 @@ export default function SecretOptions() {
   }
 
   return (
-    <div className="page-shell-wide space-y-2.5 text-gray-100 md:space-y-3">
+    <div className="page-shell-wide space-y-2.5 text-stealth-100 md:space-y-3">
+      <h1 className="sr-only">Options Performance</h1>
       <div className="hidden flex-wrap items-center justify-between gap-2 px-1 xl:flex">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stealth-500">Private</span>
-          <h1 className="text-lg font-semibold leading-none tracking-tight text-white md:text-xl">Options Performance</h1>
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-stealth-500">Private</span>
+          <p className="text-lg font-semibold leading-none tracking-tight text-white md:text-xl">Options Performance</p>
         </div>
         <div className="flex items-center gap-2">
           {hasSecretToken ? (
             <button
               type="button"
               onClick={lockSecretOptions}
-              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-200"
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-200"
               title="Clear the in-memory Secret Options credential"
             >
               <KeyRound className="h-3 w-3" aria-hidden="true" /> {secretAuthScope === "write" ? "Write access" : secretAuthScope === "read" ? "Read access" : "Session unlocked"}
             </button>
           ) : null}
-          <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stealth-400">
+          <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-xs uppercase tracking-[0.18em] text-stealth-400">
             /secret/options
           </span>
         </div>
@@ -5968,20 +4270,29 @@ export default function SecretOptions() {
           aria-live="polite"
         >
           <div className="min-w-0">
-            <p className="text-sm font-semibold">{lastClosedPosition.symbol} moved to P/L History.</p>
+            <p className="text-sm font-semibold">
+              {lastClosedPosition.symbol} moved to P/L History.
+            </p>
             <p className="mt-0.5 text-xs leading-5 text-amber-100/75">
               Undo restores the original position and removes this close from trading-model learning.
             </p>
-            {closedRestoreError ? (
-              <p className="mt-2 text-sm text-rose-200" role="alert">{closedRestoreError}</p>
+            {closedRestoreError && closedRestoreErrorTargetId === lastClosedPosition.id ? (
+              <div
+                ref={closedRestoreErrorRef}
+                role="alert"
+                tabIndex={-1}
+                className="mt-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+              >
+                {closedRestoreError}
+              </div>
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              disabled={secretMutationDisabled || closedRestoreSubmittingId !== null}
+              disabled={closedRestoreSubmittingId !== null}
               onClick={() => void handleRestoreClosedPosition(lastClosedPosition)}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-300/55 bg-amber-400/15 px-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/25 disabled:cursor-wait disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-300/55 bg-amber-400/15 px-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 disabled:cursor-wait disabled:opacity-50"
             >
               <Undo2 className="h-4 w-4" aria-hidden="true" />
               {closedRestoreSubmittingId === lastClosedPosition.id ? "Restoring…" : "Undo close"}
@@ -5992,6 +4303,7 @@ export default function SecretOptions() {
               onClick={() => {
                 setLastClosedPosition(null);
                 setClosedRestoreError(null);
+                setClosedRestoreErrorTargetId(null);
               }}
               className="min-h-11 rounded-lg px-3 text-sm text-amber-100/75 hover:bg-white/5 hover:text-amber-50 disabled:opacity-50"
             >
@@ -6005,7 +4317,7 @@ export default function SecretOptions() {
       <div className="space-y-3 xl:hidden">
         <div className="flex items-center justify-between gap-3 px-1">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-white">Options Performance</h1>
+            <p className="text-xl font-semibold tracking-tight text-white">Options Performance</p>
             <p className="mt-0.5 text-xs text-stealth-400">Decision windows, scanner evidence, and portfolio learning</p>
           </div>
           <div className="relative flex shrink-0 items-center gap-2">
@@ -6087,7 +4399,7 @@ export default function SecretOptions() {
                     <span className="mx-1.5 text-stealth-700">·</span>Linked {openAttribution.linked}/{openAttribution.total}
                   </div>
                 </div>
-                <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-1 text-[10px] uppercase tracking-wide text-stealth-400">{totals.count} open</span>
+                <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-1 text-xs uppercase tracking-wide text-stealth-400">{totals.count} open</span>
               </div>
               <div className="mt-3 grid grid-cols-4 gap-1.5">
                 {[
@@ -6098,17 +4410,22 @@ export default function SecretOptions() {
                 ].map((metric) => (
                   <button key={metric.label} type="button" onClick={() => toggleFilter(metric.filter)} aria-pressed={positionFilter === metric.filter} className={`min-h-14 rounded-lg border px-1.5 py-2 text-center ${positionFilter === metric.filter ? "border-sky-400/55 bg-sky-500/10" : "border-stealth-800 bg-stealth-950/30"}`}>
                     <span className={`block text-lg font-semibold tabular-nums ${metric.tone}`}>{metric.value}</span>
-                    <span className="block text-[10px] text-stealth-500">{metric.label}</span>
+                    <span className="block text-xs text-stealth-500">{metric.label}</span>
                   </button>
                 ))}
               </div>
             </section>
 
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" aria-label="Position filters">
+            <div
+              role="region"
+              aria-label="Position filters"
+              tabIndex={0}
+              className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            >
               {[
                 ["all", "All"], ["attention", "Review soon"], ["losing", "Losing"], ["lowConfidence", "Low confidence"],
               ].map(([filter, label]) => (
-                <button key={filter} type="button" onClick={() => setPositionFilter(filter as PositionFilter)} className={`min-h-10 shrink-0 rounded-full border px-3 text-xs font-semibold ${positionFilter === filter ? "border-sky-400/55 bg-sky-500/15 text-sky-100" : "border-stealth-700 bg-stealth-900/60 text-stealth-400"}`}>{label}</button>
+                <button key={filter} type="button" onClick={() => setPositionFilter(filter as PositionFilter)} aria-pressed={positionFilter === filter} className={`min-h-11 shrink-0 rounded-full border px-3 text-xs font-semibold ${positionFilter === filter ? "border-sky-400/55 bg-sky-500/15 text-sky-100" : "border-stealth-700 bg-stealth-900/60 text-stealth-400"}`}>{label}</button>
               ))}
             </div>
 
@@ -6148,13 +4465,20 @@ export default function SecretOptions() {
             <section className="surface-card-strong p-3">
               <div className="flex items-center justify-between gap-3">
                 <div><h2 className="text-base font-semibold text-stealth-100">Scanner workspace</h2><p className="mt-0.5 text-xs text-stealth-400">Run a sweep, then inspect its evidence.</p></div>
-                <button type="button" onClick={handleRunScanner} disabled={scannerRunning || Boolean(activeScannerRun)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white disabled:bg-stealth-700 disabled:text-stealth-400"><Play className="h-4 w-4" aria-hidden="true" />{activeScannerRun ? "Running" : "Run"}</button>
+                <button type="button" onClick={handleRunScanner} disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white disabled:bg-stealth-700 disabled:text-stealth-400"><Play className="h-4 w-4" aria-hidden="true" />{activeScannerRun ? "Running" : "Run"}</button>
               </div>
-              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px] gap-2">
-                <select value={scannerUniverse} onChange={(event) => setScannerUniverse(event.target.value)} disabled={scannerRunning || Boolean(activeScannerRun)} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100">{scannerUniverses.map((universe) => <option key={universe.key} value={universe.key}>{universe.label}</option>)}</select>
-                <input type="number" min="1" max="99" step="1" value={scannerThreshold} onChange={(event) => setScannerThreshold(event.target.value)} disabled={scannerRunning || Boolean(activeScannerRun)} aria-label="IV percentile threshold" className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100" />
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_104px] gap-2">
+                <label className="grid gap-1 text-xs text-stealth-300">
+                  Universe
+                  <select value={scannerUniverse} onChange={(event) => setScannerUniverse(event.target.value)} disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100">{scannerUniverses.map((universe) => <option key={universe.key} value={universe.key}>{universe.label}</option>)}</select>
+                </label>
+                <label className="grid gap-1 text-xs text-stealth-300">
+                  IV threshold
+                  <input type="number" min="1" max="99" step="1" value={scannerThreshold} onChange={(event) => setScannerThreshold(event.target.value)} disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100" />
+                </label>
               </div>
-              {scannerError ? <div className="mt-2 rounded-lg border border-rose-500/35 bg-rose-500/10 p-2 text-xs text-rose-100">{scannerError}</div> : null}
+              {scannerWriteAccessMessage ? <p id="mobile-scanner-write-scope" className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-xs leading-5 text-amber-100">{scannerWriteAccessMessage}</p> : null}
+              {scannerError ? <div role="alert" className="mt-2 rounded-lg border border-rose-500/35 bg-rose-500/10 p-2 text-xs text-rose-100">{scannerError}</div> : null}
               {scannerNotice ? <div className="mt-2 rounded-lg border border-sky-500/30 bg-sky-500/10 p-2 text-xs text-sky-100">{scannerNotice}</div> : null}
             </section>
 
@@ -6162,17 +4486,43 @@ export default function SecretOptions() {
               <section className="sticky top-[7.75rem] z-20 rounded-xl border border-sky-500/35 bg-stealth-950/95 p-3 shadow-xl backdrop-blur">
                 <div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold text-sky-100">{activeScannerRun.universe_label}</span><span className="text-stealth-300 tabular-nums">{activeScannerRun.scanned_symbols}/{activeScannerRun.total_symbols}</span></div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stealth-800"><div className="h-full rounded-full bg-sky-300 transition-[width]" style={{ width: `${Math.max(3, activeScannerRun.total_symbols > 0 ? activeScannerRun.scanned_symbols / activeScannerRun.total_symbols * 100 : 0)}%` }} /></div>
-                <button type="button" onClick={handleStopScanner} disabled={scannerStopping} className="mt-2 text-xs font-semibold text-rose-200">{scannerStopping ? "Stopping…" : "Stop scan"}</button>
+                <button type="button" onClick={handleStopScanner} disabled={secretMutationDisabled || scannerStopping} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="mt-2 inline-flex min-h-11 items-center rounded-lg px-2 text-xs font-semibold text-rose-200 disabled:text-stealth-500">{scannerStopping ? "Stopping…" : "Stop scan"}</button>
               </section>
             ) : null}
 
             <div className="grid grid-cols-4 rounded-xl border border-stealth-700 bg-stealth-950/70 p-1" role="tablist" aria-label="Scanner views">
-              {(["history", "hits", "repeated", "earnings"] as MobileScannerView[]).map((view) => <button key={view} type="button" role="tab" aria-selected={mobileScannerView === view} onClick={() => setMobileScannerView(view)} className={`min-h-10 rounded-lg px-1 text-[11px] font-semibold capitalize ${mobileScannerView === view ? "bg-sky-500/15 text-sky-100" : "text-stealth-500"}`}>{view}</button>)}
+              {(["history", "hits", "repeated", "earnings"] as MobileScannerView[]).map((view, index, views) => (
+                <button
+                  key={view}
+                  id={`mobile-scanner-tab-${view}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={mobileScannerView === view}
+                  aria-controls="mobile-scanner-view-panel"
+                  tabIndex={mobileScannerView === view ? 0 : -1}
+                  onClick={() => setMobileScannerView(view)}
+                  onKeyDown={(event) => {
+                    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                    event.preventDefault();
+                    const nextIndex = event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? views.length - 1
+                        : (index + (event.key === "ArrowRight" ? 1 : -1) + views.length) % views.length;
+                    const nextView = views[nextIndex];
+                    setMobileScannerView(nextView);
+                    window.requestAnimationFrame(() => document.getElementById(`mobile-scanner-tab-${nextView}`)?.focus());
+                  }}
+                  className={`min-h-11 rounded-lg px-1 text-xs font-semibold capitalize ${mobileScannerView === view ? "bg-sky-500/15 text-sky-100" : "text-stealth-500"}`}
+                >
+                  {view}
+                </button>
+              ))}
             </div>
 
-            <section className="surface-card-strong p-3">
+            <section id="mobile-scanner-view-panel" role="tabpanel" aria-labelledby={`mobile-scanner-tab-${mobileScannerView}`} className="surface-card-strong p-3">
               {mobileScannerView === "history" ? (
-                <div className="space-y-2">{recentScannerRuns.length === 0 ? <p className="text-sm text-stealth-400">No scanner runs yet.</p> : recentScannerRuns.slice(0, 8).map((run) => <button key={run.id} type="button" onClick={() => void handleSelectScannerRun(run.id)} className={`w-full rounded-lg border p-3 text-left ${selectedScannerRunId === run.id ? "border-sky-500/40 bg-sky-500/10" : "border-stealth-800 bg-stealth-950/30"}`}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-stealth-100">{run.universe_label}</span><span className={`rounded-full border px-2 py-0.5 text-[10px] ${scannerStatusClass(run.status)}`}>{run.status}</span></div><div className="mt-1 flex justify-between text-xs text-stealth-500"><span>{formatRelativeTime(run.started_at)}</span><span>{run.hits} hits · {run.scanned_symbols} scanned</span></div></button>)}</div>
+                <div className="space-y-2">{recentScannerRuns.length === 0 ? <p className="text-sm text-stealth-400">No scanner runs yet.</p> : recentScannerRuns.slice(0, 8).map((run) => <button key={run.id} type="button" onClick={() => void handleSelectScannerRun(run.id)} className={`w-full rounded-lg border p-3 text-left ${selectedScannerRunId === run.id ? "border-sky-500/40 bg-sky-500/10" : "border-stealth-800 bg-stealth-950/30"}`}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-stealth-100">{run.universe_label}</span><span className={`rounded-full border px-2 py-0.5 text-xs ${scannerStatusClass(run.status)}`}>{run.status}</span></div><div className="mt-1 flex justify-between text-xs text-stealth-500"><span>{formatRelativeTime(run.started_at)}</span><span>{run.hits} hits · {run.scanned_symbols} scanned</span></div></button>)}</div>
               ) : null}
               {mobileScannerView === "hits" ? (
                 <div className="space-y-2">
@@ -6200,7 +4550,7 @@ export default function SecretOptions() {
                               {field ? (
                                 <span
                                   aria-label={field.accessibleLabel}
-                                  className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${scannerPositionMatchBadgeClass[field.tone]}`}
+                                  className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${scannerPositionMatchBadgeClass[field.tone]}`}
                                 >
                                   {field.badgeLabel}
                                 </span>
@@ -6242,9 +4592,9 @@ export default function SecretOptions() {
               {visibleOptionalityClusters.length > 4 ? <button type="button" onClick={() => setMobileClustersExpanded((current) => !current)} className="mt-2 min-h-11 w-full rounded-lg border border-stealth-700 text-sm font-semibold text-stealth-200">{mobileClustersExpanded ? "Show less" : `View all ${visibleOptionalityClusters.length}`}</button> : null}
             </section>
             <section className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{scannerData?.summary.symbol_count ?? 0}</span><span className="mt-1 block text-[10px] text-stealth-500">Symbols / 45d</span></div>
-              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{learningSummary?.sample.actual_closed_trades ?? 0}</span><span className="mt-1 block text-[10px] text-stealth-500">Closed lessons</span></div>
-              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{learningSummary?.promotion_readiness.remaining_cycles ?? "—"}</span><span className="mt-1 block text-[10px] text-stealth-500">Cycles needed</span></div>
+              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{scannerData?.summary.symbol_count ?? 0}</span><span className="mt-1 block text-xs text-stealth-500">Symbols / 45d</span></div>
+              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{learningSummary?.sample.actual_closed_trades ?? 0}</span><span className="mt-1 block text-xs text-stealth-500">Closed lessons</span></div>
+              <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3"><span className="text-lg font-semibold text-stealth-100">{learningSummary?.promotion_readiness.remaining_cycles ?? "—"}</span><span className="mt-1 block text-xs text-stealth-500">Cycles needed</span></div>
             </section>
           </div>
         ) : null}
@@ -6263,7 +4613,7 @@ export default function SecretOptions() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-semibold text-stealth-100">Position Summary</h2>
-              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-stealth-400">
+              <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2 py-0.5 text-xs uppercase tracking-[0.14em] text-stealth-400">
                 Open {totals.count}
               </span>
             </div>
@@ -6337,7 +4687,7 @@ export default function SecretOptions() {
                     </button>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-none text-stealth-400 tabular-nums">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-none text-stealth-400 tabular-nums">
                   <span title="Total premium paid for open positions.">
                     Cost <span className="text-stealth-200">{formatCurrency(totals.totalCost, 0)}</span>
                   </span>
@@ -6423,14 +4773,14 @@ export default function SecretOptions() {
         </div>
 
         {activeFilterLabel ? (
-          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2.5 py-1.5 text-[11px] text-sky-100">
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100">
             <span>
               Showing {filteredPositions.length}/{positions.length} positions: {activeFilterLabel}
             </span>
             <button
               type="button"
               onClick={() => setPositionFilter("all")}
-              className="rounded border border-sky-300/35 px-2 py-0.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-400/10"
+              className="rounded border border-sky-300/35 px-2 py-0.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/10"
             >
               Clear
             </button>
@@ -6438,11 +4788,11 @@ export default function SecretOptions() {
         ) : null}
 
         {loading && positions.length === 0 ? (
-          <div className="text-sm text-gray-400">Loading positions...</div>
+          <div className="text-sm text-stealth-400">Loading positions...</div>
         ) : (
           <div className="max-h-[68vh] overflow-auto rounded-xl border border-stealth-700 bg-stealth-950/30">
             <div
-              className={`sticky top-0 z-10 grid min-w-0 items-center gap-1.5 border-b border-gray-700 bg-stealth-900/95 px-1.5 py-2 text-[10px] uppercase text-gray-500 backdrop-blur sm:gap-2 sm:px-2 ${positionMobileGrid} ${positionTableWidth} ${positionGridColumns}`}
+              className={`sticky top-0 z-10 grid min-w-0 items-center gap-1.5 border-b border-stealth-700 bg-stealth-900/95 px-1.5 py-2 text-xs uppercase text-stealth-500 backdrop-blur sm:gap-2 sm:px-2 ${positionMobileGrid} ${positionTableWidth} ${positionGridColumns}`}
             >
               <button
                 type="button"
@@ -6470,9 +4820,9 @@ export default function SecretOptions() {
               <span className="hidden md:block">Stats</span>
             </div>
 
-            <div className={`min-w-0 divide-y divide-gray-800 ${positionTableWidth}`}>
+            <div className={`min-w-0 divide-y divide-stealth-800 ${positionTableWidth}`}>
               {filteredPositions.length === 0 ? (
-                <div className="px-3 py-8 text-center text-xs text-gray-400">
+                <div className="px-3 py-8 text-center text-xs text-stealth-400">
                   No positions match the active filter.
                 </div>
               ) : null}
@@ -6495,12 +4845,22 @@ export default function SecretOptions() {
                 return (
                   <Fragment key={position.id}>
                     <div
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isExpanded}
+                      aria-label={`${isExpanded ? "Collapse" : "Expand"} ${position.symbol} position details`}
                       className={`relative grid cursor-pointer items-center gap-1.5 px-1.5 py-1.5 transition-colors sm:gap-2 sm:px-2 ${positionMobileGrid} ${positionGridColumns} ${
                         rowActive
                           ? "bg-sky-500/12 shadow-[inset_3px_0_0_rgba(125,211,252,0.9)] ring-1 ring-inset ring-sky-400/25"
-                          : `${heat.rowTint} hover:bg-gray-900/40`
+                          : `${heat.rowTint} hover:bg-stealth-900/40`
                       }`}
                       onClick={() => {
+                        setSelectedId(position.id);
+                        setExpandedPositionId((current) => (current === position.id ? null : position.id));
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
                         setSelectedId(position.id);
                         setExpandedPositionId((current) => (current === position.id ? null : position.id));
                       }}
@@ -6515,10 +4875,10 @@ export default function SecretOptions() {
                           />
                           <div className="min-w-0">
                             <div className="flex min-w-0 items-center gap-1.5">
-                              <div className="truncate text-sm font-semibold text-gray-100">{position.symbol}</div>
+                              <div className="truncate text-sm font-semibold text-stealth-100">{position.symbol}</div>
                               <PositionIndexBadges context={rowContext} />
                             </div>
-                            <div className="truncate text-[10px] uppercase tracking-wide text-gray-500">
+                            <div className="truncate text-xs uppercase tracking-wide text-stealth-500">
                               {position.option_type} ${formatNumber(position.strike, 2)} / {position.contracts} ctr
                             </div>
                           </div>
@@ -6536,34 +4896,34 @@ export default function SecretOptions() {
                         isInteractive={rowActive || rowHovered}
                       />
 
-                      <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)] gap-x-2 text-[11px] tabular-nums md:grid">
+                      <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)] gap-x-2 text-xs tabular-nums md:grid">
                         <div
                           className={`font-semibold ${
                             metrics.pnl?.dollar === null || metrics.pnl?.dollar === undefined
-                              ? "text-gray-500"
+                              ? "text-stealth-500"
                               : metrics.pnl.dollar >= 0
                                 ? "text-emerald-300"
                                 : "text-rose-300"
                           }`}
                         >
-                          <div className="text-[9px] font-medium uppercase tracking-wide text-gray-500">P/L</div>
+                          <div className="text-xs font-medium uppercase tracking-wide text-stealth-500">P/L</div>
                           <div>
                             {metrics.pnl?.dollar !== null && metrics.pnl?.dollar !== undefined
                               ? formatCurrency(metrics.pnl.dollar, 0)
                               : "—"}
                           </div>
-                          <div className="text-[10px] font-normal text-gray-500">
+                          <div className="text-xs font-normal text-stealth-500">
                             {metrics.pnl?.percent !== null && metrics.pnl?.percent !== undefined ? `${formatSigned(metrics.pnl.percent, 1)}%` : "—"}
                           </div>
                         </div>
                         <div>
-                          <div className="text-[9px] uppercase tracking-wide text-gray-500">Rank</div>
-                          <div className="font-semibold text-gray-100">{opportunityRead.label}</div>
+                          <div className="text-xs uppercase tracking-wide text-stealth-500">Rank</div>
+                          <div className="font-semibold text-stealth-100">{opportunityRead.label}</div>
                         </div>
                         <div className={`${volatilityRead.text}`}>
-                          <div className="text-[9px] uppercase tracking-wide text-gray-500">Vol</div>
+                          <div className="text-xs uppercase tracking-wide text-stealth-500">Vol</div>
                           <div className="truncate">{volatilityRead.label}</div>
-                          <div className="truncate text-[10px] font-normal text-gray-500">{volatilityRead.detail}</div>
+                          <div className="truncate text-xs font-normal text-stealth-500">{volatilityRead.detail}</div>
                         </div>
                       </div>
 
@@ -6589,46 +4949,46 @@ export default function SecretOptions() {
                     </div>
 
                     {isExpanded ? (
-                      <div className="border-t border-gray-800 bg-gray-950/35 px-3 py-2">
+                      <div className="border-t border-stealth-800 bg-stealth-950/35 px-3 py-2">
                         <div
-                          className={`mb-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
+                          className={`mb-2 rounded-md border px-2.5 py-1.5 text-xs ${
                             lane?.urgency === "overdue"
                               ? "border-rose-500/35 bg-rose-500/10 text-rose-100"
                               : lane?.urgency === "due"
                                 ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
                                 : lane?.urgency === "watch"
                                   ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-100"
-                                  : "border-gray-700/70 bg-gray-900/45 text-gray-300"
+                                  : "border-stealth-700/70 bg-stealth-900/45 text-stealth-300"
                           }`}
                         >
                           {rowDiagnosis}
                         </div>
-                        <div className="grid gap-2 text-[11px] text-gray-400 md:grid-cols-4">
-                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Pricing</div>
+                        <div className="grid gap-2 text-xs text-stealth-400 md:grid-cols-4">
+                          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
+                            <div className="text-xs uppercase tracking-wide text-stealth-500">Pricing</div>
                             <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
-                              <span>Fill</span><span className="text-gray-200">{formatCurrency(position.fill_price, 2)}</span>
-                              <span>Option</span><span className="text-gray-200">{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
-                              <span>Underlying</span><span className="text-gray-200">{metrics.market.current_price !== null ? formatCurrency(metrics.market.current_price, 2) : "—"}</span>
-                              <span>Bid / Ask</span><span className="text-gray-200">
+                              <span>Fill</span><span className="text-stealth-200">{formatCurrency(position.fill_price, 2)}</span>
+                              <span>Option</span><span className="text-stealth-200">{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
+                              <span>Underlying</span><span className="text-stealth-200">{metrics.market.current_price !== null ? formatCurrency(metrics.market.current_price, 2) : "—"}</span>
+                              <span>Bid / Ask</span><span className="text-stealth-200">
                                 {metrics.quote.bid !== null && metrics.quote.bid !== undefined ? formatCurrency(metrics.quote.bid, 2) : "n/a"} / {metrics.quote.ask !== null && metrics.quote.ask !== undefined ? formatCurrency(metrics.quote.ask, 2) : "n/a"}
                               </span>
-                              <span>Spread</span><span className="text-gray-200">{metrics.quote.spread_pct !== null && metrics.quote.spread_pct !== undefined ? formatPercent(metrics.quote.spread_pct, 1) : "n/a"}</span>
-                              <span>OI / Vol</span><span className="text-gray-200">{metrics.quote.open_interest ?? "n/a"} / {metrics.quote.volume ?? "n/a"}</span>
+                              <span>Spread</span><span className="text-stealth-200">{metrics.quote.spread_pct !== null && metrics.quote.spread_pct !== undefined ? formatPercent(metrics.quote.spread_pct, 1) : "n/a"}</span>
+                              <span>OI / Vol</span><span className="text-stealth-200">{metrics.quote.open_interest ?? "n/a"} / {metrics.quote.volume ?? "n/a"}</span>
                             </div>
                           </div>
 
-                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Model Rank</div>
+                          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
+                            <div className="text-xs uppercase tracking-wide text-stealth-500">Model Rank</div>
                             <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
                               <span>Entry</span>
-                              <span className="text-gray-200">
+                              <span className="text-stealth-200">
                                 {metrics.opportunity?.entry?.score !== null && metrics.opportunity?.entry?.score !== undefined
                                   ? `${compactOpportunityGrade(metrics.opportunity.entry.score, metrics.opportunity.entry.grade)} (${metrics.opportunity.entry.score.toFixed(0)})`
                                   : "n/a"}
                               </span>
                               <span>Now</span>
-                              <span className="text-gray-200">
+                              <span className="text-stealth-200">
                                 {metrics.opportunity?.current?.score !== null && metrics.opportunity?.current?.score !== undefined
                                   ? `${opportunityRead.label} (${metrics.opportunity.current.score.toFixed(0)})`
                                   : opportunityRead.label}
@@ -6638,24 +4998,24 @@ export default function SecretOptions() {
                                 {metrics.opportunity?.score_change !== null && metrics.opportunity?.score_change !== undefined ? formatSigned(metrics.opportunity.score_change, 1) : "n/a"}
                               </span>
                             </div>
-                            <div className="mt-1 truncate text-[10px] text-gray-500">
+                            <div className="mt-1 truncate text-xs text-stealth-500">
                               {metrics.opportunity?.current?.reasons?.slice(0, 2).join(" / ") || metrics.opportunity?.basis || "score unavailable"}
                             </div>
                             {holdDateWindow ? (
-                              <div className="mt-2 border-t border-gray-800/80 pt-1.5 text-[10px]">
+                              <div className="mt-2 border-t border-stealth-800/80 pt-1.5 text-xs">
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="uppercase tracking-wide text-gray-500">Hold</span>
+                                  <span className="uppercase tracking-wide text-stealth-500">Hold</span>
                                   <span className="truncate text-right font-medium text-cyan-100">{holdDateWindow.range}</span>
                                 </div>
-                                <div className="mt-0.5 truncate text-gray-500">{holdDateWindow.detail}</div>
+                                <div className="mt-0.5 truncate text-stealth-500">{holdDateWindow.detail}</div>
                               </div>
                             ) : null}
                           </div>
 
-                          <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                            <div className="text-[9px] uppercase tracking-wide text-gray-500">Window</div>
+                          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
+                            <div className="text-xs uppercase tracking-wide text-stealth-500">Window</div>
                             <div className="mt-1 space-y-0.5">
-                              <div className="text-gray-200">{lane?.detail ?? evaluation?.detail ?? "No linked or historical template"}</div>
+                              <div className="text-stealth-200">{lane?.detail ?? evaluation?.detail ?? "No linked or historical template"}</div>
                               <div>{volatilityRead.label}</div>
                               <div>{position.source_match_method || "unlinked"} / {position.source_match_confidence !== null && position.source_match_confidence !== undefined ? formatPercent(position.source_match_confidence * 100, 0) : "n/a"}</div>
                             </div>
@@ -6671,20 +5031,20 @@ export default function SecretOptions() {
               })}
             </div>
 
-            <div className="flex items-center justify-between border-t border-gray-700 px-3 py-2 text-xs">
-              <span className="font-semibold text-gray-400">
+            <div className="flex items-center justify-between border-t border-stealth-700 px-3 py-2 text-xs">
+              <span className="font-semibold text-stealth-400">
                 Quoted P&amp;L · {totals.markedCount}/{totals.count}
               </span>
               <span className={`font-semibold ${
                 totals.markedCount === 0
-                  ? "text-gray-500"
+                  ? "text-stealth-500"
                   : totals.totalPnl >= 0
                     ? "text-emerald-300"
                     : "text-rose-300"
               }`}>
                 {totals.markedCount > 0 ? formatCurrency(totals.totalPnl, 0) : "—"}
               </span>
-              <span className="text-gray-500">{totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}</span>
+              <span className="text-stealth-500">{totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}</span>
             </div>
           </div>
         )}
@@ -6694,40 +5054,48 @@ export default function SecretOptions() {
         <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-stealth-100">Scanner Control &amp; Outcomes</h2>
-            <div className="mt-0.5 text-[11px] text-stealth-400">
+            <div className="mt-0.5 text-xs text-stealth-400">
               Runs the same options sweep used by Discord and preserves Discord hit output.
             </div>
           </div>
-          <div className="grid gap-2 sm:grid-cols-[minmax(150px,1fr)_96px_auto] lg:w-[620px]">
-            <select
-              value={scannerUniverse}
-              onChange={(event) => setScannerUniverse(event.target.value)}
-              disabled={scannerRunning || Boolean(activeScannerRun)}
-              className="rounded-md border border-stealth-700 bg-stealth-950 px-2 py-1.5 text-xs text-stealth-100 disabled:opacity-60"
-            >
-              {scannerUniverses.map((universe) => (
-                <option key={universe.key} value={universe.key}>
-                  {universe.label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="1"
-              max="99"
-              step="1"
-              value={scannerThreshold}
-              onChange={(event) => setScannerThreshold(event.target.value)}
-              disabled={scannerRunning || Boolean(activeScannerRun)}
-              className="rounded-md border border-stealth-700 bg-stealth-950 px-2 py-1.5 text-xs text-stealth-100 disabled:opacity-60"
-              aria-label="IV percentile threshold"
-            />
+          <div className="grid items-end gap-2 sm:grid-cols-[minmax(150px,1fr)_112px_auto] lg:w-[660px]">
+            <label className="grid gap-1 text-xs text-stealth-300">
+              Universe
+              <select
+                value={scannerUniverse}
+                onChange={(event) => setScannerUniverse(event.target.value)}
+                disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)}
+                aria-describedby={scannerWriteAccessMessage ? "desktop-scanner-write-scope" : undefined}
+                className="min-h-11 rounded-md border border-stealth-700 bg-stealth-950 px-2 text-xs text-stealth-100 disabled:opacity-60"
+              >
+                {scannerUniverses.map((universe) => (
+                  <option key={universe.key} value={universe.key}>
+                    {universe.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs text-stealth-300">
+              IV threshold
+              <input
+                type="number"
+                min="1"
+                max="99"
+                step="1"
+                value={scannerThreshold}
+                onChange={(event) => setScannerThreshold(event.target.value)}
+                disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)}
+                aria-describedby={scannerWriteAccessMessage ? "desktop-scanner-write-scope" : undefined}
+                className="min-h-11 rounded-md border border-stealth-700 bg-stealth-950 px-2 text-xs text-stealth-100 disabled:opacity-60"
+              />
+            </label>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={handleRunScanner}
-                disabled={scannerRunning || Boolean(activeScannerRun)}
-                className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-stealth-700 disabled:text-stealth-400"
+                disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)}
+                aria-describedby={scannerWriteAccessMessage ? "desktop-scanner-write-scope" : undefined}
+                className="inline-flex min-h-11 min-w-[104px] items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-stealth-700 disabled:text-stealth-400"
               >
                 <Play className="h-3.5 w-3.5" aria-hidden="true" />
                 {activeScannerRun ? "Running" : scannerRunning ? "Starting" : "Run Scan"}
@@ -6736,8 +5104,9 @@ export default function SecretOptions() {
                 <button
                   type="button"
                   onClick={handleStopScanner}
-                  disabled={scannerStopping}
-                  className="inline-flex min-w-[82px] items-center justify-center gap-1.5 rounded-md border border-rose-500/45 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:border-rose-400/70 hover:bg-rose-500/25 disabled:opacity-60"
+                  disabled={secretMutationDisabled || scannerStopping}
+                  aria-describedby={scannerWriteAccessMessage ? "desktop-scanner-write-scope" : undefined}
+                  className="inline-flex min-h-11 min-w-[82px] items-center justify-center gap-1.5 rounded-md border border-rose-500/45 bg-rose-500/15 px-3 text-xs font-semibold text-rose-100 hover:border-rose-400/70 hover:bg-rose-500/25 disabled:opacity-60"
                 >
                   <Square className="h-3 w-3" aria-hidden="true" />
                   {scannerStopping ? "Stopping" : "Stop"}
@@ -6747,13 +5116,18 @@ export default function SecretOptions() {
           </div>
         </div>
 
+        {scannerWriteAccessMessage ? (
+          <p id="desktop-scanner-write-scope" className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs leading-5 text-amber-100">
+            {scannerWriteAccessMessage}
+          </p>
+        ) : null}
         {scannerError ? (
-          <div className="mb-2 rounded-md border border-rose-500/35 bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-100">
+          <div role="alert" className="mb-2 rounded-md border border-rose-500/35 bg-rose-500/10 px-2.5 py-2 text-xs text-rose-100">
             {scannerError}
           </div>
         ) : null}
         {scannerNotice ? (
-          <div className="mb-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-[11px] text-sky-100">
+          <div className="mb-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100">
             {scannerNotice}
           </div>
         ) : null}
@@ -6762,13 +5136,13 @@ export default function SecretOptions() {
           <div className="min-w-0 rounded-lg border border-stealth-800/80 bg-stealth-950/25 p-2">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Run History</div>
-                <div className="text-[10px] text-stealth-500">Select scan</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-stealth-500">Run History</div>
+                <div className="text-xs text-stealth-500">Select scan</div>
               </div>
               <button
                 type="button"
                 onClick={loadScannerSummary}
-                className="text-[10px] font-medium text-sky-300 hover:text-sky-200"
+                className="text-xs font-medium text-sky-300 hover:text-sky-200"
               >
                 Refresh
               </button>
@@ -6801,9 +5175,9 @@ export default function SecretOptions() {
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0 truncate text-xs font-semibold text-stealth-100">
                           {run.universe_label}
-                          <span className="ml-1 text-[10px] font-normal uppercase text-stealth-500">{run.trigger_source}</span>
+                          <span className="ml-1 text-xs font-normal uppercase text-stealth-500">{run.trigger_source}</span>
                         </div>
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scannerStatusClass(run.status)}`}>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${scannerStatusClass(run.status)}`}>
                           {run.status}
                         </span>
                       </div>
@@ -6818,11 +5192,11 @@ export default function SecretOptions() {
                           <div className="absolute inset-y-0 left-0 w-1/2 animate-[updatesIndeterminate_1200ms_ease-in-out_infinite] motion-reduce:animate-none rounded-full bg-sky-200/20" />
                         ) : null}
                       </div>
-                      <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-stealth-400 tabular-nums">
+                      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-stealth-400 tabular-nums">
                         <span>{formatRelativeTime(run.started_at)} · {scanned} scanned</span>
                         <span>{run.hits} hits / {run.errors} errors</span>
                       </div>
-                      <div className="mt-1 min-h-[14px] truncate text-[10px] text-stealth-500">
+                      <div className="mt-1 min-h-[14px] truncate text-xs text-stealth-500">
                         {run.hit_symbols.length > 0
                           ? `${run.hit_symbols.slice(0, 8).join(" ")}${run.hit_symbols.length > 8 ? ` +${run.hit_symbols.length - 8}` : ""}`
                           : run.hits > 0
@@ -6841,22 +5215,22 @@ export default function SecretOptions() {
           <div className="min-w-0">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Selected Scan Hits</div>
-                <div className="text-[10px] text-stealth-500">
+                <div className="text-xs font-semibold uppercase tracking-wide text-stealth-500">Selected Scan Hits</div>
+                <div className="text-xs text-stealth-500">
                   {selectedScannerRun
                     ? `${selectedScannerRun.universe_label} · ${formatRelativeTime(selectedScannerRun.started_at)}`
                     : "No scan selected"}
                 </div>
               </div>
               {selectedScannerRun ? (
-                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scannerStatusClass(selectedScannerRun.status)}`}>
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${scannerStatusClass(selectedScannerRun.status)}`}>
                   {selectedScannerRun.status}
                 </span>
               ) : null}
             </div>
             {selectedScannerRunActive ? (
               <div className="mb-2 rounded-md border border-sky-500/20 bg-sky-500/10 px-2.5 py-2">
-                <div className="flex items-center justify-between gap-2 text-[10px] text-sky-100 tabular-nums">
+                <div className="flex items-center justify-between gap-2 text-xs text-sky-100 tabular-nums">
                   <span>Scanning {selectedScannerRun?.scanned_symbols ?? 0}/{selectedScannerRun?.total_symbols ?? 0}</span>
                   <span>{selectedScannerRunProgress.toFixed(0)}%</span>
                 </div>
@@ -6885,7 +5259,7 @@ export default function SecretOptions() {
               </div>
             ) : (
               <div className="max-h-[460px] overflow-x-hidden overflow-y-auto rounded-lg border border-stealth-800/80 bg-stealth-950/25">
-                <div className="sticky top-0 z-10 grid grid-cols-[64px_minmax(0,1fr)_64px] gap-2 border-b border-stealth-800 bg-stealth-950/95 px-2 py-1.5 text-[9px] uppercase tracking-wide text-stealth-500">
+                <div className="sticky top-0 z-10 grid grid-cols-[64px_minmax(0,1fr)_64px] gap-2 border-b border-stealth-800 bg-stealth-950/95 px-2 py-1.5 text-xs uppercase tracking-wide text-stealth-500">
                   <span>Symbol</span>
                   <span>Setup</span>
                   <span className="text-right">Rank</span>
@@ -6903,21 +5277,10 @@ export default function SecretOptions() {
                   return (
                     <Fragment key={opportunity.event_id}>
                         <div
-                          role="button"
-                          tabIndex={0}
                           data-scanner-event-id={opportunity.event_id}
                           data-scanner-snapshot={scannerRunDetail?.ranking_snapshot?.snapshot_uuid}
-                          aria-haspopup="dialog"
-                          aria-label={`Open scanner hit details for ${opportunity.symbol}`}
-                          onClick={() => setExpandedScannerHitId(opportunity.event_id)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              setExpandedScannerHitId(opportunity.event_id);
-                            }
-                          }}
-                          className={`grid cursor-pointer grid-cols-[64px_minmax(0,1fr)_64px] gap-2 px-2 py-2 text-xs transition-colors ${
-                            isSelected ? "bg-sky-500/10" : "hover:bg-stealth-900/35"
+                          className={`grid grid-cols-[64px_minmax(0,1fr)_64px] items-start gap-2 px-2 py-2 text-xs transition-colors ${
+                            isSelected ? "bg-sky-500/10" : "hover:bg-stealth-900/20"
                           }`}
                         >
                         <Link
@@ -6938,7 +5301,7 @@ export default function SecretOptions() {
                               <span
                                 aria-label={positionMatch.accessibleLabel}
                                 title={positionMatch.accessibleLabel}
-                                className={`shrink-0 rounded border px-1 py-0.5 text-[8px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[positionMatch.tone]}`}
+                                className={`shrink-0 rounded border px-1 py-0.5 text-xs font-semibold tracking-wide ${scannerPositionMatchBadgeClass[positionMatch.tone]}`}
                               >
                                 {positionMatch.badgeLabel}
                               </span>
@@ -6947,13 +5310,13 @@ export default function SecretOptions() {
                               <span
                                 aria-label={marketField.accessibleLabel}
                                 title={marketField.accessibleLabel}
-                                className={`shrink-0 rounded border px-1 py-0.5 text-[8px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[marketField.tone]}`}
+                                className={`shrink-0 rounded border px-1 py-0.5 text-xs font-semibold tracking-wide ${scannerPositionMatchBadgeClass[marketField.tone]}`}
                               >
                                 {marketField.badgeLabel}
                               </span>
                             ) : null}
                           </div>
-                          <div className="truncate text-[10px] text-stealth-500">
+                          <div className="truncate text-xs text-stealth-500">
                             {opportunity.group} · IV pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
                             {contract.reward_risk !== null && contract.reward_risk !== undefined ? ` · ${contract.reward_risk.toFixed(2)}R` : ""}
                             {contract.open_interest !== null && contract.open_interest !== undefined ? ` · OI ${contract.open_interest}` : ""}
@@ -6962,23 +5325,30 @@ export default function SecretOptions() {
                             <div
                               role="note"
                               aria-label={positionMatch.accessibleLabel}
-                              className={`truncate text-[9px] ${scannerPositionMatchTextClass[positionMatch.tone]}`}
+                              className={`truncate text-xs ${scannerPositionMatchTextClass[positionMatch.tone]}`}
                             >
                               {positionMatch.evidenceLine}
                             </div>
                           ) : null}
                         </div>
-                        <div className="flex items-start justify-end gap-1">
-                          <div className={`rounded-md border px-1.5 py-1 text-center text-[10px] font-semibold tabular-nums ${opportunityScoreClass(opportunity.score)}`}>
+                        <button
+                          type="button"
+                          aria-haspopup="dialog"
+                          aria-label={`Open scanner hit details for ${opportunity.symbol}`}
+                          onClick={() => setExpandedScannerHitId(opportunity.event_id)}
+                          className="flex min-h-11 min-w-11 items-start justify-end gap-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                        >
+                          <div className={`rounded-md border px-1.5 py-1 text-center text-xs font-semibold tabular-nums ${opportunityScoreClass(opportunity.score)}`}>
                             <span className="block">#{opportunity.display_ordinal ?? opportunity.applied_rank ?? "—"}</span>
-                            <span className="block text-[9px] opacity-80">
+                            <span className="block text-xs opacity-80">
                               {compactOpportunityGrade(opportunity.score, opportunity.grade)}
                             </span>
                           </div>
                           <ChevronDown
                             className={`mt-1 h-3 w-3 -rotate-90 text-stealth-500 transition-colors ${isSelected ? "text-sky-300" : ""}`}
+                            aria-hidden="true"
                           />
-                        </div>
+                        </button>
                       </div>
                     </Fragment>
                   );
@@ -6991,10 +5361,10 @@ export default function SecretOptions() {
           <div className="min-w-0 rounded-lg border border-stealth-800/80 bg-stealth-950/25 p-2">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Repeated Names</div>
-                <div className="text-[10px] text-stealth-500">All runs / 45d</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-stealth-500">Repeated Names</div>
+                <div className="text-xs text-stealth-500">All runs / 45d</div>
               </div>
-              <div className="text-right text-[10px] text-stealth-500">
+              <div className="text-right text-xs text-stealth-500">
                 <div>{scannerData?.summary.event_count ?? 0} hits</div>
                 <div>{scannerData?.summary.symbol_count ?? 0} names</div>
               </div>
@@ -7015,13 +5385,13 @@ export default function SecretOptions() {
                     </Link>
                     <div className="min-w-0">
                       <div className="truncate text-stealth-300">{symbol.group}</div>
-                      <div className="text-[10px] text-stealth-500">{formatRelativeTime(symbol.latest_triggered_at)}</div>
+                      <div className="text-xs text-stealth-500">{formatRelativeTime(symbol.latest_triggered_at)}</div>
                     </div>
                     <div className="text-right tabular-nums">
                       <div className="font-semibold text-stealth-100">
                         {symbol.hits}x{symbol.recent_hits > 0 ? ` / ${symbol.recent_hits} wk` : ""}
                       </div>
-                      <div className="text-[10px] text-stealth-500">
+                      <div className="text-xs text-stealth-500">
                         {symbol.avg_opportunity_score !== null && symbol.avg_opportunity_score !== undefined
                           ? `score ${symbol.avg_opportunity_score.toFixed(0)}`
                           : `IV/HV ${formatPointChange(symbol.avg_iv_hv_spread, 1)}`}
@@ -7044,7 +5414,7 @@ export default function SecretOptions() {
           <div>
             <h2 className="text-sm font-semibold text-stealth-100">Position inspector</h2>
             {selected ? (
-              <p className="mt-0.5 text-[11px] font-medium text-stealth-300">
+              <p className="mt-0.5 text-xs font-medium text-stealth-300">
                 Selected: {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
                 {" · "}
                 {formatDate(selected.position.expiration)}
@@ -7057,7 +5427,7 @@ export default function SecretOptions() {
             {selectedStockAnalysisPath && selectedSymbol && (
               <Link
                 to={selectedStockAnalysisPath}
-                className="rounded-md bg-sky-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-sky-600"
+                className="rounded-md bg-sky-700 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-600"
               >
                 {selectedSymbol} Analysis
               </Link>
@@ -7067,14 +5437,14 @@ export default function SecretOptions() {
 
         {selectedDiagnosis && (
           <div
-            className={`mb-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
+            className={`mb-2 rounded-md border px-2.5 py-1.5 text-xs ${
               selectedTimelineLane?.urgency === "overdue"
                 ? "border-rose-500/35 bg-rose-500/10 text-rose-100"
                 : selectedTimelineLane?.urgency === "due"
                   ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
                   : selectedTimelineLane?.urgency === "watch"
                     ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-100"
-                    : "border-gray-700/70 bg-gray-900/45 text-gray-300"
+                    : "border-stealth-700/70 bg-stealth-900/45 text-stealth-300"
             }`}
           >
             {selectedDiagnosis}
@@ -7085,14 +5455,14 @@ export default function SecretOptions() {
           <div className="mb-2 rounded-xl border border-sky-700/45 bg-sky-950/20 p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-sky-300">Decision cockpit</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-300">Decision cockpit</div>
                 <div className="mt-1 text-base font-semibold leading-tight text-stealth-100">
                   {selectedThesisAssessment?.assessment
                     ? `${decisionLabel(selectedThesisAssessment.assessment.proposed_verdict)} to ${selectedThesisAssessment.assessment.proposed_target_contracts}`
                     : "Building the first point-in-time assessment"}
                 </div>
                 {selectedThesisAssessment?.assessment && (
-                  <div className="mt-1 flex flex-wrap gap-1 text-[9px]">
+                  <div className="mt-1 flex flex-wrap gap-1 text-xs">
                     <span className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300">
                       {decisionLabel(selectedThesisAssessment.assessment.quality)} quality
                     </span>
@@ -7105,14 +5475,14 @@ export default function SecretOptions() {
                   </div>
                 )}
               </div>
-              <div className="shrink-0 text-right text-[9px] text-stealth-500">
+              <div className="shrink-0 text-right text-xs text-stealth-500">
                 <div>{selected.position.contracts} held</div>
                 <div>{selected.metrics.dte ?? "—"} DTE</div>
               </div>
             </div>
 
             {selectedMarketField ? (
-              <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-sky-800/35 pt-2 text-[9px]">
+              <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-sky-800/35 pt-2 text-xs">
                 <span
                   aria-label={selectedMarketField.accessibleLabel}
                   title={selectedMarketField.accessibleLabel}
@@ -7144,18 +5514,18 @@ export default function SecretOptions() {
                     Open Market Field
                   </Link>
                 ) : null}
-                <span className="basis-full text-[8px] leading-relaxed text-stealth-500">
+                <span className="basis-full text-xs leading-relaxed text-stealth-500">
                   {selectedMarketField.authorityLabel} · {selectedMarketField.advisoryEffectsLabel}
                 </span>
                 {selectedMarketField.authorityCaveat || selectedMarketField.alignmentCaveat || selectedMarketField.maturityLabel || selectedMarketField.diagnosticsCaveat ? (
-                  <span className="basis-full text-[8px] leading-relaxed text-amber-200/80">
+                  <span className="basis-full text-xs leading-relaxed text-amber-200/80">
                     {[selectedMarketField.authorityCaveat, selectedMarketField.alignmentCaveat, selectedMarketField.maturityLabel ? selectedMarketField.maturityReason : null, selectedMarketField.diagnosticsCaveat]
                       .filter((value): value is string => Boolean(value))
                       .join(" ")}
                   </span>
                 ) : null}
                 {selectedMarketField.diagnosticsLabel ? (
-                  <details className="basis-full text-[8px] text-stealth-500">
+                  <details className="basis-full text-xs text-stealth-500">
                     <summary className="cursor-pointer font-semibold text-stealth-400">Field diagnostics</summary>
                     <span className="mt-0.5 block leading-relaxed">{selectedMarketField.diagnosticsLabel}</span>
                   </details>
@@ -7173,14 +5543,14 @@ export default function SecretOptions() {
                       title={`${field.summary}${assessment.as_of ? ` · ${assessment.as_of}` : ""}`}
                       className="min-w-0 border-r border-stealth-800/80 px-2 py-1.5 last:border-r-0"
                     >
-                      <div className="flex items-center justify-between gap-1 text-[8px] uppercase tracking-wide text-stealth-500">
+                      <div className="flex items-center justify-between gap-1 text-xs uppercase tracking-wide text-stealth-500">
                         <span>{pointLabel}</span>
                         <span className="truncate normal-case tracking-normal">{formatRelativeTime(assessment.as_of)}</span>
                       </div>
-                      <div className={`mt-0.5 truncate text-[9px] font-semibold ${scannerPositionMatchTextClass[field.tone]}`}>
+                      <div className={`mt-0.5 truncate text-xs font-semibold ${scannerPositionMatchTextClass[field.tone]}`}>
                         {field.badgeLabel}
                       </div>
-                      <div className="truncate text-[8px] text-stealth-500">
+                      <div className="truncate text-xs text-stealth-500">
                         {field.boundaryLabel || field.directionLabel || field.pathStateLabel}
                       </div>
                     </div>
@@ -7195,7 +5565,7 @@ export default function SecretOptions() {
                 disabled={confirmingDecisionReview || loadingThesisAssessment || !selectedThesisAssessment?.assessment || selectedAssessmentConfirmed}
                 onClick={confirmAutomaticAssessment}
                 title="Append the current automatic grade to the decision journal. No order is submitted."
-                className="hidden min-h-9 items-center justify-center gap-1.5 rounded-md border border-emerald-600/55 bg-emerald-900/35 px-2 py-1.5 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-800/45 disabled:opacity-50 xl:inline-flex"
+                className="hidden min-h-11 items-center justify-center gap-1.5 rounded-md border border-emerald-600/55 bg-emerald-900/35 px-2 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-800/45 disabled:opacity-50 xl:inline-flex"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                 {confirmingDecisionReview ? "Confirming..." : selectedAssessmentConfirmed ? "Grade confirmed" : "Confirm grade"}
@@ -7203,7 +5573,7 @@ export default function SecretOptions() {
               <button
                 type="button"
                 onClick={() => openDecisionReviewModal(selected.position, "override")}
-                className="hidden min-h-9 items-center justify-center gap-1.5 rounded-md border border-sky-600/55 bg-sky-900/35 px-2 py-1.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-800/55 xl:inline-flex"
+                className="hidden min-h-11 items-center justify-center gap-1.5 rounded-md border border-sky-600/55 bg-sky-900/35 px-2 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-800/55 xl:inline-flex"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
                 Override decision
@@ -7211,7 +5581,7 @@ export default function SecretOptions() {
               <button
                 type="button"
                 onClick={() => openDecisionReviewModal(selected.position, "window")}
-                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-amber-700/50 bg-amber-950/25 px-2 py-1.5 text-[10px] font-semibold text-amber-100 hover:bg-amber-900/40"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-amber-700/50 bg-amber-950/25 px-2 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-900/40"
               >
                 <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
                 Revise window
@@ -7220,7 +5590,7 @@ export default function SecretOptions() {
                 type="button"
                 disabled={loadingThesisAssessment}
                 onClick={() => loadThesisAssessment(selected.position.id, true)}
-                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2 py-1.5 text-[10px] font-semibold text-stealth-200 hover:bg-stealth-800 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2 py-1.5 text-xs font-semibold text-stealth-200 hover:bg-stealth-800 disabled:opacity-50"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${loadingThesisAssessment ? "animate-spin" : ""}`} aria-hidden="true" />
                 {loadingThesisAssessment ? "Grading..." : "Refresh grade"}
@@ -7228,7 +5598,7 @@ export default function SecretOptions() {
               <button
                 type="button"
                 onClick={() => openEditModal(selected.position)}
-                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-sky-500/35 bg-sky-500/10 px-2 py-1.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-500/20"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-sky-500/35 bg-sky-500/10 px-2 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-500/20"
               >
                 <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                 Edit position
@@ -7236,7 +5606,7 @@ export default function SecretOptions() {
               <button
                 type="button"
                 onClick={() => openCloseModal(selected.position.id)}
-                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-rose-500/35 bg-rose-500/10 px-2 py-1.5 text-[10px] font-semibold text-rose-100 hover:bg-rose-500/20"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-rose-500/35 bg-rose-500/10 px-2 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/20"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 Close position
@@ -7244,10 +5614,10 @@ export default function SecretOptions() {
             </div>
 
             {selectedThesisAssessment?.assessment && (
-              <div className="mt-2 text-[10px]">
+              <div className="mt-2 text-xs">
                 <div className="grid grid-cols-2 gap-1.5">
                   <div className="rounded-md border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
-                    <div className="text-[9px] uppercase tracking-wide text-stealth-500">Suggested next review</div>
+                    <div className="text-xs uppercase tracking-wide text-stealth-500">Suggested next review</div>
                     <div className="mt-0.5 font-semibold text-stealth-100">
                       {selectedThesisAssessment.suggested_window.next_review_date
                         ? formatDate(selectedThesisAssessment.suggested_window.next_review_date)
@@ -7255,13 +5625,13 @@ export default function SecretOptions() {
                     </div>
                   </div>
                   <div className="rounded-md border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
-                    <div className="text-[9px] uppercase tracking-wide text-stealth-500">Maximum hold deadline</div>
+                    <div className="text-xs uppercase tracking-wide text-stealth-500">Maximum hold deadline</div>
                     <div className="mt-0.5 font-semibold text-stealth-100">
                       {formatDate(selectedThesisAssessment.suggested_window.decision_deadline)}
                     </div>
                   </div>
                 </div>
-                <div className="mt-1.5 text-[9px] text-stealth-500">
+                <div className="mt-1.5 text-xs text-stealth-500">
                   {selectedThesisAssessment.suggested_window.max_hold_sessions} session max · entry model {selectedThesisAssessment.suggested_window.original_min_hold_days}-{selectedThesisAssessment.suggested_window.original_max_hold_days} sessions
                   {selectedThesisAssessment.suggested_window.rebased ? " · rebased today; prior window preserved" : ""}
                 </div>
@@ -7276,15 +5646,15 @@ export default function SecretOptions() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-[9px] font-semibold uppercase tracking-wide opacity-70">Scanner replacement</div>
-                    <div className="mt-0.5 truncate text-[11px] font-semibold">
+                    <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Scanner replacement</div>
+                    <div className="mt-0.5 truncate text-xs font-semibold">
                       {selectedPositionReplacementHit.position_match.replacement_decision.label}
                     </div>
-                    <div className="mt-0.5 truncate text-[9px] text-stealth-400">
+                    <div className="mt-0.5 truncate text-xs text-stealth-400">
                       {selectedPositionReplacementHit.position_match.replacement_decision.comparison.candidate.contract}
                     </div>
                   </div>
-                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide">
+                  <span className="shrink-0 text-xs font-semibold uppercase tracking-wide">
                     Review comparison →
                   </span>
                 </div>
@@ -7292,18 +5662,18 @@ export default function SecretOptions() {
             ) : null}
 
             {thesisAssessmentError && (
-              <div className="mt-2 rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-[10px] text-rose-100">
+              <div className="mt-2 rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-xs text-rose-100">
                 {thesisAssessmentError}
               </div>
             )}
 
             {selectedThesisAssessment?.assessment && (
-              <details className="mt-2 rounded-md border border-sky-700/35 bg-stealth-950/30 text-[10px]">
+              <details className="mt-2 rounded-md border border-sky-700/35 bg-stealth-950/30 text-xs">
                 <summary className="cursor-pointer px-2 py-1.5 font-semibold text-stealth-300">
                   Why this grade · 6 decision inputs
                 </summary>
                 <div className="space-y-2 border-t border-sky-800/30 p-2">
-                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                <div className="grid grid-cols-2 gap-1.5 text-xs">
                   {[
                     ["Company", selectedThesisAssessment.assessment.company_thesis_status],
                     ["Security", selectedThesisAssessment.assessment.security_thesis_readiness],
@@ -7318,17 +5688,17 @@ export default function SecretOptions() {
                     </div>
                   ))}
                 </div>
-                <div className="text-[10px] leading-relaxed text-stealth-300">
+                <div className="text-xs leading-relaxed text-stealth-300">
                   {selectedThesisAssessment.assessment.reasons.join(" ")}
                 </div>
                 {selectedThesisAssessment.assessment.vetoes.length > 0 && (
-                  <div className="rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-[10px] text-rose-100">
+                  <div className="rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-xs text-rose-100">
                     <span className="font-semibold">Vetoes: </span>
                     {selectedThesisAssessment.assessment.vetoes.map((item) => item.detail).join(" ")}
                   </div>
                 )}
                 {selectedThesisAssessment.assessment.missing_inputs.length > 0 && (
-                  <details className="text-[10px] text-amber-100">
+                  <details className="text-xs text-amber-100">
                     <summary className="cursor-pointer">Confidence limits · {selectedThesisAssessment.assessment.missing_inputs.length}</summary>
                     <div className="mt-1 text-stealth-400">{selectedThesisAssessment.assessment.missing_inputs.join(" · ")}</div>
                   </details>
@@ -7338,7 +5708,7 @@ export default function SecretOptions() {
                   || !selectedThesisAssessment.risk_policy.active
                   || selectedThesisAssessment.risk_policy.portfolio_capital === null
                 ) && (
-                  <details className="rounded border border-amber-700/35 bg-amber-950/15 px-2 py-1.5 text-[10px] text-amber-100">
+                  <details className="rounded border border-amber-700/35 bg-amber-950/15 px-2 py-1.5 text-xs text-amber-100">
                     <summary className="cursor-pointer font-semibold">Activate portfolio sizing guardrails</summary>
                     <div className="mt-2 grid gap-2 border-t border-amber-900/50 pt-2 md:grid-cols-[1fr_auto] md:items-end">
                       <label className="text-stealth-400">
@@ -7367,7 +5737,7 @@ export default function SecretOptions() {
                     </div>
                   </details>
                 )}
-                <div className="flex flex-wrap justify-between gap-2 text-[9px] text-stealth-500">
+                <div className="flex flex-wrap justify-between gap-2 text-xs text-stealth-500">
                   <span>{selectedThesisAssessment.assessment.grader_version} · {formatRelativeTime(selectedThesisAssessment.assessment.as_of)}</span>
                   <span>Shadow decision only · no order submitted</span>
                 </div>
@@ -7376,14 +5746,14 @@ export default function SecretOptions() {
             )}
 
             {loadingDecisionReview && !selectedDecisionReviews ? (
-              <div className="mt-2 text-[11px] text-stealth-400">Loading decision history...</div>
+              <div className="mt-2 text-xs text-stealth-400">Loading decision history...</div>
             ) : selectedDecisionReviews?.latest_review ? (
-              <details className="mt-2 rounded-md border border-stealth-700/70 bg-stealth-950/25 text-[10px]">
+              <details className="mt-2 rounded-md border border-stealth-700/70 bg-stealth-950/25 text-xs">
                 <summary className="cursor-pointer px-2 py-1.5 font-semibold text-stealth-300">
                   Decision journal · {selectedDecisionReviews.review_count} review{selectedDecisionReviews.review_count === 1 ? "" : "s"}
                 </summary>
                 <div className="space-y-2 border-t border-stealth-800 p-2">
-                <div className="grid grid-cols-4 gap-1.5 text-[10px]">
+                <div className="grid grid-cols-4 gap-1.5 text-xs">
                   <div className="rounded border border-stealth-700/70 bg-stealth-950/40 px-1.5 py-1">
                     <div className="text-stealth-500">Target</div>
                     <div className="font-semibold text-stealth-100">
@@ -7404,14 +5774,14 @@ export default function SecretOptions() {
                   </div>
                 </div>
 
-                <div className="rounded border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5 text-[10px] text-stealth-300">
+                <div className="rounded border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5 text-xs text-stealth-300">
                   <span className="text-stealth-500">Would open this exact contract today? </span>
                   <span className="font-semibold text-stealth-100">
                     {decisionLabel(selectedDecisionReviews.latest_review.fresh_entry_answer)}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                <div className="grid grid-cols-2 gap-1.5 text-xs">
                   <div className="rounded border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
                     <div className="text-stealth-500">Review date · process clock</div>
                     <div className="font-semibold text-stealth-100">
@@ -7431,31 +5801,31 @@ export default function SecretOptions() {
                 </div>
 
                 {selectedDecisionReviews.latest_review.evidence_since_last && (
-                  <div className="text-[10px] leading-relaxed text-stealth-300">
+                  <div className="text-xs leading-relaxed text-stealth-300">
                     <span className="text-stealth-500">What changed: </span>
                     {selectedDecisionReviews.latest_review.evidence_since_last}
                   </div>
                 )}
                 {selectedDecisionReviews.latest_review.continuation_condition && (
-                  <div className="text-[10px] leading-relaxed text-stealth-300">
+                  <div className="text-xs leading-relaxed text-stealth-300">
                     <span className="text-stealth-500">Continue only if: </span>
                     {selectedDecisionReviews.latest_review.continuation_condition}
                   </div>
                 )}
 
                 {selectedDecisionReviews.status.additions_blocked && (
-                  <div className="rounded border border-amber-600/45 bg-amber-950/30 px-2 py-1.5 text-[10px] text-amber-100">
+                  <div className="rounded border border-amber-600/45 bg-amber-950/30 px-2 py-1.5 text-xs text-amber-100">
                     <div className="font-semibold">No additions until reconciled</div>
                     <div className="mt-0.5">{selectedDecisionReviews.status.addition_blockers.join(" ")}</div>
                   </div>
                 )}
                 {selectedDecisionReviews.status.warnings.length > 0 && (
-                  <div className="rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-[10px] text-rose-100">
+                  <div className="rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-xs text-rose-100">
                     {selectedDecisionReviews.status.warnings.join(" ")}
                   </div>
                 )}
 
-                <details className="rounded border border-stealth-700/70 bg-stealth-950/30 px-2 py-1 text-[10px]">
+                <details className="rounded border border-stealth-700/70 bg-stealth-950/30 px-2 py-1 text-xs">
                   <summary className="cursor-pointer text-stealth-400">
                     Immutable history · {selectedDecisionReviews.review_count} review{selectedDecisionReviews.review_count === 1 ? "" : "s"}
                   </summary>
@@ -7479,7 +5849,7 @@ export default function SecretOptions() {
                 </div>
               </details>
             ) : (
-              <div className="mt-2 rounded-md border border-dashed border-stealth-700 px-2 py-1.5 text-[10px] leading-relaxed text-stealth-400">
+              <div className="mt-2 rounded-md border border-dashed border-stealth-700 px-2 py-1.5 text-xs leading-relaxed text-stealth-400">
                 No confirmed review yet. Confirm the grade or record an override; neither action submits an order.
               </div>
             )}
@@ -7494,10 +5864,10 @@ export default function SecretOptions() {
             className="mb-2 flex w-full items-center justify-between gap-3 rounded-lg border border-stealth-700/70 bg-stealth-900/35 px-2.5 py-2 text-left transition hover:border-stealth-500"
           >
             <div className="min-w-0">
-              <div className="text-[10px] font-semibold text-stealth-200">
+              <div className="text-xs font-semibold text-stealth-200">
                 {showRiskEvidence ? "Hide market & risk evidence" : "Show market & risk evidence"}
               </div>
-              <div className="mt-0.5 truncate text-[9px] text-stealth-500">
+              <div className="mt-0.5 truncate text-xs text-stealth-500">
                 Rank {selectedOpportunityRead?.label ?? "—"} · IV {formatPointChange(selected.metrics.volatility_signal?.trend.contract_iv_change, 1)} · quote {formatRelativeTime(selected.metrics.market.last_updated)}
               </div>
             </div>
@@ -7513,11 +5883,11 @@ export default function SecretOptions() {
         {selected && (
           <>
             {selected.metrics.opportunity ? (
-              <div className="mb-2 rounded-md border border-gray-700/70 bg-gray-900/45 px-2.5 py-1.5">
+              <div className="mb-2 rounded-md border border-stealth-700/70 bg-stealth-900/45 px-2.5 py-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <div className="text-[9px] uppercase tracking-wide text-gray-500">Opportunity Rank</div>
-                    <div className="text-xs font-semibold text-gray-100">{selectedOpportunityRead?.label ?? "—"}</div>
+                    <div className="text-xs uppercase tracking-wide text-stealth-500">Opportunity Rank</div>
+                    <div className="text-xs font-semibold text-stealth-100">{selectedOpportunityRead?.label ?? "—"}</div>
                   </div>
                   <div className={`rounded-md border px-2 py-1 text-right text-xs font-semibold ${opportunityScoreClass(selected.metrics.opportunity.current?.score ?? selected.metrics.opportunity.entry?.score)}`}>
                     {selected.metrics.opportunity.score_change !== null && selected.metrics.opportunity.score_change !== undefined
@@ -7528,11 +5898,11 @@ export default function SecretOptions() {
               </div>
             ) : null}
             <VolatilitySignalCard metrics={selected.metrics} className="mb-2" />
-            <details className="mb-2 rounded-md border border-gray-700/70 bg-gray-900/45 px-2 py-1 text-[10px] text-gray-400">
+            <details className="mb-2 rounded-md border border-stealth-700/70 bg-stealth-900/45 px-2 py-1 text-xs text-stealth-400">
               <summary className="cursor-pointer list-none truncate">
                 Data: quote {formatRelativeTime(selected.metrics.market.last_updated)} / positions {formatRelativeTime(positionsLoadedAt)}
               </summary>
-              <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 border-t border-gray-700/60 pt-1">
+              <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 border-t border-stealth-700/60 pt-1">
                 <span>Model vol: {selected.metrics.volatility ? formatPercent(selected.metrics.volatility * 100, 1) : "n/a"}</span>
                 <span>Model src: {selected.metrics.volatility_source || "n/a"}</span>
                 <span>Bid / Ask: {selected.metrics.quote?.bid !== null && selected.metrics.quote?.bid !== undefined ? formatCurrency(selected.metrics.quote.bid, 2) : "n/a"} / {selected.metrics.quote?.ask !== null && selected.metrics.quote?.ask !== undefined ? formatCurrency(selected.metrics.quote.ask, 2) : "n/a"}</span>
@@ -7546,11 +5916,11 @@ export default function SecretOptions() {
 
         <div className="mb-2">
           {loadingGreeks ? (
-            <div className="text-sm text-gray-400">Loading Greeks...</div>
+            <div className="text-sm text-stealth-400">Loading Greeks...</div>
           ) : greeksData && greeksData.price_curve.length > 0 ? (
             <div className="grid grid-cols-1 gap-2">
-              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
-                <h3 className="mb-1 text-[11px] font-semibold">Delta - directional exposure</h3>
+              <div className="rounded-lg border border-stealth-700 bg-stealth-900 p-2">
+                <h3 className="mb-1 text-xs font-semibold">Delta - directional exposure</h3>
                 <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer
                     width="100%"
@@ -7559,18 +5929,22 @@ export default function SecretOptions() {
                     minHeight={1}
                     initialDimension={{ width: 360, height: 112 }}
                   >
-                    <LineChart data={greeksData.price_curve}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label={`${selectedSymbol ?? "Selected option position"} delta by underlying price`}
+                      data={greeksData.price_curve}
+                    >
                       <XAxis
                         dataKey="price"
                         type="number"
                         domain={["dataMin", "dataMax"]}
                         tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
-                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                         tickLine={false}
                         axisLine={false}
                       />
                       <YAxis
-                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                         tickLine={false}
                         axisLine={false}
                       />
@@ -7632,8 +6006,8 @@ export default function SecretOptions() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
-                <h3 className="mb-1 text-[11px] font-semibold">Gamma - convexity</h3>
+              <div className="rounded-lg border border-stealth-700 bg-stealth-900 p-2">
+                <h3 className="mb-1 text-xs font-semibold">Gamma - convexity</h3>
                 <div className="h-28" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer
                     width="100%"
@@ -7642,18 +6016,22 @@ export default function SecretOptions() {
                     minHeight={1}
                     initialDimension={{ width: 360, height: 112 }}
                   >
-                    <LineChart data={greeksData.price_curve}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label={`${selectedSymbol ?? "Selected option position"} gamma by underlying price`}
+                      data={greeksData.price_curve}
+                    >
                       <XAxis
                         dataKey="price"
                         type="number"
                         domain={["dataMin", "dataMax"]}
                         tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
-                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                         tickLine={false}
                         axisLine={false}
                       />
                       <YAxis
-                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                         tickLine={false}
                         axisLine={false}
                       />
@@ -7715,8 +6093,8 @@ export default function SecretOptions() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
-                <h3 className="mb-1 text-[11px] font-semibold">Theta - daily decay</h3>
+              <div className="rounded-lg border border-stealth-700 bg-stealth-900 p-2">
+                <h3 className="mb-1 text-xs font-semibold">Theta - daily decay</h3>
                 <div className="h-24" style={{ minWidth: 0, minHeight: 0 }}>
                   <ResponsiveContainer
                     width="100%"
@@ -7725,15 +6103,19 @@ export default function SecretOptions() {
                     minHeight={1}
                     initialDimension={{ width: 360, height: 96 }}
                   >
-                    <LineChart data={greeksData.theta_curve}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label={`${selectedSymbol ?? "Selected option position"} theta by days to expiration`}
+                      data={greeksData.theta_curve}
+                    >
                       <XAxis
                         dataKey="days"
-                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                         tickLine={false}
                         axisLine={false}
                       />
                       <YAxis
-                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                         tickLine={false}
                         axisLine={false}
                       />
@@ -7760,30 +6142,30 @@ export default function SecretOptions() {
               </div>
             </div>
           ) : (
-            <div className="text-sm text-gray-500">No Greeks data available for the selected position.</div>
+            <div className="text-sm text-stealth-500">No Greeks data available for the selected position.</div>
           )}
         </div>
 
         {greeksData?.model_info && (
-          <div className="mb-2 flex flex-wrap gap-1.5 text-[10px] text-gray-300">
+          <div className="mb-2 flex flex-wrap gap-1.5 text-xs text-stealth-300">
             {greeksData.model_info.model && (
-              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">{greeksData.model_info.model}</span>
+              <span className="rounded border border-stealth-700/70 bg-stealth-900/55 px-1.5 py-1">{greeksData.model_info.model}</span>
             )}
             {greeksData.model_info.volatility !== undefined && (
-              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+              <span className="rounded border border-stealth-700/70 bg-stealth-900/55 px-1.5 py-1">
                 Vol {formatPercent(greeksData.model_info.volatility * 100, 1)}
               </span>
             )}
             {greeksData.model_info.dte !== undefined && (
-              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">DTE {greeksData.model_info.dte}</span>
+              <span className="rounded border border-stealth-700/70 bg-stealth-900/55 px-1.5 py-1">DTE {greeksData.model_info.dte}</span>
             )}
             {selectedSpotPrice !== null && (
-              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+              <span className="rounded border border-stealth-700/70 bg-stealth-900/55 px-1.5 py-1">
                 Spot {formatCurrency(selectedSpotPrice)}
               </span>
             )}
             {greeksData.model_info.risk_free_rate !== undefined && (
-              <span className="rounded border border-gray-700/70 bg-gray-900/55 px-1.5 py-1">
+              <span className="rounded border border-stealth-700/70 bg-stealth-900/55 px-1.5 py-1">
                 Rf {formatPercent(greeksData.model_info.risk_free_rate * 100, 2)}
               </span>
             )}
@@ -7791,7 +6173,7 @@ export default function SecretOptions() {
         )}
 
         {greekSummary && (
-          <div className="mb-2 rounded-lg border border-gray-700 bg-gray-900/60 p-2">
+          <div className="mb-2 rounded-lg border border-stealth-700 bg-stealth-900/60 p-2">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
               <div
                 className={`text-xs font-semibold ${
@@ -7799,19 +6181,19 @@ export default function SecretOptions() {
                     ? "text-emerald-300"
                     : greekSummary.tone === "bearish"
                       ? "text-rose-300"
-                      : "text-gray-200"
+                      : "text-stealth-200"
                 }`}
               >
                 {capitalizeWord(greekSummary.tone)} / {greekSummary.thetaDirection}
               </div>
-              <div className="flex flex-wrap gap-1 text-[10px]">
+              <div className="flex flex-wrap gap-1 text-xs">
               <span
                 className={`rounded-full border px-1.5 py-0.5 ${
                   greekSummary.tone === "bullish"
                     ? "border-emerald-700/60 bg-emerald-900/30 text-emerald-200"
                     : greekSummary.tone === "bearish"
                       ? "border-rose-700/60 bg-rose-900/30 text-rose-200"
-                      : "border-gray-700 bg-gray-800 text-gray-300"
+                      : "border-stealth-700 bg-stealth-800 text-stealth-300"
                 }`}
               >
                 {greekSummary.tone}
@@ -7831,10 +6213,10 @@ export default function SecretOptions() {
               {greekSummary.details.slice(0, 4).map((item) => (
                 <div
                   key={item.label}
-                  className="min-w-0 rounded-md border border-gray-700/70 bg-gray-900/40 px-2 py-1.5"
+                  className="min-w-0 rounded-md border border-stealth-700/70 bg-stealth-900/40 px-2 py-1.5"
                 >
-                  <div className="truncate text-[9px] uppercase tracking-wide text-gray-500">{item.label}</div>
-                  <div className="truncate text-xs font-semibold text-gray-100">{item.value}</div>
+                  <div className="truncate text-xs uppercase tracking-wide text-stealth-500">{item.label}</div>
+                  <div className="truncate text-xs font-semibold text-stealth-100">{item.value}</div>
                 </div>
               ))}
             </div>
@@ -7842,19 +6224,19 @@ export default function SecretOptions() {
         )}
 
         {selected && (
-          <div className="mb-1 rounded-lg border border-gray-700/60 bg-gray-900/40 p-2.5">
-            <div className="mb-1.5 text-[9px] uppercase tracking-wide text-gray-500">Visualization targets</div>
+          <div className="mb-1 rounded-lg border border-stealth-700/60 bg-stealth-900/40 p-2.5">
+            <div className="mb-1.5 text-xs uppercase tracking-wide text-stealth-500">Visualization targets</div>
             <div className="grid grid-cols-3 gap-1.5">
-              <label className="min-w-0 text-[10px] text-amber-300">
+              <label className="min-w-0 text-xs text-amber-300">
                 Strike
                 <input
                   type="number"
                   value={selected.position.strike}
                   readOnly
-                  className="mt-1 w-full bg-gray-900 border border-amber-700/70 rounded px-2 py-1.5 text-xs text-amber-100"
+                  className="mt-1 w-full bg-stealth-900 border border-amber-700/70 rounded px-2 py-1.5 text-xs text-amber-100"
                 />
               </label>
-              <label className="min-w-0 text-[10px] text-emerald-300">
+              <label className="min-w-0 text-xs text-emerald-300">
                 Profit Target
                 <input
                   type="number"
@@ -7869,10 +6251,10 @@ export default function SecretOptions() {
                       },
                     }))
                   }
-                  className="mt-1 w-full bg-gray-900 border border-emerald-700/70 rounded px-2 py-1.5 text-xs text-emerald-100"
+                  className="mt-1 w-full bg-stealth-900 border border-emerald-700/70 rounded px-2 py-1.5 text-xs text-emerald-100"
                 />
               </label>
-              <label className="min-w-0 text-[10px] text-rose-300">
+              <label className="min-w-0 text-xs text-rose-300">
                 Loss Threshold
                 <input
                   type="number"
@@ -7887,7 +6269,7 @@ export default function SecretOptions() {
                       },
                     }))
                   }
-                  className="mt-1 w-full bg-gray-900 border border-rose-700/70 rounded px-2 py-1.5 text-xs text-rose-100"
+                  className="mt-1 w-full bg-stealth-900 border border-rose-700/70 rounded px-2 py-1.5 text-xs text-rose-100"
                 />
               </label>
             </div>
@@ -7904,20 +6286,21 @@ export default function SecretOptions() {
       ) : null}
 
       {selectedScannerHit && renderModal(
+        `Scanner hit details for ${selectedScannerHit.symbol}`,
+        () => setExpandedScannerHitId(null),
         <div
-          className="fixed inset-0 z-50 flex min-h-[100dvh] items-stretch justify-center overflow-x-hidden overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-4"
-          onClick={() => setExpandedScannerHitId(null)}
+          role="presentation"
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-stretch justify-center overflow-x-hidden overflow-y-auto bg-stealth-950/90 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+          onClick={(event) => {
+            if (event.currentTarget === event.target) setExpandedScannerHitId(null);
+          }}
         >
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="scanner-hit-detail-title"
             className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-stealth-700 bg-stealth-950 shadow-2xl sm:max-h-[calc(100dvh-2rem)]"
-            onClick={(event) => event.stopPropagation()}
           >
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-stealth-800 bg-stealth-950/95 px-4 py-3">
               <div className="min-w-0">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Scanner hit detail</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-stealth-500">Scanner hit detail</div>
                 <h2 id="scanner-hit-detail-title" className="mt-0.5 truncate text-lg font-semibold text-stealth-100">
                   {selectedScannerHit.symbol}
                 </h2>
@@ -7929,11 +6312,11 @@ export default function SecretOptions() {
                     <span
                       aria-label={selectedScannerHitPositionMatch.accessibleLabel}
                       title={selectedScannerHitPositionMatch.accessibleLabel}
-                      className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${scannerPositionMatchBadgeClass[selectedScannerHitPositionMatch.tone]}`}
+                      className={`rounded border px-1.5 py-0.5 text-xs font-semibold tracking-wide ${scannerPositionMatchBadgeClass[selectedScannerHitPositionMatch.tone]}`}
                     >
                       {selectedScannerHitPositionMatch.badgeLabel}
                     </span>
-                    <span className={`text-[10px] ${scannerPositionMatchTextClass[selectedScannerHitPositionMatch.tone]}`}>
+                    <span className={`text-xs ${scannerPositionMatchTextClass[selectedScannerHitPositionMatch.tone]}`}>
                       {selectedScannerHitPositionMatch.classificationLabel}
                     </span>
                   </div>
@@ -7944,10 +6327,11 @@ export default function SecretOptions() {
                   {compactOpportunityGrade(selectedScannerHit.score, selectedScannerHit.grade)}
                 </div>
                 <button
+                  data-dialog-initial-focus
                   type="button"
                   onClick={() => setExpandedScannerHitId(null)}
                   aria-label="Close scanner hit details"
-                  className="rounded-md border border-stealth-700 bg-stealth-900 px-2 py-1 text-sm text-stealth-300 transition hover:border-stealth-500 hover:text-stealth-100"
+                  className="grid h-11 w-11 place-items-center rounded-md border border-stealth-700 bg-stealth-900 text-sm text-stealth-300 transition hover:border-stealth-500 hover:text-stealth-100"
                 >
                   ✕
                 </button>
@@ -7974,20 +6358,21 @@ export default function SecretOptions() {
       )}
 
       {showDecisionReviewModal && selected && renderModal(
+        `${decisionReviewMode === "window" ? "Revise decision window" : "Record decision review"} for ${selected.position.symbol}`,
+        closeDecisionReviewModal,
         <div
-          className="fixed inset-0 z-[60] flex min-h-[100dvh] items-stretch justify-center overflow-y-auto bg-black/75 p-3 backdrop-blur-sm sm:items-center sm:p-4"
-          onClick={closeDecisionReviewModal}
+          role="presentation"
+          className="fixed inset-0 z-[60] flex min-h-[100dvh] items-stretch justify-center overflow-y-auto bg-stealth-950/95 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+          onClick={(event) => {
+            if (event.currentTarget === event.target) closeDecisionReviewModal();
+          }}
         >
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="decision-review-title"
             className={`flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-hidden rounded-xl border border-stealth-700 bg-stealth-950 shadow-2xl sm:max-h-[calc(100dvh-2rem)] ${decisionReviewMode === "window" ? "max-w-3xl" : "max-w-5xl"}`}
-            onClick={(event) => event.stopPropagation()}
           >
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-stealth-800 px-4 py-3">
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-300">Append-only decision journal</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-sky-300">Append-only decision journal</div>
                 <h2 id="decision-review-title" className="mt-0.5 text-lg font-semibold text-stealth-100">
                   {decisionReviewMode === "window"
                     ? "Revise decision window"
@@ -8004,15 +6389,20 @@ export default function SecretOptions() {
               <button
                 type="button"
                 onClick={closeDecisionReviewModal}
-                className="rounded-md border border-stealth-700 bg-stealth-900 px-2 py-1 text-sm text-stealth-300 hover:text-stealth-100"
+                aria-label="Close decision review"
+                className="grid h-11 w-11 place-items-center rounded-md border border-stealth-700 bg-stealth-900 text-sm text-stealth-300 hover:text-stealth-100"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateDecisionReview} className="min-h-0 overflow-y-auto px-4 py-3">
+            <form
+              onSubmit={handleCreateDecisionReview}
+              aria-describedby={decisionReviewError ? "decision-review-error" : undefined}
+              className="min-h-0 overflow-y-auto px-4 py-3"
+            >
               {decisionReviewError && (
-                <div className="mb-3 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+                <div ref={decisionReviewErrorRef} id="decision-review-error" role="alert" tabIndex={-1} className="mb-3 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
                   {decisionReviewError}
                 </div>
               )}
@@ -8022,15 +6412,15 @@ export default function SecretOptions() {
                   <section className="rounded-lg border border-stealth-700/70 bg-stealth-900/30 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-stealth-500">Decision stays intact</div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-stealth-500">Decision stays intact</div>
                         <div className="mt-1 text-base font-semibold text-stealth-100">
                           {decisionLabel(decisionReviewForm.verdict)} to {decisionReviewForm.target_contracts || selected.position.contracts}
                         </div>
-                        <div className="mt-1 text-[11px] text-stealth-400">
+                        <div className="mt-1 text-xs text-stealth-400">
                           This creates a new journal entry for the clocks and conditions below. It does not edit the prior record or submit an order.
                         </div>
                       </div>
-                      <div className="rounded-md border border-stealth-700 bg-stealth-950/45 px-2.5 py-1.5 text-right text-[10px] text-stealth-400">
+                      <div className="rounded-md border border-stealth-700 bg-stealth-950/45 px-2.5 py-1.5 text-right text-xs text-stealth-400">
                         {decisionLabel(decisionReviewForm.quality)} quality<br />
                         {decisionLabel(decisionReviewForm.confidence)} confidence
                       </div>
@@ -8041,13 +6431,13 @@ export default function SecretOptions() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <h3 className="text-sm font-semibold text-amber-100">Latest suggested window</h3>
-                        <p className="mt-1 text-[11px] text-stealth-400">
+                        <p className="mt-1 text-xs text-stealth-400">
                           Review {selectedThesisAssessment?.suggested_window.next_review_date ? formatDate(selectedThesisAssessment.suggested_window.next_review_date) : "not required"}
                           {" · "}
                           maximum hold {selectedThesisAssessment?.suggested_window.decision_deadline ? formatDate(selectedThesisAssessment.suggested_window.decision_deadline) : "not set"}
                         </p>
                         {selectedThesisAssessment?.suggested_window && (
-                          <p className="mt-1 max-w-xl text-[10px] text-stealth-500">
+                          <p className="mt-1 max-w-xl text-xs text-stealth-500">
                             {selectedThesisAssessment.suggested_window.max_hold_sessions} session max, bounded by the original {selectedThesisAssessment.suggested_window.original_min_hold_days}-{selectedThesisAssessment.suggested_window.original_max_hold_days} session model.
                           </p>
                         )}
@@ -8056,7 +6446,7 @@ export default function SecretOptions() {
                         type="button"
                         disabled={!selectedThesisAssessment?.assessment}
                         onClick={applySuggestedDecisionWindow}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-600/50 bg-amber-900/35 px-2.5 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-800/45 disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-600/50 bg-amber-900/35 px-2.5 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-800/45 disabled:opacity-50"
                       >
                         <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
                         Apply suggested dates
@@ -8112,7 +6502,7 @@ export default function SecretOptions() {
                   <section className="rounded-lg border border-sky-700/45 bg-sky-950/20 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-300">System recommendation</div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-sky-300">System recommendation</div>
                         <div className="mt-1 text-lg font-semibold text-stealth-100">
                           {decisionLabel(selectedThesisAssessment.assessment.proposed_verdict)} to {selectedThesisAssessment.assessment.proposed_target_contracts} contract{selectedThesisAssessment.assessment.proposed_target_contracts === 1 ? "" : "s"}
                         </div>
@@ -8120,24 +6510,24 @@ export default function SecretOptions() {
                           {selectedThesisAssessment.assessment.reasons.join(" ")}
                         </div>
                       </div>
-                      <div className="rounded border border-stealth-700 bg-stealth-950/45 px-2 py-1 text-right text-[10px] text-stealth-400">
+                      <div className="rounded border border-stealth-700 bg-stealth-950/45 px-2 py-1 text-right text-xs text-stealth-400">
                         {decisionLabel(selectedThesisAssessment.assessment.quality)} · {decisionLabel(selectedThesisAssessment.assessment.urgency)} urgency<br />
                         {decisionLabel(selectedThesisAssessment.assessment.confidence)} confidence
                       </div>
                     </div>
-                    <div className="mt-2 text-[10px] text-stealth-500">Saving records a decision; it does not create, stage, or send an order.</div>
+                    <div className="mt-2 text-xs text-stealth-500">Saving records a decision; it does not create, stage, or send an order.</div>
                   </section>
                 )}
 
                 <details className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
                   <summary className="cursor-pointer text-sm font-semibold text-stealth-100">
                     Advanced mandate and generated thresholds
-                    <span className="ml-2 text-[10px] font-normal text-stealth-500">Review only if the reconstructed context is wrong</span>
+                    <span className="ml-2 text-xs font-normal text-stealth-500">Review only if the reconstructed context is wrong</span>
                   </summary>
                   <div className="mt-3 border-t border-stealth-800 pt-3">
                   <div className="mb-3">
                     <h3 className="text-sm font-semibold text-stealth-100">Mandate</h3>
-                    <p className="text-[11px] text-stealth-500">What was this trade supposed to accomplish? Carry these fields forward unless the mandate itself changed.</p>
+                    <p className="text-xs text-stealth-500">What was this trade supposed to accomplish? Carry these fields forward unless the mandate itself changed.</p>
                   </div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <label className="text-xs text-stealth-400">
@@ -8200,7 +6590,7 @@ export default function SecretOptions() {
                 <section className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
                   <div className="mb-3">
                     <h3 className="text-sm font-semibold text-stealth-100">2. Knowing what we know today</h3>
-                    <p className="text-[11px] text-stealth-500">Separate the underlying thesis from whether this exact contract is still a good use of the remaining capital.</p>
+                    <p className="text-xs text-stealth-500">Separate the underlying thesis from whether this exact contract is still a good use of the remaining capital.</p>
                   </div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <label className="text-xs text-stealth-400">
@@ -8245,7 +6635,7 @@ export default function SecretOptions() {
                 <section className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
                   <div className="mb-3">
                     <h3 className="text-sm font-semibold text-stealth-100">3. Decision and the next two clocks</h3>
-                    <p className="text-[11px] text-stealth-500">Review date is a process reminder. Decision deadline is when specified evidence must exist.</p>
+                    <p className="text-xs text-stealth-500">Review date is a process reminder. Decision deadline is when specified evidence must exist.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
                     <label className="text-xs text-stealth-400 md:col-span-2">
@@ -8325,14 +6715,14 @@ export default function SecretOptions() {
               )}
 
               <div className="sticky bottom-0 mt-4 flex items-center justify-between gap-3 border-t border-stealth-800 bg-stealth-950/95 py-3">
-                <div className="text-[11px] text-stealth-500">
+                <div className="text-xs text-stealth-500">
                   {decisionReviewMode === "window"
                     ? "Saving appends a new window version and captures a fresh market snapshot."
                     : "A fresh quote, Greeks, P/L, DTE, and remaining-capital snapshot will be captured on save."}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <button type="button" onClick={closeDecisionReviewModal} className="rounded-md px-3 py-2 text-sm text-stealth-400 hover:text-stealth-100">Cancel</button>
-                  <button type="submit" disabled={decisionReviewSubmitting} className="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600 disabled:bg-stealth-700">
+                  <button type="button" onClick={closeDecisionReviewModal} className="min-h-11 rounded-md px-3 text-sm text-stealth-400 hover:text-stealth-100">Cancel</button>
+                  <button type="submit" disabled={decisionReviewSubmitting} className="min-h-11 rounded-md bg-sky-700 px-4 text-sm font-semibold text-white hover:bg-sky-600 disabled:bg-stealth-700">
                     {decisionReviewSubmitting
                       ? "Recording..."
                       : decisionReviewMode === "window"
@@ -8348,28 +6738,37 @@ export default function SecretOptions() {
 
       {/* Trade Modal */}
       {showAddModal && renderModal(
+        editingPositionId ? "Edit trade" : scannerTradePrefill ? "Add scanner training trade" : "Add new trade",
+        closeTradeModal,
         <div
-          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
-          onClick={closeTradeModal}
+          role="presentation"
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/90 backdrop-blur-sm p-4"
+          onClick={(event) => {
+            if (event.currentTarget === event.target) closeTradeModal();
+          }}
         >
           <div
-            className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            onClick={(event) => event.stopPropagation()}
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-stealth-700 bg-stealth-800 p-4 sm:max-h-[90dvh] sm:p-6"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">
-                {editingPositionId ? "Edit Trade" : scannerTradePrefill ? "Add Scanner Training Trade" : "Add New Trade"}
-              </h2>
+            <div className="sticky -top-4 z-10 -mx-4 mb-4 flex items-start justify-between gap-3 border-b border-stealth-700 bg-stealth-800/95 px-4 pb-3 pt-1 backdrop-blur sm:-top-6 sm:-mx-6 sm:px-6 sm:pt-0">
+              <div>
+                <h2 className="text-xl font-semibold">
+                  {editingPositionId ? "Edit Trade" : scannerTradePrefill ? "Add Scanner Training Trade" : "Add New Trade"}
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-stealth-400">Review the required fields below. Cancel and save actions remain available while you scroll.</p>
+              </div>
               <button
+                type="button"
                 onClick={closeTradeModal}
-                className="text-gray-400 hover:text-gray-200"
+                aria-label="Close trade form"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-stealth-400 hover:bg-white/5 hover:text-stealth-200"
               >
                 ✕
               </button>
             </div>
             
             {formError && (
-              <div className="bg-red-900/20 border border-red-700 text-red-300 text-xs rounded-lg p-2 mb-4">
+              <div ref={tradeFormErrorRef} id="trade-form-error" role="alert" tabIndex={-1} className="mb-4 rounded-lg border border-red-700 bg-red-900/20 p-2 text-xs text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                 {formError}
               </div>
             )}
@@ -8392,44 +6791,46 @@ export default function SecretOptions() {
 
             <form
               onSubmit={editingPositionId ? handleUpdatePosition : handleCreatePosition}
+              aria-describedby={formError ? "trade-form-error" : undefined}
               className="space-y-4"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Trade Date *
                   <input
+                    data-dialog-initial-focus
                     type="date"
                     value={formData.trade_date}
                     onChange={handleFieldChange("trade_date")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
                 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Symbol *
                   <input
                     type="text"
                     value={formData.symbol}
                     onChange={handleFieldChange("symbol")}
                     placeholder="AAPL"
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 uppercase"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200 uppercase"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Expiration *
                   <input
                     type="date"
                     value={formData.expiration}
                     onChange={handleFieldChange("expiration")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Strike *
                   <input
                     type="number"
@@ -8437,36 +6838,36 @@ export default function SecretOptions() {
                     value={formData.strike}
                     onChange={handleFieldChange("strike")}
                     placeholder="100.00"
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Type *
                   <select
                     value={formData.option_type}
                     onChange={handleFieldChange("option_type")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   >
                     <option value="call">Call</option>
                     <option value="put">Put</option>
                   </select>
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Contracts *
                   <input
                     type="number"
                     value={formData.contracts}
                     onChange={handleFieldChange("contracts")}
                     placeholder="1"
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Fill Price *
                   <input
                     type="number"
@@ -8474,12 +6875,12 @@ export default function SecretOptions() {
                     value={formData.fill_price}
                     onChange={handleFieldChange("fill_price")}
                     placeholder="5.00"
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Total Cost *
                   <input
                     type="number"
@@ -8487,12 +6888,12 @@ export default function SecretOptions() {
                     value={formData.total_cost}
                     onChange={handleFieldChange("total_cost")}
                     placeholder="503.37"
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Underlying at Entry
                   <input
                     type="number"
@@ -8500,34 +6901,34 @@ export default function SecretOptions() {
                     value={formData.underlying_at_entry}
                     onChange={handleFieldChange("underlying_at_entry")}
                     placeholder="95.50"
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Account
                   <input
                     type="text"
                     value={formData.account}
                     onChange={handleFieldChange("account")}
                     placeholder="Active Trading"
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   />
                 </label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-4">
+              <div className="sticky -bottom-4 -mx-4 flex justify-end gap-2 border-t border-stealth-700 bg-stealth-800/95 px-4 py-3 backdrop-blur sm:-bottom-6 sm:-mx-6 sm:px-6">
                 <button
                   type="button"
                   onClick={closeTradeModal}
-                  className="px-4 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
+                  className="min-h-11 rounded-md px-4 text-sm text-stealth-300 hover:bg-white/5 hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                  className="min-h-11 rounded-md bg-emerald-700 px-4 text-sm font-medium text-white hover:bg-emerald-600 disabled:bg-stealth-700"
                 >
                   {submitting
                     ? editingPositionId
@@ -8547,75 +6948,88 @@ export default function SecretOptions() {
 
       {/* Close Position Modal */}
       {showCloseModal && renderModal(
+        "Close position",
+        closeClosePositionModal,
         <div
-          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
-          onClick={() => {
-            setShowCloseModal(false);
-            setExitPrice("");
-            setCloseNotes("");
-            setClosingPositionId(null);
+          role="presentation"
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/90 backdrop-blur-sm p-4"
+          onClick={(event) => {
+            if (event.currentTarget === event.target) {
+              closeClosePositionModal();
+            }
           }}
         >
           <div
-            className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md w-full"
-            onClick={(event) => event.stopPropagation()}
+            className="bg-stealth-800 rounded-lg border border-stealth-700 p-6 max-w-md w-full"
           >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Close Position</h2>
               <button
-                onClick={() => {
-                  setShowCloseModal(false);
-                  setExitPrice("");
-                  setCloseNotes("");
-                  setClosingPositionId(null);
-                }}
-                className="text-gray-400 hover:text-gray-200"
+                type="button"
+                onClick={closeClosePositionModal}
+                aria-label="Close position form"
+                className="grid h-11 w-11 place-items-center rounded-lg text-stealth-400 hover:bg-white/5 hover:text-stealth-200"
               >
                 ✕
               </button>
             </div>
-            
-            <div className="space-y-4">
-              <label className="block text-sm text-gray-400">
+
+            {closePositionError && (
+              <div
+                ref={closePositionErrorRef}
+                id="close-position-error"
+                role="alert"
+                tabIndex={-1}
+                className="mb-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+              >
+                {closePositionError}
+              </div>
+            )}
+
+            <div className="space-y-4" aria-describedby={closePositionError ? "close-position-error" : undefined}>
+              <label className="block text-sm text-stealth-400">
                 Exit Price (per contract) *
                 <input
+                  data-dialog-initial-focus
                   type="number"
                   step="0.01"
                   value={exitPrice}
-                  onChange={(e) => setExitPrice(e.target.value)}
+                  onChange={(e) => {
+                    setExitPrice(e.target.value);
+                    if (closePositionError) setClosePositionError(null);
+                  }}
                   placeholder="5.50"
-                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  aria-invalid={Boolean(closePositionError)}
+                  aria-describedby={closePositionError ? "close-position-error" : undefined}
+                  className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   required
                 />
               </label>
 
-              <label className="block text-sm text-gray-400">
+              <label className="block text-sm text-stealth-400">
                 Notes (optional)
                 <textarea
                   value={closeNotes}
                   onChange={(e) => setCloseNotes(e.target.value)}
                   placeholder="Reason for closing..."
                   rows={3}
-                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                 />
               </label>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="sticky -bottom-6 -mx-6 flex justify-end gap-2 border-t border-stealth-700 bg-stealth-800/95 px-6 py-3 backdrop-blur">
                 <button
-                  onClick={() => {
-                    setShowCloseModal(false);
-                    setExitPrice("");
-                    setCloseNotes("");
-                    setClosingPositionId(null);
-                  }}
-                  className="px-4 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
+                  type="button"
+                  onClick={closeClosePositionModal}
+                  className="min-h-11 rounded-md px-4 text-sm text-stealth-300 hover:bg-white/5 hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleClosePosition}
                   disabled={closingSubmitting}
-                  className="bg-rose-700 hover:bg-rose-600 disabled:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                  className="min-h-11 rounded-md bg-rose-700 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:bg-stealth-700"
                 >
                   {closingSubmitting ? "Closing..." : "Close Position"}
                 </button>
@@ -8627,188 +7041,195 @@ export default function SecretOptions() {
 
       {/* Edit Closed Position Modal */}
       {showClosedEditModal && renderModal(
+        "Edit closed trade",
+        closeClosedEditModal,
         <div
-          className="fixed inset-0 z-[60] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/75 backdrop-blur-sm p-4"
-          onClick={closeClosedEditModal}
+          role="presentation"
+          className="fixed inset-0 z-[60] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/95 backdrop-blur-sm p-4"
+          onClick={(event) => {
+            if (event.currentTarget === event.target) closeClosedEditModal();
+          }}
         >
           <div
-            className="w-full max-w-3xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto"
-            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-3xl rounded-lg border border-stealth-700 bg-stealth-800 p-6 max-h-[90dvh] overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Edit Closed Trade</h2>
               <button
+                type="button"
                 onClick={closeClosedEditModal}
-                className="text-gray-400 hover:text-gray-200"
+                aria-label="Close closed-trade editor"
+                className="grid h-11 w-11 place-items-center rounded-lg text-stealth-400 hover:bg-white/5 hover:text-stealth-200"
               >
                 ✕
               </button>
             </div>
 
             {closedFormError && (
-              <div className="mb-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+              <div ref={closedFormErrorRef} id="closed-trade-form-error" role="alert" tabIndex={-1} className="mb-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
                 {closedFormError}
               </div>
             )}
 
-            <form onSubmit={handleUpdateClosedPosition} className="space-y-4">
+            <form onSubmit={handleUpdateClosedPosition} aria-describedby={closedFormError ? "closed-trade-form-error" : undefined} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Trade Date *
                   <input
+                    data-dialog-initial-focus
                     type="date"
                     value={closedFormData.trade_date}
                     onChange={handleClosedFieldChange("trade_date")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Close Date *
                   <input
                     type="date"
                     value={closedFormData.close_date}
                     onChange={handleClosedFieldChange("close_date")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Account
                   <input
                     type="text"
                     value={closedFormData.account}
                     onChange={handleClosedFieldChange("account")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Symbol *
                   <input
                     type="text"
                     value={closedFormData.symbol}
                     onChange={handleClosedFieldChange("symbol")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm uppercase text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm uppercase text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Expiration *
                   <input
                     type="date"
                     value={closedFormData.expiration}
                     onChange={handleClosedFieldChange("expiration")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Type *
                   <select
                     value={closedFormData.option_type}
                     onChange={handleClosedFieldChange("option_type")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   >
                     <option value="call">Call</option>
                     <option value="put">Put</option>
                   </select>
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Contracts *
                   <input
                     type="number"
                     min="1"
                     value={closedFormData.contracts}
                     onChange={handleClosedFieldChange("contracts")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Strike *
                   <input
                     type="number"
                     step="0.01"
                     value={closedFormData.strike}
                     onChange={handleClosedFieldChange("strike")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Total Cost *
                   <input
                     type="number"
                     step="0.01"
                     value={closedFormData.total_cost}
                     onChange={handleClosedFieldChange("total_cost")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Entry Price *
                   <input
                     type="number"
                     step="0.01"
                     value={closedFormData.fill_price}
                     onChange={handleClosedFieldChange("fill_price")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Exit Price *
                   <input
                     type="number"
                     step="0.01"
                     value={closedFormData.exit_price}
                     onChange={handleClosedFieldChange("exit_price")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Underlying at Entry
                   <input
                     type="number"
                     step="0.01"
                     value={closedFormData.underlying_at_entry}
                     onChange={handleClosedFieldChange("underlying_at_entry")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   />
                 </label>
 
-                <label className="text-xs text-gray-400">
+                <label className="text-xs text-stealth-400">
                   Underlying at Exit
                   <input
                     type="number"
                     step="0.01"
                     value={closedFormData.underlying_at_exit}
                     onChange={handleClosedFieldChange("underlying_at_exit")}
-                    className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   />
                 </label>
               </div>
 
-              <label className="block text-xs text-gray-400">
+              <label className="block text-xs text-stealth-400">
                 Notes
                 <textarea
                   value={closedFormData.notes}
                   onChange={handleClosedFieldChange("notes")}
                   rows={3}
-                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                  className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                 />
               </label>
 
@@ -8816,14 +7237,14 @@ export default function SecretOptions() {
                 <button
                   type="button"
                   onClick={closeClosedEditModal}
-                  className="px-4 py-2 rounded-md text-sm text-gray-400 hover:text-gray-200"
+                  className="min-h-11 rounded-md px-4 text-sm text-stealth-300 hover:bg-white/5 hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={closedSubmitting}
-                  className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                  className="min-h-11 rounded-md bg-emerald-700 px-4 text-sm font-medium text-white hover:bg-emerald-600 disabled:bg-stealth-700"
                 >
                   {closedSubmitting ? "Saving..." : "Save Changes"}
                 </button>
@@ -8833,37 +7254,165 @@ export default function SecretOptions() {
         </div>
       )}
 
+      {/* Restore Closed Position Confirmation */}
+      {pendingClosedRestore && renderModal(
+        "Restore closed trade",
+        () => {
+          if (closedRestoreSubmittingId !== null) return;
+          setPendingClosedRestore(null);
+          setClosedRestoreError(null);
+          setClosedRestoreErrorTargetId(null);
+        },
+        <div className="fixed inset-0 z-[70] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/95 p-4">
+          <div className="w-full max-w-md rounded-xl border border-amber-500/35 bg-stealth-800 p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-amber-400/35 bg-amber-500/10 text-amber-100">
+                <Undo2 className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-xl font-semibold text-stealth-100">
+                  Restore {pendingClosedRestore.symbol}?
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-stealth-300">
+                  This returns the original contract to open positions, reconnects its thesis and
+                  review history, and reverses the close’s training outcome.
+                </p>
+                <p className="mt-2 text-xs leading-5 text-stealth-500">
+                  The close and reversal remain in the lifecycle audit trail.
+                </p>
+              </div>
+            </div>
+            {closedRestoreError && closedRestoreErrorTargetId === pendingClosedRestore.id ? (
+              <div
+                ref={closedRestoreErrorRef}
+                id="closed-restore-error"
+                role="alert"
+                tabIndex={-1}
+                className="mt-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+              >
+                {closedRestoreError}
+              </div>
+            ) : null}
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                data-dialog-initial-focus
+                disabled={closedRestoreSubmittingId !== null}
+                onClick={() => {
+                  setPendingClosedRestore(null);
+                  setClosedRestoreError(null);
+                  setClosedRestoreErrorTargetId(null);
+                }}
+                className="min-h-11 rounded-md px-4 text-sm text-stealth-300 hover:bg-white/5 hover:text-white disabled:opacity-50"
+              >
+                Keep closed
+              </button>
+              <button
+                type="button"
+                disabled={closedRestoreSubmittingId !== null}
+                aria-describedby={closedRestoreError ? "closed-restore-error" : undefined}
+                onClick={() => void handleRestoreClosedPosition(pendingClosedRestore)}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-amber-500 px-4 text-sm font-semibold text-stealth-950 hover:bg-amber-400 disabled:cursor-wait disabled:bg-stealth-700 disabled:text-stealth-400"
+              >
+                <Undo2 className="h-4 w-4" aria-hidden="true" />
+                {closedRestoreSubmittingId === pendingClosedRestore.id
+                  ? "Restoring…"
+                  : "Restore position"}
+              </button>
+            </div>
+          </div>
+        </div>,
+      )}
+
+      {/* Delete Closed Position Confirmation */}
+      {pendingClosedDeletion && renderModal(
+        "Delete closed trade",
+        () => {
+          if (closedDeleteSubmitting) return;
+          setPendingClosedDeletion(null);
+          setClosedDeleteError(null);
+        },
+        <div className="fixed inset-0 z-[70] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/95 p-4">
+          <div className="w-full max-w-md rounded-lg border border-rose-500/35 bg-stealth-800 p-6 shadow-2xl">
+            <h2 className="text-xl font-semibold text-stealth-100">Delete closed trade?</h2>
+            <p className="mt-3 text-sm leading-6 text-stealth-300">
+              Trade #{pendingClosedDeletion.id} for {pendingClosedDeletion.symbol}, closed{" "}
+              {formatDate(pendingClosedDeletion.close_date)}, will be permanently removed from the
+              P/L history.
+            </p>
+            {closedDeleteError && (
+              <div
+                ref={closedDeleteErrorRef}
+                id="closed-delete-error"
+                role="alert"
+                tabIndex={-1}
+                className="mt-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+              >
+                {closedDeleteError}
+              </div>
+            )}
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                data-dialog-initial-focus
+                disabled={closedDeleteSubmitting}
+                onClick={() => {
+                  setPendingClosedDeletion(null);
+                  setClosedDeleteError(null);
+                }}
+                className="min-h-11 rounded-md px-4 text-sm text-stealth-300 hover:bg-white/5 hover:text-white disabled:opacity-50"
+              >
+                Keep trade
+              </button>
+              <button
+                type="button"
+                disabled={closedDeleteSubmitting}
+                aria-describedby={closedDeleteError ? "closed-delete-error" : undefined}
+                onClick={() => void handleDeleteClosedPosition()}
+                className="min-h-11 rounded-md bg-rose-700 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:bg-stealth-700"
+              >
+                {closedDeleteSubmitting ? "Deleting..." : "Delete trade"}
+              </button>
+            </div>
+          </div>
+        </div>,
+      )}
+
       {/* P/L History Modal */}
       {showClosedLog && renderModal(
+        "Closed positions history",
+        () => setShowClosedLog(false),
         <div
-          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/90 p-4"
         >
-          <div className="w-full max-w-5xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto">
+          <div className="w-full max-w-5xl rounded-lg border border-stealth-700 bg-stealth-800 p-6 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Closed Positions History</h2>
               <button
+                type="button"
                 onClick={() => setShowClosedLog(false)}
-                className="text-gray-400 hover:text-gray-200"
+                aria-label="Close closed positions history"
+                className="grid h-11 w-11 place-items-center rounded-lg text-stealth-400 hover:bg-white/5 hover:text-stealth-200"
               >
                 ✕
               </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Tracked Closed Trades</div>
-                <div className="text-base font-semibold text-gray-100">{closedTotals.totalTrades}</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Tracked Closed Trades</div>
+                <div className="text-base font-semibold text-stealth-100">{closedTotals.totalTrades}</div>
               </div>
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Win Rate</div>
-                <div className="text-base font-semibold text-gray-100">{formatPercent(closedTotals.winRate, 1)}</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Win Rate</div>
+                <div className="text-base font-semibold text-stealth-100">{formatPercent(closedTotals.winRate, 1)}</div>
               </div>
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Total Cost</div>
-                <div className="text-base font-semibold text-gray-100">{formatCurrency(closedTotals.totalCost, 0)}</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Total Cost</div>
+                <div className="text-base font-semibold text-stealth-100">{formatCurrency(closedTotals.totalCost, 0)}</div>
               </div>
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Total P&amp;L</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Total P&amp;L</div>
                 <div
                   className={`text-base font-semibold ${
                     closedTotals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"
@@ -8878,11 +7427,11 @@ export default function SecretOptions() {
               <div className="mb-4 rounded-lg border border-violet-500/30 bg-violet-950/15 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-300">Closed-trade learning lab</div>
-                    <div className="mt-1 text-sm font-semibold text-gray-100">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-300">Closed-trade learning lab</div>
+                    <div className="mt-1 text-sm font-semibold text-stealth-100">
                       {learningSummary.sample.classified_trade_cycles} classified cycles · {learningSummary.sample.matured_decision_horizons} matured decision horizons
                     </div>
-                    <div className="mt-1 text-xs text-gray-400">
+                    <div className="mt-1 text-xs text-stealth-400">
                       Leading lessons: {Object.entries(learningSummary.trade_outcomes.primary_lessons)
                         .sort((left, right) => right[1] - left[1])
                         .slice(0, 3)
@@ -8890,33 +7439,33 @@ export default function SecretOptions() {
                         .join(" · ") || "collecting outcomes"}
                     </div>
                     {scannerRecurrenceLearning ? (
-                      <div className="mt-1 text-[10px] text-violet-200/75">
+                      <div className="mt-1 text-xs text-violet-200/75">
                         {scannerRecurrenceLearning}
                       </div>
                     ) : null}
                     {marketFieldLearning ? (
-                      <div className="mt-1 text-[10px] text-sky-200/75">
+                      <div className="mt-1 text-xs text-sky-200/75">
                         {marketFieldLearning}
                       </div>
                     ) : null}
                   </div>
-                  <div className="rounded-md border border-violet-500/25 bg-gray-950/35 px-3 py-2 text-right text-[10px] text-gray-400">
+                  <div className="rounded-md border border-violet-500/25 bg-stealth-950/35 px-3 py-2 text-right text-xs text-stealth-400">
                     Learned challenger: {decisionLabel(learningSummary.promotion_readiness.status)}<br />
                     {learningSummary.promotion_readiness.remaining_cycles} independent cycles until eligible
                   </div>
                 </div>
-                <div className="mt-2 text-[10px] text-gray-500">
+                <div className="mt-2 text-xs text-stealth-500">
                   Time-ordered validation and manual promotion stay mandatory. Actual trades and modeled counterfactuals remain separate; automated execution is off.
                 </div>
               </div>
             )}
 
             {sortedClosedRows.length === 0 ? (
-              <div className="text-sm text-gray-400 text-center py-8">No closed positions yet</div>
+              <div className="text-sm text-stealth-400 text-center py-8">No closed positions yet</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm text-gray-300">
-                  <thead className="text-xs uppercase text-gray-500 border-b border-gray-700">
+              <DataScroller label="Closed positions history">
+                <table className="min-w-full text-sm text-stealth-300">
+                  <thead className="text-xs uppercase text-stealth-500 border-b border-stealth-700">
                     <tr>
                       <th className="px-3 py-2 text-left">
                         <button
@@ -9026,7 +7575,7 @@ export default function SecretOptions() {
                       <th className="px-3 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-800">
+                  <tbody className="divide-y divide-stealth-800">
                     {sortedClosedRows.map((pos) => {
                       const heat = attributionHeat(pos.source_event_id, pos.source_match_confidence);
                       const tooltip = buildAttributionTooltip(
@@ -9037,7 +7586,7 @@ export default function SecretOptions() {
                         pos.source_match_notes
                       );
                       return (
-                      <tr key={pos.id} className={`${heat.rowTint} hover:bg-gray-900/40`}>
+                      <tr key={pos.id} className={`${heat.rowTint} hover:bg-stealth-900/40`}>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <span
@@ -9072,11 +7621,11 @@ export default function SecretOptions() {
                         >
                           {formatSigned(pos.percent_pnl, 1)}%
                         </td>
-                        <td className="px-3 py-2 text-xs text-gray-400">
+                        <td className="px-3 py-2 text-xs text-stealth-400">
                           <div>{pos.notes || "—"}</div>
                           {pos.learning_outcome && (
                             <div
-                              className="mt-1 text-[10px] text-violet-300"
+                              className="mt-1 text-xs text-violet-300"
                               title={`Process: ${decisionLabel(pos.learning_outcome.process_quality)} · Contract: ${decisionLabel(pos.learning_outcome.contract_result)}`}
                             >
                               Learn: {decisionLabel(pos.learning_outcome.primary_lesson)}
@@ -9091,11 +7640,12 @@ export default function SecretOptions() {
                                 disabled={secretMutationDisabled || closedRestoreSubmittingId !== null}
                                 onClick={() => {
                                   setClosedRestoreError(null);
+                                  setClosedRestoreErrorTargetId(null);
                                   setPendingClosedRestore(pos);
                                 }}
                                 aria-label={`Restore closed ${pos.symbol} trade to open positions`}
                                 title={`Restore ${pos.symbol} to open positions`}
-                                className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-amber-500/35 bg-amber-500/10 text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-500/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-amber-500/35 bg-amber-500/10 text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-500/20 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:cursor-not-allowed disabled:opacity-45"
                               >
                                 <Undo2 className="h-4 w-4" aria-hidden="true" />
                               </button>
@@ -9105,16 +7655,19 @@ export default function SecretOptions() {
                               onClick={() => openClosedEditModal(pos)}
                               aria-label={`Edit closed ${pos.symbol} trade`}
                               title={`Edit ${pos.symbol}`}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-500/35 bg-sky-500/12 text-sky-200 transition hover:border-sky-300/70 hover:bg-sky-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50"
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-sky-500/35 bg-sky-500/12 text-sky-200 transition hover:border-sky-300/70 hover:bg-sky-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50"
                             >
                               <Pencil className="h-4 w-4" aria-hidden="true" />
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteClosedPosition(pos)}
+                              onClick={() => {
+                                setClosedDeleteError(null);
+                                setPendingClosedDeletion(pos);
+                              }}
                               aria-label={`Delete closed ${pos.symbol} trade`}
                               title={`Delete ${pos.symbol}`}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50"
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50"
                             >
                               <Trash2 className="h-4 w-4" aria-hidden="true" />
                             </button>
@@ -9124,14 +7677,14 @@ export default function SecretOptions() {
                     )})}
                   </tbody>
                 </table>
-              </div>
+              </DataScroller>
             )}
 
             <div className="rounded-lg border border-indigo-500/20 bg-indigo-950/10 p-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-xs uppercase tracking-[0.18em] text-indigo-300">Scanner Outcomes</div>
-                  <div className="text-xs text-gray-400">
+                  <div className="text-xs text-stealth-400">
                     Review historical training outcomes and prefill a trade template without crowding the portfolio summary.
                   </div>
                 </div>
@@ -9150,125 +7703,68 @@ export default function SecretOptions() {
         </div>
       )}
 
-      {/* Restore Closed Position Confirmation */}
-      {pendingClosedRestore && renderModal(
+      {/* Scanner Training Outcomes Modal */}
+      {showTrainingOutcomes && renderModal(
+        "Scanner training outcomes",
+        () => setShowTrainingOutcomes(false),
         <div
-          className="fixed inset-0 z-[70] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/75 p-4"
-          onClick={() => {
-            if (closedRestoreSubmittingId === null) {
-              setPendingClosedRestore(null);
-              setClosedRestoreError(null);
-            }
+          role="presentation"
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/90 backdrop-blur-sm p-4"
+          onClick={(event) => {
+            if (event.currentTarget === event.target) setShowTrainingOutcomes(false);
           }}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-amber-500/35 bg-stealth-800 p-6 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start gap-3">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-amber-400/35 bg-amber-500/10 text-amber-100">
-                <Undo2 className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-xl font-semibold text-stealth-100">
-                  Restore {pendingClosedRestore.symbol}?
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-stealth-300">
-                  This returns the original contract to open positions, reconnects its thesis and
-                  review history, and reverses the close’s training outcome.
-                </p>
-                <p className="mt-2 text-xs leading-5 text-stealth-500">
-                  The close and reversal remain in the lifecycle audit trail.
-                </p>
-              </div>
-            </div>
-            {closedRestoreError ? (
-              <div className="mt-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200" role="alert">
-                {closedRestoreError}
-              </div>
-            ) : null}
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                disabled={closedRestoreSubmittingId !== null}
-                onClick={() => {
-                  setPendingClosedRestore(null);
-                  setClosedRestoreError(null);
-                }}
-                className="min-h-11 rounded-md px-4 text-sm text-stealth-300 hover:bg-white/5 hover:text-white disabled:opacity-50"
-              >
-                Keep closed
-              </button>
-              <button
-                type="button"
-                disabled={closedRestoreSubmittingId !== null}
-                onClick={() => void handleRestoreClosedPosition(pendingClosedRestore)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-amber-500 px-4 text-sm font-semibold text-stealth-950 hover:bg-amber-400 disabled:cursor-wait disabled:bg-stealth-700 disabled:text-stealth-400"
-              >
-                <Undo2 className="h-4 w-4" aria-hidden="true" />
-                {closedRestoreSubmittingId === pendingClosedRestore.id ? "Restoring…" : "Restore position"}
-              </button>
-            </div>
-          </div>
-        </div>,
-      )}
-
-      {/* Scanner Training Outcomes Modal */}
-      {showTrainingOutcomes && renderModal(
-        <div
-          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm p-4"
-          onClick={() => setShowTrainingOutcomes(false)}
-        >
-          <div
-            className="w-full max-w-6xl rounded-lg border border-gray-700 bg-gray-800 p-6 max-h-[90dvh] overflow-y-auto"
-            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-6xl rounded-lg border border-stealth-700 bg-stealth-800 p-6 max-h-[90dvh] overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-xl font-semibold">Exceptional Scanner Training Outcomes</h2>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-stealth-400 mt-1">
                   Backtest view of exceptional optionality setups held for their suggested window.
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setShowTrainingOutcomes(false)}
-                className="text-gray-400 hover:text-gray-200"
+                aria-label="Close scanner training outcomes"
+                className="grid h-11 w-11 place-items-center rounded-lg text-stealth-400 hover:bg-white/5 hover:text-stealth-200"
               >
                 ✕
               </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4">
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Examples</div>
-                <div className="text-base font-semibold text-gray-100">{trainingSummary?.sample_size ?? 0}</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Examples</div>
+                <div className="text-base font-semibold text-stealth-100">{trainingSummary?.sample_size ?? 0}</div>
               </div>
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Matured</div>
-                <div className="text-base font-semibold text-gray-100">{trainingSummary?.matured ?? 0}</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Matured</div>
+                <div className="text-base font-semibold text-stealth-100">{trainingSummary?.matured ?? 0}</div>
               </div>
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Pending</div>
-                <div className="text-base font-semibold text-gray-100">{trainingSummary?.pending ?? 0}</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Pending</div>
+                <div className="text-base font-semibold text-stealth-100">{trainingSummary?.pending ?? 0}</div>
               </div>
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Win Rate</div>
-                <div className="text-base font-semibold text-gray-100">
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Win Rate</div>
+                <div className="text-base font-semibold text-stealth-100">
                   {trainingSummary?.win_rate_pct !== null && trainingSummary?.win_rate_pct !== undefined
                     ? formatPercent(trainingSummary.win_rate_pct, 1)
                     : "—"}
                 </div>
               </div>
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Avg Return</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Avg Return</div>
                 <div className={`text-base font-semibold ${(trainingSummary?.avg_option_return_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                   {trainingSummary?.avg_option_return_pct !== null && trainingSummary?.avg_option_return_pct !== undefined
                     ? formatSigned(trainingSummary.avg_option_return_pct, 1) + "%"
                     : "—"}
                 </div>
               </div>
-              <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
-                <div className="text-[11px] text-gray-500">Total P/L (1 lot)</div>
+              <div className="bg-stealth-900/50 rounded-lg border border-stealth-700 p-3">
+                <div className="text-xs text-stealth-500">Total P/L (1 lot)</div>
                 <div className={`text-base font-semibold ${(trainingSummary?.total_option_pnl_per_contract ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                   {trainingSummary?.total_option_pnl_per_contract !== null && trainingSummary?.total_option_pnl_per_contract !== undefined
                     ? formatCurrency(trainingSummary.total_option_pnl_per_contract, 0)
@@ -9282,46 +7778,46 @@ export default function SecretOptions() {
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em] text-sky-300">Your Trades vs Model Rank</div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-xs text-stealth-400">
                       Closed linked trades filtered by current model threshold {opportunityBacktest.threshold.toFixed(0)} (C or better).
                     </div>
                   </div>
-                  <div className="text-[10px] uppercase text-gray-500">{opportunityBacktest.model_version}</div>
+                  <div className="text-xs uppercase text-stealth-500">{opportunityBacktest.model_version}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                  <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                    <div className="text-[10px] text-gray-500">All linked</div>
+                  <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
+                    <div className="text-xs text-stealth-500">All linked</div>
                     <div className={`text-sm font-semibold ${(opportunityBacktest.summary.all_trades.total_pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                       {formatCurrency(opportunityBacktest.summary.all_trades.total_pnl, 0)}
                     </div>
-                    <div className="text-[10px] text-gray-500">
+                    <div className="text-xs text-stealth-500">
                       {opportunityBacktest.summary.all_trades.count} trades / {formatPercent(opportunityBacktest.summary.all_trades.win_rate_pct, 0)}
                     </div>
                   </div>
-                  <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                    <div className="text-[10px] text-gray-500">Model selected</div>
+                  <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
+                    <div className="text-xs text-stealth-500">Model selected</div>
                     <div className={`text-sm font-semibold ${(opportunityBacktest.summary.model_selected.total_pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                       {formatCurrency(opportunityBacktest.summary.model_selected.total_pnl, 0)}
                     </div>
-                    <div className="text-[10px] text-gray-500">
+                    <div className="text-xs text-stealth-500">
                       {opportunityBacktest.summary.model_selected.count} trades / {formatPercent(opportunityBacktest.summary.model_selected.win_rate_pct, 0)}
                     </div>
                   </div>
-                  <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                    <div className="text-[10px] text-gray-500">Avg return delta</div>
+                  <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
+                    <div className="text-xs text-stealth-500">Avg return delta</div>
                     <div className={`text-sm font-semibold ${(opportunityBacktest.summary.avg_percent_delta_vs_all ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                       {opportunityBacktest.summary.avg_percent_delta_vs_all !== null && opportunityBacktest.summary.avg_percent_delta_vs_all !== undefined
                         ? `${formatSigned(opportunityBacktest.summary.avg_percent_delta_vs_all, 1)}%`
                         : "—"}
                     </div>
-                    <div className="text-[10px] text-gray-500">selected vs all linked</div>
+                    <div className="text-xs text-stealth-500">selected vs all linked</div>
                   </div>
-                  <div className="rounded-md border border-gray-700/70 bg-gray-900/45 p-2">
-                    <div className="text-[10px] text-gray-500">Excluded tradeoff</div>
-                    <div className="text-sm font-semibold text-gray-100">
+                  <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
+                    <div className="text-xs text-stealth-500">Excluded tradeoff</div>
+                    <div className="text-sm font-semibold text-stealth-100">
                       {formatCurrency(opportunityBacktest.summary.avoided_loss_from_excluded, 0)}
                     </div>
-                    <div className="text-[10px] text-gray-500">
+                    <div className="text-xs text-stealth-500">
                       avoided / {formatCurrency(opportunityBacktest.summary.excluded_winners_left_on_table, 0)} left
                     </div>
                   </div>
@@ -9330,13 +7826,13 @@ export default function SecretOptions() {
             ) : null}
 
             {loadingTrainingOutcomes ? (
-              <div className="text-sm text-gray-400 text-center py-8">Loading scanner outcomes...</div>
+              <div className="text-sm text-stealth-400 text-center py-8">Loading scanner outcomes...</div>
             ) : trainingOutcomes.length === 0 ? (
-              <div className="text-sm text-gray-400 text-center py-8">No exceptional scanner examples found in lookback window.</div>
+              <div className="text-sm text-stealth-400 text-center py-8">No exceptional scanner examples found in lookback window.</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm text-gray-300">
-                  <thead className="text-xs uppercase text-gray-500 border-b border-gray-700">
+              <DataScroller label="Scanner training outcomes">
+                <table className="min-w-full text-sm text-stealth-300">
+                  <thead className="text-xs uppercase text-stealth-500 border-b border-stealth-700">
                     <tr>
                       <th className="px-3 py-2 text-left">Symbol / Rank</th>
                       <th className="px-3 py-2 text-left">Type</th>
@@ -9351,12 +7847,12 @@ export default function SecretOptions() {
                       <th className="px-3 py-2 text-left">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-800">
+                  <tbody className="divide-y divide-stealth-800">
                     {trainingOutcomes.map((row) => (
-                      <tr key={row.event_id} className="hover:bg-gray-900/40">
+                      <tr key={row.event_id} className="hover:bg-stealth-900/40">
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-gray-100">{row.symbol}</span>
+                            <span className="font-semibold text-stealth-100">{row.symbol}</span>
                             <OpportunityRankBadge
                               score={row.opportunity_score}
                               grade={row.opportunity_grade}
@@ -9405,7 +7901,7 @@ export default function SecretOptions() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataScroller>
             )}
           </div>
         </div>

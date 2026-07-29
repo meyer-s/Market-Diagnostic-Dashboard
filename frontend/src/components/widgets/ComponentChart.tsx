@@ -49,7 +49,12 @@ export function ComponentChart({
 
   return (
     <ResponsiveContainer width="100%" height={height as `${number}%` | number}>
-      <LineChart data={data} margin={CHART_MARGIN}>
+      <LineChart
+        accessibilityLayer
+        aria-label={`${lines.map((line) => line.name).join(", ")} history${yAxisLabel ? `, ${yAxisLabel}` : ""}`}
+        data={data}
+        margin={CHART_MARGIN}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
         <XAxis
           dataKey="dateNum"
@@ -87,7 +92,7 @@ export function ComponentChart({
           }}
           labelFormatter={(label: number) => new Date(label).toLocaleDateString()}
         />
-        <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.tick }} iconType="circle" />
+        <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.tick }} iconType="circle" />
         {lines.map((line, idx) => {
           // Check if this line should be rendered (for conditional lines)
           if (line.conditional && !line.conditional(data)) {

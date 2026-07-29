@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -19,6 +19,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
+import DataScroller from "../components/ui/DataScroller";
 import { useApi } from "../hooks/useApi";
 import {
   CHART_MARGIN,
@@ -257,15 +258,26 @@ const BIOFUEL_COLORS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 function HoverTooltip({ children, tip, width = "w-64" }: { children: React.ReactNode; tip: string; width?: string }) {
+  const tooltipId = useId();
   return (
-    <span className="group/htip relative inline-block cursor-default">
+    <div className="group/htip relative inline-flex max-w-full items-start gap-1">
       {children}
+      <button
+        type="button"
+        aria-describedby={tooltipId}
+        aria-label="Show supporting context"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-stealth-600 text-xs font-semibold text-stealth-300 transition-colors hover:border-stealth-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+      >
+        i
+      </button>
       <span
-        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-2.5 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block`}
+        id={tooltipId}
+        role="tooltip"
+        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden max-w-[min(20rem,calc(100vw-2rem))] ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-3 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block group-focus-within/htip:block`}
       >
         {tip}
       </span>
-    </span>
+    </div>
   );
 }
 
@@ -343,13 +355,13 @@ function StatTile({
   tone?: string;
 }) {
   return (
-    <div className="group/stile relative surface-card-muted px-2.5 py-2 cursor-default">
+    <div className="surface-card-muted px-2.5 py-2">
       <LabelCaps>{label}</LabelCaps>
       <p className={`mt-0.5 text-base font-semibold ${tone}`}>{value}</p>
       {detail ? (
-        <span className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 hidden w-52 rounded-lg border border-stealth-700 bg-stealth-950/95 px-2.5 py-2 text-xs text-stealth-300 shadow-[0_10px_40px_rgba(2,6,23,0.75)] group-hover/stile:block">
+        <div className="mt-1 text-xs leading-5 text-stealth-300">
           {detail}
-        </span>
+        </div>
       ) : null}
     </div>
   );
@@ -379,12 +391,12 @@ function SignalTile({
   tone?: string;
 }) {
   return (
-    <div className="group/stile relative surface-card-muted px-3 py-2.5 cursor-default">
+    <div className="surface-card-muted px-3 py-2.5">
       <LabelCaps>{label}</LabelCaps>
       <p className={`mt-1 text-sm font-semibold ${tone}`}>{title}</p>
-      <span className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 hidden w-56 rounded-lg border border-stealth-700 bg-stealth-950/95 px-2.5 py-2 text-xs text-stealth-300 shadow-[0_10px_40px_rgba(2,6,23,0.75)] group-hover/stile:block">
+      <div className="mt-1 text-xs leading-5 text-stealth-300">
         {detail}
-      </span>
+      </div>
     </div>
   );
 }
@@ -451,7 +463,7 @@ function FuturesTable({
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <Kicker>Energy Futures</Kicker>
-      <div className="overflow-x-auto">
+      <DataScroller label="Energy futures contract performance">
         <table className="w-full min-w-[560px] text-xs sm:text-sm">
           <thead>
             <tr className="border-b border-stealth-700/50">
@@ -485,7 +497,7 @@ function FuturesTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </DataScroller>
       {groups?.length ? <GroupSummaryStrip groups={groups} /> : null}
     </div>
   );
@@ -508,7 +520,12 @@ function CompositeHistoryChart({ history, surfaceClassName = "surface-card" }: {
       <CardHeader kicker="Energy Stability Score" title="Stability history" tooltipText="Market stability over the selected lookback window. Higher means the complex is absorbing large moves cleanly; lower means absolute moves and volatility are destabilizing the market." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={decimated} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Energy composite stability score history"
+            data={decimated}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
             <YAxis {...commonYAxisProps} domain={[yMin, yMax]} />
@@ -706,7 +723,12 @@ function RetailPricesChart({
 
       <div className={chartHeight}>
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart data={merged} margin={CHART_MARGIN}>
+          <ComposedChart
+            accessibilityLayer
+            aria-label="Gasoline-to-WTI refining-spread momentum history"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis yAxisId="momentum" {...commonYAxisProps} tickFormatter={(v: number) => `${v.toFixed(2)}`} />
@@ -750,7 +772,12 @@ function RetailPricesChart({
           </div>
           <div className="h-28">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <LineChart data={indexedPassThrough} margin={CHART_MARGIN}>
+              <LineChart
+                accessibilityLayer
+                aria-label="Indexed retail gasoline and WTI pass-through history"
+                data={indexedPassThrough}
+                margin={CHART_MARGIN}
+              >
                 <CartesianGrid {...commonGridProps} />
                 <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
                 <YAxis {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => `${v.toFixed(0)}`} />
@@ -824,7 +851,12 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
       <CardHeader kicker="Supply ↔ Price Relationship" title="Inventories vs WTI" tooltipText="Normalized 0–100 with inventories inverted so tightening supply climbs with price stress. Divergence between the two lines suggests supply and spot price are no longer confirming each other cleanly." />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={normalized} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Inverted oil inventories and WTI price history"
+            data={normalized}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis {...commonYAxisProps} domain={[0, 100]} tickFormatter={(v) => `${v.toFixed(0)}`} />
@@ -942,9 +974,14 @@ function FactorRadar({
       <CardHeader kicker="Contract Momentum Radar" title="Cross-contract momentum" tooltipText="Month-to-month shells deepen from pale to saturated green or red so the time path itself shows expansion or contraction across the full contract set." />
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <RadarChart data={radar.rows} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
+          <RadarChart
+            accessibilityLayer
+            aria-label="Cross-contract energy momentum by lookback window"
+            data={radar.rows}
+            margin={{ top: 8, right: 28, bottom: 8, left: 28 }}
+          >
             <PolarGrid stroke="#1e293b" />
-            <PolarAngleAxis dataKey="factor" tick={{ fill: "#64748b", fontSize: 11 }} />
+            <PolarAngleAxis dataKey="factor" tick={{ fill: "#64748b", fontSize: 12 }} />
             <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
             {radar.layers.map((layer) => (
               <Radar
@@ -1083,7 +1120,12 @@ function AltEnergyChart({
 
       <div className={compact ? "h-36" : "h-52"}>
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={decimated} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Traditional versus alternative energy capital-rotation history"
+            data={decimated}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => (d as string).slice(0, 7)} />
             <YAxis {...commonYAxisProps} />
@@ -1213,7 +1255,12 @@ function BiofuelsPanel({
 
       <div className={compact ? "h-36" : "h-44"}>
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={chartData} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Indexed biofuel and combustible contract history"
+            data={chartData}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis {...commonYAxisProps} />
@@ -1294,7 +1341,7 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
         <MetaPill tone="text-stealth-300">{source}</MetaPill>
       </div>
       {fallback_used && (
-        <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-300">
+        <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300">
           Live EIA feed unavailable — showing pinned 2023 fallback values.
         </div>
       )}
@@ -1308,12 +1355,12 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
 
       <div className="mb-4 grid grid-cols-3 gap-3">
         {[
-          { label: "Fossil", pct: summary.fossil_pct,     color: "bg-slate-500",   text: "text-stealth-200" },
+          { label: "Fossil", pct: summary.fossil_pct,     color: "bg-stealth-500",   text: "text-stealth-200" },
           { label: "Renew",  pct: summary.renewables_pct, color: "bg-emerald-600", text: "text-emerald-300" },
           { label: "Nuclear",pct: summary.nuclear_pct,    color: "bg-violet-600",  text: "text-violet-300" },
         ].map((row) => (
           <div key={row.label}>
-            <div className="mb-1 flex justify-between text-[11px]">
+            <div className="mb-1 flex justify-between text-xs">
               <span className="text-stealth-500">{row.label}</span>
               <span className={`font-mono ${row.text}`}>{row.pct.toFixed(1)}%</span>
             </div>
@@ -1330,7 +1377,7 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
           <div key={fuel} className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-stealth-900/60 px-2.5 py-2">
             <div className="h-2.5 w-2.5 flex-shrink-0 rounded-sm" style={{ background: FUEL_COLORS[fuel] ?? "#94a3b8" }} />
             <div>
-              <div className="text-[9px] uppercase tracking-wide text-stealth-500">{FUEL_LABELS[fuel] ?? fuel}</div>
+              <div className="text-xs uppercase tracking-wide text-stealth-500">{FUEL_LABELS[fuel] ?? fuel}</div>
               <div className="font-mono text-xs text-stealth-100">{pct.toFixed(1)}%</div>
             </div>
           </div>
@@ -1341,10 +1388,23 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
       {trendData.length > 1 && (
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <BarChart data={trendData} margin={CHART_MARGIN}>
+            <BarChart
+              accessibilityLayer
+              aria-label="United States electricity generation trend by fuel"
+              data={trendData}
+              margin={CHART_MARGIN}
+            >
               <CartesianGrid {...commonGridProps} />
-              <XAxis {...commonXAxisProps} dataKey="year" />
-              <YAxis {...commonYAxisProps} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+              <XAxis
+                {...commonXAxisProps}
+                dataKey="year"
+                tickFormatter={(value: string | number) => String(value).slice(0, 4)}
+              />
+              <YAxis
+                {...commonYAxisProps}
+                tickFormatter={(value: number) => `${Number(value).toFixed(0)}%`}
+                domain={[0, 100]}
+              />
               <Tooltip
                 {...tip}
                 formatter={(v: number, name: string) => [`${v.toFixed(1)}%`, FUEL_LABELS[name] ?? name]}
@@ -1600,7 +1660,16 @@ export default function EnergyIndex() {
 
   const primaryDataPending = !overviewApi.data || !historyApi.data || !pricesApi.data;
   if ((overviewApi.loading || historyApi.loading || pricesApi.loading) && primaryDataPending) {
-    return <MarketLoading label="Loading energy market data..." />;
+    return (
+      <div className="page-shell-wide page-stack" aria-busy="true">
+        <div>
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Energy Markets</h1>
+          <p className="page-subtitle">Preparing the current futures, pricing, and supply evidence.</p>
+        </div>
+        <MarketLoading label="Loading energy market evidence…" />
+      </div>
+    );
   }
 
   const overview = overviewApi.data;
@@ -1610,8 +1679,22 @@ export default function EnergyIndex() {
 
   if (!overview) {
     return (
-      <div className="page-shell">
-        <p className="text-stealth-400">Energy data unavailable. {overviewApi.error}</p>
+      <div className="page-shell page-stack">
+        <div>
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Energy Markets</h1>
+        </div>
+        <div className="surface-card border-red-800/70 p-5" role="alert">
+          <h2 className="text-lg font-semibold text-red-200">Energy evidence is unavailable</h2>
+          <p className="mt-2 text-sm text-red-300">{overviewApi.error}</p>
+          <button
+            type="button"
+            onClick={overviewApi.refetch}
+            className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-red-700 bg-red-950/50 px-4 text-sm font-semibold text-red-100 hover:bg-red-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+          >
+            Retry energy evidence
+          </button>
+        </div>
       </div>
     );
   }
@@ -1633,6 +1716,11 @@ export default function EnergyIndex() {
   const hasRadarPanel = Boolean(overview.symbols.length);
   const primarySidePanelCount = Number(hasCompositePanel) + Number(hasRadarPanel);
   const hasSupplyPricePanel = Boolean(prices?.fred_prices.crude_wti_spot?.length && prices?.fred_prices.crude_inventory?.length);
+  const partialIssues = [
+    historyApi.error ? "Composite history" : null,
+    pricesApi.error ? "Retail price and inventory evidence" : null,
+    mixApi.error ? "Generation mix" : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="page-shell-wide page-stack space-y-5 md:space-y-6">
@@ -1648,8 +1736,10 @@ export default function EnergyIndex() {
           {TIMEFRAME_OPTIONS.map(({ key, label }) => (
             <button
               key={key}
+              type="button"
+              aria-pressed={timeframe === key}
               onClick={() => setTimeframe(key)}
-              className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+              className={`min-h-11 rounded-xl px-3 text-xs font-medium transition-all ${
                 timeframe === key
                   ? "bg-orange-500/20 text-orange-300"
                   : "text-stealth-400 hover:text-stealth-200"
@@ -1661,14 +1751,60 @@ export default function EnergyIndex() {
         </div>
       </div>
 
+      <nav
+        aria-label="Energy page sections"
+        tabIndex={0}
+        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
+      >
+        {[
+          ["#energy-now", "Current read"],
+          ["#energy-evidence", "Evidence"],
+          ["#energy-structure", "Market structure"],
+          ["#energy-longer-horizon", "Longer horizon"],
+          ["#energy-methodology", "Methodology"],
+        ].map(([href, label]) => (
+          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      {partialIssues.length > 0 && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4" role="status">
+          <h2 className="text-sm font-semibold text-amber-200">Partial energy update</h2>
+          <p className="mt-1 text-sm text-amber-100">
+            The current headline is available, but {partialIssues.join(", ").toLowerCase()} {partialIssues.length === 1 ? "is" : "are"} missing.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (historyApi.error) historyApi.refetch();
+              if (pricesApi.error) pricesApi.refetch();
+              if (mixApi.error) mixApi.refetch();
+            }}
+            className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          >
+            Retry missing evidence
+          </button>
+        </div>
+      )}
+
       {/* ── Regime snapshot ───────────────────────────────────────── */}
-      <div className="surface-card-strong p-4 md:p-5">
+      <section id="energy-now" aria-labelledby="energy-now-title" className="surface-card-strong scroll-mt-32 p-4 md:p-5">
+        <h2 id="energy-now-title" className="sr-only">Current energy market read</h2>
         <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.95fr]">
           <div className="space-y-4">
             <div>
             <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Energy Stability</p>
             <p className={`mt-2 text-4xl font-semibold ${biasTone(overview.stability_score)}`}>{overview.stability_score.toFixed(0)}</p>
-            <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
+            <div
+              aria-label={`Energy stability ${overview.stability_score.toFixed(0)} out of 100`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={overview.stability_score}
+              className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700"
+              role="progressbar"
+            >
               <div className={`h-2 rounded-full ${overview.stability_score >= 60 ? "bg-emerald-500" : overview.stability_score <= 40 ? "bg-rose-500" : "bg-amber-500"}`} style={{ width: `${overview.stability_score}%` }} />
             </div>
             <p className="mt-2 text-xs text-stealth-400">Large absolute moves and high volatility pull this lower. As of {new Date(overview.as_of).toLocaleString()}</p>
@@ -1726,10 +1862,10 @@ export default function EnergyIndex() {
             />
           </div>
         </div>
-      </div>
+      </section>
 
       {(hasRetailSpreadPanel || primarySidePanelCount > 0) && (
-        <div className={`grid items-start gap-3 md:gap-4 ${hasRetailSpreadPanel && primarySidePanelCount > 0 ? "xl:grid-cols-[1.45fr_0.95fr]" : "grid-cols-1"}`}>
+        <section id="energy-evidence" aria-label="Energy market evidence" className={`scroll-mt-32 grid items-start gap-3 md:gap-4 ${hasRetailSpreadPanel && primarySidePanelCount > 0 ? "xl:grid-cols-[1.45fr_0.95fr]" : "grid-cols-1"}`}>
           {hasRetailSpreadPanel && prices ? (
             <RetailPricesChart prices={prices.fred_prices} surfaceClassName="primary-card" chartHeightClassName="h-72" />
           ) : null}
@@ -1739,10 +1875,10 @@ export default function EnergyIndex() {
               {hasRadarPanel ? <FactorRadar symbols={overview.symbols} history={history?.radar_history} /> : null}
             </div>
           ) : null}
-        </div>
+        </section>
       )}
 
-      <div className="space-y-2.5">
+      <section id="energy-structure" className="scroll-mt-32 space-y-2.5">
         <div className="flex flex-wrap items-end justify-between gap-2.5">
           <SectionHeader
             kicker="Market Structure"
@@ -1752,7 +1888,7 @@ export default function EnergyIndex() {
         </div>
 
         <FuturesTable symbols={overview.symbols} groups={overview.groups} surfaceClassName="surface-card-strong" />
-      </div>
+      </section>
 
       {hasSupplyPricePanel && prices && (
         <div className="space-y-2.5">
@@ -1770,7 +1906,7 @@ export default function EnergyIndex() {
         </div>
       )}
 
-      <div className="space-y-2.5">
+      <section id="energy-longer-horizon" className="scroll-mt-32 space-y-2.5">
         <div className="flex flex-wrap items-end justify-between gap-2.5">
           <SectionHeader
             kicker="Longer Horizon"
@@ -1794,7 +1930,7 @@ export default function EnergyIndex() {
             {mix && <GenerationMixPanel mix={mix} />}
           </div>
         </div>
-      </div>
+      </section>
 
       {overview.warnings.length > 0 && (
         <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300">
@@ -1811,7 +1947,9 @@ export default function EnergyIndex() {
         </HoverTooltip>
       </div>
 
-      <EnergyMethodologyPanel />
+      <div id="energy-methodology" className="scroll-mt-32">
+        <EnergyMethodologyPanel />
+      </div>
 
     </div>
   );

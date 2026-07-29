@@ -102,6 +102,17 @@ function formatBucket(bucket: string): string {
   return new Date(bucket).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function formatTimestamp(value: string | null | undefined): string {
+  if (!value) return "Timestamp unavailable";
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime())
+    ? value
+    : timestamp.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+}
+
 function formatGroupTitle(groupKey: GroupKey): string {
   if (groupKey === "sectors") {
     return "Sectors";
@@ -134,22 +145,22 @@ function getSignalClasses(signal: FlowSignal["signal"]): string {
 
 function getBubbleSurface(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
-    return "border-emerald-300/80 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_64%,rgba(74,222,128,0.58)_100%)] text-emerald-50 shadow-[0_0_0_1px_rgba(74,222,128,0.16),0_0_28px_rgba(74,222,128,0.38)]";
+    return "border-emerald-400/80 bg-stealth-950 text-emerald-50";
   }
   if (signal === "distribution") {
-    return "border-rose-300/80 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_64%,rgba(251,113,133,0.58)_100%)] text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.16),0_0_28px_rgba(251,113,133,0.36)]";
+    return "border-rose-400/80 bg-stealth-950 text-rose-50";
   }
-  return "border-slate-300/55 bg-[radial-gradient(circle_at_center,rgba(8,14,22,0.94)_66%,rgba(148,163,184,0.42)_100%)] text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.14),0_0_22px_rgba(148,163,184,0.24)]";
+  return "border-stealth-400/70 bg-stealth-950 text-stealth-100";
 }
 
 function getConfidenceStrokeClass(signal: FlowSignal["signal"]): string {
   if (signal === "accumulation") {
-    return "stroke-emerald-300/75 drop-shadow-[0_0_5px_rgba(74,222,128,0.2)]";
+    return "stroke-emerald-300/80";
   }
   if (signal === "distribution") {
-    return "stroke-rose-300/75 drop-shadow-[0_0_5px_rgba(251,113,133,0.2)]";
+    return "stroke-rose-300/80";
   }
-  return "stroke-slate-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
+  return "stroke-stealth-300/75";
 }
 
 function ConfidenceArc({
@@ -169,7 +180,11 @@ function ConfidenceArc({
   const dashOffset = circumference * (1 - normalizedConfidence / 100);
 
   return (
-    <div className={`inline-flex items-center ${sizeClass}`} aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}>
+    <div
+      className={`inline-flex items-center ${sizeClass}`}
+      role="img"
+      aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}
+    >
       <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
         <circle cx="50" cy="50" r={radius} className="fill-none stroke-white/8" strokeWidth={strokeWidth} />
         <circle
@@ -221,7 +236,7 @@ function longestDirectionalStreak(timeline: FlowTimelineBucket[], direction: "po
 
 function SignalPill({ signal }: { signal: FlowSignal["signal"] }) {
   return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getSignalClasses(signal)}`}>
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${getSignalClasses(signal)}`}>
       {signal}
     </span>
   );
@@ -237,7 +252,7 @@ function GroupBadge({ label, value, tone = "default" }: { label: string; value: 
 
   return (
     <div className={`rounded-xl border px-2.5 py-1.5 ${toneClass}`}>
-      <div className="text-[10px] uppercase tracking-[0.18em] opacity-70">{label}</div>
+      <div className="text-xs uppercase tracking-[0.18em] opacity-70">{label}</div>
       <div className="mt-0.5 text-sm font-semibold">{value}</div>
     </div>
   );
@@ -246,13 +261,13 @@ function GroupBadge({ label, value, tone = "default" }: { label: string; value: 
 function CenteredFlowBar({ value, scale }: { value: number | null; scale: number }) {
   const numericValue = value ?? 0;
   const magnitude = scale > 0 ? Math.max(5, Math.min(50, (Math.abs(numericValue) / scale) * 50)) : 0;
-  const toneClass = numericValue > 0 ? "bg-emerald-400/85" : numericValue < 0 ? "bg-rose-400/85" : "bg-slate-400/60";
+  const toneClass = numericValue > 0 ? "bg-emerald-400/85" : numericValue < 0 ? "bg-rose-400/85" : "bg-stealth-400/60";
 
   return (
     <div className="relative h-3 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
       <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-stealth-400/80" />
       {numericValue === 0 ? (
-        <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80" />
+        <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stealth-300/80" />
       ) : (
         <div
           className={`absolute inset-y-0 ${toneClass}`}
@@ -289,13 +304,13 @@ function TrendZoneBar({
       ? "bg-emerald-400/25"
       : direction === "negative"
         ? "bg-rose-400/25"
-        : "bg-slate-400/20";
+        : "bg-stealth-400/20";
   const bodyClass =
     direction === "positive"
       ? "bg-emerald-300/90"
       : direction === "negative"
         ? "bg-rose-300/90"
-        : "bg-slate-300/75";
+        : "bg-stealth-300/75";
 
   return (
     <div className="relative h-6 overflow-hidden rounded-full border border-stealth-800 bg-stealth-950/90">
@@ -305,7 +320,7 @@ function TrendZoneBar({
         style={{ left: `${50 - totalReach}%`, width: `${totalReach * 2}%` }}
       />
       {direction === "neutral" ? (
-        <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80 shadow-[0_0_12px_rgba(148,163,184,0.25)]" />
+        <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stealth-300/90" />
       ) : (
         <>
           <div
@@ -340,7 +355,7 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
     <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Flow Over Time</div>
+          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Flow Over Time</div>
           <div className="mt-1 text-xs text-stealth-300">{dominantCluster} across the latest weekly buckets.</div>
         </div>
         <div className="flex gap-2 text-xs">
@@ -355,11 +370,11 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
 
           return (
             <div key={bucket.bucket} className="grid grid-cols-[54px_minmax(0,1fr)_88px] items-center gap-2 rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
               <TrendZoneBar value={bucket.net_flow_usd} scale={scale} certainty={certainty} />
               <div className="text-right">
-                <div className="text-[11px] font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
-                <div className="mt-0.5 text-[9px] uppercase tracking-[0.16em] text-stealth-500">{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</div>
+                <div className="text-xs font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
+                <div className="mt-0.5 text-xs uppercase tracking-[0.16em] text-stealth-500">{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</div>
               </div>
             </div>
           );
@@ -368,19 +383,19 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
 
       <div className="mt-2.5 grid grid-cols-4 gap-2 text-xs text-stealth-300">
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Up Streak</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Up Streak</div>
           <div className="mt-1 font-semibold text-emerald-300">{positiveStreak}</div>
         </div>
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Down Streak</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Down Streak</div>
           <div className="mt-1 font-semibold text-rose-300">{negativeStreak}</div>
         </div>
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Net</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Net</div>
           <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.net_flow_usd, 0))}</div>
         </div>
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Volume</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Volume</div>
           <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.total_notional_usd, 0))}</div>
         </div>
       </div>
@@ -391,9 +406,17 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
 function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[]; selectedSymbol: string | null; onSelect: (symbol: string) => void }) {
   const scale = Math.max(1, ...rows.map((row) => totalNotional(row)));
 
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-stealth-700 bg-stealth-950/40 p-5 text-sm text-stealth-300" role="status">
+        No symbols in this group have enough flow evidence for the current window.
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top,rgba(46,67,96,0.34),rgba(10,15,26,0.95)_68%)] p-3">
-      <div className="rounded-[20px] border border-stealth-800 bg-[radial-gradient(circle_at_center,rgba(23,37,59,0.38),rgba(2,6,23,0.96)_70%)] p-3">
+    <div className="rounded-2xl border border-stealth-700 bg-stealth-900 p-3">
+      <div className="rounded-xl border border-stealth-800 bg-stealth-950 p-3">
         <div className="flex flex-wrap items-center justify-center gap-2.5 md:gap-3">
         {rows.map((row) => {
           const size = 78 + Math.min(34, (Math.sqrt(totalNotional(row) / scale) || 0) * 34);
@@ -404,12 +427,14 @@ function BubbleCluster({ rows, selectedSymbol, onSelect }: { rows: FlowSignal[];
               key={`${row.category}-${row.symbol}`}
               type="button"
               onClick={() => onSelect(row.symbol)}
+              aria-pressed={isSelected}
+              aria-label={`${formatSignalSymbol(row.symbol, row.category)}, ${row.signal}, ${row.confidence.toFixed(0)} percent confidence, ${formatCompactCurrency(totalNotional(row))} total notional`}
               className={`relative flex shrink-0 flex-col items-center justify-center overflow-hidden rounded-full border-2 px-2 text-center transition duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-sky-400/70 ${getBubbleSurface(row.signal)} ${isSelected ? "ring-2 ring-white/80" : "ring-0"}`}
               style={{ width: `${size}px`, height: `${size}px` }}
             >
               <BubbleConfidenceArc confidence={row.confidence} signal={row.signal} />
               <span className="max-w-full text-center text-[13px] font-semibold leading-tight tracking-wide md:text-sm">{formatSignalSymbol(row.symbol, row.category)}</span>
-              <span className="mt-1 max-w-full text-[10px] font-medium leading-tight md:text-[11px]">{formatCompactCurrency(totalNotional(row))}</span>
+              <span className="mt-1 max-w-full text-xs font-medium leading-tight">{formatCompactCurrency(totalNotional(row))}</span>
             </button>
           );
         })}
@@ -433,10 +458,11 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
   const currentMarkerStyle = { left: `clamp(${currentInsetPx}px, ${currentPosition}%, calc(100% - ${currentInsetPx}px))` };
 
   return (
-    <article className="rounded-[24px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-4 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
+    <article className="surface-card p-4" aria-labelledby="flow-focus-heading">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xl font-semibold text-stealth-100">{formatSignalSymbol(row.symbol, row.category)}</div>
+          <p className="page-kicker">Now</p>
+          <h3 id="flow-focus-heading" className="mt-1 text-xl font-semibold text-stealth-100">{formatSignalSymbol(row.symbol, row.category)}</h3>
           <div className="mt-1 text-xs text-stealth-400">{row.name} · {groupTitle}</div>
         </div>
         <SignalPill signal={row.signal} />
@@ -445,7 +471,7 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
       <div className="mt-4 rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Net Flow Bias</div>
+            <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Net Flow Bias</div>
             <div className={`mt-1 text-base font-semibold ${flowTone}`}>{formatCompactCurrency(row.net_flow_usd)}</div>
           </div>
           <div className="text-right text-xs text-stealth-400">
@@ -455,7 +481,7 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
             <div className="mt-0.5">Events {row.event_count ?? row.recent_events.length}</div>
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 text-[10px] uppercase tracking-[0.16em] text-stealth-500">
+        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 text-xs uppercase tracking-[0.16em] text-stealth-500">
           <div>
             <div>Sell Cluster</div>
             <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-rose-300">{formatCurrency(row.sell_cluster_level)}</div>
@@ -482,7 +508,7 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
                   style={currentMarkerStyle}
                 />
                 <div
-                  className={`absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-slate-100/90`}
+                  className={`absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-stealth-100/90`}
                   style={currentMarkerStyle}
                 />
               </>
@@ -502,7 +528,7 @@ function FlowFocusCard({ row, groupScale, groupTitle }: { row: FlowSignal; group
       {timeline.length > 0 && <div className="mt-4"><TimelineCluster timeline={timeline} /></div>}
 
       <div className="mt-3 rounded-2xl border border-stealth-700 bg-stealth-950/45 p-2.5">
-        <div className="text-[10px] uppercase tracking-[0.2em] text-stealth-500">Latest Triggers</div>
+        <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">Latest Triggers</div>
         <div className="mt-2 space-y-1.5">
           {row.recent_events.slice(0, 2).map((event) => (
             <div key={`${row.symbol}-${event.date}-${event.side}-${event.price}`} className="flex items-center justify-between rounded-xl border border-stealth-800 bg-stealth-900/60 px-3 py-2 text-xs">
@@ -537,12 +563,13 @@ function GroupSection({
 }) {
   const accumulationCount = rows.filter((row) => row.signal === "accumulation").length;
   const distributionCount = rows.filter((row) => row.signal === "distribution").length;
+  const headingId = `flow-group-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
   return (
-    <section className="rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top,rgba(31,49,73,0.34),rgba(12,17,27,0.98)_60%)] p-3 sm:p-4">
+    <section className="surface-card p-3 sm:p-4" aria-labelledby={headingId}>
       <div className="flex flex-wrap items-start justify-between gap-4 text-left">
         <div>
-          <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
+          <h3 id={headingId} className="text-lg font-semibold text-stealth-100">{title}</h3>
         </div>
         <div className="flex items-center gap-2">
           <GroupBadge label="Accumulations" value={accumulationCount} tone="buy" />
@@ -563,9 +590,9 @@ function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal
   const compactItems = items.slice(0, 4);
 
   return (
-    <section className={`rounded-[24px] border p-3 ${sectionClass}`}>
+    <section className={`rounded-2xl border p-3 ${sectionClass}`}>
       <div className="flex items-center justify-between gap-2">
-        <h2 className={`text-sm font-semibold ${textClass}`}>{title}</h2>
+        <h3 className={`text-sm font-semibold ${textClass}`}>{title}</h3>
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {compactItems.length === 0 && <p className="text-sm text-stealth-300">No strong signals yet.</p>}
@@ -573,7 +600,7 @@ function LeadersPanel({ title, items, tone }: { title: string; items: FlowSignal
           <div key={`${title}-${item.symbol}`} className="rounded-xl bg-stealth-900/50 px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">#{index + 1}</div>
+                <div className="text-xs uppercase tracking-[0.18em] text-stealth-500">#{index + 1}</div>
                 <div className="mt-0.5 font-semibold text-stealth-100">{formatSignalSymbol(item.symbol, item.category)}</div>
               </div>
               <div className="text-right">
@@ -598,13 +625,14 @@ export default function InstitutionalFlow() {
     return `/flow-signals/overview?${params.toString()}`;
   }, []);
 
-  const { data, loading, error } = useApi<FlowOverviewResponse>(endpoint);
+  const { data, loading, error, refetch } = useApi<FlowOverviewResponse>(endpoint);
 
   const groups = data?.groups ?? {};
   const allRows = Object.values(groups).flat();
   const totalAccumulations = allRows.filter((row) => row.signal === "accumulation").length;
   const totalDistributions = allRows.filter((row) => row.signal === "distribution").length;
   const totalSignals = allRows.length;
+  const usableSignals = allRows.filter((row) => row.status === "ok").length;
   const orderedGroupKeys: GroupKey[] = ["stocks", "sectors", "metals", "crypto"];
 
   const resolvedSelection = useMemo(() => {
@@ -633,12 +661,16 @@ export default function InstitutionalFlow() {
   const detailScale = Math.max(1, ...allRows.map((row) => Math.abs(row.net_flow_usd ?? 0)));
 
   return (
-    <div className="mx-auto max-w-7xl p-3 text-stealth-100 sm:p-4">
-      <div className="mb-3 rounded-[24px] border border-stealth-700 bg-[radial-gradient(circle_at_top_left,rgba(58,94,138,0.32),rgba(13,18,29,0.98)_55%)] p-3.5 sm:p-4">
+    <div className="page-shell-wide text-stealth-100">
+      <section className="page-hero mb-5">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="text-xs uppercase tracking-[0.25em] text-stealth-400">Institutional Flow</div>
-            <h1 className="mt-1 text-xl font-bold tracking-tight">Clustered Volume Dashboard</h1>
+            <p className="page-kicker">Evidence workspace</p>
+            <h1 className="page-title">Institutional Flow</h1>
+            <p className="page-subtitle">
+              Clustered-volume evidence for accumulation and distribution across stocks, sectors, metals, and crypto.
+              Select any symbol to inspect the confidence, price clusters, timeline, and triggering events behind the signal.
+            </p>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <GroupBadge label="Signals" value={totalSignals} />
@@ -649,26 +681,81 @@ export default function InstitutionalFlow() {
 
         {!!data?.stock_selection?.symbols?.length && (
           <div className="mt-3 rounded-2xl border border-stealth-700 bg-stealth-950/55 p-2.5">
-            <div className="text-[10px] uppercase tracking-[0.22em] text-stealth-500">Auto-selected stock basket</div>
+            <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Auto-selected stock basket</div>
             <div className="mt-1 text-xs text-stealth-200">
               Top {data.stock_selection.count} stocks by close dollar volume: <span className="font-semibold text-stealth-100">{data.stock_selection.symbols.join(", ")}</span>
             </div>
           </div>
         )}
-      </div>
+        <div className="page-meta">
+          <span className="page-badge">As of {formatTimestamp(data?.as_of)}</span>
+          <span className="page-badge">{usableSignals}/{totalSignals || 0} signals usable</span>
+          <span className="page-badge">120-day evidence window</span>
+        </div>
+        <nav className="mt-4" aria-label="Institutional flow sections">
+          <ul className="flex flex-wrap gap-2 text-sm">
+            {[
+              ["#flow-now", "Current read"],
+              ["#flow-groups", "Evidence groups"],
+              ["#flow-method", "Definition & provenance"],
+            ].map(([href, label]) => (
+              <li key={href}>
+                <a className="inline-flex min-h-11 items-center rounded-xl border border-stealth-700 bg-stealth-950/30 px-3 text-stealth-200 hover:border-blue-400 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" href={href}>
+                  {label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </section>
 
-      {loading && <MarketLoading label="Scanning for clustered institutional flow..." />}
-      {error && <div className="rounded-lg border border-rose-700/50 bg-rose-900/20 p-3 text-rose-200">{error}</div>}
+      {loading && !data && (
+        <div aria-live="polite">
+          <MarketLoading label="Scanning for clustered institutional flow..." />
+        </div>
+      )}
+      {loading && data && (
+        <div className="mb-4 text-sm text-stealth-300" role="status" aria-live="polite">
+          Refreshing flow evidence…
+        </div>
+      )}
+      {error && (
+        <div className="mb-4 rounded-xl border border-rose-700/60 bg-rose-900/20 p-4 text-rose-100" role="alert">
+          <p className="font-semibold">{data ? "The latest refresh failed" : "Institutional flow could not load"}</p>
+          <p className="mt-1 text-sm text-rose-200">
+            {error}{data ? " Previously loaded evidence remains visible below." : ""}
+          </p>
+          <button
+            type="button"
+            onClick={refetch}
+            className="mt-3 min-h-11 rounded-xl border border-rose-400/60 px-4 py-2 text-sm font-semibold hover:bg-rose-900/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       {data && (
         <>
-          <div className="mb-3 grid gap-2 lg:grid-cols-2">
-            <LeadersPanel title="Top Accumulation" items={data.leaders.accumulation} tone="buy" />
-            <LeadersPanel title="Top Distribution" items={data.leaders.distribution} tone="sell" />
-          </div>
+          <section id="flow-now" className="mb-4" aria-labelledby="flow-drivers-heading">
+            <div className="mb-3">
+              <p className="page-kicker">Drivers</p>
+              <h2 id="flow-drivers-heading" className="mt-1 text-xl font-semibold text-white">Directional leaders</h2>
+            </div>
+            <div className="grid gap-2 lg:grid-cols-2">
+              <LeadersPanel title="Top Accumulation" items={data.leaders.accumulation} tone="buy" />
+              <LeadersPanel title="Top Distribution" items={data.leaders.distribution} tone="sell" />
+            </div>
+          </section>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.78fr)] xl:items-start">
-            <div className="grid gap-3">
+          <section id="flow-groups" aria-labelledby="flow-evidence-heading">
+            <div className="mb-3">
+              <p className="page-kicker">Evidence</p>
+              <h2 id="flow-evidence-heading" className="mt-1 text-xl font-semibold text-white">Signal groups and selected detail</h2>
+              <p className="mt-1 max-w-3xl text-sm text-stealth-300">Bubble size encodes total clustered notional; the confidence arc and selected detail expose the supporting evidence.</p>
+            </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.78fr)] xl:items-start">
+            <div className="order-2 grid gap-3 xl:order-1">
               <GroupSection
                 title="Stocks"
                 rows={groups.stocks ?? []}
@@ -695,7 +782,7 @@ export default function InstitutionalFlow() {
               />
             </div>
 
-            <div className="xl:sticky xl:top-4">
+            <div className="order-1 xl:order-2 xl:sticky xl:top-4">
               {resolvedSelection?.row ? (
                 <FlowFocusCard
                   row={resolvedSelection.row}
@@ -703,13 +790,41 @@ export default function InstitutionalFlow() {
                   groupTitle={formatGroupTitle(resolvedSelection.groupKey)}
                 />
               ) : (
-                <div className="rounded-[28px] border border-stealth-700 bg-[linear-gradient(180deg,rgba(19,27,40,0.98),rgba(9,14,24,0.98))] p-6 text-sm text-stealth-300">
+                <div className="surface-card p-6 text-sm text-stealth-300">
                   No active signal.
                 </div>
               )}
             </div>
           </div>
+          </section>
+
+          <section id="flow-method" className="mt-6 surface-card p-4 md:p-5" aria-labelledby="flow-method-heading">
+            <p className="page-kicker">Definition & provenance</p>
+            <h2 id="flow-method-heading" className="mt-1 text-xl font-semibold text-white">How to read institutional flow</h2>
+            <p className="mt-3 max-w-4xl text-sm leading-6 text-stealth-200">{data.method.description}</p>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-stealth-300">{data.method.note}</p>
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+              <div className="surface-card-muted p-3">
+                <dt className="text-xs text-stealth-400">Observation time</dt>
+                <dd className="mt-1 font-semibold text-stealth-100">{formatTimestamp(data.as_of)}</dd>
+              </div>
+              <div className="surface-card-muted p-3">
+                <dt className="text-xs text-stealth-400">Usable coverage</dt>
+                <dd className="mt-1 font-semibold text-stealth-100">{usableSignals} of {totalSignals} signals</dd>
+              </div>
+              <div className="surface-card-muted p-3">
+                <dt className="text-xs text-stealth-400">Selection mode</dt>
+                <dd className="mt-1 font-semibold text-stealth-100">{data.stock_selection?.mode ?? "API-defined universe"}</dd>
+              </div>
+            </dl>
+          </section>
         </>
+      )}
+
+      {!loading && !error && !data && (
+        <div className="surface-card p-5 text-sm text-stealth-300" role="status">
+          No institutional-flow observation is available for the current window.
+        </div>
       )}
     </div>
   );

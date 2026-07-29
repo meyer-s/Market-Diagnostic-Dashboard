@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Market Stability Dashboard API",
+    title="Market Diagnostic Dashboard API",
     lifespan=lifespan
 )
 

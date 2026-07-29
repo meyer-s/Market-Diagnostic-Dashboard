@@ -98,11 +98,11 @@ export default function YieldCurveCard() {
       <div className="surface-card-strong p-4 sm:p-5 transition hover:border-stealth-500/60">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">Debt Monitor</div>
+            <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">Debt Monitor</div>
             <h3 className="text-base font-semibold text-stealth-100 sm:text-lg">Live Yield Curve</h3>
           </div>
           <div className="text-right">
-            <div className="text-[10px] text-stealth-500">10Y - 2Y</div>
+            <div className="text-xs text-stealth-500">10Y - 2Y</div>
             <div className={`text-lg font-semibold ${slopeColor}`}>
               {spread === null ? "--" : `${spread.toFixed(2)}%`}
             </div>
@@ -112,10 +112,15 @@ export default function YieldCurveCard() {
 
         <div className="mt-3 h-36">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <LineChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 8 }}>
+            <LineChart
+              accessibilityLayer
+              aria-label="Latest and prior Treasury yield curves by maturity"
+              data={chartData}
+              margin={{ top: 8, right: 8, left: -16, bottom: 8 }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="#2f3b52" />
-              <XAxis dataKey="maturity" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} domain={["dataMin - 0.25", "dataMax + 0.25"]} />
+              <XAxis dataKey="maturity" tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} />
+              <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} domain={["dataMin - 0.25", "dataMax + 0.25"]} />
               <Tooltip
                 formatter={(value) => (value === null ? "--" : `${Number(value).toFixed(2)}%`)}
                 contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 8 }}
@@ -142,7 +147,7 @@ export default function YieldCurveCard() {
           </div>
         </div>
 
-        <div className="mt-2 text-[11px] text-stealth-400">
+        <div className="mt-2 text-xs text-stealth-400">
           {steepening === null
             ? "Watching curve shape changes for debt-cycle stress."
             : steepening >= 0
