@@ -2,24 +2,23 @@
 
 This is the durable closure ledger for the 34 findings in
 `artifacts/site-audit/2026-07-29-full/FULL_IMPROVEMENT_BACKLOG.csv`.
-It evaluates the final local production bundle on
-`codex/full-site-remediation-2026-07-29`, not the pre-remediation site.
+It evaluates the corrected release deployed from
+`codex/full-site-remediation-2026-07-29`, not the pre-remediation site or the
+rejected flatter first pass.
 
 ## Outcome
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Closed | 29 | The original defect is remediated and supported by source, automated tests, or full-height capture evidence. |
-| Partial | 5 | Material remediation is present, but part of the original acceptance criteria, product-direction tradeoff, or release proof remains. |
+| Closed | 31 | The original defect is remediated and supported by source, automated tests, or full-height production capture evidence. |
+| Partial | 3 | Material remediation is present, but part of the original acceptance criteria or an intentional product-direction tradeoff remains. |
 | Open | 0 | No original finding is wholly unaddressed. |
 
-The five Partial findings are:
+The three Partial findings are:
 
 - **AUD-004:** chart names and keyboard value layers are complete, but a manual screen-reader pass and persistent alternatives for every chart are not.
-- **AUD-013:** error, timeout, retry, and completeness UI is implemented, but cold/concurrent production endpoint budgets and last-known-good behavior still need post-deploy proof.
 - **AUD-023:** meaningful feature extraction landed, but the largest route modules are still too large to qualify as orchestration-only modules.
 - **AUD-026:** concise first-screen summaries remain, but the initial sticky section rails were deliberately removed after hands-on review because they duplicated each page’s headings and real controls. A less intrusive mobile-only jump pattern remains a possible follow-up.
-- **AUD-027:** breadth quality states and invariants are implemented, but sparse/live production behavior still needs post-deploy operating proof.
 
 ## Visual correction after hands-on review
 
@@ -51,9 +50,10 @@ The corrected release bundle is:
 
 The corrected frontend suite passed 219/219 tests across 37 files. ESLint,
 TypeScript, the production build, and bundle budgets passed. The backend suite
-collected 448 tests: 445 passed and 3 skipped. The targeted endpoint resilience
-and API-provenance suites passed 32/32 tests, and the additive response-snapshot Alembic migration
-passed upgrade/downgrade and PostgreSQL DDL smoke checks.
+collected 450 tests: 447 passed and 3 skipped. Targeted logging, response-cache,
+endpoint-resilience, and API-provenance tests passed, and the additive
+response-snapshot Alembic migration passed upgrade/downgrade and PostgreSQL DDL
+smoke checks.
 
 Corrected bundle results:
 
@@ -61,6 +61,63 @@ Corrected bundle results:
 - initial CSS: 132.92 KiB raw / 23.65 KiB gzip;
 - largest deferred chunk: 274.80 KiB raw / 85.84 KiB gzip;
 - 20 route modules emitted as deferred chunks.
+
+## Deployed production closure
+
+The corrected release is live at `https://marketdiagnostictool.com` from exact
+source commit `7adab50a9887021d84db8362a6add580796f541a`.
+
+- Production JavaScript: `assets/index-Bdbx4vqA.js`
+- Production CSS: `assets/index-BjlRYaqq.css`
+- Database migration: `20260729_0021 (head)`
+- IB Gateway: not recreated; its container ID and original start time remained
+  unchanged through the frontend/backend/scheduler deployment.
+
+The strict production audit covered every supported route, both explicitly
+retired AAS routes, the complete recap archive, the desktop Tools menu, the
+mobile navigation menu, protected/error paths, and the defined material
+interaction states.
+
+| Viewport | Route and legacy captures | Material-state captures | Result |
+|---|---:|---:|---|
+| Desktop | 102/102 | 29/29 | 131/131 accepted and full-height |
+| Mobile | 102/102 | 33/33 | 135/135 accepted and full-height |
+| Total | 204/204 | 62/62 | 266/266 accepted and full-height |
+
+Across the production evidence:
+
+- all 266 captures covered the measured full document height;
+- all 204 route captures had one `main`, one H1, and a non-empty
+  route-specific title;
+- horizontal document overflow, unresolved literal loading states, missing
+  image alt attributes, unnamed form controls, unfocusable scroll regions, and
+  priority controls below 44×44 CSS pixels were zero;
+- Axe violations, unexpected console errors, page errors, and request failures
+  were zero;
+- the deliberate rejected-auth Secret Options fixture classified its expected
+  401 and aborted access request without failing the audit;
+- maximum route height was 6,051px desktop and 10,099px mobile;
+- maximum material-state height was 6,430px desktop and 9,831px mobile;
+- no retry run was needed.
+
+Production endpoint proof also closed the original reliability acceptance
+criteria:
+
+- Analyst Confidence returned 249 live rows with complete quality metadata in
+  0.85s; two concurrent requests completed in 0.18s and 0.30s.
+- Public Credit returned all four configured components with complete quality
+  metadata in 1.18s; concurrent requests completed in 0.21s and 0.25s.
+- Real Estate overview returned all 11 configured components in 0.15s;
+  concurrent requests completed in 0.14s and 0.25s. History, transmission,
+  context, and commercial evidence also completed with explicit quality
+  metadata.
+- Market Breadth completed within the bounded request budget and honestly
+  returned `partial`, `representative=false`, and zero representative exchange
+  coverage because the upstream provider returned no usable breadth symbols.
+  It did not hang, claim complete evidence, or render a categorical conclusion.
+- Shared last-known-good snapshots were present for Analyst Confidence, Public
+  Credit, and the Real Estate surfaces. Slow/failure fixtures verify bounded
+  retry and retained-evidence behavior.
 
 ## Authoritative local closure evidence
 
@@ -119,7 +176,7 @@ Bundle results:
 | AUD-010 | P1 | Closed | Topbar desktop/mobile disclosures expose controlled/expanded state, Escape handling, active-route semantics, and trigger-focus return. `Topbar.test.tsx` covers the keyboard lifecycle. | None against the original finding. |
 | AUD-011 | P1 | Closed | System Breakdown’s historical heatmap is contained in a labeled focusable data scroller. Final mobile document overflow and unfocusable scrollers are both zero. | None against the original finding. |
 | AUD-012 | P1 | Closed | Agriculture’s correlation matrix is contained in a labeled focusable region with bounded width. The 9,093px deep-dive capture remained exactly 390px wide. | None against the original finding. |
-| AUD-013 | P1 | Partial | Requests have bounded deadlines, sanitized errors, retry actions, retained prior data support, and explicit evidence-state notices. Failure/timeout fixtures are tested, and the final serialized live-proxy runs were clean. Earlier concurrent release runs still exposed transient Breadth 502, Volume/Breadth abort, and Energy timeout behavior before clean retries. | After deployment, prove documented cold and concurrent latency budgets for public credit, analyst, breadth, and Energy endpoints; verify 504/slow behavior preserves last-known data and request-age/completeness context. |
+| AUD-013 | P1 | Closed | Requests have bounded deadlines, sanitized errors, retry actions, shared last-known-good snapshots, single-flight refresh coordination, and explicit evidence-state notices. Failure/timeout fixtures verify retained evidence and no indefinite loader. Production route/state audits were clean, and direct warm/concurrent probes for Analyst, Public Credit, Breadth, and Real Estate completed within the service budgets with explicit quality metadata. | None against the original acceptance criteria. Continue monitoring upstream latency and snapshot age as an operating concern. |
 | AUD-014 | P1 | Closed | A six-state evidence classifier covers loading, complete, partial, stale, empty, and error. Deterministic 1440px/390px semantic inventories cover Consumer Health, Bond core, Liquidity, and Sentiment. Recap Gallery has explicit populated and empty reader/dialog contracts. | The acceptance contract is semantic DOM parity, not pixel-level visual parity. Add Playwright fixture screenshots if pixel parity becomes a release requirement; public/yield Bond panels are classified but not separately viewport-fixtured. |
 | AUD-015 | P1 | Closed | Route modules are lazy, heavy libraries are deferred, and `check-bundle-budget.mjs` is a build/CI gate. The final initial bundle is 60.78 KiB gzip with 20 deferred route modules. | None against the original finding; review budgets deliberately when adding routes or visualization libraries. |
 | AUD-016 | P1 | Closed | Market News uses bounded pagination, count/sort controls, compact results, and URL-persisted filters. `SitePolishRoutes.test.tsx` covers loading and URL recovery. | None against the original finding. |
@@ -130,10 +187,10 @@ Bundle results:
 | AUD-021 | P2 | Closed | Semantic surface/text/border/status tokens replaced supported raw gray/slate utilities; obsolete AAS presentation modules were deleted. Remaining hard-coded colors are chart identity/status values rather than unintended theme islands. | Continue migrating chart colors only when it improves semantic governance; do not erase deliberate series identity. |
 | AUD-022 | P2 | Closed | Reduced-motion CSS now removes decorative/spatial movement while preserving understandable progress and state-change feedback. | None against the original finding; retain OS-level reduced-motion smoke checks. |
 | AUD-023 | P2 | Partial | Shared UI primitives were extracted. Secret Options domain types, presentation, and telemetry moved under `features/secretOptions`; Treasury and municipal panels moved under `features/indicatorDetail`. Full tests remained green. | `SecretOptions.tsx` is still 7,912 physical lines and `IndicatorDetail.tsx` is 2,865. Continue extracting stateful workflow slices, dialogs, forms, and indicator panels until route files are orchestration-only. Other >1,000-line research modules remain. |
-| AUD-024 | P2 | Closed | CI now has scheduled/manual desktop/mobile full-route and material-state gates, evidence upload, route-registry parity, explicit AAS legacy assertions, response-state tests, and failing runtime contracts. The final local gate passed 266/266 captures. | The first GitHub-hosted scheduled run and post-deploy production run remain monitoring steps, not missing implementation. Preserve read-only request blocking and registry parity. |
+| AUD-024 | P2 | Closed | CI now has scheduled/manual desktop/mobile full-route and material-state gates, evidence upload, route-registry parity, explicit AAS legacy assertions, response-state tests, and failing runtime contracts. Both the final local gate and deployed production gate passed 266/266 captures. | The first GitHub-hosted scheduled run remains a monitoring step, not missing implementation. Preserve read-only request blocking and registry parity. |
 | AUD-025 | P2 | Closed | Recap pages now render one article H1, place current content before ancillary recent-post navigation on mobile, and expose explicit Gallery empty state. All recap captures passed the one-H1 contract. | None against the original finding. |
 | AUD-026 | P2 | Partial | Current-state summaries remain early, every major section keeps a named heading/deep-link target, and genuine page tabs and controls remain. The first implementation added thirteen sticky or inline anchor rails; hands-on review found them visually redundant, so they were removed in the correction. | If long mobile journeys still need direct jumping after production use, add one compact mobile-only section disclosure or bottom-sheet navigator rather than restoring persistent duplicate rails. |
-| AUD-027 | P2 | Partial | Volume & Breadth has bounded loading, retry/error states, exchange coverage/freshness labels, readable chart-equivalent tables, and tests that prevent unavailable placeholders from being described as usable evidence. Final serialized captures were clean. | Prove sparse/impossible production combinations suppress categorical conclusions after deployment, and monitor the market-internals endpoint against its latency/completeness budget under cold and concurrent load. |
+| AUD-027 | P2 | Closed | Volume & Breadth has bounded loading, retry/error states, exchange coverage/freshness labels, readable chart-equivalent tables, and invariant tests. Production returned an explicit partial, non-representative response with zero representative exchange coverage when Yahoo supplied no usable breadth symbols; the UI suppressed categorical conclusions and both viewport audits completed without a loader or runtime failure. | None against the original quality-UX finding. Restoring representative breadth evidence still depends on upstream data availability or a future replacement provider. |
 | AUD-028 | P2 | Closed | Incidental overflow was removed and genuine horizontal data regions were labeled/focused. Final runtime evidence reports zero unfocusable scroll regions, including all recap routes. | None against the original finding; retain runtime focusability checks. |
 | AUD-029 | P2 | Closed | Market Weather Pair controls only reference IDs present in the responsive DOM. Pair Overview, Field, Audit, and sheet coverage return zero Axe findings at both widths. | None against the original finding. |
 | AUD-030 | P3 | Closed | Canonical identity is centralized in `productIdentity.ts` and used by metadata, shell, titles, loading states, footer, and tests. | None against the original finding. |
@@ -145,21 +202,21 @@ Bundle results:
 
 ## Remaining work, in priority order
 
-1. **Production endpoint resilience — AUD-013 and AUD-027.** Deploy, then
-   measure cold and concurrent latency for Energy, public-credit, analyst, and
-   breadth endpoints. Verify slow/504 paths retain last-known data and visibly
-   state age, completeness, and retry behavior.
-2. **Manual assistive-technology validation — AUD-004.** Traverse all chart
+1. **Manual assistive-technology validation — AUD-004.** Traverse all chart
    families with a real screen reader and keyboard. Record whether Recharts
    point values and nearby interpretation provide equivalent evidence; add
    persistent tables where they do not.
-3. **Large-module decomposition — AUD-023.** Continue behavior-preserving
+2. **Large-module decomposition — AUD-023.** Continue behavior-preserving
    extraction of Secret Options workflows and remaining Indicator Detail
    panels, followed by the other >1,000-line research modules.
-4. **Release proof.** Repeat the same strict audit against the deployed
-   frontend bundle and retain the generated JSON/PNGs as the production
-   receipt. The local audit used the final frontend build with live production
-   data, but it was not the deployed frontend asset.
+3. **Optional mobile section jumping — AUD-026.** Keep the duplicate rails
+   removed. If production use shows a real navigation problem on the longest
+   pages, add one compact mobile-only section disclosure or bottom sheet rather
+   than persistent repeated headings.
+4. **Breadth provider coverage.** The production contract is now bounded and
+   truthful, but Yahoo returned no usable breadth-symbol data during closure.
+   Monitor the provider and evaluate a more representative exchange-universe
+   source if this persists.
 5. **Credential hygiene.** Current-tree scanning found no hard-coded FRED
    credential. Production dependency logging now suppresses routine HTTP-client
    request lines and redacts credential-like query parameters, after a live log
@@ -194,5 +251,13 @@ Bundle results:
   `artifacts/site-audit/2026-07-29-release-local-mobile-full-retry/runtime-audit-mobile.json`
 - Mobile material states:
   `artifacts/site-audit/2026-07-29-release-local-mobile-closure/material-state-audit-mobile.json`
+- Production desktop routes:
+  `artifacts/site-audit/2026-07-29-final-production-corrected-desktop/runtime-audit-desktop.json`
+- Production desktop material states:
+  `artifacts/site-audit/2026-07-29-final-production-corrected-desktop/material-state-audit-desktop.json`
+- Production mobile routes:
+  `artifacts/site-audit/2026-07-29-final-production-corrected-mobile/runtime-audit-mobile.json`
+- Production mobile material states:
+  `artifacts/site-audit/2026-07-29-final-production-corrected-mobile/material-state-audit-mobile.json`
 - Machine-readable closure ledger:
   `artifacts/site-audit/2026-07-29-final-closure/AUDIT_CLOSURE.csv`
