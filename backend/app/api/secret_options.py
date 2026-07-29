@@ -1656,12 +1656,6 @@ def _compute_position_metrics(
     if option_price is not None:
         pnl_source = "option_price"
         pnl_dollar = (option_price - position.fill_price) * position.contracts * 100
-    elif greeks and position.underlying_at_entry and market_spot:
-        pnl_source = "delta_estimate"
-        estimated_price = position.fill_price + greeks["delta"] * (
-            market_spot - position.underlying_at_entry
-        )
-        pnl_dollar = (estimated_price - position.fill_price) * position.contracts * 100
 
     if pnl_dollar is not None and position.total_cost:
         pnl_percent = pnl_dollar / position.total_cost * 100

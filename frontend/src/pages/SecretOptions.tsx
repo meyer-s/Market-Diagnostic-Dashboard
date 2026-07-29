@@ -2718,7 +2718,13 @@ function MobilePositionCard({
         </div>
         <div className="shrink-0 text-right tabular-nums">
           <div className={`text-xs font-semibold ${statusClass}`}>{statusLabel}</div>
-          <div className={`mt-0.5 text-sm font-semibold ${pnl !== null && pnl !== undefined && pnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+          <div className={`mt-0.5 text-sm font-semibold ${
+            pnl === null || pnl === undefined
+              ? "text-stealth-500"
+              : pnl >= 0
+                ? "text-emerald-300"
+                : "text-rose-300"
+          }`}>
             {pnl !== null && pnl !== undefined ? formatCurrency(pnl, 0) : "—"}
           </div>
         </div>
@@ -5230,16 +5236,20 @@ export default function SecretOptions() {
     let totalCost = 0;
     let totalPnl = 0;
     let count = 0;
+    let markedCost = 0;
+    let markedCount = 0;
     positions.forEach((item) => {
       totalCost += item.position.total_cost;
       const pnlDollar = item.metrics?.pnl?.dollar;
       if (pnlDollar !== null && pnlDollar !== undefined) {
         totalPnl += pnlDollar;
+        markedCost += item.position.total_cost;
+        markedCount += 1;
       }
       count += 1;
     });
-    const percent = totalCost ? (totalPnl / totalCost) * 100 : null;
-    return { totalCost, totalPnl, percent, count };
+    const percent = markedCost ? (totalPnl / markedCost) * 100 : null;
+    return { totalCost, totalPnl, percent, count, markedCount };
   }, [positions]);
 
   const selectedZoneInputs = selected ? zoneInputsByPosition[selected.position.id] : null;
@@ -5933,8 +5943,18 @@ export default function SecretOptions() {
                 <div>
                   <h2 id="mobile-position-summary" className="text-base font-semibold text-stealth-100">Position summary</h2>
                   <div className="mt-1 text-xs text-stealth-400 tabular-nums">
-                    P/L <span className={totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"}>{formatCurrency(totals.totalPnl, 0)}</span>
+                    P/L{" "}
+                    <span className={
+                      totals.markedCount === 0
+                        ? "text-stealth-500"
+                        : totals.totalPnl >= 0
+                          ? "text-emerald-300"
+                          : "text-rose-300"
+                    }>
+                      {totals.markedCount > 0 ? formatCurrency(totals.totalPnl, 0) : "—"}
+                    </span>
                     <span className="mx-1.5 text-stealth-700">·</span>Cost {formatCurrency(totals.totalCost, 0)}
+                    <span className="mx-1.5 text-stealth-700">·</span>Marks {totals.markedCount}/{totals.count}
                     <span className="mx-1.5 text-stealth-700">·</span>Linked {openAttribution.linked}/{openAttribution.total}
                   </div>
                 </div>
@@ -6192,12 +6212,21 @@ export default function SecretOptions() {
                   <span title="Total premium paid for open positions.">
                     Cost <span className="text-stealth-200">{formatCurrency(totals.totalCost, 0)}</span>
                   </span>
-                  <span title="Live total open-position P/L.">
+                  <span title={`P/L from current contract marks. Coverage ${totals.markedCount} of ${totals.count} open positions.`}>
                     P/L{" "}
-                    <span className={totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"}>
-                      {formatCurrency(totals.totalPnl, 0)}
+                    <span className={
+                      totals.markedCount === 0
+                        ? "text-stealth-500"
+                        : totals.totalPnl >= 0
+                          ? "text-emerald-300"
+                          : "text-rose-300"
+                    }>
+                      {totals.markedCount > 0 ? formatCurrency(totals.totalPnl, 0) : "—"}
                       {totals.percent !== null ? ` ${formatSigned(totals.percent, 1)}%` : ""}
                     </span>
+                  </span>
+                  <span title="Positions with a current bid/ask midpoint or last contract price.">
+                    Marks <span className="text-stealth-200">{totals.markedCount}/{totals.count}</span>
                   </span>
                   <span title="Linked = positions matched to scanner/model templates. Confidence is the reliability of the match.">
                     Linked{" "}
@@ -6380,7 +6409,11 @@ export default function SecretOptions() {
                       <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)] gap-x-2 text-[11px] tabular-nums md:grid">
                         <div
                           className={`font-semibold ${
-                            (metrics.pnl?.dollar ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
+                            metrics.pnl?.dollar === null || metrics.pnl?.dollar === undefined
+                              ? "text-gray-500"
+                              : metrics.pnl.dollar >= 0
+                                ? "text-emerald-300"
+                                : "text-rose-300"
                           }`}
                         >
                           <div className="text-[9px] font-medium uppercase tracking-wide text-gray-500">P/L</div>
@@ -6501,9 +6534,17 @@ export default function SecretOptions() {
             </div>
 
             <div className="flex items-center justify-between border-t border-gray-700 px-3 py-2 text-xs">
-              <span className="font-semibold text-gray-400">Total P&amp;L</span>
-              <span className={`font-semibold ${totals.totalPnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                {formatCurrency(totals.totalPnl, 0)}
+              <span className="font-semibold text-gray-400">
+                Quoted P&amp;L · {totals.markedCount}/{totals.count}
+              </span>
+              <span className={`font-semibold ${
+                totals.markedCount === 0
+                  ? "text-gray-500"
+                  : totals.totalPnl >= 0
+                    ? "text-emerald-300"
+                    : "text-rose-300"
+              }`}>
+                {totals.markedCount > 0 ? formatCurrency(totals.totalPnl, 0) : "—"}
               </span>
               <span className="text-gray-500">{totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}</span>
             </div>

@@ -274,8 +274,7 @@ def test_position_metrics_reuses_daily_history_for_causal_field_context(
         "timeframe": "1D",
     }
     assert metrics["field_context"] == field_context
-    assert metrics["pnl"]["source"] == "delta_estimate"
-    assert metrics["pnl"]["dollar"] != 0
+    assert metrics["pnl"] == {"dollar": None, "percent": None, "source": None}
 
 
 def test_position_metrics_does_not_report_flat_pnl_without_current_market_data(
@@ -324,8 +323,8 @@ def test_position_metrics_does_not_report_flat_pnl_without_current_market_data(
 
     metrics = secret_options._compute_position_metrics(position, Provider())
 
-    # The entry/reference spot still supports model context, but cannot stand in
-    # for a current quote and manufacture a misleading $0 / 0% P&L.
+    # The entry/reference spot still supports model context, but neither it nor
+    # a live underlying quote can replace a current contract mark for P&L.
     assert metrics["greeks"] is not None
     assert metrics["pnl"] == {"dollar": None, "percent": None, "source": None}
 
