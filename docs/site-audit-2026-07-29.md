@@ -161,8 +161,11 @@ Bundle results:
    receipt. The local audit used the final frontend build with live production
    data, but it was not the deployed frontend asset.
 5. **Credential hygiene.** Current-tree scanning found no hard-coded FRED
-   credential, but historical tracked scripts contained one. Rotate or revoke
-   that credential externally if this has not already been completed.
+   credential. Production dependency logging now suppresses routine HTTP-client
+   request lines and redacts credential-like query parameters, after a live log
+   check found that the configured FRED key had been included in request URLs.
+   Rotate or revoke that key externally; it also appeared in historical tracked
+   scripts before the current-tree cleanup.
 
 ## Evidence boundaries
 

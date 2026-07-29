@@ -29,12 +29,14 @@ from app.api.agriculture import router as agriculture_router
 from app.api.energy import router as energy_router
 from app.api.real_estate import router as real_estate_router
 from app.api.market_weather import router as market_weather_router
+from app.utils.logging_config import configure_safe_dependency_logging
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+configure_safe_dependency_logging()
 
 
 async def prewarm_agriculture_caches() -> None:
