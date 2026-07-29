@@ -1038,12 +1038,24 @@ interface RawPositionPayload {
   metrics?: Partial<PositionMetrics> | null;
 }
 
+interface PositionRefreshProgress {
+  total: number;
+  completed: number;
+  current_position_id: number | null;
+  current_symbol: string | null;
+  target_position_ids: number[];
+  completed_position_ids: number[];
+}
+
+type PositionRefreshState = "idle" | "pending" | "active" | "complete";
+
 interface PositionListResponse {
   positions: RawPositionPayload[];
   metrics_cache?: {
     status: "fresh" | "stale";
     age_seconds: number;
     refresh_in_progress: boolean;
+    refresh_progress?: PositionRefreshProgress;
   };
 }
 
@@ -2643,8 +2655,7 @@ function MobilePositionCard({
   decisionHistory,
   suggestedWindow,
   selected,
-  refreshing,
-  refreshed,
+  refreshState,
   onOpen,
 }: {
   item: PositionPayload;
@@ -2653,8 +2664,7 @@ function MobilePositionCard({
   decisionHistory?: PositionDecisionWindowRevision[];
   suggestedWindow?: SuggestedDecisionWindow | null;
   selected: boolean;
-  refreshing: boolean;
-  refreshed: boolean;
+  refreshState: PositionRefreshState;
   onOpen: () => void;
 }) {
   const { position, metrics } = item;
@@ -2754,9 +2764,15 @@ function MobilePositionCard({
         </span>
       </div>
 
-      {(refreshing || refreshed) ? (
+      {refreshState !== "idle" ? (
         <span
-          className={`pointer-events-none absolute inset-y-2 right-0 w-1 rounded-l-full ${refreshing ? "animate-pulse bg-amber-300/85 motion-reduce:animate-none" : "bg-emerald-400/75"}`}
+          className={`pointer-events-none absolute inset-y-2 right-0 w-1 rounded-l-full ${
+            refreshState === "active"
+              ? "animate-pulse bg-sky-300 motion-reduce:animate-none"
+              : refreshState === "pending"
+                ? "bg-amber-300/55"
+                : "bg-emerald-400/75"
+          }`}
           aria-hidden="true"
         />
       ) : null}
@@ -3296,6 +3312,7 @@ export default function SecretOptions() {
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
   const [positionsRefreshing, setPositionsRefreshing] = useState(false);
+  const [positionRefreshProgress, setPositionRefreshProgress] = useState<PositionRefreshProgress | null>(null);
   const positionsRefreshTimerRef = useRef<number | null>(null);
   const [listRefreshInFlight, setListRefreshInFlight] = useState(false);
   const [listRefreshSettled, setListRefreshSettled] = useState(false);
@@ -3344,6 +3361,23 @@ export default function SecretOptions() {
   // that shared lifecycle on each affected row so status stays attached to the
   // data it describes instead of looking like a page-wide warning.
   const listRefreshPending = listRefreshInFlight || positionsRefreshing;
+  const refreshTargetPositionIds = new Set(positionRefreshProgress?.target_position_ids ?? []);
+  const refreshCompletedPositionIds = new Set(positionRefreshProgress?.completed_position_ids ?? []);
+  const positionRefreshState = (positionId: number): PositionRefreshState => {
+    if (listRefreshSettled) return "complete";
+    if (!listRefreshPending || !refreshTargetPositionIds.has(positionId)) return "idle";
+    if (positionRefreshProgress?.current_position_id === positionId) return "active";
+    if (refreshCompletedPositionIds.has(positionId)) return "complete";
+    return "pending";
+  };
+  const listRefreshProgressLabel =
+    positionsRefreshing && positionRefreshProgress?.total
+      ? `Refreshing ${positionRefreshProgress.completed}/${positionRefreshProgress.total}`
+      : listRefreshPending
+        ? "Starting refresh"
+        : listRefreshSettled
+          ? "Updated"
+          : "Refresh list";
   const secretOptionsReadOnly = secretAuthScope === "read";
   const secretMutationDisabled = secretOptionsReadOnly || secretAuthRequired;
 
@@ -3367,6 +3401,7 @@ export default function SecretOptions() {
     scannerRunDetailRef.current = null;
     setExpandedScannerHitId(null);
     setPositionsLoadedAt(null);
+    setPositionRefreshProgress(null);
     setZoneInputsByPosition({});
     setSpotWeightBySymbol({});
     setDecisionReviewsByPosition({});
@@ -3525,11 +3560,12 @@ export default function SecretOptions() {
       }
       const cacheRefreshing = data.metrics_cache?.refresh_in_progress === true;
       setPositionsRefreshing(cacheRefreshing);
+      setPositionRefreshProgress(data.metrics_cache?.refresh_progress ?? null);
       if (positionsRefreshTimerRef.current !== null) {
         window.clearTimeout(positionsRefreshTimerRef.current);
         positionsRefreshTimerRef.current = null;
       }
-      if (data.metrics_cache?.status === "stale" && cacheRefreshing && refreshAttempt < 10) {
+      if (cacheRefreshing && refreshAttempt < 120) {
         positionsRefreshTimerRef.current = window.setTimeout(() => {
           void loadPositions({ quiet: true, refreshAttempt: refreshAttempt + 1 });
         }, 2000);
@@ -3605,11 +3641,9 @@ export default function SecretOptions() {
     if (listRefreshPending) return;
     setListRefreshInFlight(true);
     try {
-      await Promise.all([
-        loadPositions({ quiet: true, force: true }),
-        loadDecisionReviewWindows(),
-        loadPositionRowContexts(),
-      ]);
+      await loadPositions({ quiet: true, force: true });
+      await loadDecisionReviewWindows();
+      await loadPositionRowContexts();
     } finally {
       setListRefreshInFlight(false);
     }
@@ -5583,8 +5617,7 @@ export default function SecretOptions() {
         decisionHistory={decisionReviewsByPosition[position.id]?.history ?? decisionWindowsByPosition[String(position.id)]}
         suggestedWindow={thesisAssessmentsByPosition[position.id]?.suggested_window ?? null}
         selected={expanded}
-        refreshing={listRefreshPending}
-        refreshed={listRefreshSettled}
+        refreshState={positionRefreshState(position.id)}
         onOpen={() => toggleMobilePositionDetails(position)}
       />
       {expanded ? (
@@ -5912,7 +5945,7 @@ export default function SecretOptions() {
             {mobileActionsOpen ? (
               <div className="absolute right-0 top-12 z-40 w-56 overflow-hidden rounded-xl border border-stealth-700 bg-stealth-950 p-1.5 shadow-2xl">
                 <button type="button" onClick={() => { void refreshPositionList(); setMobileActionsOpen(false); }} disabled={listRefreshPending} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-stealth-200 disabled:opacity-50">
-                  <RefreshCw className={`h-4 w-4 ${listRefreshPending ? "animate-spin" : ""}`} aria-hidden="true" /> {listRefreshPending ? "Refreshing list" : "Refresh list"}
+                  <RefreshCw className={`h-4 w-4 ${listRefreshPending ? "animate-spin" : ""}`} aria-hidden="true" /> {listRefreshProgressLabel}
                 </button>
                 <button type="button" onClick={openProfitLossHistory} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-stealth-200">
                   <History className="h-4 w-4" aria-hidden="true" /> P/L history
@@ -6128,7 +6161,7 @@ export default function SecretOptions() {
         <section className="min-w-0 space-y-3">
       <div className="surface-card-strong p-3">
         <span className="sr-only" role="status" aria-live="polite">
-          {listRefreshPending ? "Position list updates pending." : listRefreshSettled ? "Position list updated." : ""}
+          {listRefreshPending ? `${listRefreshProgressLabel}.` : listRefreshSettled ? "Position list updated." : ""}
         </span>
         <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
@@ -6270,7 +6303,7 @@ export default function SecretOptions() {
               }`}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${listRefreshPending ? "animate-spin" : ""}`} aria-hidden="true" />
-              {listRefreshPending ? "Refreshing" : listRefreshSettled ? "Updated" : "Refresh list"}
+              {listRefreshProgressLabel}
             </button>
             <button
               onClick={openAddTrade}
@@ -6361,6 +6394,7 @@ export default function SecretOptions() {
                 const isExpanded = expandedPositionId === position.id;
                 const rowDiagnosis = buildPositionDiagnosis(position, metrics, lane);
                 const holdDateWindow = formatHoldDateWindow(position, evaluation, lane);
+                const rowRefreshState = positionRefreshState(position.id);
 
                 return (
                   <Fragment key={position.id}>
@@ -6437,14 +6471,22 @@ export default function SecretOptions() {
                         </div>
                       </div>
 
-                      {(listRefreshPending || listRefreshSettled) ? (
+                      {rowRefreshState !== "idle" ? (
                         <span
                           className={`pointer-events-none absolute inset-y-1 right-0 w-1 rounded-l-full transition-colors duration-200 ${
-                            listRefreshPending
-                              ? "animate-pulse bg-amber-300/85 motion-reduce:animate-none"
-                              : "bg-emerald-400/75"
+                            rowRefreshState === "active"
+                              ? "animate-pulse bg-sky-300 motion-reduce:animate-none"
+                              : rowRefreshState === "pending"
+                                ? "bg-amber-300/55"
+                                : "bg-emerald-400/75"
                           }`}
-                          title={listRefreshPending ? `${position.symbol} refresh pending` : `${position.symbol} updated`}
+                          title={
+                            rowRefreshState === "active"
+                              ? `${position.symbol} is refreshing now`
+                              : rowRefreshState === "pending"
+                                ? `${position.symbol} is queued`
+                                : `${position.symbol} updated`
+                          }
                           aria-hidden="true"
                         />
                       ) : null}

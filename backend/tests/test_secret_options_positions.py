@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 import json
 import sys
 import types
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -147,6 +148,54 @@ def test_positions_endpoint_replaces_non_finite_metrics(monkeypatch: pytest.Monk
     assert compute_count == 1
     assert scheduled_refreshes == 2
     with secret_options._POSITION_METRICS_CACHE_LOCK:
+        secret_options._POSITION_METRICS_CACHE.clear()
+
+
+def test_position_refresh_runs_sequentially_and_commits_each_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    positions = [
+        SimpleNamespace(id=1, symbol="AAA"),
+        SimpleNamespace(id=2, symbol="BBB"),
+        SimpleNamespace(id=3, symbol="CCC"),
+    ]
+    compute_order: list[int] = []
+    cache_sizes_seen: list[int] = []
+
+    class _InlineExecutor:
+        @staticmethod
+        def submit(callback):
+            callback()
+            return object()
+
+    def compute_metrics(position, _provider):
+        with secret_options._POSITION_METRICS_CACHE_LOCK:
+            cache_sizes_seen.append(len(secret_options._POSITION_METRICS_CACHE))
+        progress = secret_options._position_metrics_refresh_progress()
+        assert progress["current_position_id"] == position.id
+        compute_order.append(position.id)
+        return {"position_id": position.id}
+
+    monkeypatch.setattr(secret_options, "_POSITION_METRICS_REFRESH_EXECUTOR", _InlineExecutor())
+    monkeypatch.setattr(secret_options, "get_market_data_provider", lambda: object())
+    monkeypatch.setattr(secret_options, "_compute_position_metrics", compute_metrics)
+    monkeypatch.setattr(secret_options, "_position_metrics_refresh_delay_seconds", lambda: 0.0)
+    with secret_options._POSITION_METRICS_CACHE_LOCK:
+        secret_options._POSITION_METRICS_CACHE.clear()
+    with secret_options._POSITION_METRICS_REFRESH_LOCK:
+        secret_options._POSITION_METRICS_REFRESH_IN_PROGRESS = False
+
+    assert secret_options._schedule_position_metrics_refresh(positions) is True
+
+    assert compute_order == [1, 2, 3]
+    assert cache_sizes_seen == [0, 1, 2]
+    assert secret_options._position_metrics_refreshing() is False
+    progress = secret_options._position_metrics_refresh_progress()
+    assert progress["completed"] == 3
+    assert progress["total"] == 3
+    assert progress["completed_position_ids"] == [1, 2, 3]
+    with secret_options._POSITION_METRICS_CACHE_LOCK:
+        assert len(secret_options._POSITION_METRICS_CACHE) == 3
         secret_options._POSITION_METRICS_CACHE.clear()
 
 

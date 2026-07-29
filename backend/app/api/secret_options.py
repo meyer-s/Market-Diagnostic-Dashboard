@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 import math
 from numbers import Real
@@ -115,6 +115,14 @@ _POSITION_METRICS_CACHE: Dict[tuple[object, ...], tuple[float, Dict[str, object]
 _POSITION_METRICS_CACHE_LOCK = Lock()
 _POSITION_METRICS_REFRESH_LOCK = Lock()
 _POSITION_METRICS_REFRESH_IN_PROGRESS = False
+_POSITION_METRICS_REFRESH_PROGRESS: Dict[str, object] = {
+    "total": 0,
+    "completed": 0,
+    "current_position_id": None,
+    "current_symbol": None,
+    "target_position_ids": [],
+    "completed_position_ids": [],
+}
 _POSITION_METRICS_REFRESH_EXECUTOR = ThreadPoolExecutor(
     max_workers=1,
     thread_name_prefix="option-position-cache-refresh",
@@ -2621,12 +2629,18 @@ def _position_metrics_snapshot(position: OptionPosition) -> SimpleNamespace:
     )
 
 
-def _position_metrics_worker_count(position_count: int) -> int:
+def _compute_position_metrics_safely(
+    position: Any,
+    provider: MarketDataProvider,
+) -> Dict[str, object]:
     try:
-        configured_workers = int(os.getenv("OPTION_POSITIONS_MAX_WORKERS", "1"))
-    except ValueError:
-        configured_workers = 1
-    return min(position_count, max(1, min(configured_workers, 8)))
+        return _compute_position_metrics(position, provider)
+    except Exception as perr:
+        # A failed symbol must not prevent the rest of the book from
+        # rendering. The empty payload also exposes the error to the
+        # existing data-quality UI.
+        traceback.print_exc()
+        return _empty_position_metrics(str(perr))
 
 
 def _compute_position_metrics_batch(
@@ -2637,31 +2651,11 @@ def _compute_position_metrics_batch(
         return {}
     market_provider = provider or get_market_data_provider()
     metrics_by_position_index: Dict[int, Dict[str, object]] = {}
-
-    def compute_metrics(
-        position_index: int,
-        position: OptionPosition,
-    ) -> tuple[int, Dict[str, object]]:
-        try:
-            return position_index, _compute_position_metrics(position, market_provider)
-        except Exception as perr:
-            # A failed symbol must not prevent the rest of the book from
-            # rendering. The empty payload also exposes the error to the
-            # existing data-quality UI.
-            traceback.print_exc()
-            return position_index, _empty_position_metrics(str(perr))
-
-    with ThreadPoolExecutor(
-        max_workers=_position_metrics_worker_count(len(positions)),
-        thread_name_prefix="option-position-metrics",
-    ) as executor:
-        futures = [
-            executor.submit(compute_metrics, position_index, position)
-            for position_index, position in enumerate(positions)
-        ]
-        for future in as_completed(futures):
-            position_index, metrics = future.result()
-            metrics_by_position_index[position_index] = metrics
+    for position_index, position in enumerate(positions):
+        metrics_by_position_index[position_index] = _compute_position_metrics_safely(
+            position,
+            market_provider,
+        )
     return metrics_by_position_index
 
 
@@ -2672,44 +2666,132 @@ def _position_metrics_cache_ttl_seconds() -> float:
         return 30.0
 
 
+def _position_metrics_refresh_delay_seconds() -> float:
+    try:
+        return max(
+            min(float(os.getenv("OPTION_POSITIONS_REFRESH_DELAY_SECONDS", "0.25")), 5.0),
+            0.0,
+        )
+    except ValueError:
+        return 0.25
+
+
 def _position_metrics_refreshing() -> bool:
     with _POSITION_METRICS_REFRESH_LOCK:
         return _POSITION_METRICS_REFRESH_IN_PROGRESS
+
+
+def _position_metrics_refresh_progress() -> Dict[str, object]:
+    with _POSITION_METRICS_REFRESH_LOCK:
+        return {
+            **_POSITION_METRICS_REFRESH_PROGRESS,
+            "target_position_ids": list(
+                _POSITION_METRICS_REFRESH_PROGRESS["target_position_ids"]
+            ),
+            "completed_position_ids": list(
+                _POSITION_METRICS_REFRESH_PROGRESS["completed_position_ids"]
+            ),
+        }
 
 
 def _schedule_position_metrics_refresh(positions: list[Any]) -> bool:
     global _POSITION_METRICS_REFRESH_IN_PROGRESS
     if not positions:
         return False
+    snapshots = [_position_metrics_snapshot(position) for position in positions]
+    target_position_ids = [
+        int(position.id)
+        for position in snapshots
+        if getattr(position, "id", None) is not None
+    ]
     with _POSITION_METRICS_REFRESH_LOCK:
         if _POSITION_METRICS_REFRESH_IN_PROGRESS:
             return False
         _POSITION_METRICS_REFRESH_IN_PROGRESS = True
-
-    snapshots = [_position_metrics_snapshot(position) for position in positions]
+        _POSITION_METRICS_REFRESH_PROGRESS.update(
+            {
+                "total": len(snapshots),
+                "completed": 0,
+                "current_position_id": None,
+                "current_symbol": None,
+                "target_position_ids": target_position_ids,
+                "completed_position_ids": [],
+            }
+        )
 
     def refresh() -> None:
         global _POSITION_METRICS_REFRESH_IN_PROGRESS
+        refreshed_cache_keys: list[tuple[object, ...]] = []
         try:
-            refreshed = _compute_position_metrics_batch(snapshots)
+            market_provider = get_market_data_provider()
+            refresh_delay = _position_metrics_refresh_delay_seconds()
+            for position_index, position in enumerate(snapshots):
+                position_id = getattr(position, "id", None)
+                with _POSITION_METRICS_REFRESH_LOCK:
+                    _POSITION_METRICS_REFRESH_PROGRESS.update(
+                        {
+                            "current_position_id": position_id,
+                            "current_symbol": getattr(position, "symbol", None),
+                        }
+                    )
+
+                metrics = _compute_position_metrics_safely(position, market_provider)
+                cache_key = _position_metrics_cache_key(position)
+                refreshed_cache_keys.append(cache_key)
+                with _POSITION_METRICS_CACHE_LOCK:
+                    _POSITION_METRICS_CACHE[cache_key] = (
+                        time_lib.monotonic(),
+                        metrics,
+                    )
+
+                with _POSITION_METRICS_REFRESH_LOCK:
+                    completed_ids = _POSITION_METRICS_REFRESH_PROGRESS[
+                        "completed_position_ids"
+                    ]
+                    if position_id is not None:
+                        completed_ids.append(int(position_id))
+                    _POSITION_METRICS_REFRESH_PROGRESS.update(
+                        {
+                            "completed": position_index + 1,
+                            "current_position_id": None,
+                            "current_symbol": None,
+                        }
+                    )
+
+                if refresh_delay > 0 and position_index < len(snapshots) - 1:
+                    time_lib.sleep(refresh_delay)
+
+            # Normalize timestamps at completion so the earliest sequential
+            # result cannot become stale merely because later symbols were slow.
             refreshed_at = time_lib.monotonic()
             with _POSITION_METRICS_CACHE_LOCK:
-                for position_index, position in enumerate(snapshots):
-                    _POSITION_METRICS_CACHE[_position_metrics_cache_key(position)] = (
-                        refreshed_at,
-                        refreshed[position_index],
-                    )
+                for cache_key in refreshed_cache_keys:
+                    cached = _POSITION_METRICS_CACHE.get(cache_key)
+                    if cached is not None:
+                        _POSITION_METRICS_CACHE[cache_key] = (refreshed_at, cached[1])
         except Exception:
             traceback.print_exc()
         finally:
             with _POSITION_METRICS_REFRESH_LOCK:
                 _POSITION_METRICS_REFRESH_IN_PROGRESS = False
+                _POSITION_METRICS_REFRESH_PROGRESS.update(
+                    {
+                        "current_position_id": None,
+                        "current_symbol": None,
+                    }
+                )
 
     try:
         _POSITION_METRICS_REFRESH_EXECUTOR.submit(refresh)
     except RuntimeError:
         with _POSITION_METRICS_REFRESH_LOCK:
             _POSITION_METRICS_REFRESH_IN_PROGRESS = False
+            _POSITION_METRICS_REFRESH_PROGRESS.update(
+                {
+                    "current_position_id": None,
+                    "current_symbol": None,
+                }
+            )
         return False
     return True
 
@@ -2763,6 +2845,8 @@ def get_positions(refresh: bool = Query(False)):
             refresh_started = _schedule_position_metrics_refresh(
                 [positions[position_index] for position_index in stale_indices]
             )
+            refresh_in_progress = refresh_started or _position_metrics_refreshing()
+            refresh_progress = _position_metrics_refresh_progress()
             metrics_by_position_index = {
                 position_index: metrics
                 for position_index, (_cached_at, metrics) in enumerate(cache_entries)
@@ -2784,9 +2868,10 @@ def get_positions(refresh: bool = Query(False)):
                 {
                     "positions": payload,
                     "metrics_cache": {
-                        "status": "stale" if stale_indices else "fresh",
+                        "status": "stale" if stale_indices or refresh_in_progress else "fresh",
                         "age_seconds": round(cache_age_seconds, 1),
-                        "refresh_in_progress": refresh_started or _position_metrics_refreshing(),
+                        "refresh_in_progress": refresh_in_progress,
+                        "refresh_progress": refresh_progress,
                     },
                 }
             )
