@@ -274,6 +274,60 @@ def test_position_metrics_reuses_daily_history_for_causal_field_context(
         "timeframe": "1D",
     }
     assert metrics["field_context"] == field_context
+    assert metrics["pnl"]["source"] == "delta_estimate"
+    assert metrics["pnl"]["dollar"] != 0
+
+
+def test_position_metrics_does_not_report_flat_pnl_without_current_market_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = pd.DataFrame(
+        {"Close": [99.0, 100.0]},
+        index=pd.to_datetime(["2026-07-20", "2026-07-21"]),
+    )
+
+    class Provider:
+        name = "fixture_provider"
+
+        def daily_bars(self, _symbol: str, days: int = 365) -> pd.DataFrame:
+            return history
+
+    monkeypatch.setattr(
+        secret_options,
+        "_market_data_for_symbol",
+        lambda *_args, **_kwargs: {
+            "current_price": None,
+            "last_updated": "2026-07-21T20:00:00Z",
+            "data_source": "fixture_provider",
+        },
+    )
+    monkeypatch.setattr(secret_options, "_resolve_option_row", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(secret_options, "compute_historical_volatility", lambda *_args: 25.0)
+    monkeypatch.setattr(secret_options, "technical_snapshot_from_frame", lambda *_args: {})
+    monkeypatch.setattr(secret_options, "build_option_field_context", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(secret_options, "_compute_volatility_signal", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(secret_options, "_compute_position_opportunity_signal", lambda *_args: None)
+
+    position = types.SimpleNamespace(
+        symbol="KVUE",
+        expiration=date.today() + timedelta(days=60),
+        option_type="call",
+        action="Buy to Open",
+        strike=19.0,
+        underlying_reference=20.0,
+        underlying_at_entry=20.0,
+        fill_price=1.09,
+        contracts=50,
+        total_cost=5_450.0,
+        source_event_id=None,
+    )
+
+    metrics = secret_options._compute_position_metrics(position, Provider())
+
+    # The entry/reference spot still supports model context, but cannot stand in
+    # for a current quote and manufacture a misleading $0 / 0% P&L.
+    assert metrics["greeks"] is not None
+    assert metrics["pnl"] == {"dollar": None, "percent": None, "source": None}
 
 
 def test_legacy_discord_training_recipe_derives_gate() -> None:

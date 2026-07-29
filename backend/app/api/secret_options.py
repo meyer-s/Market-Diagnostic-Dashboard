@@ -1576,8 +1576,11 @@ def _compute_position_metrics(
         timeframe="1D",
     )
     
-    # Determine spot price
-    spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
+    # Entry/reference spot remains useful for Greeks and decision context when
+    # the live underlying quote is temporarily unavailable. It must not,
+    # however, be mistaken for a current price when estimating P&L.
+    market_spot = market.get("current_price")
+    spot = market_spot or position.underlying_reference or position.underlying_at_entry
     
     # Determine volatility to use
     volatility = None
@@ -1653,9 +1656,11 @@ def _compute_position_metrics(
     if option_price is not None:
         pnl_source = "option_price"
         pnl_dollar = (option_price - position.fill_price) * position.contracts * 100
-    elif greeks and position.underlying_at_entry and spot:
+    elif greeks and position.underlying_at_entry and market_spot:
         pnl_source = "delta_estimate"
-        estimated_price = position.fill_price + greeks["delta"] * (spot - position.underlying_at_entry)
+        estimated_price = position.fill_price + greeks["delta"] * (
+            market_spot - position.underlying_at_entry
+        )
         pnl_dollar = (estimated_price - position.fill_price) * position.contracts * 100
 
     if pnl_dollar is not None and position.total_cost:

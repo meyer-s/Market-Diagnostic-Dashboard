@@ -39,6 +39,10 @@ import {
   setSecretOptionsToken,
   type SecretOptionsScope,
 } from "../utils/secretOptionsAuth";
+import {
+  isMissingThesisAssessmentError,
+  shouldGenerateInitialThesisAssessment,
+} from "../utils/thesisAssessment";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { formatDate, formatNumber } from "../utils/styleUtils";
 import { getFamilyColor } from "../theme/metricColors";
@@ -3649,6 +3653,38 @@ export default function SecretOptions() {
       setPortfolioCapitalInput((current) => current || String(data.risk_policy.portfolio_capital ?? ""));
       return data;
     } catch (err: unknown) {
+      if (
+        shouldGenerateInitialThesisAssessment(err, {
+          force,
+          scope: secretAuthScope ?? getSecretOptionsScope(),
+        })
+      ) {
+        // A position can be opened just after the scheduled grader snapshots
+        // the book. A write-scoped session heals that expected lifecycle gap
+        // immediately without making the GET endpoint itself mutate state.
+        try {
+          const data = await apiFetch<PositionThesisAssessmentResponse>(
+            `/secret/options/positions/${positionId}/thesis-assessment?force=false`,
+            { method: "POST" }
+          );
+          setThesisAssessmentsByPosition((prev) => ({ ...prev, [positionId]: data }));
+          setPortfolioCapitalInput((current) => current || String(data.risk_policy.portfolio_capital ?? ""));
+          return data;
+        } catch (refreshError: unknown) {
+          const message =
+            refreshError instanceof Error
+              ? refreshError.message
+              : "The initial automatic assessment could not be generated.";
+          setThesisAssessmentError(message);
+          console.error("Failed to generate initial thesis assessment:", refreshError);
+          return null;
+        }
+      }
+      if (!force && isMissingThesisAssessmentError(err)) {
+        // Read-only sessions cannot create the snapshot, but the absence is an
+        // expected pending state rather than a P&L or position-load failure.
+        return null;
+      }
       const message = err instanceof Error ? err.message : "Failed to grade the position.";
       setThesisAssessmentError(message);
       console.error("Failed to load thesis assessment:", err);
