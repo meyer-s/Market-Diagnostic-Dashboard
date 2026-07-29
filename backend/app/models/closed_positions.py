@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Date, DateTime, Float, Integer, String
+from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Text
 
 from app.core.db import Base
 
@@ -34,6 +34,7 @@ class ClosedPosition(Base):
     
     # Metadata
     source_position_id = Column(Integer, nullable=True, index=True)
+    source_position_snapshot_json = Column(Text, nullable=True)
     account = Column(String, nullable=True)
     notes = Column(String, nullable=True)
     source_event_id = Column(Integer, nullable=True, index=True)

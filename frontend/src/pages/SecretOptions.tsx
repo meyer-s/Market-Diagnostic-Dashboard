@@ -28,6 +28,7 @@ import {
   SlidersHorizontal,
   Square,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
 import {
@@ -551,6 +552,17 @@ interface ClosedPositionRow {
   source_opportunity_rank_score: number | null;
   source_opportunity_model_version: string | null;
   learning_outcome?: OptionTradeLearningOutcome | null;
+}
+
+type ClosedRestoreTarget = Pick<ClosedPositionRow, "id" | "symbol" | "close_date">;
+
+interface ClosePositionResponse {
+  closed_position_id: number;
+  symbol: string;
+}
+
+interface RestoreClosedPositionResponse {
+  position: OptionPosition;
 }
 
 interface TrainingOutcomeRow {
@@ -3287,6 +3299,10 @@ export default function SecretOptions() {
   const [closedFormData, setClosedFormData] = useState(initialClosedFormState);
   const [closedFormError, setClosedFormError] = useState<string | null>(null);
   const [closedSubmitting, setClosedSubmitting] = useState(false);
+  const [pendingClosedRestore, setPendingClosedRestore] = useState<ClosedRestoreTarget | null>(null);
+  const [lastClosedPosition, setLastClosedPosition] = useState<ClosedRestoreTarget | null>(null);
+  const [closedRestoreSubmittingId, setClosedRestoreSubmittingId] = useState<number | null>(null);
+  const [closedRestoreError, setClosedRestoreError] = useState<string | null>(null);
   const [showTrainingOutcomes, setShowTrainingOutcomes] = useState(false);
   const [trainingOutcomes, setTrainingOutcomes] = useState<TrainingOutcomeRow[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingOutcomeSummary | null>(null);
@@ -3391,6 +3407,9 @@ export default function SecretOptions() {
     setGreeksPositionId(null);
     setGreeksLoadedAt(null);
     setClosedPositions([]);
+    setPendingClosedRestore(null);
+    setLastClosedPosition(null);
+    setClosedRestoreError(null);
     setTrainingOutcomes([]);
     setTrainingSummary(null);
     setOpportunityBacktest(null);
@@ -3434,6 +3453,7 @@ export default function SecretOptions() {
     showDecisionReviewModal ||
     showClosedLog ||
     showClosedEditModal ||
+    pendingClosedRestore !== null ||
     showTrainingOutcomes ||
     expandedScannerHitId !== null;
   const renderModal = (node: JSX.Element) => {
@@ -4485,15 +4505,22 @@ export default function SecretOptions() {
 
     setClosingSubmitting(true);
     try {
-      await apiFetch(`/secret/options/positions/${closingPositionId}`, {
+      const closeDate = new Date().toISOString().split("T")[0];
+      const result = await apiFetch<ClosePositionResponse>(`/secret/options/positions/${closingPositionId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           exit_price: Number(exitPrice),
-          close_date: new Date().toISOString().split("T")[0],
+          close_date: closeDate,
           notes: closeNotes || null,
         }),
       });
+      setLastClosedPosition({
+        id: result.closed_position_id,
+        symbol: result.symbol,
+        close_date: closeDate,
+      });
+      setClosedRestoreError(null);
       
       setShowCloseModal(false);
       setExitPrice("");
@@ -4504,6 +4531,34 @@ export default function SecretOptions() {
       alert(`Failed to close position: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setClosingSubmitting(false);
+    }
+  };
+
+  const handleRestoreClosedPosition = async (target: ClosedRestoreTarget) => {
+    if (closedRestoreSubmittingId !== null) return;
+    setClosedRestoreSubmittingId(target.id);
+    setClosedRestoreError(null);
+    try {
+      const result = await apiFetch<RestoreClosedPositionResponse>(
+        `/secret/options/closed-positions/${target.id}/restore`,
+        { method: "POST" },
+      );
+      setPendingClosedRestore(null);
+      setLastClosedPosition((current) => (current?.id === target.id ? null : current));
+      await Promise.all([
+        loadPositions(),
+        loadPositionRowContexts(),
+        loadClosedPositions(),
+        loadLearningSummary(),
+      ]);
+      setSelectedId(result.position.id);
+      if (!isMobileWorkflow) setExpandedPositionId(result.position.id);
+    } catch (err: unknown) {
+      setClosedRestoreError(
+        `Failed to restore ${target.symbol}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setClosedRestoreSubmittingId(null);
     }
   };
 
@@ -5905,6 +5960,46 @@ export default function SecretOptions() {
           {error}
         </div>
       )}
+
+      {lastClosedPosition ? (
+        <div
+          className="flex flex-col gap-3 rounded-xl border border-amber-500/35 bg-amber-950/20 px-3 py-3 text-amber-50 sm:flex-row sm:items-center sm:justify-between"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{lastClosedPosition.symbol} moved to P/L History.</p>
+            <p className="mt-0.5 text-xs leading-5 text-amber-100/75">
+              Undo restores the original position and removes this close from trading-model learning.
+            </p>
+            {closedRestoreError ? (
+              <p className="mt-2 text-sm text-rose-200" role="alert">{closedRestoreError}</p>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              disabled={secretMutationDisabled || closedRestoreSubmittingId !== null}
+              onClick={() => void handleRestoreClosedPosition(lastClosedPosition)}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-300/55 bg-amber-400/15 px-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/25 disabled:cursor-wait disabled:opacity-50"
+            >
+              <Undo2 className="h-4 w-4" aria-hidden="true" />
+              {closedRestoreSubmittingId === lastClosedPosition.id ? "Restoring…" : "Undo close"}
+            </button>
+            <button
+              type="button"
+              disabled={closedRestoreSubmittingId === lastClosedPosition.id}
+              onClick={() => {
+                setLastClosedPosition(null);
+                setClosedRestoreError(null);
+              }}
+              className="min-h-11 rounded-lg px-3 text-sm text-amber-100/75 hover:bg-white/5 hover:text-amber-50 disabled:opacity-50"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {isMobileWorkflow ? (
       <div className="space-y-3 xl:hidden">
@@ -8990,6 +9085,21 @@ export default function SecretOptions() {
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex justify-end gap-1.5">
+                            {pos.source_position_id !== null && pos.source_position_id !== undefined ? (
+                              <button
+                                type="button"
+                                disabled={secretMutationDisabled || closedRestoreSubmittingId !== null}
+                                onClick={() => {
+                                  setClosedRestoreError(null);
+                                  setPendingClosedRestore(pos);
+                                }}
+                                aria-label={`Restore closed ${pos.symbol} trade to open positions`}
+                                title={`Restore ${pos.symbol} to open positions`}
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-amber-500/35 bg-amber-500/10 text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-500/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <Undo2 className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => openClosedEditModal(pos)}
@@ -9038,6 +9148,69 @@ export default function SecretOptions() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Restore Closed Position Confirmation */}
+      {pendingClosedRestore && renderModal(
+        <div
+          className="fixed inset-0 z-[70] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-black/75 p-4"
+          onClick={() => {
+            if (closedRestoreSubmittingId === null) {
+              setPendingClosedRestore(null);
+              setClosedRestoreError(null);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-amber-500/35 bg-stealth-800 p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-amber-400/35 bg-amber-500/10 text-amber-100">
+                <Undo2 className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-xl font-semibold text-stealth-100">
+                  Restore {pendingClosedRestore.symbol}?
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-stealth-300">
+                  This returns the original contract to open positions, reconnects its thesis and
+                  review history, and reverses the close’s training outcome.
+                </p>
+                <p className="mt-2 text-xs leading-5 text-stealth-500">
+                  The close and reversal remain in the lifecycle audit trail.
+                </p>
+              </div>
+            </div>
+            {closedRestoreError ? (
+              <div className="mt-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200" role="alert">
+                {closedRestoreError}
+              </div>
+            ) : null}
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={closedRestoreSubmittingId !== null}
+                onClick={() => {
+                  setPendingClosedRestore(null);
+                  setClosedRestoreError(null);
+                }}
+                className="min-h-11 rounded-md px-4 text-sm text-stealth-300 hover:bg-white/5 hover:text-white disabled:opacity-50"
+              >
+                Keep closed
+              </button>
+              <button
+                type="button"
+                disabled={closedRestoreSubmittingId !== null}
+                onClick={() => void handleRestoreClosedPosition(pendingClosedRestore)}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-amber-500 px-4 text-sm font-semibold text-stealth-950 hover:bg-amber-400 disabled:cursor-wait disabled:bg-stealth-700 disabled:text-stealth-400"
+              >
+                <Undo2 className="h-4 w-4" aria-hidden="true" />
+                {closedRestoreSubmittingId === pendingClosedRestore.id ? "Restoring…" : "Restore position"}
+              </button>
+            </div>
+          </div>
+        </div>,
       )}
 
       {/* Scanner Training Outcomes Modal */}

@@ -851,6 +851,8 @@ def learning_summary(db: Session) -> dict[str, object]:
             ),
         )
         .label("outcome_rank"),
+    ).filter(
+        OptionTradeOutcome.outcome_status != "reversed"
     ).subquery()
     latest_outcomes = (
         db.query(OptionTradeOutcome)

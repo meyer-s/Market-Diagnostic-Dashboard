@@ -2725,6 +2725,110 @@ def test_close_position_rejects_duplicate_closed_trade(secret_options_client) ->
     assert "Duplicate closed position" in response.json()["detail"]
 
 
+def test_restore_closed_position_reconnects_history_and_reverses_learning(
+    secret_options_client,
+) -> None:
+    client, session_local = secret_options_client
+    with session_local() as db:
+        position = OptionPosition(
+            trade_date=date(2026, 7, 1),
+            account="HSA",
+            action="Buy to Open",
+            contracts=4,
+            symbol="KVUE",
+            expiration=date(2026, 9, 18),
+            strike=19.0,
+            option_type="call",
+            fill_price=1.09,
+            total_cost=436.0,
+            underlying_at_entry=19.60,
+            estimated_delta=0.58,
+            shares_equivalent=232,
+            dte_at_entry=79,
+            underlying_reference=19.55,
+        )
+        db.add(position)
+        db.commit()
+        position_id = position.id
+
+    close_response = client.request(
+        "DELETE",
+        f"/secret/options/positions/{position_id}",
+        json={
+            "exit_price": 1.50,
+            "close_date": "2026-07-29",
+            "notes": "wrong position",
+        },
+    )
+
+    assert close_response.status_code == 200
+    closed_id = close_response.json()["closed_position_id"]
+    assert close_response.json()["symbol"] == "KVUE"
+
+    restore_response = client.post(
+        f"/secret/options/closed-positions/{closed_id}/restore"
+    )
+
+    assert restore_response.status_code == 200
+    restored = restore_response.json()["position"]
+    assert restored["id"] == position_id
+    assert restored["symbol"] == "KVUE"
+    assert restored["action"] == "Buy to Open"
+    assert restored["estimated_delta"] == 0.58
+    assert restored["shares_equivalent"] == 232
+    assert restored["dte_at_entry"] == 79
+    assert restored["underlying_reference"] == 19.55
+    assert restore_response.json()["learning_outcomes_reversed"] == 1
+
+    with session_local() as db:
+        assert db.query(ClosedPosition).count() == 0
+        restored_row = db.query(OptionPosition).one()
+        assert restored_row.id == position_id
+        assert restored_row.contracts == 4
+        trade_outcome = db.query(OptionTradeOutcome).one()
+        assert trade_outcome.outcome_status == "reversed"
+        event_types = [
+            row.event_type
+            for row in db.query(OptionPositionEvent)
+            .filter(OptionPositionEvent.position_id == position_id)
+            .order_by(OptionPositionEvent.id.asc())
+            .all()
+        ]
+        assert event_types == ["closed", "close_reversed"]
+        summary = learning_summary(db)
+        assert summary["sample"]["actual_closed_trades"] == 0
+        assert summary["sample"]["classified_trade_cycles"] == 0
+
+
+def test_restore_rejects_history_only_trade(secret_options_client) -> None:
+    client, session_local = secret_options_client
+    with session_local() as db:
+        db.add(
+            ClosedPosition(
+                trade_date=date(2026, 7, 1),
+                close_date=date(2026, 7, 29),
+                contracts=1,
+                symbol="LEGACY",
+                expiration=date(2026, 9, 18),
+                strike=20.0,
+                option_type="call",
+                fill_price=1.0,
+                exit_price=1.5,
+                total_cost=100.0,
+                total_proceeds=150.0,
+                dollar_pnl=50.0,
+                percent_pnl=50.0,
+            )
+        )
+        db.commit()
+        closed_id = db.query(ClosedPosition).one().id
+
+    response = client.post(f"/secret/options/closed-positions/{closed_id}/restore")
+
+    assert response.status_code == 409
+    assert "added directly to P/L history" in response.json()["detail"]
+
+
 def test_due_sell_reminders_send_once(
     secret_options_client,
     monkeypatch: pytest.MonkeyPatch,

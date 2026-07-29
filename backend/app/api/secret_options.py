@@ -4026,6 +4026,7 @@ def close_position(
         # Create closed position record
         closed = ClosedPosition(
             source_position_id=position.id,
+            source_position_snapshot_json=json_dumps(prior_position),
             symbol=position.symbol,
             option_type=position.option_type,
             strike=position.strike,
@@ -4083,6 +4084,8 @@ def close_position(
         
         return _json_safe({
             "message": "Position closed successfully",
+            "closed_position_id": closed.id,
+            "symbol": closed.symbol,
             "learning_outcome": serialize_trade_outcome(trade_outcome),
             "pnl": {
                 "dollar": dollar_pnl,
@@ -4090,6 +4093,210 @@ def close_position(
                 "total_proceeds": total_proceeds
             }
         })
+
+
+@router.post("/closed-positions/{closed_position_id}/restore")
+def restore_closed_position(closed_position_id: int, http_request: Request):
+    """Reverse an accidental close while preserving an append-only lifecycle trail."""
+    with get_db_session() as db:
+        closed = (
+            db.query(ClosedPosition)
+            .filter(ClosedPosition.id == closed_position_id)
+            .with_for_update()
+            .first()
+        )
+        if not closed:
+            raise HTTPException(status_code=404, detail="Closed position not found")
+        if closed.source_position_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="This trade was added directly to P/L history and has no open position to restore.",
+            )
+        if (
+            db.query(OptionPosition)
+            .filter(OptionPosition.id == closed.source_position_id)
+            .first()
+            is not None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Open position #{closed.source_position_id} already exists.",
+            )
+
+        prior_closed = _serialize_closed_position(closed, None)
+        snapshot = json_loads(closed.source_position_snapshot_json, {})
+        if not isinstance(snapshot, dict):
+            snapshot = {}
+
+        def snapshot_float(field: str, fallback: Optional[float]) -> Optional[float]:
+            value = snapshot.get(field)
+            return float(value) if _is_finite_number(value) else fallback
+
+        def snapshot_int(field: str, fallback: Optional[int]) -> Optional[int]:
+            value = snapshot_float(field, None)
+            return int(value) if value is not None else fallback
+
+        def snapshot_date(field: str, fallback: date) -> date:
+            value = snapshot.get(field)
+            if isinstance(value, str):
+                try:
+                    return date.fromisoformat(value)
+                except ValueError:
+                    pass
+            return fallback
+
+        def snapshot_datetime(
+            field: str,
+            fallback: Optional[datetime],
+        ) -> Optional[datetime]:
+            value = snapshot.get(field)
+            if isinstance(value, str):
+                try:
+                    return datetime.fromisoformat(value)
+                except ValueError:
+                    pass
+            return fallback
+
+        trade_date = snapshot_date("trade_date", closed.trade_date)
+        expiration = snapshot_date("expiration", closed.expiration)
+        contracts = snapshot_int("contracts", closed.contracts) or closed.contracts
+        symbol = str(snapshot.get("symbol") or closed.symbol).strip().upper()
+        option_type = str(snapshot.get("option_type") or closed.option_type).strip().lower()
+        strike = snapshot_float("strike", closed.strike) or closed.strike
+        fill_price = snapshot_float("fill_price", closed.fill_price) or closed.fill_price
+        total_cost = snapshot_float("total_cost", closed.total_cost)
+        if total_cost is None:
+            total_cost = closed.total_cost
+        account = snapshot.get("account") if "account" in snapshot else closed.account
+        action = snapshot.get("action") if "action" in snapshot else "Buy to Open"
+
+        duplicate = _find_duplicate_open_position(
+            db,
+            trade_date=trade_date,
+            account=account,
+            action=action,
+            contracts=contracts,
+            symbol=symbol,
+            expiration=expiration,
+            strike=strike,
+            option_type=option_type,
+            fill_price=fill_price,
+            total_cost=total_cost,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Matching open position already exists as trade #{duplicate.id}.",
+            )
+
+        restored = OptionPosition(
+            id=closed.source_position_id,
+            trade_date=trade_date,
+            account=account,
+            action=action,
+            contracts=contracts,
+            symbol=symbol,
+            expiration=expiration,
+            strike=strike,
+            option_type=option_type,
+            fill_price=fill_price,
+            total_cost=total_cost,
+            underlying_at_entry=snapshot_float(
+                "underlying_at_entry",
+                closed.underlying_at_entry,
+            ),
+            estimated_delta=snapshot_float("estimated_delta", None),
+            shares_equivalent=snapshot_int("shares_equivalent", None),
+            dte_at_entry=snapshot_int(
+                "dte_at_entry",
+                (expiration - trade_date).days,
+            ),
+            underlying_reference=snapshot_float(
+                "underlying_reference",
+                closed.underlying_at_entry,
+            ),
+            source_event_id=snapshot_int("source_event_id", closed.source_event_id),
+            source_triggered_at=snapshot_datetime(
+                "source_triggered_at",
+                closed.source_triggered_at,
+            ),
+            source_match_method=(
+                snapshot.get("source_match_method")
+                if "source_match_method" in snapshot
+                else closed.source_match_method
+            ),
+            source_match_confidence=snapshot_float(
+                "source_match_confidence",
+                closed.source_match_confidence,
+            ),
+            source_match_notes=(
+                snapshot.get("source_match_notes")
+                if "source_match_notes" in snapshot
+                else closed.source_match_notes
+            ),
+        )
+        db.add(restored)
+        db.flush()
+
+        trade_outcomes = (
+            db.query(OptionTradeOutcome)
+            .filter(OptionTradeOutcome.closed_position_id == closed.id)
+            .all()
+        )
+        for outcome in trade_outcomes:
+            outcome.outcome_status = "reversed"
+        decision_outcomes = (
+            db.query(OptionDecisionOutcome)
+            .filter(OptionDecisionOutcome.closed_position_id == closed.id)
+            .all()
+        )
+        for outcome in decision_outcomes:
+            outcome.closed_position_id = None
+
+        record_position_event(
+            db,
+            position_id=restored.id,
+            closed_position_id=closed.id,
+            event_type="close_reversed",
+            quantity_before=0,
+            quantity_after=restored.contracts,
+            execution_price=closed.exit_price,
+            total_cost_before=0.0,
+            total_cost_after=restored.total_cost,
+            details={
+                "reason": "operator_undo",
+                "restored_from_closed_position_id": closed.id,
+                "learning_outcomes_reversed": len(trade_outcomes),
+            },
+        )
+        sync_trade_sell_reminder(db, restored)
+        db.delete(closed)
+        db.commit()
+        db.refresh(restored)
+        serialized = _serialize_position(
+            restored,
+            _position_evaluation_window(db, restored),
+        )
+        set_secret_options_audit_change(
+            http_request,
+            object_type="position",
+            object_id=restored.id,
+            before=prior_closed,
+            after={
+                **serialized,
+                "status": "restored",
+                "closed_position_id": closed_position_id,
+                "learning_outcomes_reversed": len(trade_outcomes),
+            },
+        )
+        return _json_safe(
+            {
+                "message": f"{restored.symbol} was restored to open positions.",
+                "position": serialized,
+                "closed_position_id": closed_position_id,
+                "learning_outcomes_reversed": len(trade_outcomes),
+            }
+        )
 
 
 @router.get("/closed-positions")
