@@ -3364,8 +3364,9 @@ export default function SecretOptions() {
   const refreshTargetPositionIds = new Set(positionRefreshProgress?.target_position_ids ?? []);
   const refreshCompletedPositionIds = new Set(positionRefreshProgress?.completed_position_ids ?? []);
   const positionRefreshState = (positionId: number): PositionRefreshState => {
+    if (!refreshTargetPositionIds.has(positionId)) return "idle";
     if (listRefreshSettled) return "complete";
-    if (!listRefreshPending || !refreshTargetPositionIds.has(positionId)) return "idle";
+    if (!listRefreshPending) return "idle";
     if (positionRefreshProgress?.current_position_id === positionId) return "active";
     if (refreshCompletedPositionIds.has(positionId)) return "complete";
     return "pending";
